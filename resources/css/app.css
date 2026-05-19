@@ -1364,14 +1364,14 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
 [data-layout-mode="dark"] .btn.pmt-btn-ghost:hover {
   background-color: rgba(255, 255, 255, 0.06) !important;
   border-color: rgba(255, 255, 255, 0.22) !important;
-  color: #fff !important;
+  color: #c4bedd !important;
 }
 
 /* Method column badge — readable in both light and dark mode
    Uses .badge.pmt-method-badge to outrank Bootstrap's default `.badge { color: #fff }` */
 .badge.pmt-method-badge {
   background-color: rgba(124, 92, 252, 0.12) !important;
-  color: #6b4dff !important;
+  color: #c4bedd !important;
   border: 1px solid rgba(124, 92, 252, 0.28) !important;
   padding: 4px 9px !important;
   font-size: 10.5px !important;
@@ -2074,9 +2074,9 @@ body .modal.cbc-payment-modal .modal-dialog {
   color: var(--vz-heading-color, var(--vz-body-color));
 }
 .hr-mega-cat-btn.is-active {
-  background: rgba(124,92,252,0.14);
-  color: #5a3fd1;
-  border-color: rgba(124,92,252,0.30);
+  background: linear-gradient(135deg, rgba(124,92,252,0.28) 0%, rgba(124,92,252,0.50) 100%);
+  color: #2e1a8a;
+  border-color: rgba(124,92,252,0.55);
 }
 .hr-mega-cat-btn .hr-mega-cat-caret {
   font-size: 14px;
@@ -2102,10 +2102,13 @@ body .modal.cbc-payment-modal .modal-dialog {
 }
 
 [data-bs-theme="dark"] .hr-mega-cat-btn:hover { background: rgba(255,255,255,0.06); }
-[data-bs-theme="dark"] .hr-mega-cat-btn.is-active {
-  background: rgba(124,92,252,0.22);
-  color: #c4b5fd;
+html[data-bs-theme="dark"] .hr-mega-cat-btn.is-active {
+  background: linear-gradient(135deg, rgba(124,92,252,0.22) 0%, rgba(124,92,252,0.42) 100%);
+  color: #ffffff !important;
   border-color: rgba(124,92,252,0.45);
+}
+html[data-bs-theme="dark"] .hr-mega-cat-btn.is-active .hr-mega-cat-caret {
+  color: #ffffff !important;
 }
 
 .hr-mega-leaves {
@@ -2140,14 +2143,18 @@ body .modal.cbc-payment-modal .modal-dialog {
   transition: background .15s ease, color .15s ease;
   white-space: nowrap;
 }
-.hr-mega-leaf-link:hover {
-  background: rgba(124,92,252,0.18);
-  color: #5a3fd1;
+.hr-mega-leaf-link:hover,
+.hr-mega-leaf-link.active {
+  background: linear-gradient(135deg, rgba(124,92,252,0.28) 0%, rgba(124,92,252,0.50) 100%);
+  color: #2e1a8a;
+  border: 1px solid rgba(124,92,252,0.55);
 }
 [data-bs-theme="dark"] .hr-mega-leaf-link { color: var(--vz-body-color); }
-[data-bs-theme="dark"] .hr-mega-leaf-link:hover {
-  background: rgba(124,92,252,0.28);
-  color: #c4b5fd;
+html[data-bs-theme="dark"] .hr-mega-leaf-link:hover,
+html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
+  background: linear-gradient(135deg, rgba(124,92,252,0.22) 0%, rgba(124,92,252,0.42) 100%);
+  color: #ffffff !important;
+  border: 1px solid rgba(124,92,252,0.45);
 }
 
 /* On small screens, stack the category strip vertically so the buttons
@@ -2162,6 +2169,82 @@ body .modal.cbc-payment-modal .modal-dialog {
   .hr-mega-cats { flex-direction: column; align-items: stretch; flex-wrap: wrap; width: 100%; }
   .hr-mega-cat-btn { justify-content: space-between; }
   .hr-mega-leaves { justify-content: flex-start; }
+}
+
+
+/* Default = LIGHT mode (the app sets `data-bs-theme="dark"` only for dark;
+   light has no attribute, so the unconditional block IS the light rule). */
+[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active,
+[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] {
+  background: linear-gradient(135deg, rgba(124,92,252,0.28) 0%, rgba(124,92,252,0.50) 100%) !important;
+  color: #2e1a8a !important;
+  border: 1px solid rgba(124,92,252,0.55) !important;
+  border-radius: 8px !important;
+  /* Shorten the pill so it doesn't fill the full nav-link height — sits
+     compactly like the HR CORE / EMP ID pill. Margin compensates for the
+     padding reduction so the .nav-item total height stays close to the
+     original and the absolute-positioned mega-menu still anchors below. */
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  margin-top: 6px;
+  margin-bottom: 6px;
+}
+[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active i,
+[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] i,
+[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active span,
+[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] span {
+  color: #2e1a8a !important;
+}
+
+/* DARK-mode override. No `html` prefix so the selector matches whether
+   `data-bs-theme="dark"` lives on <html> or <body>. Every declaration is
+   !important and we re-target i + span explicitly because Velzon's SCSS
+   nav-link rules pipe `color` through --vz-topnav-item-active-color,
+   which is dynamically set per-tenant by AuthContext. */
+[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active,
+[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] {
+  background: linear-gradient(135deg, rgba(124,92,252,0.22) 0%, rgba(124,92,252,0.42) 100%) !important;
+  border: 1px solid rgba(124,92,252,0.45) !important;
+  color: #ffffff !important;
+}
+[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active i,
+[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] i,
+[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active span,
+[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] span,
+[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active *,
+[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] * {
+  color: #ffffff !important;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Vertical sidebar — mirror the horizontal gradient pill on the ACTIVE
+   top-level menu item so the highlight reads the same in both layouts.
+   Scoped to direct `.nav-item > .nav-link` children of `.navbar-nav` so
+   we only hit top-level entries, not the indented sub-links (.nav-sm).
+   ───────────────────────────────────────────────────────────────────── */
+/* Default = light mode (see note on horizontal block above). */
+[data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active,
+[data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] {
+  background: linear-gradient(135deg, rgba(124,92,252,0.28) 0%, rgba(124,92,252,0.50) 100%);
+  color: #2e1a8a !important;
+  border-radius: 8px;
+  border: 1px solid rgba(124,92,252,0.55);
+  margin: 2px 10px;
+}
+[data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active i,
+[data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] i {
+  color: #2e1a8a !important;
+}
+[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active,
+[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] {
+  background: linear-gradient(135deg, rgba(124,92,252,0.22) 0%, rgba(124,92,252,0.42) 100%);
+  border-color: rgba(124,92,252,0.45);
+}
+[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active,
+[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"],
+[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active *,
+[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] * {
+  color: #ffffff !important;
 }
 
 /* ─────────────────────────────────────────────────────────────────────

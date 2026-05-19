@@ -126,12 +126,21 @@ const HorizontalLayout = (props : any) => {
             const items : any = ul.getElementsByTagName("a");
             let itemsArray = [...items]; // converts NodeList to Array
             removeActivation(itemsArray);
-            let matchingMenuItem = itemsArray.find((x) => {
-                return x.pathname === pathName;
+            // Prefix match so a deep route like /hr/employees/42 also activates
+            // the /hr top-level link in the horizontal nav. The HR mega-menu
+            // wrapper isn't a `.collapse.menu-dropdown`, so activateParentDropdown
+            // wouldn't walk up to the parent on its own; matching every prefix
+            // pathname lights up the top-level entry directly. HR and Sales
+            // triggers have no real href (the click handler just toggles the
+            // dropdown), so we read `data-path-prefix` set in LayoutMenuData
+            // to know which URL range each trigger represents.
+            const matches = itemsArray.filter((x) => {
+                const prefix = (x as HTMLAnchorElement).dataset?.pathPrefix;
+                const candidate = prefix || x.pathname;
+                if (!candidate || candidate === '/' || candidate === '/#') return false;
+                return pathName === candidate || pathName.startsWith(candidate + '/');
             });
-            if (matchingMenuItem) {
-                activateParentDropdown(matchingMenuItem);
-            }
+            matches.forEach(activateParentDropdown);
         };
         initMenu();
     }, [path, props.layoutType]);
@@ -195,10 +204,22 @@ const HorizontalLayout = (props : any) => {
                             (item.subItems ? (
                                 <li className="nav-item">
                                     <Link
-                                        onClick={item.click}
+                                        // Exclusive open: clicking a top-level entry first collapses
+                                        // every other dropdown (HR / Sales / More + HR-cat strip), then
+                                        // toggles this one. Without this wrap, `item.click` only flips
+                                        // the clicked id, so two mega-menus could be open at once.
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            const wasOpen = !!item.stateVariables;
+                                            collapseAllNavMenus();
+                                            if (!wasOpen && typeof item.click === 'function') {
+                                                item.click(e);
+                                            }
+                                        }}
                                         className="nav-link menu-link"
                                         to={item.link ? item.link : "/#"}
                                         aria-expanded={item.stateVariables}
+                                        data-path-prefix={item.pathPrefix}
                                     >
                                         <i className={item.icon}></i> <span data-key="t-apps">{props.t(item.label)}</span>
                                     </Link>
@@ -206,7 +227,7 @@ const HorizontalLayout = (props : any) => {
                                     <div
                                         className={dropdownClass(
                                             (item.id === "baseUi" && item.subItems.length > 13) ||
-                                            item.id === "hr" || item.id === "more"
+                                            item.id === "hr" || item.id === "sales" || item.id === "more"
                                                 ? "mega-dropdown-menu hr-mega-menu"
                                                 : ""
                                         )}
@@ -217,7 +238,7 @@ const HorizontalLayout = (props : any) => {
                                                 expands the category's leaves in a horizontal row below
                                               • plain links — direct navigation, no expand
                                             Only one category is expanded at a time. */}
-                                        {(item.id === "hr" || item.id === "more") ? (
+                                        {(item.id === "hr" || item.id === "sales" || item.id === "more") ? (
                                             (() => {
                                                 const items = item.subItems || [];
                                                 const activeCat = items.find((c: any) => c.isChildItem && c.id === openHrCat) || null;

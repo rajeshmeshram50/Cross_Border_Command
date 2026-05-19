@@ -5,7 +5,8 @@ import type { MenuGroup, MenuItem } from '../types';
 import Avatar from '../components/ui/Avatar';
 import Logo from '../components/Logo';
 import { LogOut, Maximize2, Minimize2, Moon, Sun, Bell, ChevronsLeft, ChevronsRight, ChevronDown, ChevronRight } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import * as Icons from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -13,6 +14,16 @@ import type { LucideIcon } from 'lucide-react';
 function getIcon(name?: string): LucideIcon {
   if (!name) return Icons.Circle;
   return (Icons as unknown as Record<string, LucideIcon>)[name] || Icons.Circle;
+}
+
+// Curved tree-branch connector — replaces the flat dash / circle markers on
+// nested submenu rows so the hierarchy reads as an L-shaped elbow.
+function Curve({ size = 11, className = '' }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 12 12" fill="none" aria-hidden="true" className={className}>
+      <path d="M 2 1 L 2 6 Q 2 9.5, 5.5 9.5 L 10 9.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" fill="none" />
+    </svg>
+  );
 }
 
 interface Props {
@@ -29,6 +40,26 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
   const [, setFsState] = useState(false);
   const [openParents, setOpenParents] = useState<Record<string, boolean>>({});
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  // Floating popout menu shown beside a parent icon when the sidebar is
+  // collapsed. Portal-rendered so it escapes the aside's overflow/clip.
+  const [popout, setPopout] = useState<{ id: string; top: number; left: number } | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelPopoutClose = () => {
+    if (closeTimerRef.current) { clearTimeout(closeTimerRef.current); closeTimerRef.current = null; }
+  };
+  const openPopout = (id: string, anchor: HTMLElement) => {
+    cancelPopoutClose();
+    const r = anchor.getBoundingClientRect();
+    setPopout({ id, top: r.top, left: r.right + 6 });
+  };
+  const schedulePopoutClose = () => {
+    cancelPopoutClose();
+    closeTimerRef.current = setTimeout(() => setPopout(null), 180);
+  };
+  const closePopout = () => { cancelPopoutClose(); setPopout(null); };
+  // Auto-close popout when sidebar expands (the inline tree replaces it).
+  useEffect(() => { if (!collapsed) closePopout(); }, [collapsed]);
+  useEffect(() => () => cancelPopoutClose(), []);
 
   useEffect(() => {
     const h = () => setFsState(!!document.fullscreenElement);
@@ -125,7 +156,7 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
   const toggleGroup = (id: string) => setOpenGroups(p => ({ ...p, [id]: !p[id] }));
 
   return (
-    <aside className={`${collapsed ? 'w-16' : 'w-[230px]'} bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 flex flex-col flex-shrink-0 transition-all duration-300 z-50 h-full overflow-hidden`}>
+    <aside className={`${collapsed ? 'w-16' : 'w-[230px]'} bg-gradient-to-br from-slate-900/85 via-slate-900/80 to-zinc-950/85 backdrop-blur-2xl border-r border-white/[.06] shadow-[inset_-1px_0_0_rgba(255,255,255,.02)] flex flex-col flex-shrink-0 transition-all duration-300 z-50 h-full overflow-hidden`}>
       <div className="px-4 py-3 border-b border-white/[.06] flex items-center justify-between">
         <Logo variant={collapsed ? 'sidebarCollapsed' : 'sidebar'} />
         {onToggle && (
@@ -152,16 +183,22 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
           const parentOpen = !!openParents[m.id];
 
           if (hasGroups) {
-            // Parent with submenu (e.g. Master)
+            // Parent with submenu (e.g. Master). When collapsed, hover/click
+            // opens a floating popout (rendered via portal at the bottom).
+            const popoutOpen = popout?.id === m.id;
             return (
               <div key={m.id}>
                 <button
-                  onClick={() => collapsed ? onNavigate(m._filteredGroups![0].children[0].id) : toggleParent(m.id)}
+                  onClick={(e) => collapsed ? openPopout(m.id, e.currentTarget) : toggleParent(m.id)}
+                  onMouseEnter={(e) => { if (collapsed) openPopout(m.id, e.currentTarget); }}
+                  onMouseLeave={() => { if (collapsed) schedulePopoutClose(); }}
                   title={collapsed ? m.label : undefined}
                   className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12.5px] font-medium cursor-pointer transition-all duration-150 whitespace-nowrap ${
                     parentActive
-                      ? 'bg-primary/15 text-white font-semibold'
-                      : 'text-sidebar-text hover:bg-white/[.06] hover:text-slate-300'
+                      ? 'bg-white/[.06] text-white font-semibold ring-1 ring-primary/25'
+                      : popoutOpen
+                        ? 'bg-white/[.05] text-white'
+                        : 'text-sidebar-text hover:bg-white/[.06] hover:text-slate-300'
                   }`}
                 >
                   <Icon size={14} className={`flex-shrink-0 ${parentActive ? 'opacity-100 text-primary' : 'opacity-50'}`} />
@@ -172,7 +209,6 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
                   <div className="ml-2 mt-0.5 border-l border-white/[.08] pl-1.5 space-y-0.5">
                     {m._filteredGroups!.map(group => {
                       const groupOpen = openGroups[group.id] !== false; // default open
-                      const GroupIcon = getIcon(group.icon);
                       // Same prefix-tolerant match as parentActive so a
                       // sub-route under hr.employee still highlights both
                       // the "HR Core" group label and the "HR" parent.
@@ -185,7 +221,7 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
                               activeInGroup ? 'text-primary' : 'text-white/40 hover:text-white/70'
                             }`}
                           >
-                            <GroupIcon size={11} className="flex-shrink-0 opacity-70" />
+                            <Curve size={11} className="flex-shrink-0 opacity-70" />
                             <span className="flex-1 text-left truncate">{group.label}</span>
                             <span className="text-[9px] bg-white/10 px-1.5 rounded-full leading-[14px]">{group.children.length}</span>
                             {groupOpen ? <ChevronDown size={11} className="opacity-40" /> : <ChevronRight size={11} className="opacity-40" />}
@@ -193,7 +229,6 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
                           {groupOpen && (
                             <div className="space-y-0.5 mt-0.5 mb-1">
                               {group.children.map(child => {
-                                const CIcon = getIcon(child.icon);
                                 // Prefix match so deeper SPA routes like
                                 // /hr/employees/42/profile still light up
                                 // the "Employee" leaf, not just /hr/employees.
@@ -202,13 +237,13 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
                                   <button
                                     key={child.id}
                                     onClick={() => onNavigate(child.id)}
-                                    className={`w-full flex items-center gap-2 px-2.5 py-[5px] rounded-md text-[11.5px] cursor-pointer transition-all duration-150 ${
+                                    className={`w-full flex items-center gap-2 px-2.5 py-[5px] rounded-full text-[11.5px] cursor-pointer transition-all duration-150 ${
                                       active
-                                        ? 'bg-primary text-white font-semibold shadow-sm'
+                                        ? 'bg-gradient-to-r from-primary to-primary/80 text-white font-semibold shadow-[0_0_14px_-3px] shadow-primary/70 ring-1 ring-primary/30'
                                         : 'text-white/60 hover:bg-white/[.06] hover:text-slate-200'
                                     }`}
                                   >
-                                    <CIcon size={11} className={`flex-shrink-0 ${active ? 'opacity-100' : 'opacity-50'}`} />
+                                    <Curve size={11} className={`flex-shrink-0 ${active ? 'opacity-100' : 'opacity-60'}`} />
                                     <span className="truncate">{child.label}</span>
                                   </button>
                                 );
@@ -230,9 +265,9 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
               key={m.id}
               onClick={() => onNavigate(m.id)}
               title={collapsed ? m.label : undefined}
-              className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12.5px] font-medium cursor-pointer transition-all duration-150 whitespace-nowrap ${
+              className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-full text-[12.5px] font-medium cursor-pointer transition-all duration-150 whitespace-nowrap ${
                 active
-                  ? 'bg-gradient-to-r from-primary/100 to-primary/80 text-white font-semibold shadow-md shadow-primary/30 border-l-2 border-white/50 pl-2'
+                  ? 'bg-gradient-to-r from-primary to-primary/85 text-white font-semibold shadow-[0_4px_18px_-4px] shadow-primary/60 ring-1 ring-primary/30'
                   : 'text-sidebar-text hover:bg-white/[.06] hover:text-slate-300 hover:translate-x-0.5'
               }`}
             >
@@ -320,6 +355,50 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
           );
         })()}
       </div>
+
+      {/* Floating popout — children of a collapsed parent. Portal-rendered so
+          the aside's overflow doesn't clip it. */}
+      {collapsed && popout && (() => {
+        const parent = items.find(m => m.id === popout.id) as (MenuItem & { _filteredGroups?: MenuGroup[] }) | undefined;
+        if (!parent || !parent._filteredGroups?.length) return null;
+        return createPortal(
+          <div
+            onMouseEnter={cancelPopoutClose}
+            onMouseLeave={schedulePopoutClose}
+            style={{ position: 'fixed', top: popout.top, left: popout.left }}
+            className="min-w-[210px] max-w-[260px] max-h-[70vh] overflow-y-auto bg-slate-900/95 backdrop-blur-2xl border border-white/[.08] rounded-xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.6)] py-2 z-[60]"
+          >
+            <div className="px-3 pb-1.5 mb-1 border-b border-white/[.06] text-[10.5px] font-bold uppercase tracking-wider text-white/45">
+              {parent.label}
+            </div>
+            {parent._filteredGroups.map(group => (
+              <div key={group.id} className="px-1.5 pb-1">
+                <div className="px-2 pt-1.5 pb-0.5 text-[9.5px] font-semibold uppercase tracking-wider text-white/35">
+                  {group.label}
+                </div>
+                {group.children.map(child => {
+                  const active = current === child.id || current.startsWith(child.id + '.');
+                  return (
+                    <button
+                      key={child.id}
+                      onClick={() => { onNavigate(child.id); closePopout(); }}
+                      className={`w-full flex items-center gap-2 px-2.5 py-[6px] rounded-full text-[12px] cursor-pointer transition-all duration-150 ${
+                        active
+                          ? 'bg-gradient-to-r from-primary to-primary/80 text-white font-semibold shadow-[0_0_14px_-3px] shadow-primary/70 ring-1 ring-primary/30'
+                          : 'text-white/65 hover:bg-white/[.07] hover:text-white'
+                      }`}
+                    >
+                      <Curve size={12} className={`flex-shrink-0 ${active ? 'opacity-100' : 'opacity-60'}`} />
+                      <span className="truncate">{child.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>,
+          document.body
+        );
+      })()}
     </aside>
   );
 }

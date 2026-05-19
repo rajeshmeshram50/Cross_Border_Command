@@ -115,12 +115,21 @@ const VerticalLayout = (props : any) => {
             const items : any = ul.getElementsByTagName("a");
             let itemsArray = [...items]; // converts NodeList to Array
             removeActivation(itemsArray);
-            let matchingMenuItem = itemsArray.find((x) => {
-                return x.pathname === pathName;
+            // Prefix match so a deep route like /hr/employees/42/profile lights
+            // up every ancestor link in the tree — the /hr top-level row, the
+            // HR Core group, AND the Employee leaf. Strict equality used to
+            // miss everything when the URL didn't match a menu link exactly.
+            // For dropdown-only triggers (HR / Sales) the trigger has no real
+            // href, so we read `data-path-prefix` set in LayoutMenuData and
+            // match against that instead of the anchor's pathname (which would
+            // be "/").
+            const matches = itemsArray.filter((x) => {
+                const prefix = (x as HTMLAnchorElement).dataset?.pathPrefix;
+                const candidate = prefix || x.pathname;
+                if (!candidate || candidate === '/' || candidate === '/#') return false;
+                return pathName === candidate || pathName.startsWith(candidate + '/');
             });
-            if (matchingMenuItem) {
-                activateParentDropdown(matchingMenuItem);
-            }
+            matches.forEach(activateParentDropdown);
         };
         if (props.layoutType === "vertical") {
             initMenu();
@@ -189,6 +198,7 @@ const VerticalLayout = (props : any) => {
                                             className="nav-link menu-link"
                                             to={item.link ? item.link : "/#"}
                                             aria-expanded={item.stateVariables}
+                                            data-path-prefix={item.pathPrefix}
                                         >
                                             <i className={item.icon}></i>
                                             <span data-key="t-apps">{props.t(item.label)}</span>
