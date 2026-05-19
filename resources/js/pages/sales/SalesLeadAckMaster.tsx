@@ -94,6 +94,31 @@ export default function SalesLeadAckMaster() {
     document.head.appendChild(link);
   }, []);
 
+  // Escape closes whichever modal is open (form takes priority over the
+  // type selector, matching the open/stack order). Saving disables the
+  // shortcut so a stray key press can't abandon an in-flight request.
+  useEffect(() => {
+    if (!oppSelectorOpen && !formOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (formOpen) { if (!saving) closeForm(); return; }
+      if (oppSelectorOpen) setOppSelectorOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [oppSelectorOpen, formOpen, saving]);
+
+  // Lock body scroll while any modal is open so the underlying page
+  // doesn't scroll behind the dim overlay (the customizer in this app
+  // sometimes pushes the body up otherwise).
+  useEffect(() => {
+    const open = oppSelectorOpen || formOpen;
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [oppSelectorOpen, formOpen]);
+
   // Fetch on mount if user can view.
   useEffect(() => {
     if (!canView) { setLoading(false); return; }
@@ -128,6 +153,13 @@ export default function SalesLeadAckMaster() {
   const safePage = Math.min(page, pages);
   const startIdx = (safePage - 1) * rpp;
   const rows = filtered.slice(startIdx, startIdx + rpp);
+
+  // If a row got marked inactive / deleted and shrank the result set below
+  // the current page, reconcile state so the pagination pill doesn't read
+  // "3 / 1" until the next user action.
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
 
   // Tab switch resets page + clears search (matches HTML behaviour).
   const switchTab = (next: OppType) => { setTab(next); setPage(1); setQ(''); };
@@ -211,10 +243,9 @@ export default function SalesLeadAckMaster() {
   // Trash button — flips status to inactive (matches HTML "Mark Inactive").
   const markInactive = async (row: Reason) => {
     if (!canDelete) return;
-    if (row.status === 'inactive') {
-      toast.info('Already inactive', `${row.reason}`);
-      return;
-    }
+    // The button is rendered with aria-disabled when the row is already
+    // inactive; clicks are silently ignored to avoid a noisy toast.
+    if (row.status === 'inactive') return;
     try {
       const res = await api.put(`/sales/lead-ack-reasons/${row.id}`, { status: 'inactive' });
       setData(prev => ({
@@ -358,8 +389,14 @@ export default function SalesLeadAckMaster() {
                         </Tooltip>
                       )}
                       {canDelete && (
-                        <Tooltip label="Mark Inactive">
-                          <button aria-label="Mark Inactive" className="lam-ab lam-del" onClick={() => markInactive(r)}>
+                        <Tooltip label={r.status === 'inactive' ? 'Already inactive' : 'Mark Inactive'}>
+                          <button
+                            type="button"
+                            aria-label={r.status === 'inactive' ? 'Already inactive' : 'Mark Inactive'}
+                            aria-disabled={r.status === 'inactive'}
+                            className={`lam-ab lam-del ${r.status === 'inactive' ? 'lam-ab-muted' : ''}`}
+                            onClick={() => markInactive(r)}
+                          >
                             <IconTrash />
                           </button>
                         </Tooltip>
@@ -409,16 +446,16 @@ export default function SalesLeadAckMaster() {
               <div className="lam-modal-hicon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
               </div>
-              <div>
+              <div className="lam-modal-htext">
                 <div className="lam-modal-title">Select Opportunity Type</div>
                 <div className="lam-modal-sub">Choose where to store this reason</div>
               </div>
-              <button className="lam-modal-close" onClick={() => setOppSelectorOpen(false)}><IconX /></button>
+              <button type="button" className="lam-modal-close" onClick={() => setOppSelectorOpen(false)}><IconX /></button>
             </div>
             <div className="lam-modal-body">
               <p className="lam-modal-helper">Select the opportunity type for which you want to add a new reason:</p>
               <div className="lam-opp-options">
-                <button className="lam-opp lam-opp-qualified" onClick={() => selectOpp('qualified')}>
+                <button type="button" className="lam-opp lam-opp-qualified" onClick={() => selectOpp('qualified')}>
                   <div className="lam-opp-icon"><IconCheckCircle large /></div>
                   <div className="lam-opp-text">
                     <div className="lam-opp-title">Qualified Opportunity</div>
@@ -426,7 +463,7 @@ export default function SalesLeadAckMaster() {
                   </div>
                   <IconChevronRight />
                 </button>
-                <button className="lam-opp lam-opp-disqualified" onClick={() => selectOpp('disqualified')}>
+                <button type="button" className="lam-opp lam-opp-disqualified" onClick={() => selectOpp('disqualified')}>
                   <div className="lam-opp-icon"><IconXCircle large /></div>
                   <div className="lam-opp-text">
                     <div className="lam-opp-title">Disqualified Opportunity</div>
@@ -434,7 +471,7 @@ export default function SalesLeadAckMaster() {
                   </div>
                   <IconChevronRight />
                 </button>
-                <button className="lam-opp lam-opp-clarity" onClick={() => selectOpp('clarity_pending')}>
+                <button type="button" className="lam-opp lam-opp-clarity" onClick={() => selectOpp('clarity_pending')}>
                   <div className="lam-opp-icon"><IconInfoCircle large /></div>
                   <div className="lam-opp-text">
                     <div className="lam-opp-title">Clarity Pending Opportunity</div>
@@ -450,17 +487,17 @@ export default function SalesLeadAckMaster() {
 
       {/* Add / Edit modal */}
       {formOpen && pendingType && (
-        <div className="lam-overlay" onMouseDown={closeForm}>
+        <div className="lam-overlay" onMouseDown={() => { if (!saving) closeForm(); }}>
           <div className="lam-modal lam-modal-lg" onMouseDown={e => e.stopPropagation()}>
             <div className="lam-modal-header">
               <div className="lam-modal-hicon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
               </div>
-              <div>
+              <div className="lam-modal-htext">
                 <div className="lam-modal-title">{editingId !== null ? 'Edit Reason' : `Add ${pendingType === 'qualified' ? 'Qualified' : pendingType === 'disqualified' ? 'Disqualified' : 'Clarity Pending'} Reason`}</div>
                 <div className="lam-modal-sub">{TAB_LABELS[pendingType]}</div>
               </div>
-              <button className="lam-modal-close" onClick={closeForm}><IconX /></button>
+              <button type="button" className="lam-modal-close" onClick={closeForm}><IconX /></button>
             </div>
             <div className="lam-modal-body">
               {/* Reason */}
@@ -474,7 +511,7 @@ export default function SalesLeadAckMaster() {
                   value={formReason}
                   onChange={e => setFormReason(e.target.value)}
                 />
-                <div className="lam-char-count">
+                <div className={`lam-char-count ${formReason.length >= 450 ? (formReason.length >= 500 ? 'lam-cc-max' : 'lam-cc-warn') : ''}`}>
                   <span>{formReason.length}</span>
                   <span className="lam-char-max">/500</span>
                 </div>
@@ -515,8 +552,8 @@ export default function SalesLeadAckMaster() {
                 Fields marked <span className="lam-req">*</span> are required
               </div>
               <div className="lam-footer-actions">
-                <button className="lam-btn lam-btn-light" onClick={closeForm} disabled={saving}>Cancel</button>
-                <button className="lam-btn lam-btn-primary" onClick={save} disabled={saving}>
+                <button type="button" className="lam-btn lam-btn-light" onClick={closeForm} disabled={saving}>Cancel</button>
+                <button type="button" className="lam-btn lam-btn-primary" onClick={save} disabled={saving}>
                   {saving ? 'Saving…' : <>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
                     Save Reason
@@ -582,7 +619,7 @@ const SCOPED_CSS = `
 /* ─── Header ─── */
 .lam-header {
   position: relative; overflow: hidden;
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   background: linear-gradient(100deg, #f5f3ff 0%, #ede9fe 55%, #ddd6fe 100%);
   border: 1px solid #c4b5fd; border-radius: 12px;
   padding: 12px 16px 12px 20px;
@@ -605,7 +642,7 @@ const SCOPED_CSS = `
   flex-shrink: 0; z-index: 1;
   box-shadow: 0 4px 12px rgba(124,58,237,.35);
 }
-.lam-header-text { flex: 1; min-width: 0; z-index: 1; }
+.lam-header-text { flex: 1 1 220px; min-width: 0; z-index: 1; }
 .lam-header-title { font-size: 15px; font-weight: 800; color: #4c1d95; letter-spacing: -.3px; line-height: 1.2; }
 .lam-header-sub   { font-size: 11px; color: #7c3aed; margin-top: 2px; font-weight: 500; opacity: .85; }
 .lam-add-btn {
@@ -620,9 +657,9 @@ const SCOPED_CSS = `
 .lam-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(124,58,237,.50); }
 
 /* ─── Tabs + Search ─── */
-.lam-tabs-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.lam-tabs-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .lam-tabs {
-  display: flex; align-items: center; gap: 3px;
+  display: flex; align-items: center; gap: 3px; flex-wrap: wrap;
   background: #f5f3ff; padding: 4px; border-radius: 10px; border: 1.5px solid #ddd6fe;
 }
 .lam-tab {
@@ -714,7 +751,10 @@ const SCOPED_CSS = `
 .lam-edit { background: #eef2ff; color: #6366f1; }
 .lam-edit:hover { background: #6366f1; color: #fff; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(99,102,241,.30); }
 .lam-del  { background: #fff1f2; color: #f43f5e; }
-.lam-del:hover  { background: #f43f5e; color: #fff; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(244,63,94,.30); }
+.lam-del:hover:not([aria-disabled="true"])  { background: #f43f5e; color: #fff; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(244,63,94,.30); }
+.lam-ab[aria-disabled="true"] { cursor: not-allowed; }
+.lam-ab-muted { opacity: .50; background: #f1f5f9 !important; color: #94a3b8 !important; }
+.lam-ab-muted:hover { transform: none !important; box-shadow: none !important; background: #f1f5f9 !important; color: #94a3b8 !important; }
 
 /* ─── Pagination ─── */
 .lam-pagination {
@@ -799,6 +839,7 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,.12);
 }
+.lam-modal-htext { flex: 1; min-width: 0; padding-right: 36px; position: relative; z-index: 1; }
 .lam-modal-title { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -.3px; position: relative; z-index: 1; }
 .lam-modal-sub   { font-size: 11px; color: rgba(255,255,255,.75); margin-top: 3px; position: relative; z-index: 1; }
 .lam-modal-close {
@@ -874,8 +915,12 @@ const SCOPED_CSS = `
   transition: border-color .15s, box-shadow .15s;
 }
 .lam-textarea:focus { border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139,92,246,.12); }
-.lam-char-count { font-size: 10.5px; color: #94a3b8; text-align: right; margin-top: 3px; }
+.lam-char-count { font-size: 10.5px; color: #94a3b8; text-align: right; margin-top: 3px; transition: color .15s; }
 .lam-char-max   { color: #ddd6fe; }
+.lam-cc-warn    { color: #ea580c; font-weight: 700; }
+.lam-cc-warn .lam-char-max { color: #fdba74; }
+.lam-cc-max     { color: #dc2626; font-weight: 800; }
+.lam-cc-max .lam-char-max  { color: #f87171; }
 .lam-form-grid { display: grid; gap: 14px; margin-top: 14px; }
 .lam-form-grid.one { grid-template-columns: 1fr; }
 .lam-form-grid.two { grid-template-columns: 1fr 1fr; }
@@ -1002,4 +1047,38 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lam-footer-hint  { color: #7a6b9a; }
 [data-bs-theme="dark"] .lam-btn-light    { background: #1a1530; color: #c4b5fd; border-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .lam-btn-light:hover:not(:disabled) { border-color: rgba(167,139,250,.50); color: #e9d5ff; }
+[data-bs-theme="dark"] .lam-ab-muted {
+  background: rgba(148,163,184,.12) !important;
+  color: #6b7280 !important;
+}
+[data-bs-theme="dark"] .lam-ab-muted:hover {
+  background: rgba(148,163,184,.12) !important;
+  color: #6b7280 !important;
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 720px) {
+  .lam-root { padding: 12px 12px 16px; font-size: 13px; }
+  .lam-header { padding: 12px 14px; gap: 10px; }
+  .lam-header-title { font-size: 14px; }
+  .lam-header-sub   { font-size: 10.5px; }
+  .lam-add-btn { width: 100%; justify-content: center; }
+  .lam-tabs-row { flex-direction: column; align-items: stretch; }
+  .lam-tabs { width: 100%; justify-content: flex-start; overflow-x: auto; }
+  .lam-tab { padding: 6px 11px; }
+  .lam-search { max-width: 100%; }
+  .lam-pagination { padding: 9px 12px; }
+  .lam-pag-info, .lam-pag-range, .lam-rpp { padding-left: 10px; padding-right: 10px; }
+}
+@media (max-width: 520px) {
+  .lam-form-grid.two { grid-template-columns: 1fr; }
+  .lam-modal-header { padding: 16px 18px; }
+  .lam-modal-body   { padding: 18px 16px 14px; }
+  .lam-modal-footer { padding: 12px 16px; flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+  .lam-modal-close  { right: 14px; }
+  .lam-modal-htext  { padding-right: 30px; }
+  .lam-footer-actions { width: 100%; justify-content: flex-end; }
+  .lam-footer-hint { font-size: 10.5px; }
+  .lam-pag-right { flex-wrap: wrap; }
+}
 `;

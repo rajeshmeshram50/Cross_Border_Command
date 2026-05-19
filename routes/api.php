@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\EmployeeDocumentController;
 use App\Http\Controllers\Api\ExitController;
 use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
+use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
 use App\Http\Controllers\Api\HrDocumentSignatureController;
@@ -84,6 +85,16 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/branches/next-code', [BranchController::class, 'nextCode']);
     Route::apiResource('branches', BranchController::class);
 
+    // Products — step-wise create/update (Core → Sales → Quality → Vendors)
+    Route::get('/products/stats',                [ProductController::class, 'stats']);
+    Route::get('/products',                      [ProductController::class, 'index']);
+    Route::get('/products/{id}',                 [ProductController::class, 'show'])->whereNumber('id');
+    Route::post('/products/step/core',           [ProductController::class, 'storeCore']);
+    Route::put('/products/{id}/step/sales',      [ProductController::class, 'storeSales'])->whereNumber('id');
+    Route::put('/products/{id}/step/quality',    [ProductController::class, 'storeQuality'])->whereNumber('id');
+    Route::put('/products/{id}/step/vendors',    [ProductController::class, 'storeVendors'])->whereNumber('id');
+    Route::delete('/products/{id}',              [ProductController::class, 'destroy'])->whereNumber('id');
+
     // Plans (admin CRUD)
     Route::apiResource('plans', PlanController::class);
 
@@ -123,7 +134,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // multipart/form-data on store + update.
     Route::get   ('/sales/reminders',                 [SalesTodoController::class, 'listReminders']);
     Route::post  ('/sales/reminders',                 [SalesTodoController::class, 'storeReminder']);
-    Route::post  ('/sales/reminders/{id}',            [SalesTodoController::class, 'updateReminder']); // POST + _method=PUT for multipart
+    // Reminder update accepts both verbs because attachments arrive as multipart
+    // (POST + _method=PUT, since PHP can't parse multipart on PUT) but Laravel's
+    // global `enableHttpMethodParameterOverride()` still flips the method to PUT
+    // before the router matches. Registering both verbs keeps the route reachable
+    // either way.
+    Route::match(['put', 'post'], '/sales/reminders/{id}', [SalesTodoController::class, 'updateReminder']);
     Route::patch ('/sales/reminders/{id}/status',     [SalesTodoController::class, 'setReminderStatus']);
     Route::delete('/sales/reminders/{id}',            [SalesTodoController::class, 'destroyReminder']);
 
@@ -449,3 +465,4 @@ Route::get('/advance-requests/{id}/attachments/{index}', [\App\Http\Controllers\
     ->name('advance-requests.attachment');
 
 Route::apiResource('dummy-items', DummyItemController::class);
+    

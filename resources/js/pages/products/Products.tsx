@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
-import AddProductModal, { type AddProductPayload } from './AddProductModal';
+import api from '../../api';
+import AddProductModal from './AddProductModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Products
@@ -15,7 +16,8 @@ import AddProductModal, { type AddProductPayload } from './AddProductModal';
  * ──────────────────────────────────────────────────────────────────────── */
 
 export type Product = {
-  id: string;
+  apiId: number;                               // numeric DB id (for edit / delete)
+  id: string;                                  // display code e.g. "P-001"
   name: string;
   genericName: string;
   brand: string;
@@ -24,44 +26,155 @@ export type Product = {
   currency: string;
   rating: number;
   reviews: number;
-  status: 'Active' | 'Inactive' | 'Out of Stock';
+  status: 'Active' | 'Inactive' | 'Draft';     // server canonical status
   hsn: string;
   uom: string;
   hazClass: 'HAZ' | 'NON HAZ';
+  hazClassName: string;                        // master haz_class.name when product is HAZ
+  gstRate: number;
+  vendorCount: number;
+  stepCompleted: number;                       // 0..4 — wizard re-entry hint
   badge?: 'Best Seller' | 'New' | 'Trending' | 'Top Rated';
-  thumb: string; // gradient label fallback used as a tile background
+  thumb: string;                               // gradient fallback when no real image
+  images: string[];                            // primary first, then secondaries — cycled on the card
 };
 
-/* ─── Seed data ─── */
-const SEED: Product[] = [
-  { id:'P-001', name:'Cashew W320 Premium',     genericName:'Cashew Nuts',     brand:'GreenHarvest',  segment:'Dry Fruits',     price:1850, currency:'₹', rating:4.7, reviews:124, status:'Active',       hsn:'08013100', uom:'Kg',  hazClass:'NON HAZ', badge:'Best Seller', thumb:'linear-gradient(135deg,#fef3c7,#fbbf24)' },
-  { id:'P-002', name:'Basmati Rice 1121 Premium', genericName:'Long Grain Rice', brand:'Shree Exports', segment:'Rice & Grains',  price:120,  currency:'₹', rating:4.5, reviews:287, status:'Active',       hsn:'10063020', uom:'Kg',  hazClass:'NON HAZ', badge:'Top Rated',   thumb:'linear-gradient(135deg,#dcfce7,#22c55e)' },
-  { id:'P-003', name:'Turmeric Powder (Organic)', genericName:'Turmeric',        brand:'Sun Agri',      segment:'Spices',         price:240,  currency:'₹', rating:4.8, reviews:96,  status:'Active',       hsn:'09103030', uom:'Kg',  hazClass:'NON HAZ', badge:'Trending',    thumb:'linear-gradient(135deg,#fef9c3,#eab308)' },
-  { id:'P-004', name:'Cold-Pressed Coconut Oil',  genericName:'Coconut Oil',     brand:'MJ Foods',      segment:'Coconut Oil',    price:450,  currency:'₹', rating:4.6, reviews:158, status:'Active',       hsn:'15131100', uom:'L',   hazClass:'NON HAZ',                       thumb:'linear-gradient(135deg,#e0f2fe,#0ea5e9)' },
-  { id:'P-005', name:'Sesame Seeds (Hulled)',     genericName:'Sesame',          brand:'BrightHarvest', segment:'Seeds',          price:180,  currency:'₹', rating:4.4, reviews:64,  status:'Out of Stock', hsn:'12074090', uom:'Kg',  hazClass:'NON HAZ',                       thumb:'linear-gradient(135deg,#fef3c7,#f97316)' },
-  { id:'P-006', name:'Arabica Coffee Beans',      genericName:'Coffee',          brand:'Eastern Harvest', segment:'Coffee Beans', price:680,  currency:'₹', rating:4.9, reviews:412, status:'Active',       hsn:'09011190', uom:'Kg',  hazClass:'NON HAZ', badge:'Best Seller', thumb:'linear-gradient(135deg,#fce7f3,#a16207)' },
-  { id:'P-007', name:'Toor Dal Premium Grade',    genericName:'Pigeon Pea',      brand:'Delta Agro',    segment:'Pulses',         price:130,  currency:'₹', rating:4.3, reviews:78,  status:'Active',       hsn:'07136000', uom:'Kg',  hazClass:'NON HAZ',                       thumb:'linear-gradient(135deg,#fef9c3,#facc15)' },
-  { id:'P-008', name:'Mango Pulp (Alphonso)',     genericName:'Mango Pulp',      brand:'Apex Foods',    segment:'Mango Pulp',     price:320,  currency:'₹', rating:4.7, reviews:189, status:'Active',       hsn:'08045010', uom:'Kg',  hazClass:'NON HAZ', badge:'New',         thumb:'linear-gradient(135deg,#fed7aa,#f97316)' },
-  { id:'P-009', name:'Red Chilli Powder Spicy',   genericName:'Chilli',          brand:'Spice Route',   segment:'Spices',         price:280,  currency:'₹', rating:4.6, reviews:142, status:'Active',       hsn:'09042120', uom:'Kg',  hazClass:'NON HAZ',                       thumb:'linear-gradient(135deg,#fee2e2,#dc2626)' },
-  { id:'P-010', name:'Black Pepper (Whole)',      genericName:'Black Pepper',    brand:'Spice Route',   segment:'Spices',         price:850,  currency:'₹', rating:4.8, reviews:203, status:'Active',       hsn:'09041110', uom:'Kg',  hazClass:'NON HAZ', badge:'Top Rated',   thumb:'linear-gradient(135deg,#1f2937,#374151)' },
-  { id:'P-011', name:'Foxtail Millet Organic',    genericName:'Millets',         brand:'Bharat Agro',   segment:'Millets',        price:160,  currency:'₹', rating:4.4, reviews:55,  status:'Active',       hsn:'10082930', uom:'Kg',  hazClass:'NON HAZ',                       thumb:'linear-gradient(135deg,#fef3c7,#d97706)' },
-  { id:'P-012', name:'Industrial Ethanol 99%',    genericName:'Ethanol',         brand:'SunGrow',       segment:'Chemicals',      price:95,   currency:'₹', rating:4.2, reviews:18,  status:'Active',       hsn:'22072000', uom:'L',   hazClass:'HAZ',                          thumb:'linear-gradient(135deg,#fecaca,#ef4444)' },
+/* Predictable per-id gradient so reload-order doesn't shuffle card colours. */
+const THUMB_GRADIENTS = [
+  'linear-gradient(135deg,#fef3c7,#fbbf24)',
+  'linear-gradient(135deg,#dcfce7,#22c55e)',
+  'linear-gradient(135deg,#fef9c3,#eab308)',
+  'linear-gradient(135deg,#e0f2fe,#0ea5e9)',
+  'linear-gradient(135deg,#fce7f3,#a16207)',
+  'linear-gradient(135deg,#fef3c7,#f97316)',
+  'linear-gradient(135deg,#fee2e2,#dc2626)',
+  'linear-gradient(135deg,#ede9fe,#7c3aed)',
+  'linear-gradient(135deg,#fed7aa,#f97316)',
+  'linear-gradient(135deg,#1f2937,#374151)',
 ];
 
+function apiToCard(row: Record<string, unknown>): Product {
+  const get = <T,>(k: string, fallback: T): T => (row[k] as T) ?? fallback;
+  const segObj = row.segment as { title?: string } | null;
+  const uomObj = row.uom as { title?: string; short_code?: string } | null;
+  const hsnObj = row.hsn as { hsn_code?: string } | null;
+  const gstObj = row.gst_percentage as { percentage?: number | string } | null;
+  const hazClassObj = row.haz_class as { name?: string } | null;
+  const apiStatus = String(row.status ?? 'draft').toLowerCase();
+  const displayStatus: Product['status'] =
+    apiStatus === 'active' ? 'Active' : apiStatus === 'inactive' ? 'Inactive' : 'Draft';
+  const idNum = Number(row.id) || 0;
+  // Prefer the absolute *_url accessors so cards work in any environment
+  // (local /storage, Azure CDN, etc.); fall back to the raw path resolved
+  // client-side if older rows don't have the accessor yet.
+  const primaryUrl = (row.primary_image_url as string | null) || (row.primary_image as string | null) || '';
+  const secondaryUrls = Array.isArray(row.secondary_images_url)
+    ? (row.secondary_images_url as string[])
+    : (Array.isArray(row.secondary_images) ? (row.secondary_images as string[]) : []);
+  const images = [primaryUrl, ...secondaryUrls].filter(Boolean);
+  return {
+    apiId: idNum,
+    id: String(row.product_code ?? `P-${idNum}`),
+    name: get('name', ''),
+    genericName: get('generic_name', '') as string,
+    brand: get('brand', '—') as string,
+    segment: segObj?.title ?? '—',
+    price: Number(row.total_price ?? row.base_price ?? 0),
+    currency: '₹',
+    rating: 0,
+    reviews: 0,
+    status: displayStatus,
+    hsn: hsnObj?.hsn_code ?? '—',
+    uom: uomObj?.short_code ?? uomObj?.title ?? '—',
+    hazClass: String(row.haz_type ?? '').toLowerCase().startsWith('haz') && !String(row.haz_type ?? '').toLowerCase().includes('non') ? 'HAZ' : 'NON HAZ',
+    hazClassName: hazClassObj?.name ?? '',
+    gstRate: Number(gstObj?.percentage ?? 0),
+    vendorCount: Array.isArray(row.vendor_maps) ? (row.vendor_maps as unknown[]).length : 0,
+    stepCompleted: Number(row.step_completed ?? 0),
+    thumb: THUMB_GRADIENTS[idNum % THUMB_GRADIENTS.length],
+    images,
+  };
+}
+
 const SEGMENTS = ['All Segments', 'Dry Fruits', 'Rice & Grains', 'Spices', 'Coconut Oil', 'Seeds', 'Coffee Beans', 'Pulses', 'Mango Pulp', 'Millets', 'Chemicals'];
-const STATUSES = ['All Status', 'Active', 'Inactive', 'Out of Stock'];
+const STATUSES = ['All Status', 'Active', 'Inactive', 'Draft'];
+
+/* ─── Sidebar filter options ─── */
+const GST_RATES = ['0%', '5%', '12%', '18%', '28%'];
+const HSN_CODES = ['08013100', '10063020', '09103030', '15131100', '12074090', '09011190', '07136000', '08045010', '09042120', '09041110', '10082930', '22072000'];
+const HAZ_TYPES = ['HAZ', 'NON HAZ'];
+const UOMS = ['Kg', 'L', 'g', 'mL', 'Pcs', 'Box', 'Tonne'];
+const CONDITIONS = ['New', 'Refurbished', 'Open Box', 'Second Hand'];
+const VENDORS = ['GreenHarvest', 'Shree Exports', 'Sun Agri', 'MJ Foods', 'BrightHarvest', 'Eastern Harvest', 'Delta Agro', 'Apex Foods', 'Spice Route', 'Bharat Agro', 'SunGrow'];
+const SCORE_RANGES = ['0 – 1', '1 – 2', '2 – 3', '3 – 4', '4 – 5'];
+const TOP_PRODUCTS = ['Top 10', 'Top 25', 'Top 50', 'Top 100'];
+const PRODUCT_OWNERS = ['Branch Admin', 'Inventory Manager', 'Procurement Lead', 'Branch User', 'Employee'];
+const INWARD_BUCKETS = ['0 – 50', '51 – 200', '201 – 500', '501 – 1000', '1000+'];
+
+type FilterState = {
+  gstRate: string[];
+  segment: string[];
+  hsn: string[];
+  hazType: string[];
+  uom: string[];
+  condition: string[];
+  vendor: string[];
+  scoreRange: string[];
+  topProducts: string;
+  createdFrom: string;
+  createdTo: string;
+  productOwner: string[];
+  inwardCount: string[];
+};
+
+const EMPTY_FILTERS: FilterState = {
+  gstRate: [], segment: [], hsn: [], hazType: [], uom: [], condition: [],
+  vendor: [], scoreRange: [], topProducts: '', createdFrom: '', createdTo: '',
+  productOwner: [], inwardCount: [],
+};
 
 export default function Products() {
   const { user } = useAuth();
   const toast = useToast();
 
-  const [products, setProducts] = useState<Product[]>(SEED);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<{ active: number; inactive: number }>({ active: 0, inactive: 0 });
+  const [statusTab, setStatusTab] = useState<'active' | 'inactive'>('active');
   const [q, setQ] = useState('');
   const [segment, setSegment] = useState('All Segments');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [view, setView] = useState<'grid' | 'list'>('grid');
   const [sort, setSort] = useState<'recent' | 'price-asc' | 'price-desc' | 'rating'>('recent');
   const [addOpen, setAddOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  /* ─── Filter sidebar ─── */
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+  const [expandedPanel, setExpandedPanel] = useState<string | null>(null);
+
+  const togglePanel = (key: string) =>
+    setExpandedPanel(prev => (prev === key ? null : key));
+
+  const toggleMulti = (key: keyof FilterState, value: string) => {
+    setFilters(prev => {
+      const arr = prev[key] as string[];
+      const next = arr.includes(value) ? arr.filter(v => v !== value) : [...arr, value];
+      return { ...prev, [key]: next };
+    });
+  };
+
+  const resetFilters = () => setFilters(EMPTY_FILTERS);
+
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    Object.entries(filters).forEach(([, v]) => {
+      if (Array.isArray(v)) n += v.length;
+      else if (typeof v === 'string' && v.trim()) n += 1;
+    });
+    return n;
+  }, [filters]);
 
   // Hard guard — even if someone types /products directly, only branch_user
   // and employee can use the module.
@@ -75,6 +188,26 @@ export default function Products() {
     link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap';
     document.head.appendChild(link);
   }, []);
+
+  /* ─── Load list (re-runs when the status tab flips) ─── */
+  const refresh = useCallback(async () => {
+    if (!allowed) return;
+    setLoading(true);
+    try {
+      const [list, st] = await Promise.all([
+        api.get<{ data: Record<string, unknown>[] }>('/products', { params: { status: statusTab, per_page: 100 } }),
+        api.get<{ active: number; inactive: number }>('/products/stats'),
+      ]);
+      setProducts(list.data.data.map(apiToCard));
+      setStats({ active: st.data.active, inactive: st.data.inactive });
+    } catch {
+      setProducts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [allowed, statusTab]);
+
+  useEffect(() => { refresh(); }, [refresh]);
 
   const filtered = useMemo(() => {
     let src = products;
@@ -92,12 +225,30 @@ export default function Products() {
     if (segment !== 'All Segments')  src = src.filter(p => p.segment === segment);
     if (statusFilter !== 'All Status') src = src.filter(p => p.status === statusFilter);
 
+    if (filters.segment.length)  src = src.filter(p => filters.segment.includes(p.segment));
+    if (filters.hsn.length)      src = src.filter(p => filters.hsn.includes(p.hsn));
+    if (filters.hazType.length)  src = src.filter(p => filters.hazType.includes(p.hazClass));
+    if (filters.uom.length)      src = src.filter(p => filters.uom.includes(p.uom));
+    if (filters.vendor.length)   src = src.filter(p => filters.vendor.includes(p.brand));
+    if (filters.scoreRange.length) {
+      src = src.filter(p => filters.scoreRange.some(r => {
+        const [lo, hi] = r.split('–').map(s => parseFloat(s.trim()));
+        return p.rating >= lo && p.rating <= hi;
+      }));
+    }
+
     const sorted = [...src];
     if (sort === 'price-asc')  sorted.sort((a, b) => a.price - b.price);
     if (sort === 'price-desc') sorted.sort((a, b) => b.price - a.price);
     if (sort === 'rating')     sorted.sort((a, b) => b.rating - a.rating);
+
+    if (filters.topProducts) {
+      const n = parseInt(filters.topProducts.replace(/\D/g, ''), 10);
+      return [...sorted].sort((a, b) => b.rating - a.rating).slice(0, n);
+    }
+
     return sorted;
-  }, [products, q, segment, statusFilter, sort]);
+  }, [products, q, segment, statusFilter, sort, filters]);
 
   if (!allowed) {
     return (
@@ -114,37 +265,29 @@ export default function Products() {
     );
   }
 
-  // Build a Product card from the wizard payload — segment, pricing,
-  // dimensions etc. all flow through so the new card actually reflects
-  // what the user typed (instead of placeholder defaults).
-  const onSaved = (p: AddProductPayload) => {
-    const id = `P-${String(products.length + 1).padStart(3, '0')}`;
-    const thumbGradients = [
-      'linear-gradient(135deg,#e9d5ff,#a78bfa)',
-      'linear-gradient(135deg,#dcfce7,#22c55e)',
-      'linear-gradient(135deg,#fef3c7,#f59e0b)',
-      'linear-gradient(135deg,#dbeafe,#3b82f6)',
-      'linear-gradient(135deg,#fecaca,#ef4444)',
-    ];
-    const newProd: Product = {
-      id,
-      name: p.name || 'Untitled Product',
-      genericName: p.genericName || '—',
-      brand: p.brand || '—',
-      segment: p.segment || 'Dry Fruits',
-      price: p.totalPrice || p.basePrice || 0,
-      currency: '₹',
-      rating: 0,
-      reviews: 0,
-      status: 'Active',
-      hsn: p.hsn || '—',
-      uom: p.uom || '—',
-      hazClass: p.hazType === 'HAZ' ? 'HAZ' : 'NON HAZ',
-      badge: 'New',
-      thumb: thumbGradients[products.length % thumbGradients.length],
-    };
-    setProducts(prev => [newProd, ...prev]);
-    toast.success('Product Created', `${newProd.name} added to catalog`);
+  // Refetch from the API after any step is saved. The wizard does its own
+  // POST/PUT for each step, so this page just needs to mirror what's on
+  // the server.
+  const handleSaved = (productId: number, finalised: boolean) => {
+    refresh();
+    if (finalised) toast.success('Product Saved', 'Product is now Active');
+    else           toast.info('Step Saved', `Draft saved (ID ${productId})`);
+  };
+
+  const handleEdit = (p: Product) => {
+    setEditingId(p.apiId);
+    setAddOpen(true);
+  };
+
+  const handleDelete = async (p: Product) => {
+    if (!confirm(`Delete ${p.name}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/products/${p.apiId}`);
+      toast.success('Deleted', `${p.name} removed`);
+      refresh();
+    } catch {
+      toast.error('Delete failed', 'Please try again');
+    }
   };
 
   return (
@@ -171,14 +314,46 @@ export default function Products() {
             <div className="prd-header-sub">Manage your product catalog — pricing, compliance, vendors and documents in one place</div>
           </div>
         </div>
-        <button className="prd-add-btn" onClick={() => setAddOpen(true)}>
+        <button className="prd-add-btn" onClick={() => { setEditingId(null); setAddOpen(true); }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           Add Product
         </button>
       </div>
 
+      {/* Status tab strip — Active / Inactive */}
+      <div className="prd-status-tabs">
+        <button
+          className={`prd-status-tab ${statusTab === 'active' ? 'on' : ''}`}
+          onClick={() => setStatusTab('active')}
+        >
+          <span className="prd-status-dot is-active" />
+          Active
+          <span className="prd-status-count">{stats.active}</span>
+        </button>
+        <button
+          className={`prd-status-tab ${statusTab === 'inactive' ? 'on' : ''}`}
+          onClick={() => setStatusTab('inactive')}
+        >
+          <span className="prd-status-dot is-inactive" />
+          Inactive
+          <span className="prd-status-count">{stats.inactive}</span>
+        </button>
+      </div>
+
       {/* Filters bar */}
       <div className="prd-filters">
+        <button
+          className={`prd-filter-toggle ${filterOpen ? 'on' : ''}`}
+          onClick={() => setFilterOpen(o => !o)}
+          aria-label="Open filters"
+          title="Open filters"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+          </svg>
+          Filters
+          {activeFilterCount > 0 && <span className="prd-filter-toggle-badge">{activeFilterCount}</span>}
+        </button>
         <div className="prd-search">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
           <input
@@ -219,7 +394,17 @@ export default function Products() {
       </div>
 
       {/* Grid / List view */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        view === 'grid' ? (
+          <div className="prd-grid">
+            {Array.from({ length: 8 }).map((_, i) => <ProductCardShimmer key={i} />)}
+          </div>
+        ) : (
+          <div className="prd-list">
+            {Array.from({ length: 6 }).map((_, i) => <ProductRowShimmer key={i} />)}
+          </div>
+        )
+      ) : filtered.length === 0 ? (
         <div className="prd-empty">
           <div className="prd-empty-icon">
             <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
@@ -229,58 +414,340 @@ export default function Products() {
         </div>
       ) : view === 'grid' ? (
         <div className="prd-grid">
-          {filtered.map(p => <ProductCard key={p.id} product={p} onAction={(act) => toast.info(act, `${act}: ${p.name}`)} />)}
+          {filtered.map(p => (
+            <ProductCard
+              key={p.apiId}
+              product={p}
+              onAction={(act) => {
+                if (act === 'Edit')        handleEdit(p);
+                else if (act === 'Delete') handleDelete(p);
+                else                       toast.info(act, `${act}: ${p.name}`);
+              }}
+            />
+          ))}
         </div>
       ) : (
         <div className="prd-list">
-          {filtered.map(p => <ProductRow key={p.id} product={p} onAction={(act) => toast.info(act, `${act}: ${p.name}`)} />)}
+          {filtered.map(p => (
+            <ProductRow
+              key={p.apiId}
+              product={p}
+              onAction={(act) => {
+                if (act === 'Edit')        handleEdit(p);
+                else if (act === 'Delete') handleDelete(p);
+                else                       toast.info(act, `${act}: ${p.name}`);
+              }}
+            />
+          ))}
         </div>
       )}
 
       {addOpen && (
         <AddProductModal
-          onClose={() => setAddOpen(false)}
-          onSubmit={(payload) => { setAddOpen(false); onSaved(payload); }}
+          productId={editingId}
+          onClose={() => { setAddOpen(false); setEditingId(null); }}
+          onSaved={(id, finalised) => {
+            handleSaved(id, finalised);
+            if (finalised) { setAddOpen(false); setEditingId(null); }
+            else           { setEditingId(id); }
+          }}
         />
       )}
+
+      {/* Filter sidebar — slides in from the left */}
+      <div
+        className={`prd-filter-overlay ${filterOpen ? 'open' : ''}`}
+        onClick={() => setFilterOpen(false)}
+        aria-hidden={!filterOpen}
+      />
+      <aside className={`prd-filter-drawer ${filterOpen ? 'open' : ''}`} aria-hidden={!filterOpen}>
+        <div className="prd-filter-head">
+          <div className="prd-filter-head-title">Filters</div>
+          <div className="prd-filter-head-actions">
+            <button
+              className="prd-filter-icon-btn"
+              onClick={resetFilters}
+              aria-label="Reset filters"
+              title="Reset filters"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+            </button>
+            <button
+              className="prd-filter-icon-btn close"
+              onClick={() => setFilterOpen(false)}
+              aria-label="Close filters"
+              title="Close"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="prd-filter-body">
+          <FilterPanel label="GST Rate" panelKey="gstRate" open={expandedPanel === 'gstRate'} onToggle={togglePanel} count={filters.gstRate.length}>
+            {GST_RATES.map(v => (
+              <CheckRow key={v} label={v} checked={filters.gstRate.includes(v)} onChange={() => toggleMulti('gstRate', v)} />
+            ))}
+          </FilterPanel>
+
+          <FilterPanel label="Product Segment" panelKey="segment" open={expandedPanel === 'segment'} onToggle={togglePanel} count={filters.segment.length}>
+            {SEGMENTS.filter(s => s !== 'All Segments').map(v => (
+              <CheckRow key={v} label={v} checked={filters.segment.includes(v)} onChange={() => toggleMulti('segment', v)} />
+            ))}
+          </FilterPanel>
+
+          <FilterPanel label="HSN/SAC Code" panelKey="hsn" open={expandedPanel === 'hsn'} onToggle={togglePanel} count={filters.hsn.length}>
+            {HSN_CODES.map(v => (
+              <CheckRow key={v} label={v} checked={filters.hsn.includes(v)} onChange={() => toggleMulti('hsn', v)} />
+            ))}
+          </FilterPanel>
+
+          <FilterPanel label="Hazard Type" panelKey="hazType" open={expandedPanel === 'hazType'} onToggle={togglePanel} count={filters.hazType.length}>
+            {HAZ_TYPES.map(v => (
+              <CheckRow key={v} label={v} checked={filters.hazType.includes(v)} onChange={() => toggleMulti('hazType', v)} />
+            ))}
+          </FilterPanel>
+
+          <FilterPanel label="Unit of Measurement" panelKey="uom" open={expandedPanel === 'uom'} onToggle={togglePanel} count={filters.uom.length}>
+            {UOMS.map(v => (
+              <CheckRow key={v} label={v} checked={filters.uom.includes(v)} onChange={() => toggleMulti('uom', v)} />
+            ))}
+          </FilterPanel>
+
+          <FilterPanel label="Condition" panelKey="condition" open={expandedPanel === 'condition'} onToggle={togglePanel} count={filters.condition.length}>
+            {CONDITIONS.map(v => (
+              <CheckRow key={v} label={v} checked={filters.condition.includes(v)} onChange={() => toggleMulti('condition', v)} />
+            ))}
+          </FilterPanel>
+
+          <FilterPanel label="Vendor" panelKey="vendor" open={expandedPanel === 'vendor'} onToggle={togglePanel} count={filters.vendor.length}>
+            {VENDORS.map(v => (
+              <CheckRow key={v} label={v} checked={filters.vendor.includes(v)} onChange={() => toggleMulti('vendor', v)} />
+            ))}
+          </FilterPanel>
+
+          <FilterPanel label="Score Range" panelKey="scoreRange" open={expandedPanel === 'scoreRange'} onToggle={togglePanel} count={filters.scoreRange.length}>
+            {SCORE_RANGES.map(v => (
+              <CheckRow key={v} label={v} checked={filters.scoreRange.includes(v)} onChange={() => toggleMulti('scoreRange', v)} />
+            ))}
+          </FilterPanel>
+
+          <FilterPanel label="Top Products" panelKey="topProducts" open={expandedPanel === 'topProducts'} onToggle={togglePanel} count={filters.topProducts ? 1 : 0}>
+            {TOP_PRODUCTS.map(v => (
+              <label key={v} className="prd-filter-row">
+                <input
+                  type="radio"
+                  name="topProducts"
+                  checked={filters.topProducts === v}
+                  onChange={() => setFilters(prev => ({ ...prev, topProducts: v }))}
+                />
+                <span>{v}</span>
+              </label>
+            ))}
+            {filters.topProducts && (
+              <button className="prd-filter-clear-mini" onClick={() => setFilters(prev => ({ ...prev, topProducts: '' }))}>Clear selection</button>
+            )}
+          </FilterPanel>
+
+          <FilterPanel label="Created Date" panelKey="createdDate" open={expandedPanel === 'createdDate'} onToggle={togglePanel} count={(filters.createdFrom ? 1 : 0) + (filters.createdTo ? 1 : 0)}>
+            <div className="prd-filter-date-grid">
+              <label className="prd-filter-date-field">
+                <span>From</span>
+                <input
+                  type="date"
+                  value={filters.createdFrom}
+                  onChange={e => setFilters(prev => ({ ...prev, createdFrom: e.target.value }))}
+                />
+              </label>
+              <label className="prd-filter-date-field">
+                <span>To</span>
+                <input
+                  type="date"
+                  value={filters.createdTo}
+                  onChange={e => setFilters(prev => ({ ...prev, createdTo: e.target.value }))}
+                />
+              </label>
+            </div>
+          </FilterPanel>
+
+          <FilterPanel label="Product Owner" panelKey="productOwner" open={expandedPanel === 'productOwner'} onToggle={togglePanel} count={filters.productOwner.length}>
+            {PRODUCT_OWNERS.map(v => (
+              <CheckRow key={v} label={v} checked={filters.productOwner.includes(v)} onChange={() => toggleMulti('productOwner', v)} />
+            ))}
+          </FilterPanel>
+
+          <FilterPanel label="Inward Count" panelKey="inwardCount" open={expandedPanel === 'inwardCount'} onToggle={togglePanel} count={filters.inwardCount.length}>
+            {INWARD_BUCKETS.map(v => (
+              <CheckRow key={v} label={v} checked={filters.inwardCount.includes(v)} onChange={() => toggleMulti('inwardCount', v)} />
+            ))}
+          </FilterPanel>
+        </div>
+
+        <div className="prd-filter-footer">
+          <button className="prd-filter-btn ghost" onClick={resetFilters}>Reset</button>
+          <button className="prd-filter-btn primary" onClick={() => setFilterOpen(false)}>
+            Apply {activeFilterCount > 0 && <span className="prd-filter-btn-count">{activeFilterCount}</span>}
+          </button>
+        </div>
+      </aside>
     </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * Sidebar helper components
+ * ════════════════════════════════════════════════════════════════════════ */
+function FilterPanel(props: {
+  label: string;
+  panelKey: string;
+  open: boolean;
+  count: number;
+  onToggle: (k: string) => void;
+  children: ReactNode;
+}) {
+  const { label, panelKey, open, count, onToggle, children } = props;
+  return (
+    <div className={`prd-filter-panel ${open ? 'open' : ''}`}>
+      <button className="prd-filter-panel-head" onClick={() => onToggle(panelKey)}>
+        <span className="prd-filter-panel-label">{label}</span>
+        <span className="prd-filter-panel-right">
+          {count > 0 && <span className="prd-filter-panel-count">{count}</span>}
+          <svg
+            className="prd-filter-chevron"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </span>
+      </button>
+      {open && <div className="prd-filter-panel-body">{children}</div>}
+    </div>
+  );
+}
+
+function CheckRow(props: { label: string; checked: boolean; onChange: () => void }) {
+  return (
+    <label className="prd-filter-row">
+      <input type="checkbox" checked={props.checked} onChange={props.onChange} />
+      <span>{props.label}</span>
+    </label>
   );
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
  * Product Card (Amazon / Flipkart style)
  * ════════════════════════════════════════════════════════════════════════ */
-function ProductCard(props: { product: Product; onAction: (label: string) => void }) {
+function ProductCard(props: {
+  product: Product;
+  onAction: (label: string) => void;
+}) {
   const { product, onAction } = props;
+  // Auto-cycle the carousel every 1.8s when 2+ images exist.
+  const [imgIndex, setImgIndex] = useState(0);
+  useEffect(() => {
+    if (product.images.length < 2) return;
+    const t = setInterval(() => {
+      setImgIndex(i => (i + 1) % product.images.length);
+    }, 1800);
+    return () => clearInterval(t);
+  }, [product.images.length]);
+  const hasImage = product.images.length > 0;
+
   return (
     <div className="prd-card">
       {product.badge && <span className={`prd-card-badge prd-badge-${product.badge.replace(/\s+/g, '').toLowerCase()}`}>{product.badge}</span>}
-      <div className="prd-card-thumb" style={{ background: product.thumb }}>
-        <div className="prd-card-thumb-letter">{product.name.charAt(0).toUpperCase()}</div>
+      <div className="prd-card-thumb" style={{ background: hasImage ? '#f5f3ff' : product.thumb }}>
+        {hasImage ? (
+          <div className="prd-card-thumb-slider">
+            {product.images.map((src, i) => (
+              <img
+                key={`${product.apiId}-${i}`}
+                src={src}
+                alt={product.name}
+                className={`prd-card-thumb-img ${i === imgIndex ? 'on' : ''}`}
+                draggable={false}
+              />
+            ))}
+            {product.images.length > 1 && (
+              <div className="prd-card-thumb-dots">
+                {product.images.map((_, i) => (
+                  <span key={i} className={`prd-card-thumb-dot ${i === imgIndex ? 'on' : ''}`} />
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="prd-card-thumb-letter">{product.name.charAt(0).toUpperCase()}</div>
+        )}
         <div className="prd-card-hover">
-          <button className="prd-card-hover-btn" onClick={() => onAction('View')}>View</button>
-          <button className="prd-card-hover-btn primary" onClick={() => onAction('Edit')}>Edit</button>
-          <button className="prd-card-hover-btn danger" onClick={() => onAction('Delete')}>
+          <button className="prd-card-hover-btn" onClick={(e) => { e.stopPropagation(); onAction('View'); }}>View</button>
+          <button className="prd-card-hover-btn primary" onClick={(e) => { e.stopPropagation(); onAction('Edit'); }}>Edit</button>
+          <button className="prd-card-hover-btn danger" onClick={(e) => { e.stopPropagation(); onAction('Delete'); }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
           </button>
         </div>
-        {product.hazClass === 'HAZ' && <span className="prd-card-haz">HAZ</span>}
       </div>
+
       <div className="prd-card-body">
-        <div className="prd-card-id">{product.id} · {product.hsn}</div>
-        <div className="prd-card-name" title={product.name}>{product.name}</div>
-        <div className="prd-card-brand">by {product.brand} · {product.segment}</div>
-        <div className="prd-card-meta">
-          <span className="prd-card-rating">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-            {product.rating.toFixed(1)}
+        {/* ID|Name as a single line link */}
+        <button className="prd-card-title-link" title={product.name} onClick={() => onAction('View')}>
+          <span className="prd-card-id-inline">{product.id}</span>
+          <span className="prd-card-id-sep">|</span>
+          <span className="prd-card-name-inline">{product.name}</span>
+        </button>
+
+        {/* HSN / GST / vendor count row */}
+        <div className="prd-card-info-row">
+          <span className="prd-card-info-cell">
+            <span className="prd-card-info-key">HSN/SAC:</span>
+            <span className="prd-card-info-val">{product.hsn}</span>
           </span>
-          <span className="prd-card-reviews">({product.reviews})</span>
-          <span className={`prd-card-status status-${product.status.replace(/\s+/g, '').toLowerCase()}`}>{product.status}</span>
+          <span className="prd-card-info-cell">
+            <span className="prd-card-info-key">GST:</span>
+            <span className="prd-card-info-val">{product.gstRate}%</span>
+          </span>
+          <span className="prd-card-info-cell prd-card-vendor-cell" title={`${product.vendorCount} linked vendor${product.vendorCount === 1 ? '' : 's'}`}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span>{product.vendorCount}</span>
+          </span>
         </div>
-        <div className="prd-card-pricerow">
-          <span className="prd-card-price">{product.currency}{product.price.toLocaleString()}</span>
-          <span className="prd-card-uom">/ {product.uom}</span>
+
+        {/* Haz pill — plus the class name when hazardous */}
+        <div className="prd-card-haz-row">
+          <span className={`prd-card-haz-pill ${product.hazClass === 'HAZ' ? 'is-haz' : 'is-nonhaz'}`}>
+            {product.hazClass === 'HAZ' ? 'HAZ' : 'Non-Haz'}
+          </span>
+          {product.hazClass === 'HAZ' && product.hazClassName && (
+            <span className="prd-card-haz-class">
+              <span className="prd-card-haz-class-key">Haz:</span>
+              <span className="prd-card-haz-class-val">{product.hazClassName}</span>
+            </span>
+          )}
+        </div>
+
+        {/* Selling price */}
+        <div className="prd-card-buyrow">
+          <div className="prd-card-price-block">
+            <span className="prd-card-price-label">Selling Price:</span>
+            <span className="prd-card-price">{product.currency}{product.price.toLocaleString()}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -288,30 +755,56 @@ function ProductCard(props: { product: Product; onAction: (label: string) => voi
 }
 
 /* ─── List view row ─── */
-function ProductRow(props: { product: Product; onAction: (label: string) => void }) {
+function ProductRow(props: {
+  product: Product;
+  onAction: (label: string) => void;
+}) {
   const { product, onAction } = props;
   return (
     <div className="prd-row">
-      <div className="prd-row-thumb" style={{ background: product.thumb }}>{product.name.charAt(0).toUpperCase()}</div>
-      <div className="prd-row-info">
-        <div className="prd-card-id">{product.id} · HSN {product.hsn}</div>
-        <div className="prd-row-name">{product.name}</div>
-        <div className="prd-card-brand">by {product.brand} · {product.segment} · {product.genericName}</div>
+      <div className="prd-row-thumb" style={{ background: product.images.length ? '#f5f3ff' : product.thumb }}>
+        {product.images.length ? (
+          <img src={product.images[0]} alt={product.name} className="prd-row-thumb-img" draggable={false} />
+        ) : (
+          product.name.charAt(0).toUpperCase()
+        )}
       </div>
-      <div className="prd-row-rating">
-        <span className="prd-card-rating">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-          {product.rating.toFixed(1)}
-        </span>
-        <span className="prd-card-reviews">({product.reviews})</span>
+      <div className="prd-row-info">
+        <button className="prd-card-title-link" onClick={() => onAction('View')}>
+          <span className="prd-card-id-inline">{product.id}</span>
+          <span className="prd-card-id-sep">|</span>
+          <span className="prd-card-name-inline">{product.name}</span>
+        </button>
+        <div className="prd-card-info-row">
+          <span className="prd-card-info-cell"><span className="prd-card-info-key">HSN/SAC:</span><span className="prd-card-info-val">{product.hsn}</span></span>
+          <span className="prd-card-info-cell"><span className="prd-card-info-key">GST:</span><span className="prd-card-info-val">{product.gstRate}%</span></span>
+          <span className="prd-card-info-cell prd-card-vendor-cell">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span>{product.vendorCount}</span>
+          </span>
+          <span className={`prd-card-haz-pill ${product.hazClass === 'HAZ' ? 'is-haz' : 'is-nonhaz'}`}>
+            {product.hazClass === 'HAZ' ? 'HAZ' : 'Non-Haz'}
+          </span>
+          {product.hazClass === 'HAZ' && product.hazClassName && (
+            <span className="prd-card-haz-class">
+              <span className="prd-card-haz-class-key">Haz:</span>
+              <span className="prd-card-haz-class-val">{product.hazClassName}</span>
+            </span>
+          )}
+        </div>
       </div>
       <div className="prd-row-status">
-        <span className={`prd-card-status status-${product.status.replace(/\s+/g, '').toLowerCase()}`}>{product.status}</span>
-        {product.hazClass === 'HAZ' && <span className="prd-row-haz">HAZ</span>}
+        {/* Status pill intentionally hidden — the status tabs at the top
+            already segment Active vs Inactive, no need to repeat it here. */}
       </div>
       <div className="prd-row-price">
+        <div className="prd-card-price-label">Selling Price</div>
         <div className="prd-card-price">{product.currency}{product.price.toLocaleString()}</div>
-        <div className="prd-card-uom">per {product.uom}</div>
       </div>
       <div className="prd-row-actions">
         <button className="prd-card-hover-btn" onClick={() => onAction('View')}>View</button>
@@ -319,6 +812,47 @@ function ProductRow(props: { product: Product; onAction: (label: string) => void
         <button className="prd-card-hover-btn danger" onClick={() => onAction('Delete')}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * Shimmer placeholders — matches card / row geometry so the loading state
+ * doesn't shift the layout when the real data lands.
+ * ════════════════════════════════════════════════════════════════════════ */
+function ProductCardShimmer() {
+  return (
+    <div className="prd-card prd-card-shimmer">
+      <div className="prd-card-thumb prd-shim-thumb" />
+      <div className="prd-card-body">
+        <div className="prd-shim-bar" style={{ width: '70%' }} />
+        <div className="prd-shim-bar" style={{ width: '55%', height: 10 }} />
+        <div className="prd-shim-row">
+          <div className="prd-shim-pill" />
+          <div className="prd-shim-pill" />
+        </div>
+        <div className="prd-card-buyrow">
+          <div className="prd-shim-bar" style={{ width: 90, height: 18 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductRowShimmer() {
+  return (
+    <div className="prd-row prd-card-shimmer">
+      <div className="prd-row-thumb prd-shim-thumb" />
+      <div className="prd-row-info">
+        <div className="prd-shim-bar" style={{ width: '60%', marginBottom: 6 }} />
+        <div className="prd-shim-bar" style={{ width: '40%', height: 10 }} />
+      </div>
+      <div className="prd-shim-bar" style={{ width: 80, height: 18 }} />
+      <div className="prd-shim-bar" style={{ width: 120, height: 18 }} />
+      <div className="prd-shim-row">
+        <div className="prd-shim-pill" />
+        <div className="prd-shim-pill" />
       </div>
     </div>
   );
@@ -375,6 +909,67 @@ const SCOPED_CSS = `
 .prd-add-btn:hover { background: #6d28d9; transform: translateY(-2px); box-shadow: 0 10px 28px rgba(124,58,237,.6); }
 .prd-add-btn:active { transform: translateY(0); }
 
+/* Status tabs */
+.prd-status-tabs {
+  display: inline-flex; gap: 4px; padding: 4px;
+  background: #fff;
+  border: 1.5px solid #ddd6fe;
+  border-radius: 12px;
+  align-self: flex-start;
+  box-shadow: 0 2px 8px rgba(124,58,237,.08);
+}
+.prd-status-tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 16px;
+  background: transparent; border: none;
+  border-radius: 9px;
+  font-family: inherit; font-size: 12.5px; font-weight: 800;
+  color: #6b7280; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.prd-status-tab:hover { background: #f5f3ff; color: #5b21b6; }
+.prd-status-tab.on {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(124,58,237,.35);
+}
+.prd-status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.prd-status-dot.is-active   { background: #22c55e; box-shadow: 0 0 0 2px rgba(34,197,94,.25); }
+.prd-status-dot.is-inactive { background: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,.25); }
+.prd-status-tab.on .prd-status-dot.is-active   { background: #4ade80; box-shadow: 0 0 0 2px rgba(255,255,255,.35); }
+.prd-status-tab.on .prd-status-dot.is-inactive { background: #fbbf24; box-shadow: 0 0 0 2px rgba(255,255,255,.35); }
+.prd-status-count {
+  min-width: 22px; height: 20px; padding: 0 8px; border-radius: 99px;
+  background: #ede9fe; color: #5b21b6;
+  font-size: 10.5px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.prd-status-tab.on .prd-status-count { background: rgba(255,255,255,.25); color: #fff; }
+/* Shimmer placeholders — light theme. The animated gradient is shared with
+   the rest of the app via the global .shimmer class in app.css, but the
+   product page renders enough cards that a local rule keeps the bundle
+   self-contained. */
+@keyframes prd-shim {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+.prd-shim-thumb,
+.prd-shim-bar,
+.prd-shim-pill {
+  background: linear-gradient(90deg, #f5f3ff 0%, #ede9fe 50%, #f5f3ff 100%);
+  background-size: 800px 100%;
+  animation: prd-shim 1.2s linear infinite;
+  border-radius: 8px;
+}
+.prd-shim-thumb { aspect-ratio: 4 / 3; width: 100%; height: 100%; border-radius: 0; }
+.prd-shim-bar  { height: 14px; }
+.prd-shim-pill { width: 56px; height: 18px; border-radius: 99px; }
+.prd-shim-row  { display: flex; gap: 8px; align-items: center; }
+
+.prd-card-shimmer { cursor: default; pointer-events: none; }
+.prd-card-shimmer:hover { transform: none; border-color: #e8e4f9; box-shadow: none; }
+.prd-card-shimmer .prd-card-body { gap: 10px; }
+
 /* Filters */
 .prd-filters {
   display: flex; align-items: center; gap: 10px;
@@ -424,7 +1019,7 @@ const SCOPED_CSS = `
 /* ─── Grid ─── */
 .prd-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(238px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 16px;
 }
 .prd-card {
@@ -450,6 +1045,37 @@ const SCOPED_CSS = `
   font-size: 64px; font-weight: 800; color: rgba(255,255,255,.92);
   text-shadow: 0 4px 14px rgba(0,0,0,.15);
   letter-spacing: -1px;
+}
+
+/* Image carousel — primary → secondary → … on a 1.8s loop.
+   All <img> are stacked; only the one with .on is opaque, the rest fade out. */
+.prd-card-thumb-slider { position: absolute; inset: 0; }
+.prd-card-thumb-img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity .55s ease;
+  pointer-events: none;
+  user-select: none;
+}
+.prd-card-thumb-img.on { opacity: 1; }
+.prd-card-thumb-dots {
+  position: absolute; left: 0; right: 0; bottom: 8px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  z-index: 2;
+}
+.prd-card-thumb-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: rgba(255,255,255,.55);
+  border: 1px solid rgba(0,0,0,.08);
+  transition: background .25s, transform .25s;
+}
+.prd-card-thumb-dot.on { background: #fff; transform: scale(1.25); }
+.prd-row-thumb-img {
+  width: 100%; height: 100%; object-fit: cover; border-radius: inherit;
+  display: block;
+  user-select: none;
 }
 .prd-card-hover {
   position: absolute; inset: 0;
@@ -493,7 +1119,65 @@ const SCOPED_CSS = `
   z-index: 2;
 }
 
-.prd-card-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 5px; }
+.prd-card-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+
+/* ID|Name link */
+.prd-card-title-link {
+  display: flex; align-items: baseline; gap: 6px;
+  background: none; border: none; padding: 0;
+  font-family: inherit; cursor: pointer; text-align: left;
+  color: #5b21b6; font-size: 13.5px; font-weight: 700;
+  line-height: 1.3;
+  width: 100%; min-width: 0;
+}
+.prd-card-title-link:hover .prd-card-name-inline { text-decoration: underline; }
+.prd-card-id-inline { color: #5b21b6; font-weight: 800; flex-shrink: 0; }
+.prd-card-id-sep    { color: #c4b5fd; font-weight: 700; flex-shrink: 0; }
+.prd-card-name-inline {
+  color: #1e1b4b; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0; flex: 1;
+}
+
+/* HSN / GST / vendor row */
+.prd-card-info-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  font-size: 11.5px;
+}
+.prd-card-info-cell { display: inline-flex; align-items: center; gap: 4px; }
+.prd-card-info-key { color: #7c3aed; font-weight: 700; }
+.prd-card-info-val { color: #1e1b4b; font-weight: 700; font-variant-numeric: tabular-nums; }
+.prd-card-vendor-cell {
+  color: #16a34a;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.prd-card-vendor-cell svg { color: #16a34a; }
+
+/* Haz pill */
+.prd-card-haz-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.prd-card-haz-pill {
+  display: inline-flex; align-items: center;
+  padding: 2px 9px; border-radius: 6px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .04em;
+}
+.prd-card-haz-pill.is-haz    { background: #fecaca; color: #b91c1c; border: 1px solid #f87171; }
+.prd-card-haz-pill.is-nonhaz { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+
+.prd-card-haz-class { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; min-width: 0; }
+.prd-card-haz-class-key { color: #b91c1c; font-weight: 800; letter-spacing: .02em; flex-shrink: 0; }
+.prd-card-haz-class-val { color: #1e1b4b; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Buy row */
+.prd-card-buyrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 4px; padding-top: 10px;
+  border-top: 1px dashed #ede9fe;
+}
+.prd-card-price-block { display: flex; flex-direction: column; gap: 1px; }
+.prd-card-price-label { font-size: 10.5px; font-weight: 700; color: #6b7280; letter-spacing: .02em; }
+
+
 .prd-card-id { font-size: 9.5px; font-weight: 800; letter-spacing: .06em; color: #94a3b8; text-transform: uppercase; }
 .prd-card-name { font-size: 13.5px; font-weight: 800; color: #1e1b4b; line-height: 1.3; min-height: 35px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .prd-card-brand { font-size: 11px; color: #6b7280; }
@@ -502,8 +1186,8 @@ const SCOPED_CSS = `
 .prd-card-reviews { font-size: 10.5px; color: #94a3b8; font-weight: 600; }
 .prd-card-status { margin-left: auto; padding: 2px 8px; border-radius: 99px; font-size: 10px; font-weight: 800; letter-spacing: .02em; }
 .status-active   { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
-.status-inactive { background: #f3f4f6; color: #475569; border: 1px solid #e2e8f0; }
-.status-outofstock { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+.status-inactive { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+.status-draft    { background: #f3f4f6; color: #475569; border: 1px solid #e2e8f0; }
 .prd-card-pricerow { display: flex; align-items: baseline; gap: 5px; margin-top: 4px; padding-top: 8px; border-top: 1px dashed #ede9fe; }
 .prd-card-price { font-size: 17px; font-weight: 800; color: #5b21b6; }
 .prd-card-uom { font-size: 10.5px; color: #6b7280; font-weight: 600; }
@@ -512,7 +1196,7 @@ const SCOPED_CSS = `
 .prd-list { display: flex; flex-direction: column; gap: 10px; }
 .prd-row {
   display: grid;
-  grid-template-columns: 80px 1fr 130px 130px 130px auto;
+  grid-template-columns: 72px 1fr 120px 140px auto;
   gap: 14px; align-items: center;
   padding: 12px 16px;
   background: #fff; border: 1.5px solid #e8e4f9; border-radius: 12px;
@@ -556,5 +1240,428 @@ const SCOPED_CSS = `
   .prd-row { grid-template-columns: 64px 1fr auto; gap: 10px; }
   .prd-row-rating, .prd-row-status, .prd-row-price { grid-column: 2 / -1; }
   .prd-row-actions { grid-column: 1 / -1; justify-content: flex-end; }
+}
+
+/* ─── Filter sidebar ─── */
+.prd-filter-toggle {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 40px; padding: 0 14px;
+  border-radius: 10px; border: 1.5px solid #ddd6fe;
+  background: #fff; color: #5b21b6;
+  font-family: inherit; font-size: 12px; font-weight: 800; cursor: pointer;
+  transition: background .15s, border-color .15s, box-shadow .15s, transform .12s;
+}
+.prd-filter-toggle:hover { background: #f5f3ff; border-color: #c4b5fd; box-shadow: 0 4px 10px rgba(124,58,237,.18); transform: translateY(-1px); }
+.prd-filter-toggle.on { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; border-color: transparent; box-shadow: 0 4px 12px rgba(124,58,237,.35); }
+.prd-filter-toggle-badge {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
+  background: #fef3c7; color: #b45309; font-size: 10px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.prd-filter-toggle.on .prd-filter-toggle-badge { background: #fff; color: #5b21b6; }
+
+.prd-filter-overlay {
+  position: fixed; inset: 0;
+  background: rgba(15, 23, 42, .35);
+  backdrop-filter: blur(2px);
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s ease;
+  z-index: 998;
+}
+.prd-filter-overlay.open { opacity: 1; pointer-events: auto; }
+
+.prd-filter-drawer {
+  position: fixed; top: 0; bottom: 0; left: 0;
+  width: 340px; max-width: 88vw;
+  background: #fff;
+  border-right: 1.5px solid #ddd6fe;
+  box-shadow: 14px 0 36px rgba(76, 29, 149, .18);
+  transform: translateX(-100%);
+  transition: transform .28s cubic-bezier(.4, 0, .2, 1);
+  z-index: 999;
+  display: flex; flex-direction: column;
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+}
+.prd-filter-drawer.open { transform: translateX(0); }
+
+.prd-filter-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px;
+  background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 100%);
+  border-bottom: 1px solid #ddd6fe;
+}
+.prd-filter-head-title { font-size: 16px; font-weight: 800; color: #3b0764; letter-spacing: -.3px; }
+.prd-filter-head-actions { display: inline-flex; gap: 6px; }
+.prd-filter-icon-btn {
+  width: 32px; height: 32px; border-radius: 9px;
+  border: 1.5px solid #ddd6fe; background: #fff; color: #5b21b6;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, transform .12s;
+}
+.prd-filter-icon-btn:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
+.prd-filter-icon-btn.close:hover { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+
+.prd-filter-body {
+  flex: 1; overflow-y: auto;
+  padding: 14px 14px 8px;
+  display: flex; flex-direction: column; gap: 8px;
+  scrollbar-width: thin; scrollbar-color: #c4b5fd transparent;
+}
+.prd-filter-body::-webkit-scrollbar { width: 8px; }
+.prd-filter-body::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 99px; }
+
+.prd-filter-panel {
+  background: #f5f3ff;
+  border: 1px solid #ede9fe;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color .15s, box-shadow .15s;
+}
+.prd-filter-panel.open { border-color: #c4b5fd; box-shadow: 0 2px 8px rgba(124,58,237,.1); }
+.prd-filter-panel-head {
+  width: 100%;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 14px;
+  background: transparent; border: none;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  color: #3b0764; cursor: pointer; text-align: left;
+}
+.prd-filter-panel-head:hover { background: #ede9fe; }
+.prd-filter-panel-label { letter-spacing: -.1px; }
+.prd-filter-panel-right { display: inline-flex; align-items: center; gap: 8px; color: #7c3aed; }
+.prd-filter-panel-count {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
+  background: #7c3aed; color: #fff;
+  font-size: 10px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.prd-filter-chevron { transition: transform .22s ease; }
+.prd-filter-panel.open .prd-filter-chevron { transform: rotate(180deg); }
+
+.prd-filter-panel-body {
+  padding: 4px 10px 10px;
+  background: #fff;
+  border-top: 1px solid #ede9fe;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 2px;
+  scrollbar-width: thin; scrollbar-color: #ddd6fe transparent;
+}
+.prd-filter-panel-body::-webkit-scrollbar { width: 6px; }
+.prd-filter-panel-body::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 99px; }
+
+.prd-filter-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  font-size: 12px; color: #1e1b4b; font-weight: 500;
+  cursor: pointer;
+  transition: background .12s;
+}
+.prd-filter-row:hover { background: #f5f3ff; }
+.prd-filter-row input[type="checkbox"],
+.prd-filter-row input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  border: 1.5px solid #c4b5fd;
+  background: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  transition: background .12s, border-color .12s;
+}
+.prd-filter-row input[type="checkbox"] { border-radius: 4px; }
+.prd-filter-row input[type="radio"] { border-radius: 50%; }
+.prd-filter-row input[type="checkbox"]:checked,
+.prd-filter-row input[type="radio"]:checked {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  border-color: #7c3aed;
+}
+.prd-filter-row input[type="checkbox"]:checked::after {
+  content: ''; position: absolute; left: 4px; top: 1px;
+  width: 5px; height: 9px;
+  border: solid #fff; border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.prd-filter-row input[type="radio"]:checked::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #fff;
+  transform: translate(-50%, -50%);
+}
+
+.prd-filter-clear-mini {
+  margin-top: 4px;
+  padding: 6px 10px;
+  border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c;
+  border-radius: 7px;
+  font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+  align-self: flex-start;
+}
+.prd-filter-clear-mini:hover { background: #fee2e2; }
+
+.prd-filter-date-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 6px 4px 4px; }
+.prd-filter-date-field { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; font-weight: 700; color: #6d28d9; letter-spacing: .04em; text-transform: uppercase; }
+.prd-filter-date-field input {
+  height: 34px; padding: 0 10px;
+  border: 1.5px solid #ddd6fe; border-radius: 8px;
+  background: #faf5ff; color: #1e1b4b;
+  font-family: inherit; font-size: 12px; outline: none;
+}
+.prd-filter-date-field input:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
+
+.prd-filter-footer {
+  display: flex; gap: 8px;
+  padding: 12px 14px;
+  border-top: 1px solid #ede9fe;
+  background: #faf5ff;
+}
+.prd-filter-btn {
+  flex: 1;
+  height: 40px; border-radius: 10px;
+  font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  transition: transform .12s, background .15s, box-shadow .15s;
+}
+.prd-filter-btn.ghost { background: #fff; color: #5b21b6; border: 1.5px solid #ddd6fe; }
+.prd-filter-btn.ghost:hover { background: #ede9fe; border-color: #c4b5fd; }
+.prd-filter-btn.primary { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; border: none; box-shadow: 0 4px 12px rgba(124,58,237,.4); }
+.prd-filter-btn.primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.5); }
+.prd-filter-btn-count {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px;
+  background: rgba(255,255,255,.22); color: #fff;
+  font-size: 10.5px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+@media (max-width: 480px) {
+  .prd-filter-drawer { width: 88vw; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * Dark mode — flips backgrounds, borders, and text while keeping the violet
+ * accent so the brand identity stays consistent.
+ * ════════════════════════════════════════════════════════════════════════ */
+[data-bs-theme="dark"] .prd-root {
+  background: linear-gradient(160deg, #0f0d1f 0%, #161033 40%, #1d1442 100%);
+  color: #e9e5ff;
+}
+
+/* Header */
+[data-bs-theme="dark"] .prd-header {
+  background: linear-gradient(110deg, #1c1438 0%, #261852 40%, #2e1d6b 100%);
+  border-color: #4c1d95;
+  box-shadow: 0 2px 0 rgba(167,139,250,.08) inset, 0 8px 28px rgba(0,0,0,.55);
+}
+[data-bs-theme="dark"] .prd-header-title { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-header-sub   { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-online-dot   { border-color: #1d1442; }
+
+/* Status tabs — dark */
+[data-bs-theme="dark"] .prd-status-tabs { background: #1a1430; border-color: #3b2a6b; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .prd-status-tab { color: #a89fc7; }
+[data-bs-theme="dark"] .prd-status-tab:hover { background: #221852; color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-status-count { background: #2a1d5c; color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-shim-thumb,
+[data-bs-theme="dark"] .prd-shim-bar,
+[data-bs-theme="dark"] .prd-shim-pill {
+  background: linear-gradient(90deg, #1a1430 0%, #221852 50%, #1a1430 100%);
+  background-size: 800px 100%;
+}
+[data-bs-theme="dark"] .prd-card-shimmer:hover { border-color: #3b2a6b; }
+
+/* Top filters bar */
+[data-bs-theme="dark"] .prd-filters {
+  background: #1a1430;
+  border-color: #3b2a6b;
+  box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+[data-bs-theme="dark"] .prd-search {
+  background: #110c25;
+  border-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .prd-search input { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-search input::placeholder { color: #6d6391; }
+[data-bs-theme="dark"] .prd-select {
+  background: #110c25;
+  border-color: #3b2a6b;
+  color: #d8c9ff;
+}
+[data-bs-theme="dark"] .prd-select option { background: #1a1430; color: #ede9fe; }
+[data-bs-theme="dark"] .prd-view-toggle {
+  background: #110c25;
+  border-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .prd-view-btn { color: #c4b5fd; }
+
+/* Meta */
+[data-bs-theme="dark"] .prd-meta-count { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-meta-chip {
+  background: #2a1d5c;
+  border-color: #4c1d95;
+  color: #ddd6fe;
+}
+
+/* Grid cards */
+[data-bs-theme="dark"] .prd-card {
+  background: #1a1430;
+  border-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .prd-card:hover {
+  border-color: #7c3aed;
+  box-shadow: 0 18px 36px rgba(0,0,0,.6);
+}
+[data-bs-theme="dark"] .prd-card-name { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-card-brand { color: #a89fc7; }
+[data-bs-theme="dark"] .prd-card-id { color: #8579b5; }
+[data-bs-theme="dark"] .prd-card-uom { color: #a89fc7; }
+[data-bs-theme="dark"] .prd-card-price { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-card-pricerow { border-top-color: #3b2a6b; }
+[data-bs-theme="dark"] .prd-card-reviews { color: #8579b5; }
+[data-bs-theme="dark"] .prd-card-hover-btn { background: rgba(26,20,48,.92); color: #ddd6fe; border-color: rgba(167,139,250,.35); }
+[data-bs-theme="dark"] .prd-card-hover-btn:hover { background: #1a1430; }
+
+/* New card pieces — dark */
+[data-bs-theme="dark"] .prd-card-title-link { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-card-id-inline { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-card-id-sep    { color: #4c1d95; }
+[data-bs-theme="dark"] .prd-card-name-inline { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-card-info-key { color: #a78bfa; }
+[data-bs-theme="dark"] .prd-card-info-val { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-card-vendor-cell,
+[data-bs-theme="dark"] .prd-card-vendor-cell svg { color: #4ade80; }
+[data-bs-theme="dark"] .prd-card-haz-pill.is-nonhaz {
+  background: #2a1d5c; color: #c4b5fd; border-color: #4c1d95;
+}
+[data-bs-theme="dark"] .prd-card-haz-pill.is-haz {
+  background: #3f1d1d; color: #fca5a5; border-color: #7f1d1d;
+}
+[data-bs-theme="dark"] .prd-card-haz-class-key { color: #fca5a5; }
+[data-bs-theme="dark"] .prd-card-haz-class-val { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-card-buyrow { border-top-color: #3b2a6b; }
+[data-bs-theme="dark"] .prd-card-price-label { color: #a89fc7; }
+
+/* List rows */
+[data-bs-theme="dark"] .prd-row {
+  background: #1a1430;
+  border-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .prd-row:hover { border-color: #7c3aed; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .prd-row-name { color: #ede9fe; }
+
+/* Empty + no-access */
+[data-bs-theme="dark"] .prd-empty {
+  background: #1a1430;
+  border-color: #4c1d95;
+}
+[data-bs-theme="dark"] .prd-empty-icon { background: #2a1d5c; }
+[data-bs-theme="dark"] .prd-empty-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-empty-desc  { color: #a89fc7; }
+[data-bs-theme="dark"] .prd-noaccess { background: #1a1430; border-color: #7f1d1d; }
+[data-bs-theme="dark"] .prd-noaccess-desc { color: #a89fc7; }
+
+/* ─── Filter sidebar — dark mode ─── */
+[data-bs-theme="dark"] .prd-filter-toggle {
+  background: #1a1430;
+  border-color: #3b2a6b;
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .prd-filter-toggle:hover {
+  background: #221852;
+  border-color: #7c3aed;
+}
+[data-bs-theme="dark"] .prd-filter-toggle-badge { background: #4c1d95; color: #ede9fe; }
+
+[data-bs-theme="dark"] .prd-filter-overlay { background: rgba(0,0,0,.6); }
+
+[data-bs-theme="dark"] .prd-filter-drawer {
+  background: #110c25;
+  border-right-color: #3b2a6b;
+  box-shadow: 14px 0 36px rgba(0,0,0,.7);
+}
+[data-bs-theme="dark"] .prd-filter-head {
+  background: linear-gradient(110deg, #1c1438 0%, #2a1d5c 100%);
+  border-bottom-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .prd-filter-head-title { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-filter-icon-btn {
+  background: #1a1430;
+  border-color: #3b2a6b;
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .prd-filter-icon-btn:hover {
+  background: #221852;
+  border-color: #7c3aed;
+}
+[data-bs-theme="dark"] .prd-filter-icon-btn.close:hover {
+  background: #3f1d1d;
+  color: #fca5a5;
+  border-color: #7f1d1d;
+}
+
+[data-bs-theme="dark"] .prd-filter-body { scrollbar-color: #4c1d95 transparent; }
+[data-bs-theme="dark"] .prd-filter-body::-webkit-scrollbar-thumb { background: #4c1d95; }
+
+[data-bs-theme="dark"] .prd-filter-panel {
+  background: #1a1430;
+  border-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .prd-filter-panel.open {
+  border-color: #7c3aed;
+  box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+[data-bs-theme="dark"] .prd-filter-panel-head { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-filter-panel-head:hover { background: #221852; }
+[data-bs-theme="dark"] .prd-filter-panel-right { color: #c4b5fd; }
+
+[data-bs-theme="dark"] .prd-filter-panel-body {
+  background: #14102a;
+  border-top-color: #3b2a6b;
+  scrollbar-color: #4c1d95 transparent;
+}
+[data-bs-theme="dark"] .prd-filter-panel-body::-webkit-scrollbar-thumb { background: #4c1d95; }
+
+[data-bs-theme="dark"] .prd-filter-row { color: #ddd6fe; }
+[data-bs-theme="dark"] .prd-filter-row:hover { background: #221852; }
+[data-bs-theme="dark"] .prd-filter-row input[type="checkbox"],
+[data-bs-theme="dark"] .prd-filter-row input[type="radio"] {
+  background: #110c25;
+  border-color: #4c1d95;
+}
+
+[data-bs-theme="dark"] .prd-filter-clear-mini {
+  background: #3f1d1d;
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+[data-bs-theme="dark"] .prd-filter-clear-mini:hover { background: #4f1d1d; }
+
+[data-bs-theme="dark"] .prd-filter-date-field { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-filter-date-field input {
+  background: #110c25;
+  border-color: #3b2a6b;
+  color: #ede9fe;
+  color-scheme: dark;
+}
+[data-bs-theme="dark"] .prd-filter-date-field input:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(167,139,250,.18);
+}
+
+[data-bs-theme="dark"] .prd-filter-footer {
+  background: #14102a;
+  border-top-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .prd-filter-btn.ghost {
+  background: #1a1430;
+  border-color: #3b2a6b;
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .prd-filter-btn.ghost:hover {
+  background: #221852;
+  border-color: #7c3aed;
 }
 `;

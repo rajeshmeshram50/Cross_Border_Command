@@ -12,6 +12,7 @@ export function MasterSelect({
   disabled,
   invalid,
   onChange,
+  onOpen,
 }: {
   name?: string;
   value?: string;
@@ -21,6 +22,7 @@ export function MasterSelect({
   disabled?: boolean;
   invalid?: boolean;
   onChange?: (value: string) => void;
+  onOpen?: () => void;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
   useEffect(() => {
@@ -30,7 +32,12 @@ export function MasterSelect({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   // Reset the search filter each time the menu closes so the next open is fresh.
-  useEffect(() => { if (!open) setSearch(''); }, [open]);
+  // Also surface the open→true transition so consumers can refresh their
+  // option source (e.g. reload the Departments master) before the user picks.
+  useEffect(() => {
+    if (!open) setSearch('');
+    else onOpen?.();
+  }, [open]);
   // Auto-flip — when the menu would extend below the viewport (or sit close to
   // the bottom edge of a parent modal), open upward instead so it doesn't hide
   // action buttons below the field.

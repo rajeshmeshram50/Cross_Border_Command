@@ -203,6 +203,10 @@ export default function SalesTodo() {
   // Tracks any in-flight mutation so the action buttons can show a spinner
   // / suppress double-clicks without re-rendering the whole table.
   const savingRef = useRef(false);
+  // Mirrored as state purely so the save button can render a spinner / get
+  // visually disabled while a save is in flight. The ref is still the source
+  // of truth for the re-entrancy guard.
+  const [saving, setSaving] = useState(false);
 
   const [tab, setTab]             = useState<TopTab>('reminder');
   const [meetingSub, setMeetingSub] = useState<MeetingSub>('virtual');
@@ -264,15 +268,15 @@ export default function SalesTodo() {
   const filteredReminders = useMemo(() => {
     let rows = reminders;
     if (reminderFilter === 'today')         rows = rows.filter(r => r.setDate === TODAY_STR && r.status === 'In Progress');
-    else if (reminderFilter === 'all')      rows = rows;
-    else                                    rows = rows.filter(r => r.status === reminderFilter);
+    else if (reminderFilter !== 'all')      rows = rows.filter(r => r.status === reminderFilter);
     if (q) {
       const lo = q.toLowerCase();
       rows = rows.filter(r =>
         r.subject.toLowerCase().includes(lo) ||
         r.oppId.toLowerCase().includes(lo) ||
         r.setDate.includes(lo) ||
-        r.remark.toLowerCase().includes(lo)
+        r.remark.toLowerCase().includes(lo) ||
+        r.tat.toLowerCase().includes(lo)
       );
     }
     return rows;
@@ -283,12 +287,20 @@ export default function SalesTodo() {
     let rows = meetings.filter(m => m.type === meetingSub && m.status === meetingFilter);
     if (q) {
       const lo = q.toLowerCase();
+      // Search across every text-bearing column the user can see in the
+      // table — customer/agenda/etc. PLUS the columns that used to silently
+      // miss ("Zoom" never matched the platform column; phone numbers
+      // never matched contact; venue / email were also blind spots).
       rows = rows.filter(m =>
         m.customer.toLowerCase().includes(lo) ||
         m.oppId.toLowerCase().includes(lo) ||
         m.code.toLowerCase().includes(lo) ||
         m.date.includes(lo) ||
-        m.agenda.toLowerCase().includes(lo)
+        m.agenda.toLowerCase().includes(lo) ||
+        m.platform.toLowerCase().includes(lo) ||
+        m.contact.toLowerCase().includes(lo) ||
+        m.email.toLowerCase().includes(lo) ||
+        m.venue.toLowerCase().includes(lo)
       );
     }
     return rows;
@@ -354,6 +366,15 @@ export default function SalesTodo() {
   const startIdx = (safePage - 1) * rpp;
   const rows = filtered.slice(startIdx, startIdx + rpp);
 
+  // Resync the `page` state when filters / deletes shrink `pages` below
+  // the currently selected page. Without this, the render-time `safePage`
+  // clamp hides the drift but Prev/Next clicks operate on the stale
+  // `page` and feel "stuck" — the first one or two clicks appear to do
+  // nothing while the underlying counter catches up.
+  useEffect(() => {
+    if (page > pages) setPage(pages);
+  }, [pages, page]);
+
   /* ── Actions ── */
   const switchTab = (next: TopTab) => {
     setTab(next);
@@ -378,6 +399,12 @@ export default function SalesTodo() {
 
   const openEdit = (record: Reminder | Meeting) => {
     if (!canEdit) return;
+    // Completed reminders are read-only — the action button is rendered as
+    // disabled, but guard the programmatic path too (calendar popover, etc.).
+    if ('subject' in record && (record as Reminder).status === 'Done') {
+      toast.info('Read-only', 'Completed reminders cannot be edited.');
+      return;
+    }
     setForm({ ...record, editId: record.id });
     setFormError('');
     setModalOpen(true);
@@ -388,6 +415,15 @@ export default function SalesTodo() {
   const setMark = async (record: Reminder | Meeting, status: string) => {
     if (savingRef.current) return;
     savingRef.current = true;
+    // Optimistic update — flip the row in local state immediately so the UI
+    // doesn't sit on "In Progress" for a few seconds waiting for the round
+    // trip. If the API call fails we roll the row back and toast the error.
+    const prevStatus = record.status;
+    if (tab === 'reminder') {
+      setReminders(prev => prev.map(r => r.id === record.id ? { ...r, status: status as Reminder['status'] } : r));
+    } else {
+      setMeetings(prev => prev.map(m => m.id === record.id ? { ...m, status: status as Meeting['status'] } : m));
+    }
     try {
       if (tab === 'reminder') {
         const fresh = await remindersApi.setStatus(record.id, status as 'In Progress' | 'Done');
@@ -398,6 +434,12 @@ export default function SalesTodo() {
       }
       toast.success('Updated', `Marked as ${status}`);
     } catch (err: any) {
+      // Roll back to the prior status — the optimistic flip was incorrect.
+      if (tab === 'reminder') {
+        setReminders(prev => prev.map(r => r.id === record.id ? { ...r, status: prevStatus as Reminder['status'] } : r));
+      } else {
+        setMeetings(prev => prev.map(m => m.id === record.id ? { ...m, status: prevStatus as Meeting['status'] } : m));
+      }
       toast.error('Could not update', err?.response?.data?.message || err?.message || 'Please try again.');
     } finally {
       savingRef.current = false;
@@ -407,40 +449,47 @@ export default function SalesTodo() {
   const del = async (record: Reminder | Meeting) => {
     if (!canDel || savingRef.current) return;
 
-    // Confirm before delete — matches the project's confirm-dialog pattern
-    // used by Inbox / MyTeam / HrEmployeeOnboarding. Resolves to true when
-    // the user clicks Yes, false on Cancel / Esc / backdrop click.
-    const isReminder = tab === 'reminder';
-    const label = isReminder
-      ? (record as Reminder).subject
-      : `${(record as Meeting).code} — ${(record as Meeting).customer}`;
-    const ok = await confirmDialog({
-      title: isReminder ? 'Delete reminder?' : 'Delete meeting?',
-      message: (
-        <>
-          You're about to permanently delete <strong>{label}</strong>. This can't be undone.
-        </>
-      ),
-      confirmLabel: 'Yes, Delete',
-      cancelLabel:  'Cancel',
-      tone:         'danger',
-      icon:         'delete-bin-line',
-    });
-    if (!ok) return;
-
+    // Mark "in-flight" BEFORE awaiting the confirm dialog so a second
+    // delete click (or Enter-spam on the keyboard) is rejected by the
+    // guard at the top instead of racing through to a duplicate DELETE.
+    // Reset in `finally` covers all exit paths — cancel, network error,
+    // success — so the ref never leaks across interactions.
     savingRef.current = true;
     try {
-      if (isReminder) {
-        await remindersApi.destroy(record.id);
-        setReminders(prev => prev.filter(r => r.id !== record.id));
-        toast.info('Deleted', (record as Reminder).subject);
-      } else {
-        await meetingsApi.destroy(record.id);
-        setMeetings(prev => prev.filter(m => m.id !== record.id));
-        toast.info('Deleted', (record as Meeting).code);
+      // Confirm before delete — matches the project's confirm-dialog
+      // pattern (Inbox / MyTeam / HrEmployeeOnboarding). Resolves true
+      // on Yes, false on Cancel / Esc / backdrop click.
+      const isReminder = tab === 'reminder';
+      const label = isReminder
+        ? (record as Reminder).subject
+        : `${(record as Meeting).code} — ${(record as Meeting).customer}`;
+      const ok = await confirmDialog({
+        title: isReminder ? 'Delete reminder?' : 'Delete meeting?',
+        message: (
+          <>
+            You're about to permanently delete <strong>{label}</strong>. This can't be undone.
+          </>
+        ),
+        confirmLabel: 'Yes, Delete',
+        cancelLabel:  'Cancel',
+        tone:         'danger',
+        icon:         'delete-bin-line',
+      });
+      if (!ok) return;
+
+      try {
+        if (isReminder) {
+          await remindersApi.destroy(record.id);
+          setReminders(prev => prev.filter(r => r.id !== record.id));
+          toast.info('Deleted', (record as Reminder).subject);
+        } else {
+          await meetingsApi.destroy(record.id);
+          setMeetings(prev => prev.filter(m => m.id !== record.id));
+          toast.info('Deleted', (record as Meeting).code);
+        }
+      } catch (err: any) {
+        toast.error('Could not delete', err?.response?.data?.message || err?.message || 'Please try again.');
       }
-    } catch (err: any) {
-      toast.error('Could not delete', err?.response?.data?.message || err?.message || 'Please try again.');
     } finally {
       savingRef.current = false;
     }
@@ -451,13 +500,19 @@ export default function SalesTodo() {
     setFormError('');
 
     if (tab === 'reminder') {
-      if (!form.subject || !form.subject.trim()) { setFormError('Subject is required.'); return; }
-      if (!form.setDate)                          { setFormError('Set date is required.'); return; }
+      const subj = (form.subject || '').trim();
+      if (!subj) { setFormError('Subject is required.'); return; }
+      // Reject "only special chars / digits" — at least one letter required so
+      // a reminder like "!!!!!" or "1234" can't slip through. Allows mixed
+      // strings like "Follow-up #5" because that contains letters.
+      if (!/[A-Za-z]/.test(subj)) { setFormError('Subject must contain at least one letter.'); return; }
+      if (subj.length < 3)        { setFormError('Subject must be at least 3 characters.'); return; }
+      if (!form.setDate)          { setFormError('Set date is required.'); return; }
 
       const payload = {
         opp_id: form.oppId || undefined,
         opp_date: form.oppDate ? displayToIso(form.oppDate) : null,
-        subject: form.subject.trim(),
+        subject: subj,
         set_date: displayToIso(form.setDate),
         tat: form.tat || '24 Hours',
         remark: form.remark || '',
@@ -466,6 +521,7 @@ export default function SalesTodo() {
       };
 
       savingRef.current = true;
+      setSaving(true);
       try {
         if (form.editId) {
           const fresh = await remindersApi.update(form.editId, payload);
@@ -479,43 +535,109 @@ export default function SalesTodo() {
           // default "Today's Priority" filter only shows (today + In Progress),
           // so a Done reminder OR a future-dated one would silently vanish
           // and the user would think the save didn't work. Land on the
-          // matching status tab so the newly-created row is always visible.
-          setReminderFilter(payload.status === 'Done' ? 'Done' : 'all');
+          // most specific filter that contains the new row:
+          //   • Done            → Completed tab
+          //   • today + InProg  → Today's Priority (preserves the focused view)
+          //   • everything else → All Reminders
+          const isTodayPriority =
+            payload.status === 'In Progress' &&
+            payload.set_date === displayToIso(TODAY_STR);
+          setReminderFilter(
+            payload.status === 'Done' ? 'Done' :
+            isTodayPriority ? 'today' :
+            'all'
+          );
           setPage(1);
         }
         close();
       } catch (err: any) {
-        const errors = (err?.response?.data?.errors ?? {}) as Record<string, string[]>;
-        const firstFieldError = Object.values(errors)[0]?.[0];
-        const msg = err?.response?.data?.message
-          || firstFieldError
-          || err?.message
-          || 'Save failed';
-        setFormError(String(msg));
+        setFormError(prettySaveError(err));
       } finally {
         savingRef.current = false;
+        setSaving(false);
       }
     } else {
-      if (!form.customer || !form.customer.trim()) { setFormError('Customer is required.'); return; }
-      if (!form.date)                              { setFormError('Date is required.'); return; }
+      const cust = (form.customer || '').trim();
+      if (!cust) { setFormError('Customer Name is required.'); return; }
+      // Customer name: must contain at least one letter (rejects "!!!", "123",
+      // "@@@" etc.) and stay within a sensible length / safe character set.
+      if (!/[A-Za-z]/.test(cust))               { setFormError('Customer Name must contain letters.'); return; }
+      if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) { setFormError('Customer Name has invalid characters or length.'); return; }
+
+      if (!form.date) { setFormError('Meeting Date is required.'); return; }
+      if (!form.startTime) { setFormError('Start Time is required.'); return; }
+      if (!form.endTime)   { setFormError('End Time is required.'); return; }
+
+      // Contact number — REQUIRED. Must be 10–15 digits (10 covers India's
+      // standard mobile length; 15 is the ITU-T E.164 maximum so international
+      // numbers still fit). Leading "+", spaces and dashes are allowed as
+      // separators but only the digit count is enforced.
+      const contactRaw = (form.contact || '').trim();
+      if (!contactRaw) { setFormError('Contact Number is required.'); return; }
+      const digits = contactRaw.replace(/\D/g, '');
+      if (digits.length < 10) {
+        setFormError('Contact Number must be at least 10 digits.'); return;
+      }
+      if (digits.length > 15) {
+        setFormError('Contact Number cannot be more than 15 digits.'); return;
+      }
+      if (!/^\+?[\d\s\-]+$/.test(contactRaw)) {
+        setFormError('Contact Number can only contain digits, spaces, dashes and a leading +.'); return;
+      }
+
+      if (!form.platform) {
+        setFormError(meetingSub === 'physical' ? 'Meeting Type is required.' : 'Platform is required.'); return;
+      }
+
+      const isVirtual = ((form.type as MeetingSub) || meetingSub) === 'virtual';
+      const linkRaw  = (form.link  || '').trim();
+      const venueRaw = (form.venue || '').trim();
+
+      if (isVirtual) {
+        // Virtual meeting link — REQUIRED, must be a valid http(s) URL.
+        if (!linkRaw) { setFormError('Meeting Link is required.'); return; }
+        try {
+          const u = new URL(linkRaw);
+          if (!/^https?:$/.test(u.protocol)) throw new Error();
+        } catch {
+          setFormError('Meeting Link must be a valid http(s) URL (e.g. https://meet.google.com/abc-def-ghi).'); return;
+        }
+      } else {
+        // Physical meeting — venue is REQUIRED and must look like a real
+        // place name (at least one letter, sensible length, safe punctuation).
+        if (!venueRaw) { setFormError('Place / Venue is required.'); return; }
+        if (!/[A-Za-z]/.test(venueRaw)) { setFormError('Venue must contain letters, not just symbols or digits.'); return; }
+        if (venueRaw.length < 3 || venueRaw.length > 200) {
+          setFormError('Venue must be between 3 and 200 characters.'); return;
+        }
+        if (!/^[A-Za-z0-9 .,'&()#\/\-\n\r]+$/.test(venueRaw)) {
+          setFormError('Venue contains invalid characters.'); return;
+        }
+      }
+
+      // Meeting agenda — REQUIRED for both meeting types.
+      const agendaRaw = (form.agenda || '').trim();
+      if (!agendaRaw) { setFormError('Meeting Agenda is required.'); return; }
+      if (agendaRaw.length < 3) { setFormError('Meeting Agenda must be at least 3 characters.'); return; }
 
       const payload = {
         type: ((form.type as 'virtual' | 'physical') || meetingSub),
         opp_id: form.oppId || undefined,
-        customer: form.customer.trim(),
+        customer: cust,
         email: form.email || undefined,
-        contact: form.contact || undefined,
+        contact: contactRaw,
         platform: form.platform || undefined,
         date: displayToIso(form.date),
         start_time: form.startTime || undefined,
         end_time: form.endTime || undefined,
-        link: form.link || undefined,
-        venue: form.venue || undefined,
-        agenda: form.agenda || undefined,
+        link: isVirtual ? linkRaw : undefined,
+        venue: isVirtual ? undefined : venueRaw,
+        agenda: agendaRaw,
         status: ((form.status as MeetingStatus) || 'In Progress'),
       };
 
       savingRef.current = true;
+      setSaving(true);
       try {
         if (form.editId) {
           const fresh = await meetingsApi.update(form.editId, payload);
@@ -534,17 +656,27 @@ export default function SalesTodo() {
         }
         close();
       } catch (err: any) {
-        const errors = (err?.response?.data?.errors ?? {}) as Record<string, string[]>;
-        const firstFieldError = Object.values(errors)[0]?.[0];
-        const msg = err?.response?.data?.message
-          || firstFieldError
-          || err?.message
-          || 'Save failed';
-        setFormError(String(msg));
+        setFormError(prettySaveError(err));
       } finally {
         savingRef.current = false;
+        setSaving(false);
       }
     }
+  };
+
+  // Turn raw axios / Laravel errors into something a user can act on.
+  // Catches the "POST data is too large" PHP error (returned as 413 or
+  // surfaced as a 500 with that wording) and translates it to a sensible
+  // size hint that matches the backend's ATTACH_MAX_KB constant (20 MB).
+  const prettySaveError = (err: any): string => {
+    const status = err?.response?.status;
+    const raw = String(err?.response?.data?.message || err?.message || '');
+    if (status === 413 || /POST data is too large|content length|413/i.test(raw)) {
+      return 'Attachment is too large. Please upload a file under 20 MB.';
+    }
+    const errors = (err?.response?.data?.errors ?? {}) as Record<string, string[]>;
+    const firstFieldError = Object.values(errors)[0]?.[0];
+    return firstFieldError || raw || 'Save failed';
   };
 
   /* ── No-access ── */
@@ -782,26 +914,31 @@ export default function SalesTodo() {
                     <tr key={r.id} className={today ? 'td-today-row' : ''}>
                       <td><span className="td-sr-pill">{startIdx + i + 1}</span></td>
                       <td><span className="td-opp-id">{r.oppId}</span></td>
-                      <td style={{ fontWeight: 500 }}>
+                      <td className="td-cell-subject" style={{ fontWeight: 500 }}>
                         {today && <span title="Today's Priority" style={{ color: '#0d9488', marginRight: 4 }}>🔔</span>}
-                        {r.subject}
+                        <span className="td-subject-text" title={r.subject}>{r.subject}</span>
                       </td>
-                      <td style={{ color: '#64748b' }}>
+                      <td className="td-cell-muted">
                         {r.setDate}
                         {today && <span className="td-today-pill">TODAY</span>}
                       </td>
-                      <td style={{ color: '#64748b' }}>{r.tat}</td>
+                      <td className="td-cell-muted">{r.tat}</td>
                       <td><StatusBadge status={r.status} /></td>
                       <td>
                         <div className="td-actions">
-                          {canEdit && (
+                          {canEdit && r.status !== 'Done' && (
                             <Tooltip label="Edit">
-                              <button className="td-ab td-ab-edit" aria-label="Edit" onClick={() => openEdit(r)}><IconEdit /></button>
+                              <button type="button" className="td-ab td-ab-edit" aria-label="Edit" onClick={() => openEdit(r)}><IconEdit /></button>
+                            </Tooltip>
+                          )}
+                          {canEdit && r.status === 'Done' && (
+                            <Tooltip label="Completed reminders are read-only">
+                              <button type="button" aria-disabled="true" className="td-ab td-ab-edit td-ab-muted" aria-label="Edit (disabled)"><IconEdit /></button>
                             </Tooltip>
                           )}
                           {r.status !== 'Done' && canEdit && (
                             <Tooltip label="Mark Done">
-                              <button className="td-ab td-ab-done" aria-label="Mark Done" onClick={() => setMark(r, 'Done')}><IconCheck /></button>
+                              <button type="button" className="td-ab td-ab-done" aria-label="Mark Done" onClick={() => setMark(r, 'Done')}><IconCheck /></button>
                             </Tooltip>
                           )}
                           {canDel && (
@@ -850,30 +987,46 @@ export default function SalesTodo() {
                         </span>
                       </td>
                       <td><span className="td-opp-id">{m.oppId}</span></td>
-                      <td style={{ fontWeight: 600, color: '#1e293b' }}>{m.customer}</td>
-                      <td style={{ color: '#64748b', fontSize: 11 }}>{m.email}</td>
-                      <td style={{ color: '#64748b' }}>{m.contact}</td>
+                      <td className="td-cell-strong">{m.customer}</td>
+                      <td className="td-cell-muted td-cell-sm">{m.email}</td>
+                      <td className="td-cell-muted">{m.contact}</td>
                       <td style={{ fontWeight: 500 }}>{m.platform}</td>
-                      <td style={{ color: '#64748b' }}>{m.date}</td>
-                      <td style={{ color: '#64748b' }}>{m.startTime}–{m.endTime}</td>
-                      <td style={{ maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={isPhys ? (m.venue || '') : (m.link || '')}>
+                      <td className="td-cell-muted">{m.date}</td>
+                      <td className="td-cell-muted">{m.startTime}–{m.endTime}</td>
+                      <td className="td-cell-ellipsis" title={isPhys ? (m.venue || '') : (m.link || '')}>
                         {isPhys
-                          ? <span style={{ color: '#64748b', fontSize: 11 }}>{m.venue || '—'}</span>
+                          ? <span className="td-cell-muted td-cell-sm">{m.venue || '—'}</span>
                           : (m.link
-                              ? <a href={m.link} target="_blank" rel="noreferrer" style={{ color: '#0d9488', fontSize: 11, textDecoration: 'none' }}>{m.link.length > 25 ? m.link.slice(0, 25) + '…' : m.link}</a>
-                              : <span style={{ color: '#94a3b8' }}>—</span>)}
+                              ? <a href={m.link} target="_blank" rel="noreferrer" className="td-cell-link">{m.link.length > 25 ? m.link.slice(0, 25) + '…' : m.link}</a>
+                              : <span className="td-cell-empty">—</span>)}
                       </td>
                       <td><StatusBadge status={m.status} /></td>
                       <td>
                         <div className="td-actions">
                           {isPhys ? (
-                            <Tooltip label="View Location">
-                              <button
-                                className="td-ab td-ab-loc"
-                                aria-label="View Location"
-                                onClick={() => alert('Venue: ' + (m.venue || '—'))}
-                              ><IconLocation /></button>
-                            </Tooltip>
+                            // Physical meetings — clicking "View Location" opens the
+                            // venue on Google Maps in a new tab. Falls back to a
+                            // themed toast when the row has no venue captured,
+                            // since a blank maps query is worse than nothing.
+                            m.venue ? (
+                              <Tooltip label="View on Maps">
+                                <a
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(m.venue)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="td-ab td-ab-loc"
+                                  aria-label="View on Maps"
+                                ><IconLocation /></a>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip label="No venue">
+                                <button
+                                  className="td-ab td-ab-loc"
+                                  aria-label="No venue captured"
+                                  onClick={() => toast.info('No venue', 'This meeting doesn’t have a venue captured.')}
+                                ><IconLocation /></button>
+                              </Tooltip>
+                            )
                           ) : (m.link && (
                             <Tooltip label="Join Meeting">
                               <a href={m.link} target="_blank" rel="noreferrer" className="td-ab td-ab-join" aria-label="Join Meeting"><IconVideo /></a>
@@ -1078,8 +1231,20 @@ export default function SalesTodo() {
                       )}
                       <input
                         type="file" id="tdF_attachment" style={{ display: 'none' }}
+                        accept=".png,.jpg,.jpeg,.pdf,.doc,.docx,.xls,.xlsx,.csv"
                         onChange={e => {
                           const f = e.target.files?.[0];
+                          // Reject too-large files client-side BEFORE the user
+                          // hits Save — saves an upload of useless bytes and
+                          // shows the message inline next to the field. Cap
+                          // mirrors the backend's ATTACH_MAX_KB (20 MB).
+                          const MAX_BYTES = 20 * 1024 * 1024;
+                          if (f && f.size > MAX_BYTES) {
+                            setFormError(`Attachment is too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Please upload a file under 20 MB.`);
+                            e.target.value = '';
+                            return;
+                          }
+                          setFormError('');
                           setForm(p => ({ ...p, attachmentName: f ? f.name : '', attachmentFile: f || null }));
                         }}
                       />
@@ -1119,7 +1284,23 @@ export default function SalesTodo() {
                   </div>
                   <div className="td-form-row">
                     <Field label="Contact No" required>
-                      <input className="td-inp" value={form.contact || ''} onChange={e => setForm(p => ({ ...p, contact: e.target.value }))} placeholder="Contact number" />
+                      <input
+                        className="td-inp"
+                        type="tel"
+                        inputMode="tel"
+                        maxLength={20}
+                        value={form.contact || ''}
+                        onChange={e => {
+                          // Allow only digits, spaces, dashes and a leading +.
+                          // Strip everything else as the user types so the
+                          // field can never end up in an invalid state.
+                          const cleaned = e.target.value
+                            .replace(/[^\d\s+\-]/g, '')
+                            .replace(/(?!^)\+/g, '');
+                          setForm(p => ({ ...p, contact: cleaned }));
+                        }}
+                        placeholder="e.g. +91 98765 43210"
+                      />
                     </Field>
                     <Field label={meetingSub === 'physical' ? 'Meeting Type' : 'Platform'} required>
                       <TdSelect
@@ -1166,12 +1347,21 @@ export default function SalesTodo() {
                 Fields marked <span className="td-req">*</span> are required
               </div>
               <div className="td-footer-actions">
-                <button className="td-btn-cancel" onClick={close}>Cancel</button>
-                <button className="td-btn-save" onClick={save}>
-                  {form.editId
-                    ? (<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>)
-                    : (<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /></svg>)}
-                  {form.editId ? 'Update' : 'Save'}
+                <button type="button" className="td-btn-cancel" onClick={close} disabled={saving}>Cancel</button>
+                <button type="button" className="td-btn-save" onClick={save} disabled={saving}>
+                  {saving ? (
+                    <>
+                      <span className="td-spinner" aria-hidden />
+                      {form.editId ? 'Updating…' : 'Saving…'}
+                    </>
+                  ) : (
+                    <>
+                      {form.editId
+                        ? (<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>)
+                        : (<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /></svg>)}
+                      {form.editId ? 'Update' : 'Save'}
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -1423,10 +1613,17 @@ function CalendarSection(props: {
 
       <div className="td-cal-card">
         <div className="td-cal-day-hdr">
-          {CAL_DAY_NAMES.map((d, i) => {
-            const isTdHdr = (i === new Date().getDay() && calMonth === todayDate.m && calYear === todayDate.y);
-            return <div key={d} className={`td-cal-day-hdr-cell ${isTdHdr ? 'td-cal-day-hdr-today' : ''} ${(i===0||i===6) ? 'td-cal-day-hdr-we' : ''}`}>{d}</div>;
-          })}
+          {/* Use the anchored `todayDate` (computed at module load) rather
+              than a live `new Date()` here — otherwise the highlighted
+              weekday column drifts across midnight while the page stays
+              open, getting out of sync with the `td-cal-cell-today` cell. */}
+          {(() => {
+            const todayDow = new Date(todayDate.y, todayDate.m, todayDate.d).getDay();
+            return CAL_DAY_NAMES.map((d, i) => {
+              const isTdHdr = (i === todayDow && calMonth === todayDate.m && calYear === todayDate.y);
+              return <div key={d} className={`td-cal-day-hdr-cell ${isTdHdr ? 'td-cal-day-hdr-today' : ''} ${(i===0||i===6) ? 'td-cal-day-hdr-we' : ''}`}>{d}</div>;
+            });
+          })()}
         </div>
         <div className="td-cal-grid">{cells}</div>
       </div>
@@ -1474,7 +1671,20 @@ function TdSelect(props: {
 }) {
   const { value, options, onChange, placeholder = 'Select…' } = props;
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Reset the filter every time the menu closes so the next open is fresh,
+  // and auto-focus the search input when the menu opens (mirrors how
+  // MasterSelect behaves so the two read as siblings).
+  useEffect(() => {
+    if (!open) { setSearch(''); return; }
+    // setTimeout shoves the focus past the click that just opened the menu —
+    // otherwise React re-renders steal it back on the same tick.
+    const id = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -1491,6 +1701,14 @@ function TdSelect(props: {
   }, [open]);
 
   const selected = options.find(o => o.value === value);
+  // Only show the search row when there are enough options to make
+  // scrolling annoying — keeps short status/yes-no dropdowns clean.
+  const showSearch = options.length > 4;
+  const lo = search.trim().toLowerCase();
+  const filtered = lo
+    ? options.filter(o => o.label.toLowerCase().includes(lo) || o.value.toLowerCase().includes(lo))
+    : options;
+
   return (
     <div ref={rootRef} className={`td-cs ${open ? 'is-open' : ''}`}>
       <button
@@ -1509,21 +1727,40 @@ function TdSelect(props: {
       </button>
       {open && (
         <div className="td-cs-menu" role="listbox">
-          {options.map(o => (
-            <button
-              key={o.value || '__empty'}
-              type="button"
-              role="option"
-              aria-selected={o.value === value}
-              className={`td-cs-opt ${o.value === value ? 'is-active' : ''}`}
-              onClick={() => { onChange(o.value); setOpen(false); }}
-            >
-              {o.label}
-              {o.value === value && (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12" /></svg>
-              )}
-            </button>
-          ))}
+          {showSearch && (
+            <div className="td-cs-search" onMouseDown={e => e.stopPropagation()}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.3">
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => { if (e.key !== 'Escape') e.stopPropagation(); }}
+              />
+            </div>
+          )}
+          <div className="td-cs-list">
+            {filtered.length === 0 ? (
+              <div className="td-cs-empty">No results</div>
+            ) : filtered.map(o => (
+              <button
+                key={o.value || '__empty'}
+                type="button"
+                role="option"
+                aria-selected={o.value === value}
+                className={`td-cs-opt ${o.value === value ? 'is-active' : ''}`}
+                onClick={() => { onChange(o.value); setOpen(false); }}
+              >
+                {o.label}
+                {o.value === value && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12" /></svg>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -1994,16 +2231,28 @@ const SCOPED_CSS = `
 }
 .td-form-row {
   display: grid; grid-template-columns: 1fr 1fr;
-  gap: 8px 14px; margin-bottom: 10px;
+  gap: 12px 14px; margin-bottom: 12px;
   align-items: start;
 }
 .td-form-row-3 { grid-template-columns: 1fr 1fr 1fr; }
-.td-field { display: flex; flex-direction: column; gap: 4px; }
+.td-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .td-label {
   font-size: 10.5px; font-weight: 600;
   color: #475569; letter-spacing: .04em;
   text-transform: uppercase;
+  margin: 0;
+  line-height: 1.3;
 }
+/* Force every form control (input, native select via .td-inp, custom select
+   trigger via .td-cs-trigger, date/time inputs) to share the same height so
+   adjacent fields line up — the Edit Meeting popup was visually broken
+   because the custom select read a few pixels taller than the inputs next
+   to it on the same row. */
+.td-modal .td-inp,
+.td-modal .td-cs-trigger { min-height: 34px; padding: 7px 11px; }
+.td-modal textarea.td-inp { min-height: 60px; padding: 8px 11px; }
+.td-modal input[type="date"].td-inp,
+.td-modal input[type="time"].td-inp { padding-top: 5px; padding-bottom: 5px; }
 
 /* Virtual / Physical toggle at top of meeting modal */
 .td-mtg-toggle {
@@ -2109,11 +2358,30 @@ const SCOPED_CSS = `
   background: #fff; border: 1.5px solid #5eead4; border-radius: 10px;
   box-shadow: 0 12px 28px rgba(13,148,136,.18), 0 4px 10px rgba(15,23,42,.05);
   padding: 4px;
-  max-height: 260px; overflow-y: auto;
+  max-height: 260px; overflow: hidden;
   z-index: 9600;
   animation: tdCsIn .15s cubic-bezier(.22,1,.36,1);
+  display: flex; flex-direction: column;
 }
 @keyframes tdCsIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+/* Search row — only rendered when options.length > 4. Sticks to the top
+   of the menu and scrolls with the option list underneath it. */
+.td-cs-search {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px 6px 10px; margin: 2px 2px 4px;
+  border: 1.5px solid #ccfbf1; border-radius: 7px; background: #f0fdfa;
+}
+.td-cs-search > svg { flex-shrink: 0; }
+.td-cs-search input {
+  flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 12px; font-weight: 500; color: #1e293b;
+}
+.td-cs-search input::placeholder { color: #94a3b8; }
+.td-cs-list { overflow-y: auto; flex: 1; min-height: 0; }
+.td-cs-empty {
+  padding: 14px 12px; text-align: center;
+  font-size: 11.5px; font-weight: 600; color: #94a3b8;
+}
 .td-cs-opt {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; gap: 8px;
@@ -2158,12 +2426,46 @@ const SCOPED_CSS = `
   display:flex; align-items:center; gap:5px;
 }
 .td-footer-actions { display:flex; gap:8px; }
+/* Semantic table-cell classes — replace inline color styles so dark mode can
+   override them. Inline style color always wins over CSS, which is why the
+   meeting table looked dim on dark bg before this refactor. */
+.td-cell-strong  { font-weight: 600; color: #1e293b; }
+.td-cell-muted   { color: #64748b; }
+.td-cell-sm      { font-size: 11px; }
+.td-cell-ellipsis { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.td-cell-link    { color: #0d9488; font-size: 11px; text-decoration: none; }
+.td-cell-link:hover { text-decoration: underline; }
+.td-cell-empty   { color: #94a3b8; }
+
+[data-bs-theme="dark"] .td-cell-strong { color: #f1f5f9; }
+[data-bs-theme="dark"] .td-cell-muted  { color: #cbd5e1; }
+[data-bs-theme="dark"] .td-cell-link   { color: #5eead4; }
+[data-bs-theme="dark"] .td-cell-empty  { color: #64748b; }
+
+.td-cell-subject { max-width: 320px; }
+.td-subject-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+  line-height: 1.4;
+}
+.td-ab-muted {
+  opacity: .45 !important;
+  cursor: not-allowed !important;
+  filter: grayscale(.35);
+}
+.td-ab-muted:hover { transform: none !important; box-shadow: none !important; }
 .td-btn-cancel {
   padding:7px 18px; border:1.5px solid #e2e8f0;
   border-radius:8px; background:#fff; color:#64748b;
   font-family:inherit; font-size:12px; font-weight:600;
-  cursor:pointer;
+  cursor:pointer; transition: all .15s;
 }
+.td-btn-cancel:hover:not(:disabled) { background:#f8fafc; border-color:#cbd5e1; color:#0f172a; }
+.td-btn-cancel:disabled { opacity:.55; cursor:not-allowed; }
 .td-btn-save {
   display:inline-flex; align-items:center; gap:6px;
   padding:7px 18px; border:none; border-radius:8px;
@@ -2171,7 +2473,17 @@ const SCOPED_CSS = `
   color:#fff; font-family:inherit;
   font-size:12px; font-weight:700; cursor:pointer;
   box-shadow: 0 2px 8px rgba(20,184,166,.4);
+  transition: transform .15s, box-shadow .15s, filter .15s;
 }
+.td-btn-save:hover:not(:disabled)  { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(20,184,166,.5); filter: brightness(1.05); }
+.td-btn-save:active:not(:disabled) { transform: translateY(0); }
+.td-btn-save:disabled { opacity:.7; cursor:not-allowed; box-shadow: none; }
+.td-spinner {
+  display:inline-block; width:11px; height:11px; border-radius:50%;
+  border:2px solid rgba(255,255,255,.35); border-top-color:#fff;
+  animation: td-spin .7s linear infinite;
+}
+@keyframes td-spin { to { transform: rotate(360deg); } }
 
 /* ── Calendar view ── */
 .td-root .td-cal-topbar {
@@ -2514,10 +2826,39 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .td-cs-opt { color: #e2e8f0; }
 [data-bs-theme="dark"] .td-cs-opt:hover { background: rgba(20,184,166,.12); color: #99f6e4; }
 [data-bs-theme="dark"] .td-cs-value.is-placeholder { color: #475569; }
-[data-bs-theme="dark"] .td-mtg-toggle { border-color: rgba(94,234,212,.30); }
+[data-bs-theme="dark"] .td-cs-search {
+  background: rgba(15,23,42,.55); border-color: rgba(94,234,212,.30);
+}
+[data-bs-theme="dark"] .td-cs-search input { color: #e2e8f0; }
+[data-bs-theme="dark"] .td-cs-search input::placeholder { color: #475569; }
+[data-bs-theme="dark"] .td-cs-empty { color: #475569; }
+[data-bs-theme="dark"] .td-mtg-toggle { border-color: rgba(94,234,212,.45); background: rgba(15,23,42,.4); }
 [data-bs-theme="dark"] .td-mtg-toggle-btn {
   background: rgba(15,23,42,.55); color: #5eead4;
   border-color: rgba(94,234,212,.30);
+}
+[data-bs-theme="dark"] .td-mtg-toggle-btn + .td-mtg-toggle-btn { border-left-color: rgba(94,234,212,.30); }
+[data-bs-theme="dark"] .td-mtg-toggle-btn:hover { background: rgba(20,184,166,.18); color: #99f6e4; }
+[data-bs-theme="dark"] .td-mtg-toggle-btn.active {
+  background: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 60%, #0d9488 100%) !important;
+  color: #0f172a !important;
+  font-weight: 800;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.20), 0 4px 14px rgba(20,184,166,.40);
+}
+/* Filter pill — active state needed a stronger, brighter background in dark mode
+   so the selected filter stands out instead of just glowing slightly. */
+[data-bs-theme="dark"] .td-root .td-sf.active,
+[data-bs-theme="dark"] .td-root .td-meeting-pill.active {
+  background: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 60%, #0d9488 100%) !important;
+  color: #052e2b !important;
+  border-color: #5eead4 !important;
+  font-weight: 800;
+  box-shadow: 0 6px 20px rgba(45,212,191,.35), inset 0 0 0 1px rgba(255,255,255,.22);
+}
+[data-bs-theme="dark"] .td-root .td-sf-count-active,
+[data-bs-theme="dark"] .td-root .td-pill-count-active {
+  background: rgba(15,23,42,.40);
+  color: #f0fdfa;
 }
 [data-bs-theme="dark"] .td-file-drop { background: rgba(15,23,42,.55); border-color: rgba(94,234,212,.30); }
 [data-bs-theme="dark"] .td-file-drop:hover { background: rgba(20,184,166,.12); border-color: #14b8a6; }

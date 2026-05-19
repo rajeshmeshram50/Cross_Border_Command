@@ -43,7 +43,10 @@ const read = <T extends string>(key: string, fallback: T, allowed?: readonly T[]
 };
 
 const persistedLayoutMode = read('cbc-layout-mode', 'light', ['light', 'dark'] as const);
-const persistedLayoutType = read('cbc-layout', LAYOUT_TYPES.VERTICAL, [
+// First-time login defaults to topbar (horizontal). Users who switch to
+// sidebar via the customizer persist that choice in `cbc-layout` and the
+// read() above will honour it.
+const persistedLayoutType = read('cbc-layout', LAYOUT_TYPES.HORIZONTAL, [
   LAYOUT_TYPES.VERTICAL, LAYOUT_TYPES.HORIZONTAL, LAYOUT_TYPES.TWOCOLUMN, LAYOUT_TYPES.SEMIBOX,
 ] as const);
 const persistedSidebarTheme = read('cbc-sidebar-theme', LAYOUT_SIDEBAR_TYPES.DARK);
