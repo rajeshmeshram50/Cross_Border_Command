@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\EmployeeDocumentController;
 use App\Http\Controllers\Api\ExitController;
 use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
+use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
 use App\Http\Controllers\Api\HrDocumentSignatureController;
@@ -83,6 +84,16 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // Branches
     Route::get('/branches/next-code', [BranchController::class, 'nextCode']);
     Route::apiResource('branches', BranchController::class);
+
+    // Products — step-wise create/update (Core → Sales → Quality → Vendors)
+    Route::get('/products/stats',                [ProductController::class, 'stats']);
+    Route::get('/products',                      [ProductController::class, 'index']);
+    Route::get('/products/{id}',                 [ProductController::class, 'show'])->whereNumber('id');
+    Route::post('/products/step/core',           [ProductController::class, 'storeCore']);
+    Route::put('/products/{id}/step/sales',      [ProductController::class, 'storeSales'])->whereNumber('id');
+    Route::put('/products/{id}/step/quality',    [ProductController::class, 'storeQuality'])->whereNumber('id');
+    Route::put('/products/{id}/step/vendors',    [ProductController::class, 'storeVendors'])->whereNumber('id');
+    Route::delete('/products/{id}',              [ProductController::class, 'destroy'])->whereNumber('id');
 
     // Plans (admin CRUD)
     Route::apiResource('plans', PlanController::class);

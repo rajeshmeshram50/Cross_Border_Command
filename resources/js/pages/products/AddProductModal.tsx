@@ -1,19 +1,41 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import api from '../../api';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
+import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Add Product — 6-step wizard
+ * Add Product — 2-step wizard
  *
- * Steps:
- *   1. Product Information   (Core / Sales / Quality tab strip)
- *   2. Sales Configuration   (pricing + GST)
- *   3. Quality Compliance    (box matrix + QC list)
- *   4. Document Upload
- *   5. Review & Validation
- *   6. Vendor Mapping
+ * Step 1: Product Information — 3 inner tabs
+ *           • Product Core Information  (identity, classification, media)
+ *           • For Sales Department      (pricing + GST)
+ *           • Quality & Compliance      (box matrix + QC list)
+ * Step 2: Map Product Vendor — vendor selection + mapped vendor table
  *
- * The form stays local — validation is light. `onSubmit` fires when the user
- * completes step 6 and clicks "Save Product".
+ * Light + dark mode aware. Validation is light, the form stays local, and
+ * `onSubmit` fires when the user clicks "Save Product" on step 2.
  * ──────────────────────────────────────────────────────────────────────── */
+
+export type VendorEntry = {
+  id: string;
+  productCode: string;
+  vendorCode: string;
+  vendorName: string;
+  website: string;
+  contactPerson: string;
+  contactNo: string;
+  email: string;
+  designation: string;
+  attachments: number;
+  purchasePrice: number;
+  gstPct: number;
+  gstAmt: number;
+  totalAmt: number;
+  mapDate: string;
+  remarks: string;
+};
 
 export type AddProductPayload = {
   name: string;
@@ -28,6 +50,8 @@ export type AddProductPayload = {
   condition: string;
   packagingMaterial: string;
   confidential: string;
+  primaryImagePath: string | null;
+  secondaryImagePaths: string[];
   basePrice: number;
   gstPct: number;
   gstAmt: number;
@@ -40,610 +64,1339 @@ export type AddProductPayload = {
   height: number;
   qcRecords: QcRecord[];
   documents: Array<{ name: string; type: string }>;
-  vendors: Array<{ name: string; price: number; lead: string }>;
+  vendors: VendorEntry[];
 };
 
-type QcRecord = { id: number; name: string; standard: string; mandatory: boolean };
+export type QcRecord = {
+  id: number;
+  name: string;            // QC Name (dropdown: COA, MSDS, FSSC, etc.)
+  purpose: string;         // QC Purpose
+  issuedBy: string;        // Issuing authority
+  testingParameter: string;
+  minAcceptance: string;
+  attachmentName: string;  // single attachment filename
+};
 
-const STEP_LABELS: { n: number; title: string; sub: string }[] = [
-  { n: 1, title: 'Product Information',  sub: 'Add basic product details' },
-  { n: 2, title: 'Sales Configuration',  sub: 'Set price and GST' },
-  { n: 3, title: 'Quality Compliance',   sub: 'Define quality rules' },
-  { n: 4, title: 'Document Upload',      sub: 'Upload required documents' },
-  { n: 5, title: 'Review & Validation',  sub: 'Check all details' },
-  { n: 6, title: 'Vendor',               sub: 'Link vendors' },
+/* ─── Static option lists ─── */
+// Segments / Haz Class / UOM / HSN / Conditions / Packaging / GST are loaded
+// from the master API at runtime — see the masters loader effect inside the
+// component. These three lists stay local because:
+//   • Haz Type is a binary flag, not a master
+//   • Bottom / Non Bottom is fixed
+//   • QC Names + Vendor List don't have masters yet (TODO)
+const HAZ_TYPES = ['Non-Haz', 'Haz'];
+const BOTTOM_OPTIONS = ['Bottom', 'Non Bottom'];
+const QC_NAMES = ['COA', 'MSDS', 'FSSAI', 'AGMARK', 'ISO 9001', 'ISO 22000', 'HACCP', 'HALAL', 'KOSHER', 'FSSC 22000'];
+// Local vendor stub — there's no Vendor master yet. Once it ships, swap this
+// for a `GET /api/master/vendors` call in the loaders effect.
+const VENDOR_LIST = [
+  { code: 'V-001', name: 'Golden Grain Suppliers', website: 'www.goldengrain.in', contact: 'Rakesh Mehta',  phone: '+91 98765 43210', email: 'rakesh@goldengrain.in',  designation: 'Sales Head' },
+  { code: 'V-002', name: 'GreenHarvest',           website: 'www.greenharvest.co', contact: 'Anita Desai',  phone: '+91 99888 77665', email: 'anita@greenharvest.co',  designation: 'Procurement Mgr' },
+  { code: 'V-003', name: 'Shree Exports',          website: 'www.shreeexports.in', contact: 'Mohit Sharma', phone: '+91 95544 22119', email: 'mohit@shreeexports.in',  designation: 'Director' },
+  { code: 'V-004', name: 'Sun Agri',               website: 'www.sunagri.com',     contact: 'Pooja Iyer',   phone: '+91 91234 56789', email: 'pooja@sunagri.com',      designation: 'Account Mgr' },
 ];
 
-type CoreTab = 'core' | 'sales' | 'quality';
+type Tab = 'core' | 'sales' | 'quality';
 
-export default function AddProductModal(props: { onClose: () => void; onSubmit: (payload: AddProductPayload) => void }) {
-  const { onClose, onSubmit } = props;
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
-  const [coreTab, setCoreTab] = useState<CoreTab>('core');
+const today = () => {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+};
+
+const formatDate = (iso: string) => {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+};
+
+const parseDmyToIso = (dmy: string): string | null => {
+  if (!dmy) return null;
+  // Accept either DD/MM/YYYY (display format) or YYYY-MM-DD (ISO from picker)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dmy)) return dmy;
+  const m = dmy.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+};
+
+const extractError = (e: unknown, fallback: string): string => {
+  const err = e as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
+  if (err?.response?.data?.errors) {
+    const first = Object.values(err.response.data.errors)[0];
+    if (first?.[0]) return first[0];
+  }
+  return err?.response?.data?.message || fallback;
+};
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Component
+ * ────────────────────────────────────────────────────────────────────── */
+type MasterOpt = { value: string; label: string; extra?: Record<string, unknown> };
+
+export default function AddProductModal(props: {
+  productId?: number | null;
+  onClose: () => void;
+  onSaved: (productId: number, finalised: boolean) => void;
+}) {
+  const { productId: initialId, onClose, onSaved } = props;
+
+  /* ─── Wizard nav ─── */
+  const [step, setStep] = useState<1 | 2>(1);
+  const [tab, setTab] = useState<Tab>('core');
   const [previousOpen, setPreviousOpen] = useState(true);
+  const [productId, setProductId] = useState<number | null>(initialId ?? null);
+  const [productCodeFromApi, setProductCodeFromApi] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>('');
 
-  /* ─── Form state ─── */
+  /* ─── Master options (loaded from API on mount) ─── */
+  const [optSegments, setOptSegments] = useState<MasterOpt[]>([]);
+  const [optHazClasses, setOptHazClasses] = useState<MasterOpt[]>([]);
+  const [optUoms, setOptUoms] = useState<MasterOpt[]>([]);
+  const [optHsn, setOptHsn] = useState<MasterOpt[]>([]);
+  const [optConditions, setOptConditions] = useState<MasterOpt[]>([]);
+  const [optPackaging, setOptPackaging] = useState<MasterOpt[]>([]);
+  const [optGst, setOptGst] = useState<MasterOpt[]>([]);
+
+  /* ─── Step 1: Core ─── */
   const [name, setName] = useState('');
   const [genericName, setGenericName] = useState('');
   const [description, setDescription] = useState('');
   const [brand, setBrand] = useState('');
-  const [segment, setSegment] = useState('');
+  const [segmentId, setSegmentId] = useState('');
   const [hazType, setHazType] = useState('');
-  const [hazClass, setHazClass] = useState('');
-  const [uom, setUom] = useState('');
-  const [hsn, setHsn] = useState('');
-  const [condition, setCondition] = useState('');
-  const [packagingMaterial, setPackagingMaterial] = useState('');
+  const [hazClassId, setHazClassId] = useState('');
+  const [uomId, setUomId] = useState('');
+  const [hsnId, setHsnId] = useState('');
+  const [conditionId, setConditionId] = useState('');
+  const [packagingMaterialId, setPackagingMaterialId] = useState('');
   const [confidential, setConfidential] = useState('');
 
-  const [basePrice, setBasePrice] = useState<number>(0);
-  const [gstPct, setGstPct] = useState<number>(0);
+  /* ─── Image state ─────────────────────────────────────────────────
+   * `primaryImagePath`  — server-stored disk path (null when never saved
+   *                       or freshly cleared).
+   * `primaryImageFile`  — newly picked File pending upload. When set, it
+   *                       overrides the stored path on next save.
+   * Secondary images follow the same kept-paths + new-files split.
+   * Preview URLs are derived: `URL.createObjectURL(file)` for pending
+   * files, `resolveFileUrl(path)` for already-uploaded paths.
+   * ──────────────────────────────────────────────────────────────── */
+  const [primaryImagePath, setPrimaryImagePath] = useState<string | null>(null);
+  const [primaryImageFile, setPrimaryImageFile] = useState<File | null>(null);
+  const [secondaryImagePaths, setSecondaryImagePaths] = useState<string[]>([]);
+  const [secondaryImageFiles, setSecondaryImageFiles] = useState<File[]>([]);
+
+  const primaryPreview = primaryImageFile
+    ? URL.createObjectURL(primaryImageFile)
+    : (primaryImagePath ? resolveFileUrl(primaryImagePath) : '');
+  const secondaryPreviews = [
+    ...secondaryImagePaths.map(p => resolveFileUrl(p)),
+    ...secondaryImageFiles.map(f => URL.createObjectURL(f)),
+  ];
+
+  /* ─── Step 1: Sales ─── */
+  const [basePrice, setBasePrice] = useState<string>('');
+  const [gstId, setGstId] = useState<string>('');
   const [markBottom, setMarkBottom] = useState('');
-  const gstAmt   = +(basePrice * (gstPct / 100)).toFixed(2);
-  const totalPrice = +(basePrice + gstAmt).toFixed(2);
 
-  const [netWeight, setNetWeight] = useState<number>(0);
-  const [grossWeight, setGrossWeight] = useState<number>(0);
-  const [length, setLength] = useState<number>(0);
-  const [width, setWidth] = useState<number>(0);
-  const [height, setHeight] = useState<number>(0);
+  const basePriceNum = parseFloat(basePrice) || 0;
+  // Pull the percentage value out of the selected GST master row for the
+  // amount calculation. `extra.percentage` carries the numeric column from
+  // the master response shape; fall back to 0 when nothing is picked yet.
+  const gstPctNum = useMemo(() => {
+    const row = optGst.find(o => o.value === gstId);
+    return parseFloat(String(row?.extra?.percentage ?? '0')) || 0;
+  }, [optGst, gstId]);
+  const gstPctStr = gstPctNum ? `${gstPctNum}%` : '';
+  const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
+  const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
 
-  const [qcRecords, setQcRecords] = useState<QcRecord[]>([]);
-
-  const [documents, setDocuments] = useState<Array<{ name: string; type: string }>>([]);
-  const [vendors, setVendors] = useState<Array<{ name: string; price: number; lead: string }>>([]);
-  const [vendorDraft, setVendorDraft] = useState({ name: '', price: 0, lead: '' });
-
-  /* ─── Step navigation ─── */
-  const next = () => setStep(s => (Math.min(6, s + 1) as 1 | 2 | 3 | 4 | 5 | 6));
-  const prev = () => setStep(s => (Math.max(1, s - 1) as 1 | 2 | 3 | 4 | 5 | 6));
-
-  const submitAll = () => onSubmit({
-    name, genericName, description, brand, segment,
-    hazType, hazClass, uom, hsn, condition, packagingMaterial, confidential,
-    basePrice, gstPct, gstAmt, totalPrice, markBottom,
-    netWeight, grossWeight, length, width, height,
-    qcRecords, documents, vendors,
+  /* ─── Step 1: Quality ─── */
+  const [netWeight,   setNetWeight]   = useState<string>('');
+  const [grossWeight, setGrossWeight] = useState<string>('');
+  const [length,      setLength]      = useState<string>('');
+  const [width,       setWidth]       = useState<string>('');
+  const [height,      setHeight]      = useState<string>('');
+  const [qcRecords,   setQcRecords]   = useState<QcRecord[]>([]);
+  const [qcModalOpen, setQcModalOpen] = useState(false);
+  const [qcDraft, setQcDraft] = useState<Omit<QcRecord, 'id'>>({
+    name: '', purpose: '', issuedBy: '',
+    testingParameter: '', minAcceptance: '', attachmentName: '',
   });
 
-  return (
+  /* ─── Step 2: Vendor ─── */
+  const [vendors, setVendors] = useState<VendorEntry[]>([]);
+  const [vendorDraftOpen, setVendorDraftOpen] = useState(false);
+  const [vendorSelectedCode, setVendorSelectedCode] = useState('');
+  const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
+  const [vendorGstPct, setVendorGstPct] = useState<string>('');
+  const [vendorRemarks, setVendorRemarks] = useState('');
+  const [vendorMapDate, setVendorMapDate] = useState<string>('');
+
+  const vendorSelected = useMemo(
+    () => VENDOR_LIST.find(v => v.code === vendorSelectedCode) || null,
+    [vendorSelectedCode]
+  );
+  const vendorPp   = parseFloat(vendorPurchasePrice) || 0;
+  const vendorGp   = parseFloat(vendorGstPct.replace('%', '')) || 0;
+  const vendorGsta = +(vendorPp * (vendorGp / 100)).toFixed(2);
+  const vendorTota = +(vendorPp + vendorGsta).toFixed(2);
+
+  // Use the server-generated code once it exists; until then derive a
+  // throwaway placeholder so the summary strip has something to show.
+  const productCode = productCodeFromApi || (name ? 'P-NEW' : '');
+
+  // Look up a master row's display label from its id — used by the
+  // previous-stages summary and the QC popup's product header.
+  const labelOf = (opts: MasterOpt[], id: string, fallback = '—') =>
+    opts.find(o => o.value === id)?.label || fallback;
+
+  const onPrimaryUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setPrimaryImageFile(f);
+    setPrimaryImagePath(null); // queued file supersedes any stored path
+  };
+
+  const onSecondaryUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length) setSecondaryImageFiles(prev => [...prev, ...files]);
+  };
+
+  /**
+   * Remove secondary preview at flat index `i` where the array is
+   * `[...paths, ...files]`. We splice from whichever underlying array the
+   * index lands in.
+   */
+  const removeSecondary = (i: number) => {
+    if (i < secondaryImagePaths.length) {
+      setSecondaryImagePaths(prev => prev.filter((_, idx) => idx !== i));
+    } else {
+      const fi = i - secondaryImagePaths.length;
+      setSecondaryImageFiles(prev => prev.filter((_, idx) => idx !== fi));
+    }
+  };
+
+  const clearPrimary = () => { setPrimaryImageFile(null); setPrimaryImagePath(null); };
+
+  const openQcModal = () => {
+    setQcDraft({ name: '', purpose: '', issuedBy: '', testingParameter: '', minAcceptance: '', attachmentName: '' });
+    setQcModalOpen(true);
+  };
+  const saveQcDraft = () => {
+    if (!qcDraft.name || !qcDraft.purpose || !qcDraft.issuedBy) return;
+    setQcRecords(prev => [...prev, { id: Date.now(), ...qcDraft }]);
+    setQcModalOpen(false);
+  };
+  const removeQc = (id: number) =>
+    setQcRecords(prev => prev.filter(q => q.id !== id));
+
+  const saveVendorDraft = () => {
+    if (!vendorSelected || !vendorPp) return;
+    const entry: VendorEntry = {
+      id: String(Date.now()),
+      productCode: productCode || 'P-NEW',
+      vendorCode: vendorSelected.code,
+      vendorName: vendorSelected.name,
+      website: vendorSelected.website,
+      contactPerson: vendorSelected.contact,
+      contactNo: vendorSelected.phone,
+      email: vendorSelected.email,
+      designation: vendorSelected.designation,
+      attachments: 0,
+      purchasePrice: vendorPp,
+      gstPct: vendorGp,
+      gstAmt: vendorGsta,
+      totalAmt: vendorTota,
+      mapDate: vendorMapDate ? formatDate(vendorMapDate) : today(),
+      remarks: vendorRemarks,
+    };
+    setVendors(prev => [...prev, entry]);
+    setVendorDraftOpen(false);
+    setVendorSelectedCode('');
+    setVendorPurchasePrice('');
+    setVendorGstPct('');
+    setVendorRemarks('');
+    setVendorMapDate('');
+  };
+
+  const removeVendor = (id: string) =>
+    setVendors(prev => prev.filter(v => v.id !== id));
+
+  // Lock the page scroll so the modal feels like a true overlay rather
+  // than a panel that floats above scrollable content.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  /* ─── Load master options on mount ─── */
+  useEffect(() => {
+    type Row = Record<string, unknown> & { id: number | string };
+    const fetchMaster = async (slug: string, labelKey: string, opts?: { extraKeys?: string[] }): Promise<MasterOpt[]> => {
+      try {
+        const res = await api.get<Row[]>(`/master/${slug}`);
+        return (res.data || [])
+          .filter(r => String((r as Record<string, unknown>).status ?? '').toLowerCase() !== 'inactive')
+          .map(r => {
+            const extra: Record<string, unknown> = {};
+            opts?.extraKeys?.forEach(k => { extra[k] = (r as Record<string, unknown>)[k]; });
+            return {
+              value: String(r.id),
+              label: String((r as Record<string, unknown>)[labelKey] ?? ''),
+              extra,
+            };
+          });
+      } catch {
+        return [];
+      }
+    };
+
+    (async () => {
+      const [seg, hz, uo, hs, co, pk, gst] = await Promise.all([
+        fetchMaster('segments',           'title'),
+        fetchMaster('haz_class',          'name'),
+        fetchMaster('uom',                'title', { extraKeys: ['short_code', 'unit_type'] }),
+        fetchMaster('hsn_codes',          'hsn_code', { extraKeys: ['description'] }),
+        fetchMaster('conditions',         'title'),
+        fetchMaster('packaging_material', 'title'),
+        fetchMaster('gst_percentage',     'percentage', { extraKeys: ['percentage'] }),
+      ]);
+      setOptSegments(seg);
+      setOptHazClasses(hz);
+      setOptUoms(uo.map(o => ({ ...o, label: o.label + (o.extra?.short_code ? ` (${o.extra.short_code})` : '') })));
+      setOptHsn(hs.map(o => ({ ...o, label: o.label + (o.extra?.description ? ` — ${String(o.extra.description).slice(0, 40)}` : '') })));
+      setOptConditions(co);
+      setOptPackaging(pk);
+      setOptGst(gst.map(o => ({ ...o, label: `${o.label}%` })));
+    })();
+  }, []);
+
+  /* ─── If editing, load the product and prefill ─── */
+  useEffect(() => {
+    if (!initialId) return;
+    (async () => {
+      try {
+        type ProductDto = {
+          id: number; product_code?: string;
+          name?: string; generic_name?: string; description?: string; brand?: string;
+          segment_id?: number; haz_type?: string; haz_class_id?: number;
+          uom_id?: number; hsn_id?: number; condition_id?: number;
+          packaging_material_id?: number; confidential_info?: string;
+          primary_image?: string | null; secondary_images?: string[] | null;
+          base_price?: string | number; gst_id?: number; mark_bottom?: string;
+          net_weight?: string | number; gross_weight?: string | number;
+          length_cm?: string | number; width_cm?: string | number; height_cm?: string | number;
+          step_completed?: number;
+          qc_records?: Array<{ id: number; qc_name: string; qc_purpose?: string; issued_by?: string; qa_testing_parameter?: string; min_acceptance_criteria?: string; attachment_path?: string }>;
+          vendor_maps?: Array<Record<string, unknown>>;
+        };
+        const res = await api.get<ProductDto>(`/products/${initialId}`);
+        const p = res.data;
+        setProductId(p.id);
+        setProductCodeFromApi(p.product_code ?? '');
+        setName(p.name ?? '');
+        setGenericName(p.generic_name ?? '');
+        setDescription(p.description ?? '');
+        setBrand(p.brand ?? '');
+        setSegmentId(p.segment_id ? String(p.segment_id) : '');
+        setHazType(p.haz_type ?? '');
+        setHazClassId(p.haz_class_id ? String(p.haz_class_id) : '');
+        setUomId(p.uom_id ? String(p.uom_id) : '');
+        setHsnId(p.hsn_id ? String(p.hsn_id) : '');
+        setConditionId(p.condition_id ? String(p.condition_id) : '');
+        setPackagingMaterialId(p.packaging_material_id ? String(p.packaging_material_id) : '');
+        setConfidential(p.confidential_info ?? '');
+        setPrimaryImagePath(p.primary_image ?? null);
+        setPrimaryImageFile(null);
+        setSecondaryImagePaths(p.secondary_images ?? []);
+        setSecondaryImageFiles([]);
+        setBasePrice(p.base_price != null ? String(p.base_price) : '');
+        setGstId(p.gst_id ? String(p.gst_id) : '');
+        setMarkBottom(p.mark_bottom ?? '');
+        setNetWeight(p.net_weight != null ? String(p.net_weight) : '');
+        setGrossWeight(p.gross_weight != null ? String(p.gross_weight) : '');
+        setLength(p.length_cm != null ? String(p.length_cm) : '');
+        setWidth(p.width_cm != null ? String(p.width_cm) : '');
+        setHeight(p.height_cm != null ? String(p.height_cm) : '');
+        setQcRecords((p.qc_records ?? []).map(q => ({
+          id: q.id,
+          name: q.qc_name,
+          purpose: q.qc_purpose ?? '',
+          issuedBy: q.issued_by ?? '',
+          testingParameter: q.qa_testing_parameter ?? '',
+          minAcceptance: q.min_acceptance_criteria ?? '',
+          attachmentName: q.attachment_path ? q.attachment_path.split('/').pop() ?? '' : '',
+        })));
+        setVendors((p.vendor_maps ?? []).map(v => ({
+          id: String(v.id),
+          productCode: p.product_code ?? '',
+          vendorCode: String(v.vendor_code ?? ''),
+          vendorName: String(v.vendor_name ?? ''),
+          website: String(v.vendor_website ?? ''),
+          contactPerson: String(v.contact_person ?? ''),
+          contactNo: String(v.contact_no ?? ''),
+          email: String(v.email ?? ''),
+          designation: String(v.designation ?? ''),
+          attachments: 0,
+          purchasePrice: Number(v.purchase_price ?? 0),
+          gstPct: Number(v.gst_percentage ?? 0),
+          gstAmt: Number(v.gst_amount ?? 0),
+          totalAmt: Number(v.total_amount ?? 0),
+          mapDate: v.map_date ? formatDate(String(v.map_date)) : '',
+          remarks: String(v.remarks ?? ''),
+        })));
+
+        // Jump the wizard to the next pending step
+        const sc = Number(p.step_completed ?? 0);
+        if (sc >= 3)      { setStep(2); }
+        else if (sc === 2) { setTab('quality'); }
+        else if (sc === 1) { setTab('sales'); }
+      } catch {
+        setError('Failed to load product. Closing…');
+        setTimeout(onClose, 1200);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialId]);
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Per-step save handlers
+   *
+   * Each "Save & Next" call writes the relevant slice to the server and
+   * advances the wizard only after a 2xx response. If the call fails we
+   * keep the user on the current tab so they can correct the error.
+   * ────────────────────────────────────────────────────────────── */
+  const saveCore = async () => {
+    setError('');
+    if (!name.trim()) { setError('Product name is required.'); return; }
+    setSaving(true);
+    try {
+      // Always send multipart so file uploads work; Laravel handles either
+      // JSON or multipart against the same validation rules.
+      const fd = new FormData();
+      const put = (k: string, v: unknown) => {
+        if (v === null || v === undefined) return;
+        fd.append(k, typeof v === 'string' ? v : String(v));
+      };
+      if (productId) put('id', productId);
+      put('name', name);
+      put('generic_name', genericName);
+      put('description', description);
+      put('brand', brand);
+      put('segment_id', segmentId ? Number(segmentId) : null);
+      put('haz_type', hazType || null);
+      put('haz_class_id', hazClassId ? Number(hazClassId) : null);
+      put('uom_id', uomId ? Number(uomId) : null);
+      put('hsn_id', hsnId ? Number(hsnId) : null);
+      put('condition_id', conditionId ? Number(conditionId) : null);
+      put('packaging_material_id', packagingMaterialId ? Number(packagingMaterialId) : null);
+      put('confidential_info', confidential);
+
+      // Primary image: send the kept-path if any, plus the new file if one
+      // was just picked. Backend prefers the file when both are present.
+      fd.append('primary_image', primaryImagePath ?? '');
+      if (primaryImageFile) fd.append('primary_image_file', primaryImageFile);
+
+      // Secondary images: kept paths as a repeating field + new files.
+      secondaryImagePaths.forEach(p => fd.append('secondary_images[]', p));
+      secondaryImageFiles.forEach(f => fd.append('secondary_image_files[]', f));
+
+      const res = await api.post<{ id: number; product_code?: string; primary_image?: string | null; secondary_images?: string[] | null; step_completed?: number }>(
+        '/products/step/core',
+        fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+
+      // Mirror the persisted state — pending files have now become paths.
+      setProductId(res.data.id);
+      setProductCodeFromApi(res.data.product_code ?? '');
+      setPrimaryImagePath(res.data.primary_image ?? null);
+      setPrimaryImageFile(null);
+      setSecondaryImagePaths(res.data.secondary_images ?? []);
+      setSecondaryImageFiles([]);
+
+      onSaved(res.data.id, false);
+      setTab('sales');
+    } catch (e: unknown) {
+      setError(extractError(e, 'Failed to save Core information.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveSales = async () => {
+    if (!productId) { setError('Save Core info first.'); return; }
+    setError(''); setSaving(true);
+    try {
+      await api.put(`/products/${productId}/step/sales`, {
+        base_price: basePriceNum || null,
+        gst_id: gstId ? Number(gstId) : null,
+        gst_amount: gstAmt || null,
+        total_price: totalPrice || null,
+        mark_bottom: markBottom || null,
+      });
+      onSaved(productId, false);
+      setTab('quality');
+    } catch (e: unknown) {
+      setError(extractError(e, 'Failed to save Sales information.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveQuality = async () => {
+    if (!productId) { setError('Save Core info first.'); return; }
+    setError(''); setSaving(true);
+    try {
+      await api.put(`/products/${productId}/step/quality`, {
+        net_weight: parseFloat(netWeight) || null,
+        gross_weight: parseFloat(grossWeight) || null,
+        length_cm: parseFloat(length) || null,
+        width_cm: parseFloat(width) || null,
+        height_cm: parseFloat(height) || null,
+        qc_records: qcRecords.map(q => ({
+          qc_name: q.name,
+          qc_purpose: q.purpose,
+          issued_by: q.issuedBy,
+          qa_testing_parameter: q.testingParameter,
+          min_acceptance_criteria: q.minAcceptance,
+          attachment_path: q.attachmentName || null,
+        })),
+      });
+      // Step 1 fully complete — product is now Inactive on the server.
+      onSaved(productId, false);
+      setStep(2);
+    } catch (e: unknown) {
+      setError(extractError(e, 'Failed to save Quality information.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveVendorsAndFinish = async () => {
+    if (!productId) { setError('Save Core info first.'); return; }
+    if (vendors.length === 0) { setError('Map at least one vendor before saving.'); return; }
+    setError(''); setSaving(true);
+    try {
+      await api.put(`/products/${productId}/step/vendors`, {
+        vendors: vendors.map(v => ({
+          vendor_code: v.vendorCode,
+          vendor_name: v.vendorName,
+          vendor_website: v.website,
+          contact_person: v.contactPerson,
+          contact_no: v.contactNo,
+          email: v.email,
+          designation: v.designation,
+          purchase_price: v.purchasePrice,
+          gst_percentage: v.gstPct,
+          gst_amount: v.gstAmt,
+          total_amount: v.totalAmt,
+          map_date: parseDmyToIso(v.mapDate),
+          remarks: v.remarks,
+        })),
+      });
+      onSaved(productId, true);
+    } catch (e: unknown) {
+      setError(extractError(e, 'Failed to save vendors.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return createPortal((
     <div className="apm-backdrop" onClick={onClose}>
       <style>{SCOPED_CSS}</style>
       <div className="apm-modal" onClick={(e) => e.stopPropagation()}>
-        {/* Header (purple gradient) */}
+        {/* ─── Gradient header ─── */}
         <div className="apm-head">
           <div className="apm-head-left">
             <div className="apm-head-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                <line x1="12" y1="22.08" x2="12" y2="12" />
+              </svg>
             </div>
             <div>
-              <div className="apm-title">Add Product</div>
-              <div className="apm-sub">Add complete product details including pricing, compliance, and vendor details.</div>
+              <div className="apm-title">{step === 1 ? 'Add Product' : 'Map Product Vendor'}</div>
+              <div className="apm-sub">
+                {step === 1
+                  ? 'Add complete product details — identity, pricing, compliance and dimensions.'
+                  : 'Link this product to one or more vendors with purchase pricing.'}
+              </div>
             </div>
           </div>
-          <div className="apm-head-right">
-            <button className="apm-map-vendor">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-              Map Vendor
-            </button>
-            <button className="apm-close" onClick={onClose} aria-label="Close">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-            </button>
-          </div>
+          <button className="apm-close" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
         </div>
 
-        {/* Stepper */}
+        {/* ─── Step strip ─── */}
         <div className="apm-stepper">
-          {STEP_LABELS.map((s, i) => {
-            const state = step > s.n ? 'done' : step === s.n ? 'active' : 'idle';
-            return (
-              <div key={s.n} className="apm-stepper-item-wrap">
-                <div className={`apm-step apm-step-${state}`}>
-                  <div className="apm-step-num">
-                    {state === 'done'
-                      ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                      : s.n}
-                  </div>
-                  <div>
-                    <div className="apm-step-title">{s.title}</div>
-                    <div className="apm-step-sub">{s.sub}</div>
-                  </div>
-                </div>
-                {i < STEP_LABELS.length - 1 && <div className={`apm-step-line ${step > s.n ? 'done' : ''}`} />}
-              </div>
-            );
-          })}
+          <StepperItem n={1} title="Product Information" sub="Identity, pricing, compliance" current={step} />
+          <div className={`apm-step-line ${step > 1 ? 'done' : ''}`} />
+          <StepperItem n={2} title="Map Product Vendor" sub="Link vendors with pricing" current={step} />
         </div>
 
-        {/* Body */}
+        {/* ─── Body ─── */}
         <div className="apm-body">
-          {/* Previous stages summary (steps 2+) */}
-          {step > 1 && (
-            <div className="apm-prev">
-              <div className="apm-prev-head">
-                <div className="apm-prev-title">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                  What you did in previous stages
-                  <span className="apm-prev-chip">Step 1–{step - 1} Complete</span>
-                </div>
-                <button className="apm-prev-toggle" onClick={() => setPreviousOpen(o => !o)}>{previousOpen ? 'Hide' : 'Show'}</button>
-              </div>
-              {previousOpen && (
-                <>
-                  <div className="apm-prev-section-label">⊕ PRODUCT CORE</div>
-                  <div className="apm-prev-grid">
-                    <PrevField label="Product Name" value={name || '—'} />
-                    <PrevField label="Generic Name" value={genericName || '—'} />
-                    <PrevField label="HSN/SAC" value={hsn || 'Select'} />
-                    <PrevField label="Segment" value={segment || 'Select'} />
-                    <PrevField label="HAZ/Non-HAZ" value={hazType || '—'} />
-                    <PrevField label="UOM" value={uom || 'Select'} />
-                  </div>
-                  {step >= 3 && (
-                    <>
-                      <div className="apm-prev-section-label">⊕ SALES CONFIG</div>
-                      <div className="apm-prev-grid apm-prev-grid-sales">
-                        <PrevField label="Base Price" value={`₹${basePrice}`} />
-                        <PrevField label="GST %" value={`${gstPct}%`} />
-                        <PrevField label="GST Amt" value={`₹${gstAmt}`} />
-                        <PrevField label="Total Price" value={`₹${totalPrice}`} />
-                        <PrevField label="Bottom" value={markBottom || 'Select'} />
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Step content */}
           {step === 1 && (
             <>
-              <div className="apm-coretabs">
-                <button className={`apm-coretab ${coreTab === 'core' ? 'on' : ''}`} onClick={() => setCoreTab('core')}>Product Core Information</button>
-                <button className={`apm-coretab ${coreTab === 'sales' ? 'on' : ''}`} onClick={() => setCoreTab('sales')}>For Sales Department</button>
-                <button className={`apm-coretab ${coreTab === 'quality' ? 'on' : ''}`} onClick={() => setCoreTab('quality')}>Quality &amp; Compliance</button>
-              </div>
-
-              {coreTab === 'core' && (
-                <Step1ProductCore
-                  name={name} setName={setName}
-                  genericName={genericName} setGenericName={setGenericName}
-                  description={description} setDescription={setDescription}
-                  brand={brand} setBrand={setBrand}
-                  segment={segment} setSegment={setSegment}
-                  hazType={hazType} setHazType={setHazType}
-                  hazClass={hazClass} setHazClass={setHazClass}
-                  uom={uom} setUom={setUom}
-                  hsn={hsn} setHsn={setHsn}
-                  condition={condition} setCondition={setCondition}
-                  packagingMaterial={packagingMaterial} setPackagingMaterial={setPackagingMaterial}
-                  confidential={confidential} setConfidential={setConfidential}
+              {/* Previous stages summary — visible once user moves past Core */}
+              {tab !== 'core' && (
+                <PreviousStages
+                  open={previousOpen}
+                  onToggle={() => setPreviousOpen(v => !v)}
+                  completed={tab === 'sales' ? 1 : 2}
+                  total={3}
+                  stages={[
+                    {
+                      name: 'PRODUCT CORE',
+                      tone: 'violet',
+                      fields: [
+                        { label: 'Product Name', value: name || '—' },
+                        { label: 'Generic Name', value: genericName || '—' },
+                        { label: 'HSN/SAC',      value: labelOf(optHsn, hsnId) },
+                        { label: 'Segment',      value: labelOf(optSegments, segmentId) },
+                        { label: 'Haz/Non-Haz',  value: hazType || '—' },
+                        { label: 'UOM',          value: labelOf(optUoms, uomId) },
+                        { label: 'Brand',        value: brand || '—' },
+                        { label: 'Condition',    value: labelOf(optConditions, conditionId) },
+                      ],
+                    },
+                    ...(tab === 'quality' ? [{
+                      name: 'SALES CONFIG',
+                      tone: 'amber' as const,
+                      fields: [
+                        { label: 'Base Price',  value: basePrice ? `₹${basePriceNum}` : '—' },
+                        { label: 'GST %',       value: gstPctStr || '—' },
+                        { label: 'GST Amount',  value: gstAmt ? `₹${gstAmt}` : '—' },
+                        { label: 'Total Price', value: totalPrice ? `₹${totalPrice}` : '—' },
+                        { label: 'Mark Bottom', value: markBottom || '—' },
+                      ],
+                    }] : []),
+                  ]}
                 />
               )}
-              {coreTab === 'sales'   && <Step1ForSales preview />}
-              {coreTab === 'quality' && <Step1QualityPreview preview />}
+
+              <div className="apm-tabs">
+                <button className={`apm-tab ${tab === 'core'    ? 'on' : ''}`} onClick={() => setTab('core')}>Product Core Information</button>
+                <button className={`apm-tab ${tab === 'sales'   ? 'on' : ''}`} onClick={() => setTab('sales')}>For Sales Department</button>
+                <button className={`apm-tab ${tab === 'quality' ? 'on' : ''}`} onClick={() => setTab('quality')}>Quality &amp; Compliance</button>
+              </div>
+
+              {tab === 'core' && (
+                <SectionCard
+                  tone="blue"
+                  icon={
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
+                  }
+                  title="Product Core Information"
+                  subtitle="Basic identity, classification and media"
+                >
+                  <div className="apm-grid-2">
+                    <Field label="Product Name" required icon={<i className="ri-product-hunt-line" />}>
+                      <input className="apm-input apm-input-mf" placeholder="Enter product name" value={name} onChange={e => setName(e.target.value)} />
+                    </Field>
+                    <Field label="Generic Name" required icon={<i className="ri-price-tag-3-line" />}>
+                      <input className="apm-input apm-input-mf" placeholder="Enter generic name" value={genericName} onChange={e => setGenericName(e.target.value)} />
+                    </Field>
+                  </div>
+
+                  <Field label="Product Printable Description" required icon={<i className="ri-file-text-line" />}>
+                    <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Enter printable description" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
+                  </Field>
+
+                  <div className="apm-grid-2">
+                    <Field label="Make / Brand / Specifications" required icon={<i className="ri-store-2-line" />}>
+                      <input className="apm-input apm-input-mf" placeholder="Make / Brand / Specifications" value={brand} onChange={e => setBrand(e.target.value)} />
+                    </Field>
+                    <Field label="Segment" required addNew>
+                      <SelectInput value={segmentId} onChange={setSegmentId} placeholder="Select" options={optSegments} />
+                    </Field>
+                  </div>
+
+                  <div className="apm-grid-2">
+                    <UploadDropzone
+                      label="Product Primary Image"
+                      required
+                      hint="Click to upload primary image"
+                      multiple={false}
+                      preview={primaryPreview ? [primaryPreview] : []}
+                      onPick={onPrimaryUpload}
+                      onRemove={clearPrimary}
+                    />
+                    <UploadDropzone
+                      label="Product Secondary Images"
+                      required
+                      hint="You Can Add Multiple Attachments"
+                      multiple
+                      preview={secondaryPreviews}
+                      onPick={onSecondaryUpload}
+                      onRemove={removeSecondary}
+                    />
+                  </div>
+
+                  <div className="apm-inner-section">
+                    <div className="apm-inner-title">PRODUCT GENERAL INFORMATION</div>
+                    <div className="apm-grid-3">
+                      <Field label="Haz / Non Haz" required>
+                        <SelectInput value={hazType} onChange={setHazType} placeholder="Select" options={HAZ_TYPES} />
+                      </Field>
+                      <Field label="Haz Class" required addNew>
+                        <SelectInput value={hazClassId} onChange={setHazClassId} placeholder="Select" options={optHazClasses} disabled={hazType !== 'Haz'} />
+                      </Field>
+                      <Field label="UOM" required addNew>
+                        <SelectInput value={uomId} onChange={setUomId} placeholder="Select" options={optUoms} />
+                      </Field>
+                    </div>
+                    <div className="apm-grid-3">
+                      <Field label="HSN / SAC Code" required addNew>
+                        <SelectInput value={hsnId} onChange={setHsnId} placeholder="Select" options={optHsn} />
+                      </Field>
+                      <Field label="Condition" required addNew>
+                        <SelectInput value={conditionId} onChange={setConditionId} placeholder="Select" options={optConditions} />
+                      </Field>
+                      <Field label="Packaging Material" required addNew>
+                        <SelectInput value={packagingMaterialId} onChange={setPackagingMaterialId} placeholder="Select" options={optPackaging} />
+                      </Field>
+                    </div>
+                    <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
+                      <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Confidential information" value={confidential} onChange={e => setConfidential(e.target.value)} rows={2} />
+                    </Field>
+                  </div>
+                </SectionCard>
+              )}
+
+              {tab === 'sales' && (
+                <SectionCard
+                  tone="violet"
+                  icon={
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                    </svg>
+                  }
+                  title="For Sales Department"
+                  subtitle="Pricing, GST and sales configuration"
+                >
+                  <div className="apm-grid-2">
+                    <Field label="Product Selling Price (Without GST)" required>
+                      <div className="apm-input-icon">
+                        <span className="apm-input-icon-prefix">₹</span>
+                        <input className="apm-input has-prefix" placeholder="Enter base price" type="number" value={basePrice} onChange={e => setBasePrice(e.target.value)} />
+                      </div>
+                    </Field>
+                    <Field label="GST %" required addNew>
+                      <SelectInput value={gstId} onChange={setGstId} placeholder="Select" options={optGst} />
+                    </Field>
+                  </div>
+                  <div className="apm-grid-2">
+                    <Field label="GST Amount" required>
+                      <div className="apm-input-icon">
+                        <span className="apm-input-icon-prefix">₹</span>
+                        <input className="apm-input has-prefix apm-readonly" value={gstAmt} readOnly />
+                      </div>
+                    </Field>
+                    <Field label="Total Selling Price" required>
+                      <div className="apm-input-icon">
+                        <span className="apm-input-icon-prefix">₹</span>
+                        <input className="apm-input has-prefix apm-readonly apm-total" value={totalPrice} readOnly />
+                      </div>
+                    </Field>
+                  </div>
+                  <Field label="Mark Bottom / Non Bottom" required>
+                    <SelectInput value={markBottom} onChange={setMarkBottom} placeholder="Select" options={BOTTOM_OPTIONS} />
+                  </Field>
+                </SectionCard>
+              )}
+
+              {tab === 'quality' && (
+                <>
+                  <SectionCard
+                    tone="amber"
+                    icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4" /></svg>}
+                    title="Box Matrix Details"
+                    subtitle="Physical dimensions and weight specifications"
+                  >
+                    <div className="apm-grid-5">
+                      <Field label="Net Weight (Kg)" icon={<i className="ri-scales-2-line" />}>
+                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Net Weight" type="number" value={netWeight} onChange={e => setNetWeight(e.target.value)} />
+                      </Field>
+                      <Field label="Gross Weight (Kg)" icon={<i className="ri-scales-3-line" />}>
+                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Gross Weight" type="number" value={grossWeight} onChange={e => setGrossWeight(e.target.value)} />
+                      </Field>
+                      <Field label="Length (Cm)" icon={<i className="ri-ruler-2-line" />}>
+                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Length" type="number" value={length} onChange={e => setLength(e.target.value)} />
+                      </Field>
+                      <Field label="Width (Cm)" icon={<i className="ri-ruler-line" />}>
+                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Width" type="number" value={width} onChange={e => setWidth(e.target.value)} />
+                      </Field>
+                      <Field label="Height (Cm)" icon={<i className="ri-arrow-up-down-line" />}>
+                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Height" type="number" value={height} onChange={e => setHeight(e.target.value)} />
+                      </Field>
+                    </div>
+                  </SectionCard>
+
+                  <SectionCard
+                    tone="green"
+                    icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
+                    title="QC & Compliance"
+                    subtitle="Quality standards and compliance certifications"
+                    headerAction={
+                      <button className="apm-section-add-btn" onClick={openQcModal}>
+                        <span>+</span> Add QC
+                      </button>
+                    }
+                  >
+                    {qcRecords.length === 0 ? (
+                      <div className="apm-empty">No QC records. Click "Add QC" to begin.</div>
+                    ) : (
+                      <div className="table-responsive table-card border rounded">
+                        <table className="table align-middle table-nowrap mb-0">
+                          <thead className="table-light">
+                            <tr>
+                              <th scope="col">Sr No</th>
+                              <th scope="col">QC Name</th>
+                              <th scope="col">QC Purpose</th>
+                              <th scope="col">Issued By</th>
+                              <th scope="col">QA Testing Parameter</th>
+                              <th scope="col">Min Acceptance Criteria</th>
+                              <th scope="col">Attachments</th>
+                              <th scope="col">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {qcRecords.map((q, i) => (
+                              <tr key={q.id}>
+                                <td><span className="text-muted fs-13">{i + 1}</span></td>
+                                <td><span className="fw-semibold text-primary fs-13">{q.name}</span></td>
+                                <td><span className="fs-13">{q.purpose}</span></td>
+                                <td><span className="fs-13">{q.issuedBy}</span></td>
+                                <td>
+                                  <span className="fs-13 d-inline-block text-truncate" style={{ maxWidth: 220 }} title={q.testingParameter}>
+                                    {q.testingParameter || <span className="text-muted">—</span>}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className="fs-13 d-inline-block text-truncate" style={{ maxWidth: 220 }} title={q.minAcceptance}>
+                                    {q.minAcceptance || <span className="text-muted">—</span>}
+                                  </span>
+                                </td>
+                                <td>
+                                  {q.attachmentName ? (
+                                    <span className="d-inline-flex align-items-center gap-2">
+                                      <span className="fs-13">{q.attachmentName}</span>
+                                      <button type="button" className="btn btn-sm btn-soft-info" title="View" aria-label="View">
+                                        <i className="ri-eye-line" />
+                                      </button>
+                                    </span>
+                                  ) : <span className="text-muted fs-13">—</span>}
+                                </td>
+                                <td>
+                                  <div className="hstack gap-1">
+                                    <button type="button" className="btn btn-sm btn-soft-primary" title="Edit" aria-label="Edit">
+                                      <i className="ri-pencil-line" />
+                                    </button>
+                                    <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => removeQc(q.id)} title="Delete" aria-label="Delete">
+                                      <i className="ri-delete-bin-line" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </SectionCard>
+                </>
+              )}
             </>
           )}
 
           {step === 2 && (
             <>
-              <div className="apm-coretabs">
-                <button className="apm-coretab" onClick={() => { setStep(1); setCoreTab('core'); }}>Product Core Information</button>
-                <button className="apm-coretab on">For Sales Department</button>
-                <button className="apm-coretab" onClick={() => setStep(3)}>Quality &amp; Compliance</button>
-              </div>
-
-              <Step2Sales
-                basePrice={basePrice} setBasePrice={setBasePrice}
-                gstPct={gstPct} setGstPct={setGstPct}
-                gstAmt={gstAmt} totalPrice={totalPrice}
-                markBottom={markBottom} setMarkBottom={setMarkBottom}
+              {/* All Step-1 data carried into Step 2 */}
+              <PreviousStages
+                open={previousOpen}
+                onToggle={() => setPreviousOpen(v => !v)}
+                completed={3}
+                total={3}
+                stages={[
+                  {
+                    name: 'PRODUCT CORE',
+                    tone: 'violet',
+                    fields: [
+                      { label: 'Product Name', value: name || '—' },
+                      { label: 'Generic Name', value: genericName || '—' },
+                      { label: 'HSN/SAC',      value: labelOf(optHsn, hsnId) },
+                      { label: 'Segment',      value: labelOf(optSegments, segmentId) },
+                      { label: 'Haz/Non-Haz',  value: hazType || '—' },
+                      { label: 'UOM',          value: labelOf(optUoms, uomId) },
+                      { label: 'Brand',        value: brand || '—' },
+                      { label: 'Condition',    value: labelOf(optConditions, conditionId) },
+                    ],
+                  },
+                  {
+                    name: 'SALES CONFIG',
+                    tone: 'amber',
+                    fields: [
+                      { label: 'Base Price',  value: basePrice ? `₹${basePriceNum}` : '—' },
+                      { label: 'GST %',       value: gstPctStr || '—' },
+                      { label: 'GST Amount',  value: gstAmt ? `₹${gstAmt}` : '—' },
+                      { label: 'Total Price', value: totalPrice ? `₹${totalPrice}` : '—' },
+                      { label: 'Mark Bottom', value: markBottom || '—' },
+                    ],
+                  },
+                  {
+                    name: 'QUALITY & COMPLIANCE',
+                    tone: 'green',
+                    fields: [
+                      { label: 'Net Weight',   value: netWeight   ? `${netWeight} kg` : '—' },
+                      { label: 'Gross Weight', value: grossWeight ? `${grossWeight} kg` : '—' },
+                      { label: 'Length',       value: length ? `${length} cm` : '—' },
+                      { label: 'Width',        value: width  ? `${width} cm`  : '—' },
+                      { label: 'Height',       value: height ? `${height} cm` : '—' },
+                      { label: 'QC Records',   value: String(qcRecords.length) },
+                    ],
+                  },
+                ]}
               />
+
+              {!vendorDraftOpen && (
+                <div className="apm-vendor-toolbar">
+                  <div className="apm-vendor-toolbar-title">Map Product Vendor</div>
+                  <button className="apm-btn-primary" onClick={() => setVendorDraftOpen(true)}>
+                    <span>+</span> Map New Vendor
+                  </button>
+                </div>
+              )}
+
+              {vendorDraftOpen && (
+                <SectionCard
+                  tone="navy"
+                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
+                  title="Map Product Vendor"
+                  subtitle="Select a vendor and enter purchase pricing"
+                  headerAction={
+                    <button className="apm-btn-outline">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+                      Add Vendor
+                    </button>
+                  }
+                >
+                  <div className="apm-grid-2">
+                    <Field label="Select Vendor" required>
+                      <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select vendor"
+                        options={VENDOR_LIST.map(v => ({ value: v.code, label: `${v.code} — ${v.name}` }))}
+                      />
+                    </Field>
+                    <span />
+                  </div>
+
+                  {/* Read-only vendor info grid */}
+                  <div className="apm-vendor-info">
+                    <InfoCell label="Vendor Code"          value={vendorSelected?.code   ?? 'NA'} />
+                    <InfoCell label="Vendor Company Name"  value={vendorSelected?.name   ?? 'NA'} />
+                    <InfoCell label="Company Website"      value={vendorSelected?.website ?? 'NA'} />
+                    <InfoCell label="Contact person name" value={vendorSelected?.contact ?? 'NA'} />
+                    <InfoCell label="Contact no"           value={vendorSelected?.phone  ?? 'NA'} />
+                    <InfoCell label="Email ID"             value={vendorSelected?.email  ?? 'NA'} />
+                    <InfoCell label="Designation"          value={vendorSelected?.designation ?? 'NA'} />
+                    <InfoCell label="Attachments"          value="—" />
+                  </div>
+
+                  <div className="apm-grid-4">
+                    <Field label="Purchase Price" required>
+                      <div className="apm-input-icon">
+                        <span className="apm-input-icon-prefix">₹</span>
+                        <input className="apm-input has-prefix" type="number" placeholder="0.00" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} />
+                      </div>
+                    </Field>
+                    <Field label="GST %">
+                      <SelectInput value={vendorGstPct} onChange={setVendorGstPct} placeholder="0%" options={GST_OPTIONS} />
+                    </Field>
+                    <Field label="GST Amount">
+                      <div className="apm-input-icon">
+                        <span className="apm-input-icon-prefix">₹</span>
+                        <input className="apm-input has-prefix apm-readonly" value={vendorGsta.toFixed(2)} readOnly />
+                      </div>
+                    </Field>
+                    <Field label="Total Amount">
+                      <div className="apm-input-icon">
+                        <span className="apm-input-icon-prefix">₹</span>
+                        <input className="apm-input has-prefix apm-readonly apm-total" value={vendorTota.toFixed(2)} readOnly />
+                      </div>
+                    </Field>
+                  </div>
+
+                  <div className="apm-grid-2">
+                    <Field label="Map Date" icon={<i className="ri-calendar-line" />}>
+                      <div className="apm-master-date">
+                        <MasterDatePicker
+                          value={vendorMapDate}
+                          onChange={setVendorMapDate}
+                          placeholder="Select date"
+                        />
+                      </div>
+                    </Field>
+                    <Field label="Remarks" icon={<i className="ri-chat-3-line" />}>
+                      <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Enter remarks" value={vendorRemarks} onChange={e => setVendorRemarks(e.target.value)} rows={2} />
+                    </Field>
+                  </div>
+
+                  <div className="apm-vendor-draft-foot">
+                    <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={!vendorSelected || !vendorPp}>
+                      Save Vendor
+                    </button>
+                    <button className="apm-btn-ghost" onClick={() => setVendorDraftOpen(false)}>Cancel</button>
+                  </div>
+                </SectionCard>
+              )}
+
+              {/* Mapped vendor table — same shell as the Clients master table */}
+              {vendors.length > 0 && (
+                <div className="apm-vendor-table-card">
+                  <div className="apm-vendor-table-head">
+                    <div className="apm-vendor-table-title">
+                      <i className="ri-links-line" />
+                      Mapped Vendors
+                      <span className="apm-vendor-table-count">{vendors.length}</span>
+                    </div>
+                  </div>
+                  <div className="table-responsive table-card border rounded">
+                    <table className="table align-middle table-nowrap mb-0">
+                      <thead className="table-light">
+                        <tr>
+                          <th scope="col">Sr No</th>
+                          <th scope="col">Product/Vendor Code</th>
+                          <th scope="col">Vendor Company Name</th>
+                          <th scope="col">Company Website</th>
+                          <th scope="col">Purchase Price</th>
+                          <th scope="col">GST %</th>
+                          <th scope="col">GST Amount</th>
+                          <th scope="col">Total Amount</th>
+                          <th scope="col">Map Date</th>
+                          <th scope="col">Remarks</th>
+                          <th scope="col">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {vendors.map((v, i) => (
+                          <tr key={v.id}>
+                            <td><span className="text-muted fs-13">{i + 1}</span></td>
+                            <td><span className="fw-medium text-primary font-monospace fs-13">{v.productCode}/{v.vendorCode}</span></td>
+                            <td><span className="fw-semibold fs-13">{v.vendorName}</span></td>
+                            <td>
+                              {v.website ? (
+                                <a href={`https://${v.website}`} target="_blank" rel="noreferrer" className="text-body text-decoration-none d-inline-flex align-items-center gap-1">
+                                  <i className="ri-global-line text-muted fs-13" />
+                                  <span className="fs-13">{v.website}</span>
+                                </a>
+                              ) : <span className="text-muted fs-13">—</span>}
+                            </td>
+                            <td><span className="fw-medium fs-13">₹{v.purchasePrice.toLocaleString()}</span></td>
+                            <td><span className="fs-13">{v.gstPct.toFixed(2)}%</span></td>
+                            <td><span className="fs-13">₹{v.gstAmt.toFixed(2)}</span></td>
+                            <td><span className="text-success fw-semibold fs-13">₹{v.totalAmt.toLocaleString()}</span></td>
+                            <td>
+                              <span className="d-inline-flex align-items-center gap-1 fs-13">
+                                <i className="ri-calendar-line text-muted" />
+                                <span>{v.mapDate}</span>
+                              </span>
+                            </td>
+                            <td><span className="fs-13">{v.remarks || <span className="text-muted">—</span>}</span></td>
+                            <td>
+                              <div className="hstack gap-1">
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-soft-primary"
+                                  title="Edit"
+                                  aria-label="Edit"
+                                >
+                                  <i className="ri-pencil-line" />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-soft-danger"
+                                  onClick={() => removeVendor(v.id)}
+                                  title="Delete"
+                                  aria-label="Delete"
+                                >
+                                  <i className="ri-delete-bin-line" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </>
-          )}
-
-          {step === 3 && (
-            <>
-              <div className="apm-coretabs">
-                <button className="apm-coretab" onClick={() => { setStep(1); setCoreTab('core'); }}>Product Core Information</button>
-                <button className="apm-coretab" onClick={() => setStep(2)}>For Sales Department</button>
-                <button className="apm-coretab on">Quality &amp; Compliance</button>
-              </div>
-
-              <Step3Quality
-                netWeight={netWeight} setNetWeight={setNetWeight}
-                grossWeight={grossWeight} setGrossWeight={setGrossWeight}
-                length={length} setLength={setLength}
-                width={width} setWidth={setWidth}
-                height={height} setHeight={setHeight}
-                qcRecords={qcRecords} setQcRecords={setQcRecords}
-              />
-            </>
-          )}
-
-          {step === 4 && <Step4Documents documents={documents} setDocuments={setDocuments} />}
-
-          {step === 5 && (
-            <Step5Review
-              name={name} genericName={genericName} brand={brand} segment={segment}
-              hsn={hsn} uom={uom} hazType={hazType} hazClass={hazClass}
-              basePrice={basePrice} gstPct={gstPct} gstAmt={gstAmt} totalPrice={totalPrice}
-              netWeight={netWeight} grossWeight={grossWeight} length={length} width={width} height={height}
-              qcRecords={qcRecords} documents={documents}
-            />
-          )}
-
-          {step === 6 && (
-            <Step6Vendor
-              vendors={vendors} setVendors={setVendors}
-              draft={vendorDraft} setDraft={setVendorDraft}
-            />
           )}
         </div>
 
-        {/* Footer */}
+        {/* ─── Footer ─── */}
         <div className="apm-foot">
-          <button className="apm-btn-cancel" onClick={onClose}>Cancel</button>
+          <div className="apm-foot-left">
+            <button className="apm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+            {error && <span className="apm-foot-error">{error}</span>}
+          </div>
           <div className="apm-foot-right">
-            {step > 1 && (
-              <button className="apm-btn-prev" onClick={prev}>← Previous</button>
+            {(step === 2 || (step === 1 && tab !== 'core')) && (
+              <button
+                className="apm-btn-outline"
+                disabled={saving}
+                onClick={() => {
+                  if (step === 2)              { setStep(1); setTab('quality'); }
+                  else if (tab === 'quality')  { setTab('sales'); }
+                  else if (tab === 'sales')    { setTab('core'); }
+                }}
+              >
+                ← Previous
+              </button>
             )}
-            {step < 6 ? (
-              <button className="apm-btn-next" onClick={next}>Save &amp; Next →</button>
-            ) : (
-              <button className="apm-btn-save" onClick={submitAll}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            {step === 2 ? (
+              <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving}>
+                {saving ? (
+                  <span className="apm-spinner" />
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                )}
                 Save Product
+              </button>
+            ) : (
+              <button
+                className="apm-btn-primary"
+                disabled={saving}
+                onClick={() => {
+                  if (tab === 'core')         saveCore();
+                  else if (tab === 'sales')   saveSales();
+                  else if (tab === 'quality') saveQuality();
+                }}
+              >
+                {saving ? <span className="apm-spinner" /> : null}
+                Save &amp; Next →
               </button>
             )}
           </div>
         </div>
       </div>
+
+      {qcModalOpen && (
+        <QcAddPopup
+          draft={qcDraft}
+          setDraft={setQcDraft}
+          product={{
+            code: productCode || 'P-NEW',
+            name: name || '—',
+            generic: genericName || '—',
+            hsn: labelOf(optHsn, hsnId),
+            segment: labelOf(optSegments, segmentId),
+            hazType: hazType || '—',
+            hazClass: labelOf(optHazClasses, hazClassId),
+            vendorCount: vendors.length,
+          }}
+          onClose={() => setQcModalOpen(false)}
+          onSave={saveQcDraft}
+        />
+      )}
     </div>
-  );
+  ), document.body);
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Subcomponents
- * ════════════════════════════════════════════════════════════════════════ */
-
-function PrevField(props: { label: string; value: string }) {
+/* ──────────────────────────────────────────────────────────────────────────
+ * Sub-components
+ * ────────────────────────────────────────────────────────────────────── */
+function StepperItem(props: { n: number; title: string; sub: string; current: number }) {
+  const { n, title, sub, current } = props;
+  const state = current > n ? 'done' : current === n ? 'active' : 'idle';
   return (
-    <div className="apm-prev-field">
-      <div className="apm-prev-label">{props.label}</div>
-      <div className="apm-prev-value">{props.value}</div>
+    <div className={`apm-step apm-step-${state}`}>
+      <div className="apm-step-num">
+        {state === 'done' ? (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+        ) : n}
+      </div>
+      <div className="apm-step-text">
+        <div className="apm-step-title">{title}</div>
+        <div className="apm-step-sub">{sub}</div>
+      </div>
     </div>
   );
 }
 
-/* ─── STEP 1 — Product Core Information ─── */
-function Step1ProductCore(props: any) {
-  const SEGMENTS = ['Dry Fruits', 'Rice & Grains', 'Spices', 'Coconut Oil', 'Seeds', 'Coffee Beans', 'Pulses', 'Mango Pulp', 'Millets', 'Chemicals'];
-  const HAZ = ['HAZ', 'NON HAZ'];
-  const HAZ_CLASSES = ['Class 1 - Explosives', 'Class 3 - Flammable Liquids', 'Class 4 - Flammable Solids', 'Class 8 - Corrosives', 'Class 9 - Misc Hazardous'];
-  const UOMS = ['Kg', 'L', 'Box', 'Pcs', 'MT', 'Dozen'];
-  const HSN = ['08013100', '10063020', '09103030', '15131100', '12074090', '09011190', '07136000', '08045010'];
-  const CONDITIONS = ['New', 'Refurbished', 'Damaged', 'Used'];
-  const PACKAGING = ['Carton Box', 'Plastic Pouch', 'Glass Jar', 'Drum', 'Sack/Bag', 'Pallet'];
-
-  return (
-    <div className="apm-panel">
-      <div className="apm-panel-head">
-        <div className="apm-panel-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
-        </div>
-        <div>
-          <div className="apm-panel-title">Product Core Information</div>
-          <div className="apm-panel-sub">Basic identity, classification and media</div>
-        </div>
-      </div>
-
-      <div className="apm-grid-2">
-        <Field label="Product Name" required>
-          <input className="apm-input" placeholder="Enter product name" value={props.name} onChange={(e) => props.setName(e.target.value)} />
-        </Field>
-        <Field label="Generic Name" required>
-          <input className="apm-input" placeholder="Enter generic name" value={props.genericName} onChange={(e) => props.setGenericName(e.target.value)} />
-        </Field>
-        <Field label="Product Printable Description" required full>
-          <textarea className="apm-textarea" placeholder="Enter printable description" value={props.description} onChange={(e) => props.setDescription(e.target.value)} />
-        </Field>
-        <Field label="Make / Brand / Specifications" required>
-          <input className="apm-input" placeholder="Make / Brand / Specifications" value={props.brand} onChange={(e) => props.setBrand(e.target.value)} />
-        </Field>
-        <Field label="Segment" required addable>
-          <select className="apm-input" value={props.segment} onChange={(e) => props.setSegment(e.target.value)}>
-            <option value="">Select</option>
-            {SEGMENTS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </Field>
-        <Field label="Product Primary Image" required>
-          <div className="apm-upload">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-            Click to upload primary image
-          </div>
-        </Field>
-        <Field label="Product Secondary Images" required>
-          <div className="apm-upload">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-            You Can Add Multiple Attachments
-          </div>
-        </Field>
-      </div>
-
-      <div className="apm-subpanel">
-        <div className="apm-subpanel-label">PRODUCT GENERAL INFORMATION</div>
-        <div className="apm-grid-3">
-          <Field label="HAZ / NON HAZ" required>
-            <select className="apm-input" value={props.hazType} onChange={(e) => props.setHazType(e.target.value)}>
-              <option value="">Select</option>
-              {HAZ.map(h => <option key={h}>{h}</option>)}
-            </select>
-          </Field>
-          <Field label="HAZ Class" required addable>
-            <select className="apm-input" value={props.hazClass} onChange={(e) => props.setHazClass(e.target.value)}>
-              <option value="">Select</option>
-              {HAZ_CLASSES.map(h => <option key={h}>{h}</option>)}
-            </select>
-          </Field>
-          <Field label="UOM" required addable>
-            <select className="apm-input" value={props.uom} onChange={(e) => props.setUom(e.target.value)}>
-              <option value="">Select</option>
-              {UOMS.map(u => <option key={u}>{u}</option>)}
-            </select>
-          </Field>
-          <Field label="HSN / SAC Code" required addable>
-            <select className="apm-input" value={props.hsn} onChange={(e) => props.setHsn(e.target.value)}>
-              <option value="">Select</option>
-              {HSN.map(h => <option key={h}>{h}</option>)}
-            </select>
-          </Field>
-          <Field label="Condition" required addable>
-            <select className="apm-input" value={props.condition} onChange={(e) => props.setCondition(e.target.value)}>
-              <option value="">Select</option>
-              {CONDITIONS.map(c => <option key={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Packaging Material" required addable>
-            <select className="apm-input" value={props.packagingMaterial} onChange={(e) => props.setPackagingMaterial(e.target.value)}>
-              <option value="">Select</option>
-              {PACKAGING.map(p => <option key={p}>{p}</option>)}
-            </select>
-          </Field>
-        </div>
-      </div>
-
-      <Field label="Confidential Info" full>
-        <textarea className="apm-textarea" placeholder="Confidential information" value={props.confidential} onChange={(e) => props.setConfidential(e.target.value)} />
-      </Field>
-    </div>
-  );
-}
-
-function Step1ForSales(_props: { preview: boolean }) {
-  return (
-    <div className="apm-coretab-preview">
-      <div className="apm-coretab-preview-icon">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.2"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
-      </div>
-      <div className="apm-coretab-preview-title">For Sales Department</div>
-      <div className="apm-coretab-preview-desc">Pricing &amp; GST configuration will open in <strong>Step 2</strong>. Complete Product Core Information first to continue.</div>
-    </div>
-  );
-}
-
-function Step1QualityPreview(_props: { preview: boolean }) {
-  return (
-    <div className="apm-coretab-preview">
-      <div className="apm-coretab-preview-icon">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.2"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-      </div>
-      <div className="apm-coretab-preview-title">Quality &amp; Compliance</div>
-      <div className="apm-coretab-preview-desc">Box matrix, QC records and compliance certifications will open in <strong>Step 3</strong>.</div>
-    </div>
-  );
-}
-
-/* ─── STEP 2 — Sales Configuration ─── */
-function Step2Sales(props: {
-  basePrice: number; setBasePrice: (n: number) => void;
-  gstPct: number; setGstPct: (n: number) => void;
-  gstAmt: number; totalPrice: number;
-  markBottom: string; setMarkBottom: (s: string) => void;
+function SectionCard(props: {
+  tone: 'blue' | 'violet' | 'amber' | 'green' | 'navy';
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+  headerAction?: ReactNode;
+  children: ReactNode;
 }) {
-  const GST_RATES = ['0', '5', '12', '18', '28'];
   return (
-    <div className="apm-panel">
-      <div className="apm-panel-head">
-        <div className="apm-panel-icon apm-panel-icon-purple">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
-        </div>
-        <div>
-          <div className="apm-panel-title">For Sales Department</div>
-          <div className="apm-panel-sub">Pricing, GST and sales configuration</div>
-        </div>
-      </div>
-
-      <div className="apm-grid-2">
-        <Field label="Product Selling Price (Without GST)" required>
-          <div className="apm-input-prefix">
-            <span>₹</span>
-            <input className="apm-input" type="number" min="0" placeholder="Enter base price" value={props.basePrice || ''} onChange={(e) => props.setBasePrice(Number(e.target.value))} />
-          </div>
-        </Field>
-        <Field label="GST %" required addable>
-          <select className="apm-input" value={props.gstPct} onChange={(e) => props.setGstPct(Number(e.target.value))}>
-            <option value="0">Select</option>
-            {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
-          </select>
-        </Field>
-        <Field label="GST Amount" required>
-          <div className="apm-input-prefix apm-input-readonly">
-            <span>₹</span>
-            <input className="apm-input" value={props.gstAmt} readOnly />
-          </div>
-        </Field>
-        <Field label="Total Selling Price" required>
-          <div className="apm-input-prefix apm-input-total">
-            <span>₹</span>
-            <input className="apm-input" value={props.totalPrice} readOnly />
-          </div>
-        </Field>
-        <Field label="Mark Bottom / Non Bottom" required full>
-          <select className="apm-input" value={props.markBottom} onChange={(e) => props.setMarkBottom(e.target.value)}>
-            <option value="">Select</option>
-            <option>Bottom</option>
-            <option>Non Bottom</option>
-          </select>
-        </Field>
-      </div>
-    </div>
-  );
-}
-
-/* ─── STEP 3 — Quality & Compliance ─── */
-function Step3Quality(props: {
-  netWeight: number; setNetWeight: (n: number) => void;
-  grossWeight: number; setGrossWeight: (n: number) => void;
-  length: number; setLength: (n: number) => void;
-  width: number; setWidth: (n: number) => void;
-  height: number; setHeight: (n: number) => void;
-  qcRecords: QcRecord[]; setQcRecords: (q: QcRecord[]) => void;
-}) {
-  const [qcDraft, setQcDraft] = useState({ name: '', standard: '', mandatory: false });
-  const addQc = () => {
-    if (!qcDraft.name) return;
-    props.setQcRecords([...props.qcRecords, { id: Date.now(), ...qcDraft }]);
-    setQcDraft({ name: '', standard: '', mandatory: false });
-  };
-  const removeQc = (id: number) => props.setQcRecords(props.qcRecords.filter(q => q.id !== id));
-
-  return (
-    <>
-      <div className="apm-panel apm-panel-orange">
-        <div className="apm-panel-head">
-          <div className="apm-panel-icon apm-panel-icon-orange">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" /></svg>
-          </div>
+    <div className={`apm-section apm-section-${props.tone}`}>
+      <div className="apm-section-head">
+        <div className="apm-section-head-left">
+          <div className="apm-section-icon">{props.icon}</div>
           <div>
-            <div className="apm-panel-title">Box Matrix Details</div>
-            <div className="apm-panel-sub">Physical dimensions and weight specifications</div>
+            <div className="apm-section-title">{props.title}</div>
+            <div className="apm-section-sub">{props.subtitle}</div>
           </div>
         </div>
-        <div className="apm-grid-5">
-          <Field label="Net Weight (kg)">
-            <input className="apm-input apm-input-orange" type="number" min="0" placeholder="Net Weight" value={props.netWeight || ''} onChange={(e) => props.setNetWeight(Number(e.target.value))} />
-          </Field>
-          <Field label="Gross Weight (kg)">
-            <input className="apm-input apm-input-orange" type="number" min="0" placeholder="Gross Weight" value={props.grossWeight || ''} onChange={(e) => props.setGrossWeight(Number(e.target.value))} />
-          </Field>
-          <Field label="Length (cm)">
-            <input className="apm-input apm-input-orange" type="number" min="0" placeholder="Length" value={props.length || ''} onChange={(e) => props.setLength(Number(e.target.value))} />
-          </Field>
-          <Field label="Width (cm)">
-            <input className="apm-input apm-input-orange" type="number" min="0" placeholder="Width" value={props.width || ''} onChange={(e) => props.setWidth(Number(e.target.value))} />
-          </Field>
-          <Field label="Height (cm)">
-            <input className="apm-input apm-input-orange" type="number" min="0" placeholder="Height" value={props.height || ''} onChange={(e) => props.setHeight(Number(e.target.value))} />
-          </Field>
-        </div>
+        {props.headerAction}
       </div>
+      <div className="apm-section-body">{props.children}</div>
+    </div>
+  );
+}
 
-      <div className="apm-panel apm-panel-green">
-        <div className="apm-panel-head">
-          <div className="apm-panel-head-left-grouped">
-            <div className="apm-panel-icon apm-panel-icon-green">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-            </div>
-            <div>
-              <div className="apm-panel-title">QC &amp; Compliance</div>
-              <div className="apm-panel-sub">Quality standards and compliance certifications</div>
-            </div>
-          </div>
-          <button className="apm-add-qc" onClick={addQc} disabled={!qcDraft.name}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            Add QC
-          </button>
-        </div>
-
-        <div className="apm-qc-form">
-          <input className="apm-input" placeholder="QC name (e.g. Moisture, Aflatoxin)" value={qcDraft.name} onChange={(e) => setQcDraft({ ...qcDraft, name: e.target.value })} />
-          <input className="apm-input" placeholder="Standard / threshold" value={qcDraft.standard} onChange={(e) => setQcDraft({ ...qcDraft, standard: e.target.value })} />
-          <label className="apm-qc-mand">
-            <input type="checkbox" checked={qcDraft.mandatory} onChange={(e) => setQcDraft({ ...qcDraft, mandatory: e.target.checked })} />
-            Mandatory
-          </label>
-        </div>
-
-        {props.qcRecords.length === 0 ? (
-          <div className="apm-qc-empty">No QC records. Click "Add QC" to begin.</div>
-        ) : (
-          <table className="apm-qc-table">
-            <thead><tr><th>Name</th><th>Standard</th><th>Mandatory</th><th></th></tr></thead>
-            <tbody>
-              {props.qcRecords.map(q => (
-                <tr key={q.id}>
-                  <td>{q.name}</td>
-                  <td>{q.standard || '—'}</td>
-                  <td>{q.mandatory ? <span className="apm-yes">Yes</span> : <span className="apm-no">No</span>}</td>
-                  <td><button className="apm-row-del" onClick={() => removeQc(q.id)}>Remove</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+function Field(props: {
+  label: string;
+  required?: boolean;
+  addNew?: boolean;
+  icon?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <label className="apm-field">
+      <span className="apm-field-label">
+        {props.label} {props.required && <span className="apm-req">*</span>}
+        {props.addNew && (
+          <button type="button" className="apm-field-plus" aria-label="Add new option" tabIndex={-1} onClick={(e) => e.preventDefault()}>+</button>
         )}
-      </div>
-    </>
+      </span>
+      {props.icon ? (
+        <div className="apm-master-field">
+          <span className="apm-master-field-icon">{props.icon}</span>
+          {props.children}
+        </div>
+      ) : props.children}
+    </label>
   );
 }
 
-/* ─── STEP 4 — Documents ─── */
-function Step4Documents(props: { documents: Array<{ name: string; type: string }>; setDocuments: (d: Array<{ name: string; type: string }>) => void; }) {
-  const TYPES = ['MSDS', 'COA', 'Phytosanitary', 'Fumigation', 'Insurance', 'Origin Certificate', 'Other'];
-  const add = (type: string) => props.setDocuments([...props.documents, { name: `Sample ${type} Document.pdf`, type }]);
-  const remove = (i: number) => props.setDocuments(props.documents.filter((_, idx) => idx !== i));
+type Opt = string | { value: string; label: string };
+function SelectInput(props: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  options: Opt[];
+  disabled?: boolean;
+}) {
+  const normalized = props.options.map(o =>
+    typeof o === 'string' ? { value: o, label: o } : o
+  );
   return (
-    <div className="apm-panel">
-      <div className="apm-panel-head">
-        <div className="apm-panel-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-        </div>
-        <div>
-          <div className="apm-panel-title">Document Upload</div>
-          <div className="apm-panel-sub">Attach MSDS, COA, certificates and other compliance docs</div>
-        </div>
-      </div>
+    <div className="apm-master-select">
+      <MasterSelect
+        value={props.value}
+        options={normalized}
+        placeholder={props.placeholder ?? 'Select'}
+        onChange={props.onChange}
+        disabled={props.disabled}
+      />
+    </div>
+  );
+}
 
-      <div className="apm-doc-types">
-        {TYPES.map(t => (
-          <button key={t} className="apm-doc-type" onClick={() => add(t)}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            {t}
-          </button>
-        ))}
+function UploadDropzone(props: {
+  label: string;
+  required?: boolean;
+  hint: string;
+  multiple: boolean;
+  preview: string[];
+  onPick: (e: ChangeEvent<HTMLInputElement>) => void;
+  onRemove: (index: number) => void;
+}) {
+  return (
+    <label className="apm-field apm-upload-field">
+      <span className="apm-field-label">
+        {props.label} {props.required && <span className="apm-req">*</span>}
+      </span>
+      <div className="apm-dropzone">
+        <input
+          type="file"
+          accept="image/*"
+          multiple={props.multiple}
+          onChange={props.onPick}
+          className="apm-dropzone-input"
+        />
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="17 8 12 3 7 8" />
+          <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
+        <span>{props.hint}</span>
       </div>
-
-      {props.documents.length === 0 ? (
-        <div className="apm-upload apm-upload-big">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-          <div>
-            <div className="apm-upload-big-title">Drop files here or click a document type above</div>
-            <div className="apm-upload-big-sub">Accepted: PDF, JPG, PNG, DOCX · up to 10 MB each</div>
-          </div>
+      {props.preview.length > 0 && (
+        <div className="apm-upload-preview">
+          {props.preview.map((src, i) => (
+            <div key={i} className="apm-upload-chip">
+              <img src={src} alt="" />
+              <button type="button" onClick={(e) => { e.preventDefault(); props.onRemove(i); }} aria-label="Remove">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+          ))}
         </div>
-      ) : (
-        <div className="apm-doc-list">
-          {props.documents.map((d, i) => (
-            <div key={i} className="apm-doc-row">
-              <div className="apm-doc-icon">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+      )}
+    </label>
+  );
+}
+
+function InfoCell(props: { label: string; value: string }) {
+  return (
+    <div className="apm-info-cell">
+      <span className="apm-info-key">{props.label}:</span>
+      <span className="apm-info-val">{props.value}</span>
+    </div>
+  );
+}
+
+type PrevStage = {
+  name: string;
+  tone: 'violet' | 'amber' | 'green';
+  fields: { label: string; value: string }[];
+};
+
+function PreviousStages(props: {
+  open: boolean;
+  onToggle: () => void;
+  completed: number;
+  total: number;
+  stages: PrevStage[];
+}) {
+  return (
+    <div className="apm-prev">
+      <div className="apm-prev-head">
+        <div className="apm-prev-title">
+          <span className="apm-prev-check">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+          </span>
+          What you did in previous stages
+          <span className="apm-prev-chip">Stage {props.completed} of {props.total} Complete</span>
+        </div>
+        <button className="apm-prev-toggle" onClick={props.onToggle}>{props.open ? 'Hide' : 'Show'}</button>
+      </div>
+      {props.open && (
+        <div className="apm-prev-body">
+          {props.stages.map(s => (
+            <div key={s.name} className={`apm-prev-stage tone-${s.tone}`}>
+              <div className="apm-prev-stage-label">⊕ {s.name}</div>
+              <div className="apm-prev-grid">
+                {s.fields.map(f => (
+                  <div key={f.label} className="apm-prev-field">
+                    <div className="apm-prev-field-label">{f.label}</div>
+                    <div className="apm-prev-field-value">{f.value}</div>
+                  </div>
+                ))}
               </div>
-              <div>
-                <div className="apm-doc-name">{d.name}</div>
-                <div className="apm-doc-meta">{d.type} · uploaded just now</div>
-              </div>
-              <button className="apm-row-del" onClick={() => remove(i)}>Remove</button>
             </div>
           ))}
         </div>
@@ -652,598 +1405,912 @@ function Step4Documents(props: { documents: Array<{ name: string; type: string }
   );
 }
 
-/* ─── STEP 5 — Review ─── */
-function Step5Review(props: any) {
-  return (
-    <div className="apm-panel">
-      <div className="apm-panel-head">
-        <div className="apm-panel-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><circle cx="12" cy="12" r="10" /><polyline points="9 12 11 14 15 10" /></svg>
-        </div>
-        <div>
-          <div className="apm-panel-title">Review &amp; Validation</div>
-          <div className="apm-panel-sub">Confirm every detail before saving</div>
-        </div>
-      </div>
-
-      <div className="apm-review-grid">
-        <ReviewRow label="Product Name" value={props.name} />
-        <ReviewRow label="Generic Name" value={props.genericName} />
-        <ReviewRow label="Brand" value={props.brand} />
-        <ReviewRow label="Segment" value={props.segment} />
-        <ReviewRow label="HSN/SAC" value={props.hsn} />
-        <ReviewRow label="UOM" value={props.uom} />
-        <ReviewRow label="HAZ / Non HAZ" value={props.hazType} />
-        <ReviewRow label="HAZ Class" value={props.hazClass} />
-        <ReviewRow label="Base Price" value={`₹${props.basePrice}`} />
-        <ReviewRow label="GST %" value={`${props.gstPct}%`} />
-        <ReviewRow label="GST Amount" value={`₹${props.gstAmt}`} />
-        <ReviewRow label="Total Price" value={`₹${props.totalPrice}`} highlight />
-        <ReviewRow label="Net Weight" value={`${props.netWeight} kg`} />
-        <ReviewRow label="Gross Weight" value={`${props.grossWeight} kg`} />
-        <ReviewRow label="Dimensions" value={`${props.length} × ${props.width} × ${props.height} cm`} />
-        <ReviewRow label="QC Records" value={`${props.qcRecords.length}`} />
-        <ReviewRow label="Documents Uploaded" value={`${props.documents.length}`} />
-      </div>
-
-      <div className="apm-review-note">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803d" strokeWidth="2.3"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-        All required fields look complete. Move to <strong>Vendor</strong> to link sourcing.
-      </div>
-    </div>
-  );
-}
-
-function ReviewRow(props: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <div className={`apm-review-cell ${props.highlight ? 'highlight' : ''}`}>
-      <div className="apm-review-label">{props.label}</div>
-      <div className="apm-review-value">{props.value || '—'}</div>
-    </div>
-  );
-}
-
-/* ─── STEP 6 — Vendor ─── */
-function Step6Vendor(props: {
-  vendors: Array<{ name: string; price: number; lead: string }>;
-  setVendors: (v: Array<{ name: string; price: number; lead: string }>) => void;
-  draft: { name: string; price: number; lead: string };
-  setDraft: (d: { name: string; price: number; lead: string }) => void;
-}) {
-  const add = () => {
-    if (!props.draft.name) return;
-    props.setVendors([...props.vendors, props.draft]);
-    props.setDraft({ name: '', price: 0, lead: '' });
+/* ──────────────────────────────────────────────────────────────────────────
+ * QC Add popup — opens above the parent modal
+ * ────────────────────────────────────────────────────────────────────── */
+function QcAddPopup(props: {
+  draft: Omit<QcRecord, 'id'>;
+  setDraft: (next: Omit<QcRecord, 'id'>) => void;
+  product: {
+    code: string; name: string; generic: string; hsn: string;
+    segment: string; hazType: string; hazClass: string; vendorCount: number;
   };
-  const remove = (i: number) => props.setVendors(props.vendors.filter((_, idx) => idx !== i));
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const { draft, setDraft, product, onClose, onSave } = props;
+  const set = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
+    setDraft({ ...draft, [key]: value });
+
+  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) set('attachmentName', f.name);
+  };
+
+  return createPortal((
+    <div className="apm-qc-backdrop" onClick={onClose}>
+      <div className="apm-qc-popup" onClick={(e) => e.stopPropagation()}>
+        <div className="apm-qc-popup-head">
+          <div className="apm-qc-popup-title">
+            <i className="ri-shield-check-line" />
+            Add QC Record
+          </div>
+          <button className="apm-close apm-qc-close" onClick={onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+
+        {/* Product summary strip */}
+        <div className="apm-qc-product-bar">
+          <QcProd label="Product Code"  value={product.code} />
+          <QcProd label="Product Name"  value={product.name} />
+          <QcProd label="Generic Name"  value={product.generic} />
+          <QcProd label="HSN/SAC Code"  value={product.hsn} />
+          <QcProd label="Segment"       value={product.segment} />
+          <QcProd label="Haz/Non-Haz"   value={product.hazType} />
+          <QcProd label="Haz Class"     value={product.hazClass} />
+          <QcProd label="Product Vendors" value={String(product.vendorCount)} accent />
+        </div>
+
+        <div className="apm-qc-body">
+          <div className="apm-qc-row-3">
+            <Field label="QC Name" required>
+              <SelectInput
+                value={draft.name}
+                onChange={(v) => set('name', v)}
+                placeholder="Select QC"
+                options={QC_NAMES}
+              />
+            </Field>
+            <Field label="Issued By" required icon={<i className="ri-government-line" />}>
+              <input className="apm-input apm-input-mf" placeholder="Authority" value={draft.issuedBy} onChange={e => set('issuedBy', e.target.value)} />
+            </Field>
+            <Field label={`Attachment ( Only One File Allowed )`} required>
+              <div className="apm-qc-file">
+                <input id="qc-file-input" type="file" className="apm-qc-file-input" onChange={onPickFile} />
+                <label htmlFor="qc-file-input" className="apm-qc-file-trigger">
+                  <i className="ri-attachment-2" />
+                  <span>{draft.attachmentName || 'Choose file'}</span>
+                </label>
+              </div>
+            </Field>
+          </div>
+
+          <Field label="QC Purpose" required icon={<i className="ri-file-list-3-line" />}>
+            <input className="apm-input apm-input-mf" placeholder="Certificate of Analysis" value={draft.purpose} onChange={e => set('purpose', e.target.value)} />
+          </Field>
+
+          <div className="apm-qc-row-2">
+            <Field label="QA Testing Parameter">
+              <textarea
+                className="apm-input apm-textarea apm-qc-textarea"
+                placeholder="Enter testing parameter…"
+                value={draft.testingParameter}
+                onChange={e => set('testingParameter', e.target.value)}
+              />
+            </Field>
+            <Field label="Minimum Acceptance Criteria">
+              <textarea
+                className="apm-input apm-textarea apm-qc-textarea"
+                placeholder="Enter minimum acceptance criteria…"
+                value={draft.minAcceptance}
+                onChange={e => set('minAcceptance', e.target.value)}
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div className="apm-qc-foot">
+          <button
+            className="apm-qc-save"
+            onClick={onSave}
+            disabled={!draft.name || !draft.purpose || !draft.issuedBy}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
+}
+
+function QcProd(props: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="apm-panel">
-      <div className="apm-panel-head">
-        <div className="apm-panel-icon">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><circle cx="9" cy="7" r="4" /><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-        </div>
-        <div>
-          <div className="apm-panel-title">Vendor Mapping</div>
-          <div className="apm-panel-sub">Link approved vendors and their commercial terms</div>
-        </div>
-      </div>
-
-      <div className="apm-vendor-form">
-        <input className="apm-input" placeholder="Vendor name" value={props.draft.name} onChange={(e) => props.setDraft({ ...props.draft, name: e.target.value })} />
-        <input className="apm-input" type="number" min="0" placeholder="Price per UOM" value={props.draft.price || ''} onChange={(e) => props.setDraft({ ...props.draft, price: Number(e.target.value) })} />
-        <input className="apm-input" placeholder="Lead time (e.g. 7 days)" value={props.draft.lead} onChange={(e) => props.setDraft({ ...props.draft, lead: e.target.value })} />
-        <button className="apm-add-qc" onClick={add} disabled={!props.draft.name}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Map Vendor
-        </button>
-      </div>
-
-      {props.vendors.length === 0 ? (
-        <div className="apm-qc-empty">No vendors mapped yet. Add at least one vendor to finish.</div>
-      ) : (
-        <table className="apm-qc-table">
-          <thead><tr><th>Vendor</th><th>Price</th><th>Lead Time</th><th></th></tr></thead>
-          <tbody>
-            {props.vendors.map((v, i) => (
-              <tr key={i}>
-                <td>{v.name}</td>
-                <td>₹{v.price}</td>
-                <td>{v.lead || '—'}</td>
-                <td><button className="apm-row-del" onClick={() => remove(i)}>Unmap</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+    <div className="apm-qc-prod">
+      <span className="apm-qc-prod-key">{props.label} :</span>
+      <span className={`apm-qc-prod-val ${props.accent ? 'accent' : ''}`}>{props.value}</span>
     </div>
   );
 }
 
-/* ─── Field wrapper ─── */
-function Field(props: { label: string; required?: boolean; addable?: boolean; full?: boolean; children: React.ReactNode }) {
-  return (
-    <div className={`apm-field ${props.full ? 'apm-field-full' : ''}`}>
-      <label className="apm-field-label">
-        {props.label}
-        {props.required && <span className="apm-req-star"> *</span>}
-        {props.addable && <span className="apm-addable">+</span>}
-      </label>
-      {props.children}
-    </div>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════════════════════
- * Scoped CSS
- * ════════════════════════════════════════════════════════════════════════ */
+/* ──────────────────────────────────────────────────────────────────────────
+ * Scoped CSS — light + dark mode
+ * ────────────────────────────────────────────────────────────────────── */
 const SCOPED_CSS = `
 .apm-backdrop {
-  position: fixed; inset: 0; z-index: 10000;
-  background: rgba(15, 23, 42, .58);
+  position: fixed; inset: 0;
+  /* Above Velzon topbar (1002) and vertical-menu overlays (1003-1004). */
+  z-index: 1090;
+  background: rgba(15, 23, 42, .55);
   backdrop-filter: blur(3px);
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px; overflow-y: auto;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 24px 20px;
+  overflow-y: auto;
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
 }
-.apm-backdrop *, .apm-backdrop *::before, .apm-backdrop *::after { box-sizing: border-box; }
 .apm-modal {
-  width: 100%; max-width: 1180px;
-  background: #fff; border-radius: 18px;
-  box-shadow: 0 28px 64px rgba(15, 23, 42, .38);
-  display: flex; flex-direction: column;
-  max-height: calc(100vh - 48px); overflow: hidden;
-}
-
-/* Header */
-.apm-head {
-  padding: 18px 22px;
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  color: #fff;
-  background: linear-gradient(110deg, #6d28d9 0%, #5b21b6 60%, #4c1d95 100%);
-}
-.apm-head-left { display: flex; align-items: center; gap: 14px; }
-.apm-head-icon {
-  width: 44px; height: 44px; border-radius: 12px;
-  background: rgba(255,255,255,.15); border: 1.5px solid rgba(255,255,255,.25);
-  display: flex; align-items: center; justify-content: center; color: #fff;
-}
-.apm-title { font-size: 17px; font-weight: 800; letter-spacing: -.3px; }
-.apm-sub   { font-size: 12px; opacity: .85; margin-top: 2px; }
-
-.apm-head-right { display: flex; align-items: center; gap: 10px; }
-.apm-map-vendor {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 14px; border-radius: 9px;
-  background: rgba(255,255,255,.12); border: 1.5px solid rgba(255,255,255,.25);
-  color: #fff; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
-  transition: background .15s;
-}
-.apm-map-vendor:hover { background: rgba(255,255,255,.22); }
-.apm-close {
-  width: 32px; height: 32px; border-radius: 8px;
-  background: rgba(255,255,255,.12); border: 1.5px solid rgba(255,255,255,.25);
-  color: #fff; display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: background .15s;
-}
-.apm-close:hover { background: rgba(255,255,255,.22); }
-
-/* Stepper */
-.apm-stepper {
-  display: flex; align-items: stretch; gap: 0;
-  padding: 14px 22px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
-  overflow-x: auto;
-}
-.apm-stepper-item-wrap { display: flex; align-items: center; flex: 1; min-width: 200px; }
-.apm-step {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 14px; border-radius: 12px;
-  border: 1.5px solid transparent;
+  width: 100%; max-width: 1140px;
+  max-height: calc(100vh - 48px);
+  margin: auto;
   background: #fff;
-  transition: all .15s;
-  flex: 1;
+  border-radius: 18px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .45);
+  color: #1e1b4b;
 }
+.apm-modal *, .apm-modal *::before, .apm-modal *::after { box-sizing: border-box; }
+
+/* ─── Header ─── */
+.apm-head {
+  position: relative;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 18px 22px;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,0.10) 0%, transparent 35%, transparent 65%, rgba(0,0,0,0.08) 100%),
+    linear-gradient(135deg, #5b21b6 0%, #6d28d9 35%, #7c3aed 70%, #8b5cf6 100%);
+  color: #fff;
+}
+.apm-head-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.apm-head-icon {
+  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.25);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(6px);
+}
+.apm-title { font-size: 18px; font-weight: 800; letter-spacing: -.2px; }
+.apm-sub   { font-size: 12px; color: rgba(255,255,255,.82); margin-top: 2px; }
+.apm-close {
+  width: 34px; height: 34px; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.12); color: #fff;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s, transform .12s;
+}
+.apm-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+
+/* ─── Stepper ─── */
+.apm-stepper {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 22px;
+  background: #faf5ff;
+  border-bottom: 1px solid #ede9fe;
+}
+.apm-step { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; border-radius: 12px; }
 .apm-step-num {
-  width: 30px; height: 30px; border-radius: 50%;
+  width: 32px; height: 32px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 800;
-  flex-shrink: 0;
+  background: #ede9fe; color: #6b7280; flex-shrink: 0;
+  border: 2px solid #ddd6fe;
 }
-.apm-step-title { font-size: 12.5px; font-weight: 800; line-height: 1.2; }
-.apm-step-sub   { font-size: 10.5px; color: #94a3b8; margin-top: 1px; }
-
-.apm-step-idle { background: #fff; border-color: #e2e8f0; }
-.apm-step-idle .apm-step-num   { background: #f1f5f9; color: #94a3b8; }
-.apm-step-idle .apm-step-title { color: #94a3b8; }
-
-.apm-step-active { background: #f5f3ff; border-color: #c4b5fd; box-shadow: 0 4px 12px rgba(124,58,237,.15); }
-.apm-step-active .apm-step-num { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; }
-.apm-step-active .apm-step-title { color: #6d28d9; }
-
-.apm-step-done .apm-step-num { background: linear-gradient(135deg, #4ade80, #22c55e); color: #fff; }
-.apm-step-done .apm-step-title { color: #15803d; }
-.apm-step-done { background: #f0fdf4; border-color: #bbf7d0; }
-
+.apm-step-text { min-width: 0; }
+.apm-step-title { font-size: 12.5px; font-weight: 800; color: #1e1b4b; }
+.apm-step-sub   { font-size: 10.5px; color: #6b7280; }
+.apm-step-active .apm-step-num { background: linear-gradient(135deg,#8b5cf6,#7c3aed); color:#fff; border-color: #7c3aed; box-shadow: 0 4px 12px rgba(124,58,237,.35); }
+.apm-step-active .apm-step-title { color: #5b21b6; }
+.apm-step-done   .apm-step-num { background: #16a34a; color:#fff; border-color: #16a34a; }
+.apm-step-done   .apm-step-title { color: #15803d; }
 .apm-step-line {
-  flex: 0 0 20px; height: 2px;
-  background: #e2e8f0;
-  margin: 0 6px;
+  flex: 1; height: 2px; background: #ddd6fe; border-radius: 2px;
+  transition: background .25s;
 }
-.apm-step-line.done { background: linear-gradient(90deg, #4ade80, #22c55e); }
+.apm-step-line.done { background: #16a34a; }
 
-/* Body */
+/* ─── Body ─── */
 .apm-body {
-  padding: 18px 22px;
-  overflow-y: auto;
-  flex: 1;
-  background: #fff;
-  display: flex; flex-direction: column; gap: 14px;
+  flex: 1; overflow-y: auto;
+  padding: 18px 22px 22px;
+  background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
+  scrollbar-width: thin; scrollbar-color: #c4b5fd transparent;
 }
+.apm-body::-webkit-scrollbar { width: 8px; }
+.apm-body::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 99px; }
 
-/* Previous stages summary */
-.apm-prev {
-  background: linear-gradient(110deg, #f0fdf4 0%, #ecfdf5 100%);
-  border: 1.5px solid #bbf7d0;
-  border-radius: 12px;
-  padding: 14px 16px;
+/* ─── Tabs ─── */
+.apm-tabs {
+  display: flex; gap: 4px; margin-bottom: 14px;
+  border-bottom: 1.5px solid #ddd6fe;
+  padding-bottom: 0;
 }
-.apm-prev-head { display: flex; align-items: center; justify-content: space-between; }
-.apm-prev-title {
-  display: inline-flex; align-items: center; gap: 10px;
-  font-size: 13px; font-weight: 800; color: #15803d;
-}
-.apm-prev-title > svg {
-  background: linear-gradient(135deg, #4ade80, #22c55e);
-  border-radius: 50%;
-  padding: 4px;
-  width: 22px; height: 22px;
-}
-.apm-prev-chip {
-  display: inline-flex; align-items: center;
-  padding: 3px 10px; border-radius: 99px;
-  background: rgba(34,197,94,.15); border: 1px solid #86efac;
-  font-size: 10.5px; font-weight: 800; color: #15803d;
-}
-.apm-prev-toggle {
-  border: 1.5px solid #bbf7d0;
-  background: #fff; color: #15803d;
-  font-family: inherit; font-size: 11.5px; font-weight: 800;
-  padding: 5px 14px; border-radius: 99px; cursor: pointer;
-}
-.apm-prev-section-label {
-  font-size: 11px; font-weight: 800; letter-spacing: .06em;
-  color: #2563eb; margin-top: 12px; margin-bottom: 8px;
-}
-.apm-prev-grid {
-  display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px;
-}
-.apm-prev-grid-sales { grid-template-columns: repeat(5, 1fr); }
-.apm-prev-field {
-  background: #fff;
-  border: 1.5px solid #e2e8f0; border-radius: 9px;
-  padding: 8px 10px;
-}
-.apm-prev-label { font-size: 9.5px; font-weight: 800; letter-spacing: .05em; color: #94a3b8; text-transform: uppercase; }
-.apm-prev-value { font-size: 12px; font-weight: 800; color: #5b21b6; margin-top: 2px; }
-
-/* Tabs inside step 1/2/3 */
-.apm-coretabs {
-  display: flex; align-items: center; gap: 0;
-  border-bottom: 1.5px solid #e2e8f0;
-}
-.apm-coretab {
+.apm-tab {
+  background: none; border: none;
   padding: 10px 16px;
-  border: none; background: transparent;
-  color: #94a3b8;
-  font-family: inherit; font-size: 13px; font-weight: 800;
-  cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 700;
+  color: #94a3b8; cursor: pointer;
   border-bottom: 2.5px solid transparent;
   margin-bottom: -1.5px;
   transition: color .15s, border-color .15s;
 }
-.apm-coretab:hover { color: #6d28d9; }
-.apm-coretab.on {
-  color: #7c3aed;
-  border-bottom-color: #7c3aed;
-}
+.apm-tab:hover { color: #6d28d9; }
+.apm-tab.on { color: #5b21b6; border-bottom-color: #7c3aed; }
 
-/* Generic panel */
-.apm-panel {
-  border: 1.5px solid #ddd6fe;
-  border-radius: 12px;
-  padding: 14px 16px;
+/* ─── Section card ─── */
+.apm-section {
   background: #fff;
-  position: relative;
-}
-.apm-panel::before {
-  content: '';
-  position: absolute; left: 0; top: 16px; bottom: 16px;
-  width: 3px; border-radius: 0 3px 3px 0;
-  background: linear-gradient(180deg, #a78bfa, #7c3aed);
-}
-.apm-panel-orange { border-color: #fed7aa; }
-.apm-panel-orange::before { background: linear-gradient(180deg, #fbbf24, #d97706); }
-.apm-panel-green  { border-color: #bbf7d0; }
-.apm-panel-green::before  { background: linear-gradient(180deg, #4ade80, #15803d); }
-
-.apm-panel-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding-left: 6px;
+  border: 1.5px solid transparent;
+  border-left-width: 4px;
+  border-radius: 14px;
   margin-bottom: 14px;
+  overflow: hidden;
 }
-.apm-panel-head-left-grouped { display: flex; align-items: center; gap: 10px; }
-.apm-panel-icon {
-  width: 32px; height: 32px; border-radius: 10px;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+.apm-section-blue   { border-color: #c4b5fd; border-left-color: #7c3aed; }
+.apm-section-violet { border-color: #c4b5fd; border-left-color: #7c3aed; }
+.apm-section-amber  { border-color: #fde68a; border-left-color: #f59e0b; }
+.apm-section-green  { border-color: #bbf7d0; border-left-color: #16a34a; }
+.apm-section-navy   { border-color: #c4b5fd; border-left-color: #4338ca; }
+
+.apm-section-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px;
+}
+.apm-section-blue   .apm-section-head { background: linear-gradient(135deg, #ede9fe, #f5f3ff); }
+.apm-section-violet .apm-section-head { background: linear-gradient(135deg, #ede9fe, #f3e8ff); }
+.apm-section-amber  .apm-section-head { background: linear-gradient(135deg, #fef3c7, #fef9c3); }
+.apm-section-green  .apm-section-head { background: linear-gradient(135deg, #dcfce7, #ecfdf5); }
+.apm-section-navy   .apm-section-head { background: linear-gradient(135deg, #ede9fe, #e0e7ff); }
+.apm-section-head-left { display: flex; align-items: center; gap: 10px; }
+.apm-section-icon {
+  width: 32px; height: 32px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
   color: #fff;
-  display: inline-flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
 }
-.apm-panel-icon-purple { background: linear-gradient(135deg, #a78bfa, #7c3aed); }
-.apm-panel-icon-orange { background: linear-gradient(135deg, #fbbf24, #d97706); }
-.apm-panel-icon-green  { background: linear-gradient(135deg, #4ade80, #15803d); }
-.apm-panel-title { font-size: 13.5px; font-weight: 800; color: #1e1b4b; }
-.apm-panel-sub   { font-size: 11px; color: #6b7280; margin-top: 1px; }
+.apm-section-blue   .apm-section-icon { background: linear-gradient(135deg,#7c3aed,#5b21b6); }
+.apm-section-violet .apm-section-icon { background: linear-gradient(135deg,#7c3aed,#5b21b6); }
+.apm-section-amber  .apm-section-icon { background: linear-gradient(135deg,#f59e0b,#d97706); }
+.apm-section-green  .apm-section-icon { background: linear-gradient(135deg,#16a34a,#0f8a3e); }
+.apm-section-navy   .apm-section-icon { background: linear-gradient(135deg,#4338ca,#312e81); }
 
-/* Sub-panel inside step 1 (General Information) */
-.apm-subpanel {
-  margin-top: 6px;
+.apm-section-title { font-size: 13.5px; font-weight: 800; color: #1e1b4b; }
+.apm-section-sub   { font-size: 11px; color: #6b7280; margin-top: 1px; }
+.apm-section-amber .apm-section-title { color: #92400e; }
+.apm-section-amber .apm-section-sub   { color: #b45309; }
+.apm-section-green .apm-section-title { color: #166534; }
+.apm-section-green .apm-section-sub   { color: #15803d; }
+
+.apm-section-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+
+.apm-section-add-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 14px; border-radius: 8px;
+  background: #16a34a; color: #fff; border: none;
+  font-family: inherit; font-size: 12px; font-weight: 800; cursor: pointer;
+  transition: background .15s, transform .12s;
+}
+.apm-section-add-btn:hover { background: #15803d; transform: translateY(-1px); }
+.apm-section-add-btn span { font-size: 14px; line-height: 1; }
+
+/* ─── Inner section heading (e.g. "PRODUCT GENERAL INFORMATION") ─── */
+.apm-inner-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
   padding: 12px 14px;
-  background: #faf5ff;
-  border: 1.5px solid #ede9fe;
-  border-radius: 10px;
+  background: #fafafa;
+  display: flex; flex-direction: column; gap: 10px;
 }
-.apm-subpanel-label {
-  font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
-  color: #5b21b6; margin-bottom: 10px;
+.apm-inner-title {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  color: #475569; padding-bottom: 6px;
+  border-bottom: 1px dashed #cbd5e1;
 }
 
-/* Grids */
-.apm-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 16px; }
-.apm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 16px; }
-.apm-grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px 14px; }
+/* ─── Form layout grids ─── */
+.apm-grid-2 { display: grid; grid-template-columns: 1fr 1fr;       gap: 12px; }
+.apm-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr;   gap: 12px; }
+.apm-grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+.apm-grid-5 { display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; }
 
-/* Field */
-.apm-field { display: flex; flex-direction: column; gap: 4px; }
-.apm-field-full { grid-column: 1 / -1; }
+/* ─── Field ─── */
+.apm-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .apm-field-label {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 10.5px; font-weight: 800; color: #5b21b6;
-  letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
+  color: #5b21b6; text-transform: uppercase;
 }
-.apm-req-star { color: #ef4444; }
-.apm-addable {
+.apm-req { color: #ef4444; font-weight: 700; }
+.apm-field-plus {
+  width: 18px; height: 18px;
+  border: none; border-radius: 5px;
+  background: #7c3aed; color: #fff;
+  font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 4px;
-  background: #ede9fe; color: #7c3aed;
-  font-weight: 800; font-size: 12px;
-  cursor: pointer;
+}
+.apm-field-plus:hover { background: #6d28d9; }
+
+/* ─── Master-form-style field container (with leading icon) ─── */
+.apm-master-field { position: relative; }
+.apm-master-field-icon {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  font-size: 15px; color: #6b7280; pointer-events: none; z-index: 3; line-height: 1;
+  transition: color .18s ease, transform .18s ease;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.apm-master-field:has(.apm-input-mf:focus) .apm-master-field-icon {
+  color: #7c3aed; transform: translateY(-50%) scale(1.08);
+}
+/* Lift the icon up for multi-line fields so it sits in the first row. */
+.apm-master-field:has(textarea.apm-input-mf) .apm-master-field-icon {
+  top: 13px; transform: none;
+}
+.apm-master-field:has(textarea.apm-input-mf:focus) .apm-master-field-icon {
+  transform: scale(1.08);
+}
+.apm-input-mf { padding-left: 36px !important; }
+
+/* ─── MasterSelect inside the modal — restyle the trigger to match apm-input ─── */
+.apm-master-select .master-select-wrap .master-select-toggle {
+  min-height: 38px !important;
+  height: 38px;
+  padding: 0 32px 0 12px !important;
+  font-size: 13px !important;
+  font-family: inherit !important;
+  background: color-mix(in srgb, #7c3aed 5%, #f8fafc) !important;
+  border: 1.5px solid color-mix(in srgb, #7c3aed 18%, #e2e8f0) !important;
+  border-radius: 10px !important;
+  color: #1e1b4b !important;
+  transition: border-color .15s, background .15s, box-shadow .15s !important;
+}
+.apm-master-select .master-select-wrap .master-select-toggle:hover {
+  border-color: #c4b5fd !important;
+}
+.apm-master-select .master-select-wrap.show .master-select-toggle {
+  background: #fff !important;
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.12) !important;
+}
+.apm-master-select .master-select-placeholder { color: #94a3b8 !important; font-size: 13px !important; }
+
+/* ─── MasterDatePicker inside the modal ─── */
+.apm-master-date .master-date-input,
+.apm-master-date input.form-control {
+  min-height: 38px !important;
+  height: 38px !important;
+  padding-left: 12px !important;
+  font-size: 13px !important;
+  background: color-mix(in srgb, #7c3aed 5%, #f8fafc) !important;
+  border: 1.5px solid color-mix(in srgb, #7c3aed 18%, #e2e8f0) !important;
+  border-radius: 10px !important;
+  color: #1e1b4b !important;
+}
+.apm-master-date .master-date-input:focus {
+  background: #fff !important;
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.12) !important;
 }
 
+/* ─── Input ─── */
 .apm-input {
-  width: 100%; height: 38px; padding: 0 12px;
-  border: 1.5px solid #e2e8f0; border-radius: 8px;
-  background: #fff;
-  font-family: inherit; font-size: 12.5px; color: #1e1b4b;
+  height: 38px; width: 100%;
+  padding: 0 12px;
+  border: 1.5px solid color-mix(in srgb, #7c3aed 18%, #e2e8f0); border-radius: 10px;
+  background: color-mix(in srgb, #7c3aed 5%, #f8fafc); color: #1e1b4b;
+  font-family: inherit; font-size: 13px;
   outline: none;
-  transition: border .15s, box-shadow .15s;
+  transition: border-color .15s, background .15s, box-shadow .15s;
 }
-.apm-input:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
-.apm-input-orange { border-color: #fed7aa; background: #fffaf0; }
-.apm-input-orange:focus { border-color: #f97316; box-shadow: 0 0 0 3px rgba(249,115,22,.12); }
-.apm-textarea {
-  width: 100%; min-height: 64px; padding: 8px 12px;
-  border: 1.5px solid #e2e8f0; border-radius: 8px;
-  font-family: inherit; font-size: 12.5px; color: #1e1b4b;
-  background: #fff;
-  outline: none; resize: vertical;
-}
-.apm-textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
+.apm-input::placeholder { color: #94a3b8; }
+.apm-input:focus { border-color: #7c3aed; background: #fff; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
+.apm-input:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
 
-.apm-input-prefix {
-  display: flex; align-items: center;
-  border: 1.5px solid #e2e8f0; border-radius: 8px;
-  background: #fff;
-  padding-left: 12px;
-}
-.apm-input-prefix span { color: #94a3b8; font-weight: 800; font-size: 13px; }
-.apm-input-prefix .apm-input { border: none; background: transparent; height: 36px; padding-left: 6px; box-shadow: none; }
-.apm-input-readonly { background: #f8fafc; }
-.apm-input-readonly span { color: #475569; }
-.apm-input-total { background: #f0fdf4; border-color: #bbf7d0; }
-.apm-input-total span { color: #15803d; }
-.apm-input-total .apm-input { color: #15803d; font-weight: 800; }
+.apm-textarea { height: auto; min-height: 64px; padding: 9px 12px; resize: vertical; }
+.apm-select { appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237c3aed' stroke-width='2.4'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+.apm-readonly { background: #f5f3ff; color: #5b21b6; font-weight: 700; }
+.apm-total    { background: #dcfce7 !important; color: #15803d !important; }
 
-/* Upload tile */
-.apm-upload {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  height: 88px;
-  border: 2px dashed #c4b5fd;
+.apm-input-amber {
+  background: #fef9c3; border-color: #fde68a;
+}
+.apm-input-amber:focus { background: #fef3c7; border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
+
+.apm-input-icon { position: relative; }
+.apm-input-icon-prefix {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: #7c3aed; font-weight: 700; font-size: 13px;
+  pointer-events: none;
+}
+.apm-input.has-prefix { padding-left: 28px; }
+
+/* ─── Upload dropzone ─── */
+.apm-upload-field { position: relative; }
+.apm-dropzone {
+  position: relative;
+  min-height: 80px;
+  border: 1.5px dashed #c4b5fd;
   border-radius: 10px;
-  background: #faf5ff;
-  color: #7c3aed; font-size: 12px; font-weight: 800;
+  background: #f5f3ff;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  color: #7c3aed; font-size: 12.5px; font-weight: 700;
   cursor: pointer;
   transition: background .15s, border-color .15s;
 }
-.apm-upload:hover { background: #f5f3ff; border-color: #a78bfa; }
-.apm-upload-big {
-  height: 140px; flex-direction: column; gap: 6px; padding: 16px;
-}
-.apm-upload-big-title { font-size: 13px; color: #5b21b6; }
-.apm-upload-big-sub { font-size: 11px; color: #94a3b8; font-weight: 600; margin-top: 4px; }
+.apm-dropzone:hover { background: #ede9fe; border-color: #7c3aed; }
+.apm-dropzone-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
-/* Document types row */
-.apm-doc-types { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.apm-doc-type {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 14px; border-radius: 99px;
-  background: #faf5ff; border: 1.5px solid #ddd6fe;
-  color: #6d28d9; font-family: inherit; font-size: 11.5px; font-weight: 800; cursor: pointer;
-  transition: all .15s;
+.apm-upload-preview { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.apm-upload-chip {
+  position: relative;
+  width: 64px; height: 64px; border-radius: 8px; overflow: hidden;
+  border: 1px solid #ddd6fe;
 }
-.apm-doc-type:hover { background: #ede9fe; transform: translateY(-1px); }
+.apm-upload-chip img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.apm-upload-chip button {
+  position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(15,23,42,.7); color: #fff; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+}
 
-.apm-doc-list { display: flex; flex-direction: column; gap: 8px; }
-.apm-doc-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px;
-  border: 1.5px solid #e8e4f9; border-radius: 10px;
+/* ─── QC empty state ─── */
+.apm-empty { padding: 24px; text-align: center; color: #94a3b8; font-size: 12.5px; }
+
+/* ─── QC Add popup ─── */
+.apm-qc-backdrop {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(15, 23, 42, .55);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 24px 20px;
+  overflow-y: auto;
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+}
+.apm-qc-popup {
+  width: 100%; max-width: 1080px;
+  margin: auto;
   background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
+  color: #1e1b4b;
+  max-height: calc(100vh - 48px);
 }
-.apm-doc-icon {
-  width: 32px; height: 32px; border-radius: 8px;
-  background: #ede9fe; color: #7c3aed;
+.apm-qc-popup-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  color: #fff;
+}
+.apm-qc-popup-title {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 800;
+}
+.apm-qc-popup-title i { font-size: 18px; }
+.apm-qc-close {
+  width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.12);
+  color: #fff; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s, transform .12s;
 }
-.apm-doc-name { font-size: 12.5px; font-weight: 700; color: #1e1b4b; }
-.apm-doc-meta { font-size: 10.5px; color: #94a3b8; font-weight: 600; margin-top: 1px; }
-.apm-doc-row > button { margin-left: auto; }
+.apm-qc-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
 
-/* QC form */
-.apm-add-qc {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 14px; border-radius: 8px;
-  border: none;
-  background: linear-gradient(135deg, #4ade80, #15803d);
-  color: #fff; font-family: inherit; font-size: 12px; font-weight: 800;
-  cursor: pointer;
-  box-shadow: 0 3px 10px rgba(34,197,94,.35);
-  transition: transform .15s;
-}
-.apm-add-qc:hover:not(:disabled) { transform: translateY(-1px); }
-.apm-add-qc:disabled { opacity: .55; cursor: not-allowed; }
-
-.apm-qc-form, .apm-vendor-form {
+.apm-qc-product-bar {
   display: grid;
-  grid-template-columns: 1fr 1fr auto auto;
-  gap: 10px; align-items: center;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px 18px;
+  padding: 12px 18px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+.apm-qc-prod { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px; min-width: 0; }
+.apm-qc-prod-key { color: #1e1b4b; font-weight: 700; flex-shrink: 0; }
+.apm-qc-prod-val { color: #6d28d9; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.apm-qc-prod-val.accent { color: #5b21b6; font-weight: 800; }
+
+.apm-qc-body {
+  flex: 1; overflow-y: auto;
+  padding: 18px;
+  display: flex; flex-direction: column; gap: 14px;
+  scrollbar-width: thin; scrollbar-color: #c4b5fd transparent;
+}
+.apm-qc-body::-webkit-scrollbar { width: 8px; }
+.apm-qc-body::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 99px; }
+
+.apm-qc-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.apm-qc-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.apm-qc-textarea { min-height: 240px !important; }
+
+.apm-qc-file { position: relative; }
+.apm-qc-file-input { display: none; }
+.apm-qc-file-trigger {
+  display: inline-flex; align-items: center; gap: 8px;
+  width: 100%; height: 38px; padding: 0 12px;
+  border: 1.5px dashed color-mix(in srgb, #7c3aed 25%, #e2e8f0);
+  border-radius: 10px;
+  background: color-mix(in srgb, #7c3aed 5%, #f8fafc);
+  color: #475569; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  white-space: nowrap; overflow: hidden;
+  transition: background .15s, border-color .15s;
+}
+.apm-qc-file-trigger:hover { background: #ede9fe; border-color: #7c3aed; }
+.apm-qc-file-trigger i { color: #7c3aed; font-size: 15px; flex-shrink: 0; }
+.apm-qc-file-trigger span { overflow: hidden; text-overflow: ellipsis; }
+
+.apm-qc-foot {
+  display: flex; justify-content: center;
+  padding: 14px 18px 18px;
+  border-top: 1px solid #ede9fe;
+}
+.apm-qc-save {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 42px; padding: 0 38px;
+  background: linear-gradient(135deg, #1e293b, #0f172a);
+  color: #fff; border: none; border-radius: 10px;
+  font-family: inherit; font-size: 14px; font-weight: 800; cursor: pointer;
+  box-shadow: 0 4px 12px rgba(15,23,42,.35);
+  transition: transform .12s, box-shadow .15s;
+}
+.apm-qc-save:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(15,23,42,.5);
+}
+.apm-qc-save:disabled { opacity: .55; cursor: not-allowed; }
+
+@media (max-width: 880px) {
+  .apm-qc-product-bar { grid-template-columns: 1fr 1fr; }
+  .apm-qc-row-3 { grid-template-columns: 1fr; }
+  .apm-qc-row-2 { grid-template-columns: 1fr; }
+}
+
+/* ─── Previous stages summary ─── */
+.apm-prev {
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  border-radius: 12px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.apm-prev-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #dcfce7, #ecfdf5);
+  border-bottom: 1px solid #bbf7d0;
+}
+.apm-prev-title {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px; font-weight: 800; color: #166534;
+}
+.apm-prev-check {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.apm-prev-chip {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 99px;
+  background: #fff; color: #166534;
+  font-size: 11px; font-weight: 700;
+  border: 1px solid #bbf7d0;
+}
+.apm-prev-toggle {
+  height: 28px; padding: 0 12px;
+  background: #fff; border: 1px solid #bbf7d0; color: #166534;
+  border-radius: 7px;
+  font-family: inherit; font-size: 11.5px; font-weight: 800; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.apm-prev-toggle:hover { background: #dcfce7; border-color: #4ade80; }
+
+.apm-prev-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+.apm-prev-stage { display: flex; flex-direction: column; gap: 6px; }
+.apm-prev-stage-label {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
+  display: inline-flex; align-items: center;
+}
+.apm-prev-stage.tone-violet .apm-prev-stage-label { color: #5b21b6; }
+.apm-prev-stage.tone-amber  .apm-prev-stage-label { color: #b45309; }
+.apm-prev-stage.tone-green  .apm-prev-stage-label { color: #166534; }
+
+.apm-prev-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.apm-prev-field {
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  min-width: 0;
+}
+.apm-prev-stage.tone-violet .apm-prev-field { border-color: #ddd6fe; }
+.apm-prev-stage.tone-amber  .apm-prev-field { border-color: #fde68a; }
+.apm-prev-stage.tone-green  .apm-prev-field { border-color: #bbf7d0; }
+.apm-prev-field-label {
+  font-size: 9.5px; font-weight: 800; letter-spacing: .06em;
+  color: #94a3b8; text-transform: uppercase;
+}
+.apm-prev-field-value {
+  font-size: 12.5px; font-weight: 700; color: #1e1b4b;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+/* ─── Vendor toolbar ─── */
+.apm-vendor-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  background: #fff; border: 1px solid #ddd6fe; border-radius: 12px;
   margin-bottom: 12px;
 }
-.apm-vendor-form { grid-template-columns: 1.5fr 1fr 1fr auto; }
-.apm-qc-mand {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12px; font-weight: 700; color: #5b21b6;
-  padding: 0 10px;
-}
-.apm-qc-mand input { width: 14px; height: 14px; accent-color: #7c3aed; }
+.apm-vendor-toolbar-title { font-size: 13px; font-weight: 800; color: #1e1b4b; }
 
-.apm-qc-empty {
-  text-align: center; padding: 18px;
-  color: #94a3b8; font-size: 12.5px; font-weight: 600;
-  background: #faf5ff; border: 1.5px dashed #ddd6fe;
+/* ─── Vendor info read-only grid ─── */
+.apm-vendor-info {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 18px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
 }
+.apm-info-cell { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px; min-width: 0; }
+.apm-info-key { color: #6b7280; font-weight: 700; }
+.apm-info-val { color: #1e1b4b; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.apm-qc-table {
-  width: 100%; border-collapse: collapse;
-  font-size: 12px;
-}
-.apm-qc-table thead tr { background: linear-gradient(90deg, #6d28d9, #7c3aed); }
-.apm-qc-table thead th { color: #fff; padding: 10px 12px; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; text-align: left; }
-.apm-qc-table tbody td { padding: 9px 12px; border-bottom: 1px solid #f1f0fc; color: #475569; }
-.apm-yes { padding: 2px 8px; border-radius: 99px; background: #dcfce7; color: #15803d; font-size: 10.5px; font-weight: 800; }
-.apm-no  { padding: 2px 8px; border-radius: 99px; background: #f3f4f6; color: #475569; font-size: 10.5px; font-weight: 800; }
-.apm-row-del {
-  border: 1.5px solid #fecaca; background: #fef2f2; color: #dc2626;
-  padding: 5px 12px; border-radius: 7px;
-  font-family: inherit; font-size: 11px; font-weight: 800; cursor: pointer;
-}
+/* ─── Vendor draft footer ─── */
+.apm-vendor-draft-foot { display: flex; justify-content: center; gap: 10px; padding-top: 4px; }
 
-/* Coretab preview placeholder */
-.apm-coretab-preview {
-  background: #faf5ff;
-  border: 1.5px dashed #ddd6fe;
-  border-radius: 12px;
-  padding: 36px 20px;
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  text-align: center;
-}
-.apm-coretab-preview-icon {
-  width: 50px; height: 50px; border-radius: 14px;
-  background: #ede9fe;
-  display: flex; align-items: center; justify-content: center;
-}
-.apm-coretab-preview-title { font-size: 14px; font-weight: 800; color: #5b21b6; }
-.apm-coretab-preview-desc  { font-size: 12px; color: #6b7280; max-width: 480px; }
-
-/* Review grid */
-.apm-review-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
-}
-.apm-review-cell {
-  padding: 9px 12px;
-  border: 1.5px solid #e8e4f9;
-  border-radius: 9px;
-  background: #faf5ff;
-}
-.apm-review-cell.highlight {
-  background: #ecfdf5;
-  border-color: #86efac;
-}
-.apm-review-label { font-size: 9.5px; font-weight: 800; letter-spacing: .05em; color: #94a3b8; text-transform: uppercase; }
-.apm-review-value { font-size: 12.5px; font-weight: 800; color: #5b21b6; margin-top: 3px; }
-.apm-review-cell.highlight .apm-review-value { color: #15803d; }
-.apm-review-note {
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 14px;
-  padding: 10px 14px;
-  background: #ecfdf5; border: 1.5px solid #bbf7d0;
-  border-radius: 10px;
-  font-size: 12px; color: #15803d; font-weight: 700;
-}
-
-/* Footer */
-.apm-foot {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 22px;
+/* ─── Vendor mapped table — Velzon table-card shell ─── */
+.apm-vendor-table-card {
+  margin-top: 12px;
   background: #fff;
-  border-top: 1px solid #e2e8f0;
+  border: 1px solid #ddd6fe;
+  border-radius: 12px;
+  padding: 12px;
 }
-.apm-foot-right { display: flex; align-items: center; gap: 10px; }
-.apm-btn-cancel {
-  padding: 9px 22px; border-radius: 9px;
-  border: 1.5px solid #e2e8f0; background: #fff;
-  color: #475569; font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer;
+.apm-vendor-table-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
 }
-.apm-btn-cancel:hover { background: #f8fafc; }
-.apm-btn-prev {
-  padding: 9px 18px; border-radius: 9px;
-  border: 1.5px solid #c4b5fd; background: #fff;
-  color: #6d28d9; font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer;
+.apm-vendor-table-title {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 800; color: #1e1b4b;
 }
-.apm-btn-prev:hover { background: #faf5ff; }
-.apm-btn-next {
-  padding: 9px 22px; border-radius: 9px;
-  border: none;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
-  font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer;
-  box-shadow: 0 4px 12px rgba(124,58,237,.4);
-  transition: transform .15s;
+.apm-vendor-table-title i { color: #7c3aed; font-size: 16px; }
+.apm-vendor-table-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 8px; border-radius: 99px;
+  background: #ede9fe; color: #5b21b6;
+  font-size: 11px; font-weight: 800;
+  border: 1px solid #c4b5fd;
 }
-.apm-btn-next:hover { transform: translateY(-1px); }
-.apm-btn-save {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 22px; border-radius: 9px;
-  border: none;
-  background: linear-gradient(135deg, #4ade80, #15803d); color: #fff;
-  font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer;
-  box-shadow: 0 4px 12px rgba(34,197,94,.45);
-  transition: transform .15s;
+/* Lighten the table chrome inside the modal so it reads as a sub-table,
+   not the page's main table. */
+.apm-vendor-table-card .table-responsive { border-radius: 10px; }
+.apm-vendor-table-card .table thead th {
+  font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
+  color: #475569;
 }
-.apm-btn-save:hover { transform: translateY(-1px); }
+.apm-vendor-table-card .table tbody td { vertical-align: middle; }
 
-@media (max-width: 1100px) {
-  .apm-grid-3 { grid-template-columns: repeat(2, 1fr); }
-  .apm-grid-5 { grid-template-columns: repeat(3, 1fr); }
-  .apm-prev-grid, .apm-prev-grid-sales { grid-template-columns: repeat(3, 1fr); }
-  .apm-review-grid { grid-template-columns: repeat(2, 1fr); }
-  .apm-stepper { gap: 6px; }
+/* ─── Footer ─── */
+.apm-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 22px;
+  background: #fff; border-top: 1px solid #ede9fe;
 }
-@media (max-width: 680px) {
-  .apm-grid-2, .apm-grid-3, .apm-grid-5 { grid-template-columns: 1fr; }
-  .apm-prev-grid, .apm-prev-grid-sales { grid-template-columns: repeat(2, 1fr); }
-  .apm-qc-form, .apm-vendor-form { grid-template-columns: 1fr; }
-  .apm-head { flex-direction: column; align-items: flex-start; gap: 12px; }
+.apm-foot-left  { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.apm-foot-right { display: flex; align-items: center; gap: 8px; }
+.apm-foot-error {
+  font-size: 12.5px; font-weight: 700; color: #b91c1c;
+  background: #fef2f2; border: 1px solid #fecaca;
+  padding: 6px 10px; border-radius: 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 480px;
 }
+.apm-spinner {
+  width: 13px; height: 13px;
+  border: 2px solid rgba(255,255,255,.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: apm-spin .8s linear infinite;
+}
+@keyframes apm-spin { to { transform: rotate(360deg); } }
+.apm-btn-primary:disabled,
+.apm-btn-outline:disabled,
+.apm-btn-ghost:disabled { opacity: .55; cursor: not-allowed; }
+.apm-btn-ghost,
+.apm-btn-outline,
+.apm-btn-primary {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 40px; padding: 0 18px;
+  font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer;
+  border-radius: 10px;
+  transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
+}
+.apm-btn-ghost { background: #fff; border: 1.5px solid #e2e8f0; color: #475569; }
+.apm-btn-ghost:hover { background: #f1f5f9; border-color: #cbd5e1; }
+.apm-btn-outline { background: #fff; border: 1.5px solid #c4b5fd; color: #5b21b6; }
+.apm-btn-outline:hover { background: #f5f3ff; border-color: #7c3aed; }
+.apm-btn-primary {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; border: none;
+  box-shadow: 0 4px 12px rgba(124,58,237,.35);
+}
+.apm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(124,58,237,.5); }
+.apm-btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+.apm-btn-primary span { font-size: 16px; line-height: 1; }
+
+/* ─── Responsive ─── */
+@media (max-width: 880px) {
+  .apm-grid-2, .apm-grid-3, .apm-grid-4, .apm-grid-5 { grid-template-columns: 1fr 1fr; }
+  .apm-vendor-info { grid-template-columns: 1fr 1fr; }
+  .apm-qc-row { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 540px) {
+  .apm-grid-2, .apm-grid-3, .apm-grid-4, .apm-grid-5 { grid-template-columns: 1fr; }
+  .apm-vendor-info { grid-template-columns: 1fr; }
+  .apm-stepper { padding: 12px; gap: 8px; }
+  .apm-step-text { display: none; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * Dark mode
+ * ════════════════════════════════════════════════════════════════════ */
+[data-bs-theme="dark"] .apm-modal {
+  background: #14102a;
+  color: #ede9fe;
+  box-shadow: 0 30px 80px rgba(0,0,0,.75);
+}
+[data-bs-theme="dark"] .apm-stepper {
+  background: #1a1430;
+  border-bottom-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .apm-step-num { background: #2a1d5c; color: #a89fc7; border-color: #4c1d95; }
+[data-bs-theme="dark"] .apm-step-title { color: #ede9fe; }
+[data-bs-theme="dark"] .apm-step-sub   { color: #a89fc7; }
+[data-bs-theme="dark"] .apm-step-active .apm-step-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-step-done   .apm-step-title { color: #4ade80; }
+[data-bs-theme="dark"] .apm-step-line { background: #3b2a6b; }
+[data-bs-theme="dark"] .apm-step-line.done { background: #16a34a; }
+
+[data-bs-theme="dark"] .apm-body {
+  background: linear-gradient(180deg, #110c25 0%, #1a1430 100%);
+  scrollbar-color: #4c1d95 transparent;
+}
+[data-bs-theme="dark"] .apm-body::-webkit-scrollbar-thumb { background: #4c1d95; }
+
+[data-bs-theme="dark"] .apm-tabs { border-bottom-color: #3b2a6b; }
+[data-bs-theme="dark"] .apm-tab { color: #6d6391; }
+[data-bs-theme="dark"] .apm-tab:hover { color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-tab.on { color: #c4b5fd; border-bottom-color: #a78bfa; }
+
+[data-bs-theme="dark"] .apm-section { background: #1a1430; }
+[data-bs-theme="dark"] .apm-section-blue,
+[data-bs-theme="dark"] .apm-section-violet,
+[data-bs-theme="dark"] .apm-section-navy { border-color: #3b2a6b; border-left-color: #a78bfa; }
+[data-bs-theme="dark"] .apm-section-amber { border-color: #78350f; border-left-color: #f59e0b; }
+[data-bs-theme="dark"] .apm-section-green { border-color: #14532d; border-left-color: #4ade80; }
+
+[data-bs-theme="dark"] .apm-section-blue   .apm-section-head,
+[data-bs-theme="dark"] .apm-section-violet .apm-section-head,
+[data-bs-theme="dark"] .apm-section-navy   .apm-section-head { background: linear-gradient(135deg, #221852, #2a1d5c); }
+[data-bs-theme="dark"] .apm-section-amber  .apm-section-head { background: linear-gradient(135deg, #3f2c0a, #4a3408); }
+[data-bs-theme="dark"] .apm-section-green  .apm-section-head { background: linear-gradient(135deg, #14241a, #1a3225); }
+
+[data-bs-theme="dark"] .apm-section-title { color: #ede9fe; }
+[data-bs-theme="dark"] .apm-section-sub   { color: #a89fc7; }
+[data-bs-theme="dark"] .apm-section-amber .apm-section-title { color: #fde68a; }
+[data-bs-theme="dark"] .apm-section-amber .apm-section-sub   { color: #fcd34d; }
+[data-bs-theme="dark"] .apm-section-green .apm-section-title { color: #bbf7d0; }
+[data-bs-theme="dark"] .apm-section-green .apm-section-sub   { color: #86efac; }
+
+[data-bs-theme="dark"] .apm-inner-section { background: #110c25; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .apm-inner-title   { color: #a89fc7; border-bottom-color: #3b2a6b; }
+
+[data-bs-theme="dark"] .apm-field-label { color: #a78bfa; }
+[data-bs-theme="dark"] .apm-master-field-icon { color: #8579b5; }
+[data-bs-theme="dark"] .apm-master-field:has(.apm-input-mf:focus) .apm-master-field-icon { color: #a78bfa; }
+[data-bs-theme="dark"] .apm-master-select .master-select-wrap .master-select-toggle {
+  background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
+  border-color: #3b2a6b !important;
+  color: #ede9fe !important;
+}
+[data-bs-theme="dark"] .apm-master-select .master-select-wrap .master-select-toggle:hover {
+  border-color: #4c1d95 !important;
+}
+[data-bs-theme="dark"] .apm-master-select .master-select-wrap.show .master-select-toggle {
+  background: #1a1430 !important; border-color: #a78bfa !important;
+  box-shadow: 0 0 0 3px rgba(167,139,250,.18) !important;
+}
+[data-bs-theme="dark"] .apm-master-select .master-select-placeholder { color: #6d6391 !important; }
+[data-bs-theme="dark"] .apm-master-date .master-date-input,
+[data-bs-theme="dark"] .apm-master-date input.form-control {
+  background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
+  border-color: #3b2a6b !important;
+  color: #ede9fe !important;
+}
+[data-bs-theme="dark"] .apm-master-date .master-date-input:focus {
+  background: #1a1430 !important; border-color: #a78bfa !important;
+  box-shadow: 0 0 0 3px rgba(167,139,250,.18) !important;
+}
+[data-bs-theme="dark"] .apm-input {
+  background: #110c25; border-color: #3b2a6b; color: #ede9fe;
+}
+[data-bs-theme="dark"] .apm-input::placeholder { color: #6d6391; }
+[data-bs-theme="dark"] .apm-input:focus { background: #1a1430; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
+[data-bs-theme="dark"] .apm-input:disabled { background: #16102d; color: #6d6391; }
+[data-bs-theme="dark"] .apm-readonly { background: #221852; color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-total    { background: #14241a !important; color: #4ade80 !important; }
+[data-bs-theme="dark"] .apm-input-amber { background: #2a1f08; border-color: #78350f; color: #fde68a; }
+[data-bs-theme="dark"] .apm-input-amber:focus { background: #3f2c0a; border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.22); }
+[data-bs-theme="dark"] .apm-input-icon-prefix { color: #a78bfa; }
+[data-bs-theme="dark"] .apm-select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a78bfa' stroke-width='2.4'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); }
+[data-bs-theme="dark"] .apm-select option { background: #1a1430; color: #ede9fe; }
+
+[data-bs-theme="dark"] .apm-dropzone { background: #221852; border-color: #4c1d95; color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-dropzone:hover { background: #2a1d5c; border-color: #a78bfa; }
+[data-bs-theme="dark"] .apm-upload-chip { border-color: #4c1d95; }
+
+[data-bs-theme="dark"] .apm-qc-popup { background: #14102a; color: #ede9fe; box-shadow: 0 30px 80px rgba(0,0,0,.75); }
+[data-bs-theme="dark"] .apm-qc-product-bar { background: #110c25; border-bottom-color: #3b2a6b; }
+[data-bs-theme="dark"] .apm-qc-prod-key { color: #ede9fe; }
+[data-bs-theme="dark"] .apm-qc-prod-val { color: #a78bfa; }
+[data-bs-theme="dark"] .apm-qc-prod-val.accent { color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-qc-body { scrollbar-color: #4c1d95 transparent; }
+[data-bs-theme="dark"] .apm-qc-body::-webkit-scrollbar-thumb { background: #4c1d95; }
+[data-bs-theme="dark"] .apm-qc-file-trigger {
+  background: color-mix(in srgb, #a78bfa 12%, #110c25);
+  border-color: #4c1d95; color: #a89fc7;
+}
+[data-bs-theme="dark"] .apm-qc-file-trigger:hover { background: #221852; border-color: #a78bfa; }
+[data-bs-theme="dark"] .apm-qc-foot { border-top-color: #3b2a6b; }
+[data-bs-theme="dark"] .apm-qc-save {
+  background: linear-gradient(135deg, #4338ca, #312e81);
+  box-shadow: 0 4px 12px rgba(67,56,202,.45);
+}
+[data-bs-theme="dark"] .apm-qc-save:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(67,56,202,.6); }
+
+[data-bs-theme="dark"] .apm-vendor-toolbar {
+  background: #1a1430; border-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .apm-vendor-toolbar-title { color: #ede9fe; }
+
+/* Previous stages — dark */
+[data-bs-theme="dark"] .apm-prev { background: #14241a; border-color: #14532d; }
+[data-bs-theme="dark"] .apm-prev-head { background: linear-gradient(135deg, #14241a, #1a3225); border-bottom-color: #14532d; }
+[data-bs-theme="dark"] .apm-prev-title { color: #bbf7d0; }
+[data-bs-theme="dark"] .apm-prev-chip { background: #14241a; color: #bbf7d0; border-color: #166534; }
+[data-bs-theme="dark"] .apm-prev-toggle { background: #14241a; color: #bbf7d0; border-color: #166534; }
+[data-bs-theme="dark"] .apm-prev-toggle:hover { background: #1a3225; border-color: #22c55e; }
+[data-bs-theme="dark"] .apm-prev-field { background: #110c25; }
+[data-bs-theme="dark"] .apm-prev-stage.tone-violet .apm-prev-field { border-color: #4c1d95; }
+[data-bs-theme="dark"] .apm-prev-stage.tone-amber  .apm-prev-field { border-color: #78350f; }
+[data-bs-theme="dark"] .apm-prev-stage.tone-green  .apm-prev-field { border-color: #14532d; }
+[data-bs-theme="dark"] .apm-prev-field-label { color: #6d6391; }
+[data-bs-theme="dark"] .apm-prev-field-value { color: #ede9fe; }
+[data-bs-theme="dark"] .apm-prev-stage.tone-violet .apm-prev-stage-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-prev-stage.tone-amber  .apm-prev-stage-label { color: #fde68a; }
+[data-bs-theme="dark"] .apm-prev-stage.tone-green  .apm-prev-stage-label { color: #bbf7d0; }
+
+[data-bs-theme="dark"] .apm-vendor-info { background: #110c25; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .apm-info-key { color: #a89fc7; }
+[data-bs-theme="dark"] .apm-info-val { color: #ede9fe; }
+
+[data-bs-theme="dark"] .apm-vendor-table-card { background: #1a1430; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .apm-vendor-table-title { color: #ede9fe; }
+[data-bs-theme="dark"] .apm-vendor-table-title i { color: #a78bfa; }
+[data-bs-theme="dark"] .apm-vendor-table-count { background: #2a1d5c; color: #c4b5fd; border-color: #4c1d95; }
+[data-bs-theme="dark"] .apm-vendor-table-card .table thead th { color: #a89fc7; }
+
+[data-bs-theme="dark"] .apm-foot {
+  background: #14102a; border-top-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .apm-foot-error { background: #3f1d1d; border-color: #7f1d1d; color: #fca5a5; }
+[data-bs-theme="dark"] .apm-btn-ghost { background: #1a1430; border-color: #3b2a6b; color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-btn-ghost:hover { background: #221852; border-color: #4c1d95; }
+[data-bs-theme="dark"] .apm-btn-outline { background: #1a1430; border-color: #4c1d95; color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-btn-outline:hover { background: #221852; border-color: #a78bfa; }
 `;
