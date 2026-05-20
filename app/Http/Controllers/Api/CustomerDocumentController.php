@@ -120,12 +120,32 @@ class CustomerDocumentController extends Controller
             'issue_date'        => optional($d->issue_date)->toDateString(),
             'expiry_date'       => optional($d->expiry_date)->toDateString(),
             'attachment_path'   => $d->attachment_path,
-            'attachment_url'    => $d->attachment_path ? Storage::disk('public')->url($d->attachment_path) : null,
+            // URL building moved to the frontend (resolveFileUrl) so a
+            // server with a public disk that lacks a `url` key (which
+            // makes Storage::url() throw "This driver does not support
+            // retrieving URLs") doesn't break the whole shape.
+            'attachment_url'    => self::safeStorageUrl($d->attachment_path),
             'attachment_name'   => $d->attachment_path ? basename($d->attachment_path) : null,
             'description'       => $d->description,
             'status'            => $d->status,
             'created_at'        => $d->created_at?->toDateTimeString(),
         ];
+    }
+
+    /**
+     * Build a public URL for a stored path, swallowing the
+     * "driver does not support retrieving URLs" exception that some
+     * filesystem configurations throw. Returns null when no URL can be
+     * built — the frontend's resolveFileUrl() takes over from the path.
+     */
+    private static function safeStorageUrl(?string $path): ?string
+    {
+        if (!$path) return null;
+        try {
+            return Storage::disk('public')->url($path);
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     private function validatePayload(Request $request, ?int $docId = null): array

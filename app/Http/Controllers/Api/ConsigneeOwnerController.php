@@ -104,18 +104,32 @@ class ConsigneeOwnerController extends Controller
             'designation'         => $o->designation,
             'official_email'      => $o->official_email,
             'phone_number'        => $o->phone_number,
+            // URL fields are best-effort. Some server configs have a
+            // `public` disk without a `url` key, which makes
+            // Storage::url() throw. We swallow that and let the
+            // frontend's resolveFileUrl() build the URL from the path.
             'id_proof_path'       => $o->id_proof_path,
-            'id_proof_url'        => $o->id_proof_path      ? Storage::disk('public')->url($o->id_proof_path)      : null,
+            'id_proof_url'        => self::safeStorageUrl($o->id_proof_path),
             'id_proof_name'       => $o->id_proof_path      ? basename($o->id_proof_path)      : null,
             'address_proof_path'  => $o->address_proof_path,
-            'address_proof_url'   => $o->address_proof_path ? Storage::disk('public')->url($o->address_proof_path) : null,
+            'address_proof_url'   => self::safeStorageUrl($o->address_proof_path),
             'address_proof_name'  => $o->address_proof_path ? basename($o->address_proof_path) : null,
             'photograph_path'     => $o->photograph_path,
-            'photograph_url'      => $o->photograph_path    ? Storage::disk('public')->url($o->photograph_path)    : null,
+            'photograph_url'      => self::safeStorageUrl($o->photograph_path),
             'photograph_name'     => $o->photograph_path    ? basename($o->photograph_path)    : null,
             'status'              => $o->status,
             'created_at'          => $o->created_at?->toDateTimeString(),
         ];
+    }
+
+    private static function safeStorageUrl(?string $path): ?string
+    {
+        if (!$path) return null;
+        try {
+            return Storage::disk('public')->url($path);
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     private function validatePayload(Request $request, ?int $ownerId = null): array

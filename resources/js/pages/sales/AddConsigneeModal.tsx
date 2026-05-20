@@ -1336,6 +1336,24 @@ const SectionHeader = ({ icon, title, sub, accent }: { icon: React.ReactNode; ti
   </div>
 );
 
+/* Truncated table cell. Empty → muted dash. Short → render as-is.
+ * Long → trim with an ellipsis and wrap in the project's portal-based
+ * Tooltip so the full text shows on hover (clears table overflow
+ * clipping, matches the look used everywhere else in the project). */
+const TruncatedCell = ({ text, max = 28, mono = false }: { text: string; max?: number; mono?: boolean }) => {
+  const t = (text ?? '').trim();
+  if (!t) return <span style={{ color: '#9ca3af' }}>—</span>;
+  const style: React.CSSProperties | undefined = mono
+    ? { fontFamily: 'ui-monospace, "JetBrains Mono", monospace', fontSize: 11.5 }
+    : undefined;
+  if (t.length <= max) return <span style={style}>{t}</span>;
+  return (
+    <Tooltip label={t} maxWidth={320}>
+      <span style={style}>{t.slice(0, max - 1)}…</span>
+    </Tooltip>
+  );
+};
+
 const Field = ({ label, required, error, fieldKey, children }: { label: string; required?: boolean; error?: string; fieldKey?: string; children: React.ReactNode }) => (
   <div className="acm-field" data-field={fieldKey}>
     <label className="acm-field-label">
@@ -1702,15 +1720,16 @@ const LocationsTable = ({ locations, onAdd, onEdit, onDel }: {
               </tr>
             ) : locations.map((l, i) => {
               const place = [l.city, l.state, l.country].filter(Boolean).join(' • ');
+              const contact = l.cpName + (l.cpDesignation ? ` (${l.cpDesignation})` : '');
               return (
                 <tr key={l.id}>
                   <td>{i + 1}</td>
                   <td>{l.type}</td>
-                  <td title={l.line}>{l.line.length > 36 ? l.line.slice(0, 33) + '…' : l.line}</td>
-                  <td>{place}</td>
-                  <td>{l.cpName}{l.cpDesignation ? <span style={{ color: '#6b7280', fontWeight: 500 }}> ({l.cpDesignation})</span> : null}</td>
-                  <td>{l.cpContact}</td>
-                  <td>{l.cpEmail}</td>
+                  <td><TruncatedCell text={l.line} max={36} /></td>
+                  <td><TruncatedCell text={place} max={32} /></td>
+                  <td><TruncatedCell text={contact} max={26} /></td>
+                  <td><TruncatedCell text={l.cpContact} max={18} mono /></td>
+                  <td><TruncatedCell text={l.cpEmail} max={28} /></td>
                   <td>{l.cpWhatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : <span className="acm-pill-no">✕ No</span>}</td>
                   <td>
                     <div className="acm-loc-actions">
