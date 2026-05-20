@@ -2121,16 +2121,55 @@ const RecapField = ({ label, value }: { label: string; value?: string }) => (
  * the actual File object so it can be POSTed via multipart/form-data,
  * along with a display name. `displayName` allows pre-filling the
  * filename when editing an already-uploaded row (no File available
- * but we know the name from the server). */
-function FileUploadField({ value, displayName, onPick, accept }: {
+ * but we know the name from the server).
+ *
+ * Client-side file-type guard:
+ *   The HTML `accept` attribute is only a HINT — users can switch the
+ *   file picker to "All Files" and pick a .php / .exe / .zip anyway.
+ *   So we re-validate the chosen file against the allowed extensions
+ *   here and reject + toast if it doesn't match. The server enforces
+ *   the same list (mimes:jpg,jpeg,png,pdf,doc,docx) so a manipulated
+ *   request can't slip through either. */
+const DEFAULT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.doc,.docx';
+const MAX_MB = 10;
+function parseAcceptExts(accept?: string): string[] {
+  if (!accept) return [];
+  return accept.split(',')
+    .map(s => s.trim().toLowerCase().replace(/^\./, ''))
+    .filter(s => s && !s.includes('/'));  // skip mime patterns like "image/*"
+}
+function isAcceptedFile(file: File, accept?: string): { ok: true } | { ok: false; reason: string } {
+  // image/* shortcut — accept any image
+  if (accept?.includes('image/')) {
+    if (file.type.startsWith('image/')) return { ok: true };
+    return { ok: false, reason: 'Only image files (JPG, JPEG, PNG) are allowed.' };
+  }
+  const exts = parseAcceptExts(accept || DEFAULT_ACCEPT);
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (!exts.includes(ext)) {
+    return { ok: false, reason: `Only ${exts.map(e => e.toUpperCase()).join(', ')} files are allowed.` };
+  }
+  if (file.size > MAX_MB * 1024 * 1024) {
+    return { ok: false, reason: `File must not exceed ${MAX_MB} MB.` };
+  }
+  return { ok: true };
+}
+
+function FileUploadField({ value, displayName, onPick, accept, hint }: {
   value: File | null;
   displayName?: string;
   onPick: (file: File | null) => void;
   accept?: string;
+  hint?: string;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const labelText = value ? value.name : (displayName || '');
   const hasFile = !!labelText;
+  const effectiveAccept = accept || DEFAULT_ACCEPT;
+  const hintText = hint || (effectiveAccept.includes('image/')
+    ? 'JPG, JPEG, PNG — max 10 MB'
+    : 'PDF, DOC, DOCX, JPG, PNG — max 10 MB');
   return (
     <div className="acm-file-zone">
       {hasFile ? (
@@ -2143,7 +2182,7 @@ function FileUploadField({ value, displayName, onPick, accept }: {
             type="button"
             className="acm-file-chip-x"
             aria-label="Remove file"
-            onClick={() => { onPick(null); if (inputRef.current) inputRef.current.value = ''; }}
+            onClick={() => { onPick(null); setErr(null); if (inputRef.current) inputRef.current.value = ''; }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -2162,18 +2201,27 @@ function FileUploadField({ value, displayName, onPick, accept }: {
           </span>
           <span className="acm-file-drop-text">
             <span className="acm-file-drop-title">Click to upload</span>
-            <span className="acm-file-drop-sub">PDF, JPG, PNG — max 10 MB</span>
+            <span className="acm-file-drop-sub">{hintText}</span>
           </span>
         </button>
       )}
+      {err && <div className="acm-file-err">{err}</div>}
       <input
         ref={inputRef}
         type="file"
-        accept={accept}
+        accept={effectiveAccept}
         style={{ display: 'none' }}
         onChange={e => {
           const f = e.target.files?.[0];
-          if (f) onPick(f);
+          if (!f) return;
+          const check = isAcceptedFile(f, effectiveAccept);
+          if (!check.ok) {
+            setErr(check.reason);
+            if (inputRef.current) inputRef.current.value = '';
+            return;
+          }
+          setErr(null);
+          onPick(f);
         }}
       />
     </div>
@@ -2468,7 +2516,7 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
                 value={file}
                 displayName={file ? '' : existingAttachmentName}
                 onPick={(f) => setFile(f)}
-                accept=".pdf,.jpg,.jpeg,.png"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
               />
             </div>
           </div>
@@ -2627,7 +2675,7 @@ function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
                 value={idProof}
                 displayName={idProof ? '' : existingIdProofName}
                 onPick={setIdProof}
-                accept=".pdf,.jpg,.jpeg,.png"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
               />
             </div>
             <div className="acm-field">
@@ -2636,7 +2684,7 @@ function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
                 value={addressProof}
                 displayName={addressProof ? '' : existingAddressProofName}
                 onPick={setAddressProof}
-                accept=".pdf,.jpg,.jpeg,.png"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
               />
             </div>
           </div>
@@ -2647,7 +2695,7 @@ function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
                 value={photograph}
                 displayName={photograph ? '' : existingPhotographName}
                 onPick={setPhotograph}
-                accept="image/*"
+                accept=".jpg,.jpeg,.png"
               />
             </div>
             <div className="acm-field">
@@ -3580,6 +3628,23 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-file-drop-text { display: flex; flex-direction: column; min-width: 0; }
 .acm-file-drop-title { font-size: 12.5px; font-weight: 600; color: #065f46; }
 .acm-file-drop-sub   { font-size: 11px; color: #6b7280; margin-top: 2px; }
+.acm-file-err {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: rgba(239,68,68,0.08);
+  color: #b91c1c;
+  border: 1px solid rgba(239,68,68,0.22);
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+[data-bs-theme="dark"] .acm-file-err {
+  background: rgba(239,68,68,0.14);
+  color: #fca5a5;
+  border-color: rgba(239,68,68,0.35);
+}
 
 .acm-file-chip {
   display: flex; align-items: center; gap: 8px;

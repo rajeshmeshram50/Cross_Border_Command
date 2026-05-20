@@ -134,6 +134,29 @@ const TL_DOCS: KycDocRow[] = [
   { code: 'TL-008', name: 'Pollution Control Certificate', authority: 'Pollution Control Board',  expiry: '07/2026', status: 'mandatory' },
 ];
 
+/* ─── File-upload guard ─────
+ * Browser `accept=` is only a hint — users can switch the file picker
+ * to "All files" and select a .php / .exe / .zip anyway. We re-check
+ * the chosen file's extension + size here and reject + alert if it
+ * doesn't match. The server enforces the same list
+ * (mimes:jpg,jpeg,png,pdf,doc,docx) so a manipulated request can't
+ * slip through either. */
+const ALLOWED_DOC_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
+const ALLOWED_PHOTO_EXTS = ['jpg', 'jpeg', 'png'];
+const MAX_UPLOAD_MB = 10;
+type FileKind = 'doc' | 'photo';
+function validateUpload(file: File, kind: FileKind = 'doc'): string | null {
+  const allowed = kind === 'photo' ? ALLOWED_PHOTO_EXTS : ALLOWED_DOC_EXTS;
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (!allowed.includes(ext)) {
+    return `Only ${allowed.map(e => e.toUpperCase()).join(', ')} files are allowed (got .${ext}).`;
+  }
+  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+    return `File must not exceed ${MAX_UPLOAD_MB} MB.`;
+  }
+  return null;
+}
+
 const KYC_PER_PAGE = 6;
 const KYC_TAB_META: Record<KycSubTab, { title: string; sub: string; nameCol: string; placeholder: string; data: typeof DD_DOCS; showAdd: boolean; addLabel?: string }> = {
   'company-dd':   { title:'COMPANY DUE DILIGENCE', sub:'| Licenses, statutory documents, and compliance proofs', nameCol:'DD Document Name',     placeholder:'Search DD document name...',     data: DD_DOCS,      showAdd: true,  addLabel:'Add Document / License' },
@@ -1872,10 +1895,26 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
                 placeholder="DD/MM/YYYY"
               />
             </Field>
-            <Field label="Attachments">
-              <Tooltip label={d.attachment ? `Replace: ${d.attachment.name}` : 'Attach a file'}>
-                <label className="acm-doc-attach">
-                  <input type="file" hidden onChange={e => set('attachment', e.target.files?.[0] ?? null)} />
+            <Field label="Attachments" error={errs.attachment}>
+              <Tooltip label={d.attachment ? `Replace: ${d.attachment.name}` : 'PDF, DOC, DOCX, JPG, PNG — max 10 MB'}>
+                <label className={`acm-doc-attach ${errs.attachment ? 'acm-input-error' : ''}`}>
+                  <input
+                    type="file"
+                    hidden
+                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                    onChange={e => {
+                      const f = e.target.files?.[0] ?? null;
+                      if (!f) { set('attachment', null); return; }
+                      const err = validateUpload(f, 'doc');
+                      if (err) {
+                        setErrs(s => ({ ...s, attachment: err }));
+                        e.target.value = '';
+                        return;
+                      }
+                      setErrs(s => { const n = { ...s }; delete n.attachment; return n; });
+                      set('attachment', f);
+                    }}
+                  />
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                   <span className="acm-doc-attach-label">{d.attachment ? (d.attachment.name.length > 14 ? d.attachment.name.slice(0, 14) + '…' : d.attachment.name) : 'ATTACH FILE'}</span>
                 </label>
@@ -2159,11 +2198,33 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
    *  named field key so its placeholder + error text can vary. */
   const FileField = ({ field, label }: { field: 'idProof' | 'addressProof' | 'photograph'; label: string }) => {
     const file = d[field];
+    // Photograph is image-only (it's a picture of a person), the other
+    // two proof slots also accept PDF/DOC since scanned passports + bills
+    // commonly arrive in those formats.
+    const isPhoto = field === 'photograph';
+    const acceptAttr = isPhoto ? '.jpg,.jpeg,.png' : '.pdf,.jpg,.jpeg,.png,.doc,.docx';
+    const hintText = isPhoto ? 'JPG, JPEG, PNG — max 10 MB' : 'PDF, DOC, DOCX, JPG, PNG — max 10 MB';
     return (
       <Field label={label} required error={errs[field]}>
-        <Tooltip label={file ? `Replace: ${file.name}` : `Upload ${label}`}>
+        <Tooltip label={file ? `Replace: ${file.name}` : hintText}>
           <label className={`acm-doc-attach ${errs[field] ? 'acm-input-error' : ''}`}>
-            <input type="file" hidden onChange={e => set(field, e.target.files?.[0] ?? null)} />
+            <input
+              type="file"
+              hidden
+              accept={acceptAttr}
+              onChange={e => {
+                const f = e.target.files?.[0] ?? null;
+                if (!f) { set(field, null); return; }
+                const err = validateUpload(f, isPhoto ? 'photo' : 'doc');
+                if (err) {
+                  setErrs(s => ({ ...s, [field]: err }));
+                  e.target.value = '';
+                  return;
+                }
+                setErrs(s => { const n = { ...s }; delete n[field]; return n; });
+                set(field, f);
+              }}
+            />
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
             <span className="acm-doc-attach-label">
               {file ? (file.name.length > 18 ? file.name.slice(0, 18) + '…' : file.name) : `UPLOAD ${label.toUpperCase()}`}

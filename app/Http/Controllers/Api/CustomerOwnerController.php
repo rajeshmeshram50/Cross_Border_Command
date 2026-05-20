@@ -135,11 +135,23 @@ class CustomerOwnerController extends Controller
             'official_email'  => 'nullable|email|max:255',
             'phone_number'    => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
             'status'          => 'nullable|in:Active,Inactive',
-            // 10MB cap per file. Images + PDF allowed at the UI level;
-            // server-side we just bound size + presence.
-            'id_proof'        => 'sometimes|file|max:10240',
-            'address_proof'   => 'sometimes|file|max:10240',
-            'photograph'      => 'sometimes|file|max:10240',
+            // File slots — 10 MB cap, restricted to safe document types.
+            // ID / Address proof allow PDF + Office docs alongside images
+            // (passports, utility bills are often scanned PDFs). Photograph
+            // is image-only since it's literally a picture of a person.
+            // Server-side enforcement so executables / scripts / archives
+            // (.php, .exe, .zip, .txt) are rejected even if the UI is
+            // bypassed.
+            'id_proof'        => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:10240',
+            'address_proof'   => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:10240',
+            'photograph'      => 'sometimes|file|mimes:jpg,jpeg,png|max:10240',
+        ], [
+            'id_proof.mimes'      => 'ID Proof must be a JPG, JPEG, PNG, PDF, DOC or DOCX file.',
+            'id_proof.max'        => 'ID Proof must not exceed 10 MB.',
+            'address_proof.mimes' => 'Address Proof must be a JPG, JPEG, PNG, PDF, DOC or DOCX file.',
+            'address_proof.max'   => 'Address Proof must not exceed 10 MB.',
+            'photograph.mimes'    => 'Photograph must be a JPG, JPEG or PNG image.',
+            'photograph.max'      => 'Photograph must not exceed 10 MB.',
         ]);
     }
 
