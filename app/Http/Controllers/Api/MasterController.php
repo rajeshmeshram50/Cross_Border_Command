@@ -239,6 +239,13 @@ class MasterController extends Controller
         $this->authorizeMaster($request, $slug, 'can_view');
         $modelClass = $this->resolveModel($slug);
         $q = $modelClass::query()->with(self::OWNERSHIP_WITH)->orderByDesc('id');
+        // Eager-load the state relation for state_codes so the list endpoint
+        // returns the state name inline (master_states has tens of thousands
+        // of subdivisions — downloading the whole table just to translate an
+        // id on the frontend was prohibitively slow).
+        if ($slug === 'state_codes') {
+            $q->with('state:id,name');
+        }
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($search = $request->query('search')) {
