@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -554,50 +555,7 @@ class MasterController extends Controller
      */
     private function hierarchicalDenial(?User $user, $row, string $action): ?string
     {
-        if (!$user || $user->user_type === 'super_admin') return null;
-        if (!$row->created_by) return null;
-        if ($row->created_by === $user->id)  return null;          // your own row is always fair game
-
-        // Resolve creator (and their branch, if any) once.
-        $creator = User::find($row->created_by);
-        if (!$creator) return null;
-
-        $rankFor = function (?User $u, $rowBranchId = null) {
-            if (!$u) return 0;
-            switch ($u->user_type) {
-                case 'super_admin':                       return 5;
-                case 'client_admin':
-                case 'client_user':                       return 4;
-                case 'branch_user': {
-                    // Main branch users outrank sub-branch users.
-                    $branchId = $u->branch_id ?: $rowBranchId;
-                    if ($branchId) {
-                        $isMain = \App\Models\Branch::where('id', $branchId)->value('is_main');
-                        if ($isMain) return 3;
-                    }
-                    return 2;
-                }
-                case 'employee':                          return 1;
-                default:                                   return 0;
-            }
-        };
-
-        $creatorRank = $rankFor($creator, $row->branch_id);
-        $userRank    = $rankFor($user);
-
-        if ($creatorRank > $userRank) {
-            $byWhom = match ($creator->user_type) {
-                'super_admin'  => 'a Super Admin',
-                'client_admin' => 'a Client Admin',
-                'client_user'  => 'a Client user',
-                'branch_user'  => $creatorRank === 3 ? 'the Main Branch' : 'another Branch user',
-                'employee'     => 'an Employee',
-                default        => 'a higher-privileged user',
-            };
-            $verb = $action === 'delete' ? 'delete' : 'edit';
-            return "You cannot {$verb} this record — it was created by {$byWhom}.";
-        }
-        return null;
+        return MasterVisibility::hierarchicalDenial($user, $row, $action);
     }
 
     /**
@@ -742,81 +700,7 @@ class MasterController extends Controller
      */
     private function applyScope($q, $user, ?int $branchFilter = null): void
     {
-        if (!$user) return;
-        if ($user->user_type === 'super_admin') {
-            if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
-            return;
-        }
-
-        if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
-            $clientId = $user->client_id;
-            $q->where(function ($w) use ($clientId) {
-                $w->whereNull('client_id')->orWhere('client_id', $clientId);
-            });
-            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-            return;
-        }
-
-        // branch_user AND employee share the same scope rules — both belong
-        // to a single (client, branch) tuple and should see:
-        //   - global rows (super-admin seeded, client_id IS NULL)
-        //   - their client's rows
-        //   - rows under their own branch
-        //   - rows under the client's main branch (shared template data)
-        // Without this, a freshly-onboarded employee opening the Edit form
-        // sees empty Country/State/Department dropdowns because the scope
-        // returns zero rows.
-        if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-            $clientId = $user->client_id;
-            $branchId = $user->branch_id;
-            $isMain   = $user->branch?->is_main ?? false;
-
-            if ($isMain) {
-                $q->where(function ($w) use ($clientId) {
-                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
-                });
-                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
-                return;
-            }
-
-            // Branch-bound user: include global rows, client-level rows, own
-            // branch, main-branch-shared rows.
-            $mainBranchId = \App\Models\Branch::where('client_id', $clientId)
-                ->where('is_main', true)
-                ->value('id');
-
-            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId) {
-                $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId) {
-                      $ww->where('client_id', $clientId)
-                         ->where(function ($wb) use ($branchId, $mainBranchId) {
-                             $wb->whereNull('branch_id')
-                                ->orWhere('branch_id', $branchId);
-                             if ($mainBranchId) {
-                                 $wb->orWhere('branch_id', $mainBranchId);
-                             }
-                         });
-                  });
-            });
-            // Sub-branch users can't switch — branchFilter ignored on this path.
-            return;
-        }
-
-        // unknown type -> see nothing
-        $q->whereRaw('1 = 0');
-    }
-
-    /** Narrow the already-tenant-scoped query to a single branch when the
-     *  SPA's BranchSwitcher injects `?branch_id=N`. The branch must belong to
-     *  the granter's own client; cross-tenant ids are silently dropped. */
-    private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
-    {
-        if ($branchFilter === null) return;
-        $belongsToClient = \App\Models\Branch::where('id', $branchFilter)
-            ->where('client_id', $user->client_id)
-            ->exists();
-        if (!$belongsToClient) return;
-        $q->where('branch_id', $branchFilter);
+        MasterVisibility::applyReadScope($q, $user, $branchFilter);
     }
 
     /**
@@ -856,13 +740,6 @@ class MasterController extends Controller
         // Nullable fields with an empty value skip the unique check via
         // Laravel's `nullable` rule.
         $uEach = $schema['uEach'] ?? [];
-        // `tenantScoped` was an opt-in per-master flag that added branch_id
-        // to the uniqueness check. We now scope by branch_id for ALL
-        // masters by default — Branch A and Branch B of the same client
-        // can each maintain their own copy of "IT" department, "Manager"
-        // role, etc. Schemas can still opt OUT with 'clientScopedOnly'
-        // => true if a master is genuinely shared across an entire client.
-        $clientScopedOnly = !empty($schema['clientScopedOnly']);
         $modelClass = $this->resolveModel($slug);
         $table = (new $modelClass)->getTable();
         $isComposite = count($uFields) > 1;
@@ -880,16 +757,14 @@ class MasterController extends Controller
         } else {
             [$tenantClientId, $tenantBranchId] = $this->resolveOwnership($request, $request->user());
         }
-        $applyTenantScope = function ($rule) use ($clientScopedOnly, $tenantClientId, $tenantBranchId) {
-            return $rule->where(function ($q) use ($clientScopedOnly, $tenantClientId, $tenantBranchId) {
+        $applyTenantScope = function ($rule) use ($tenantClientId, $tenantBranchId) {
+            return $rule->where(function ($q) use ($tenantClientId, $tenantBranchId) {
                 $tenantClientId === null
                     ? $q->whereNull('client_id')
                     : $q->where('client_id', $tenantClientId);
-                if (!$clientScopedOnly) {
-                    $tenantBranchId === null
-                        ? $q->whereNull('branch_id')
-                        : $q->where('branch_id', $tenantBranchId);
-                }
+                $tenantBranchId === null
+                    ? $q->whereNull('branch_id')
+                    : $q->where('branch_id', $tenantBranchId);
             });
         };
 
@@ -972,16 +847,13 @@ class MasterController extends Controller
 
             // Always scope the case-insensitive uniqueness check by the
             // (client_id, branch_id) tuple this row belongs to so the same
-            // name can recur across branches of one client. Masters can
-            // opt back into client-wide scope via 'clientScopedOnly'.
+            // name can recur across branches of one client.
             $tenantClientId === null
                 ? $query->whereNull('client_id')
                 : $query->where('client_id', $tenantClientId);
-            if (!$clientScopedOnly) {
-                $tenantBranchId === null
-                    ? $query->whereNull('branch_id')
-                    : $query->where('branch_id', $tenantBranchId);
-            }
+            $tenantBranchId === null
+                ? $query->whereNull('branch_id')
+                : $query->where('branch_id', $tenantBranchId);
 
             if ($query->exists()) {
                 // Pretty per-field labels for the duplicate message — falls

@@ -76,31 +76,23 @@ class Customer extends Model
     }
 
     /**
-     * Single source of truth for tenant visibility on the customers
-     * table. Every controller in the customer + consignee modules
-     * goes through this scope so role-based rules stay in one place:
+     * Tenant visibility scope for the customers table. Delegates to the
+     * shared creator-hierarchy rule so the customer + consignee modules
+     * stay aligned with master data:
      *
      *   - super_admin:                  sees everything
      *   - client_admin | client_user:   their client's rows
-     *   - branch_user | employee:       their client's rows (shared
-     *                                   across branches under one
-     *                                   client — by design)
-     *   - anonymous:                    sees nothing
+     *   - main-branch member:           their client's rows
+     *   - sub-branch member:            client-level + main-branch + own
+     *                                   sub-branch (sibling sub-branches
+     *                                   are blocked)
      *
      * Usage:
      *   Customer::query()->forUser($user)->where(...)
      */
     public function scopeForUser(Builder $q, $user): Builder
     {
-        if (!$user) return $q->whereRaw('1 = 0');
-        if ($user->user_type === 'super_admin') return $q;
-        if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
-            return $q->where('client_id', $user->client_id);
-        }
-        if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-            $clientId = $user->client_id ?? ($user->branch?->client_id);
-            return $q->where('client_id', $clientId);
-        }
-        return $q->whereRaw('1 = 0');
+        \App\Support\MasterVisibility::applyReadScope($q, $user);
+        return $q;
     }
 }

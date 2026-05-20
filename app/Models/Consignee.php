@@ -76,21 +76,13 @@ class Consignee extends Model
     }
 
     /**
-     * Tenant visibility scope — mirrors Customer::scopeForUser exactly
-     * so the rule lives in one shape and only changes in two files
-     * when roles evolve. See Customer.php for the role matrix.
+     * Tenant visibility scope — mirrors Customer::scopeForUser by
+     * delegating to the same creator-hierarchy rule. See Customer.php
+     * for the role matrix.
      */
     public function scopeForUser(Builder $q, $user): Builder
     {
-        if (!$user) return $q->whereRaw('1 = 0');
-        if ($user->user_type === 'super_admin') return $q;
-        if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
-            return $q->where('client_id', $user->client_id);
-        }
-        if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-            $clientId = $user->client_id ?? ($user->branch?->client_id);
-            return $q->where('client_id', $clientId);
-        }
-        return $q->whereRaw('1 = 0');
+        \App\Support\MasterVisibility::applyReadScope($q, $user);
+        return $q;
     }
 }

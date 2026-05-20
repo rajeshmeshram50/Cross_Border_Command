@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
+use App\Support\MasterVisibility;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -135,6 +136,10 @@ class CustomerController extends Controller
         $user = $request->user();
         $customer = Customer::query()->forUser($user)->findOrFail($id);
 
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $customer, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
         $data = $this->validatePayload($request, (int) $customer->id, $customer->client_id);
 
         $row = DB::transaction(function () use ($customer, $data) {
@@ -180,6 +185,11 @@ class CustomerController extends Controller
     {
         $user = $request->user();
         $customer = Customer::query()->forUser($user)->findOrFail($id);
+
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $customer, 'delete')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
         $customer->delete();
         return response()->json(['id' => $customer->id, 'deleted' => true]);
     }

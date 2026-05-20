@@ -51,7 +51,7 @@ class CustomerOwnerController extends Controller
 
     public function store(Request $request, $customerId): JsonResponse
     {
-        $customer = $this->resolveCustomer($request, $customerId);
+        $customer = $this->resolveCustomer($request, $customerId, 'edit');
         $data = $this->validatePayload($request);
 
         $data['customer_id'] = $customer->id;
@@ -68,7 +68,7 @@ class CustomerOwnerController extends Controller
 
     public function update(Request $request, $customerId, $id): JsonResponse
     {
-        $customer = $this->resolveCustomer($request, $customerId);
+        $customer = $this->resolveCustomer($request, $customerId, 'edit');
         $owner = $customer->owners()->findOrFail($id);
         $data = $this->validatePayload($request, $owner->id);
 
@@ -88,7 +88,7 @@ class CustomerOwnerController extends Controller
 
     public function destroy(Request $request, $customerId, $id): JsonResponse
     {
-        $customer = $this->resolveCustomer($request, $customerId);
+        $customer = $this->resolveCustomer($request, $customerId, 'delete');
         $owner = $customer->owners()->findOrFail($id);
         foreach (self::FILE_FIELDS as $column) {
             if ($owner->{$column}) Storage::disk('public')->delete($owner->{$column});
@@ -141,10 +141,15 @@ class CustomerOwnerController extends Controller
         return $file->storeAs("customer_documents/{$customerId}", $name, 'public');
     }
 
-    private function resolveCustomer(Request $request, $customerId): Customer
+    private function resolveCustomer(Request $request, $customerId, ?string $action = null): Customer
     {
-        return Customer::query()
+        $customer = Customer::query()
             ->forUser($request->user())
             ->findOrFail($customerId);
+        if ($action) {
+            $denial = \App\Support\MasterVisibility::hierarchicalDenial($request->user(), $customer, $action);
+            if ($denial) abort(403, $denial);
+        }
+        return $customer;
     }
 }

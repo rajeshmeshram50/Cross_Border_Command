@@ -8,6 +8,7 @@ use App\Models\ConsigneeAddress;
 use App\Models\ConsigneeDocument;
 use App\Models\ConsigneeOwner;
 use App\Models\Customer;
+use App\Support\MasterVisibility;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -134,6 +135,10 @@ class ConsigneeController extends Controller
         $user = $request->user();
         $consignee = Consignee::query()->forUser($user)->findOrFail($id);
 
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $consignee, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
         $data = $this->validatePayload($request);
         $this->assertCustomerInScope($user, (int) $data['customer_id']);
         // Carry the previous value forward if the payload omits the
@@ -186,6 +191,11 @@ class ConsigneeController extends Controller
     {
         $user = $request->user();
         $consignee = Consignee::query()->forUser($user)->findOrFail($id);
+
+        if ($denial = MasterVisibility::hierarchicalDenial($user, $consignee, 'delete')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
         $consignee->delete();
         return response()->json(['id' => $consignee->id, 'deleted' => true]);
     }
