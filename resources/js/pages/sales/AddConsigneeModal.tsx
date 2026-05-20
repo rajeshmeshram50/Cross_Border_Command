@@ -5,6 +5,7 @@ import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 
 /* Each row in the Address & Contact Details table — mirrors the
  * shape used by AddCustomerModal so the JSX patterns line up. */
@@ -23,6 +24,13 @@ interface KycDocRow {
   issuing_authority?: string;
   issue_date?: string;        // YYYY-MM-DD
   expiry_date?: string;       // YYYY-MM-DD
+  /* _path is the disk-relative storage path (e.g.
+   * "consignee_documents/12/doc-abcd.pdf") — what the backend always
+   * returns. _url is the optional pre-built public URL (returns
+   * null on server configs where Storage::url() throws). View links
+   * prefer _url when present, fall back to resolveFileUrl(_path). */
+  attachment_path?: string;
+  attachment_url?: string | null;
   attachment_name?: string;
   status: 'Active' | 'Inactive';
 }
@@ -32,9 +40,9 @@ interface KycOwnerRow {
   designation?: string;
   official_email?: string;
   phone_number?: string;
-  id_proof_name?: string;
-  address_proof_name?: string;
-  photograph_name?: string;
+  id_proof_path?: string;       id_proof_url?: string | null;       id_proof_name?: string;
+  address_proof_path?: string;  address_proof_url?: string | null;  address_proof_name?: string;
+  photograph_path?: string;     photograph_url?: string | null;     photograph_name?: string;
   status: 'Active' | 'Inactive';
 }
 type KycSubTab = 'company-dd' | 'owner-kyc' | 'trade-licence';
@@ -602,6 +610,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         issuing_authority: x.issuing_authority ?? '',
         issue_date: x.issue_date ?? '',
         expiry_date: x.expiry_date ?? '',
+        attachment_path: x.attachment_path ?? '',
+        attachment_url:  x.attachment_url ?? null,
         attachment_name: x.attachment_name ?? '',
         status: x.status === 'Inactive' ? 'Inactive' : 'Active',
       })));
@@ -611,9 +621,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         designation: x.designation ?? '',
         official_email: x.official_email ?? '',
         phone_number: x.phone_number ?? '',
-        id_proof_name: x.id_proof_name ?? '',
+        id_proof_path:      x.id_proof_path ?? '',
+        id_proof_url:       x.id_proof_url ?? null,
+        id_proof_name:      x.id_proof_name ?? '',
+        address_proof_path: x.address_proof_path ?? '',
+        address_proof_url:  x.address_proof_url ?? null,
         address_proof_name: x.address_proof_name ?? '',
-        photograph_name: x.photograph_name ?? '',
+        photograph_path:    x.photograph_path ?? '',
+        photograph_url:     x.photograph_url ?? null,
+        photograph_name:    x.photograph_name ?? '',
         status: x.status === 'Inactive' ? 'Inactive' : 'Active',
       })));
     } catch { /* silent — KYC table just stays empty until next fetch */ }
@@ -1340,6 +1356,21 @@ const SectionHeader = ({ icon, title, sub, accent }: { icon: React.ReactNode; ti
  * Long → trim with an ellipsis and wrap in the project's portal-based
  * Tooltip so the full text shows on hover (clears table overflow
  * clipping, matches the look used everywhere else in the project). */
+/* Attachment cell — renders a clickable View link when there's any
+ * path or URL, an em-dash when not. Prefers the server-built `url`
+ * (works when the public disk has its `url` key configured); falls
+ * back to resolveFileUrl(path) for servers where Storage::url()
+ * threw and `url` came back null. Always opens in a new tab. */
+const AttachmentLink = ({ url, path, label = 'View' }: { url?: string | null; path?: string; label?: string }) => {
+  const href = url || (path ? resolveFileUrl(path) : '');
+  if (!href) return <span style={{ color: '#9ca3af' }}>—</span>;
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="acm-kyc-attach acm-kyc-attach-link">
+      {label}
+    </a>
+  );
+};
+
 const TruncatedCell = ({ text, max = 28, mono = false }: { text: string; max?: number; mono?: boolean }) => {
   const t = (text ?? '').trim();
   if (!t) return <span style={{ color: '#9ca3af' }}>—</span>;
@@ -1873,9 +1904,9 @@ const Stage2 = ({
                       <td>{o.designation || '—'}</td>
                       <td>{o.official_email || '—'}</td>
                       <td>{o.phone_number || '—'}</td>
-                      <td>{o.id_proof_name ? <span className="acm-kyc-attach">{o.id_proof_name}</span> : '—'}</td>
-                      <td>{o.address_proof_name ? <span className="acm-kyc-attach">{o.address_proof_name}</span> : '—'}</td>
-                      <td>{o.photograph_name ? <span className="acm-kyc-attach">{o.photograph_name}</span> : '—'}</td>
+                      <td><AttachmentLink url={o.id_proof_url}      path={o.id_proof_path} /></td>
+                      <td><AttachmentLink url={o.address_proof_url} path={o.address_proof_path} /></td>
+                      <td><AttachmentLink url={o.photograph_url}    path={o.photograph_path} /></td>
                       <td>{o.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
                       <td>
                         <div className="acm-loc-actions">
@@ -1914,7 +1945,7 @@ const Stage2 = ({
                         <td><span className={d.issue_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.issue_date)}</span></td>
                         <td><span className={d.expiry_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.expiry_date)}</span></td>
                         <td>{d.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
-                        <td>{d.attachment_name ? <span className="acm-kyc-attach">{d.attachment_name}</span> : '—'}</td>
+                        <td><AttachmentLink url={d.attachment_url} path={d.attachment_path} /></td>
                         <td>
                           <div className="acm-loc-actions">
                             <Tooltip label="Edit">
@@ -2181,7 +2212,7 @@ const VaultDocsTable = ({ docs, kind }: { docs: KycDocRow[]; kind: 'dd' | 'tl' }
                 <td><span className={d.issue_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.issue_date)}</span></td>
                 <td><span className={d.expiry_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.expiry_date)}</span></td>
                 <td>{d.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
-                <td>{d.attachment_name ? <span className="acm-kyc-attach">{d.attachment_name}</span> : '—'}</td>
+                <td><AttachmentLink url={d.attachment_url} path={d.attachment_path} /></td>
               </tr>
             ))}
           </tbody>
@@ -2211,9 +2242,9 @@ const VaultOwnersTable = ({ owners }: { owners: KycOwnerRow[] }) => (
               <td>{o.designation || '—'}</td>
               <td>{o.official_email || '—'}</td>
               <td>{o.phone_number || '—'}</td>
-              <td>{o.id_proof_name ? <span className="acm-kyc-attach">{o.id_proof_name}</span> : '—'}</td>
-              <td>{o.address_proof_name ? <span className="acm-kyc-attach">{o.address_proof_name}</span> : '—'}</td>
-              <td>{o.photograph_name ? <span className="acm-kyc-attach">{o.photograph_name}</span> : '—'}</td>
+              <td><AttachmentLink url={o.id_proof_url}      path={o.id_proof_path} /></td>
+              <td><AttachmentLink url={o.address_proof_url} path={o.address_proof_path} /></td>
+              <td><AttachmentLink url={o.photograph_url}    path={o.photograph_path} /></td>
               <td>{o.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
             </tr>
           ))}
@@ -3141,8 +3172,8 @@ const SCOPED_CSS = `
 
 /* ─── Phase B — Wizard ─── */
 .acm-wiz {
-  width: 100%; max-width: 1280px;
-  max-height: calc(100vh - 48px);
+  width: 100%; max-width: 1440px;
+  max-height: calc(100vh - 24px);
   background: #f0fdf4; border-radius: 16px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0,0,0,.40);
   display: flex; flex-direction: column;
@@ -3755,6 +3786,22 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   font-size: 11.5px; color: #047857; font-weight: 600;
   word-break: break-all;
 }
+/* Anchor-variant: the chip becomes clickable + underlined on hover
+ * when wired through AttachmentLink. Keeps the same emerald palette
+ * so the View link still reads as part of the KYC table styling. */
+.acm-kyc-attach-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 10px; border-radius: 6px;
+  background: #ecfdf5; border: 1px solid rgba(16,185,129,.30);
+  color: #047857;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.acm-kyc-attach-link:hover {
+  background: #10b981; color: #fff; border-color: #10b981;
+  box-shadow: 0 2px 6px rgba(16,185,129,.25);
+}
 
 /* ─── Address & Contact table card ─── */
 .acm-loc-card {
@@ -4033,4 +4080,114 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-kyc-exp        { background: rgba(255,255,255,.06); color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-kyc-exp.na     { color: #6b7280; }
 [data-bs-theme="dark"] .acm-kyc-attach     { color: #6ee7b7; }
+
+/* ============================================================
+ *  RESPONSIVE — tablet & mobile
+ *  Mirrors AddCustomerModal's responsive block. Consignee modal
+ *  uses the same .acm-* class names + a few consignee-specific
+ *  ones (acm-id-tabs, acm-grid-N, acm-loc-*, acm-kyc-*, acm-same-
+ *  banner). All those collapse cleanly down to single-column on
+ *  phones so a full Add Consignee flow is usable from any device.
+ * ============================================================ */
+
+/* ── Tablet (≤ 1024px) ───────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .acm-overlay { padding: 12px; }
+  .acm-wiz { max-width: 100%; }
+  /* Form section grids collapse */
+  .acm-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .acm-grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .acm-grid-2 { grid-template-columns: 1fr 1fr; }
+  /* Sub-modal location grids */
+  .acm-loc-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  /* Linked customer card */
+  .acm-linked-grid { grid-template-columns: repeat(2, 1fr); }
+  /* Section paddings */
+  .acm-sec-pad { padding: 12px; }
+}
+
+/* ── Mobile (≤ 640px) ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  .acm-overlay { padding: 0; align-items: stretch; }
+  .acm-wiz, .acm-pick {
+    border-radius: 0;
+    max-height: 100vh;
+    height: 100vh;
+    width: 100vw;
+    max-width: 100vw;
+  }
+  /* Phase A picker fits the viewport */
+  .acm-pick-body { padding: 14px; }
+  .acm-pick-header { padding: 14px 14px 10px; }
+  .acm-pick-title { font-size: 17px; }
+  .acm-pick-footer { padding: 12px 14px; flex-direction: column; gap: 8px; }
+  .acm-pick-footer .acm-btn { width: 100%; }
+  /* Wizard header */
+  .acm-wiz-header { padding: 14px 16px; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .acm-wiz-hicon { width: 38px; height: 38px; }
+  .acm-wiz-htitle { font-size: 16px; }
+  .acm-wiz-hsub   { font-size: 11.5px; }
+  .acm-close { position: absolute; top: 12px; right: 12px; }
+  /* Steps: stack vertically, hide arrows */
+  .acm-steps { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; }
+  .acm-steps-arrow { display: none; }
+  .acm-step { width: 100%; }
+  /* Identification / Vault sub-tabs */
+  .acm-id-tabs { flex-wrap: wrap; gap: 6px; padding: 0 12px; }
+  .acm-id-tab { flex: 1 1 45%; min-width: 0; font-size: 12px; padding: 8px 10px; }
+  /* Body padding */
+  .acm-wiz-body { padding: 12px; }
+  /* ALL grids → single col on phone */
+  .acm-grid-4, .acm-grid-3, .acm-grid-2 { grid-template-columns: 1fr; }
+  .acm-loc-grid-2, .acm-loc-grid-4 { grid-template-columns: 1fr; }
+  .acm-mt-12 { margin-top: 10px; }
+  /* Field input sizing */
+  .acm-input { font-size: 13px; padding: 9px 11px; }
+  /* Section header */
+  .acm-sec-header { padding: 10px 12px; }
+  .acm-sec-title { font-size: 13px; }
+  .acm-sec-sub   { display: none; }
+  .acm-sec-pad   { padding: 10px; }
+  /* Linked customer card */
+  .acm-linked { padding: 12px; }
+  .acm-linked-grid { grid-template-columns: 1fr 1fr; padding: 8px; gap: 8px; }
+  .acm-linked-hide { font-size: 11px; padding: 4px 10px; }
+  /* Footer: stacked actions, full-width buttons */
+  .acm-wiz-footer { padding: 10px 12px; flex-direction: column; gap: 8px; }
+  .acm-footer-right { width: 100%; display: flex; gap: 8px; }
+  .acm-btn { flex: 1 1 50%; padding: 10px 12px; font-size: 13px; justify-content: center; }
+  /* Address & Contact table card */
+  .acm-loc-head-row { flex-wrap: wrap; gap: 8px; }
+  .acm-loc-head-text { flex: 1 1 100%; }
+  .acm-add-pill { width: 100%; justify-content: center; font-size: 12px; padding: 8px 12px; }
+  /* Sub-modal (Location / KYC Doc / KYC Owner) */
+  .acm-loc-sub-overlay { padding: 0; align-items: stretch; }
+  .acm-loc-sub-card { border-radius: 0; max-height: 100vh; height: 100vh; width: 100vw; }
+  .acm-loc-sub-header { padding: 14px 16px; }
+  .acm-loc-sub-body   { padding: 14px; }
+  .acm-loc-sub-footer { padding: 12px 14px; flex-direction: column; gap: 8px; }
+  .acm-loc-sub-footer .acm-btn { width: 100%; }
+  /* Stage 2 KYC sub-tabs */
+  .acm-kyc-subtabs { flex-wrap: wrap; gap: 6px; }
+  .acm-kyc-subtab { flex: 1 1 45%; font-size: 12px; padding: 8px 10px; }
+  /* KYC toolbar (search + count + add) */
+  .acm-kyc-head-row { flex-wrap: wrap; gap: 8px; }
+  .acm-kyc-head-text { flex: 1 1 100%; }
+  .acm-kyc-toolbar { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+  .acm-kyc-search { max-width: 100%; }
+  .acm-kyc-count { align-self: flex-start; }
+  /* Same-as-Customer banner */
+  .acm-same-banner { padding: 10px 12px; gap: 10px; }
+  .acm-same-banner-sub { font-size: 11.5px; }
+  /* Recap (Stage 3) */
+  .acm-recap-grid { grid-template-columns: 1fr; }
+  .acm-recap-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+  /* Vault sub-tabs */
+  .acm-vault-tabs { flex-wrap: wrap; gap: 6px; }
+  .acm-vault-tab  { flex: 1 1 45%; font-size: 12px; padding: 8px 10px; }
+  /* File upload zone */
+  .acm-file-drop { padding: 12px; }
+  .acm-file-drop-title { font-size: 12px; }
+  .acm-file-drop-sub { font-size: 10.5px; }
+}
 `;

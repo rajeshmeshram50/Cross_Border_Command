@@ -703,7 +703,9 @@ const SCOPED_CSS = `
   background: #fff !important;
   border: 1px solid #d1fae5 !important;
   border-radius: 10px !important;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
 }
 .smcg-table-wrap .table { --bs-table-bg: transparent; margin-bottom: 0 !important; }
 
@@ -1059,5 +1061,38 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .smcg-pag-btn:hover:not(:disabled) {
   background: #10b981; color: #fff; border-color: #10b981;
+}
+
+/* ============================================================
+ *  RESPONSIVE — tablet & mobile
+ *  Mirrors SalesCustomers' responsive block. Emerald-themed
+ *  class names (smcg-*). Same reflow strategy: hero stacks,
+ *  "what we are doing" cards wrap, search row collapses, table
+ *  keeps horizontal scroll via .table-responsive.
+ * ============================================================ */
+@media (max-width: 1024px) {
+  .smcg-wdh-cards { grid-template-columns: repeat(2, 1fr); }
+  .smcg-wdh-arrow { display: none; }
+}
+@media (max-width: 768px) {
+  .smcg-cstrip { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px; }
+  .smcg-cstrip-right { width: 100%; }
+  .smcg-add-btn { width: 100%; justify-content: center; }
+  .smcg-title { font-size: 18px; }
+  .smcg-sub   { font-size: 12.5px; }
+  .smcg-wdh-cards { grid-template-columns: 1fr; }
+  .smcg-wdh-header { flex-wrap: wrap; gap: 8px; }
+  .smcg-tabs-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .smcg-search-wrap { max-width: 100%; }
+}
+@media (max-width: 480px) {
+  .smcg-root { padding: 0; }
+  .smcg-cstrip, .smcg-wdh, .smcg-tabs-row { border-radius: 12px; }
+  .smcg-avatar-wrap, .smcg-back-btn { flex-shrink: 0; }
+  .smcg-wdh-card { padding: 12px; }
+  .smcg-shimmer-head, .smcg-shimmer-row {
+    grid-template-columns: repeat(12, minmax(64px, 1fr));
+    overflow-x: auto;
+  }
 }
 `;

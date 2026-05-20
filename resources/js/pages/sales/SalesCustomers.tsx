@@ -767,7 +767,9 @@ const SCOPED_CSS = `
   background: #fff !important;
   border: 1px solid #e0d9f7 !important;
   border-radius: 10px !important;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
 }
 .smc-table-wrap .table {
   --bs-table-bg: transparent;
@@ -1278,5 +1280,45 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .smc-pag-btn:hover:not(:disabled) {
   background: #7c3aed; color: #fff;
+}
+
+/* ============================================================
+ *  RESPONSIVE — tablet & mobile
+ *  Hero strip is the most reflow-sensitive piece: the avatar +
+ *  title go above the "Add Customer" button on narrow viewports.
+ *  The "What we are doing here" 4-card strip wraps. The table
+ *  scrolls horizontally inside its existing .table-responsive
+ *  wrapper, so no special table treatment is needed.
+ * ============================================================ */
+@media (max-width: 1024px) {
+  /* "What we are doing here" — 4 cards across become 2x2 */
+  .smc-wdh-cards { grid-template-columns: repeat(2, 1fr); }
+  .smc-wdh-arrow { display: none; }
+}
+@media (max-width: 768px) {
+  /* Hero strip: stack the right-side Add button under the title */
+  .smc-cstrip { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px; }
+  .smc-cstrip-right { width: 100%; }
+  .smc-add-btn { width: 100%; justify-content: center; }
+  .smc-title { font-size: 18px; }
+  .smc-sub   { font-size: 12.5px; }
+  /* What-we-are-doing collapses to single column */
+  .smc-wdh-cards { grid-template-columns: 1fr; }
+  .smc-wdh-header { flex-wrap: wrap; gap: 8px; }
+  /* Fresh/Recurring tabs + search row stack */
+  .smc-tabs-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .smc-search-wrap { max-width: 100%; }
+}
+@media (max-width: 480px) {
+  /* Smaller mobile — tighten paddings */
+  .smc-root { padding: 0; }
+  .smc-cstrip, .smc-wdh, .smc-tabs-row { border-radius: 12px; }
+  .smc-avatar-wrap, .smc-back-btn { flex-shrink: 0; }
+  .smc-wdh-card { padding: 12px; }
+  /* Shimmer header grid — let the cells just flow with min widths */
+  .smc-shimmer-head, .smc-shimmer-row {
+    grid-template-columns: repeat(12, minmax(64px, 1fr));
+    overflow-x: auto;
+  }
 }
 `;

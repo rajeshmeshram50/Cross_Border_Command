@@ -64,7 +64,13 @@ export function MasterSelect({
     return () => window.removeEventListener('resize', update);
   }, [open]);
   const selected = options.find(o => o.value === currentValue);
-  const showSearch = options.length > 4;
+  /* Always show the search input — keeps every MasterSelect across
+   * the project visually consistent (Risk Level / Active-Inactive /
+   * Customer Segment all look the same). Was previously gated at
+   * `options.length > 4` which made short dropdowns look like a
+   * different component. The search is functionally harmless on
+   * short lists; it just becomes a no-op. */
+  const showSearch = true;
   const filtered = search.trim()
     ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
     : options;

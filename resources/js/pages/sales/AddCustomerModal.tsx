@@ -2445,8 +2445,8 @@ const SCOPED_CSS = `
      sub-tabs (the empty Address & Contact table is shorter than the
      full Identification form). Height = min(90vh, 100vh - 32px) keeps
      a small breathing gap on shorter viewports. */
-  width: 100%; max-width: 1200px;
-  height: min(90vh, calc(100vh - 32px));
+  width: 100%; max-width: 1440px;
+  height: min(92vh, calc(100vh - 24px));
   background: linear-gradient(165deg,#faf7ff 0%,#f5efff 45%,#ede9fe 100%);
   border: 1px solid rgba(167,139,250,.5);
   border-radius: 20px;
@@ -3165,4 +3165,87 @@ const SCOPED_CSS = `
 
 /* Error message text under invalid fields */
 [data-bs-theme="dark"] .acm-field-error { color: #fca5a5; }
+
+/* ============================================================
+ *  RESPONSIVE — tablet & mobile
+ *  Strategy: the modal is normally a fixed-width card centered on
+ *  the screen. On narrower viewports we (a) eat the side padding,
+ *  (b) collapse multi-col grids down toward 1 col, (c) stack the
+ *  header / footer rows that were side-by-side, (d) loosen the
+ *  step indicator and sub-modal so they fit, and (e) drop heavy
+ *  visual chrome (large icons, generous padding) so the form is
+ *  still usable on a phone.
+ * ============================================================ */
+
+/* ── Tablet (≤ 1024px) ───────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .acm-overlay { padding: 12px; }
+  .acm-wiz { max-width: 100%; }
+  /* 4-col grids → 2 cols; 3-col → 2 cols; 2-col → stays */
+  .acm-row-4 { grid-template-columns: 1fr 1fr; }
+  .acm-row-3 { grid-template-columns: 1fr 1fr; }
+  .acm-row-2 { grid-template-columns: 1fr 1fr; }
+  .acm-section-body, .acm-sec-pad { padding: 12px; }
+}
+
+/* ── Mobile (≤ 640px) ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  .acm-overlay { padding: 0; align-items: stretch; }
+  .acm-wiz {
+    border-radius: 0;
+    max-height: 100vh;
+    height: 100vh;
+    width: 100vw;
+  }
+  /* Header: stack icon + title, tighten font */
+  .acm-header { padding: 14px 16px; flex-direction: column; align-items: flex-start; gap: 10px; }
+  .acm-header-icon { width: 40px; height: 40px; }
+  .acm-title { font-size: 16px; }
+  .acm-sub   { font-size: 11.5px; }
+  .acm-close { position: absolute; top: 12px; right: 12px; }
+  /* Steps: stack vertically (or hide intermediate connectors) */
+  .acm-steps { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; }
+  .acm-steps-arrow, .acm-step-connector { display: none; }
+  .acm-step { width: 100%; }
+  /* Tabs */
+  .acm-tabs { flex-wrap: wrap; padding: 0 12px; }
+  .acm-tab { flex: 1 1 auto; min-width: 40%; font-size: 12px; padding: 8px 10px; }
+  /* Body padding */
+  .acm-body { padding: 12px; }
+  /* All grids → single column on phone */
+  .acm-row-4, .acm-row-3, .acm-row-2 { grid-template-columns: 1fr; }
+  .acm-row { gap: 10px; }
+  /* Inputs slightly smaller */
+  .acm-input { font-size: 13px; padding: 8px 10px; }
+  /* Section header tightens */
+  .acm-section-head { padding: 10px 12px; gap: 8px; }
+  .acm-section-title { font-size: 12.5px; }
+  .acm-section-sub { display: none; }
+  .acm-section-body, .acm-sec-pad { padding: 10px; }
+  /* Footer: stack actions, full-width buttons */
+  .acm-footer { padding: 10px 12px; flex-direction: column; gap: 8px; }
+  .acm-footer-right { width: 100%; display: flex; gap: 8px; }
+  .acm-btn-prev, .acm-btn-next { flex: 1 1 50%; padding: 10px 14px; font-size: 13px; }
+  /* Sub-modal */
+  .acm-sub-modal { padding: 0; align-items: stretch; }
+  .acm-sub-card { border-radius: 0; max-height: 100vh; height: 100vh; width: 100vw; }
+  .acm-sub-header { padding: 14px 16px; }
+  .acm-sub-body { padding: 14px; }
+  .acm-sub-footer { padding: 12px 14px; flex-direction: column; gap: 8px; }
+  .acm-btn-mini-cancel, .acm-btn-save, .acm-doc-save { width: 100%; }
+  /* Map-Consignee popup (if present), Stage 2 toolbar */
+  .acm-doc-toolbar { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+  .acm-doc-search { max-width: 100%; }
+  .acm-doc-count { align-self: flex-start; }
+  /* Stage 2 sub-tabs wrap */
+  .acm-subtabs-row { flex-wrap: wrap; gap: 6px; }
+  /* History recap card collapses to single column */
+  .acm-recap-grid { grid-template-columns: 1fr; }
+  /* Same-as-Customer banner: tighter */
+  .acm-same-banner { padding: 10px 12px; gap: 10px; }
+  .acm-same-banner-sub { font-size: 11.5px; }
+  /* Address & Contact action button — wrap label */
+  .acm-add-pill { font-size: 11.5px; padding: 6px 12px; }
+  .acm-section-head-row { flex-wrap: wrap; gap: 8px; }
+}
 `;

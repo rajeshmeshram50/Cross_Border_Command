@@ -474,4 +474,44 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .ccm-row-btn { background: #2e1065; border-color: rgba(167,139,250,.25); color: #94a3b8; }
 [data-bs-theme="dark"] .ccm-row-btn:hover { background: rgba(124,58,237,.18); border-color: #7c3aed; color: #c4b5fd; }
 [data-bs-theme="dark"] .ccm-row-btn-del:hover { background: rgba(239,68,68,.18); border-color: #ef4444; color: #fca5a5; }
+
+/* ============================================================
+ *  RESPONSIVE — tablet & mobile
+ *  The popup is a wide 12-column table by default. On smaller
+ *  viewports it eats the side padding and lets the table scroll
+ *  horizontally (rather than forcing a card stack), so the user
+ *  can still see all columns at a glance — just scroll.
+ * ============================================================ */
+@media (max-width: 1024px) {
+  .ccm-overlay { padding: 12px; }
+  .ccm-card { max-height: calc(100vh - 24px); }
+  .ccm-link-chip-name { max-width: 140px; }
+}
+@media (max-width: 640px) {
+  .ccm-overlay { padding: 0; align-items: stretch; }
+  .ccm-card {
+    border-radius: 0;
+    max-height: 100vh;
+    height: 100vh;
+    width: 100vw;
+  }
+  /* Header: stack chip + close below the title block */
+  .ccm-header { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; }
+  .ccm-header-left { align-items: flex-start; }
+  .ccm-title { font-size: 16px; }
+  .ccm-sub   { font-size: 11.5px; }
+  .ccm-header-right { width: 100%; flex-wrap: wrap; gap: 8px; }
+  .ccm-link-chip { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
+  .ccm-link-chip-name { max-width: 100%; }
+  .ccm-close { position: absolute; top: 12px; right: 12px; }
+  /* Toolbar: search above, controls below */
+  .ccm-toolbar { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px; }
+  .ccm-search { max-width: 100%; }
+  .ccm-toolbar-right { width: 100%; justify-content: space-between; }
+  .ccm-add-btn { flex: 0 0 auto; padding: 8px 14px; font-size: 12.5px; }
+  /* Table scrolls horizontally — keep all 12 cols visible just slide
+     left/right with thumb on mobile. */
+  .ccm-table { font-size: 11.5px; }
+  .ccm-table thead th, .ccm-table tbody td { padding: 10px 8px; }
+}
 `;
