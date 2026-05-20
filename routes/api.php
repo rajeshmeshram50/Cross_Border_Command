@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrGeneratedDocumentController;
 use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\LeadAckReasonController;
+use App\Http\Controllers\Api\SalesPdfController;
 use App\Http\Controllers\Api\SalesTodoController;
 use App\Http\Controllers\Api\LeavePlanController;
 use App\Http\Controllers\Api\LeaveRequestController;
@@ -153,6 +154,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/sales/lead-ack-reasons',       [LeadAckReasonController::class, 'store']);
     Route::put   ('/sales/lead-ack-reasons/{id}',  [LeadAckReasonController::class, 'update']);
     Route::delete('/sales/lead-ack-reasons/{id}',  [LeadAckReasonController::class, 'destroy']);
+
+    // Sales Matrix → QPI page PDF previews. POST body carries the row fields
+    // the frontend already has (piNo, customer, etc.) plus a `withSignature`
+    // flag that picks between the two More-Options variants. Returns the PDF
+    // inline so the page can preview it in a new tab via blob URL.
+    Route::post  ('/sales/pi/preview-pdf',         [SalesPdfController::class, 'previewPi']);
 
     // Sales Matrix → Productivity Tracker (/sales/todo). Two parallel
     // sub-resources behind one controller — reminders + meetings — with

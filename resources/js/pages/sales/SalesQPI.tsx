@@ -1,4 +1,6 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import Tooltip from '../../components/ui/Tooltip';
 
@@ -83,6 +85,156 @@ const PI_WITHOUT: PI[] = [
 ];
 
 const ROWS_PER_PAGE = 10;
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * PI PDF preview — opens the Proforma Invoice in a new tab.
+ *
+ * Used by the More Options dropdown on both the Quotation and PI tables.
+ * POSTs the row fields to /sales/pi/preview-pdf, gets back a PDF blob,
+ * and opens it via blob URL. The `withSignature` flag picks between the
+ * stamped and blank variants of the same template.
+ * ════════════════════════════════════════════════════════════════════════ */
+async function openPiPreview(payload: Record<string, unknown>, withSignature: boolean): Promise<void> {
+  const res = await api.post('/sales/pi/preview-pdf', { ...payload, withSignature }, {
+    responseType: 'blob',
+  });
+  const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, '_blank', 'noopener,noreferrer');
+  // Revoke after a short delay so the browser has time to read the blob
+  // before we drop the reference; we can't revoke immediately or the new
+  // tab gets a broken/blank document.
+  if (win) setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function piPayloadFromQuotation(q: Quotation) {
+  return {
+    piNo: q.qtNo, piDate: q.qtDate,
+    oppId: q.oppId, oppDate: q.oppDate,
+    customer: q.customer, consignee: q.consignee,
+    docType: q.docType, currency: q.currency,
+    salesManager: q.salesManager,
+  };
+}
+
+function piPayloadFromPI(p: PI) {
+  return {
+    piNo: p.piNo, piDate: p.piDate,
+    btId: p.btId ?? '0', btDate: p.btDate ?? 'NA',
+    oppId: p.oppId, oppDate: p.oppDate,
+    customer: p.customer, consignee: p.consignee,
+    docType: p.docType, currency: p.currency,
+    salesManager: p.salesManager,
+  };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * MoreOptionsMenu — dropdown anchored next to the kebab button.
+ *
+ * Rendered via portal at document.body so it escapes the table-wrap's
+ * overflow:auto clip. Position is computed from the anchor button's rect
+ * each open. Closes on outside-click, Escape, scroll, and resize.
+ * ──────────────────────────────────────────────────────────────────────── */
+function MoreOptionsMenu(props: {
+  anchor: HTMLElement;
+  payload: Record<string, unknown>;
+  onClose: () => void;
+  onError: (msg: string) => void;
+}) {
+  const { anchor, payload, onClose, onError } = props;
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState<'with' | 'without' | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  // Measure the anchor + menu before paint to avoid a one-frame flash at
+  // the wrong coordinates. Re-measure if window resizes; close on scroll
+  // so the menu doesn't drift away from a moving anchor.
+  useLayoutEffect(() => {
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      const menuW = menuRef.current?.offsetWidth ?? 200;
+      const menuH = menuRef.current?.offsetHeight ?? 90;
+      // Default: open below the kebab, aligned to its right edge.
+      let top  = r.bottom + 6;
+      let left = r.right - menuW;
+      // Flip up if not enough room below.
+      if (top + menuH > window.innerHeight - 8) top = r.top - 6 - menuH;
+      // Clamp horizontally so the menu stays on-screen.
+      if (left < 8) left = 8;
+      if (left + menuW > window.innerWidth - 8) left = window.innerWidth - menuW - 8;
+      setPos({ top, left });
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [anchor]);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t)) return;
+      if (anchor.contains(t)) return; // clicking the kebab again toggles via parent
+      onClose();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onScroll = () => onClose();
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [anchor, onClose]);
+
+  const pick = async (withSignature: boolean) => {
+    setBusy(withSignature ? 'with' : 'without');
+    try {
+      await openPiPreview(payload, withSignature);
+      onClose();
+    } catch (err: any) {
+      onError(err?.response?.data?.message || 'Could not generate PDF');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="qpi-moremenu"
+      role="menu"
+      style={pos ? { top: pos.top, left: pos.left } : { top: -9999, left: -9999 }}
+    >
+      <button
+        type="button" role="menuitem"
+        className="qpi-moremenu-item"
+        disabled={busy !== null}
+        onClick={() => pick(true)}
+      >
+        <IconFileSignSm />
+        <span>PI with Signature</span>
+        {busy === 'with' && <span className="qpi-moremenu-spinner" />}
+      </button>
+      <button
+        type="button" role="menuitem"
+        className="qpi-moremenu-item"
+        disabled={busy !== null}
+        onClick={() => pick(false)}
+      >
+        <IconFileSm />
+        <span>PI without Signature</span>
+        {busy === 'without' && <span className="qpi-moremenu-spinner" />}
+      </button>
+    </div>,
+    document.body
+  );
+}
+
+const IconFileSignSm = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><path d="M9 18c1-2 2-3 3-3s2 1 3 2" /></svg>
+);
 
 const STEPS = [
   { n:1, title:'Create Quotation',          desc:'Prepare quotation using opportunity, buyer, product, pricing, currency, and bank details.', tag:'FOUNDATION STEP' },
@@ -259,9 +411,21 @@ export default function SalesQPI() {
         {/* Table */}
         <div className="qpi-table-wrap">
           {tab === 'quotation' ? (
-            <QuotationTable rows={rows as Quotation[]} startIdx={startIdx} onConvert={onConvertToPi} onMail={() => soon('Mail Quotation')} onEdit={() => soon('Edit Quotation')} onMenu={() => soon('More Options')} onDelete={() => soon('Delete Quotation')} />
+            <QuotationTable
+              rows={rows as Quotation[]} startIdx={startIdx}
+              onConvert={onConvertToPi}
+              onMail={() => soon('Mail Quotation')}
+              onEdit={() => soon('Edit Quotation')}
+              onDelete={() => soon('Delete Quotation')}
+              onMenuError={(msg) => toast.error('Preview failed', msg)}
+            />
           ) : (
-            <PITable rows={rows as PI[]} startIdx={startIdx} sub={piSub} onEdit={() => soon('Edit PI')} onMenu={() => soon('More Options')} onDelete={() => soon('Delete PI')} />
+            <PITable
+              rows={rows as PI[]} startIdx={startIdx} sub={piSub}
+              onEdit={() => soon('Edit PI')}
+              onDelete={() => soon('Delete PI')}
+              onMenuError={(msg) => toast.error('Preview failed', msg)}
+            />
           )}
         </div>
 
@@ -318,9 +482,11 @@ export default function SalesQPI() {
 function QuotationTable(props: {
   rows: Quotation[]; startIdx: number;
   onConvert: (q: Quotation) => void;
-  onMail: () => void; onEdit: () => void; onMenu: () => void; onDelete: () => void;
+  onMail: () => void; onEdit: () => void; onDelete: () => void;
+  onMenuError: (msg: string) => void;
 }) {
-  const { rows, startIdx, onConvert, onMail, onEdit, onMenu, onDelete } = props;
+  const { rows, startIdx, onConvert, onMail, onEdit, onDelete, onMenuError } = props;
+  const [menuFor, setMenuFor] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   return (
     <table className="qpi-table">
       <thead>
@@ -366,8 +532,25 @@ function QuotationTable(props: {
                   <button className="qpi-act qpi-act-edit" onClick={onEdit} aria-label="Edit Quotation"><IconEdit /></button>
                 </Tooltip>
                 <Tooltip label="More Options">
-                  <button className="qpi-act qpi-act-menu" onClick={onMenu} aria-label="More Options"><IconKebab /></button>
+                  <button
+                    className="qpi-act qpi-act-menu"
+                    onClick={(e) => {
+                      const el = e.currentTarget;
+                      setMenuFor(prev => prev?.id === r.qtNo ? null : { id: r.qtNo, anchor: el });
+                    }}
+                    aria-haspopup="menu"
+                    aria-expanded={menuFor?.id === r.qtNo}
+                    aria-label="More Options"
+                  ><IconKebab /></button>
                 </Tooltip>
+                {menuFor?.id === r.qtNo && (
+                  <MoreOptionsMenu
+                    anchor={menuFor.anchor}
+                    payload={piPayloadFromQuotation(r)}
+                    onClose={() => setMenuFor(null)}
+                    onError={onMenuError}
+                  />
+                )}
                 <Tooltip label="Delete Quotation">
                   <button className="qpi-act qpi-act-del" onClick={onDelete} aria-label="Delete Quotation"><IconTrash /></button>
                 </Tooltip>
@@ -386,10 +569,12 @@ function QuotationTable(props: {
 
 function PITable(props: {
   rows: PI[]; startIdx: number; sub: PISubTab;
-  onEdit: () => void; onMenu: () => void; onDelete: () => void;
+  onEdit: () => void; onDelete: () => void;
+  onMenuError: (msg: string) => void;
 }) {
-  const { rows, startIdx, sub, onEdit, onMenu, onDelete } = props;
+  const { rows, startIdx, sub, onEdit, onDelete, onMenuError } = props;
   const withShipment = sub === 'with';
+  const [menuFor, setMenuFor] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   return (
     <table className="qpi-table">
       <thead>
@@ -435,8 +620,25 @@ function PITable(props: {
                   <button className="qpi-act qpi-act-edit" onClick={onEdit} aria-label="Edit PI"><IconEdit /></button>
                 </Tooltip>
                 <Tooltip label="More Options">
-                  <button className="qpi-act qpi-act-menu" onClick={onMenu} aria-label="More Options"><IconKebab /></button>
+                  <button
+                    className="qpi-act qpi-act-menu"
+                    onClick={(e) => {
+                      const el = e.currentTarget;
+                      setMenuFor(prev => prev?.id === r.piNo ? null : { id: r.piNo, anchor: el });
+                    }}
+                    aria-haspopup="menu"
+                    aria-expanded={menuFor?.id === r.piNo}
+                    aria-label="More Options"
+                  ><IconKebab /></button>
                 </Tooltip>
+                {menuFor?.id === r.piNo && (
+                  <MoreOptionsMenu
+                    anchor={menuFor.anchor}
+                    payload={piPayloadFromPI(r)}
+                    onClose={() => setMenuFor(null)}
+                    onError={onMenuError}
+                  />
+                )}
                 <Tooltip label="Delete PI">
                   <button className="qpi-act qpi-act-del" onClick={onDelete} aria-label="Delete PI"><IconTrash /></button>
                 </Tooltip>
@@ -1312,6 +1514,52 @@ const SCOPED_CSS = `
 .qpi-act-edit { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
 .qpi-act-menu { color: #475569; border-color: #e2e8f0; background: #fff; }
 .qpi-act-del  { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+
+/* ─── More-Options dropdown (portal'd into <body>; positioned via inline style) ─── */
+.qpi-moremenu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 200px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 14px 32px rgba(15,23,42,.20), 0 4px 10px rgba(15,23,42,.08);
+  padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  animation: qpi-moremenu-in .12s ease-out;
+}
+@keyframes qpi-moremenu-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.qpi-moremenu-item {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 7px;
+  background: transparent; border: none; cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  color: #1e293b;
+  text-align: left;
+  transition: background .12s, color .12s;
+}
+.qpi-moremenu-item:hover:not(:disabled) { background: #eff6ff; color: #0369a1; }
+.qpi-moremenu-item:disabled { opacity: .65; cursor: wait; }
+.qpi-moremenu-item svg { flex-shrink: 0; color: #0ea5e9; }
+.qpi-moremenu-item span { flex: 1; white-space: nowrap; }
+.qpi-moremenu-spinner {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid rgba(14,165,233,.30); border-top-color: #0ea5e9;
+  animation: qpi-moremenu-spin .7s linear infinite;
+}
+@keyframes qpi-moremenu-spin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .qpi-moremenu {
+  background: #2a2342;
+  border-color: rgba(167,139,250,.45);
+  box-shadow: 0 14px 32px rgba(0,0,0,.60), 0 4px 10px rgba(0,0,0,.40);
+}
+[data-bs-theme="dark"] .qpi-moremenu-item { color: #f1f5f9; }
+[data-bs-theme="dark"] .qpi-moremenu-item:hover:not(:disabled) {
+  background: rgba(14,165,233,.20);
+  color: #e0f2fe;
+}
+[data-bs-theme="dark"] .qpi-moremenu-item svg { color: #38bdf8; }
 
 /* ─── Pagination ─── */
 .qpi-pagination {
