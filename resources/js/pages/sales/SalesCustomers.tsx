@@ -1,5 +1,4 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
@@ -48,7 +47,6 @@ const ROWS_PER_PAGE = 10;
 export default function SalesCustomers() {
   const toast = useToast();
   const { user } = useAuth();
-  const navigate = useNavigate();
   const isSuperAdmin = user?.user_type === 'super_admin';
   // Match the Permissions sheet exactly: the row is keyed by the leaf slug
   // `sales.customers` and exposes can_view/add/edit/delete/etc. as booleans.
@@ -151,6 +149,20 @@ export default function SalesCustomers() {
     </Tooltip>
   );
 
+  /* ── Truncated cell — for fields that can hold long values (company
+   * name, contact person, email). Renders the value with an ellipsis
+   * cap and a Tooltip that shows the full value on hover. Falls back
+   * to "—" when the value is empty so the column stays visually
+   * aligned. */
+  const TruncatedCell = ({ value, className, max = 22 }: { value?: string | null; className?: string; max?: number }) => {
+    const v = (value ?? '').trim();
+    if (!v) return <span className="text-muted">—</span>;
+    const needsTooltip = v.length > max;
+    const display = needsTooltip ? v.slice(0, max) + '…' : v;
+    const inner = <span className={className} style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
+    return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
+  };
+
   /* ── TanStack table columns. Cell renderers preserve the existing
    * type-color pills, segment chips, WhatsApp pill, and customer-ID
    * mono chip so the look stays consistent with the previous design;
@@ -173,7 +185,7 @@ export default function SalesCustomers() {
     {
       header: 'Company Name',
       accessorKey: 'company',
-      cell: (info: any) => <span className="smc-company">{info.getValue() || '—'}</span>,
+      cell: (info: any) => <TruncatedCell value={info.getValue()} className="smc-company" max={22} />,
     },
     {
       header: 'Customer Type',
@@ -194,10 +206,10 @@ export default function SalesCustomers() {
       accessorKey: 'segment',
       cell: (info: any) => info.getValue() ? <span className="smc-seg">{info.getValue()}</span> : <span className="text-muted">—</span>,
     },
-    { header: 'Country',        accessorKey: 'country', cell: (i: any) => <span className="smc-country">{i.getValue() || '—'}</span> },
-    { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <span className="smc-contact">{i.getValue() || '—'}</span> },
+    { header: 'Country',        accessorKey: 'country', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-country" max={24} /> },
+    { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={22} /> },
     { header: 'Contact No',     accessorKey: 'phone',   cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
-    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <span className="smc-email">{i.getValue() || '—'}</span> },
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" max={24} /> },
     {
       header: () => <div className="text-center">WhatsApp</div>,
       accessorKey: 'whatsapp',
@@ -267,96 +279,87 @@ export default function SalesCustomers() {
     <div className="smc-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* Hero strip */}
-      <div className="smc-cstrip">
-        <span className="smc-accent" />
-        <span className="smc-glow" />
-        <span className="smc-sheen" />
-        <div className="smc-cstrip-left">
-          {/* Back button — routes to the Sales Matrix landing. Falls
-              back to browser history when there's no /sales route
-              registered (defensive — keeps the button useful even
-              outside the normal nav flow). */}
-          <button
-            type="button"
-            className="smc-back-btn"
-            aria-label="Back"
-            onClick={() => navigate(-1)}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
-          <div className="smc-avatar-wrap">
-            <div className="smc-avatar"><IconUsers /></div>
-            <span className="smc-online-dot" />
+      {/* ── Slim "What you are doing here" banner — same pattern as the
+            Master/Countries page. Collapsed by default to give a clean
+            list view; expanding reveals the 4-step guide cards. */}
+      <div className={`smc-wdh-card ${wdhOpen ? 'is-open' : ''}`}>
+        <button
+          type="button"
+          className="smc-wdh-toggle-row"
+          onClick={() => setWdhOpen(o => !o)}
+        >
+          <div className="smc-wdh-heading">
+            <span className="smc-wdh-bulb">
+              <i className="ri-lightbulb-flash-line" />
+            </span>
+            <div>
+              <div className="smc-wdh-title">Customers — What you are doing here</div>
+              <small className="smc-wdh-sub">Quick 4-step guide to set up a Customer record</small>
+            </div>
           </div>
-          <div>
-            <div className="smc-title">Customers</div>
-            <div className="smc-sub">Manage customer onboarding and lifecycle with strict compliance, KYC verification, and product mapping for sales readiness.</div>
+          <span className={`smc-wdh-chev ${wdhOpen ? 'is-open' : ''}`}>
+            <i className="ri-arrow-down-s-line" />
+          </span>
+        </button>
+
+        <div className="smc-wdh-body-wrap" style={{ maxHeight: wdhOpen ? 600 : 0 }}>
+          <div className="smc-wdh-body">
+            {STEPS.map((s, i) => {
+              const isLast = i === STEPS.length - 1;
+              return (
+                <Fragment key={s.n}>
+                  <div className="smc-step" data-n={i}>
+                    <div className="smc-step-head">
+                      <div className="smc-step-num">{s.n}</div>
+                      <span className="smc-step-name">{s.name}</span>
+                    </div>
+                    <p className="smc-step-desc">{s.desc}</p>
+                  </div>
+                  {!isLast && (
+                    <div className="smc-step-arrow"><i className="ri-arrow-right-s-line" /></div>
+                  )}
+                </Fragment>
+              );
+            })}
           </div>
         </div>
-        <div className="smc-cstrip-right">
+      </div>
+
+      {/* ── Main card — search + Add Customer + tabs + table + pagination ── */}
+      <div className="smc-table-card">
+
+        {/* Search row + Add Customer (Countries-style) */}
+        <div className="smc-toolbar">
+          <div className="smc-search">
+            <i className="ri-search-line smc-search-icon" />
+            <input
+              type="text"
+              placeholder="Search customers..."
+              value={q}
+              onChange={(e) => onSearch(e.target.value)}
+            />
+          </div>
           {canAdd && (
-            <button className="smc-add-btn" onClick={() => { setEditing(null); setAddOpen(true); }}>
-              <span className="smc-add-sheen" />
-              <IconPlus />
+            <button
+              type="button"
+              className="smc-add-btn"
+              onClick={() => { setEditing(null); setAddOpen(true); }}
+            >
+              <i className="ri-add-line" />
               Add Customer
             </button>
           )}
         </div>
-      </div>
 
-      {/* What We Are Doing Here */}
-      <div className="smc-wdh">
-        <div className="smc-wdh-header" onClick={() => setWdhOpen(o => !o)} role="button">
-          <div className="smc-wdh-head-left">
-            <div className="smc-wdh-icon"><IconUsers /></div>
-            <span className="smc-wdh-title">Customers — What We Are Doing Here:</span>
-          </div>
-          <button className="smc-wdh-toggle" onClick={(e) => { e.stopPropagation(); setWdhOpen(o => !o); }}>
-            {wdhOpen ? <IconChevronUp /> : <IconChevronDown />}
-          </button>
-        </div>
-        {wdhOpen && (
-          <div className="smc-wdh-body">
-            {STEPS.map((s, i) => (
-              <Fragment key={s.n}>
-                <div className="smc-step">
-                  <div className="smc-step-head">
-                    <div className="smc-step-num">{s.n}</div>
-                    <span className="smc-step-name">{s.name}</span>
-                  </div>
-                  <p className="smc-step-desc">{s.desc}</p>
-                </div>
-                {i < STEPS.length - 1 && (
-                  <div className="smc-step-arrow"><div className="smc-step-arrow-dot"><IconChevronRight /></div></div>
-                )}
-              </Fragment>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Table card */}
-      <div className="smc-table-card">
+        {/* Fresh / Recurring tabs */}
         <div className="smc-tabs-bar">
           <div className="smc-pill-group">
             <button className={`smc-pill ${tab === 'fresh' ? 'on' : 'off'}`} onClick={() => switchTab('fresh')}>
-              <IconUserPlus /> Fresh Customers
+              <i className="ri-user-add-line" /> Fresh Customers
             </button>
             <button className={`smc-pill ${tab === 'recurring' ? 'on' : 'off'}`} onClick={() => switchTab('recurring')}>
-              <IconRepeat /> Recurring Customers
+              <i className="ri-repeat-line" /> Recurring Customers
             </button>
-          </div>
-          <div className="smc-search">
-            <IconSearch />
-            <input
-              type="text"
-              placeholder="Search by name, ID, company, email, segment..."
-              value={q}
-              onChange={(e) => onSearch(e.target.value)}
-            />
           </div>
         </div>
 
@@ -454,13 +457,6 @@ const STEPS: { n: number; name: string; desc: string }[] = [
   { n: 4, name: 'Product Mapping',  desc: 'Link customer with products, pricing, and tax details for sales use.' },
 ];
 
-/* ─── Inline SVG icons (Lucide-style stroke) ─── */
-const IconUsers = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
-  </svg>
-);
 /* ─── List-page shimmer ─────
  * Drop-in replacement for the empty TableContainer while the initial
  * /customers fetch is in flight. Mirrors the live column count + the
@@ -490,258 +486,274 @@ function CustomerListShimmer({ rows = 10 }: { rows?: number }) {
   );
 }
 
-const IconPlus = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8">
-    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-  </svg>
-);
-const IconChevronUp = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5">
-    <polyline points="7 11 12 6 17 11" /><polyline points="7 18 12 13 17 18" />
-  </svg>
-);
-const IconChevronDown = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5">
-    <polyline points="7 13 12 18 17 13" /><polyline points="7 6 12 11 17 6" />
-  </svg>
-);
-const IconChevronRight = () => (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <polyline points="9 18 15 12 9 6" />
-  </svg>
-);
-const IconUserPlus = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
-    <path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
-  </svg>
-);
-const IconRepeat = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-    <polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-3.1" />
-  </svg>
-);
-const IconSearch = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round">
-    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-  </svg>
-);
-
 /* ─── Scoped page CSS (all rules under .smc-root) ─── */
 const SCOPED_CSS = `
 .smc-root {
   font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
-  background: linear-gradient(160deg, #faf5ff 0%, #f3e8ff 40%, #ede9fe 100%);
-  padding: 14px 18px 20px;
-  margin: -1rem -0.75rem;
-  min-height: calc(100vh - 70px);
-  display: flex; flex-direction: column; gap: 10px;
-  color: #1e293b;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  display: flex; flex-direction: column; gap: 14px;
+  color: var(--vz-body-color);
 }
 .smc-root *, .smc-root *::before, .smc-root *::after { box-sizing: border-box; }
 
-/* ─── Hero strip ─── */
-.smc-cstrip {
-  position: relative; overflow: hidden;
+/* ─── Slim "What you are doing here" banner ──────────────────────
+ * Mirrors the Master/Countries pattern: a compact card that shows
+ * just a title + lightbulb icon + chevron when collapsed; expanding
+ * reveals the 4-step guide. Soft violet gradient washes the banner
+ * + a thin gradient accent line on top so the page feels branded
+ * without going back to the heavy hero strip. */
+.smc-wdh-card {
+  position: relative;
+  background:
+    linear-gradient(135deg, #faf5ff 0%, #f3eaff 45%, #ede1ff 100%);
+  border: 1px solid #d6c5ff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(124,58,237,0.10), 0 1px 3px rgba(124,58,237,0.06);
+}
+.smc-wdh-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #5b21b6 0%, #7c3aed 35%, #a78bfa 70%, #c4b5fd 100%);
+  z-index: 1;
+}
+.smc-wdh-toggle-row {
+  width: 100%;
   display: flex; align-items: center; justify-content: space-between;
-  min-height: 66px; padding: 0 18px;
-  border: 1px solid #c4b5fd; border-radius: 16px;
-  background: linear-gradient(110deg, #faf5ff 0%, #f3e8ff 25%, #ede9fe 55%, #ddd6fe 85%, #c4b5fd 100%);
-  box-shadow:
-    0 2px 0 rgba(255,255,255,.85) inset,
-    0 8px 28px rgba(139,92,246,.2),
-    0 2px 8px rgba(0,0,0,.06);
-  flex-shrink: 0;
+  gap: 12px;
+  padding: 14px 18px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background .2s ease;
+  text-align: left;
+  position: relative;
+  z-index: 1;
 }
-.smc-accent {
-  position: absolute; left:0; top:0; bottom:0; width:4px;
-  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
-  border-radius: 16px 0 0 16px;
+.smc-wdh-toggle-row:hover { background: rgba(124,58,237,0.05); }
+.smc-wdh-card.is-open .smc-wdh-toggle-row {
+  background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(167,139,250,0.05));
+  border-bottom: 1px solid rgba(124,58,237,0.18);
 }
-.smc-glow {
-  position: absolute; inset:0; pointer-events:none;
-  background-image:
-    radial-gradient(ellipse at 10% 50%, rgba(196,181,253,.45) 0%, transparent 50%),
-    radial-gradient(ellipse at 90% 50%, rgba(167,139,250,.25) 0%, transparent 55%);
-}
-.smc-sheen {
-  position: absolute; top:0; left:0; right:0; height:50%; pointer-events:none;
-  background: linear-gradient(180deg, rgba(255,255,255,.5), transparent);
-  border-radius: 16px 16px 0 0;
-}
-.smc-cstrip-left  { display:flex; align-items:center; gap:13px; z-index:1; padding-left:4px; }
-.smc-back-btn {
-  flex-shrink: 0;
-  width: 34px; height: 34px; border-radius: 10px;
+.smc-wdh-heading { display: flex; align-items: center; gap: 12px; }
+.smc-wdh-bulb {
+  width: 40px; height: 40px; border-radius: 12px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,.75);
-  border: 1px solid rgba(124,58,237,.20);
-  color: #6d28d9; cursor: pointer;
-  transition: all .18s ease;
-  box-shadow: 0 1px 2px rgba(15,23,42,.04);
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  box-shadow: 0 4px 10px rgba(124,58,237,0.25);
+  color: #fff; font-size: 18px; flex-shrink: 0;
 }
-.smc-back-btn:hover  { background: #fff; border-color: #7c3aed; transform: translateX(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.18); }
-.smc-back-btn:active { transform: translateX(-1px) scale(.97); }
-[data-bs-theme="dark"] .smc-back-btn         { background: rgba(255,255,255,.06); border-color: rgba(167,139,250,.30); color: #c4b5fd; }
-[data-bs-theme="dark"] .smc-back-btn:hover   { background: rgba(124,58,237,.18); border-color: #a78bfa; color: #ddd6fe; }
-.smc-avatar-wrap  { position: relative; flex-shrink: 0; }
-.smc-avatar {
-  width: 38px; height: 38px; border-radius: 12px;
+.smc-wdh-title {
+  font-size: 15px; font-weight: 700;
+  color: var(--vz-heading-color, var(--vz-body-color));
+  line-height: 1.2;
+}
+.smc-wdh-sub {
+  color: var(--vz-secondary-color);
+  font-size: 12px;
+}
+.smc-wdh-chev {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(124,58,237,0.10);
+  color: #6d28d9;
+  font-size: 18px; flex-shrink: 0;
+  transition: transform .25s ease;
+}
+.smc-wdh-chev.is-open { transform: rotate(180deg); }
+.smc-wdh-body-wrap {
+  overflow: hidden;
+  transition: max-height .35s ease;
+}
+.smc-wdh-body {
+  display: flex; align-items: stretch;
+  gap: 8px;
+  padding: 14px 18px 18px;
+  flex-wrap: wrap;
+}
+/* Step tiles — solid WHITE background with a colored left-side
+   accent stripe per step (violet / blue / teal / amber). The
+   per-tile color also tints the number badge and title text; the
+   card body itself stays clean white so the tiles pop against the
+   lavender banner behind them. */
+.smc-step {
+  flex: 1 1 0;
+  min-width: 200px;
+  background: #ffffff;
+  border: 1px solid rgba(124,58,237,0.18);
+  border-left: 4px solid #7c3aed;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 6px;
+  box-shadow: 0 2px 8px rgba(18,38,63,0.04);
+  cursor: default;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.smc-step:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(124,58,237,0.18), 0 2px 6px rgba(124,58,237,0.10);
+}
+.smc-step[data-n="1"] { border-color: rgba(64,81,137,0.20); border-left-color: #405189; }
+.smc-step[data-n="1"]:hover { box-shadow: 0 8px 22px rgba(64,81,137,0.20), 0 2px 6px rgba(64,81,137,0.12); }
+.smc-step[data-n="1"] .smc-step-num  { background: linear-gradient(135deg, #405189, #6691e7); box-shadow: 0 3px 8px rgba(64,81,137,0.30); }
+.smc-step[data-n="1"] .smc-step-name { color: #405189; }
+.smc-step[data-n="2"] { border-color: rgba(10,179,156,0.22); border-left-color: #0ab39c; }
+.smc-step[data-n="2"]:hover { box-shadow: 0 8px 22px rgba(10,179,156,0.22), 0 2px 6px rgba(10,179,156,0.12); }
+.smc-step[data-n="2"] .smc-step-num  { background: linear-gradient(135deg, #0ab39c, #30d5b5); box-shadow: 0 3px 8px rgba(10,179,156,0.30); }
+.smc-step[data-n="2"] .smc-step-name { color: #0ab39c; }
+.smc-step[data-n="3"] { border-color: rgba(247,184,75,0.25); border-left-color: #d97a08; }
+.smc-step[data-n="3"]:hover { box-shadow: 0 8px 22px rgba(247,184,75,0.25), 0 2px 6px rgba(247,184,75,0.14); }
+.smc-step[data-n="3"] .smc-step-num  { background: linear-gradient(135deg, #f7b84b, #ffd47a); box-shadow: 0 3px 8px rgba(247,184,75,0.30); }
+.smc-step[data-n="3"] .smc-step-name { color: #d97a08; }
+.smc-step[data-n="0"] .smc-step-num  { background: linear-gradient(135deg, #7c3aed, #a78bfa); }
+.smc-step[data-n="0"] .smc-step-name { color: #6d28d9; }
+.smc-step[data-n="0"]:hover { box-shadow: 0 8px 22px rgba(124,58,237,0.22), 0 2px 6px rgba(124,58,237,0.12); }
+.smc-step-head { display: flex; align-items: center; gap: 8px; }
+.smc-step-num {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 12px; font-weight: 700;
+  flex-shrink: 0;
+  box-shadow: 0 3px 8px rgba(124,58,237,0.30);
+}
+.smc-step-name {
+  font-size: 14px; font-weight: 700;
+  color: #6d28d9;
+  line-height: 1.2;
+}
+.smc-step-desc {
+  font-size: 12px; color: var(--vz-secondary-color);
+  line-height: 1.45;
+  margin: 0;
+}
+.smc-step-arrow {
   display: flex; align-items: center; justify-content: center;
-  color: #fff;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #5b21b6 100%);
-  box-shadow: 0 0 0 3px rgba(139,92,246,.25), 0 4px 14px rgba(124,58,237,.45);
+  flex-shrink: 0;
+  width: 24px;
+  color: var(--vz-secondary-color);
+  font-size: 18px;
 }
-.smc-online-dot {
-  position:absolute; bottom:-1px; right:-1px;
-  width:10px; height:10px; border-radius:50%;
-  background: linear-gradient(135deg, #4ade80, #22c55e);
-  border:2px solid #f3e8ff; box-shadow:0 2px 4px rgba(34,197,94,.4);
-}
-.smc-title { font-size:14.5px; font-weight:800; color:#3b0764; letter-spacing:-.4px; line-height:1.2; }
-.smc-sub   { font-size:11.5px; color:#6b7280; font-weight:400; margin-top:2px; line-height:1.4; }
 
-.smc-cstrip-right { display:flex; align-items:center; gap:7px; z-index:1; flex-shrink:0; }
+/* ─── Toolbar — search input + Add Customer button row inside
+   the main card. Light violet gradient wash + tinted search box
+   so the brand color carries through. */
+.smc-toolbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, rgba(124,58,237,0.04), rgba(167,139,250,0.02));
+  border-bottom: 1px solid rgba(124,58,237,0.15);
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 1;
+}
+.smc-toolbar .smc-search {
+  position: relative;
+  flex: 1; min-width: 240px;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(124,58,237,0.20);
+  border-radius: 10px;
+  padding: 0 14px 0 38px;
+  height: 42px;
+  display: flex; align-items: center;
+  box-shadow: 0 1px 3px rgba(124,58,237,0.06);
+  transition: border-color .15s, box-shadow .15s;
+}
+.smc-toolbar .smc-search:focus-within {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.15);
+}
+.smc-toolbar .smc-search-icon {
+  position: absolute; left: 14px;
+  color: var(--vz-secondary-color);
+  font-size: 16px;
+}
+.smc-toolbar .smc-search input {
+  flex: 1; border: 0; outline: 0; background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--vz-body-color);
+  font-weight: 500;
+}
+.smc-toolbar .smc-search input::placeholder { color: var(--vz-secondary-color); }
+
 .smc-add-btn {
-  position: relative; overflow: hidden;
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 0 26px; height: 44px;
-  border: none; border-radius: 14px;
-  font-family: inherit; font-size: 13px; font-weight: 700;
-  color: #fff; letter-spacing: .01em; white-space: nowrap; cursor: pointer;
-  background: #7c3aed;
-  box-shadow:
-    0 6px 20px rgba(124,58,237,.5),
-    0 2px 6px rgba(91,33,182,.3),
-    0 1px 0 rgba(255,255,255,.18) inset;
-  transition: background .18s, transform .18s, box-shadow .18s;
+  padding: 0 22px; height: 42px;
+  border: 0; border-radius: 999px;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(124,58,237,0.30);
+  transition: transform .15s, box-shadow .15s, background .18s;
 }
 .smc-add-btn:hover {
-  background: #6d28d9; transform: translateY(-2px);
-  box-shadow: 0 10px 28px rgba(124,58,237,.6), 0 3px 8px rgba(91,33,182,.35), 0 1px 0 rgba(255,255,255,.18) inset;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(124,58,237,0.40);
 }
-.smc-add-btn:active { transform: translateY(0); background: #5b21b6; }
-.smc-add-sheen {
-  position: absolute; top:0; left:0; right:0; height:48%; pointer-events:none;
-  background: linear-gradient(180deg, rgba(255,255,255,.15), transparent);
-  border-radius: 14px 14px 0 0;
-}
+.smc-add-btn:active { transform: translateY(0); }
+.smc-add-btn i { font-size: 16px; }
 
-/* ─── What We Are Doing Here ─── */
-.smc-wdh {
-  position: relative;
-  background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 50%, #ddd6fe 100%);
-  border: 1px solid #c4b5fd; border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(139,92,246,.1);
-  flex-shrink: 0;
-}
-.smc-wdh-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 9px 14px; min-height: 46px;
-  cursor: pointer; user-select: none; position: relative; z-index: 1;
-}
-.smc-wdh-head-left { display:flex; align-items:center; gap:9px; }
-.smc-wdh-icon {
-  width:28px; height:28px; border-radius:8px;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  display:flex; align-items:center; justify-content:center;
-  color:#fff; flex-shrink:0; box-shadow:0 3px 10px rgba(124,58,237,.4);
-}
-.smc-wdh-title { font-size:13px; font-weight:800; color:#3b0764; letter-spacing:-.3px; }
-.smc-wdh-toggle {
-  width:28px; height:28px; border-radius:50%;
-  border:1.5px solid rgba(124,58,237,.25); background: rgba(255,255,255,.7);
-  display:flex; align-items:center; justify-content:center;
-  cursor:pointer; flex-shrink:0; transition: background .15s;
-}
-.smc-wdh-toggle:hover { background: rgba(255,255,255,.95); }
-.smc-wdh-body {
-  display:flex; align-items:stretch; gap:0; padding: 7px 14px 9px;
-  position: relative; z-index: 1;
-}
-.smc-step {
-  flex:1; min-width:0;
-  background:#fff; border:1.5px solid #e8e4f9; border-left:3px solid #7c3aed;
-  border-radius:10px; padding:9px 12px;
-  display:flex; flex-direction:column; gap:4px;
-}
-.smc-step-head { display:flex; align-items:center; gap:8px; }
-.smc-step-num {
-  width:22px; height:22px; border-radius:50%;
-  background: linear-gradient(135deg, #a78bfa, #7c3aed);
-  display:flex; align-items:center; justify-content:center;
-  color:#fff; font-size:10px; font-weight:800; line-height:1;
-  flex-shrink:0; box-shadow:0 2px 6px rgba(124,58,237,.3);
-}
-.smc-step-name { font-size:11.5px; font-weight:700; color:#5b21b6; letter-spacing:-.2px; line-height:1.2; }
-.smc-step-desc { font-size:10.5px; color:#6b7280; font-weight:400; line-height:1.45; margin:0; }
-.smc-step-arrow {
-  display:flex; align-items:center; justify-content:center; flex-shrink:0; width:24px;
-}
-.smc-step-arrow-dot {
-  width:20px; height:20px; border-radius:50%;
-  background:#fff; border:1.5px solid #ddd6fe;
-  display:flex; align-items:center; justify-content:center;
-  color:#a78bfa;
-  box-shadow:0 1px 4px rgba(124,58,237,.08);
-}
-
-/* ─── Table card ─── */
+/* ─── Main card — neutral border (so bottom doesn't show as a
+   violet line) with ONLY the top accent stripe carrying the brand. */
 .smc-table-card {
-  background: #fff;
-  border: 1.5px solid #c4b5fd; border-radius: 18px;
-  box-shadow: 0 8px 32px rgba(109,40,217,.13), 0 2px 8px rgba(109,40,217,.07);
+  position: relative;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid var(--vz-border-color);
+  border-radius: 16px;
   overflow: hidden;
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+}
+.smc-table-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #5b21b6 0%, #7c3aed 35%, #a78bfa 70%, #c4b5fd 100%);
+  z-index: 1;
 }
 .smc-tabs-bar {
-  padding: 10px 16px;
-  border-bottom: 2px solid #c4b5fd;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(124,58,237,0.15);
   display: flex; align-items: center; gap: 12px;
-  background: linear-gradient(110deg, #f5f0ff 0%, #ede9fe 50%, #ddd6fe 100%);
+  background: linear-gradient(135deg, rgba(124,58,237,0.04), rgba(167,139,250,0.02));
 }
 .smc-pill-group {
-  display:flex; align-items:center; gap:2px;
-  background: rgba(255,255,255,.5);
-  border: 1.5px solid #c4b5fd; border-radius: 12px;
-  padding: 4px; backdrop-filter: blur(4px);
-  box-shadow: 0 2px 8px rgba(109,40,217,.1);
+  display: inline-flex; align-items: center; gap: 2px;
+  background: var(--vz-secondary-bg);
+  border: 1px solid var(--vz-border-color);
+  border-radius: 10px;
+  padding: 4px;
   flex-shrink: 0;
 }
 .smc-pill {
-  display:inline-flex; align-items:center; gap:6px;
-  padding: 7px 18px; height: 32px;
-  border: none; border-radius: 9px;
-  font-family: inherit; font-size: 12px; font-weight: 700;
-  cursor: pointer; transition: all .2s cubic-bezier(.22,1,.36,1);
-  letter-spacing: -.1px; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 16px; height: 32px;
+  border: 0; border-radius: 8px;
+  font-family: inherit;
+  font-size: 12.5px; font-weight: 600;
+  cursor: pointer;
+  transition: all .18s ease;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
-.smc-pill.on  { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
-.smc-pill.off { background: transparent; color: #5b21b6; }
-.smc-pill.off:hover { background: rgba(255,255,255,.6); }
-
-.smc-search {
-  flex: 1;
-  display: flex; align-items: center; gap: 10px;
-  background: rgba(255,255,255,.85);
-  border: 1.5px solid #c4b5fd; border-radius: 12px;
-  padding: 8px 16px;
-  box-shadow: 0 2px 8px rgba(109,40,217,.08), 0 1px 0 rgba(255,255,255,.9) inset;
-  backdrop-filter: blur(4px);
-  transition: border-color .2s, box-shadow .2s;
+.smc-pill.on  {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(124,58,237,0.30);
 }
-.smc-search:focus-within {
-  border-color: #7c3aed;
-  box-shadow: 0 0 0 3px rgba(124,58,237,.15), 0 2px 8px rgba(109,40,217,.1);
-}
-.smc-search input {
-  border: none; outline: none; background: transparent;
-  font-family: inherit; font-size: 12.5px; color: #3b0764;
-  width: 100%; font-weight: 500;
-}
-.smc-search input::placeholder { color: #a78bfa; }
+.smc-pill.off { background: transparent; color: var(--vz-secondary-color); }
+.smc-pill.off:hover { background: rgba(124,58,237,0.06); color: #6d28d9; }
+.smc-pill i { font-size: 14px; }
 
 /* ─── Table ───
  * The page uses the project-standard TableContainer with
@@ -752,21 +764,66 @@ const SCOPED_CSS = `
  * integrated with the purple page chrome without going back to the
  * heavy gradient header. */
 .smc-table-wrap {
-  overflow: auto; flex: 1; min-height: 0;
-  /* Breathing room so the table-responsive card doesn't sit flush
-     against the tabs/search bar above and the pagination doesn't
-     touch the bottom edge of .smc-table-card. */
+  /* Only vertical scroll on the wrap; horizontal scroll is handled
+     by the inner .table-responsive so we never get TWO horizontal
+     scrollbars stacked (one on the outer wrap and one on the table). */
+  overflow-x: hidden;
+  overflow-y: auto;
+  flex: 1; min-height: 0;
   padding: 14px 14px 12px;
+  /* Light, subtle scrollbar (Firefox). */
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+/* WebKit scrollbar — light treatment for Chrome/Edge/Safari. Applied
+   to the inner .table-responsive (which holds the only horizontal
+   scrollbar) plus the wrap's vertical bar. */
+.smc-table-wrap::-webkit-scrollbar,
+.smc-table-wrap .table-responsive::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.smc-table-wrap::-webkit-scrollbar-track,
+.smc-table-wrap .table-responsive::-webkit-scrollbar-track {
+  background: transparent;
+}
+.smc-table-wrap::-webkit-scrollbar-thumb,
+.smc-table-wrap .table-responsive::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.smc-table-wrap::-webkit-scrollbar-thumb:hover,
+.smc-table-wrap .table-responsive::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+  background-clip: padding-box;
+}
+.smc-table-wrap .table-responsive {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+[data-bs-theme="dark"] .smc-table-wrap,
+[data-bs-theme="dark"] .smc-table-wrap .table-responsive {
+  scrollbar-color: rgba(167,139,250,0.30) transparent;
+}
+[data-bs-theme="dark"] .smc-table-wrap::-webkit-scrollbar-thumb,
+[data-bs-theme="dark"] .smc-table-wrap .table-responsive::-webkit-scrollbar-thumb {
+  background: rgba(167,139,250,0.30);
+}
+[data-bs-theme="dark"] .smc-table-wrap::-webkit-scrollbar-thumb:hover,
+[data-bs-theme="dark"] .smc-table-wrap .table-responsive::-webkit-scrollbar-thumb:hover {
+  background: rgba(167,139,250,0.50);
 }
 
 /* Card wrapper produced by divClass "table-responsive table-card border rounded".
  * Header uses a soft lavender tint that ties to the page's purple
  * chrome (hero, WDH cards, tabs bar). The cell content chips
  * provide the cell-level color; the chrome stays light + airy. */
-/* ─── Table chrome — neutral, same look as Clients / HR Employees.
-   The violet aesthetic comes back inside the cells via the chips
-   (.smc-id-chip, .smc-type-pill, .smc-seg, .smc-wa, etc.) so the
-   page still reads violet without the table itself being violet. */
+/* ─── Table chrome — soft violet wash on the header (Countries
+   master uses the same lavender tint). Rows stay clean white,
+   border stays neutral so it doesn't read as a violet edge at
+   the bottom. */
 .smc-table-wrap .table-responsive {
   background: var(--vz-card-bg, #fff) !important;
   border: 1px solid var(--vz-border-color) !important;
@@ -779,34 +836,36 @@ const SCOPED_CSS = `
   --bs-table-bg: transparent;
   margin-bottom: 0 !important;
 }
-/* Header — neutral table-light (Velzon default), matches every
-   other list page in the app. */
+/* Header — soft lavender wash (light, faint gradient — not the
+   heavy dark violet bar). Violet column text reads well against
+   the pale background and keeps the brand color present without
+   making the row visually heavy. */
 .smc-table-wrap .table thead.table-light tr {
-  background: var(--vz-light) !important;
+  background: linear-gradient(110deg, #f5f0ff 0%, #ede9fe 50%, #e0d7fc 100%) !important;
 }
 .smc-table-wrap .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
   background: transparent !important;
-  color: var(--vz-secondary-color) !important;
+  color: #5b21b6 !important;
   font-size: 12px !important;
-  font-weight: 600 !important;
+  font-weight: 700 !important;
   letter-spacing: .02em !important;
-  padding: 10px 14px !important;
+  padding: 11px 14px !important;
   line-height: 1.3 !important;
-  border-bottom: 1px solid var(--vz-border-color) !important;
+  border-bottom: 1px solid rgba(124,58,237,0.18) !important;
   white-space: nowrap;
   text-transform: uppercase;
   vertical-align: middle !important;
 }
-.smc-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; }
-/* Body — neutral rows + neutral hover (light gray instead of lavender). */
+.smc-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; color: #6d28d9; }
+/* Body — white rows with soft lavender hover. */
 .smc-table-wrap .table tbody tr {
   background: transparent;
   transition: background .12s ease;
 }
 .smc-table-wrap .table tbody tr:hover {
-  background: var(--vz-light) !important;
+  background: #faf7ff !important;
 }
 .smc-table-wrap .table tbody td {
   --bs-table-bg: transparent !important;
@@ -815,7 +874,7 @@ const SCOPED_CSS = `
   font-size: 13px;
   color: var(--vz-body-color);
   vertical-align: middle;
-  border-bottom: 1px solid var(--vz-border-color) !important;
+  border-bottom: 1px solid rgba(124,58,237,0.08) !important;
   white-space: nowrap;
 }
 .smc-table-wrap .table tbody tr:last-child td { border-bottom: none !important; }
@@ -840,9 +899,26 @@ const SCOPED_CSS = `
   background: #faf7ff;
 }
 
-/* Dark-mode: table chrome inherits vz tokens above so it flips
-   automatically. We only override the pagination active state to
-   keep the violet gradient consistent with the rest of the page. */
+/* Dark-mode table chrome — flip the lavender thead wash to a deep
+   purple-tinted dark slate so it reads cleanly on the dark canvas. */
+[data-bs-theme="dark"] .smc-table-wrap .table-responsive {
+  background: var(--vz-card-bg) !important;
+  border-color: var(--vz-border-color) !important;
+}
+[data-bs-theme="dark"] .smc-table-wrap .table thead.table-light tr {
+  background: linear-gradient(110deg, rgba(76,29,149,0.22) 0%, rgba(109,40,217,0.16) 50%, rgba(124,58,237,0.12) 100%) !important;
+}
+[data-bs-theme="dark"] .smc-table-wrap .table thead.table-light th {
+  color: #e9d5ff !important;
+  border-bottom-color: rgba(167,139,250,0.25) !important;
+}
+[data-bs-theme="dark"] .smc-table-wrap .table thead th i { color: #c4b5fd !important; opacity: 0.7; }
+[data-bs-theme="dark"] .smc-table-wrap .table tbody tr:hover { background: rgba(167,139,250,0.08) !important; }
+[data-bs-theme="dark"] .smc-table-wrap .table tbody td {
+  color: var(--vz-body-color);
+  border-bottom-color: rgba(167,139,250,0.10) !important;
+}
+
 [data-bs-theme="dark"] .smc-table-wrap .pagination .page-link {
   background: var(--vz-secondary-bg);
   color: #c4b5fd;
@@ -1112,77 +1188,91 @@ const SCOPED_CSS = `
    (buttons, headers, chips) but recolour every surface, border, and body text
    so the page actually reads as dark. */
 [data-bs-theme="dark"] .smc-root {
-  background: linear-gradient(160deg, #14101d 0%, #1a1530 40%, #15122a 100%);
-  color: #d4d1de;
+  background: transparent;
+  color: var(--vz-body-color);
 }
-[data-bs-theme="dark"] .smc-cstrip {
-  border-color: rgba(167,139,250,.30);
-  background: linear-gradient(110deg, #1c1432 0%, #221839 25%, #2a1d49 55%, #3a2467 85%, #4c2d8a 100%);
-  box-shadow:
-    0 2px 0 rgba(167,139,250,.08) inset,
-    0 8px 28px rgba(0,0,0,.45),
-    0 2px 8px rgba(0,0,0,.40);
-}
-[data-bs-theme="dark"] .smc-glow { opacity: .55; }
-[data-bs-theme="dark"] .smc-sheen { background: linear-gradient(180deg, rgba(255,255,255,.06), transparent); }
-[data-bs-theme="dark"] .smc-online-dot { border-color: #2a1d49; }
-[data-bs-theme="dark"] .smc-title { color: #e9d5ff; }
-[data-bs-theme="dark"] .smc-sub   { color: #9aa0b4; }
 
-[data-bs-theme="dark"] .smc-wdh {
-  background: linear-gradient(110deg, #1c1432 0%, #221839 50%, #2a1d49 100%);
-  border-color: rgba(167,139,250,.25);
-  box-shadow: 0 2px 8px rgba(0,0,0,.40);
+/* WDH banner — dark variant: brighter violet gradient so the wash
+   is actually visible (the previous mix was so dark it looked solid
+   black). Title + chevron stay readable, brand color is preserved. */
+[data-bs-theme="dark"] .smc-wdh-card {
+  background: linear-gradient(110deg, #1f1340 0%, #2d1a5a 30%, #3d2280 60%, #4b2aa6 85%, #5b21b6 100%);
+  border-color: rgba(167,139,250,0.40);
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.05) inset,
+    0 4px 16px rgba(0,0,0,0.35),
+    0 1px 3px rgba(167,139,250,0.12);
 }
-[data-bs-theme="dark"] .smc-wdh-title { color: #e9d5ff; }
-[data-bs-theme="dark"] .smc-wdh-toggle {
-  background: rgba(255,255,255,.05);
-  border-color: rgba(167,139,250,.30);
+[data-bs-theme="dark"] .smc-wdh-toggle-row { background: transparent; }
+[data-bs-theme="dark"] .smc-wdh-toggle-row:hover { background: rgba(255,255,255,0.06); }
+[data-bs-theme="dark"] .smc-wdh-card.is-open .smc-wdh-toggle-row {
+  background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+  border-bottom-color: rgba(167,139,250,0.30);
+}
+[data-bs-theme="dark"] .smc-wdh-bulb {
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+  box-shadow: 0 4px 10px rgba(124,58,237,0.45);
+}
+[data-bs-theme="dark"] .smc-wdh-title { color: #faf5ff; font-weight: 800; }
+[data-bs-theme="dark"] .smc-wdh-sub   { color: #e9d5ff; opacity: 0.92; }
+[data-bs-theme="dark"] .smc-wdh-chev {
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(167,139,250,0.30);
   color: #e9d5ff;
 }
-[data-bs-theme="dark"] .smc-wdh-toggle:hover { background: rgba(255,255,255,.10); }
-[data-bs-theme="dark"] .smc-wdh-toggle svg { stroke: #c4b5fd; }
+[data-bs-theme="dark"] .smc-wdh-chev:hover { background: rgba(255,255,255,0.20); }
+
+/* Step tiles in dark mode — translucent dark surface so the violet
+   banner glows through, crisp colored text per tile. */
 [data-bs-theme="dark"] .smc-step {
-  background: #1a1530;
-  border-color: rgba(167,139,250,.20);
-  border-left-color: #a78bfa;
+  background: rgba(15, 23, 33, 0.78);
+  border-color: rgba(167,139,250,0.30);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
-[data-bs-theme="dark"] .smc-step-name { color: #c4b5fd; }
-[data-bs-theme="dark"] .smc-step-desc { color: #9aa0b4; }
-[data-bs-theme="dark"] .smc-step-arrow-dot {
-  background: #1a1530;
-  border-color: rgba(167,139,250,.30);
-  color: #a78bfa;
-}
+[data-bs-theme="dark"] .smc-step[data-n="0"] { border-color: rgba(167,139,250,0.40); border-left-color: #a78bfa; }
+[data-bs-theme="dark"] .smc-step[data-n="1"] { border-color: rgba(102,145,231,0.40); border-left-color: #6691e7; }
+[data-bs-theme="dark"] .smc-step[data-n="2"] { border-color: rgba(48,213,181,0.40); border-left-color: #30d5b5; }
+[data-bs-theme="dark"] .smc-step[data-n="3"] { border-color: rgba(255,212,122,0.40); border-left-color: #ffd47a; }
+[data-bs-theme="dark"] .smc-step[data-n="0"] .smc-step-name { color: #c4b5fd; }
+[data-bs-theme="dark"] .smc-step[data-n="1"] .smc-step-name { color: #93b4f0; }
+[data-bs-theme="dark"] .smc-step[data-n="2"] .smc-step-name { color: #5eead4; }
+[data-bs-theme="dark"] .smc-step[data-n="3"] .smc-step-name { color: #fcd34d; }
+[data-bs-theme="dark"] .smc-step-desc { color: #cbd5e1; }
+[data-bs-theme="dark"] .smc-step-arrow { color: #e9d5ff; }
 
 [data-bs-theme="dark"] .smc-table-card {
-  background: #1a1530;
-  border-color: rgba(167,139,250,.25);
-  box-shadow: 0 8px 32px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.30);
+  background: var(--vz-card-bg);
+  border-color: rgba(167,139,250,0.25);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.30), 0 1px 3px rgba(167,139,250,0.10);
 }
 [data-bs-theme="dark"] .smc-tabs-bar {
-  border-bottom-color: rgba(167,139,250,.25);
-  background: linear-gradient(110deg, #1c1432 0%, #221839 50%, #2a1d49 100%);
+  background: linear-gradient(135deg, rgba(167,139,250,0.08), rgba(124,58,237,0.04));
+  border-bottom-color: rgba(167,139,250,0.20);
 }
 [data-bs-theme="dark"] .smc-pill-group {
-  background: rgba(255,255,255,.04);
-  border-color: rgba(167,139,250,.25);
-  box-shadow: 0 2px 8px rgba(0,0,0,.30);
+  background: var(--vz-secondary-bg);
+  border-color: var(--vz-border-color);
 }
-[data-bs-theme="dark"] .smc-pill.off       { color: #c4b5fd; }
-[data-bs-theme="dark"] .smc-pill.off:hover { background: rgba(255,255,255,.06); }
+[data-bs-theme="dark"] .smc-pill.off       { color: var(--vz-secondary-color); }
+[data-bs-theme="dark"] .smc-pill.off:hover { background: rgba(167,139,250,0.10); color: #c4b5fd; }
 
-[data-bs-theme="dark"] .smc-search {
-  background: rgba(255,255,255,.04);
-  border-color: rgba(167,139,250,.25);
-  box-shadow: 0 2px 8px rgba(0,0,0,.30), 0 1px 0 rgba(255,255,255,.04) inset;
+[data-bs-theme="dark"] .smc-toolbar {
+  background: linear-gradient(135deg, rgba(167,139,250,0.08), rgba(124,58,237,0.04));
+  border-bottom-color: rgba(167,139,250,0.20);
 }
-[data-bs-theme="dark"] .smc-search:focus-within {
+[data-bs-theme="dark"] .smc-toolbar .smc-search {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(167,139,250,0.25);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.20);
+}
+[data-bs-theme="dark"] .smc-toolbar .smc-search:focus-within {
   border-color: #a78bfa;
-  box-shadow: 0 0 0 3px rgba(167,139,250,.20), 0 2px 8px rgba(0,0,0,.30);
+  box-shadow: 0 0 0 3px rgba(167,139,250,0.20);
 }
-[data-bs-theme="dark"] .smc-search input { color: #e9d5ff; }
-[data-bs-theme="dark"] .smc-search input::placeholder { color: #7a6b9a; }
+[data-bs-theme="dark"] .smc-toolbar .smc-search input { color: var(--vz-body-color); }
+[data-bs-theme="dark"] .smc-toolbar .smc-search input::placeholder { color: var(--vz-secondary-color); }
+[data-bs-theme="dark"] .smc-toolbar .smc-search-icon { color: var(--vz-secondary-color); }
 
 [data-bs-theme="dark"] .smc-table thead tr {
   background: linear-gradient(110deg, #4c2d8a 0%, #5b21b6 40%, #6d28d9 75%, #7c3aed 100%);

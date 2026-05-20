@@ -169,6 +169,19 @@ export default function SalesConsignee() {
     </Tooltip>
   );
 
+  /* ── Truncated cell — for fields that can hold long values (company
+   * name, contact person, email, country detail). Renders the value
+   * with an ellipsis cap + Tooltip showing the full value on hover.
+   * Falls back to "—" when empty so columns stay visually aligned. */
+  const TruncatedCell = ({ value, className, max = 22 }: { value?: string | null; className?: string; max?: number }) => {
+    const v = (value ?? '').trim();
+    if (!v) return <span className="text-muted">—</span>;
+    const needsTooltip = v.length > max;
+    const display = needsTooltip ? v.slice(0, max) + '…' : v;
+    const inner = <span className={className} style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
+    return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
+  };
+
   /* ── TanStack column defs. Cell renderers keep the emerald-themed
    * pills/chips (ID chip, risk pill, country sub-text) so the page
    * palette stays intact; only the table chrome + actions switch to
@@ -194,7 +207,7 @@ export default function SalesConsignee() {
     {
       header: 'Company Name',
       accessorKey: 'company',
-      cell: (info: any) => <span className="smcg-company">{info.getValue() || '—'}</span>,
+      cell: (info: any) => <TruncatedCell value={info.getValue()} className="smcg-company" max={22} />,
     },
     {
       header: 'Segment',
@@ -214,19 +227,28 @@ export default function SalesConsignee() {
         );
       },
     },
-    { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <span className="smcg-contact">{i.getValue() || '—'}</span> },
-    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <span className="smcg-email">{i.getValue() || '—'}</span> },
+    { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-contact" max={22} /> },
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" max={24} /> },
     { header: 'Contact No',     accessorKey: 'phone',   cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
     {
       header: 'Country',
       accessorKey: 'country',
       cell: (info: any) => {
         const c = info.row.original as Consignee;
-        return (
-          <span className="smcg-country">
-            {c.country} {c.countryDetail && <span className="smcg-country-sub">({c.countryDetail})</span>}
+        const country = (c.country ?? '').trim();
+        const detail = (c.countryDetail ?? '').trim();
+        const full = detail ? `${country} (${detail})` : country;
+        if (!country) return <span className="text-muted">—</span>;
+        // Show the country name in full + the parenthesised detail truncated.
+        const maxDetail = 22;
+        const showShort = detail.length > maxDetail;
+        const detailDisplay = showShort ? detail.slice(0, maxDetail) + '…' : detail;
+        const inner = (
+          <span className="smcg-country" style={{ maxWidth: 240, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+            {country}{detail && <span className="smcg-country-sub"> ({detailDisplay})</span>}
           </span>
         );
+        return showShort ? <Tooltip label={full}>{inner}</Tooltip> : inner;
       },
     },
     {
@@ -270,99 +292,112 @@ export default function SalesConsignee() {
     <div className="smcg-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* Hero strip — emerald gradient, truck icon, add button */}
+      {/* ── Hero strip — solid emerald gradient with truck icon, page
+            title + description, and the primary "Add Consignee" CTA.
+            Brings back the bold "ultra HD" look the page had before;
+            sharp white text on a saturated green background pops
+            against the page chrome instead of blending with it. */}
       <div className="smcg-cstrip">
-        <span className="smcg-accent" />
-        <span className="smcg-glow" />
-        <span className="smcg-sheen" />
         <div className="smcg-cstrip-left">
-          {/* Back button — uses browser history so it returns to
-              whichever page led here (Sales Matrix sidebar, dashboard,
-              etc.) instead of hard-coding a target route. */}
-          <button
-            type="button"
-            className="smcg-back-btn"
-            aria-label="Back"
-            onClick={() => navigate(-1)}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
-          <div className="smcg-avatar-wrap">
-            <div className="smcg-avatar"><IconTruck /></div>
+          <div className="smcg-cstrip-icon">
+            <i className="ri-truck-line" />
           </div>
           <div>
-            <div className="smcg-title">Consignee</div>
-            <div className="smcg-sub">Manage consignee identity, shipment delivery ownership, compliance readiness, and customer-linked destination mapping for export execution.</div>
+            <div className="smcg-cstrip-title">Consignee</div>
+            <div className="smcg-cstrip-sub">
+              Manage consignee identity, shipment delivery ownership, compliance readiness, and customer-linked destination mapping for export execution.
+            </div>
           </div>
         </div>
-        <div className="smcg-cstrip-right">
-          {canAdd && (
-            <button className="smcg-add-btn" onClick={() => { setEditing(null); setAddOpen(true); }}>
-              <span className="smcg-add-sheen" />
-              <IconPlus />
+        {canAdd && (
+          <button
+            type="button"
+            className="smcg-cstrip-add"
+            onClick={() => { setEditing(null); setAddOpen(true); }}
+          >
+            <i className="ri-add-line" />
+            Add Consignee
+          </button>
+        )}
+      </div>
+
+      {/* ── Slim "What we are doing here" banner — light emerald
+            gradient with the 4 colorful step tiles inside. */}
+      <div className={`smcg-wdh-card ${wdhOpen ? 'is-open' : ''}`}>
+        <button
+          type="button"
+          className="smcg-wdh-toggle-row"
+          onClick={() => setWdhOpen(o => !o)}
+        >
+          <div className="smcg-wdh-heading">
+            <span className="smcg-wdh-bulb">
+              <i className="ri-lightbulb-flash-line" />
+            </span>
+            <div>
+              <div className="smcg-wdh-title">Consignee — What we are doing here</div>
+              <small className="smcg-wdh-sub">4 steps to complete consignee setup</small>
+            </div>
+          </div>
+          <span className={`smcg-wdh-chev ${wdhOpen ? 'is-open' : ''}`}>
+            <i className="ri-arrow-down-s-line" />
+          </span>
+        </button>
+
+        <div className="smcg-wdh-body-wrap" style={{ maxHeight: wdhOpen ? 600 : 0 }}>
+          <div className="smcg-wdh-body">
+            {STEPS.map((s, i) => {
+              const isLast = i === STEPS.length - 1;
+              return (
+                <Fragment key={s.n}>
+                  <div className="smcg-step" data-n={i}>
+                    <div className="smcg-step-head">
+                      <div className="smcg-step-num">{s.n}</div>
+                      <span className="smcg-step-name">{s.name}</span>
+                    </div>
+                    <p className="smcg-step-desc">{s.desc}</p>
+                    <div className="smcg-step-tag">
+                      <span className="smcg-step-tag-dot" />
+                      {s.tag}
+                    </div>
+                  </div>
+                  {!isLast && (
+                    <div className="smcg-step-arrow"><i className="ri-arrow-right-s-line" /></div>
+                  )}
+                </Fragment>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Main card — toolbar (search + Add Consignee) + table + pagination ── */}
+      <div className="smcg-table-card">
+
+        {/* Toolbar — search only (Add Consignee lives in the hero strip). */}
+        <div className="smcg-toolbar">
+          <div className="smcg-search">
+            <i className="ri-search-line smcg-search-icon" />
+            <input
+              type="text"
+              placeholder="Search by consignee ID, customer, company, country, risk..."
+              value={q}
+              onChange={(e) => onSearch(e.target.value)}
+            />
+          </div>
+          {/* Add button moved to the emerald hero strip above. The block
+              below is kept commented in case we ever want it back. */}
+          {false && canAdd && (
+            <button
+              type="button"
+              className="smcg-add-btn"
+              onClick={() => { setEditing(null); setAddOpen(true); }}
+            >
+              <i className="ri-add-line" />
               Add Consignee
             </button>
           )}
         </div>
-      </div>
 
-      {/* What We Are Doing Here — 4 emerald cards */}
-      <div className="smcg-wdh">
-        <div className="smcg-wdh-header" onClick={() => setWdhOpen(o => !o)} role="button">
-          <div className="smcg-wdh-head-left">
-            <div className="smcg-wdh-icon"><IconTruck /></div>
-            <div>
-              <div className="smcg-wdh-title">Consignee — What We Are Doing Here</div>
-              <div className="smcg-wdh-subtitle">4 steps to complete consignee setup</div>
-            </div>
-          </div>
-          <button className="smcg-wdh-toggle" onClick={(e) => { e.stopPropagation(); setWdhOpen(o => !o); }}>
-            {wdhOpen ? <IconChevronUp /> : <IconChevronDown />}
-          </button>
-        </div>
-        {wdhOpen && (
-          <div className="smcg-wdh-body">
-            {STEPS.map((s, i) => (
-              <Fragment key={s.n}>
-                <div className="smcg-step">
-                  <div className="smcg-step-head">
-                    <div className="smcg-step-num">{s.n}</div>
-                    <span className="smcg-step-name">{s.name}</span>
-                  </div>
-                  <p className="smcg-step-desc">{s.desc}</p>
-                  <div className="smcg-step-tag">
-                    <span className="smcg-step-tag-dot" />
-                    {s.tag}
-                  </div>
-                </div>
-                {i < STEPS.length - 1 && (
-                  <div className="smcg-step-arrow"><div className="smcg-step-arrow-dot"><IconChevronRight /></div></div>
-                )}
-              </Fragment>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Search */}
-      <div className="smcg-search-bar">
-        <div className="smcg-search">
-          <IconSearch />
-          <input
-            type="text"
-            placeholder="Search by consignee ID, customer, company, country, risk..."
-            value={q}
-            onChange={(e) => onSearch(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* Table card — shimmer block while the initial fetch is in
-          flight (light + dark mode compatible via shared .shimmer
-          tokens), then the project-standard TableContainer. */}
-      <div className="smcg-table-card">
         <div className="smcg-table-wrap">
           {loading && rows.length === 0 ? (
             <ConsigneeListShimmer rows={ROWS_PER_PAGE} />
@@ -494,215 +529,432 @@ function ConsigneeListShimmer({ rows = 10 }: { rows?: number }) {
 const SCOPED_CSS = `
 .smcg-root {
   font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
-  background: linear-gradient(160deg, #ecfdf5 0%, #d1fae5 40%, #a7f3d0 100%);
-  padding: 14px 18px 20px;
-  margin: -1rem -0.75rem;
-  min-height: calc(100vh - 70px);
-  display: flex; flex-direction: column; gap: 10px;
-  color: #064e3b;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  display: flex; flex-direction: column; gap: 14px;
+  color: var(--vz-body-color);
 }
 .smcg-root *, .smcg-root *::before, .smcg-root *::after { box-sizing: border-box; }
 
 /* ─── Hero strip ─── */
+/* ─── Hero strip — light mint→teal gradient (Figma spec). Soft,
+   minty background with a dark-emerald icon + dark-emerald primary
+   button on top. Reads "ultra HD" without being a heavy solid bar. */
 .smcg-cstrip {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: space-between;
-  min-height: 76px; padding: 0 22px;
-  border: 1px solid rgba(16,185,129,.40); border-radius: 16px;
-  background: linear-gradient(110deg, #10b981 0%, #059669 45%, #047857 100%);
-  box-shadow:
-    0 2px 0 rgba(255,255,255,.30) inset,
-    0 8px 28px rgba(16,185,129,.30),
-    0 2px 8px rgba(0,0,0,.06);
-  flex-shrink: 0;
-  color: #fff;
-}
-.smcg-accent {
-  position: absolute; left:0; top:0; bottom:0; width:4px;
-  background: linear-gradient(180deg, #6ee7b7, #10b981, #047857);
-  border-radius: 16px 0 0 16px;
-}
-.smcg-glow {
-  position: absolute; inset:0; pointer-events:none;
-  background-image:
-    radial-gradient(ellipse at 12% 50%, rgba(255,255,255,.18) 0%, transparent 50%),
-    radial-gradient(ellipse at 88% 50%, rgba(167,243,208,.20) 0%, transparent 55%);
-}
-.smcg-sheen {
-  position: absolute; top:0; left:0; right:0; height:48%; pointer-events:none;
-  background: linear-gradient(180deg, rgba(255,255,255,.22), transparent);
-  border-radius: 16px 16px 0 0;
-}
-.smcg-cstrip-left  { display:flex; align-items:center; gap:14px; z-index:1; padding-left:4px; }
-.smcg-back-btn {
-  flex-shrink: 0;
-  width: 34px; height: 34px; border-radius: 10px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,.75);
-  border: 1px solid rgba(16,185,129,.20);
-  color: #047857; cursor: pointer;
-  transition: all .18s ease;
-  box-shadow: 0 1px 2px rgba(15,42,35,.04);
-}
-.smcg-back-btn:hover  { background: #fff; border-color: #10b981; transform: translateX(-1px); box-shadow: 0 4px 12px rgba(16,185,129,.18); }
-.smcg-back-btn:active { transform: translateX(-1px) scale(.97); }
-[data-bs-theme="dark"] .smcg-back-btn         { background: rgba(255,255,255,.06); border-color: rgba(110,231,183,.30); color: #6ee7b7; }
-[data-bs-theme="dark"] .smcg-back-btn:hover   { background: rgba(16,185,129,.18); border-color: #10b981; color: #d1fae5; }
-.smcg-avatar-wrap  { position: relative; flex-shrink: 0; }
-.smcg-avatar {
-  width: 44px; height: 44px; border-radius: 12px;
-  display: flex; align-items: center; justify-content: center;
-  color: #fff;
-  background: rgba(255,255,255,.18);
-  border: 1px solid rgba(255,255,255,.30);
-  box-shadow: 0 4px 14px rgba(0,0,0,.18);
-}
-.smcg-title { font-size:18px; font-weight:800; color:#fff; letter-spacing:-.4px; line-height:1.2; }
-.smcg-sub   { font-size:11.5px; color:rgba(255,255,255,.85); font-weight:400; margin-top:2px; line-height:1.4; max-width: 760px; }
-
-.smcg-cstrip-right { display:flex; align-items:center; gap:7px; z-index:1; flex-shrink:0; }
-.smcg-add-btn {
-  position: relative; overflow: hidden;
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 0 22px; height: 46px;
-  border: 1px solid rgba(255,255,255,.30); border-radius: 12px;
-  font-family: inherit; font-size: 14px; font-weight: 700;
-  color: #047857; letter-spacing: .01em; white-space: nowrap; cursor: pointer;
-  background: #fff;
-  box-shadow:
-    0 6px 18px rgba(0,0,0,.15),
-    0 1px 0 rgba(255,255,255,.40) inset;
-  transition: transform .18s, box-shadow .18s, color .18s, background .18s;
-}
-.smcg-add-btn:hover {
-  transform: translateY(-2px);
-  background: #f0fdf4;
-  color: #064e3b;
-  box-shadow: 0 10px 28px rgba(0,0,0,.20), 0 1px 0 rgba(255,255,255,.40) inset;
-}
-.smcg-add-btn:active { transform: translateY(0); }
-.smcg-add-sheen {
-  position: absolute; top:0; left:0; right:0; height:48%; pointer-events:none;
-  background: linear-gradient(180deg, rgba(255,255,255,.55), transparent);
-  border-radius: 12px 12px 0 0;
-}
-
-/* ─── What We Are Doing Here ─── */
-.smcg-wdh {
   position: relative;
-  background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 50%, #a7f3d0 100%);
-  border: 1px solid rgba(16,185,129,.30); border-radius: 14px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px;
+  border-radius: 16px;
+  background: linear-gradient(110deg, #f0fdf9 0%, #ccfbf1 25%, #99f6e4 55%, #5eead4 85%, #2dd4bf 100%);
+  border: 1px solid #5eead4;
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.85) inset,
+    0 8px 28px rgba(45,212,191,0.20),
+    0 2px 8px rgba(0,0,0,0.06);
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(16,185,129,.10);
   flex-shrink: 0;
 }
-.smcg-wdh-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 11px 16px; min-height: 56px;
-  cursor: pointer; user-select: none; position: relative; z-index: 1;
+.smcg-cstrip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse at 12% 50%, rgba(255,255,255,0.40) 0%, transparent 55%),
+    radial-gradient(ellipse at 88% 50%, rgba(94,234,212,0.22) 0%, transparent 55%);
 }
-.smcg-wdh-head-left { display:flex; align-items:center; gap:11px; }
-.smcg-wdh-icon {
-  width:34px; height:34px; border-radius:9px;
-  background: linear-gradient(135deg, #10b981, #047857);
-  display:flex; align-items:center; justify-content:center;
-  color:#fff; flex-shrink:0; box-shadow:0 3px 10px rgba(5,150,105,.40);
-}
-.smcg-wdh-title { font-size:14px; font-weight:800; color:#064e3b; letter-spacing:-.3px; }
-.smcg-wdh-subtitle { font-size:11px; color:#047857; font-weight:500; margin-top:1px; }
-.smcg-wdh-toggle {
-  width:30px; height:30px; border-radius:50%;
-  border:1.5px solid rgba(5,150,105,.30); background: rgba(255,255,255,.7);
-  display:flex; align-items:center; justify-content:center;
-  cursor:pointer; flex-shrink:0; transition: background .15s;
-}
-.smcg-wdh-toggle:hover { background: rgba(255,255,255,.95); }
-.smcg-wdh-body {
-  display:flex; align-items:stretch; gap:0; padding: 4px 14px 12px;
+.smcg-cstrip-left {
+  display: flex; align-items: center; gap: 16px;
   position: relative; z-index: 1;
+  min-width: 0;
+  flex: 1;
 }
-.smcg-step {
-  flex:1; min-width:0;
-  background:#fff; border:1.5px solid #d1fae5; border-left:3px solid #10b981;
-  border-radius:10px; padding:11px 13px;
-  display:flex; flex-direction:column; gap:5px;
-  box-shadow: 0 1px 4px rgba(16,185,129,.08);
-}
-.smcg-step-head { display:flex; align-items:center; gap:8px; }
-.smcg-step-num {
-  width:24px; height:24px; border-radius:6px;
+.smcg-cstrip-icon {
+  position: relative;
+  width: 46px; height: 46px; border-radius: 12px;
   background: linear-gradient(135deg, #10b981, #047857);
-  display:flex; align-items:center; justify-content:center;
-  color:#fff; font-size:11px; font-weight:800; line-height:1;
-  flex-shrink:0; box-shadow:0 2px 6px rgba(5,150,105,.30);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff;
+  font-size: 22px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(5,150,105,0.40), 0 0 0 3px rgba(255,255,255,0.50);
 }
-.smcg-step-name { font-size:12.5px; font-weight:700; color:#064e3b; letter-spacing:-.2px; line-height:1.2; }
-.smcg-step-desc { font-size:11px; color:#475569; font-weight:400; line-height:1.45; margin:0; }
+.smcg-cstrip-icon::after {
+  /* small green "online" dot to keep the visual rhythm of the design */
+  content: '';
+  position: absolute;
+  bottom: -2px; right: -2px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 2px solid #ecfdf5;
+  box-shadow: 0 2px 4px rgba(34,197,94,0.40);
+}
+.smcg-cstrip-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #064e3b;
+  letter-spacing: -.3px;
+  line-height: 1.2;
+}
+.smcg-cstrip-sub {
+  font-size: 12px;
+  color: #134e3a;
+  font-weight: 400;
+  margin-top: 4px;
+  line-height: 1.5;
+  max-width: 760px;
+  opacity: 0.85;
+}
+.smcg-cstrip-add {
+  position: relative; z-index: 1;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 0 22px; height: 44px;
+  border: 0;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 14px; font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #047857 0%, #065f46 100%);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 6px 18px rgba(5,150,105,0.40), 0 1px 0 rgba(255,255,255,0.20) inset;
+  transition: transform .18s, box-shadow .18s, background .18s;
+}
+.smcg-cstrip-add:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, #065f46 0%, #064e3b 100%);
+  box-shadow: 0 10px 28px rgba(5,150,105,0.50), 0 1px 0 rgba(255,255,255,0.20) inset;
+}
+.smcg-cstrip-add:active { transform: translateY(0); }
+.smcg-cstrip-add i { font-size: 16px; }
+[data-bs-theme="dark"] .smcg-cstrip {
+  background: linear-gradient(110deg, #0d2f25 0%, #114a3a 30%, #0f6b54 60%, #138671 85%, #14a78a 100%);
+  border-color: rgba(94,234,212,0.40);
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.05) inset,
+    0 8px 28px rgba(0,0,0,0.50),
+    0 2px 8px rgba(0,0,0,0.35);
+}
+[data-bs-theme="dark"] .smcg-cstrip::before {
+  background-image:
+    radial-gradient(ellipse at 12% 50%, rgba(94,234,212,0.18) 0%, transparent 55%),
+    radial-gradient(ellipse at 88% 50%, rgba(45,212,191,0.15) 0%, transparent 55%);
+}
+[data-bs-theme="dark"] .smcg-cstrip-title { color: #f0fdfa; }
+[data-bs-theme="dark"] .smcg-cstrip-sub   { color: #ccfbf1; opacity: 0.92; }
+[data-bs-theme="dark"] .smcg-cstrip-icon  {
+  background: linear-gradient(135deg, #10b981, #34d399);
+  box-shadow: 0 4px 14px rgba(16,185,129,0.50), 0 0 0 3px rgba(94,234,212,0.18);
+}
+[data-bs-theme="dark"] .smcg-cstrip-icon::after { border-color: #0d2f25; }
+[data-bs-theme="dark"] .smcg-cstrip-add {
+  background: linear-gradient(135deg, #14b89a 0%, #10b981 100%);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(20,184,154,0.50), 0 1px 0 rgba(255,255,255,0.18) inset;
+}
+[data-bs-theme="dark"] .smcg-cstrip-add:hover {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 10px 28px rgba(20,184,154,0.60), 0 1px 0 rgba(255,255,255,0.18) inset;
+}
+
+/* ─── Slim "What you are doing here" banner ──────────────────────
+ * Mint→teal gradient wash that matches the hero strip palette so
+ * the two sections feel like a single visual block. */
+.smcg-wdh-card {
+  position: relative;
+  background: linear-gradient(110deg, #f0fdf9 0%, #ccfbf1 25%, #99f6e4 55%, #5eead4 85%, #2dd4bf 100%);
+  border: 1px solid #5eead4;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.85) inset,
+    0 4px 16px rgba(45,212,191,0.18),
+    0 1px 3px rgba(0,0,0,0.04);
+}
+.smcg-wdh-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #047857 0%, #059669 35%, #10b981 70%, #34d399 100%);
+  z-index: 1;
+}
+.smcg-wdh-toggle-row {
+  width: 100%;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background .2s ease;
+  text-align: left;
+  position: relative;
+  z-index: 1;
+}
+.smcg-wdh-toggle-row:hover { background: rgba(255,255,255,0.15); }
+.smcg-wdh-card.is-open .smcg-wdh-toggle-row {
+  background: linear-gradient(135deg, rgba(255,255,255,0.20), rgba(255,255,255,0.05));
+  border-bottom: 1px solid rgba(255,255,255,0.45);
+}
+.smcg-wdh-heading { display: flex; align-items: center; gap: 12px; }
+.smcg-wdh-bulb {
+  width: 40px; height: 40px; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #10b981, #047857);
+  box-shadow: 0 4px 10px rgba(16,185,129,0.25);
+  color: #fff; font-size: 18px; flex-shrink: 0;
+}
+.smcg-wdh-title {
+  font-size: 15px; font-weight: 800;
+  color: #064e3b;
+  line-height: 1.2;
+}
+.smcg-wdh-sub {
+  color: #047857;
+  font-size: 12px;
+  opacity: 0.85;
+}
+.smcg-wdh-chev {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.55);
+  border: 1px solid rgba(5,150,105,0.20);
+  color: #047857;
+  font-size: 18px; flex-shrink: 0;
+  transition: transform .25s ease, background .15s ease;
+}
+.smcg-wdh-chev:hover { background: rgba(255,255,255,0.85); }
+.smcg-wdh-chev.is-open { transform: rotate(180deg); }
+.smcg-wdh-body-wrap {
+  overflow: hidden;
+  transition: max-height .35s ease;
+}
+.smcg-wdh-body {
+  display: flex; align-items: stretch;
+  gap: 8px;
+  padding: 14px 18px 18px;
+  flex-wrap: wrap;
+}
+/* Step tiles — solid WHITE background with a colored left-side
+   accent stripe per step (emerald / blue / amber / violet). The
+   per-tile color also tints the number badge, title text, and tag
+   dot — but the card body itself stays clean white so the tiles
+   pop against the mint→teal banner behind them. */
+.smcg-step {
+  flex: 1 1 0;
+  min-width: 200px;
+  background: #ffffff;
+  border: 1px solid rgba(16,185,129,0.18);
+  border-left: 4px solid #10b981;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 6px;
+  box-shadow: 0 2px 8px rgba(16,185,129,0.06);
+  cursor: default;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.smcg-step:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(16,185,129,0.20), 0 2px 6px rgba(16,185,129,0.12);
+}
+/* Tile 1 — Emerald (matches the page brand color). */
+.smcg-step[data-n="0"] {
+  border-color: rgba(16,185,129,0.20);
+  border-left-color: #10b981;
+}
+.smcg-step[data-n="0"]:hover { box-shadow: 0 8px 22px rgba(16,185,129,0.22), 0 2px 6px rgba(16,185,129,0.14); }
+.smcg-step[data-n="0"] .smcg-step-num  { background: linear-gradient(135deg, #10b981, #34d399); box-shadow: 0 3px 8px rgba(16,185,129,0.30); }
+.smcg-step[data-n="0"] .smcg-step-name { color: #047857; }
+.smcg-step[data-n="0"] .smcg-step-tag-dot { background: #10b981; }
+.smcg-step[data-n="0"] .smcg-step-tag { color: #047857; }
+
+/* Tile 2 — Blue (Customer & Trade Linkage). */
+.smcg-step[data-n="1"] {
+  border-color: rgba(64,81,137,0.20);
+  border-left-color: #405189;
+}
+.smcg-step[data-n="1"]:hover { box-shadow: 0 8px 22px rgba(64,81,137,0.22), 0 2px 6px rgba(64,81,137,0.14); }
+.smcg-step[data-n="1"] .smcg-step-num  { background: linear-gradient(135deg, #405189, #6691e7); box-shadow: 0 3px 8px rgba(64,81,137,0.30); }
+.smcg-step[data-n="1"] .smcg-step-name { color: #405189; }
+.smcg-step[data-n="1"] .smcg-step-tag-dot { background: #405189; }
+.smcg-step[data-n="1"] .smcg-step-tag { color: #405189; }
+
+/* Tile 3 — Amber (Compliance & Risk Details — risk-themed warm tone). */
+.smcg-step[data-n="2"] {
+  border-color: rgba(247,184,75,0.25);
+  border-left-color: #d97a08;
+}
+.smcg-step[data-n="2"]:hover { box-shadow: 0 8px 22px rgba(247,184,75,0.25), 0 2px 6px rgba(247,184,75,0.14); }
+.smcg-step[data-n="2"] .smcg-step-num  { background: linear-gradient(135deg, #f7b84b, #ffd47a); box-shadow: 0 3px 8px rgba(247,184,75,0.30); }
+.smcg-step[data-n="2"] .smcg-step-name { color: #d97a08; }
+.smcg-step[data-n="2"] .smcg-step-tag-dot { background: #d97a08; }
+.smcg-step[data-n="2"] .smcg-step-tag { color: #d97a08; }
+
+/* Tile 4 — Violet (Shipment & Export Readiness — "final execution"). */
+.smcg-step[data-n="3"] {
+  border-color: rgba(124,58,237,0.22);
+  border-left-color: #7c3aed;
+}
+.smcg-step[data-n="3"]:hover { box-shadow: 0 8px 22px rgba(124,58,237,0.22), 0 2px 6px rgba(124,58,237,0.14); }
+.smcg-step[data-n="3"] .smcg-step-num  { background: linear-gradient(135deg, #7c3aed, #a78bfa); box-shadow: 0 3px 8px rgba(124,58,237,0.30); }
+.smcg-step[data-n="3"] .smcg-step-name { color: #6d28d9; }
+.smcg-step[data-n="3"] .smcg-step-tag-dot { background: #7c3aed; }
+.smcg-step[data-n="3"] .smcg-step-tag { color: #6d28d9; }
+.smcg-step-head { display: flex; align-items: center; gap: 8px; }
+.smcg-step-num {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: linear-gradient(135deg, #10b981, #34d399);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 12px; font-weight: 700;
+  flex-shrink: 0;
+  box-shadow: 0 3px 8px rgba(16,185,129,0.30);
+}
+.smcg-step-name {
+  font-size: 14px; font-weight: 700;
+  color: #047857;
+  line-height: 1.2;
+}
+.smcg-step-desc {
+  font-size: 12px; color: var(--vz-secondary-color);
+  line-height: 1.45;
+  margin: 0;
+}
 .smcg-step-tag {
-  display:inline-flex; align-items:center; gap:5px;
-  font-size:10.5px; font-weight:700; color:#047857;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; font-weight: 700;
+  color: #047857;
   margin-top: 4px;
 }
-.smcg-step-tag-dot { width:5px; height:5px; border-radius:50%; background:#10b981; }
+.smcg-step-tag-dot { width: 5px; height: 5px; border-radius: 50%; background: #10b981; }
 .smcg-step-arrow {
-  display:flex; align-items:center; justify-content:center; flex-shrink:0; width:28px;
-}
-.smcg-step-arrow-dot {
-  width:22px; height:22px; border-radius:50%;
-  background:#fff; border:1.5px solid #a7f3d0;
-  display:flex; align-items:center; justify-content:center;
-  color:#10b981;
-  box-shadow:0 1px 4px rgba(16,185,129,.10);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  color: var(--vz-secondary-color);
+  font-size: 18px;
 }
 
-/* ─── Search bar (standalone) ─── */
-.smcg-search-bar { display:flex; flex-shrink:0; }
-.smcg-search {
-  flex: 1;
-  display: flex; align-items: center; gap: 10px;
-  background: rgba(255,255,255,.85);
-  border: 1.5px solid rgba(16,185,129,.30); border-radius: 12px;
-  padding: 9px 16px;
-  box-shadow: 0 2px 8px rgba(16,185,129,.08), 0 1px 0 rgba(255,255,255,.9) inset;
-  backdrop-filter: blur(4px);
-  transition: border-color .2s, box-shadow .2s;
+/* ─── Toolbar — search + Add Consignee inside the main card. */
+.smcg-toolbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, rgba(16,185,129,0.05), rgba(52,211,153,0.02));
+  border-bottom: 1px solid rgba(16,185,129,0.15);
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 1;
 }
-.smcg-search:focus-within {
+.smcg-toolbar .smcg-search {
+  position: relative;
+  flex: 1; min-width: 240px;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(16,185,129,0.22);
+  border-radius: 10px;
+  padding: 0 14px 0 38px;
+  height: 42px;
+  display: flex; align-items: center;
+  box-shadow: 0 1px 3px rgba(16,185,129,0.06);
+  transition: border-color .15s, box-shadow .15s;
+}
+.smcg-toolbar .smcg-search:focus-within {
   border-color: #10b981;
-  box-shadow: 0 0 0 3px rgba(16,185,129,.15), 0 2px 8px rgba(16,185,129,.10);
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.15);
 }
-.smcg-search input {
-  border: none; outline: none; background: transparent;
-  font-family: inherit; font-size: 13px; color: #064e3b;
-  width: 100%; font-weight: 500;
+.smcg-toolbar .smcg-search-icon {
+  position: absolute; left: 14px;
+  color: #059669;
+  font-size: 16px;
 }
-.smcg-search input::placeholder { color: #6ee7b7; }
+.smcg-toolbar .smcg-search input {
+  flex: 1; border: 0; outline: 0; background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--vz-body-color);
+  font-weight: 500;
+}
+.smcg-toolbar .smcg-search input::placeholder { color: var(--vz-secondary-color); }
 
-/* ─── Table card ─── */
+.smcg-add-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 0 22px; height: 42px;
+  border: 0; border-radius: 999px;
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(16,185,129,0.30);
+  transition: transform .15s, box-shadow .15s, background .18s;
+}
+.smcg-add-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(16,185,129,0.40);
+}
+.smcg-add-btn:active { transform: translateY(0); }
+.smcg-add-btn i { font-size: 16px; }
+
+/* ─── Main card — neutral border + top emerald gradient accent. */
 .smcg-table-card {
-  background: #fff;
-  border: 1.5px solid rgba(16,185,129,.30); border-radius: 18px;
-  box-shadow: 0 8px 32px rgba(5,150,105,.12), 0 2px 8px rgba(5,150,105,.06);
+  position: relative;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid var(--vz-border-color);
+  border-radius: 16px;
   overflow: hidden;
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+}
+.smcg-table-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #047857 0%, #059669 35%, #10b981 70%, #34d399 100%);
+  z-index: 1;
 }
 
 /* ─── Table ─── */
 .smcg-table-wrap {
-  overflow: auto; flex: 1; min-height: 0;
-  /* Breathing room around the TableContainer-rendered card so its
-     rounded corners aren't clipped by the outer .smcg-table-card. */
+  /* Only vertical scroll on the wrap; the inner .table-responsive
+     handles horizontal scroll. Prevents stacked scrollbars. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  flex: 1; min-height: 0;
   padding: 14px 14px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+.smcg-table-wrap::-webkit-scrollbar,
+.smcg-table-wrap .table-responsive::-webkit-scrollbar { width: 8px; height: 8px; }
+.smcg-table-wrap::-webkit-scrollbar-track,
+.smcg-table-wrap .table-responsive::-webkit-scrollbar-track { background: transparent; }
+.smcg-table-wrap::-webkit-scrollbar-thumb,
+.smcg-table-wrap .table-responsive::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.smcg-table-wrap::-webkit-scrollbar-thumb:hover,
+.smcg-table-wrap .table-responsive::-webkit-scrollbar-thumb:hover { background: #9ca3af; background-clip: padding-box; }
+.smcg-table-wrap .table-responsive { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
+[data-bs-theme="dark"] .smcg-table-wrap,
+[data-bs-theme="dark"] .smcg-table-wrap .table-responsive {
+  scrollbar-color: rgba(110,231,183,0.30) transparent;
+}
+[data-bs-theme="dark"] .smcg-table-wrap::-webkit-scrollbar-thumb,
+[data-bs-theme="dark"] .smcg-table-wrap .table-responsive::-webkit-scrollbar-thumb {
+  background: rgba(110,231,183,0.30);
 }
 
-/* ─── Project-standard TableContainer styling tinted with the
-       page's emerald palette. Same structure as SalesCustomers but
-       green instead of violet. */
-/* ─── Table chrome — neutral, same look as Clients / HR Employees.
-   The emerald aesthetic stays inside the cells via chips (id chip,
-   country chip, contact chip, etc.) so the page reads emerald
-   without the table itself being emerald. */
+/* Table chrome — neutral border (so bottom doesn't read as a hard
+   emerald line), soft emerald gradient on the header. */
 .smcg-table-wrap .table-responsive {
   background: var(--vz-card-bg, #fff) !important;
   border: 1px solid var(--vz-border-color) !important;
@@ -713,31 +965,32 @@ const SCOPED_CSS = `
 }
 .smcg-table-wrap .table { --bs-table-bg: transparent; margin-bottom: 0 !important; }
 
-/* Header — neutral table-light (Velzon default), matches every
-   other list page in the app. */
+/* Header — same mint→teal gradient as the hero strip + WDH banner
+   so all three sections feel like one connected block. Dark-emerald
+   column text reads cleanly against the teal wash. */
 .smcg-table-wrap .table thead.table-light tr {
-  background: var(--vz-light) !important;
+  background: linear-gradient(110deg, #f0fdf9 0%, #ccfbf1 25%, #99f6e4 55%, #5eead4 85%, #2dd4bf 100%) !important;
 }
 .smcg-table-wrap .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
   background: transparent !important;
-  color: var(--vz-secondary-color) !important;
+  color: #064e3b !important;
   font-size: 12px !important;
-  font-weight: 600 !important;
+  font-weight: 700 !important;
   letter-spacing: .02em !important;
-  padding: 10px 14px !important;
+  padding: 11px 14px !important;
   line-height: 1.3 !important;
-  border-bottom: 1px solid var(--vz-border-color) !important;
+  border-bottom: 1px solid #5eead4 !important;
   white-space: nowrap;
   text-transform: uppercase;
   vertical-align: middle !important;
 }
-.smcg-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; }
+.smcg-table-wrap .table thead th i { font-size: 12px; opacity: 0.7; color: #047857; }
 
-/* Body — neutral rows + neutral hover. */
+/* Body — white rows with soft emerald hover. */
 .smcg-table-wrap .table tbody tr { background: transparent; transition: background .12s ease; }
-.smcg-table-wrap .table tbody tr:hover { background: var(--vz-light) !important; }
+.smcg-table-wrap .table tbody tr:hover { background: #f0fdf4 !important; }
 .smcg-table-wrap .table tbody td {
   --bs-table-bg: transparent !important;
   background: transparent !important;
@@ -745,7 +998,7 @@ const SCOPED_CSS = `
   font-size: 13px;
   color: var(--vz-body-color);
   vertical-align: middle;
-  border-bottom: 1px solid var(--vz-border-color) !important;
+  border-bottom: 1px solid rgba(16,185,129,0.08) !important;
   white-space: nowrap;
 }
 .smcg-table-wrap .table tbody tr:last-child td { border-bottom: none !important; }
@@ -951,50 +1204,105 @@ const SCOPED_CSS = `
 
 /* ─── Dark mode overrides ─── */
 [data-bs-theme="dark"] .smcg-root {
-  background: linear-gradient(160deg, #0a1f1a 0%, #0f2a23 40%, #103129 100%);
-  color: #d1fae5;
+  background: transparent;
+  color: var(--vz-body-color);
 }
-[data-bs-theme="dark"] .smcg-cstrip {
-  background: linear-gradient(110deg, #064e3b 0%, #047857 45%, #059669 100%);
-  border-color: rgba(16,185,129,.40);
-  box-shadow: 0 2px 0 rgba(255,255,255,.10) inset, 0 8px 28px rgba(0,0,0,.45);
+
+/* Slim WDH banner — dark variant of the mint→teal wash with brighter
+   teal accents so the gradient is visible (was too close to pure
+   black before, killed the gradient feel). */
+[data-bs-theme="dark"] .smcg-wdh-card {
+  background: linear-gradient(110deg, #0d2f25 0%, #114a3a 30%, #0f6b54 60%, #138671 85%, #14a78a 100%);
+  border-color: rgba(94,234,212,0.35);
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.05) inset,
+    0 4px 16px rgba(0,0,0,0.35),
+    0 1px 3px rgba(45,212,191,0.12);
 }
-[data-bs-theme="dark"] .smcg-wdh {
-  background: linear-gradient(110deg, #0f2a23 0%, #103129 50%, #134e3a 100%);
-  border-color: rgba(16,185,129,.30);
+[data-bs-theme="dark"] .smcg-wdh-toggle-row { background: transparent; }
+[data-bs-theme="dark"] .smcg-wdh-toggle-row:hover { background: rgba(255,255,255,0.06); }
+[data-bs-theme="dark"] .smcg-wdh-card.is-open .smcg-wdh-toggle-row {
+  background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+  border-bottom-color: rgba(94,234,212,0.30);
 }
-[data-bs-theme="dark"] .smcg-wdh-title { color: #ecfdf5; }
-[data-bs-theme="dark"] .smcg-wdh-subtitle { color: #6ee7b7; }
-[data-bs-theme="dark"] .smcg-wdh-toggle {
-  background: rgba(255,255,255,.06);
-  border-color: rgba(16,185,129,.40);
+[data-bs-theme="dark"] .smcg-wdh-bulb {
+  background: linear-gradient(135deg, #10b981, #34d399);
+  box-shadow: 0 4px 10px rgba(16,185,129,0.45);
 }
+[data-bs-theme="dark"] .smcg-wdh-title { color: #f0fdfa; font-weight: 800; }
+[data-bs-theme="dark"] .smcg-wdh-sub   { color: #ccfbf1; opacity: 0.92; }
+[data-bs-theme="dark"] .smcg-wdh-chev {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(94,234,212,0.30);
+  color: #ccfbf1;
+}
+[data-bs-theme="dark"] .smcg-wdh-chev:hover { background: rgba(255,255,255,0.20); }
+/* Step tiles in dark mode — keep the white-card-on-colored-banner
+   look by using a slightly translucent dark surface (lets the
+   banner gradient peek through) with crisp readable text. */
 [data-bs-theme="dark"] .smcg-step {
-  background: #103129;
-  border-color: rgba(16,185,129,.25);
-  border-left-color: #10b981;
+  background: rgba(15, 23, 33, 0.78);
+  border-color: rgba(16,185,129,0.30);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
-[data-bs-theme="dark"] .smcg-step-name { color: #ecfdf5; }
-[data-bs-theme="dark"] .smcg-step-desc { color: #9aa9a4; }
-[data-bs-theme="dark"] .smcg-step-tag  { color: #6ee7b7; }
-[data-bs-theme="dark"] .smcg-step-arrow-dot {
-  background: #103129;
-  border-color: rgba(16,185,129,.40);
-  color: #6ee7b7;
+[data-bs-theme="dark"] .smcg-step[data-n="0"] { border-color: rgba(16,185,129,0.40); border-left-color: #10b981; }
+[data-bs-theme="dark"] .smcg-step[data-n="1"] { border-color: rgba(102,145,231,0.40); border-left-color: #6691e7; }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] { border-color: rgba(255,212,122,0.40); border-left-color: #ffd47a; }
+[data-bs-theme="dark"] .smcg-step[data-n="3"] { border-color: rgba(167,139,250,0.40); border-left-color: #a78bfa; }
+[data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-name { color: #6ee7b7; }
+[data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-name { color: #93b4f0; }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-name { color: #fcd34d; }
+[data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-name { color: #c4b5fd; }
+[data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-tag     { color: #6ee7b7; }
+[data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-tag     { color: #93b4f0; }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag     { color: #fcd34d; }
+[data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-tag     { color: #c4b5fd; }
+[data-bs-theme="dark"] .smcg-step-desc { color: #cbd5e1; }
+[data-bs-theme="dark"] .smcg-step-arrow { color: #ccfbf1; }
+
+/* Toolbar — dark emerald wash on the toolbar background. */
+[data-bs-theme="dark"] .smcg-toolbar {
+  background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(52,211,153,0.04));
+  border-bottom-color: rgba(16,185,129,0.20);
 }
-[data-bs-theme="dark"] .smcg-search {
-  background: rgba(255,255,255,.04);
-  border-color: rgba(16,185,129,.30);
+[data-bs-theme="dark"] .smcg-toolbar .smcg-search {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(16,185,129,0.25);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.20);
 }
-[data-bs-theme="dark"] .smcg-search input { color: #ecfdf5; }
-[data-bs-theme="dark"] .smcg-search input::placeholder { color: #6b8a7e; }
+[data-bs-theme="dark"] .smcg-toolbar .smcg-search:focus-within {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.20);
+}
+[data-bs-theme="dark"] .smcg-toolbar .smcg-search input { color: var(--vz-body-color); }
+[data-bs-theme="dark"] .smcg-toolbar .smcg-search input::placeholder { color: var(--vz-secondary-color); }
+[data-bs-theme="dark"] .smcg-toolbar .smcg-search-icon { color: #6ee7b7; }
+
 [data-bs-theme="dark"] .smcg-table-card {
-  background: #103129;
-  border-color: rgba(16,185,129,.30);
-  box-shadow: 0 8px 32px rgba(0,0,0,.45);
+  background: var(--vz-card-bg);
+  border-color: rgba(16,185,129,0.25);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.30), 0 1px 3px rgba(16,185,129,0.10);
 }
-[data-bs-theme="dark"] .smcg-table thead tr {
-  background: linear-gradient(110deg, #064e3b 0%, #047857 40%, #059669 75%, #10b981 100%);
+
+/* Table chrome in dark mode — translucent emerald wash on the
+   header, dark slate body. */
+[data-bs-theme="dark"] .smcg-table-wrap .table-responsive {
+  background: var(--vz-card-bg) !important;
+  border-color: var(--vz-border-color) !important;
+}
+[data-bs-theme="dark"] .smcg-table-wrap .table thead.table-light tr {
+  background: linear-gradient(110deg, rgba(15,42,35,0.55) 0%, rgba(19,78,58,0.45) 25%, rgba(6,95,70,0.40) 55%, rgba(4,120,87,0.35) 85%, rgba(45,212,191,0.20) 100%) !important;
+}
+[data-bs-theme="dark"] .smcg-table-wrap .table thead.table-light th {
+  color: #99f6e4 !important;
+  border-bottom-color: rgba(94,234,212,0.30) !important;
+}
+[data-bs-theme="dark"] .smcg-table-wrap .table thead th i { color: #99f6e4 !important; opacity: 0.7; }
+[data-bs-theme="dark"] .smcg-table-wrap .table tbody tr:hover { background: rgba(16,185,129,0.08) !important; }
+[data-bs-theme="dark"] .smcg-table-wrap .table tbody td {
+  color: var(--vz-body-color);
+  border-bottom-color: rgba(16,185,129,0.10) !important;
 }
 [data-bs-theme="dark"] .smcg-table tbody td {
   border-bottom-color: rgba(16,185,129,.18);

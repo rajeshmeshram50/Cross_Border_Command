@@ -231,6 +231,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * for new records, or pre-filled from the edit-mode prop). Drives all
    * Stage 2 KYC POSTs to /consignees/{id}/documents and /owners. */
   const [savedDbId, setSavedDbId] = useState<number | null>(null);
+  /* Synchronous re-entry lock — `saving` state is async and React
+   * batches updates, so two rapid clicks on "Save & Next" can both
+   * pass the saving check before either has set saving=true. A ref
+   * flips immediately on the synchronous tick, blocking the second
+   * call cold. This is the actual fix for the duplicate row issue
+   * the user saw on rapid clicks. */
+  const inFlightRef = useRef(false);
 
   /* True while the edit-mode hydration fetch is in flight. Renders a
    * shimmer skeleton over Stage 1 so the user sees the form shape
@@ -578,7 +585,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     if (!f.state)                                             e.state       = 'Select state';
     if (!f.city.trim())                                       e.city        = 'City is required';
     if (!f.pin.trim())                                        e.pin         = 'PIN is required';
-    else if (!/^[A-Za-z0-9\-\s]{3,12}$/.test(f.pin))          e.pin         = 'PIN looks invalid';
+    else if (!/^\d{6}$/.test(f.pin.trim()))                   e.pin         = 'PIN must be exactly 6 digits';
     if (!f.contactName.trim())                                e.contactName = 'Contact name is required';
     if (!f.designation.trim())                                e.designation = 'Designation is required';
     if (!f.contactNo.trim())                                  e.contactNo   = 'Contact number is required';
@@ -651,6 +658,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       toast.info('Hold on', 'Loading the linked customer. Try again in a moment.');
       return null;
     }
+    // Re-entry lock — if a previous save is still in flight, return
+    // the id we already have (or null) instead of firing a second POST.
+    // Without this, rapid Save-&-Next clicks created duplicate rows
+    // because the second click read savedDbId before the first POST's
+    // response had updated it.
+    if (inFlightRef.current) {
+      return consignee?.db_id ?? savedDbId;
+    }
+    inFlightRef.current = true;
     setSaving(true);
     try {
       const payload = buildPayload();
@@ -709,6 +725,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       return null;
     } finally {
       setSaving(false);
+      inFlightRef.current = false;
     }
   };
 
@@ -819,7 +836,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   });
 
   const handleSave = async () => {
-    if (saving) return;
+    // Synchronous re-entry lock — see comment on inFlightRef. The
+    // saving state is async; a ref blocks duplicate calls on the
+    // very same tick.
+    if (inFlightRef.current || saving) return;
     // Final Stage 1 validation — a user can navigate back from Stage 3
     // and edit the form before Save Consignee, so the gate has to fire
     // here too. Snap back to Stage 1 / identification tab if anything
@@ -834,13 +854,23 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       return;
     }
 
+    inFlightRef.current = true;
     setSaving(true);
     try {
       const payload = buildPayload();
-      if (consignee?.db_id) {
-        await api.put(`/consignees/${consignee.db_id}`, payload);
+      // Prefer consignee.db_id (edit mode) BUT fall back to savedDbId
+      // (the id of the row persistStage1 just created in this session).
+      // Without that fallback, the final Save Consignee click would POST
+      // a *second* row for a consignee that persistStage1 already
+      // created — silent duplicate on the list. Same pattern as
+      // persistStage1's own idempotent check.
+      const persistedDbId = consignee?.db_id ?? savedDbId;
+      if (persistedDbId) {
+        await api.put(`/consignees/${persistedDbId}`, payload);
       } else {
-        await api.post('/consignees', payload);
+        const r = await api.post('/consignees', payload);
+        const newId = r.data?.data?.db_id ?? null;
+        if (newId) setSavedDbId(newId);
       }
       toast.success('Consignee saved', `${form1.companyName} linked to ${customer?.name ?? 'customer'}`);
       onSaved?.();
@@ -883,6 +913,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       }
     } finally {
       setSaving(false);
+      inFlightRef.current = false;
     }
   };
 
@@ -996,42 +1027,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         </div>
 
         <div className="acm-wiz-body">
-          {/* Linked Customer summary */}
-          {customer && (
-            <div className="acm-linked">
-              <div className="acm-linked-bar">
-                <div className="acm-linked-bar-left">
-                  <div className="acm-linked-icon"><IconUser /></div>
-                  <span className="acm-linked-label">LINKED CUSTOMER</span>
-                  <span className="acm-linked-id">{customer.id}</span>
-                  <span className="acm-linked-name">{customer.name}</span>
-                </div>
-                <button className="acm-linked-hide" onClick={() => setLinkedHidden(h => !h)}>
-                  {linkedHidden ? 'Show' : 'Hide'} {linkedHidden ? <IconChevronDown /> : <IconChevronUp />}
-                </button>
-              </div>
-              {!linkedHidden && (
-                <div className="acm-linked-grid">
-                  <LinkedField label="Company Name"       value={customer.name} />
-                  <LinkedField label="Company Legal Name" value={customer.legalName} />
-                  <LinkedField label="Customer Type"      value={<span className="acm-pill-blue">{customer.type}</span>} />
-                  <LinkedField label="Segment"            value={customer.segment} />
-                  <LinkedField label="Risk Level"         value="—" />
-                  <LinkedField label="Classification"     value={customer.classification} />
-                  <LinkedField label="Country"            value={customer.country} />
-                  <LinkedField label="State"              value={customer.state} />
-                  <LinkedField label="City"               value={customer.city} />
-                  <LinkedField label="Pin / Postal Code"  value={customer.pin} />
-                  <LinkedField label="Contact Person"     value={customer.contactPerson} />
-                  <LinkedField label="Contact No"         value={customer.phone} />
-                  <LinkedField label="Email"              value={customer.email} />
-                  <LinkedField label="Whatsapp"           value={customer.whatsapp} />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 3-step indicator */}
+          {/* 3-step indicator — moved above the Linked Customer summary
+              so the wizard progression is the first thing the user
+              sees. Linked Customer context is still right below. */}
           <div className="acm-steps">
             <StepNode
               n={1}
@@ -1057,6 +1055,62 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               icon={<IconVault />}
             />
           </div>
+
+          {/* Linked Customer summary — uses the same slim collapsible
+              panel + compact 4-col "Label : Value" grid as the "What
+              you did in previous stages" recap, so every read-only
+              data block in the modal looks identical. */}
+          {customer && (
+            <div className={`acg-linked ${linkedHidden ? '' : 'is-open'}`}>
+              <div className="acg-linked-bar" onClick={() => setLinkedHidden(h => !h)} role="button">
+                <div className="acg-linked-bar-left">
+                  <div className="acg-linked-icon"><IconUser /></div>
+                  <div>
+                    <div className="acg-linked-title">
+                      <span className="acg-linked-tag">LINKED CUSTOMER</span>
+                      <span className="acg-linked-id">{customer.id}</span>
+                      <span className="acg-linked-name">{customer.name}</span>
+                    </div>
+                    <div className="acg-linked-sub">Parent customer this consignee is linked to</div>
+                  </div>
+                </div>
+                <div className="acg-linked-actions">
+                  {sameAsCustomer && <span className="acg-linked-badge">Same as Customer</span>}
+                  <div className={`acg-linked-chev ${linkedHidden ? '' : 'is-open'}`}>
+                    <IconChevronDown />
+                  </div>
+                </div>
+              </div>
+              {!linkedHidden && (
+                <div className="acg-hs-mirror">
+                  <div className="acg-hs-grid">
+                    <ReadInlineG label="Customer ID"          value={customer.id} />
+                    <ReadInlineG label="Company Name"         value={customer.name} />
+                    <ReadInlineG label="Company Legal Name"   value={customer.legalName} />
+                    <ReadInlineG label="Customer Type"        value={customer.type} />
+
+                    <ReadInlineG label="Customer Segment"     value={customer.segment} />
+                    <ReadInlineG label="Classification"       value={customer.classification} />
+                    <ReadInlineG label="Risk Level"           value={customer.risk} />
+                    <ReadInlineG label="Company Website"      value={customer.website} />
+
+                    <ReadInlineG label="Registered Address"   value={customer.address} span={2} />
+                    <ReadInlineG label="Country"              value={customer.country} />
+                    <ReadInlineG label="State"                value={customer.state} />
+
+                    <ReadInlineG label="City"                 value={customer.city} />
+                    <ReadInlineG label="PIN / Postal Code"    value={customer.pin} />
+                    <ReadInlineG label="Contact Person"       value={customer.contactPerson} />
+                    <ReadInlineG label="Designation"          value={customer.designation} />
+
+                    <ReadInlineG label="Contact No"           value={customer.phone} />
+                    <ReadInlineG label="Email"                value={customer.email} />
+                    <ReadInlineG label="WhatsApp Enabled"     value={customer.whatsapp} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Stage panes */}
           {stage === 1 && hydrating && <Stage1FormShimmer />}
@@ -1170,6 +1224,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 const row = kycOwners.find(o => o.id === id);
                 setKycDelModal({ open: true, kind: 'owner', id, label: row?.owner_name });
               }}
+              form1={form1}
+              locations={locations}
+              consigneeCode={consignee?.id}
+              sameAsCustomer={sameAsCustomer}
             />
           )}
           {stage === 3 && (
@@ -1182,6 +1240,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               kycDocs={kycDocs}
               kycOwners={kycOwners}
               locations={locations}
+              sameAsCustomer={sameAsCustomer}
             />
           )}
         </div>
@@ -1658,7 +1717,15 @@ const Stage1 = ({
                 <input className={`acm-input ${errors.city ? 'acm-input-error' : ''}`} placeholder="City name" value={form.city} onChange={e => set('city', e.target.value)} disabled={lock} />
               </Field>
               <Field label="Pin / Postal Code" required error={errors.pin} fieldKey="pin">
-                <input className={`acm-input ${errors.pin ? 'acm-input-error' : ''}`} placeholder="6-digit PIN" maxLength={12} value={form.pin} onChange={e => set('pin', e.target.value)} disabled={lock} />
+                <input
+                  className={`acm-input ${errors.pin ? 'acm-input-error' : ''}`}
+                  placeholder="6-digit PIN"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={form.pin}
+                  onChange={e => set('pin', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  disabled={lock}
+                />
               </Field>
             </div>
             <div className="acm-grid-4 acm-mt-12">
@@ -1797,6 +1864,7 @@ const KYC_SUB_META: Record<KycSubTab, { title: string; sub: string; nameCol: str
 const Stage2 = ({
   sub, setSub, search, setSearch, docs, owners,
   onAddDoc, onEditDoc, onDeleteDoc, onAddOwner, onEditOwner, onDeleteOwner,
+  form1, locations, consigneeCode, sameAsCustomer,
 }: {
   sub: KycSubTab;
   setSub: (s: KycSubTab) => void;
@@ -1810,6 +1878,10 @@ const Stage2 = ({
   onAddOwner: () => void;
   onEditOwner: (id: string) => void;
   onDeleteOwner: (id: string) => void;
+  form1: { companyName: string; legalName: string; website: string; segment: string; classification: string; risk: string; addressType: string; address: string; country: string; state: string; city: string; pin: string; contactName: string; designation: string; contactNo: string; email: string; whatsapp: string };
+  locations: LocationRow[];
+  consigneeCode?: string;
+  sameAsCustomer: boolean;
 }) => {
   const meta = KYC_SUB_META[sub];
   const isOwners = sub === 'owner-kyc';
@@ -1837,6 +1909,26 @@ const Stage2 = ({
 
   return (
     <>
+      {/* "What you did in previous stage" — compact summary panel
+          (collapsed by default) showing Stage 1 entries in a dense
+          4-column Label : Value grid. Mirrors AddCustomerModal.
+          When "Same as Customer" is on, the Linked Customer panel
+          above already shows the exact same data — render a slim
+          info note instead of a duplicate full panel. */}
+      {sameAsCustomer ? (
+        <div className="acg-mirror-note">
+          <span className="acg-mirror-note-icon"><IconUser /></span>
+          <div>
+            <div className="acg-mirror-note-title">Stage 1 mirrors the linked customer</div>
+            <div className="acg-mirror-note-sub">Company, address, and contact details are pulled from the customer above. Untick <b>Same as Customer</b> on Stage 1 to capture different details.</div>
+          </div>
+        </div>
+      ) : (
+        <ConsigneeHistoryPanel stagesCompleted={1}>
+          <ConsigneeHistoryStage1 form={form1} locations={locations} consigneeCode={consigneeCode} />
+        </ConsigneeHistoryPanel>
+      )}
+
       <div className="acm-kyc-subtabs">
         {(['company-dd', 'owner-kyc', 'trade-licence'] as KycSubTab[]).map(s => (
           <button
@@ -1970,7 +2062,7 @@ const Stage2 = ({
 };
 
 /* ─── Stage 3 — Evidence Vault ─── */
-const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwners, locations }: {
+const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwners, locations, sameAsCustomer }: {
   locations: LocationRow[];
   vaultTab: VaultTab;
   setVaultTab: (t: VaultTab) => void;
@@ -1979,91 +2071,34 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
   form1: any;
   kycDocs: KycDocRow[];
   kycOwners: KycOwnerRow[];
+  sameAsCustomer: boolean;
 }) => {
-  const [recapHidden, setRecapHidden] = useState(false);
+  const ddCount = kycDocs.filter(d => d.kind === 'dd').length;
+  const tlCount = kycDocs.filter(d => d.kind === 'tl').length;
   return (
     <>
-      {/* "What you did in the previous stage" recap */}
-      <div className="acm-recap">
-        <div className="acm-recap-header">
-          <div className="acm-recap-head-left">
-            <span className="acm-recap-check"><IconCheck size={14} /></span>
-            <span className="acm-recap-title">What you did in the previous stage</span>
-          </div>
-          <div className="acm-recap-head-right">
-            <span className="acm-recap-tag">Step 1–2 Complete</span>
-            <button className="acm-recap-toggle" onClick={() => setRecapHidden(h => !h)}>
-              {recapHidden ? 'Show' : 'Hide'} {recapHidden ? <IconChevronDown /> : <IconChevronUp />}
-            </button>
-          </div>
-        </div>
-        {!recapHidden && (
-          <div className="acm-recap-body">
-            <div className="acm-recap-stage">
-              <div className="acm-recap-stage-head">
-                <span className="acm-recap-stage-icon"><IconHome /></span>
-                <span className="acm-recap-stage-title">Step 1 — Consignee Legal Identity</span>
-                <span className="acm-recap-done">✓ Done</span>
-              </div>
-              <div className="acm-recap-card">
-                <div className="acm-recap-sec-title"><IconHome size={12} /> COMPANY DETAILS</div>
-                <div className="acm-recap-grid">
-                  <RecapField label="Company Name" value={form1.companyName} />
-                  <RecapField label="Legal Name"   value={form1.legalName} />
-                  <RecapField label="Segment"      value={form1.segment} />
-                  <RecapField label="Risk Level"   value={form1.risk} />
-                  <RecapField label="Website"      value={form1.website} />
-                  <RecapField label="Classification" value={form1.classification} />
-                </div>
-              </div>
-              <div className="acm-recap-card">
-                <div className="acm-recap-sec-title"><IconPin size={12} /> PRIMARY ADDRESS &amp; CONTACT</div>
-                <div className="acm-recap-grid">
-                  <RecapField label="Address Type" value={form1.addressType} />
-                  <RecapField label="Address"      value={form1.address} />
-                  <RecapField label="Country"      value={form1.country} />
-                  <RecapField label="State"        value={form1.state} />
-                  <RecapField label="City"         value={form1.city} />
-                  <RecapField label="Pin"          value={form1.pin} />
-                  <RecapField label="Contact"      value={form1.contactName} />
-                  <RecapField label="Designation"  value={form1.designation} />
-                </div>
-              </div>
-              {locations.length > 0 && (
-                <div className="acm-recap-card">
-                  <div className="acm-recap-sec-title"><IconPin size={12} /> ADDITIONAL ADDRESSES ({locations.length})</div>
-                  <div className="acm-recap-grid">
-                    {locations.map(l => (
-                      <RecapField
-                        key={l.id}
-                        label={l.type || 'Address'}
-                        value={[l.line, [l.city, l.state, l.country].filter(Boolean).join(', '), l.cpName ? `Contact: ${l.cpName}` : '']
-                          .filter(Boolean).join(' • ')}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="acm-recap-stage">
-              <div className="acm-recap-stage-head">
-                <span className="acm-recap-stage-icon"><IconDoc /></span>
-                <span className="acm-recap-stage-title">Step 2 — KYC / Due Diligence</span>
-                <span className="acm-recap-done">✓ Done</span>
-              </div>
-              <div className="acm-recap-card">
-                <div className="acm-recap-sec-title"><IconCheck size={12} /> KYC SUMMARY</div>
-                <div className="acm-recap-pills">
-                  <span className="acm-recap-pill">✓ {kycDocs.filter(d => d.kind === 'dd').length} DD docs</span>
-                  <span className="acm-recap-pill">✓ {kycOwners.length} owners</span>
-                  <span className="acm-recap-pill">✓ {kycDocs.filter(d => d.kind === 'tl').length} trade licences</span>
-                </div>
-              </div>
+      {/* "What you did in previous stages" — compact summary panel
+          (Stage 1 entries as a 4-col Label : Value grid + Stage 2
+          KYC counts as inline stats). When Same as Customer is on,
+          Stage 1 mirrors the linked customer (shown above), so we
+          collapse this panel to just the Stage 2 KYC counts plus a
+          slim mirror note — no duplicate Stage 1 grid. */}
+      {sameAsCustomer ? (
+        <ConsigneeHistoryPanel stagesCompleted={2}>
+          <div className="acg-hs-mirror">
+            <div className="acg-mirror-inline">
+              <span className="acg-mirror-inline-icon"><IconUser /></span>
+              <span><b>Stage 1 mirrors the linked customer.</b> See the Linked Customer panel above for the full details.</span>
             </div>
           </div>
-        )}
-      </div>
+          <ConsigneeHistoryStage2 ddCount={ddCount} ownerCount={kycOwners.length} tlCount={tlCount} />
+        </ConsigneeHistoryPanel>
+      ) : (
+        <ConsigneeHistoryPanel stagesCompleted={2}>
+          <ConsigneeHistoryStage1 form={form1} locations={locations} />
+          <ConsigneeHistoryStage2 ddCount={ddCount} ownerCount={kycOwners.length} tlCount={tlCount} />
+        </ConsigneeHistoryPanel>
+      )}
 
       {/* Vault tabs */}
       <div className="acm-id-tabs">
@@ -2114,6 +2149,110 @@ const RecapField = ({ label, value }: { label: string; value?: string }) => (
     <div className="acm-recap-fvalue">{value || '—'}</div>
   </div>
 );
+
+/* ─── ReadInlineG — emerald-themed compact "Label : Value" pair.
+ * Mirror of AddCustomerModal's `ReadInline`. Used inside the
+ * Stage 2 / Stage 3 history panel so the data carried forward from
+ * Stage 1 reads as a dense 4-column grid instead of card-styled
+ * sub-panels. */
+const ReadInlineG = ({ label, value, span }: { label: string; value?: string | null; span?: number }) => {
+  const v = (value ?? '').toString().trim();
+  const node = (
+    <div className="acg-hs-inline" style={span ? { gridColumn: `span ${span}` } : undefined}>
+      <span className="acg-hs-inline-lbl">{label} :</span>
+      <span className={`acg-hs-inline-val ${!v ? 'is-empty' : ''}`}>{v || '—'}</span>
+    </div>
+  );
+  return v ? <Tooltip label={`${label}: ${v}`}>{node}</Tooltip> : node;
+};
+
+/* ─── Stage 1 summary — dense 4-column "Label : Value" grid of every
+ * Stage 1 field the user filled. Same compact layout the Customer
+ * modal uses, just emerald-themed via .acg-hs-* classes. */
+function ConsigneeHistoryStage1({ form, locations, consigneeCode }: {
+  form: { companyName: string; legalName: string; website: string; segment: string; classification: string; risk: string; addressType: string; address: string; country: string; state: string; city: string; pin: string; contactName: string; designation: string; contactNo: string; email: string; whatsapp: string };
+  locations: LocationRow[];
+  consigneeCode?: string;
+}) {
+  return (
+    <div className="acg-hs-mirror">
+      <div className="acg-hs-grid">
+        {consigneeCode && <ReadInlineG label="Consignee ID" value={consigneeCode} />}
+        <ReadInlineG label="Company Name"        value={form.companyName} />
+        <ReadInlineG label="Company Legal Name"  value={form.legalName} />
+        <ReadInlineG label="Customer Segment"    value={form.segment} />
+
+        <ReadInlineG label="Classification"      value={form.classification} />
+        <ReadInlineG label="Risk Level"          value={form.risk} />
+        <ReadInlineG label="Company Website"     value={form.website} />
+        <ReadInlineG label="Address Type"        value={form.addressType} />
+
+        <ReadInlineG label="Registered Address"  value={form.address} span={2} />
+        <ReadInlineG label="Country"             value={form.country} />
+        <ReadInlineG label="State"               value={form.state} />
+
+        <ReadInlineG label="City"                value={form.city} />
+        <ReadInlineG label="PIN / Postal Code"   value={form.pin} />
+        <ReadInlineG label="Contact Person"      value={form.contactName} />
+        <ReadInlineG label="Designation"         value={form.designation} />
+
+        <ReadInlineG label="Contact No"          value={form.contactNo} />
+        <ReadInlineG label="Email"               value={form.email} />
+        <ReadInlineG label="WhatsApp Enabled"    value={form.whatsapp} />
+        {locations.length > 0 && (
+          <ReadInlineG label="Additional Locations" value={`${locations.length} captured`} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Stage 2 summary — compact KYC counts shown as inline stats. */
+function ConsigneeHistoryStage2({ ddCount, ownerCount, tlCount }: { ddCount: number; ownerCount: number; tlCount: number }) {
+  const total = ddCount + ownerCount + tlCount;
+  return (
+    <div className="acg-hs-mirror acg-hs-stats-wrap">
+      <div className="acg-hs-stats">
+        <div className="acg-hs-stat"><div className="acg-hs-stat-num">{ddCount}</div><div className="acg-hs-stat-lbl">DD Docs</div></div>
+        <div className="acg-hs-stat"><div className="acg-hs-stat-num">{ownerCount}</div><div className="acg-hs-stat-lbl">Owner KYC</div></div>
+        <div className="acg-hs-stat"><div className="acg-hs-stat-num">{tlCount}</div><div className="acg-hs-stat-lbl">Trade Lic.</div></div>
+        <div className="acg-hs-stat"><div className="acg-hs-stat-num">{total}</div><div className="acg-hs-stat-lbl">Total</div></div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Collapsible "What you did in previous stages" wrapper —
+ * emerald variant of the Customer modal's `acm-history` panel.
+ * Renders a slim header (icon + title + stage count chip + chevron)
+ * that toggles a body containing one or more summary sub-blocks. */
+function ConsigneeHistoryPanel({ stagesCompleted, children }: { stagesCompleted: number; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={`acg-history ${open ? 'acg-hist-open' : ''}`}>
+      <div className="acg-history-header" onClick={() => setOpen(o => !o)} role="button">
+        <div className="acg-history-header-left">
+          <div className="acg-history-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <polyline points="12 8 12 12 14 14"/><path d="M3.05 11a9 9 0 1 1 .5 4M3 16v-5h5"/>
+            </svg>
+          </div>
+          <div>
+            <div className="acg-history-title">What you did in previous stages</div>
+            <div className="acg-history-meta">{stagesCompleted === 1 ? 'Stage 1 completed' : `Stages 1–${stagesCompleted} completed`} — review your entries below</div>
+          </div>
+        </div>
+        <div className="acg-history-actions">
+          <span className="acg-history-badge">{stagesCompleted} stage{stagesCompleted === 1 ? '' : 's'} completed</span>
+          <div className={`acg-history-chevron ${open ? 'acg-open' : ''}`}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+      </div>
+      <div className="acg-history-body">{children}</div>
+    </div>
+  );
+}
 
 /* ─── Polished file-upload field ─────
  * Replaces the bare `<input type="file">` (browser's grey "Choose File"
@@ -2802,7 +2941,7 @@ function LocationSubModal({ editing, masters, onClose, onSave }: {
     if (!d.state)                                      next.state         = 'Select state';
     if (!d.city.trim())                                next.city          = 'City is required';
     if (!d.pin.trim())                                 next.pin           = 'PIN is required';
-    else if (!/^[A-Za-z0-9-\s]{3,12}$/.test(d.pin))    next.pin           = 'PIN looks invalid';
+    else if (!/^\d{6}$/.test(d.pin.trim()))            next.pin           = 'PIN must be exactly 6 digits';
     if (!d.cpName.trim())                              next.cpName        = 'Contact name required';
     if (!d.cpDesignation.trim())                       next.cpDesignation = 'Designation required';
     if (!d.cpContact.trim())                           next.cpContact     = 'Phone required';
@@ -2883,10 +3022,11 @@ function LocationSubModal({ editing, masters, onClose, onSave }: {
               <label className="acm-field-label">PIN / POSTAL CODE <span className="acm-req">*</span></label>
               <input
                 className={`acm-input ${errs.pin ? 'acm-input-error' : ''}`}
-                placeholder="Enter PIN"
-                maxLength={12}
+                placeholder="6-digit PIN"
+                inputMode="numeric"
+                maxLength={6}
                 value={d.pin}
-                onChange={e => set('pin', e.target.value)}
+                onChange={e => set('pin', e.target.value.replace(/\D/g, '').slice(0, 6))}
               />
               {errs.pin && <span className="acm-err-text">{errs.pin}</span>}
             </div>
@@ -3102,19 +3242,46 @@ const SCOPED_CSS = `
   box-shadow: 0 30px 80px rgba(0,0,0,.30);
   display: flex; flex-direction: column;
 }
+/* Picker header — same mint→teal gradient used by the listing hero,
+   WDH banner, and modal header so the picker feels like one piece
+   of the consignee chrome. White text + glassy icon on the wash. */
 .acm-pick-header {
   position: relative; padding: 28px 20px 24px;
-  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+  background: linear-gradient(135deg, #047857 0%, #059669 25%, #10b981 55%, #2dd4bf 85%, #5eead4 100%);
   color: #fff; text-align: center;
+  overflow: hidden;
+}
+.acm-pick-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(255,255,255,0.22) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 50%, rgba(167,243,208,0.20) 0%, transparent 55%);
 }
 .acm-pick-icon {
-  width: 48px; height: 48px; border-radius: 12px;
-  background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.30);
+  position: relative; z-index: 1;
+  width: 50px; height: 50px; border-radius: 14px;
+  background: rgba(255,255,255,0.22);
+  border: 1.5px solid rgba(255,255,255,0.35);
   display: inline-flex; align-items: center; justify-content: center;
   color: #fff; margin-bottom: 12px;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.15);
 }
-.acm-pick-title { font-size: 19px; font-weight: 800; letter-spacing: -0.4px; }
-.acm-pick-sub   { font-size: 12px; color: rgba(255,255,255,.85); margin-top: 6px; line-height: 1.45; padding: 0 14px; }
+.acm-pick-title {
+  position: relative; z-index: 1;
+  font-size: 19px; font-weight: 800; letter-spacing: -0.4px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.12);
+}
+.acm-pick-sub {
+  position: relative; z-index: 1;
+  font-size: 12px; color: rgba(255,255,255,0.92);
+  margin-top: 6px; line-height: 1.45; padding: 0 14px;
+}
 .acm-pick-body  { padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 12px; }
 .acm-label {
   display: inline-flex; align-items: center; gap: 6px;
@@ -3189,6 +3356,99 @@ const SCOPED_CSS = `
 }
 .acm-info-icon { flex-shrink: 0; margin-top: 1px; }
 
+/* ─── Linked Customer panel — slim collapsible header + dense
+   4-col Label : Value grid (mirrors the "What you did in previous
+   stages" recap). Same look as the recap so all read-only blocks
+   feel identical. */
+.acg-linked {
+  margin-bottom: 12px;
+  border-radius: 12px;
+  border: 1.5px solid #a7f3d0;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(16,185,129,.09);
+  flex-shrink: 0;
+}
+.acg-linked-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 100%);
+  border-left: 4px solid #10b981;
+  user-select: none;
+}
+.acg-linked-bar:hover { background: linear-gradient(110deg, #d1fae5, #a7f3d0); }
+.acg-linked-bar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.acg-linked-icon {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.acg-linked-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.acg-linked-tag {
+  font-size: 10px; font-weight: 800;
+  color: #047857;
+  background: #fff;
+  border: 1px solid #a7f3d0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: .06em;
+}
+.acg-linked-id {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px; font-weight: 700;
+  color: #047857;
+  background: rgba(16,185,129,0.10);
+  border: 1px solid rgba(16,185,129,0.25);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.acg-linked-name {
+  font-size: 13px; font-weight: 700;
+  color: #064e3b;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 320px;
+}
+.acg-linked-sub { font-size: 10.5px; color: #047857; margin-top: 2px; }
+.acg-linked-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.acg-linked-badge {
+  padding: 3px 11px; border-radius: 20px;
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #fff;
+  font-size: 9.5px; font-weight: 800;
+  white-space: nowrap;
+  letter-spacing: .04em;
+}
+.acg-linked-chev {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(16,185,129,.12);
+  display: flex; align-items: center; justify-content: center;
+  color: #047857;
+  transition: transform .3s;
+}
+.acg-linked-chev.is-open { transform: rotate(180deg); }
+.acg-linked.is-open .acg-linked-bar { border-bottom: 1px solid #d1fae5; }
+
+[data-bs-theme="dark"] .acg-linked {
+  background: rgba(16,185,129,0.08);
+  border-color: rgba(16,185,129,0.30);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.35);
+}
+[data-bs-theme="dark"] .acg-linked-bar {
+  background: linear-gradient(110deg, rgba(6,95,70,0.35) 0%, rgba(16,185,129,0.22) 100%);
+}
+[data-bs-theme="dark"] .acg-linked-bar:hover {
+  background: linear-gradient(110deg, rgba(6,95,70,0.45), rgba(16,185,129,0.32));
+}
+[data-bs-theme="dark"] .acg-linked-tag  { background: rgba(255,255,255,0.04); border-color: rgba(16,185,129,0.30); color: #6ee7b7; }
+[data-bs-theme="dark"] .acg-linked-id   { color: #6ee7b7; background: rgba(16,185,129,0.18); border-color: rgba(16,185,129,0.30); }
+[data-bs-theme="dark"] .acg-linked-name { color: #d1fae5; }
+[data-bs-theme="dark"] .acg-linked-sub  { color: #6ee7b7; }
+[data-bs-theme="dark"] .acg-linked.is-open .acg-linked-bar { border-bottom-color: rgba(16,185,129,0.18); }
+
 .acm-pick-footer {
   display: flex; align-items: center; gap: 10px;
   padding: 14px 20px 18px;
@@ -3226,22 +3486,41 @@ const SCOPED_CSS = `
   box-shadow: 0 30px 80px rgba(0,0,0,.40);
   display: flex; flex-direction: column;
 }
+/* Modal header — same mint→teal gradient used by the listing page
+   hero strip + WDH banner + table header. Keeps a single emerald
+   palette across the whole consignee surface. White-on-mint-teal
+   text reads sharp against the wash. */
 .acm-wiz-header {
   position: relative;
   display: flex; align-items: center; gap: 14px;
   padding: 18px 56px 18px 22px;
-  background: linear-gradient(110deg, #10b981 0%, #059669 50%, #047857 100%);
+  background: linear-gradient(110deg, #047857 0%, #059669 25%, #10b981 55%, #2dd4bf 85%, #5eead4 100%);
   color: #fff;
   flex-shrink: 0;
+  overflow: hidden;
+}
+.acm-wiz-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse at 12% 50%, rgba(255,255,255,0.22) 0%, transparent 55%),
+    radial-gradient(ellipse at 88% 50%, rgba(167,243,208,0.20) 0%, transparent 55%);
 }
 .acm-wiz-hicon {
-  width: 36px; height: 36px; border-radius: 10px;
-  background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.30);
+  position: relative; z-index: 1;
+  width: 38px; height: 38px; border-radius: 11px;
+  background: rgba(255,255,255,0.22);
+  border: 1px solid rgba(255,255,255,0.35);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
 }
-.acm-wiz-htitle { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; }
-.acm-wiz-hsub   { font-size: 11.5px; color: rgba(255,255,255,.85); margin-top: 2px; line-height: 1.4; max-width: 860px; }
+.acm-wiz-htitle { position: relative; z-index: 1; font-size: 18px; font-weight: 800; letter-spacing: -0.3px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.10); }
+.acm-wiz-hsub   { position: relative; z-index: 1; font-size: 11.5px; color: rgba(255,255,255,0.92); margin-top: 2px; line-height: 1.4; max-width: 860px; }
 
 .acm-wiz-body {
   flex: 1; min-height: 0; overflow-y: auto;
@@ -3430,6 +3709,224 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-radio input:checked + span {
   border-color: #10b981;
   background: radial-gradient(circle, #10b981 40%, transparent 45%);
+}
+
+/* ─── "What you did in previous stages" — compact emerald-themed
+   recap panel that mirrors AddCustomerModal's .acm-history.
+   Collapsed by default; expanding reveals a dense 4-column
+   Label : Value grid of Stage 1 entries (and KYC count stats on
+   Stage 3). Lives at the top of Stage 2 and Stage 3 so the user
+   can verify what they carried forward without scrolling away. */
+.acg-history {
+  margin-bottom: 12px;
+  border-radius: 12px;
+  border: 1.5px solid #a7f3d0;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(16,185,129,.09);
+  flex-shrink: 0;
+  max-height: 46px;
+  transition: max-height .38s cubic-bezier(.4,0,.2,1);
+}
+.acg-history.acg-hist-open { max-height: 700px; }
+.acg-history-header {
+  height: 46px; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  cursor: pointer;
+  background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 100%);
+  border-left: 4px solid #10b981;
+  user-select: none;
+}
+.acg-history-header:hover { background: linear-gradient(110deg, #d1fae5, #a7f3d0); }
+.acg-history-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.acg-history-icon {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.acg-history-title { font-size: 12px; font-weight: 800; color: #064e3b; white-space: nowrap; }
+.acg-history-meta  { font-size: 9.5px; color: #047857; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acg-history-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.acg-history-badge {
+  padding: 3px 11px; border-radius: 20px;
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #fff;
+  font-size: 9.5px; font-weight: 800;
+  white-space: nowrap;
+}
+.acg-history-chevron {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(16,185,129,.12);
+  display: flex; align-items: center; justify-content: center;
+  color: #047857;
+  transition: transform .3s;
+}
+.acg-history-chevron.acg-open { transform: rotate(180deg); }
+.acg-history-body {
+  overflow-y: auto;
+  max-height: calc(700px - 46px);
+  border-top: 1px solid #d1fae5;
+  background: #fff;
+}
+
+/* Body content — dense 4-column "Label : Value" grid (Stage 1) +
+   inline stat tiles (Stage 2). Tight row spacing keeps the panel
+   compact even with 18+ fields. */
+.acg-hs-mirror { padding: 10px 16px 12px; }
+.acg-hs-mirror + .acg-hs-mirror { padding-top: 4px; }
+.acg-hs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 24px;
+  row-gap: 6px;
+}
+.acg-hs-inline {
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 12px; min-width: 0;
+  cursor: default;
+  padding: 1px 2px;
+  border-radius: 4px;
+  transition: background .12s ease;
+}
+.acg-hs-inline:hover { background: rgba(16,185,129,0.06); }
+.acg-hs-inline-lbl {
+  color: #64748b;
+  font-weight: 600;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.acg-hs-inline-val {
+  color: #047857;
+  font-weight: 600;
+  line-height: 1.4;
+  min-width: 0; flex: 1 1 auto;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.acg-hs-inline-val.is-empty { color: #cbd5e1; font-weight: 500; }
+
+/* "Stage 1 mirrors the linked customer" — slim inline note that
+   replaces the full recap when Same-as-Customer is on. Kept
+   compact so it reads as a one-line affordance, not a heavy
+   banner. */
+.acg-mirror-note {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1px solid rgba(16,185,129,0.25);
+  border-left: 3px solid #10b981;
+  border-radius: 8px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #064e3b;
+}
+.acg-mirror-note-icon {
+  width: 20px; height: 20px; border-radius: 5px;
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.acg-mirror-note-icon svg { width: 11px; height: 11px; }
+.acg-mirror-note-title { font-size: 11.5px; font-weight: 700; color: #064e3b; }
+.acg-mirror-note-sub   { color: #047857; margin-top: 1px; font-size: 11px; opacity: 0.92; }
+.acg-mirror-note-sub b { color: #064e3b; }
+
+.acg-mirror-inline {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1px solid rgba(16,185,129,0.22);
+  border-left: 3px solid #10b981;
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: #064e3b;
+  line-height: 1.35;
+}
+.acg-mirror-inline b { color: #064e3b; }
+.acg-mirror-inline-icon {
+  width: 20px; height: 20px; border-radius: 5px;
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.acg-mirror-inline-icon svg { width: 11px; height: 11px; }
+
+[data-bs-theme="dark"] .acg-mirror-note {
+  background: linear-gradient(110deg, rgba(6,95,70,0.25) 0%, rgba(16,185,129,0.15) 100%);
+  border-color: rgba(94,234,212,0.30);
+  border-left-color: #10b981;
+  color: #d1fae5;
+}
+[data-bs-theme="dark"] .acg-mirror-note-title { color: #ecfdf5; }
+[data-bs-theme="dark"] .acg-mirror-note-sub   { color: #6ee7b7; }
+[data-bs-theme="dark"] .acg-mirror-note-sub b,
+[data-bs-theme="dark"] .acg-mirror-inline b   { color: #ecfdf5; }
+[data-bs-theme="dark"] .acg-mirror-inline {
+  background: linear-gradient(110deg, rgba(6,95,70,0.22) 0%, rgba(16,185,129,0.12) 100%);
+  border-color: rgba(94,234,212,0.25);
+  color: #d1fae5;
+}
+
+/* Stage 2 count stats — inline pill row (under the Stage 1 grid). */
+.acg-hs-stats-wrap { border-top: 1px dashed #d1fae5; }
+.acg-hs-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.acg-hs-stat {
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  border: 1px solid rgba(16,185,129,.22);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 2px;
+  text-align: left;
+}
+.acg-hs-stat-num { font-size: 18px; font-weight: 800; color: #047857; line-height: 1; }
+.acg-hs-stat-lbl { font-size: 10.5px; font-weight: 700; color: #065f46; text-transform: uppercase; letter-spacing: .05em; }
+
+/* Dark-mode flips for the recap panel. */
+[data-bs-theme="dark"] .acg-history {
+  background: rgba(16,185,129,0.08);
+  border-color: rgba(16,185,129,0.30);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.35);
+}
+[data-bs-theme="dark"] .acg-history-header {
+  background: linear-gradient(110deg, rgba(6,95,70,0.35) 0%, rgba(16,185,129,0.22) 100%);
+}
+[data-bs-theme="dark"] .acg-history-header:hover {
+  background: linear-gradient(110deg, rgba(6,95,70,0.45), rgba(16,185,129,0.32));
+}
+[data-bs-theme="dark"] .acg-history-title { color: #d1fae5; }
+[data-bs-theme="dark"] .acg-history-meta  { color: #6ee7b7; }
+[data-bs-theme="dark"] .acg-history-body  { background: #11182a; border-top-color: rgba(16,185,129,0.18); }
+[data-bs-theme="dark"] .acg-hs-inline:hover { background: rgba(16,185,129,0.10); }
+[data-bs-theme="dark"] .acg-hs-inline-lbl   { color: #94a3b8; }
+[data-bs-theme="dark"] .acg-hs-inline-val   { color: #6ee7b7; }
+[data-bs-theme="dark"] .acg-hs-inline-val.is-empty { color: #475569; }
+[data-bs-theme="dark"] .acg-hs-stat {
+  background: linear-gradient(135deg, rgba(16,185,129,0.18), rgba(52,211,153,0.10));
+  border-color: rgba(16,185,129,0.35);
+}
+[data-bs-theme="dark"] .acg-hs-stat-num { color: #6ee7b7; }
+[data-bs-theme="dark"] .acg-hs-stat-lbl { color: #a7f3d0; }
+
+/* Responsive — drop to 2 columns on tablets, 1 column on phones. */
+@media (max-width: 1024px) {
+  .acg-hs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .acg-hs-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .acg-hs-grid { grid-template-columns: 1fr; }
+  .acg-hs-stats { grid-template-columns: 1fr 1fr; }
+  .acg-history-meta { display: none; }
 }
 
 /* Stage 3 — recap */
@@ -4155,10 +4652,42 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
  *  phones so a full Add Consignee flow is usable from any device.
  * ============================================================ */
 
+/* ── Small laptop (≤ 1440px) ─────────────────────────────────
+   1366×768 / 1440×900 are the most common laptop sizes. The
+   modal caps at max-width: 1440 so on a 1440px viewport it fills
+   the entire screen edge-to-edge — give it breathing room. */
+@media (max-width: 1440px) {
+  .acm-overlay { padding: 10px; }
+  .acm-wiz, .acm-pick {
+    max-width: calc(100vw - 20px);
+    max-height: min(94vh, calc(100vh - 16px));
+  }
+  .acm-wiz-header { padding: 12px 18px; }
+  .acm-steps { padding: 12px 16px 10px; }
+  .acm-wiz-body { padding: 14px 18px 16px; }
+  .acm-wiz-footer { padding: 10px 18px; }
+  .acm-sec-pad { padding: 14px; }
+}
+
+/* ── Compact laptop (≤ 1280px) ────────────────────────────────
+   Common HP/Dell business laptops (1280×800, 1366×768). 4-col
+   grids start to feel cramped — collapse to 2x2 and tighten the
+   stepper chrome. */
+@media (max-width: 1280px) {
+  .acm-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .acm-loc-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .acm-step { padding: 9px 11px; }
+  .acm-step-title { font-size: 11.5px; }
+  .acm-step-sub   { font-size: 9px; }
+}
+
 /* ── Tablet (≤ 1024px) ───────────────────────────────────────── */
 @media (max-width: 1024px) {
-  .acm-overlay { padding: 12px; }
-  .acm-wiz { max-width: 100%; }
+  .acm-overlay { padding: 8px; }
+  .acm-wiz, .acm-pick {
+    max-width: calc(100vw - 16px);
+    max-height: min(96vh, calc(100vh - 12px));
+  }
   /* Form section grids collapse */
   .acm-grid-4 { grid-template-columns: repeat(2, 1fr); }
   .acm-grid-3 { grid-template-columns: repeat(2, 1fr); }
@@ -4169,6 +4698,11 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-linked-grid { grid-template-columns: repeat(2, 1fr); }
   /* Section paddings */
   .acm-sec-pad { padding: 12px; }
+  /* Stepper: hide connector chevrons + allow wrap so the steps
+     don't squeeze into unreadable widths. */
+  .acm-steps { flex-wrap: wrap; gap: 8px; padding: 10px 12px 8px; }
+  .acm-steps-arrow { display: none; }
+  .acm-step { flex: 1 1 calc(50% - 6px); min-width: 0; }
 }
 
 /* ── Mobile (≤ 640px) ───────────────────────────────────────── */
