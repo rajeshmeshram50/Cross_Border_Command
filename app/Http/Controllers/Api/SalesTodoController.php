@@ -308,15 +308,33 @@ class SalesTodoController extends Controller
      *  VALIDATION
      * ───────────────────────────────────────────────────────────────── */
 
+    /**
+     * Shared content rule for user-facing free-text fields. One rule, one
+     * message: only letters, digits and spaces are allowed. Rejects every
+     * abuse pattern QA reported ("!@#####mdsdsds", "!!!!!", "1234..." etc.)
+     * without forcing the user to memorise a punctuation allowlist.
+     */
+    private function safeTextRule(int $min, int $max): \Closure
+    {
+        return function (string $attribute, $value, $fail) use ($min, $max) {
+            $v = trim((string) $value);
+            if ($v === '') { return; } // 'required' is enforced separately
+            $label = ucfirst(str_replace('_', ' ', $attribute));
+            if (!preg_match('/^[A-Za-z0-9 ]+$/u', $v)) { $fail("Special characters are not allowed in $label."); return; }
+            if (mb_strlen($v) < $min) { $fail("$label must be at least $min characters."); return; }
+            if (mb_strlen($v) > $max) { $fail("$label cannot exceed $max characters."); return; }
+        };
+    }
+
     private function validateReminderPayload(Request $request, ?int $editingId = null): array
     {
         return $request->validate([
             'opp_id'     => 'nullable|string|max:60',
             'opp_date'   => 'nullable|date',
-            'subject'    => ['required','string','max:255'],
+            'subject'    => ['required','string','max:255', $this->safeTextRule(3, 255)],
             'set_date'   => ['required','date'],
             'tat'        => 'nullable|string|max:60',
-            'remark'     => 'nullable|string',
+            'remark'     => 'nullable|string|max:2000',
             'status'     => ['nullable', Rule::in(SalesReminder::STATUSES)],
             'attachment' => 'nullable|file|max:' . self::ATTACH_MAX_KB . '|mimes:' . self::ATTACH_MIMES,
         ]);
@@ -327,16 +345,31 @@ class SalesTodoController extends Controller
         return $request->validate([
             'type'       => ['required', Rule::in(SalesMeeting::TYPES)],
             'opp_id'     => 'nullable|string|max:60',
-            'customer'   => ['required','string','max:255'],
+            'customer'   => ['required','string','max:255', $this->safeTextRule(3, 255)],
             'email'      => 'nullable|email|max:191',
-            'contact'    => 'nullable|string|max:50',
-            'platform'   => 'nullable|string|max:100',
+            // Contact: 10–15 digits after stripping separators; allow + space -
+            'contact'    => ['required','string','max:50','regex:/^\+?[\d\s\-]{10,20}$/',
+                              function (string $attribute, $value, $fail) {
+                                  $digits = preg_replace('/\D/', '', (string) $value);
+                                  if (strlen($digits) < 10) $fail('Contact number must be at least 10 digits.');
+                                  if (strlen($digits) > 15) $fail('Contact number cannot exceed 15 digits.');
+                              }],
+            'platform'   => ['required','string','max:100'],
             'date'       => ['required','date'],
-            'start_time' => 'nullable|date_format:H:i',
-            'end_time'   => 'nullable|date_format:H:i|after_or_equal:start_time',
-            'link'       => 'nullable|string|max:2048',
-            'venue'      => 'nullable|string|max:1000',
-            'agenda'     => 'nullable|string|max:2000',
+            'start_time' => ['required','date_format:H:i'],
+            'end_time'   => ['required','date_format:H:i','after_or_equal:start_time'],
+            // Link required for virtual; venue required for physical. Cross-field
+            // checks below the array-validate call would be cleaner, but Laravel's
+            // sometimes+required_if covers it inline.
+            'link'       => ['nullable','string','max:2048','required_if:type,virtual','url'],
+            'venue'      => ['nullable','string','max:1000','required_if:type,physical',
+                              function (string $attribute, $value, $fail) use ($request) {
+                                  if ($request->input('type') === 'physical') {
+                                      $closure = $this->safeTextRule(3, 1000);
+                                      $closure($attribute, $value, $fail);
+                                  }
+                              }],
+            'agenda'     => ['required','string','max:2000', $this->safeTextRule(3, 2000)],
             'status'     => ['nullable', Rule::in(SalesMeeting::STATUSES)],
         ]);
     }
