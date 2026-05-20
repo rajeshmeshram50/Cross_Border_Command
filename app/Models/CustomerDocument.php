@@ -33,6 +33,20 @@ class CustomerDocument extends Model
         'expiry_date' => 'date:Y-m-d',
     ];
 
+    /**
+     * Auto-append the resolved URL alongside the raw path so the frontend
+     * can render the View link without knowing the storage layout. Same
+     * pattern Client (logo_url) and Product (primary_image_url) use, so
+     * the file shows up in EVERY response shape — list, single, nested
+     * via Customer's documents relation — without per-controller code.
+     */
+    protected $appends = ['attachment_url'];
+
+    public function getAttachmentUrlAttribute(): ?string
+    {
+        return file_url($this->attachment_path);
+    }
+
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);

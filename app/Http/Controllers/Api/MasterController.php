@@ -104,7 +104,7 @@ class MasterController extends Controller
         'port_of_loading' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'address', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code']],
         'port_of_discharge' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'city', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code']],
         'segments' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['title']],
-        'hsn_codes' => ['fields' => [['n' => 'hsn_code', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea', 'r' => true], ['n' => 'gst_rate_id', 't' => 'select', 'ref' => 'gst_percentage'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['hsn_code']],
+        'hsn_codes' => ['fields' => [['n' => 'hsn_code', 't' => 'text', 'r' => true, 'pattern' => '/^\d{6,8}$/', 'patternMessage' => 'HSN/SAC code must be a 6 to 8 digit number.'], ['n' => 'description', 't' => 'textarea', 'r' => true], ['n' => 'gst_rate_id', 't' => 'select', 'ref' => 'gst_percentage'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['hsn_code']],
         'gst_percentage' => ['fields' => [['n' => 'percentage', 't' => 'number', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['percentage']],
         'currencies' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'symbol', 't' => 'text', 'r' => true], ['n' => 'exchange_rate', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code']],
         'uom' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'short_code', 't' => 'text', 'r' => true], ['n' => 'unit_type', 't' => 'select', 'opts' => ['Weight', 'Volume', 'Length', 'Area', 'Count', 'Other']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['short_code']],
@@ -811,6 +811,13 @@ class MasterController extends Controller
             if (!empty($f['opts']) && empty($f['ref'])) {
                 $r[] = Rule::in($f['opts']);
             }
+            // Optional per-field regex — used for masters whose code/number
+            // columns have a fixed format (e.g. HSN/SAC = 6–8 digits). The
+            // regex is wrapped in slashes by the caller so Laravel passes it
+            // straight to PHP's preg_match without escaping.
+            if (!empty($f['pattern'])) {
+                $r[] = 'regex:' . $f['pattern'];
+            }
             // Single-field uniqueness — applied per-field. Composite uniqueness
             // (uFields with more than one column) is enforced AFTER this loop so
             // the unique check matches the ROW combination instead of each field
@@ -830,7 +837,16 @@ class MasterController extends Controller
             $rules[$f['n']] = $r;
         }
 
-        $validated = $request->validate($rules);
+        // Per-field custom validation messages — currently only used by
+        // schemas that set a `pattern` + `patternMessage` (e.g. HSN/SAC).
+        $messages = [];
+        foreach ($fields as $f) {
+            if (!empty($f['pattern']) && !empty($f['patternMessage'])) {
+                $messages[$f['n'] . '.regex'] = $f['patternMessage'];
+            }
+        }
+
+        $validated = $request->validate($rules, $messages);
 
         // Case-insensitive uniqueness check for `uEach` fields. Done
         // manually with whereRaw + LOWER() because Laravel's Rule::unique

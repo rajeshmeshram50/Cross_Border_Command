@@ -699,50 +699,53 @@ const SCOPED_CSS = `
 /* ─── Project-standard TableContainer styling tinted with the
        page's emerald palette. Same structure as SalesCustomers but
        green instead of violet. */
+/* ─── Table chrome — neutral, same look as Clients / HR Employees.
+   The emerald aesthetic stays inside the cells via chips (id chip,
+   country chip, contact chip, etc.) so the page reads emerald
+   without the table itself being emerald. */
 .smcg-table-wrap .table-responsive {
-  background: #fff !important;
-  border: 1px solid #d1fae5 !important;
+  background: var(--vz-card-bg, #fff) !important;
+  border: 1px solid var(--vz-border-color) !important;
   border-radius: 10px !important;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
 }
 .smcg-table-wrap .table { --bs-table-bg: transparent; margin-bottom: 0 !important; }
 
-/* Header — soft emerald wash with dark-green column text. */
-.smcg-table-wrap .table thead,
-.smcg-table-wrap .table thead tr,
+/* Header — neutral table-light (Velzon default), matches every
+   other list page in the app. */
 .smcg-table-wrap .table thead.table-light tr {
-  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%) !important;
+  background: var(--vz-light) !important;
 }
-.smcg-table-wrap .table thead th,
 .smcg-table-wrap .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
   background: transparent !important;
-  background-color: transparent !important;
-  color: #065f46 !important;
+  color: var(--vz-secondary-color) !important;
   font-size: 12px !important;
-  font-weight: 700 !important;
-  letter-spacing: .01em !important;
+  font-weight: 600 !important;
+  letter-spacing: .02em !important;
   padding: 10px 14px !important;
   line-height: 1.3 !important;
-  border-bottom: 1px solid #6ee7b7 !important;
+  border-bottom: 1px solid var(--vz-border-color) !important;
   white-space: nowrap;
-  text-transform: none;
+  text-transform: uppercase;
   vertical-align: middle !important;
 }
-.smcg-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; color: #047857; }
+.smcg-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; }
 
-/* Body — white rows with soft emerald hover. */
-.smcg-table-wrap .table tbody tr { background: #fff; transition: background .12s ease; }
-.smcg-table-wrap .table tbody tr:hover { background: #f0fdf4 !important; }
+/* Body — neutral rows + neutral hover. */
+.smcg-table-wrap .table tbody tr { background: transparent; transition: background .12s ease; }
+.smcg-table-wrap .table tbody tr:hover { background: var(--vz-light) !important; }
 .smcg-table-wrap .table tbody td {
   --bs-table-bg: transparent !important;
   background: transparent !important;
   padding: 12px 14px !important;
   font-size: 13px;
-  color: #1f2937;
+  color: var(--vz-body-color);
   vertical-align: middle;
-  border-bottom: 1px solid #ecfdf5 !important;
+  border-bottom: 1px solid var(--vz-border-color) !important;
   white-space: nowrap;
 }
 .smcg-table-wrap .table tbody tr:last-child td { border-bottom: none !important; }
@@ -764,32 +767,19 @@ const SCOPED_CSS = `
 }
 .smcg-table-wrap .pagination .page-item.disabled .page-link { color: #6ee7b7; background: #f0fdf4; }
 
-/* Dark mode — neutral dark slate with emerald accents. */
-[data-bs-theme="dark"] .smcg-table-wrap .table-responsive {
-  background: #131c30 !important;
-  border-color: rgba(16,185,129,0.25) !important;
+/* Dark mode: table chrome inherits vz tokens above so it flips
+   automatically. We only override pagination active to keep the
+   emerald gradient consistent with the rest of the page. */
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-link {
+  background: var(--vz-secondary-bg);
+  color: #6ee7b7;
+  border-color: var(--vz-border-color);
 }
-[data-bs-theme="dark"] .smcg-table-wrap .table thead,
-[data-bs-theme="dark"] .smcg-table-wrap .table thead tr,
-[data-bs-theme="dark"] .smcg-table-wrap .table thead.table-light tr {
-  background: linear-gradient(180deg, rgba(6,95,70,0.40) 0%, rgba(16,185,129,0.25) 100%) !important;
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item.active .page-link {
+  background: linear-gradient(135deg,#10b981,#047857);
+  border-color: #10b981;
+  color: #fff;
 }
-[data-bs-theme="dark"] .smcg-table-wrap .table thead th,
-[data-bs-theme="dark"] .smcg-table-wrap .table thead.table-light th {
-  color: #d1fae5 !important;
-  border-bottom-color: rgba(16,185,129,0.40) !important;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
-}
-[data-bs-theme="dark"] .smcg-table-wrap .table thead th i { color: #6ee7b7 !important; opacity: 0.8; }
-[data-bs-theme="dark"] .smcg-table-wrap .table tbody tr { background: #131c30; }
-[data-bs-theme="dark"] .smcg-table-wrap .table tbody tr:hover { background: rgba(16,185,129,0.10) !important; }
-[data-bs-theme="dark"] .smcg-table-wrap .table tbody td {
-  color: #e2e8f0 !important;
-  border-bottom-color: rgba(16,185,129,0.15) !important;
-}
-[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-link { background: #1c2531; color: #6ee7b7; border-color: rgba(16,185,129,0.25); }
-[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item.active .page-link { background: linear-gradient(135deg,#10b981,#047857); border-color: #10b981; color: #fff; }
-[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item.disabled .page-link { color: #475569; background: #131c30; }
 
 /* Legacy .smcg-table rules below — no longer apply since tableClass
    uses "table …" (not smcg-table). Safe to delete in cleanup. */
@@ -1059,5 +1049,38 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .smcg-pag-btn:hover:not(:disabled) {
   background: #10b981; color: #fff; border-color: #10b981;
+}
+
+/* ============================================================
+ *  RESPONSIVE — tablet & mobile
+ *  Mirrors SalesCustomers' responsive block. Emerald-themed
+ *  class names (smcg-*). Same reflow strategy: hero stacks,
+ *  "what we are doing" cards wrap, search row collapses, table
+ *  keeps horizontal scroll via .table-responsive.
+ * ============================================================ */
+@media (max-width: 1024px) {
+  .smcg-wdh-cards { grid-template-columns: repeat(2, 1fr); }
+  .smcg-wdh-arrow { display: none; }
+}
+@media (max-width: 768px) {
+  .smcg-cstrip { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px; }
+  .smcg-cstrip-right { width: 100%; }
+  .smcg-add-btn { width: 100%; justify-content: center; }
+  .smcg-title { font-size: 18px; }
+  .smcg-sub   { font-size: 12.5px; }
+  .smcg-wdh-cards { grid-template-columns: 1fr; }
+  .smcg-wdh-header { flex-wrap: wrap; gap: 8px; }
+  .smcg-tabs-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .smcg-search-wrap { max-width: 100%; }
+}
+@media (max-width: 480px) {
+  .smcg-root { padding: 0; }
+  .smcg-cstrip, .smcg-wdh, .smcg-tabs-row { border-radius: 12px; }
+  .smcg-avatar-wrap, .smcg-back-btn { flex-shrink: 0; }
+  .smcg-wdh-card { padding: 12px; }
+  .smcg-shimmer-head, .smcg-shimmer-row {
+    grid-template-columns: repeat(12, minmax(64px, 1fr));
+    overflow-x: auto;
+  }
 }
 `;

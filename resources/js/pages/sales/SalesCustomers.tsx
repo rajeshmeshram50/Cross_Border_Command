@@ -763,57 +763,59 @@ const SCOPED_CSS = `
  * Header uses a soft lavender tint that ties to the page's purple
  * chrome (hero, WDH cards, tabs bar). The cell content chips
  * provide the cell-level color; the chrome stays light + airy. */
+/* ─── Table chrome — neutral, same look as Clients / HR Employees.
+   The violet aesthetic comes back inside the cells via the chips
+   (.smc-id-chip, .smc-type-pill, .smc-seg, .smc-wa, etc.) so the
+   page still reads violet without the table itself being violet. */
 .smc-table-wrap .table-responsive {
-  background: #fff !important;
-  border: 1px solid #e0d9f7 !important;
+  background: var(--vz-card-bg, #fff) !important;
+  border: 1px solid var(--vz-border-color) !important;
   border-radius: 10px !important;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
 }
 .smc-table-wrap .table {
   --bs-table-bg: transparent;
   margin-bottom: 0 !important;
 }
-/* Header — soft lavender wash (matches the .smc-tabs-bar gradient
-   feel) with violet column text. Same vibe as the rest of the page. */
-.smc-table-wrap .table thead,
-.smc-table-wrap .table thead tr,
+/* Header — neutral table-light (Velzon default), matches every
+   other list page in the app. */
 .smc-table-wrap .table thead.table-light tr {
-  background: linear-gradient(180deg, #f5f0ff 0%, #ede9fe 100%) !important;
+  background: var(--vz-light) !important;
 }
-.smc-table-wrap .table thead th,
 .smc-table-wrap .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
   background: transparent !important;
-  background-color: transparent !important;
-  color: #4338ca !important;
+  color: var(--vz-secondary-color) !important;
   font-size: 12px !important;
-  font-weight: 700 !important;
-  letter-spacing: .01em !important;
+  font-weight: 600 !important;
+  letter-spacing: .02em !important;
   padding: 10px 14px !important;
   line-height: 1.3 !important;
-  border-bottom: 1px solid #c4b5fd !important;
+  border-bottom: 1px solid var(--vz-border-color) !important;
   white-space: nowrap;
-  text-transform: none;
+  text-transform: uppercase;
   vertical-align: middle !important;
 }
-.smc-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; color: #6d28d9; }
-/* Body — white rows, dark slate text, soft lavender hover. */
+.smc-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; }
+/* Body — neutral rows + neutral hover (light gray instead of lavender). */
 .smc-table-wrap .table tbody tr {
-  background: #fff;
+  background: transparent;
   transition: background .12s ease;
 }
 .smc-table-wrap .table tbody tr:hover {
-  background: #faf7ff !important;
+  background: var(--vz-light) !important;
 }
 .smc-table-wrap .table tbody td {
   --bs-table-bg: transparent !important;
   background: transparent !important;
   padding: 12px 14px !important;
   font-size: 13px;
-  color: #1f2937;
+  color: var(--vz-body-color);
   vertical-align: middle;
-  border-bottom: 1px solid #efeaf9 !important;
+  border-bottom: 1px solid var(--vz-border-color) !important;
   white-space: nowrap;
 }
 .smc-table-wrap .table tbody tr:last-child td { border-bottom: none !important; }
@@ -838,34 +840,19 @@ const SCOPED_CSS = `
   background: #faf7ff;
 }
 
-/* Dark-mode flips — violet-tinted dark slate that matches the rest
-   of the purple page chrome. Higher contrast than the default vz
-   tokens so the table reads clearly on the dark canvas. */
-[data-bs-theme="dark"] .smc-table-wrap .table-responsive {
-  background: #131c30 !important;
-  border-color: rgba(167,139,250,0.25) !important;
+/* Dark-mode: table chrome inherits vz tokens above so it flips
+   automatically. We only override the pagination active state to
+   keep the violet gradient consistent with the rest of the page. */
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-link {
+  background: var(--vz-secondary-bg);
+  color: #c4b5fd;
+  border-color: var(--vz-border-color);
 }
-[data-bs-theme="dark"] .smc-table-wrap .table thead,
-[data-bs-theme="dark"] .smc-table-wrap .table thead tr,
-[data-bs-theme="dark"] .smc-table-wrap .table thead.table-light tr {
-  background: linear-gradient(180deg, rgba(76,29,149,0.40) 0%, rgba(109,40,217,0.28) 100%) !important;
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item.active .page-link {
+  background: linear-gradient(135deg,#6d28d9,#4c1d95);
+  border-color: #7c3aed;
+  color: #fff;
 }
-[data-bs-theme="dark"] .smc-table-wrap .table thead th,
-[data-bs-theme="dark"] .smc-table-wrap .table thead.table-light th {
-  color: #e9d5ff !important;
-  border-bottom-color: rgba(167,139,250,0.40) !important;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
-}
-[data-bs-theme="dark"] .smc-table-wrap .table thead th i { color: #c4b5fd !important; opacity: 0.8; }
-[data-bs-theme="dark"] .smc-table-wrap .table tbody tr { background: #131c30; }
-[data-bs-theme="dark"] .smc-table-wrap .table tbody tr:hover { background: rgba(167,139,250,0.10) !important; }
-[data-bs-theme="dark"] .smc-table-wrap .table tbody td {
-  color: #e2e8f0 !important;
-  border-bottom-color: rgba(167,139,250,0.15) !important;
-}
-[data-bs-theme="dark"] .smc-table-wrap .pagination .page-link { background: #1c2531; color: #c4b5fd; border-color: rgba(167,139,250,0.25); }
-[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item.active .page-link { background: linear-gradient(135deg,#6d28d9,#4c1d95); border-color: #7c3aed; color: #fff; }
-[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item.disabled .page-link { color: #475569; background: #131c30; }
 /* Action button tiles in dark mode — lavender border/icon on a
    slate background so they pop against the dark row. Inline styles
    on the button set the base; these overrides use !important to
@@ -1278,5 +1265,45 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .smc-pag-btn:hover:not(:disabled) {
   background: #7c3aed; color: #fff;
+}
+
+/* ============================================================
+ *  RESPONSIVE — tablet & mobile
+ *  Hero strip is the most reflow-sensitive piece: the avatar +
+ *  title go above the "Add Customer" button on narrow viewports.
+ *  The "What we are doing here" 4-card strip wraps. The table
+ *  scrolls horizontally inside its existing .table-responsive
+ *  wrapper, so no special table treatment is needed.
+ * ============================================================ */
+@media (max-width: 1024px) {
+  /* "What we are doing here" — 4 cards across become 2x2 */
+  .smc-wdh-cards { grid-template-columns: repeat(2, 1fr); }
+  .smc-wdh-arrow { display: none; }
+}
+@media (max-width: 768px) {
+  /* Hero strip: stack the right-side Add button under the title */
+  .smc-cstrip { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px; }
+  .smc-cstrip-right { width: 100%; }
+  .smc-add-btn { width: 100%; justify-content: center; }
+  .smc-title { font-size: 18px; }
+  .smc-sub   { font-size: 12.5px; }
+  /* What-we-are-doing collapses to single column */
+  .smc-wdh-cards { grid-template-columns: 1fr; }
+  .smc-wdh-header { flex-wrap: wrap; gap: 8px; }
+  /* Fresh/Recurring tabs + search row stack */
+  .smc-tabs-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .smc-search-wrap { max-width: 100%; }
+}
+@media (max-width: 480px) {
+  /* Smaller mobile — tighten paddings */
+  .smc-root { padding: 0; }
+  .smc-cstrip, .smc-wdh, .smc-tabs-row { border-radius: 12px; }
+  .smc-avatar-wrap, .smc-back-btn { flex-shrink: 0; }
+  .smc-wdh-card { padding: 12px; }
+  /* Shimmer header grid — let the cells just flow with min widths */
+  .smc-shimmer-head, .smc-shimmer-row {
+    grid-template-columns: repeat(12, minmax(64px, 1fr));
+    overflow-x: auto;
+  }
 }
 `;

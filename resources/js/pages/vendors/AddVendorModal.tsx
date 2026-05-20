@@ -54,72 +54,169 @@ export type VendorPayload = {
   contactNo: string;
   email: string;
   whatsappEnabled: boolean;
-  // Step 4 mappings (count only for the parent list)
+  // Step 2 — KYC / Due Diligence collections
+  dueDiligence: DueDiligenceRow[];
+  ownerKyc: OwnerKycRow[];
+  tradeLicenses: TradeLicenseRow[];
+  bankAccounts: BankRow[];
+  gstScrutiny: GstScrutinyRow[];
+  // Step 3 — Trade Documents (preset doc types with signature workflow)
+  tradeDocuments: TradeDocRow[];
+  // Step 4 — product mappings with pricing
+  productMappings: ProductMappingRow[];
+  // Step 4 — derived list of mapped product codes (kept for backward-compat
+  // with the Vendors list page which only needs codes today)
   mappedProductCodes: string[];
+};
+
+/* ─── Step 2 row shapes ─────────────────────────────────────────────
+ * Each Step-2 tab maintains a list of rows the user adds via its
+ * "+ Add …" modal. `file` carries the actual File for upload once a
+ * backend lands; `fileName` is what we render in the table today. */
+/* `existingPath` is set when the row came back from /vendors/{id} on
+ * edit-mode prefill — it carries the server-side storage path so the
+ * KYC re-save can ship `existing_path` to the controller and skip the
+ * file upload when the user didn't replace it. Picking a new file
+ * clears it via the FileChooser's onPick handler. */
+export type DueDiligenceRow = {
+  id: string;
+  code: string;              // DD-001, DD-002, …
+  documentName: string;
+  issuingAuthority: string;
+  expiry: string;            // 'N/A' | 'MM/YYYY'
+  mandatory: boolean;
+  file: File | null;
+  fileName: string;
+  existingPath?: string;
+};
+
+export type OwnerKycRow = {
+  id: string;
+  code: string;              // KYC-001, KYC-002, …
+  documentName: string;
+  issuingAuthority: string;
+  documentNumber: string;
+  issueDate: string;         // dd/mm/yyyy
+  expiry: string;
+  status: 'Active' | 'Inactive';
+  file: File | null;
+  fileName: string;
+  existingPath?: string;
+};
+
+export type TradeLicenseRow = {
+  id: string;
+  code: string;              // TL-001, TL-002, …
+  licenseType: string;       // label from license_name master (or free text)
+  licenseNumber: string;
+  issuingAuthority: string;
+  issueDate: string;
+  expiryDate: string;
+  file: File | null;
+  fileName: string;
+  existingPath?: string;
+};
+
+export type BankRow = {
+  id: string;
+  bankName: string;
+  branchName: string;
+  accountNumber: string;
+  ifsc: string;
+  branchAddress: string;
+  chequeFile: File | null;
+  chequeFileName: string;
+  existingPath?: string;
+};
+
+export type GstScrutinyRow = {
+  id: string;
+  gstNumber: string;
+  status: 'Active' | 'Suspended' | 'Cancelled';
+  lastFilingDate: string;
+  prevNonGst2aInvoice: string;
+  redFlags: string;
+};
+
+/* Step 3 — Trade Documents (signature workflow on a preset list). */
+export type TradeDocRow = {
+  code: string;             // TD-001, TD-002, …
+  name: string;             // 'Vendor / Supplier Agreement'
+  sendForSignature: boolean;
+  status: 'N/A' | 'Sent' | 'Signed';
+  attachment: File | null;
+  attachmentName: string;
+};
+
+/* Step 4 — product-vendor mapping rows with pricing. */
+export type ProductMappingRow = {
+  id: string;
+  productId: number | null;     // FK to products.id (when picked from API)
+  productCode: string;
+  productName: string;
+  hsnSacCode: string;
+  segment: string;
+  batchSerialLot: string;
+  purchasePrice: number;
+  gstPercentage: number;
+  gstAmount: number;
+  totalAmount: number;
 };
 
 type StepKey = 1 | 2 | 3 | 4;
 type IdTab = 'identification' | 'address';
 type KycTab = 'company' | 'owner' | 'license' | 'bank' | 'gst';
+
+/* Forward order of the Step 2 sub-tabs — drives "Save & Next" pagination
+ * so the user walks Company DD → Owner KYC → Trade License → Bank → GST
+ * before advancing to Step 3. Clicking any pill in the header still
+ * jumps freely; this only controls what the footer button does. */
+const KYC_TAB_ORDER: KycTab[] = ['company', 'owner', 'license', 'bank', 'gst'];
 type TradeTab = 'kyc' | 'trade';
 type KycSubTab = 'owner' | 'company' | 'license';
 
-/* ─── Static option lists ─── */
-// Vendor Behaviour stays frontend-only (4 fixed rating buckets). All other
-// classification dropdowns are loaded from their masters via the API loader
-// effect inside the component.
-// Fallback when the vendor_behaviour master returns empty — keeps the
-// dropdown usable while the master is being populated.
-const BEHAVIOURS = ['Excellent', 'Good', 'Medium', 'Poor'];
-// Countries / States / State Codes are loaded from masters at runtime
-// (see the loader effect inside the component).
+/* Classification dropdowns (Vendor Type, Risk Level, Vendor Behaviour,
+ * Segment, Compliance Behaviour, Country, State) are all loaded from
+ * their masters via the API loader effect inside the component.
+ * Each dropdown's value is the master row's id — see the schema on
+ * vendors.vendor_type_id / risk_level_id / segment_id etc. */
 
-/* ─── Mock master document lists for steps 2 & 3 ─── */
-const DD_DOCS = [
-  { code: 'DD-001', name: 'Certificate of Incorporation',           authority: 'Registrar of Companies (ROC)',  expiry: 'N/A',     mandatory: true  },
-  { code: 'DD-002', name: 'Memorandum & Articles of Association (MOA/AOA)', authority: 'Registrar of Companies (ROC)',  expiry: 'N/A',     mandatory: true  },
-  { code: 'DD-003', name: 'Board Resolution for Authorized Signatory',      authority: 'Company Board',                 expiry: '12/2026', mandatory: true  },
-  { code: 'DD-004', name: 'Financial Statements (Last 2-3 Years)',          authority: 'Statutory Auditor',             expiry: '03/2026', mandatory: true  },
-  { code: 'DD-005', name: 'Auditor’s Report',                          authority: 'Statutory Auditor',             expiry: '03/2026', mandatory: false },
-  { code: 'DD-006', name: 'Tax Returns (Last 2 Years)',                     authority: 'Income Tax Department',         expiry: '03/2026', mandatory: false },
+/* ─── Step 2 seed rows ─────────────────────────────────────────────
+ * One mandatory default per applicable tab so the table isn't empty
+ * on open and the user can see what a row looks like. Mandatory rows
+ * can be uploaded against but not deleted. Everything else comes from
+ * the "+ Add …" modal. */
+const SEED_DD: DueDiligenceRow[] = [
+  { id: 'seed-dd-1', code: 'DD-001', documentName: 'Certificate of Incorporation', issuingAuthority: 'Registrar of Companies (ROC)', expiry: 'N/A', mandatory: true, file: null, fileName: '' },
 ];
 
-const OWNER_KYC = [
-  { code: 'KYC-001', name: 'PAN Card',                            authority: 'Income Tax Department',  expiry: 'N/A'    },
-  { code: 'KYC-002', name: 'Aadhaar Card',                        authority: 'UIDAI',                   expiry: 'N/A'    },
-  { code: 'KYC-003', name: 'Address Proof',                       authority: 'Bank / Utility / Govt Authority', expiry: 'N/A' },
-  { code: 'KYC-004', name: 'Identity Proof (Passport / DL / Voter ID)', authority: 'GOI / RTO / ECI',     expiry: 'Varies' },
-  { code: 'KYC-005', name: 'Company Registration Certificate',    authority: 'Registrar of Companies (ROC)', expiry: 'N/A' },
-  { code: 'KYC-006', name: 'GST Certificate',                     authority: 'GST Department',          expiry: '09/2030' },
+const SEED_TRADE_LICENSE: TradeLicenseRow[] = [
+  { id: 'seed-tl-1', code: 'TL-001', licenseType: 'Import Export Code (IEC)', licenseNumber: '', issuingAuthority: 'DGFT', issueDate: '', expiryDate: '', file: null, fileName: '' },
 ];
 
-const TRADE_LICENSE = [
-  { code: 'TRL-001', name: 'IEC Code (Importer Exporter)', authority: 'DGFT',     expiry: 'N/A'    },
-  { code: 'TRL-002', name: 'FSSAI License',                authority: 'FSSAI',    expiry: '11/2027' },
-  { code: 'TRL-003', name: 'AGMARK Certification',         authority: 'Agmark',   expiry: '06/2028' },
-  { code: 'TRL-004', name: 'Spices Board Registration',    authority: 'Spices Board of India', expiry: '04/2029' },
-];
-
-const TRADE_DOCS = [
-  { code: 'TD-001', name: 'Vendor Quotation',          authority: 'Issued by Vendor', expiry: 'N/A' },
-  { code: 'TD-002', name: 'Purchase Agreement',        authority: 'Mutual',           expiry: '12/2027' },
-  { code: 'TD-003', name: 'Non-Disclosure Agreement',  authority: 'Mutual',           expiry: 'N/A' },
-  { code: 'TD-004', name: 'Service Level Agreement',   authority: 'Mutual',           expiry: '06/2027' },
-];
-
-const MOCK_PRODUCTS = [
-  { code: 'P-01', name: 'Cashew W320 Premium',     segment: 'Dry Fruits',    uom: 'Kg' },
-  { code: 'P-02', name: 'Basmati Rice 1121',       segment: 'Rice & Grains', uom: 'Kg' },
-  { code: 'P-03', name: 'Turmeric Powder',         segment: 'Spices',        uom: 'Kg' },
-  { code: 'P-04', name: 'Cold-Pressed Coconut Oil', segment: 'Coconut Oil', uom: 'L'  },
+/* Step 3 — Trade Documents preset list. These are common B2B agreements
+ * an onboarder typically sends for e-signature. Status flips to 'Sent'
+ * when the user clicks the row's Send button. */
+const SEED_TRADE_DOCS: TradeDocRow[] = [
+  { code: 'TD-001', name: 'Vendor / Supplier Agreement',         sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-002', name: 'Non-Disclosure Agreement (NDA)',      sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-003', name: 'Declaration of Compliance / Conformity', sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-004', name: 'Quality Assurance Agreement',         sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-005', name: 'Service Level Agreement (SLA)',       sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
 ];
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Component
  * ────────────────────────────────────────────────────────────────────── */
-export default function AddVendorModal(props: { onClose: () => void; onSubmit: (payload: VendorPayload) => void }) {
-  const { onClose, onSubmit } = props;
+export default function AddVendorModal(props: {
+  /** Existing vendor id to edit; omit or pass null to create a new one. */
+  vendorId?: number | null;
+  onClose: () => void;
+  onSubmit: (payload: VendorPayload) => void;
+}) {
+  const { onClose, onSubmit, vendorId: initialVendorId } = props;
   const toast = useToast();
+  const isEdit = !!initialVendorId;
 
   /* ─── Wizard navigation ─── */
   const [step, setStep] = useState<StepKey>(1);
@@ -145,8 +242,12 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     state_code: string;
     state_name: string;
   }>>([]);
+  /* State dropdown is ID-based — `value` is state_id, `label` is the
+     state's name. The state-code field auto-fills off the same lookup
+     so the wizard always submits a consistent state_id + state_code
+     pair. */
   const stateOpts = useMemo<Opt[]>(
-    () => stateCodeRows.map(r => ({ value: r.state_name, label: r.state_name })),
+    () => stateCodeRows.map(r => ({ value: r.state_id, label: r.state_name })),
     [stateCodeRows]
   );
 
@@ -164,19 +265,28 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
   /* ─── Master Quick-Add state (matches the Add Product wizard pattern) ─── */
   const [quickAdd, setQuickAdd] = useState<VendorMasterSlug | null>(null);
 
+  /* Persisted vendor id — null until the first step (Identity) is saved.
+     Every subsequent step PUT/POST targets /vendors/{vendorId}/step/… so
+     the wizard treats this as required after Step 1 advances. When the
+     caller passes a vendorId prop (edit mode), it's pre-set here and a
+     load-effect fetches the existing data to prefill the form. */
+  const [vendorId, setVendorId] = useState<number | null>(initialVendorId ?? null);
+  const [saving,   setSaving]   = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(isEdit);
+
   /* ─── Step 1: Identification ─── */
   const [companyName, setCompanyName] = useState('');
   const [legalName,   setLegalName]   = useState('');
   const [vendorType,  setVendorType]  = useState('');
   const [website,     setWebsite]     = useState('');
   const [riskLevel,   setRiskLevel]   = useState('');
-  const [vendorBehaviour, setVendorBehaviour] = useState('Medium');
+  const [vendorBehaviour, setVendorBehaviour] = useState('');
   const [segment,     setSegment]     = useState('');
   const [complianceBehaviour, setComplianceBehaviour] = useState('');
 
   /* ─── Step 1: Address + primary contact ─── */
   const [registeredOffice, setRegisteredOffice] = useState('');
-  const [country,   setCountry]   = useState('India');
+  const [country,   setCountry]   = useState('');
   const [state,     setState]     = useState('');
   const [stateCode, setStateCode] = useState('');
   const [city,      setCity]      = useState('');
@@ -208,21 +318,73 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
   });
 
 
-  /* ─── Step 2: KYC / Due Diligence — track uploaded doc codes per category ─── */
-  const [uploadedDdCodes,    setUploadedDdCodes]    = useState<string[]>([]);
-  const [uploadedOwnerCodes, setUploadedOwnerCodes] = useState<string[]>([]);
-  const [uploadedLicenseCodes, setUploadedLicenseCodes] = useState<string[]>([]);
+  /* ─── Step 2: KYC / Due Diligence — one row list per tab ─── */
+  const [ddRows,      setDdRows]      = useState<DueDiligenceRow[]>(SEED_DD);
+  const [ownerRows,   setOwnerRows]   = useState<OwnerKycRow[]>([]);
+  const [licenseRows, setLicenseRows] = useState<TradeLicenseRow[]>(SEED_TRADE_LICENSE);
+  const [bankRows,    setBankRows]    = useState<BankRow[]>([]);
+  const [gstRows,     setGstRows]     = useState<GstScrutinyRow[]>([]);
 
-  /* ─── Step 2: Bank + GST ─── */
-  const [bankName, setBankName]     = useState('');
-  const [bankAcc,  setBankAcc]      = useState('');
-  const [ifsc,     setIfsc]         = useState('');
-  const [branch,   setBranch]       = useState('');
-  const [gstNumber, setGstNumber]   = useState('');
-  const [gstStatus, setGstStatus]   = useState('Active');
+  /* ─── Step 2: per-modal draft + open flag ─── */
+  type DdDraft     = Omit<DueDiligenceRow, 'id' | 'code'>;
+  type OwnerDraft  = Omit<OwnerKycRow,    'id' | 'code'>;
+  type LicDraft    = Omit<TradeLicenseRow,'id' | 'code'>;
+  type BankDraft   = Omit<BankRow,        'id'>;
+  type GstDraft    = Omit<GstScrutinyRow, 'id'>;
+  const EMPTY_DD_DRAFT: DdDraft = { documentName: '', issuingAuthority: '', expiry: 'N/A', mandatory: false, file: null, fileName: '' };
+  const EMPTY_OWNER_DRAFT: OwnerDraft = { documentName: '', issuingAuthority: '', documentNumber: '', issueDate: '', expiry: '', status: 'Active', file: null, fileName: '' };
+  const EMPTY_LIC_DRAFT: LicDraft = { licenseType: '', licenseNumber: '', issuingAuthority: '', issueDate: '', expiryDate: '', file: null, fileName: '' };
+  const EMPTY_BANK_DRAFT: BankDraft = { bankName: '', branchName: '', accountNumber: '', ifsc: '', branchAddress: '', chequeFile: null, chequeFileName: '' };
+  const EMPTY_GST_DRAFT: GstDraft = { gstNumber: '', status: 'Active', lastFilingDate: '', prevNonGst2aInvoice: '', redFlags: '' };
 
-  /* ─── Step 4: Map Products ─── */
-  const [selectedProductCodes, setSelectedProductCodes] = useState<string[]>([]);
+  const [ddPopupOpen,    setDdPopupOpen]    = useState(false);
+  const [ownerPopupOpen, setOwnerPopupOpen] = useState(false);
+  const [licPopupOpen,   setLicPopupOpen]   = useState(false);
+  const [bankPopupOpen,  setBankPopupOpen]  = useState(false);
+  const [gstPopupOpen,   setGstPopupOpen]   = useState(false);
+
+  const [ddDraft,    setDdDraft]    = useState<DdDraft>(EMPTY_DD_DRAFT);
+  const [ownerDraft, setOwnerDraft] = useState<OwnerDraft>(EMPTY_OWNER_DRAFT);
+  const [licDraft,   setLicDraft]   = useState<LicDraft>(EMPTY_LIC_DRAFT);
+  const [bankDraft,  setBankDraft]  = useState<BankDraft>(EMPTY_BANK_DRAFT);
+  const [gstDraft,   setGstDraft]   = useState<GstDraft>(EMPTY_GST_DRAFT);
+
+  /* license_name master powers the License Type dropdown on the
+     Trade License modal. Loaded lazily the first time the modal opens
+     to avoid an extra fetch on initial mount. */
+  const [licenseTypeOpts, setLicenseTypeOpts] = useState<Opt[]>([]);
+
+  /* ─── Step 3: Trade Documents (preset signature workflow) ─── */
+  const [tradeDocRows, setTradeDocRows] = useState<TradeDocRow[]>(SEED_TRADE_DOCS);
+
+  /* ─── Step 4: Product mappings + Add Product Mapping modal ─── */
+  type ProductOpt = {
+    value: string;             // product id as string
+    label: string;             // product_code — name
+    code: string;
+    name: string;
+    hsn: string;
+    segment: string;
+  };
+  const [productOpts,    setProductOpts]    = useState<ProductOpt[]>([]);
+  const [gstPctOpts,     setGstPctOpts]     = useState<Opt[]>([]);
+  const [productMappings, setProductMappings] = useState<ProductMappingRow[]>([]);
+  const [mapPopupOpen,   setMapPopupOpen]   = useState(false);
+
+  type MapDraft = {
+    productId: string;         // '' = nothing picked
+    productCode: string;
+    productName: string;
+    hsnSacCode: string;
+    segment: string;
+    batchSerialLot: string;
+    purchasePrice: string;     // string while editing — parsed on save
+    gstPercentage: string;
+    gstAmount: string;
+    totalAmount: string;
+  };
+  const EMPTY_MAP_DRAFT: MapDraft = { productId: '', productCode: '', productName: '', hsnSacCode: '', segment: '', batchSerialLot: '', purchasePrice: '', gstPercentage: '', gstAmount: '', totalAmount: '' };
+  const [mapDraft,       setMapDraft]       = useState<MapDraft>(EMPTY_MAP_DRAFT);
 
   /* ─── Body scroll lock ─── */
   useEffect(() => {
@@ -245,13 +407,17 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
    * ──────────────────────────────────────────────────────────── */
   useEffect(() => {
     type Row = Record<string, unknown> & { id: number | string; status?: string };
+    /* Master rows ship to the dropdown as { value: id, label: name } so
+       the form state carries FK ids the backend can persist directly
+       (vendor_type_id, risk_level_id, segment_id, …). The PrevField
+       summary still wants the label, so we resolve via labelFor(...). */
     const fetchMaster = async (slug: string, labelKey: string): Promise<Opt[]> => {
       try {
         const res = await api.get<Row[]>(`/master/${slug}`);
         return (res.data || [])
           .filter(r => String(r.status ?? '').toLowerCase() !== 'inactive')
-          .map(r => ({ value: String(r[labelKey] ?? ''), label: String(r[labelKey] ?? '') }))
-          .filter(o => o.value !== '');
+          .map(r => ({ value: String(r.id), label: String(r[labelKey] ?? '') }))
+          .filter(o => o.value !== '' && o.label !== '');
       } catch {
         return [];
       }
@@ -275,7 +441,7 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     };
     (async () => {
       const [vt, rl, bh, sg, cb, co, sc] = await Promise.all([
-        fetchMaster('customer_types',        'name'),
+        fetchMaster('vendor_types',          'name'),
         fetchMaster('risk_levels',           'name'),
         fetchMaster('vendor_behaviour',      'name'),
         fetchMaster('segments',              'title'),
@@ -294,65 +460,428 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
   }, []);
 
   /* ──────────────────────────────────────────────────────────────────
-   * Navigation
+   * Edit-mode prefill — fires once on mount when the parent passed an
+   * existing vendor id. Hits GET /vendors/{id} (whose response is the
+   * controller's `shape()`) and pours every field back into the form
+   * state. File rows come back with their server path; we surface the
+   * basename so the user sees what's already attached and keep the
+   * full path on `existingPath` so the next save can reuse it.
    * ────────────────────────────────────────────────────────────── */
-  const validateStep1 = (): Record<string, string> => {
-    const errs: Record<string, string> = {};
-    // Required-field checks fire first so the "X is required" message
-    // wins over a "format wrong" message for blank inputs.
-    if (!companyName.trim())         errs.companyName         = 'Company Name is required';
-    if (!vendorType)                 errs.vendorType          = 'Vendor Type is required';
-    if (!riskLevel)                  errs.riskLevel           = 'Risk Level is required';
-    if (!vendorBehaviour)            errs.vendorBehaviour     = 'Vendor Behaviour is required';
-    if (!segment)                    errs.segment             = 'Vendor Segment is required';
-    if (!complianceBehaviour)        errs.complianceBehaviour = 'Compliance Behaviour is required';
-    if (!registeredOffice.trim())    errs.registeredOffice    = 'Registered Office Address is required';
-    if (!country)                    errs.country             = 'Country is required';
-    if (!state)                      errs.state               = 'State is required';
-    if (!stateCode)                  errs.stateCode           = 'State Code is required (pick a State to auto-fill)';
-    if (!city.trim())                errs.city                = 'City is required';
-    if (!contactName.trim())         errs.contactName         = 'Contact Person Name is required';
-    if (!designation.trim())         errs.designation         = 'Designation is required';
-    if (!contactNo.trim())           errs.contactNo           = 'Contact No is required';
-    if (!email.trim())               errs.email               = 'Email is required';
+  useEffect(() => {
+    if (!initialVendorId) return;
+    type ApiAddress = {
+      address_line?: string | null; country_id?: number | null; state_id?: number | null;
+      state_code?: string | null; city?: string | null; pincode?: string | null;
+      contact_name?: string | null; designation?: string | null; contact_no?: string | null;
+      email?: string | null; whatsapp_enabled?: boolean;
+    };
+    type ApiExtra = {
+      id: number; contact_name?: string | null; designation?: string | null;
+      contact_no?: string | null; email?: string | null; whatsapp_enabled?: boolean;
+      attachment_path?: string | null;
+    };
+    type ApiDd = { id: number; code?: string | null; document_name?: string | null; issuing_authority?: string | null; expiry?: string | null; mandatory?: boolean; attachment_path?: string | null };
+    type ApiOwner = { id: number; code?: string | null; document_name?: string | null; issuing_authority?: string | null; document_number?: string | null; issue_date?: string | null; expiry?: string | null; status?: string | null; attachment_path?: string | null };
+    type ApiTl = { id: number; code?: string | null; license_type_id?: number | null; license_type_name?: string | null; license_number?: string | null; issuing_authority?: string | null; issue_date?: string | null; expiry_date?: string | null; attachment_path?: string | null };
+    type ApiBank = { id: number; bank_name?: string | null; branch_name?: string | null; account_number?: string | null; ifsc?: string | null; branch_address?: string | null; cheque_path?: string | null };
+    type ApiGst = { id: number; gst_number?: string | null; status?: string | null; last_filing_date?: string | null; prev_non_gst_2a_invoice?: string | null; red_flags?: string | null };
+    type ApiMapping = { id: number; product_id?: number | null; product_code?: string | null; product_name?: string | null; batch_serial_lot?: string | null; purchase_price?: number | string | null; gst_percentage?: number | string | null; gst_amount?: number | string | null; total_amount?: number | string | null };
+    type ApiVendor = {
+      id: number;
+      company_name?: string | null; legal_name?: string | null; website?: string | null;
+      vendor_type_id?: number | null; risk_level_id?: number | null;
+      vendor_behaviour_id?: number | null; segment_id?: number | null;
+      compliance_behaviour_id?: number | null;
+      primary_address?: ApiAddress | null;
+      extra_contacts?: ApiExtra[];
+      due_diligence?: ApiDd[];
+      owner_kyc?: ApiOwner[];
+      trade_licenses?: ApiTl[];
+      bank_accounts?: ApiBank[];
+      gst_scrutiny?: ApiGst[];
+      product_mappings?: ApiMapping[];
+    };
 
-    // Format checks — only run when the field is non-empty so we don't
-    // double-report "required" + "invalid".
-    if (!errs.email      && email)        { const e = validateEmail(email);              if (e) errs.email      = e; }
-    if (!errs.contactNo  && contactNo)    { const e = validatePhoneGeneric(contactNo, 'Contact No'); if (e) errs.contactNo  = e; }
-    if (pincode)                          { const e = validatePincode(pincode);          if (e) errs.pincode     = e; }
-    if (website)                          { const e = validateWebsite(website);          if (e) errs.website     = e; }
-    return errs;
-  };
+    const basename = (p?: string | null): string => {
+      if (!p) return '';
+      const slashed = String(p).split('/');
+      return slashed[slashed.length - 1] ?? '';
+    };
+    const numStr = (n?: number | null): string => (n ?? '') === '' || n == null ? '' : String(n);
 
-  const goNext = () => {
-    if (step === 1) {
-      const errs = validateStep1();
-      if (Object.keys(errs).length) {
-        setFieldErrors(errs);
-        toast.error('Missing required fields', 'Please fix the highlighted fields');
-        return;
+    (async () => {
+      try {
+        const res = await api.get<{ data: ApiVendor }>(`/vendors/${initialVendorId}`);
+        const v = res.data?.data;
+        if (!v) return;
+
+        // Step 1 — identity
+        setCompanyName(v.company_name ?? '');
+        setLegalName(v.legal_name ?? '');
+        setWebsite(v.website ?? '');
+        setVendorType(numStr(v.vendor_type_id));
+        setRiskLevel(numStr(v.risk_level_id));
+        setVendorBehaviour(numStr(v.vendor_behaviour_id));
+        setSegment(numStr(v.segment_id));
+        setComplianceBehaviour(numStr(v.compliance_behaviour_id));
+
+        // Step 1 — primary address + extra contacts
+        const pa = v.primary_address;
+        if (pa) {
+          setRegisteredOffice(pa.address_line ?? '');
+          setCountry(numStr(pa.country_id));
+          setState(numStr(pa.state_id));
+          setStateCode(pa.state_code ?? '');
+          setCity(pa.city ?? '');
+          setPincode(pa.pincode ?? '');
+          setContactName(pa.contact_name ?? '');
+          setDesignation(pa.designation ?? '');
+          setContactNo(pa.contact_no ?? '');
+          setEmail(pa.email ?? '');
+          setWhatsappEnabled(pa.whatsapp_enabled ?? true);
+        }
+        setExtraContacts((v.extra_contacts ?? []).map(c => ({
+          id: c.id,
+          name: c.contact_name ?? '',
+          designation: c.designation ?? '',
+          phone: c.contact_no ?? '',
+          email: c.email ?? '',
+          whatsapp: c.whatsapp_enabled ?? true,
+          attachmentName: basename(c.attachment_path),
+        })));
+
+        // Step 2 — KYC sub-collections (file fields restored via existingPath)
+        setDdRows((v.due_diligence ?? []).map(r => ({
+          id: String(r.id),
+          code: r.code ?? '',
+          documentName: r.document_name ?? '',
+          issuingAuthority: r.issuing_authority ?? '',
+          expiry: r.expiry ?? '',
+          mandatory: !!r.mandatory,
+          file: null,
+          fileName: basename(r.attachment_path),
+          existingPath: r.attachment_path ?? undefined,
+        })));
+        setOwnerRows((v.owner_kyc ?? []).map(r => ({
+          id: String(r.id),
+          code: r.code ?? '',
+          documentName: r.document_name ?? '',
+          issuingAuthority: r.issuing_authority ?? '',
+          documentNumber: r.document_number ?? '',
+          issueDate: r.issue_date ?? '',
+          expiry: r.expiry ?? '',
+          status: (r.status === 'Inactive' ? 'Inactive' : 'Active'),
+          file: null,
+          fileName: basename(r.attachment_path),
+          existingPath: r.attachment_path ?? undefined,
+        })));
+        setLicenseRows((v.trade_licenses ?? []).map(r => ({
+          id: String(r.id),
+          code: r.code ?? '',
+          // licenseType in form state carries the master id (matches the
+          // ID-based License Type dropdown). Falls back to the joined
+          // name if the id is missing — keeps old rows readable.
+          licenseType: r.license_type_id != null ? String(r.license_type_id) : (r.license_type_name ?? ''),
+          licenseNumber: r.license_number ?? '',
+          issuingAuthority: r.issuing_authority ?? '',
+          issueDate: r.issue_date ?? '',
+          expiryDate: r.expiry_date ?? '',
+          file: null,
+          fileName: basename(r.attachment_path),
+          existingPath: r.attachment_path ?? undefined,
+        })));
+        setBankRows((v.bank_accounts ?? []).map(r => ({
+          id: String(r.id),
+          bankName: r.bank_name ?? '',
+          branchName: r.branch_name ?? '',
+          accountNumber: r.account_number ?? '',
+          ifsc: r.ifsc ?? '',
+          branchAddress: r.branch_address ?? '',
+          chequeFile: null,
+          chequeFileName: basename(r.cheque_path),
+          existingPath: r.cheque_path ?? undefined,
+        })));
+        setGstRows((v.gst_scrutiny ?? []).map(r => ({
+          id: String(r.id),
+          gstNumber: r.gst_number ?? '',
+          status: (r.status === 'Suspended' || r.status === 'Cancelled' ? r.status : 'Active'),
+          lastFilingDate: r.last_filing_date ?? '',
+          prevNonGst2aInvoice: r.prev_non_gst_2a_invoice ?? '',
+          redFlags: r.red_flags ?? '',
+        })));
+
+        // Step 4 — product mappings
+        setProductMappings((v.product_mappings ?? []).map(m => ({
+          id: String(m.id),
+          productId: m.product_id ?? null,
+          productCode: m.product_code ?? '',
+          productName: m.product_name ?? '',
+          hsnSacCode: '',  // not echoed in the index/show shape; refetched if user re-edits
+          segment: '',
+          batchSerialLot: m.batch_serial_lot ?? '',
+          purchasePrice: Number(m.purchase_price ?? 0),
+          gstPercentage: Number(m.gst_percentage ?? 0),
+          gstAmount: Number(m.gst_amount ?? 0),
+          totalAmount: Number(m.total_amount ?? 0),
+        })));
+      } catch {
+        toast.error('Load failed', 'Could not load the vendor — closing the form.');
+        onClose();
+      } finally {
+        setLoadingEdit(false);
       }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialVendorId]);
+
+  /* Look up a master label by its FK id — used by the "previous stages"
+     summary that needs the display name even though form state carries
+     the id. Returns '' when nothing matches so callers can `||` to a
+     placeholder. */
+  const labelFor = (id: string, opts: Opt[]): string =>
+    opts.find(o => o.value === id)?.label ?? '';
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Step-wise persistence
+   *
+   *   Step 1 / identification  → POST /vendors/step/identity      sets vendorId
+   *   Step 1 / address         → PUT  /vendors/{id}/step/contacts
+   *   Step 2 (all 5 tabs)      → POST /vendors/{id}/step/kyc      multipart
+   *   Step 3 (Trade Documents) → no backend, just advance
+   *   Step 4 / map products    → POST /vendors/{id}/step/products + onSubmit
+   *
+   * Each handler validates client-side first, then hits the API and
+   * advances only on success. The `saving` flag disables the footer
+   * button so the user can't double-fire mid-request.
+   * ────────────────────────────────────────────────────────────── */
+
+  const saveIdentity = async (): Promise<boolean> => {
+    if (!companyName.trim()) { setFieldErrors(e => ({ ...e, companyName: 'Company Name is required' })); toast.error('Missing required fields', 'Company Name is required'); return false; }
+    const errs: Record<string, string> = {};
+    if (!vendorType)         errs.vendorType          = 'Vendor Type is required';
+    if (!riskLevel)          errs.riskLevel           = 'Risk Level is required';
+    if (!vendorBehaviour)    errs.vendorBehaviour     = 'Vendor Behaviour is required';
+    if (!segment)            errs.segment             = 'Vendor Segment is required';
+    if (!complianceBehaviour) errs.complianceBehaviour = 'Compliance Behaviour is required';
+    if (website)             { const e = validateWebsite(website); if (e) errs.website = e; }
+    if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); toast.error('Missing required fields', 'Please fix the highlighted fields'); return false; }
+
+    setSaving(true);
+    try {
+      const res = await api.post<{ data: { id: number } }>('/vendors/step/identity', {
+        id: vendorId,
+        company_name: companyName,
+        legal_name: legalName || null,
+        website: website || null,
+        vendor_type_id: vendorType ? Number(vendorType) : null,
+        risk_level_id: riskLevel ? Number(riskLevel) : null,
+        vendor_behaviour_id: vendorBehaviour ? Number(vendorBehaviour) : null,
+        segment_id: segment ? Number(segment) : null,
+        compliance_behaviour_id: complianceBehaviour ? Number(complianceBehaviour) : null,
+      });
+      setVendorId(res.data?.data?.id ?? vendorId);
       setFieldErrors({});
       toast.success('Identity saved', 'Vendor identity details captured');
-      setStep(2);
-    } else if (step === 2) {
-      // KYC format checks — only validate values that have been entered;
-      // none of these are required to leave the step.
-      const errs: Record<string, string> = {};
-      if (gstNumber) { const e = validateGstin(gstNumber);                if (e) errs.gstNumber = e; }
-      if (bankAcc)   { const e = validateAccountNumber(bankAcc);          if (e) errs.bankAcc   = e; }
-      if (ifsc)      { const e = validateIfsc(ifsc);                      if (e) errs.ifsc      = e; }
-      if (Object.keys(errs).length) {
-        setFieldErrors(errs);
-        toast.error('Please fix the highlighted fields', 'GST / Bank details are invalid');
-        return;
+      return true;
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save vendor identity';
+      toast.error('Save failed', msg);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveContacts = async (): Promise<boolean> => {
+    if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
+    const errs: Record<string, string> = {};
+    if (!registeredOffice.trim())  errs.registeredOffice = 'Registered Office Address is required';
+    if (!country)                  errs.country          = 'Country is required';
+    if (!state)                    errs.state            = 'State is required';
+    if (!stateCode)                errs.stateCode        = 'State Code is required (pick a State to auto-fill)';
+    if (!city.trim())              errs.city             = 'City is required';
+    if (!contactName.trim())       errs.contactName      = 'Contact Person Name is required';
+    if (!designation.trim())       errs.designation      = 'Designation is required';
+    if (!contactNo.trim())         errs.contactNo        = 'Contact No is required';
+    if (!email.trim())             errs.email            = 'Email is required';
+    if (!errs.email && email)      { const e = validateEmail(email);              if (e) errs.email     = e; }
+    if (!errs.contactNo && contactNo) { const e = validatePhoneGeneric(contactNo, 'Contact No'); if (e) errs.contactNo = e; }
+    if (pincode)                   { const e = validatePincode(pincode);          if (e) errs.pincode   = e; }
+    if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); toast.error('Missing required fields', 'Please fix the highlighted fields'); return false; }
+
+    setSaving(true);
+    try {
+      await api.put(`/vendors/${vendorId}/step/contacts`, {
+        primary_address: {
+          address_line: registeredOffice,
+          country_id: country ? Number(country) : null,
+          state_id:   state   ? Number(state)   : null,
+          state_code: stateCode,
+          city,
+          pincode: pincode || null,
+          contact_name: contactName,
+          designation,
+          contact_no: contactNo,
+          email,
+          whatsapp_enabled: whatsappEnabled,
+        },
+        extra_contacts: extraContacts.map(c => ({
+          contact_name: c.name,
+          designation: c.designation,
+          contact_no: c.phone,
+          email: c.email,
+          whatsapp_enabled: c.whatsapp,
+        })),
+      });
+      setFieldErrors({});
+      toast.success('Contacts saved', 'Address & contact persons captured');
+      return true;
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save contacts';
+      toast.error('Save failed', msg);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveKyc = async (): Promise<boolean> => {
+    if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
+    const missingDd = ddRows.filter(r => r.mandatory && !r.fileName);
+    if (missingDd.length) {
+      toast.error('Upload required documents', `Missing file on: ${missingDd.map(r => r.code).join(', ')}`);
+      return false;
+    }
+
+    /* Build multipart payload. Indexed array notation
+       (`due_diligence[0][document_name]`) lets PHP/Laravel parse the
+       rows into the validation rules cleanly, and `dd_files[N]` ships
+       the new file for row N (or nothing if the row already has an
+       existing_path on the backend). */
+    const fd = new FormData();
+    ddRows.forEach((r, i) => {
+      fd.append(`due_diligence[${i}][code]`, r.code);
+      fd.append(`due_diligence[${i}][document_name]`, r.documentName);
+      fd.append(`due_diligence[${i}][issuing_authority]`, r.issuingAuthority || '');
+      fd.append(`due_diligence[${i}][expiry]`, r.expiry || '');
+      fd.append(`due_diligence[${i}][mandatory]`, r.mandatory ? '1' : '0');
+      if (r.file) fd.append(`dd_files[${i}]`, r.file);
+      else if (r.existingPath) fd.append(`due_diligence[${i}][existing_path]`, r.existingPath);
+    });
+    ownerRows.forEach((r, i) => {
+      fd.append(`owner_kyc[${i}][code]`, r.code);
+      fd.append(`owner_kyc[${i}][document_name]`, r.documentName);
+      fd.append(`owner_kyc[${i}][issuing_authority]`, r.issuingAuthority || '');
+      fd.append(`owner_kyc[${i}][document_number]`, r.documentNumber || '');
+      if (r.issueDate) fd.append(`owner_kyc[${i}][issue_date]`, r.issueDate);
+      fd.append(`owner_kyc[${i}][expiry]`, r.expiry || '');
+      fd.append(`owner_kyc[${i}][status]`, r.status);
+      if (r.file) fd.append(`owner_files[${i}]`, r.file);
+      else if (r.existingPath) fd.append(`owner_kyc[${i}][existing_path]`, r.existingPath);
+    });
+    licenseRows.forEach((r, i) => {
+      fd.append(`trade_licenses[${i}][code]`, r.code);
+      // licenseType in modal stores the master label (Trade License modal
+      // shows a free-text fallback) — send as license_type_id only when
+      // the value parses as a number, else send null.
+      const ltId = Number(r.licenseType);
+      if (Number.isInteger(ltId) && ltId > 0) {
+        fd.append(`trade_licenses[${i}][license_type_id]`, String(ltId));
       }
+      fd.append(`trade_licenses[${i}][license_number]`, r.licenseNumber || '');
+      fd.append(`trade_licenses[${i}][issuing_authority]`, r.issuingAuthority || '');
+      if (r.issueDate)  fd.append(`trade_licenses[${i}][issue_date]`, r.issueDate);
+      if (r.expiryDate) fd.append(`trade_licenses[${i}][expiry_date]`, r.expiryDate);
+      if (r.file) fd.append(`tl_files[${i}]`, r.file);
+      else if (r.existingPath) fd.append(`trade_licenses[${i}][existing_path]`, r.existingPath);
+    });
+    bankRows.forEach((r, i) => {
+      fd.append(`bank_accounts[${i}][bank_name]`, r.bankName);
+      fd.append(`bank_accounts[${i}][branch_name]`, r.branchName);
+      fd.append(`bank_accounts[${i}][account_number]`, r.accountNumber);
+      fd.append(`bank_accounts[${i}][ifsc]`, r.ifsc);
+      fd.append(`bank_accounts[${i}][branch_address]`, r.branchAddress || '');
+      if (r.chequeFile) fd.append(`cheque_files[${i}]`, r.chequeFile);
+      else if (r.existingPath) fd.append(`bank_accounts[${i}][existing_path]`, r.existingPath);
+    });
+    gstRows.forEach((r, i) => {
+      fd.append(`gst_scrutiny[${i}][gst_number]`, r.gstNumber);
+      fd.append(`gst_scrutiny[${i}][status]`, r.status);
+      if (r.lastFilingDate) fd.append(`gst_scrutiny[${i}][last_filing_date]`, r.lastFilingDate);
+      fd.append(`gst_scrutiny[${i}][prev_non_gst_2a_invoice]`, r.prevNonGst2aInvoice || '');
+      fd.append(`gst_scrutiny[${i}][red_flags]`, r.redFlags || '');
+    });
+
+    setSaving(true);
+    try {
+      await api.post(`/vendors/${vendorId}/step/kyc`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       setFieldErrors({});
       toast.success('KYC saved', 'Due-diligence details captured');
-      setStep(3);
+      return true;
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save KYC';
+      toast.error('Save failed', msg);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveProducts = async (): Promise<boolean> => {
+    if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
+    if (productMappings.length === 0) {
+      toast.error('No products mapped', 'Map at least one product before saving the vendor.');
+      return false;
+    }
+    setSaving(true);
+    try {
+      await api.post(`/vendors/${vendorId}/step/products`, {
+        mappings: productMappings.map(m => ({
+          product_id: m.productId,
+          batch_serial_lot: m.batchSerialLot || null,
+          purchase_price: m.purchasePrice,
+          gst_percentage: m.gstPercentage,
+          gst_amount: m.gstAmount,
+          total_amount: m.totalAmount,
+        })),
+      });
+      toast.success('Vendor saved', 'Products mapped — vendor is now Active');
+      return true;
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save product mappings';
+      toast.error('Save failed', msg);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const goNext = async () => {
+    if (saving) return;
+    if (step === 1 && idTab === 'identification') {
+      const ok = await saveIdentity();
+      if (ok) setIdTab('address');
+    } else if (step === 1 && idTab === 'address') {
+      const ok = await saveContacts();
+      if (ok) setStep(2);
+    } else if (step === 2) {
+      // Step 2 has 5 sub-tabs (Company DD → Owner KYC → Trade License →
+      // Bank → GST). Save & Next persists the full KYC payload AND
+      // walks one sub-tab forward. Only on the last sub-tab (gst) does
+      // the wizard advance to Step 3.
+      const ok = await saveKyc();
+      if (!ok) return;
+      const idx = KYC_TAB_ORDER.indexOf(kycTab);
+      if (idx >= 0 && idx < KYC_TAB_ORDER.length - 1) {
+        setKycTab(KYC_TAB_ORDER[idx + 1]);
+      } else {
+        setStep(3);
+      }
     } else if (step === 3) {
-      toast.success('Documents saved', 'Trade documents captured');
+      // Stage 3 is a frontend-only repository view — no backend.
+      toast.success('Documents reviewed', 'Trade documents captured');
       setStep(4);
     }
   };
@@ -361,22 +890,264 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     if (step > 1) setStep((step - 1) as StepKey);
   };
 
-  const submitAll = () => {
+  const submitAll = async () => {
+    if (saving) return;
+    const ok = await saveProducts();
+    if (!ok) return;
     onSubmit({
       companyName, legalName, vendorType, website, riskLevel,
       vendorBehaviour, segment, complianceBehaviour,
       registeredOffice, country, state, stateCode, city, pincode,
       contactName, designation, contactNo, email, whatsappEnabled,
-      mappedProductCodes: selectedProductCodes,
+      dueDiligence: ddRows,
+      ownerKyc: ownerRows,
+      tradeLicenses: licenseRows,
+      bankAccounts: bankRows,
+      gstScrutiny: gstRows,
+      tradeDocuments: tradeDocRows,
+      productMappings,
+      mappedProductCodes: productMappings.map(m => m.productCode).filter(Boolean),
     });
   };
 
   /* ──────────────────────────────────────────────────────────────────
-   * Helpers — DocTable + Uploaders
+   * Step 2 — row helpers
+   *
+   * Each "+ Add …" button stamps the next auto-code (DD-002 if DD-001
+   * already exists) and appends the draft to the right list. Seed rows
+   * (mandatory defaults) share the same code prefix so the next-code
+   * calculation just counts the list length. Validation lives inside
+   * each save handler so the modal can show a focused toast.
    * ────────────────────────────────────────────────────────────── */
-  const toggleUpload = (code: string, list: string[], setList: (l: string[]) => void) => {
-    setList(list.includes(code) ? list.filter(c => c !== code) : [...list, code]);
+  const nextCode = (prefix: string, rows: Array<{ code: string }>) => {
+    let max = 0;
+    const re = new RegExp(`^${prefix}-(\\d+)$`, 'i');
+    for (const r of rows) {
+      const m = re.exec(r.code);
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    }
+    return `${prefix}-${String(max + 1).padStart(3, '0')}`;
   };
+  const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  /* Inline upload — used by mandatory seed rows that don't have a
+     dedicated row in the modal. Picking a file flips the row's
+     fileName so the action button switches to "Uploaded". */
+  const attachFileToDd = (id: string, file: File) => {
+    setDdRows(prev => prev.map(r => r.id === id ? { ...r, file, fileName: file.name } : r));
+  };
+  const attachFileToLicense = (id: string, file: File) => {
+    setLicenseRows(prev => prev.map(r => r.id === id ? { ...r, file, fileName: file.name } : r));
+  };
+
+  /* Open / save / delete handlers per modal */
+  const openDdPopup = () => { setDdDraft(EMPTY_DD_DRAFT); setDdPopupOpen(true); };
+  const saveDdDraft = () => {
+    if (!ddDraft.documentName.trim()) { toast.error('Missing field', 'DD Document Name is required'); return; }
+    if (!ddDraft.issuingAuthority.trim()) { toast.error('Missing field', 'Issuing Authority is required'); return; }
+    const row: DueDiligenceRow = { id: uid(), code: nextCode('DD', ddRows), ...ddDraft };
+    setDdRows(prev => [...prev, row]);
+    setDdPopupOpen(false);
+    toast.success('Document added', `${row.code} ${row.documentName} added`);
+  };
+  const removeDdRow = (id: string) => setDdRows(prev => prev.filter(r => r.id !== id));
+
+  const openOwnerPopup = () => { setOwnerDraft(EMPTY_OWNER_DRAFT); setOwnerPopupOpen(true); };
+  const saveOwnerDraft = () => {
+    if (!ownerDraft.documentName.trim())     { toast.error('Missing field', 'KYC Document Name is required'); return; }
+    if (!ownerDraft.issuingAuthority.trim()) { toast.error('Missing field', 'Issuing Authority is required'); return; }
+    if (!ownerDraft.fileName)                { toast.error('Missing file', 'Please upload the KYC document'); return; }
+    const row: OwnerKycRow = { id: uid(), code: nextCode('KYC', ownerRows), ...ownerDraft };
+    setOwnerRows(prev => [...prev, row]);
+    setOwnerPopupOpen(false);
+    toast.success('Owner KYC added', `${row.code} ${row.documentName} added`);
+  };
+  const removeOwnerRow = (id: string) => setOwnerRows(prev => prev.filter(r => r.id !== id));
+
+  const openLicPopup = async () => {
+    setLicDraft(EMPTY_LIC_DRAFT);
+    setLicPopupOpen(true);
+    // Lazy-load the license_name master the first time the modal opens.
+    if (licenseTypeOpts.length === 0) {
+      try {
+        const res = await api.get<Array<{ id: string | number; name?: string; status?: string }>>('/master/license_name');
+        const rows = Array.isArray(res.data) ? res.data : [];
+        setLicenseTypeOpts(rows
+          .filter(r => (r.status ?? 'Active') === 'Active')
+          .map(r => ({ value: String(r.name ?? ''), label: String(r.name ?? '') }))
+          .filter(o => o.value));
+      } catch { /* silent — fallback to free text */ }
+    }
+  };
+  const saveLicDraft = () => {
+    if (!licDraft.licenseType.trim())   { toast.error('Missing field', 'License Type is required'); return; }
+    if (!licDraft.licenseNumber.trim()) { toast.error('Missing field', 'License Number is required'); return; }
+    if (!licDraft.issuingAuthority.trim()) { toast.error('Missing field', 'Issuing Authority is required'); return; }
+    if (!licDraft.issueDate)            { toast.error('Missing field', 'Issue Date is required'); return; }
+    if (!licDraft.expiryDate)           { toast.error('Missing field', 'Expiry Date is required'); return; }
+    if (!licDraft.fileName)             { toast.error('Missing file', 'Please upload the license document'); return; }
+    const row: TradeLicenseRow = { id: uid(), code: nextCode('TL', licenseRows), ...licDraft };
+    setLicenseRows(prev => [...prev, row]);
+    setLicPopupOpen(false);
+    toast.success('Trade license added', `${row.code} ${row.licenseType} added`);
+  };
+  const removeLicRow = (id: string) => setLicenseRows(prev => prev.filter(r => r.id !== id));
+
+  const openBankPopup = () => { setBankDraft(EMPTY_BANK_DRAFT); setBankPopupOpen(true); };
+  const saveBankDraft = () => {
+    if (!bankDraft.bankName.trim())      { toast.error('Missing field', 'Bank Name is required'); return; }
+    if (!bankDraft.branchName.trim())    { toast.error('Missing field', 'Branch is required'); return; }
+    if (!bankDraft.accountNumber.trim()) { toast.error('Missing field', 'Account Number is required'); return; }
+    if (!bankDraft.ifsc.trim())          { toast.error('Missing field', 'IFSC Code is required'); return; }
+    const accErr = validateAccountNumber(bankDraft.accountNumber); if (accErr) { toast.error('Invalid Account Number', accErr); return; }
+    const ifscErr = validateIfsc(bankDraft.ifsc); if (ifscErr) { toast.error('Invalid IFSC', ifscErr); return; }
+    const row: BankRow = { id: uid(), ...bankDraft };
+    setBankRows(prev => [...prev, row]);
+    setBankPopupOpen(false);
+    toast.success('Bank added', `${row.bankName} (${row.branchName})`);
+  };
+  const removeBankRow = (id: string) => setBankRows(prev => prev.filter(r => r.id !== id));
+
+  const openGstPopup = () => { setGstDraft(EMPTY_GST_DRAFT); setGstPopupOpen(true); };
+  const saveGstDraft = () => {
+    if (!gstDraft.gstNumber.trim())     { toast.error('Missing field', 'GST Number is required'); return; }
+    if (!gstDraft.lastFilingDate)       { toast.error('Missing field', 'GST Last Filing Date is required'); return; }
+    const gstErr = validateGstin(gstDraft.gstNumber); if (gstErr) { toast.error('Invalid GST Number', gstErr); return; }
+    const row: GstScrutinyRow = { id: uid(), ...gstDraft };
+    setGstRows(prev => [...prev, row]);
+    setGstPopupOpen(false);
+    toast.success('GST scrutiny added', row.gstNumber);
+  };
+  const removeGstRow = (id: string) => setGstRows(prev => prev.filter(r => r.id !== id));
+
+  /* Tab-aware label + handler for the SectionCard's "+ Add …" button */
+  const kycTabAddMeta: Record<KycTab, { label: string; onClick: () => void }> = {
+    company: { label: '+ Add More Due Diligence', onClick: openDdPopup },
+    owner:   { label: '+ Add Owner KYC',          onClick: openOwnerPopup },
+    license: { label: '+ Add Trade License',      onClick: openLicPopup },
+    bank:    { label: '+ Add More Bank',          onClick: openBankPopup },
+    gst:     { label: '+ Add GST Scrutiny',       onClick: openGstPopup },
+  };
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Step 3 — Trade Documents handlers
+   *
+   * Each row is a fixed agreement type. Toggling the per-row checkbox
+   * marks it for signature; clicking Send flips status to 'Sent' and
+   * clears the checkbox (so the same row can be re-sent if needed).
+   * The header "select-all" checkbox flips every row's checkbox.
+   * ────────────────────────────────────────────────────────────── */
+  const toggleTradeDocSign = (code: string) => {
+    setTradeDocRows(prev => prev.map(r => r.code === code ? { ...r, sendForSignature: !r.sendForSignature } : r));
+  };
+  const toggleAllTradeDocSign = () => {
+    setTradeDocRows(prev => {
+      const allOn = prev.every(r => r.sendForSignature);
+      return prev.map(r => ({ ...r, sendForSignature: !allOn }));
+    });
+  };
+  const sendTradeDoc = (code: string) => {
+    setTradeDocRows(prev => prev.map(r => r.code === code ? { ...r, sendForSignature: false, status: 'Sent' as const } : r));
+    toast.success('Sent for signature', `${code} marked as sent`);
+  };
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Step 4 — Product Mapping handlers
+   *
+   * The modal pulls active products from /api/products and active gst
+   * percentages from the gst_percentage master on first open. Selecting
+   * a product copies its code / HSN / segment into readonly draft
+   * fields. Changing purchase price or GST % auto-computes the GST
+   * amount and total amount so the user only enters two values.
+   * ────────────────────────────────────────────────────────────── */
+  const fetchProductOptsIfNeeded = async () => {
+    if (productOpts.length) return;
+    try {
+      type ProductRow = {
+        id: number; product_code?: string; name?: string;
+        hsn?: { hsn_code?: string } | null;
+        segment?: { title?: string } | null;
+      };
+      const res = await api.get<{ data?: ProductRow[] } | ProductRow[]>('/products?status=active&per_page=200');
+      const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+      setProductOpts(rows.map(r => ({
+        value:   String(r.id),
+        label:   `${r.product_code ?? ''} — ${r.name ?? ''}`.replace(/^ — /, ''),
+        code:    r.product_code ?? '',
+        name:    r.name ?? '',
+        hsn:     r.hsn?.hsn_code ?? '',
+        segment: r.segment?.title ?? '',
+      })));
+    } catch { /* silent — modal falls back to manual entry */ }
+  };
+  const fetchGstPctOptsIfNeeded = async () => {
+    if (gstPctOpts.length) return;
+    try {
+      const res = await api.get<Array<{ id: string | number; percentage?: number | string; status?: string }>>('/master/gst_percentage');
+      const rows = Array.isArray(res.data) ? res.data : [];
+      setGstPctOpts(rows
+        .filter(r => (r.status ?? 'Active') === 'Active')
+        .map(r => ({ value: String(r.percentage ?? ''), label: `${r.percentage ?? ''}%` }))
+        .filter(o => o.value && o.value !== ''));
+    } catch { /* silent */ }
+  };
+
+  const recomputeMapTotals = (draft: MapDraft): MapDraft => {
+    const price = parseFloat(draft.purchasePrice);
+    const pct   = parseFloat(draft.gstPercentage);
+    if (!isFinite(price) || price < 0) return { ...draft, gstAmount: '', totalAmount: '' };
+    const safePct = isFinite(pct) ? pct : 0;
+    const gstAmt  = +(price * (safePct / 100)).toFixed(2);
+    const total   = +(price + gstAmt).toFixed(2);
+    return { ...draft, gstAmount: gstAmt.toFixed(2), totalAmount: total.toFixed(2) };
+  };
+
+  const openMapPopup = () => {
+    setMapDraft(EMPTY_MAP_DRAFT);
+    setMapPopupOpen(true);
+    void fetchProductOptsIfNeeded();
+    void fetchGstPctOptsIfNeeded();
+  };
+
+  const onMapProductChange = (productIdStr: string) => {
+    const picked = productOpts.find(p => p.value === productIdStr);
+    setMapDraft(d => recomputeMapTotals({
+      ...d,
+      productId:   productIdStr,
+      productCode: picked?.code ?? '',
+      productName: picked?.name ?? '',
+      hsnSacCode:  picked?.hsn  ?? '',
+      segment:     picked?.segment ?? '',
+    }));
+  };
+
+  const saveMapDraft = () => {
+    if (!mapDraft.productId)             { toast.error('Missing field', 'Pick a Product Name'); return; }
+    if (!mapDraft.purchasePrice.trim())  { toast.error('Missing field', 'Purchase Price is required'); return; }
+    const price = parseFloat(mapDraft.purchasePrice);
+    if (!isFinite(price) || price < 0)   { toast.error('Invalid price', 'Purchase Price must be a non-negative number'); return; }
+    if (productMappings.some(m => m.productId === Number(mapDraft.productId))) {
+      toast.error('Already mapped', `${mapDraft.productCode} is already mapped to this vendor`);
+      return;
+    }
+    const row: ProductMappingRow = {
+      id: uid(),
+      productId:    Number(mapDraft.productId),
+      productCode:  mapDraft.productCode,
+      productName:  mapDraft.productName,
+      hsnSacCode:   mapDraft.hsnSacCode,
+      segment:      mapDraft.segment,
+      batchSerialLot: mapDraft.batchSerialLot,
+      purchasePrice: price,
+      gstPercentage: parseFloat(mapDraft.gstPercentage) || 0,
+      gstAmount:    parseFloat(mapDraft.gstAmount) || 0,
+      totalAmount:  parseFloat(mapDraft.totalAmount) || price,
+    };
+    setProductMappings(prev => [...prev, row]);
+    setMapPopupOpen(false);
+    toast.success('Product mapped', `${row.productCode} ${row.productName} added`);
+  };
+  const removeMapRow = (id: string) => setProductMappings(prev => prev.filter(r => r.id !== id));
 
   const openContactPopup = () => {
     setContactDraft({ name: '', designation: '', phone: '', email: '', whatsapp: true, attachmentName: '' });
@@ -419,8 +1190,8 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
               </svg>
             </div>
             <div className="min-w-0">
-              <div className="avm-title">Add Vendor</div>
-              <div className="avm-sub">Capture, verify, and onboard vendors with complete compliance and sourcing readiness.</div>
+              <div className="avm-title">{isEdit ? 'Edit Vendor' : 'Add Vendor'}</div>
+              <div className="avm-sub">{isEdit ? 'Update vendor details, KYC, or product mappings — saved per step.' : 'Capture, verify, and onboard vendors with complete compliance and sourcing readiness.'}</div>
             </div>
           </div>
           <div className="avm-head-right">
@@ -462,9 +1233,9 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
               {prevOpen && (
                 <div className="avm-prev-body">
                   <PrevField k="Company Name" v={companyName || '—'} />
-                  <PrevField k="Vendor Type"  v={vendorType || '—'} />
-                  <PrevField k="Segment"      v={segment || '—'} />
-                  <PrevField k="State / City" v={`${state || '—'} / ${city || '—'}`} />
+                  <PrevField k="Vendor Type"  v={labelFor(vendorType, vendorTypeOpts) || '—'} />
+                  <PrevField k="Segment"      v={labelFor(segment, segmentOpts) || '—'} />
+                  <PrevField k="State / City" v={`${labelFor(state, stateOpts) || '—'} / ${city || '—'}`} />
                   <PrevField k="Contact"      v={contactName ? `${contactName} (${designation})` : '—'} />
                   <PrevField k="Email"        v={email || '—'} />
                 </div>
@@ -491,7 +1262,7 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
                     </Field>
                   </div>
                   <div className="avm-grid-3">
-                    <Field label="Vendor Type" required addNew onAdd={() => setQuickAdd('customer_types')} error={fieldErrors.vendorType}>
+                    <Field label="Vendor Type" required addNew onAdd={() => setQuickAdd('vendor_types')} error={fieldErrors.vendorType}>
                       <SelectInput value={vendorType} onChange={(v) => { setVendorType(v); clearFieldError('vendorType'); }} placeholder="Select" options={vendorTypeOpts} />
                     </Field>
                     <Field label="Company Website">
@@ -503,7 +1274,7 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
                   </div>
                   <div className="avm-grid-3">
                     <Field label="Vendor Behaviour" required addNew onAdd={() => setQuickAdd('vendor_behaviour')} error={fieldErrors.vendorBehaviour}>
-                      <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts.length ? behaviourOpts : BEHAVIOURS.map(b => ({ value: b, label: b }))} />
+                      <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts} />
                     </Field>
                     <Field label="Vendor Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
                       <SelectInput value={segment} onChange={(v) => { setSegment(v); clearFieldError('segment'); }} placeholder="Select Segment" options={segmentOpts} />
@@ -535,8 +1306,10 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
                         onChange={(v) => {
                           setState(v);
                           // Auto-fill State Code from the master_state_codes row
-                          // whose state.name matches the chosen state.
-                          const sc = stateCodeRows.find(r => r.state_name === v)?.state_code ?? '';
+                          // whose state_id matches the chosen state. The
+                          // dropdown's `value` is the state's id since the
+                          // switch to ID-based master FK references.
+                          const sc = stateCodeRows.find(r => r.state_id === v)?.state_code ?? '';
                           setStateCode(sc);
                           clearFieldError('state');
                           clearFieldError('stateCode');
@@ -598,58 +1371,116 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
 
               {idTab === 'address' && (
                 <>
-                  {/* ── Additional Contact Persons ── */}
+                  {/* ── Additional Contact Persons ──
+                      The primary KYC contact (captured on the Vendor
+                      Identification sub-tab) is also surfaced here as
+                      the first row so the table reads as "all contacts
+                      we know about". Marked with a "Primary" pill and
+                      not deletable — the user has to go back to the
+                      first sub-tab to change it. */}
                   <SectionCard tone="violet" icon={<i className="ri-contacts-book-line" />} title="Additional Contact Persons" subtitle="Secondary contacts beyond the primary KYC contact" headerAction={
                     <button className="avm-section-add-btn" onClick={openContactPopup}>+ Add More Contact Person</button>
                   }>
-                    {extraContacts.length === 0 ? (
-                      <div className="avm-empty">No contact persons added yet.</div>
-                    ) : (
-                      <div className="table-responsive table-card border rounded">
-                        <table className="table align-middle table-nowrap mb-0">
-                          <thead className="table-light">
-                            <tr>
-                              <th>Sr No</th>
-                              <th>Name</th>
-                              <th>Designation</th>
-                              <th>Phone</th>
-                              <th>Email</th>
-                              <th>WhatsApp</th>
-                              <th>Attachment</th>
-                              <th>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {extraContacts.map((c, idx) => (
-                              <tr key={c.id}>
-                                <td>{idx + 1}</td>
-                                <td><strong>{c.name}</strong></td>
-                                <td>{c.designation}</td>
-                                <td><span className="font-monospace fs-13">{c.phone}</span></td>
-                                <td>{c.email}</td>
-                                <td>
-                                  <span className={`badge ${c.whatsapp ? 'bg-success-subtle text-success' : 'bg-light text-muted'}`} style={{ padding: '4px 10px' }}>
-                                    {c.whatsapp ? '✓ Yes' : '— No'}
-                                  </span>
-                                </td>
-                                <td>
-                                  {c.attachmentName
-                                    ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{c.attachmentName}</span>
-                                    : <span className="text-muted fs-13">—</span>}
-                                </td>
-                                <td>
-                                  <div className="hstack gap-1">
-                                    <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => removeExtraContact(c.id)} title="Remove">
-                                      <i className="ri-delete-bin-line" />
-                                    </button>
-                                  </div>
-                                </td>
+                    {(() => {
+                      // Merge view: primary first (when populated), then extras.
+                      const primaryHasData = !!(contactName.trim() || email.trim() || contactNo.trim());
+                      type Row = {
+                        key: string;
+                        isPrimary: boolean;
+                        contactId?: number;
+                        name: string;
+                        designation: string;
+                        phone: string;
+                        email: string;
+                        whatsapp: boolean;
+                        attachmentName: string;
+                      };
+                      const rows: Row[] = [];
+                      if (primaryHasData) {
+                        rows.push({
+                          key: 'primary',
+                          isPrimary: true,
+                          name: contactName,
+                          designation,
+                          phone: contactNo,
+                          email,
+                          whatsapp: whatsappEnabled,
+                          attachmentName: attachment?.name ?? '',
+                        });
+                      }
+                      extraContacts.forEach(c => rows.push({
+                        key: String(c.id),
+                        isPrimary: false,
+                        contactId: c.id,
+                        name: c.name,
+                        designation: c.designation,
+                        phone: c.phone,
+                        email: c.email,
+                        whatsapp: c.whatsapp,
+                        attachmentName: c.attachmentName,
+                      }));
+
+                      if (rows.length === 0) {
+                        return <div className="avm-empty">Fill in the primary KYC contact on the Vendor Identification tab to see it here, then add more if needed.</div>;
+                      }
+                      return (
+                        <div className="table-responsive table-card border rounded">
+                          <table className="table align-middle table-nowrap mb-0">
+                            <thead className="table-light">
+                              <tr>
+                                <th>Sr No</th>
+                                <th>Name</th>
+                                <th>Designation</th>
+                                <th>Phone</th>
+                                <th>Email</th>
+                                <th>WhatsApp</th>
+                                <th>Attachment</th>
+                                <th>Actions</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                            </thead>
+                            <tbody>
+                              {rows.map((r, idx) => (
+                                <tr key={r.key}>
+                                  <td>{idx + 1}</td>
+                                  <td>
+                                    <strong>{r.name || '—'}</strong>
+                                    {r.isPrimary && (
+                                      <span className="badge bg-primary-subtle text-primary ms-2" style={{ padding: '3px 8px', fontSize: 10 }}>
+                                        Primary
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td>{r.designation || '—'}</td>
+                                  <td><span className="font-monospace fs-13">{r.phone || '—'}</span></td>
+                                  <td>{r.email || '—'}</td>
+                                  <td>
+                                    <span className={`badge ${r.whatsapp ? 'bg-success-subtle text-success' : 'bg-light text-muted'}`} style={{ padding: '4px 10px' }}>
+                                      {r.whatsapp ? '✓ Yes' : '— No'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    {r.attachmentName
+                                      ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.attachmentName}</span>
+                                      : <span className="text-muted fs-13">—</span>}
+                                  </td>
+                                  <td>
+                                    <div className="hstack gap-1">
+                                      {r.isPrimary ? (
+                                        <span className="text-muted fs-13" title="Edit on the Vendor Identification tab">—</span>
+                                      ) : (
+                                        <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} title="Remove">
+                                          <i className="ri-delete-bin-line" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
                   </SectionCard>
                 </>
               )}
@@ -659,7 +1490,9 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
           {/* ─── STEP 2 ─── */}
           {step === 2 && (
             <SectionCard tone="teal" icon={<i className="ri-shield-check-line" />} title="KYC / Due Diligence Details" subtitle="Upload statutory & identity proofs" headerAction={
-              <button className="avm-section-add-btn">+ Add More Due Diligence</button>
+              <button className="avm-section-add-btn" onClick={kycTabAddMeta[kycTab].onClick}>
+                {kycTabAddMeta[kycTab].label}
+              </button>
             }>
               <div className="avm-pill-tabs">
                 <button className={`avm-pill ${kycTab === 'company' ? 'on' : ''}`} onClick={() => setKycTab('company')}>Company Due Diligence Details</button>
@@ -670,64 +1503,19 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
               </div>
 
               {kycTab === 'company' && (
-                <DocTable
-                  banner={{ tone: 'amber', label: 'COMPANY DUE DILIGENCE', sub: 'Licenses, statutory documents, and compliance proofs' }}
-                  countLabel={`${DD_DOCS.length} documents`}
-                  rows={DD_DOCS}
-                  uploaded={uploadedDdCodes}
-                  onUpload={(code) => toggleUpload(code, uploadedDdCodes, setUploadedDdCodes)}
-                  showMandatory
-                />
+                <DdTable rows={ddRows} onRemove={removeDdRow} onAttach={attachFileToDd} />
               )}
               {kycTab === 'owner' && (
-                <DocTable
-                  banner={{ tone: 'amber', label: 'OWNER KYC', sub: 'PAN, Aadhaar, ID & address proofs for directors / proprietors' }}
-                  countLabel={`${OWNER_KYC.length} documents`}
-                  rows={OWNER_KYC}
-                  uploaded={uploadedOwnerCodes}
-                  onUpload={(code) => toggleUpload(code, uploadedOwnerCodes, setUploadedOwnerCodes)}
-                />
+                <OwnerKycTable rows={ownerRows} onRemove={removeOwnerRow} />
               )}
               {kycTab === 'license' && (
-                <DocTable
-                  banner={{ tone: 'amber', label: 'TRADE LICENSE', sub: 'Import-Export licenses, FSSAI, Agmark, Spices Board etc.' }}
-                  countLabel={`${TRADE_LICENSE.length} documents`}
-                  rows={TRADE_LICENSE}
-                  uploaded={uploadedLicenseCodes}
-                  onUpload={(code) => toggleUpload(code, uploadedLicenseCodes, setUploadedLicenseCodes)}
-                />
+                <TradeLicenseTable rows={licenseRows} onRemove={removeLicRow} onAttach={attachFileToLicense} />
               )}
               {kycTab === 'bank' && (
-                <div className="avm-bank-grid">
-                  <Field label="Bank Name" required>
-                    <input className="avm-input" placeholder="HDFC Bank" value={bankName} onChange={e => setBankName(e.target.value)} />
-                  </Field>
-                  <Field label="Account Number" required>
-                    <input className="avm-input" placeholder="50100123456789" value={bankAcc} onChange={e => setBankAcc(e.target.value)} />
-                  </Field>
-                  <Field label="IFSC Code" required>
-                    <input className="avm-input" placeholder="HDFC0000123" value={ifsc} onChange={e => setIfsc(e.target.value)} />
-                  </Field>
-                  <Field label="Branch">
-                    <input className="avm-input" placeholder="Andheri East" value={branch} onChange={e => setBranch(e.target.value)} />
-                  </Field>
-                  <Field label="Cancelled Cheque">
-                    <FileChooser file={null} onPick={() => {}} placeholder="Upload cancelled cheque" />
-                  </Field>
-                </div>
+                <BankTable rows={bankRows} onRemove={removeBankRow} />
               )}
               {kycTab === 'gst' && (
-                <div className="avm-grid-3">
-                  <Field label="GST Number" required>
-                    <input className="avm-input" placeholder="27ABCDE1234F1Z5" value={gstNumber} onChange={e => setGstNumber(e.target.value)} />
-                  </Field>
-                  <Field label="GST Status">
-                    <SelectInput value={gstStatus} onChange={setGstStatus} placeholder="Active" options={['Active', 'Suspended', 'Cancelled']} />
-                  </Field>
-                  <Field label="Last Return Filed">
-                    <input className="avm-input" type="date" />
-                  </Field>
-                </div>
+                <GstScrutinyTable rows={gstRows} onRemove={removeGstRow} />
               )}
             </SectionCard>
           )}
@@ -751,18 +1539,21 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
                     <button className={`avm-sub-pill ${kycSub === 'company' ? 'on' : ''}`} onClick={() => setKycSub('company')}>Company Due Diligence</button>
                     <button className={`avm-sub-pill ${kycSub === 'license' ? 'on' : ''}`} onClick={() => setKycSub('license')}>Trade License</button>
                   </div>
-                  {kycSub === 'owner'   && <DocTable countLabel={`${OWNER_KYC.length} documents`}   rows={OWNER_KYC}     uploaded={uploadedOwnerCodes}   onUpload={(c) => toggleUpload(c, uploadedOwnerCodes, setUploadedOwnerCodes)} />}
-                  {kycSub === 'company' && <DocTable countLabel={`${DD_DOCS.length} documents`}     rows={DD_DOCS}       uploaded={uploadedDdCodes}      onUpload={(c) => toggleUpload(c, uploadedDdCodes, setUploadedDdCodes)} showMandatory />}
-                  {kycSub === 'license' && <DocTable countLabel={`${TRADE_LICENSE.length} documents`} rows={TRADE_LICENSE} uploaded={uploadedLicenseCodes} onUpload={(c) => toggleUpload(c, uploadedLicenseCodes, setUploadedLicenseCodes)} />}
+                  {/* Read-only summary of what was captured in Step 2 — the
+                      Trade Document repository surfaces the same rows so
+                      onboarders can verify everything is in place before
+                      moving to product mapping. */}
+                  {kycSub === 'owner'   && <OwnerKycTable rows={ownerRows}   readOnly />}
+                  {kycSub === 'company' && <DdTable        rows={ddRows}      readOnly />}
+                  {kycSub === 'license' && <TradeLicenseTable rows={licenseRows} readOnly />}
                 </>
               )}
               {tradeTab === 'trade' && (
-                <DocTable
-                  banner={{ tone: 'amber', label: 'TRADE DOCUMENTS', sub: 'Quotations, contracts and signed agreements' }}
-                  countLabel={`${TRADE_DOCS.length} documents`}
-                  rows={TRADE_DOCS}
-                  uploaded={[]}
-                  onUpload={() => {}}
+                <TradeDocsTable
+                  rows={tradeDocRows}
+                  onToggleAll={toggleAllTradeDocSign}
+                  onToggleSign={toggleTradeDocSign}
+                  onSend={sendTradeDoc}
                 />
               )}
             </SectionCard>
@@ -770,32 +1561,10 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
 
           {/* ─── STEP 4 ─── */}
           {step === 4 && (
-            <SectionCard tone="green" icon={<i className="ri-links-line" />} title="Map Products" subtitle="Link this vendor to one or more products with pricing">
-              <div className="avm-product-list">
-                {MOCK_PRODUCTS.map(p => {
-                  const checked = selectedProductCodes.includes(p.code);
-                  return (
-                    <label key={p.code} className={`avm-product-row ${checked ? 'on' : ''}`}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => setSelectedProductCodes(prev => checked ? prev.filter(c => c !== p.code) : [...prev, p.code])}
-                      />
-                      <div className="avm-product-meta">
-                        <div className="avm-product-code">{p.code}</div>
-                        <div className="avm-product-name">{p.name}</div>
-                      </div>
-                      <div className="avm-product-info">
-                        <span className="avm-product-tag">{p.segment}</span>
-                        <span className="avm-product-tag">UOM: {p.uom}</span>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-              {selectedProductCodes.length === 0 && (
-                <div className="avm-empty">Pick at least one product to link this vendor.</div>
-              )}
+            <SectionCard tone="green" icon={<i className="ri-box-3-line" />} title="Products Details" subtitle="Link products to this vendor with purchase price & GST" headerAction={
+              <button className="avm-section-add-btn" onClick={openMapPopup}>+ Add More Products</button>
+            }>
+              <ProductMappingTable rows={productMappings} onRemove={removeMapRow} />
             </SectionCard>
           )}
         </div>
@@ -806,10 +1575,12 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
           <div className="avm-foot-right">
             {step > 1 && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
             {step < 4 ? (
-              <button className="avm-btn-primary" onClick={goNext}>Save &amp; Next →</button>
+              <button className="avm-btn-primary" onClick={goNext} disabled={saving}>
+                {saving ? 'Saving…' : <>Save &amp; Next →</>}
+              </button>
             ) : (
-              <button className="avm-btn-primary" onClick={submitAll}>
-                <i className="ri-check-line" /> Save Vendor
+              <button className="avm-btn-primary" onClick={submitAll} disabled={saving}>
+                <i className="ri-check-line" /> {saving ? 'Saving…' : 'Save Vendor'}
               </button>
             )}
           </div>
@@ -825,46 +1596,107 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
         />
       )}
 
+      {ddPopupOpen && (
+        <DdAddPopup
+          nextCodePreview={nextCode('DD', ddRows)}
+          draft={ddDraft}
+          setDraft={setDdDraft}
+          onClose={() => setDdPopupOpen(false)}
+          onSave={saveDdDraft}
+        />
+      )}
+      {ownerPopupOpen && (
+        <OwnerKycAddPopup
+          nextCodePreview={nextCode('KYC', ownerRows)}
+          draft={ownerDraft}
+          setDraft={setOwnerDraft}
+          onClose={() => setOwnerPopupOpen(false)}
+          onSave={saveOwnerDraft}
+        />
+      )}
+      {licPopupOpen && (
+        <TradeLicenseAddPopup
+          draft={licDraft}
+          setDraft={setLicDraft}
+          typeOpts={licenseTypeOpts}
+          onClose={() => setLicPopupOpen(false)}
+          onSave={saveLicDraft}
+        />
+      )}
+      {bankPopupOpen && (
+        <BankAddPopup
+          draft={bankDraft}
+          setDraft={setBankDraft}
+          onClose={() => setBankPopupOpen(false)}
+          onSave={saveBankDraft}
+        />
+      )}
+      {gstPopupOpen && (
+        <GstScrutinyAddPopup
+          draft={gstDraft}
+          setDraft={setGstDraft}
+          onClose={() => setGstPopupOpen(false)}
+          onSave={saveGstDraft}
+        />
+      )}
+      {mapPopupOpen && (
+        <AddProductMappingPopup
+          draft={mapDraft}
+          setDraft={setMapDraft}
+          productOpts={productOpts}
+          gstPctOpts={gstPctOpts}
+          onProductChange={onMapProductChange}
+          recompute={recomputeMapTotals}
+          onClose={() => setMapPopupOpen(false)}
+          onSave={saveMapDraft}
+        />
+      )}
+
       {quickAdd && (
         <MasterQuickAddPopup
           slug={quickAdd}
           onClose={() => setQuickAdd(null)}
           onSaved={(row) => {
+            // The new master row's id becomes the dropdown's value
+            // (the wizard stores FK ids and resolves labels through
+            // the Opts array on render). Without this, picking the
+            // just-added row would post a stale label to the API
+            // and fail the integer FK validation.
             const id = String(row.id ?? '');
+            if (!id) { setQuickAdd(null); return; }
             switch (quickAdd) {
-              case 'customer_types': {
+              case 'vendor_types': {
                 const label = String(row.name ?? '');
-                if (label) { setVendorTypeOpts(prev => [...prev, { value: label, label }]); setVendorType(label); clearFieldError('vendorType'); }
+                if (label) { setVendorTypeOpts(prev => [...prev, { value: id, label }]); setVendorType(id); clearFieldError('vendorType'); }
                 break;
               }
               case 'risk_levels': {
                 const label = String(row.name ?? '');
-                if (label) { setRiskLevelOpts(prev => [...prev, { value: label, label }]); setRiskLevel(label); clearFieldError('riskLevel'); }
+                if (label) { setRiskLevelOpts(prev => [...prev, { value: id, label }]); setRiskLevel(id); clearFieldError('riskLevel'); }
                 break;
               }
               case 'vendor_behaviour': {
                 const label = String(row.name ?? '');
-                if (label) { setBehaviourOpts(prev => [...prev, { value: label, label }]); setVendorBehaviour(label); clearFieldError('vendorBehaviour'); }
+                if (label) { setBehaviourOpts(prev => [...prev, { value: id, label }]); setVendorBehaviour(id); clearFieldError('vendorBehaviour'); }
                 break;
               }
               case 'segments': {
                 const label = String(row.title ?? '');
-                if (label) { setSegmentOpts(prev => [...prev, { value: label, label }]); setSegment(label); clearFieldError('segment'); }
+                if (label) { setSegmentOpts(prev => [...prev, { value: id, label }]); setSegment(id); clearFieldError('segment'); }
                 break;
               }
               case 'compliance_behaviours': {
                 const label = String(row.name ?? '');
-                if (label) { setComplianceOpts(prev => [...prev, { value: label, label }]); setComplianceBehaviour(label); clearFieldError('complianceBehaviour'); }
+                if (label) { setComplianceOpts(prev => [...prev, { value: id, label }]); setComplianceBehaviour(id); clearFieldError('complianceBehaviour'); }
                 break;
               }
               case 'countries': {
                 const label = String(row.name ?? '');
-                if (label) { setCountryOpts(prev => [...prev, { value: label, label }]); setCountry(label); clearFieldError('country'); }
+                if (label) { setCountryOpts(prev => [...prev, { value: id, label }]); setCountry(id); clearFieldError('country'); }
                 break;
               }
             }
             setQuickAdd(null);
-            void id; // id consumed only for parity with product popup
           }}
         />
       )}
@@ -882,12 +1714,12 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
  * arguments. A forward reference here trips the dev transformer with a
  * 500 even though tsc itself is happy.
  * ────────────────────────────────────────────────────────────────────── */
-type VendorMasterSlug = 'customer_types' | 'risk_levels' | 'vendor_behaviour' | 'segments' | 'compliance_behaviours' | 'countries';
+type VendorMasterSlug = 'vendor_types' | 'risk_levels' | 'vendor_behaviour' | 'segments' | 'compliance_behaviours' | 'countries';
 
 type QaField = { name: string; label: string; type?: 'text' | 'number'; required?: boolean; placeholder?: string };
 
 const QUICK_ADD_SCHEMAS: Record<VendorMasterSlug, { title: string; fields: QaField[] }> = {
-  customer_types:        { title: 'Add Vendor Type',         fields: [{ name: 'name',  label: 'Vendor Type',         required: true, placeholder: 'e.g. Genuine / Verified' }] },
+  vendor_types:          { title: 'Add Vendor Type',         fields: [{ name: 'name',  label: 'Vendor Type',         required: true, placeholder: 'e.g. Genuine / Verified' }] },
   risk_levels:           { title: 'Add Risk Level',          fields: [{ name: 'name',  label: 'Risk Level',          required: true, placeholder: 'e.g. Low, Medium, High' }] },
   vendor_behaviour:      { title: 'Add Vendor Behaviour',    fields: [{ name: 'name',  label: 'Vendor Behaviour',    required: true, placeholder: 'e.g. Excellent / Good' }] },
   segments:              { title: 'Add Segment',             fields: [{ name: 'title', label: 'Segment Name',        required: true, placeholder: 'e.g. Dry Fruits' }] },
@@ -1187,7 +2019,418 @@ function PrevField(props: { k: string; v: string }) {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * Doc table — used by KYC step (Company DD, Owner KYC, Trade License)
+ * Step 2 row tables — one per KYC tab. Each table renders the user-added
+ * row list, an empty state, and per-row actions (delete + optional file
+ * attach for mandatory seed rows). All five are intentionally similar in
+ * shape so the styling stays consistent with the rest of the modal.
+ * ────────────────────────────────────────────────────────────────────── */
+function EmptyTable(props: { label: string }) {
+  return <div className="avm-empty">{props.label}</div>;
+}
+
+function DdTable(props: {
+  rows: DueDiligenceRow[];
+  onRemove?: (id: string) => void;
+  onAttach?: (id: string, file: File) => void;
+  readOnly?: boolean;
+}) {
+  if (props.rows.length === 0) return <EmptyTable label="No due-diligence documents added yet. Use “+ Add More Due Diligence” to begin." />;
+  return (
+    <div className="table-responsive table-card border rounded">
+      <table className="table align-middle table-nowrap mb-0">
+        <thead className="table-light">
+          <tr>
+            <th>SR NO</th>
+            <th>AUTO CODE</th>
+            <th>DD DOCUMENT NAME</th>
+            <th>ISSUING AUTHORITY</th>
+            <th>EXPIRY</th>
+            <th>STATUS</th>
+            <th>FILE</th>
+            {!props.readOnly && <th>ACTIONS</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {props.rows.map((r, i) => (
+            <tr key={r.id}>
+              <td>{String(i + 1).padStart(2, '0')}</td>
+              <td><span className="badge bg-light text-warning-emphasis border" style={{ fontFamily: 'monospace', padding: '4px 10px' }}>{r.code}</span></td>
+              <td><strong>{r.documentName}</strong></td>
+              <td>{r.issuingAuthority}</td>
+              <td>{r.expiry || 'N/A'}</td>
+              <td>
+                <span className={`badge ${r.mandatory ? 'bg-success-subtle text-success' : 'bg-light text-muted'} border`} style={{ padding: '4px 10px' }}>
+                  {r.mandatory ? '✓ Mandatory' : 'Optional'}
+                </span>
+              </td>
+              <td>
+                {r.fileName
+                  ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.fileName}</span>
+                  : <span className="text-muted fs-13">—</span>}
+              </td>
+              {!props.readOnly && (
+                <td>
+                  <div className="hstack gap-1">
+                    {/* Mandatory seed rows let the user attach a file inline
+                        instead of going through the Add modal, since their
+                        row metadata is already populated. */}
+                    {props.onAttach && (
+                      <label className="btn btn-sm btn-soft-primary mb-0" title="Upload">
+                        <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
+                        <input type="file" hidden onChange={e => {
+                          const f = e.target.files?.[0];
+                          if (f && props.onAttach) props.onAttach(r.id, f);
+                        }} />
+                      </label>
+                    )}
+                    {props.onRemove && !r.mandatory && (
+                      <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} title="Remove">
+                        <i className="ri-delete-bin-line" />
+                      </button>
+                    )}
+                  </div>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function OwnerKycTable(props: {
+  rows: OwnerKycRow[];
+  onRemove?: (id: string) => void;
+  readOnly?: boolean;
+}) {
+  if (props.rows.length === 0) return <EmptyTable label="No owner-KYC documents added yet. Use “+ Add Owner KYC” to begin." />;
+  return (
+    <div className="table-responsive table-card border rounded">
+      <table className="table align-middle table-nowrap mb-0">
+        <thead className="table-light">
+          <tr>
+            <th>SR NO</th>
+            <th>AUTO CODE</th>
+            <th>KYC DOCUMENT NAME</th>
+            <th>ISSUING AUTHORITY</th>
+            <th>DOCUMENT NO</th>
+            <th>ISSUE DATE</th>
+            <th>EXPIRY</th>
+            <th>STATUS</th>
+            <th>FILE</th>
+            {!props.readOnly && <th>ACTIONS</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {props.rows.map((r, i) => (
+            <tr key={r.id}>
+              <td>{String(i + 1).padStart(2, '0')}</td>
+              <td><span className="badge bg-light text-warning-emphasis border" style={{ fontFamily: 'monospace', padding: '4px 10px' }}>{r.code}</span></td>
+              <td><strong>{r.documentName}</strong></td>
+              <td>{r.issuingAuthority}</td>
+              <td><span className="font-monospace fs-13">{r.documentNumber || '—'}</span></td>
+              <td>{r.issueDate || '—'}</td>
+              <td>{r.expiry || 'N/A'}</td>
+              <td>
+                <span className={`badge ${r.status === 'Active' ? 'bg-success-subtle text-success' : 'bg-light text-muted'} border`} style={{ padding: '4px 10px' }}>
+                  {r.status}
+                </span>
+              </td>
+              <td>
+                {r.fileName
+                  ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.fileName}</span>
+                  : <span className="text-muted fs-13">—</span>}
+              </td>
+              {!props.readOnly && (
+                <td>
+                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} title="Remove">
+                    <i className="ri-delete-bin-line" />
+                  </button>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TradeLicenseTable(props: {
+  rows: TradeLicenseRow[];
+  onRemove?: (id: string) => void;
+  onAttach?: (id: string, file: File) => void;
+  readOnly?: boolean;
+}) {
+  if (props.rows.length === 0) return <EmptyTable label="No trade licenses added yet. Use “+ Add Trade License” to begin." />;
+  return (
+    <div className="table-responsive table-card border rounded">
+      <table className="table align-middle table-nowrap mb-0">
+        <thead className="table-light">
+          <tr>
+            <th>SR NO</th>
+            <th>AUTO CODE</th>
+            <th>LICENSE TYPE</th>
+            <th>LICENSE NO</th>
+            <th>ISSUING AUTHORITY</th>
+            <th>ISSUE</th>
+            <th>EXPIRY</th>
+            <th>FILE</th>
+            {!props.readOnly && <th>ACTIONS</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {props.rows.map((r, i) => {
+            const isSeed = r.id.startsWith('seed-');
+            return (
+              <tr key={r.id}>
+                <td>{String(i + 1).padStart(2, '0')}</td>
+                <td><span className="badge bg-light text-warning-emphasis border" style={{ fontFamily: 'monospace', padding: '4px 10px' }}>{r.code}</span></td>
+                <td><strong>{r.licenseType}</strong></td>
+                <td><span className="font-monospace fs-13">{r.licenseNumber || '—'}</span></td>
+                <td>{r.issuingAuthority}</td>
+                <td>{r.issueDate || '—'}</td>
+                <td>{r.expiryDate || '—'}</td>
+                <td>
+                  {r.fileName
+                    ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.fileName}</span>
+                    : <span className="text-muted fs-13">—</span>}
+                </td>
+                {!props.readOnly && (
+                  <td>
+                    <div className="hstack gap-1">
+                      {props.onAttach && (
+                        <label className="btn btn-sm btn-soft-primary mb-0" title="Upload">
+                          <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
+                          <input type="file" hidden onChange={e => {
+                            const f = e.target.files?.[0];
+                            if (f && props.onAttach) props.onAttach(r.id, f);
+                          }} />
+                        </label>
+                      )}
+                      {props.onRemove && !isSeed && (
+                        <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} title="Remove">
+                          <i className="ri-delete-bin-line" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void }) {
+  if (props.rows.length === 0) return <EmptyTable label="No bank records added yet." />;
+  return (
+    <div className="table-responsive table-card border rounded">
+      <table className="table align-middle table-nowrap mb-0">
+        <thead className="table-light">
+          <tr>
+            <th>SR NO</th>
+            <th>BANK NAME</th>
+            <th>BRANCH</th>
+            <th>ACCOUNT NO</th>
+            <th>IFSC CODE</th>
+            <th>BRANCH ADDRESS</th>
+            <th>PROOF ATTACHMENT</th>
+            <th>ACTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.rows.map((r, i) => (
+            <tr key={r.id}>
+              <td>{String(i + 1).padStart(2, '0')}</td>
+              <td><strong>{r.bankName}</strong></td>
+              <td>{r.branchName}</td>
+              <td><span className="font-monospace fs-13">{r.accountNumber}</span></td>
+              <td><span className="font-monospace fs-13">{r.ifsc}</span></td>
+              <td>{r.branchAddress || '—'}</td>
+              <td>
+                {r.chequeFileName
+                  ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.chequeFileName}</span>
+                  : <span className="text-muted fs-13">—</span>}
+              </td>
+              <td>
+                <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} title="Remove">
+                  <i className="ri-delete-bin-line" />
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function GstScrutinyTable(props: { rows: GstScrutinyRow[]; onRemove?: (id: string) => void }) {
+  if (props.rows.length === 0) return <EmptyTable label="No GST scrutiny entries added yet." />;
+  return (
+    <div className="table-responsive table-card border rounded">
+      <table className="table align-middle table-nowrap mb-0">
+        <thead className="table-light">
+          <tr>
+            <th>SR NO</th>
+            <th>GST NUMBER</th>
+            <th>STATUS</th>
+            <th>LAST FILING</th>
+            <th>PREV 2A INVOICE</th>
+            <th>RED FLAGS</th>
+            <th>ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.rows.map((r, i) => (
+            <tr key={r.id}>
+              <td>{String(i + 1).padStart(2, '0')}</td>
+              <td><span className="font-monospace fs-13">{r.gstNumber}</span></td>
+              <td>
+                <span className={`badge ${r.status === 'Active' ? 'bg-success-subtle text-success' : (r.status === 'Suspended' ? 'bg-warning-subtle text-warning' : 'bg-danger-subtle text-danger')} border`} style={{ padding: '4px 10px' }}>
+                  {r.status}
+                </span>
+              </td>
+              <td>{r.lastFilingDate || '—'}</td>
+              <td>{r.prevNonGst2aInvoice || '—'}</td>
+              <td>{r.redFlags || '—'}</td>
+              <td>
+                <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} title="Remove">
+                  <i className="ri-delete-bin-line" />
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Step 3 — Trade Documents table. Fixed list of agreements with a
+ * per-row send-for-signature checkbox + Send button, plus document
+ * status pill. Header checkbox bulk-toggles every row's checkbox.
+ * ────────────────────────────────────────────────────────────────────── */
+function TradeDocsTable(props: {
+  rows: TradeDocRow[];
+  onToggleAll: () => void;
+  onToggleSign: (code: string) => void;
+  onSend: (code: string) => void;
+}) {
+  const allChecked = props.rows.length > 0 && props.rows.every(r => r.sendForSignature);
+  return (
+    <div className="table-responsive table-card border rounded">
+      <table className="table align-middle table-nowrap mb-0">
+        <thead className="table-light">
+          <tr>
+            <th>SR NO</th>
+            <th>DOCUMENT NAME</th>
+            <th style={{ minWidth: 260 }}>
+              <label className="d-inline-flex align-items-center gap-2 mb-0">
+                <input type="checkbox" checked={allChecked} onChange={props.onToggleAll} />
+                SEND DOCUMENT FOR SIGNATURE
+              </label>
+            </th>
+            <th>DOCUMENT STATUS</th>
+            <th>ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.rows.map((r, i) => (
+            <tr key={r.code}>
+              <td>{String(i + 1)}</td>
+              <td><strong>{r.name}</strong></td>
+              <td>
+                <div className="d-inline-flex align-items-center gap-2">
+                  <input type="checkbox" checked={r.sendForSignature} onChange={() => props.onToggleSign(r.code)} />
+                  <button type="button" className="avm-btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => props.onSend(r.code)} disabled={!r.sendForSignature && r.status === 'N/A'}>
+                    <i className="ri-send-plane-line me-1" /> Send
+                  </button>
+                </div>
+              </td>
+              <td>
+                <span className={`badge ${r.status === 'Sent' ? 'bg-success-subtle text-success' : (r.status === 'Signed' ? 'bg-primary-subtle text-primary' : 'bg-light text-muted')} border`} style={{ padding: '4px 10px' }}>
+                  {r.status}
+                </span>
+              </td>
+              <td>
+                <div className="hstack gap-1">
+                  <button type="button" className="btn btn-sm btn-soft-secondary" title="View" disabled={!r.attachmentName}>
+                    <i className="ri-eye-line" />
+                  </button>
+                  <button type="button" className="btn btn-sm btn-soft-secondary" title="Download" disabled={!r.attachmentName}>
+                    <i className="ri-download-2-line" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Step 4 — Product mapping table. Lists products linked to this vendor
+ * with purchase price + GST + total. Empty state until "+ Add More
+ * Products" is clicked.
+ * ────────────────────────────────────────────────────────────────────── */
+function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void }) {
+  if (props.rows.length === 0) return <EmptyTable label="No products mapped yet. Use “+ Add More Products” to link this vendor to one or more products." />;
+  return (
+    <div className="table-responsive table-card border rounded">
+      <table className="table align-middle table-nowrap mb-0">
+        <thead className="table-light">
+          <tr>
+            <th>SR NO</th>
+            <th>PRODUCT CODE</th>
+            <th>PRODUCT NAME</th>
+            <th>HSN / SAC</th>
+            <th>SEGMENT</th>
+            <th>BATCH / LOT</th>
+            <th>PRICE (₹)</th>
+            <th>GST %</th>
+            <th>GST AMT (₹)</th>
+            <th>TOTAL (₹)</th>
+            <th>ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.rows.map((r, i) => (
+            <tr key={r.id}>
+              <td>{String(i + 1).padStart(2, '0')}</td>
+              <td><span className="badge bg-light text-warning-emphasis border" style={{ fontFamily: 'monospace', padding: '4px 10px' }}>{r.productCode}</span></td>
+              <td><strong>{r.productName}</strong></td>
+              <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
+              <td>{r.segment || '—'}</td>
+              <td>{r.batchSerialLot || '—'}</td>
+              <td className="text-end font-monospace fs-13">{r.purchasePrice.toFixed(2)}</td>
+              <td className="text-end font-monospace fs-13">{r.gstPercentage ? `${r.gstPercentage}%` : '—'}</td>
+              <td className="text-end font-monospace fs-13">{r.gstAmount.toFixed(2)}</td>
+              <td className="text-end font-monospace fs-13"><strong>{r.totalAmount.toFixed(2)}</strong></td>
+              <td>
+                <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove(r.id)} title="Remove">
+                  <i className="ri-delete-bin-line" />
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Doc table — used by Step 3's Trade Documents sub-tab (legacy upload-toggle
+ * UX for the read-only trade-docs repository).
  * ────────────────────────────────────────────────────────────────────── */
 function DocTable(props: {
   banner?: { tone: 'amber' | 'teal' | 'violet'; label: string; sub: string };
@@ -1265,6 +2508,299 @@ function DocTable(props: {
         </table>
       </div>
     </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Step 2 popups — one per KYC tab. Each one captures a single row's
+ * draft, validates on save, and hands the row up to the parent. All
+ * five share the same backdrop / shell styling as ContactAddPopup so
+ * focus + escape behaviour stays consistent.
+ * ────────────────────────────────────────────────────────────────────── */
+type Setter<T> = (v: T) => void;
+
+function PopupShell(props: {
+  title: string;
+  icon: string;
+  subtitle?: string;
+  onClose: () => void;
+  onSave: () => void;
+  children: ReactNode;
+}) {
+  return createPortal((
+    <div className="avm-cp-backdrop" onClick={props.onClose}>
+      <div className="avm-cp-popup" onClick={e => e.stopPropagation()}>
+        <div className="avm-cp-head">
+          <div className="avm-cp-title">
+            <i className={props.icon} /> {props.title}
+            {props.subtitle && <div className="avm-cp-subtitle">{props.subtitle}</div>}
+          </div>
+          <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+        <div className="avm-cp-body">{props.children}</div>
+        <div className="avm-cp-foot">
+          <button className="avm-btn-ghost" onClick={props.onClose}>Cancel</button>
+          <button className="avm-btn-primary" onClick={props.onSave}>
+            <i className="ri-save-line" /> Save
+          </button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
+}
+
+type DdAddPopupDraft = { documentName: string; issuingAuthority: string; expiry: string; mandatory: boolean; file: File | null; fileName: string };
+function DdAddPopup(props: {
+  nextCodePreview: string;
+  draft: DdAddPopupDraft;
+  setDraft: Setter<DdAddPopupDraft>;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const { draft, setDraft, onClose, onSave, nextCodePreview } = props;
+  const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  return (
+    <PopupShell title="Add Due Diligence Document" icon="ri-file-text-line" onClose={onClose} onSave={onSave}>
+      <div className="avm-grid-2">
+        <Field label="Auto Code">
+          <input className="avm-input" value={nextCodePreview} readOnly style={{ color: '#d97706', fontFamily: 'monospace', fontWeight: 600 }} />
+        </Field>
+        <Field label="DD Document Name" required>
+          <input className="avm-input" placeholder="e.g. Memorandum of Association" value={draft.documentName} onChange={e => set('documentName', e.target.value)} />
+        </Field>
+      </div>
+      <div className="avm-grid-2">
+        <Field label="Issuing Authority" required>
+          <input className="avm-input" placeholder="e.g. Registrar of Companies (ROC)" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
+        </Field>
+        <Field label="Expiry">
+          <input className="avm-input" placeholder="MM/YYYY or N/A" value={draft.expiry} onChange={e => set('expiry', e.target.value)} />
+        </Field>
+      </div>
+      <div className="avm-grid-2">
+        <Field label="Status">
+          <SelectInput value={draft.mandatory ? 'Mandatory' : 'Optional'} onChange={v => set('mandatory', v === 'Mandatory')} options={['Mandatory', 'Optional']} />
+        </Field>
+        <Field label="Upload Document">
+          <FileChooser file={draft.file} onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '' })} placeholder="Upload DD document (PDF / Image)" />
+        </Field>
+      </div>
+    </PopupShell>
+  );
+}
+
+type OwnerKycAddPopupDraft = { documentName: string; issuingAuthority: string; documentNumber: string; issueDate: string; expiry: string; status: 'Active' | 'Inactive'; file: File | null; fileName: string };
+function OwnerKycAddPopup(props: {
+  nextCodePreview: string;
+  draft: OwnerKycAddPopupDraft;
+  setDraft: Setter<OwnerKycAddPopupDraft>;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const { draft, setDraft, onClose, onSave, nextCodePreview } = props;
+  const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  return (
+    <PopupShell title="Add Owner KYC Document" icon="ri-user-add-line" subtitle="Upload an identity, address, or compliance document for the owner" onClose={onClose} onSave={onSave}>
+      <div className="avm-grid-2">
+        <Field label="Auto Code">
+          <input className="avm-input" value={nextCodePreview} readOnly style={{ color: '#d97706', fontFamily: 'monospace', fontWeight: 600 }} />
+        </Field>
+        <Field label="KYC Document Name" required>
+          <input className="avm-input" placeholder="e.g. PAN Card, Aadhaar Card, Passport" value={draft.documentName} onChange={e => set('documentName', e.target.value)} />
+        </Field>
+      </div>
+      <div className="avm-grid-2">
+        <Field label="Issuing Authority" required>
+          <input className="avm-input" placeholder="e.g. Income Tax Department" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
+        </Field>
+        <Field label="Document Number">
+          <input className="avm-input" placeholder="e.g. AABCT1234F" value={draft.documentNumber} onChange={e => set('documentNumber', e.target.value)} />
+        </Field>
+      </div>
+      <div className="avm-grid-3">
+        <Field label="Issue Date">
+          <input className="avm-input" type="date" value={draft.issueDate} onChange={e => set('issueDate', e.target.value)} />
+        </Field>
+        <Field label="Expiry">
+          <input className="avm-input" placeholder="MM/YYYY or N/A" value={draft.expiry} onChange={e => set('expiry', e.target.value)} />
+        </Field>
+        <Field label="Status">
+          <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Inactive')} options={['Active', 'Inactive']} />
+        </Field>
+      </div>
+      <Field label="Upload Document" required>
+        <FileChooser file={draft.file} onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '' })} placeholder="Upload KYC Document (PDF / Image)" />
+      </Field>
+    </PopupShell>
+  );
+}
+
+type TradeLicenseAddPopupDraft = { licenseType: string; licenseNumber: string; issuingAuthority: string; issueDate: string; expiryDate: string; file: File | null; fileName: string };
+function TradeLicenseAddPopup(props: {
+  draft: TradeLicenseAddPopupDraft;
+  setDraft: Setter<TradeLicenseAddPopupDraft>;
+  typeOpts: Array<{ value: string; label: string }>;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const { draft, setDraft, onClose, onSave, typeOpts } = props;
+  const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  return (
+    <PopupShell title="Add Trade License" icon="ri-file-list-3-line" subtitle="Register a regulatory license, certification, or trade authorization" onClose={onClose} onSave={onSave}>
+      <div className="avm-grid-2">
+        <Field label="License Type" required>
+          {typeOpts.length > 0
+            ? <SelectInput value={draft.licenseType} onChange={v => set('licenseType', v)} placeholder="Select License Type" options={typeOpts} />
+            : <input className="avm-input" placeholder="e.g. FSSAI License" value={draft.licenseType} onChange={e => set('licenseType', e.target.value)} />}
+        </Field>
+        <Field label="License Number" required>
+          <input className="avm-input" placeholder="e.g. 10019011000123" value={draft.licenseNumber} onChange={e => set('licenseNumber', e.target.value)} />
+        </Field>
+      </div>
+      <div className="avm-grid-3">
+        <Field label="Issuing Authority" required>
+          <input className="avm-input" placeholder="e.g. FSSAI, Govt. of India" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
+        </Field>
+        <Field label="Issue Date" required>
+          <input className="avm-input" type="date" value={draft.issueDate} onChange={e => set('issueDate', e.target.value)} />
+        </Field>
+        <Field label="Expiry Date" required>
+          <input className="avm-input" type="date" value={draft.expiryDate} onChange={e => set('expiryDate', e.target.value)} />
+        </Field>
+      </div>
+      <Field label="License Document" required>
+        <FileChooser file={draft.file} onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '' })} placeholder="Upload License Document (PDF / Image)" />
+      </Field>
+    </PopupShell>
+  );
+}
+
+type BankAddPopupDraft = { bankName: string; branchName: string; accountNumber: string; ifsc: string; branchAddress: string; chequeFile: File | null; chequeFileName: string };
+function BankAddPopup(props: {
+  draft: BankAddPopupDraft;
+  setDraft: Setter<BankAddPopupDraft>;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const { draft, setDraft, onClose, onSave } = props;
+  const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  return (
+    <PopupShell title="Add Bank Details" icon="ri-bank-line" onClose={onClose} onSave={onSave}>
+      <div className="avm-grid-4">
+        <Field label="Bank Name" required>
+          <input className="avm-input" placeholder="Enter bank name" value={draft.bankName} onChange={e => set('bankName', e.target.value)} />
+        </Field>
+        <Field label="Branch" required>
+          <input className="avm-input" placeholder="Enter branch" value={draft.branchName} onChange={e => set('branchName', e.target.value)} />
+        </Field>
+        <Field label="Account Number" required>
+          <input className="avm-input" placeholder="Enter account number" value={draft.accountNumber} onChange={e => set('accountNumber', e.target.value)} />
+        </Field>
+        <Field label="IFSC Code" required>
+          <input className="avm-input" placeholder="Enter IFSC code" value={draft.ifsc} onChange={e => set('ifsc', e.target.value.toUpperCase())} />
+        </Field>
+      </div>
+      <div className="avm-grid-2">
+        <Field label="Branch Address">
+          <input className="avm-input" placeholder="Enter branch address" value={draft.branchAddress} onChange={e => set('branchAddress', e.target.value)} />
+        </Field>
+        <Field label="Cancelled Cheque" required>
+          <FileChooser file={draft.chequeFile} onPick={f => setDraft({ ...draft, chequeFile: f, chequeFileName: f?.name ?? '' })} placeholder="Upload Cancelled Cheque" />
+        </Field>
+      </div>
+    </PopupShell>
+  );
+}
+
+type GstScrutinyAddPopupDraft = { gstNumber: string; status: 'Active' | 'Suspended' | 'Cancelled'; lastFilingDate: string; prevNonGst2aInvoice: string; redFlags: string };
+function GstScrutinyAddPopup(props: {
+  draft: GstScrutinyAddPopupDraft;
+  setDraft: Setter<GstScrutinyAddPopupDraft>;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const { draft, setDraft, onClose, onSave } = props;
+  const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  return (
+    <PopupShell title="Add GST Scrutiny" icon="ri-shield-check-line" onClose={onClose} onSave={onSave}>
+      <div className="avm-grid-3">
+        <Field label="GST Number" required>
+          <input className="avm-input" placeholder="Enter GST number" value={draft.gstNumber} onChange={e => set('gstNumber', e.target.value.toUpperCase())} />
+        </Field>
+        <Field label="GST Status" required>
+          <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Suspended' | 'Cancelled')} placeholder="Select GST status" options={['Active', 'Suspended', 'Cancelled']} />
+        </Field>
+        <Field label="GST Last Filing Date" required>
+          <input className="avm-input" type="date" value={draft.lastFilingDate} onChange={e => set('lastFilingDate', e.target.value)} />
+        </Field>
+      </div>
+      <div className="avm-grid-2">
+        <Field label="Previous Non-GST 2A Reflected Invoice">
+          <input className="avm-input" placeholder="Enter invoice reference (optional)" value={draft.prevNonGst2aInvoice} onChange={e => set('prevNonGst2aInvoice', e.target.value)} />
+        </Field>
+        <Field label="Red Flags">
+          <input className="avm-input" placeholder="Enter red flags (optional)" value={draft.redFlags} onChange={e => set('redFlags', e.target.value)} />
+        </Field>
+      </div>
+    </PopupShell>
+  );
+}
+
+type ProductMappingDraft = { productId: string; productCode: string; productName: string; hsnSacCode: string; segment: string; batchSerialLot: string; purchasePrice: string; gstPercentage: string; gstAmount: string; totalAmount: string };
+function AddProductMappingPopup(props: {
+  draft: ProductMappingDraft;
+  setDraft: Setter<ProductMappingDraft>;
+  productOpts: Array<{ value: string; label: string }>;
+  gstPctOpts: Array<{ value: string; label: string }>;
+  onProductChange: (productIdStr: string) => void;
+  recompute: (d: ProductMappingDraft) => ProductMappingDraft;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const { draft, setDraft, productOpts, gstPctOpts, onProductChange, recompute, onClose, onSave } = props;
+  const set = <K extends keyof ProductMappingDraft>(k: K, v: ProductMappingDraft[K]) => setDraft({ ...draft, [k]: v });
+  return (
+    <PopupShell title="Add Product Mapping" icon="ri-box-3-line" subtitle="Link a product with purchase price & GST for this vendor" onClose={onClose} onSave={onSave}>
+      <div className="avm-grid-2">
+        <Field label="Product Name" required>
+          {productOpts.length > 0
+            ? <SelectInput value={draft.productId} onChange={onProductChange} placeholder="Select Product Name" options={productOpts} />
+            : <input className="avm-input" placeholder="Loading products…" value={draft.productName} onChange={e => set('productName', e.target.value)} />}
+        </Field>
+        <Field label="Product Code">
+          <input className="avm-input" value={draft.productCode} readOnly placeholder="Auto-fills from product" />
+        </Field>
+      </div>
+      <div className="avm-grid-3">
+        <Field label="HSN / SAC Code">
+          <input className="avm-input" value={draft.hsnSacCode} readOnly placeholder="—" />
+        </Field>
+        <Field label="Segment">
+          <input className="avm-input" value={draft.segment} readOnly placeholder="—" />
+        </Field>
+        <Field label="Batch/Serial/Lot Number">
+          <input className="avm-input" placeholder="—" value={draft.batchSerialLot} onChange={e => set('batchSerialLot', e.target.value)} />
+        </Field>
+      </div>
+      <div className="avm-grid-3">
+        <Field label="Purchase Price (₹)" required>
+          <input className="avm-input" type="number" min="0" step="0.01" placeholder="Enter purchase price" value={draft.purchasePrice} onChange={e => setDraft(recompute({ ...draft, purchasePrice: e.target.value }))} />
+        </Field>
+        <Field label="GST %">
+          {gstPctOpts.length > 0
+            ? <SelectInput value={draft.gstPercentage} onChange={v => setDraft(recompute({ ...draft, gstPercentage: v }))} placeholder="Select" options={gstPctOpts} />
+            : <input className="avm-input" type="number" min="0" step="0.01" placeholder="e.g. 18" value={draft.gstPercentage} onChange={e => setDraft(recompute({ ...draft, gstPercentage: e.target.value }))} />}
+        </Field>
+        <Field label="GST Amount (₹)">
+          <input className="avm-input" value={draft.gstAmount} readOnly placeholder="Auto-computed" />
+        </Field>
+      </div>
+      <Field label="Total Amount (₹)">
+        <input className="avm-input" value={draft.totalAmount} readOnly placeholder="Auto-computed" />
+      </Field>
+    </PopupShell>
   );
 }
 

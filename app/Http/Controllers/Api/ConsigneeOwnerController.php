@@ -104,14 +104,20 @@ class ConsigneeOwnerController extends Controller
             'designation'         => $o->designation,
             'official_email'      => $o->official_email,
             'phone_number'        => $o->phone_number,
+            // URL fields use the project-wide file_url() helper
+            // (app/helpers.php) — the same one HR Employees and
+            // Onboarding use for their attachments. It handles legacy
+            // path prefixes (storage/, public/), falls back to a
+            // constructed URL when the disk has no `url` config, and
+            // collapses double slashes.
             'id_proof_path'       => $o->id_proof_path,
-            'id_proof_url'        => $o->id_proof_path      ? Storage::disk('public')->url($o->id_proof_path)      : null,
+            'id_proof_url'        => file_url($o->id_proof_path),
             'id_proof_name'       => $o->id_proof_path      ? basename($o->id_proof_path)      : null,
             'address_proof_path'  => $o->address_proof_path,
-            'address_proof_url'   => $o->address_proof_path ? Storage::disk('public')->url($o->address_proof_path) : null,
+            'address_proof_url'   => file_url($o->address_proof_path),
             'address_proof_name'  => $o->address_proof_path ? basename($o->address_proof_path) : null,
             'photograph_path'     => $o->photograph_path,
-            'photograph_url'      => $o->photograph_path    ? Storage::disk('public')->url($o->photograph_path)    : null,
+            'photograph_url'      => file_url($o->photograph_path),
             'photograph_name'     => $o->photograph_path    ? basename($o->photograph_path)    : null,
             'status'              => $o->status,
             'created_at'          => $o->created_at?->toDateTimeString(),
@@ -126,9 +132,22 @@ class ConsigneeOwnerController extends Controller
             'official_email'  => 'nullable|email|max:255',
             'phone_number'    => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
             'status'          => 'nullable|in:Active,Inactive',
-            'id_proof'        => 'sometimes|file|max:10240',
-            'address_proof'   => 'sometimes|file|max:10240',
-            'photograph'      => 'sometimes|file|max:10240',
+            // File slots — 10 MB cap, restricted to safe document types.
+            // ID / Address proof allow PDF + Office docs alongside images.
+            // Photograph is image-only since it's a picture of a person.
+            // Server-side enforcement so executables / scripts / archives
+            // (.php, .exe, .zip, .txt) are rejected even if the UI is
+            // bypassed.
+            'id_proof'        => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:10240',
+            'address_proof'   => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:10240',
+            'photograph'      => 'sometimes|file|mimes:jpg,jpeg,png|max:10240',
+        ], [
+            'id_proof.mimes'      => 'ID Proof must be a JPG, JPEG, PNG, PDF, DOC or DOCX file.',
+            'id_proof.max'        => 'ID Proof must not exceed 10 MB.',
+            'address_proof.mimes' => 'Address Proof must be a JPG, JPEG, PNG, PDF, DOC or DOCX file.',
+            'address_proof.max'   => 'Address Proof must not exceed 10 MB.',
+            'photograph.mimes'    => 'Photograph must be a JPG, JPEG or PNG image.',
+            'photograph.max'      => 'Photograph must not exceed 10 MB.',
         ]);
     }
 

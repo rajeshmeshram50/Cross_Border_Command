@@ -4,6 +4,7 @@ import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Customer — 3-stage modal
@@ -132,6 +133,29 @@ const TL_DOCS: KycDocRow[] = [
   { code: 'TL-007', name: 'ISO Certification',             authority: 'Certification Body',       expiry: '11/2027', status: 'optional'  },
   { code: 'TL-008', name: 'Pollution Control Certificate', authority: 'Pollution Control Board',  expiry: '07/2026', status: 'mandatory' },
 ];
+
+/* ─── File-upload guard ─────
+ * Browser `accept=` is only a hint — users can switch the file picker
+ * to "All files" and select a .php / .exe / .zip anyway. We re-check
+ * the chosen file's extension + size here and reject + alert if it
+ * doesn't match. The server enforces the same list
+ * (mimes:jpg,jpeg,png,pdf,doc,docx) so a manipulated request can't
+ * slip through either. */
+const ALLOWED_DOC_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
+const ALLOWED_PHOTO_EXTS = ['jpg', 'jpeg', 'png'];
+const MAX_UPLOAD_MB = 10;
+type FileKind = 'doc' | 'photo';
+function validateUpload(file: File, kind: FileKind = 'doc'): string | null {
+  const allowed = kind === 'photo' ? ALLOWED_PHOTO_EXTS : ALLOWED_DOC_EXTS;
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (!allowed.includes(ext)) {
+    return `Only ${allowed.map(e => e.toUpperCase()).join(', ')} files are allowed (got .${ext}).`;
+  }
+  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+    return `File must not exceed ${MAX_UPLOAD_MB} MB.`;
+  }
+  return null;
+}
 
 const KYC_PER_PAGE = 6;
 const KYC_TAB_META: Record<KycSubTab, { title: string; sub: string; nameCol: string; placeholder: string; data: typeof DD_DOCS; showAdd: boolean; addLabel?: string }> = {
@@ -279,8 +303,16 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   };
   type KycOwnerRowApi = {
     id: number; owner_name: string; designation?: string | null; official_email?: string | null;
-    phone_number?: string | null; id_proof_url?: string | null; address_proof_url?: string | null;
-    photograph_url?: string | null; status?: string;
+    phone_number?: string | null;
+    /* Both *_path and *_url carried side-by-side. The backend's
+     * Storage::url() can throw on misconfigured public disks
+     * (FilesystemAdapter raises "This driver does not support
+     * retrieving URLs"). When that happens, *_url comes back null
+     * and the frontend falls back to resolveFileUrl(*_path). */
+    id_proof_path?: string | null;       id_proof_url?: string | null;
+    address_proof_path?: string | null;  address_proof_url?: string | null;
+    photograph_path?: string | null;     photograph_url?: string | null;
+    status?: string;
   };
   const [kycDocs,   setKycDocs]   = useState<KycDocRowApi[]>([]);
   const [kycOwners, setKycOwners] = useState<KycOwnerRowApi[]>([]);
@@ -1187,15 +1219,16 @@ function Stage1AdditionalLocations({ locations, onAdd, onEdit, onDel }:
                 <tr className="acm-empty-row"><td colSpan={9}>No additional locations yet. Click <strong>+ Add More Location</strong> to capture another branch, warehouse, or shipping address with its contact person.</td></tr>
               ) : locations.map((l, i) => {
                 const place = [l.city, l.state, l.country].filter(Boolean).join(' • ');
+                const contact = l.cpName + (l.cpDesignation ? ` (${l.cpDesignation})` : '');
                 return (
                   <tr key={l.id}>
                     <td>{i + 1}</td>
                     <td>{l.type}</td>
-                    <td title={l.line}>{l.line.length > 36 ? l.line.slice(0, 33) + '…' : l.line}</td>
-                    <td>{place}</td>
-                    <td>{l.cpName}{l.cpDesignation ? <span style={{ color:'#6b7280', fontWeight:500 }}> ({l.cpDesignation})</span> : null}</td>
-                    <td>{l.cpContact}</td>
-                    <td>{l.cpEmail}</td>
+                    <td><TruncatedCell text={l.line} max={36} /></td>
+                    <td><TruncatedCell text={place} max={32} /></td>
+                    <td><TruncatedCell text={contact} max={26} /></td>
+                    <td><TruncatedCell text={l.cpContact} max={18} mono /></td>
+                    <td><TruncatedCell text={l.cpEmail} max={28} /></td>
                     <td>{l.cpWhatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : <span className="acm-pill-no">✕ No</span>}</td>
                     <td>
                       <div className="acm-row-actions">
@@ -1229,8 +1262,8 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
     search: string; setSearch: (s: string) => void;
     onAdd: (s: KycSubTab) => void;
     /** Live KYC data fetched on edit. `docs` covers both DD + TL — filter by `kind`.  */
-    docs: { id:number; kind:'dd'|'tl'; name:string; license_number?:string|null; issuing_authority?:string|null; issue_date?:string|null; expiry_date?:string|null; attachment_url?:string|null; attachment_name?:string|null; status?:string }[];
-    owners: { id:number; owner_name:string; designation?:string|null; official_email?:string|null; phone_number?:string|null; id_proof_url?:string|null; address_proof_url?:string|null; photograph_url?:string|null; status?:string }[];
+    docs: { id:number; kind:'dd'|'tl'; name:string; license_number?:string|null; issuing_authority?:string|null; issue_date?:string|null; expiry_date?:string|null; attachment_path?:string|null; attachment_url?:string|null; attachment_name?:string|null; status?:string }[];
+    owners: { id:number; owner_name:string; designation?:string|null; official_email?:string|null; phone_number?:string|null; id_proof_path?:string|null; id_proof_url?:string|null; address_proof_path?:string|null; address_proof_url?:string|null; photograph_path?:string|null; photograph_url?:string|null; status?:string }[];
     /** True only when the parent customer has a db_id (i.e. has been saved). */
     customerSaved: boolean;
     onEditDoc:     (id:number) => void;
@@ -1413,9 +1446,15 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                       <td>{o.designation || '—'}</td>
                       <td>{o.official_email || '—'}</td>
                       <td style={{ fontFamily: 'JetBrains Mono, ui-monospace, monospace', fontSize: 11 }}>{o.phone_number || '—'}</td>
-                      <td>{o.id_proof_url      ? <a href={o.id_proof_url}      target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a> : '—'}</td>
-                      <td>{o.address_proof_url ? <a href={o.address_proof_url} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a> : '—'}</td>
-                      <td>{o.photograph_url    ? <a href={o.photograph_url}    target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a> : '—'}</td>
+                      <td>{(o.id_proof_url || o.id_proof_path)
+                        ? <a href={o.id_proof_url || resolveFileUrl(o.id_proof_path)} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a>
+                        : '—'}</td>
+                      <td>{(o.address_proof_url || o.address_proof_path)
+                        ? <a href={o.address_proof_url || resolveFileUrl(o.address_proof_path)} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a>
+                        : '—'}</td>
+                      <td>{(o.photograph_url || o.photograph_path)
+                        ? <a href={o.photograph_url || resolveFileUrl(o.photograph_path)} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a>
+                        : '—'}</td>
                       <td>{(o.status || 'Active') === 'Active' ? <span className="acm-status-active">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
                       <td>
                         <div className="acm-row-actions">
@@ -1463,7 +1502,9 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                         <td><span className={issClass}>{issLabel}</span></td>
                         <td><span className={expClass}>{expLabel}</span></td>
                         <td>{(d.status || 'Active') === 'Active' ? <span className="acm-status-active">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
-                        <td>{d.attachment_url ? <a href={d.attachment_url} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a> : '—'}</td>
+                        <td>{(d.attachment_url || d.attachment_path)
+                          ? <a href={d.attachment_url || resolveFileUrl(d.attachment_path)} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a>
+                          : '—'}</td>
                         <td>
                           <div className="acm-row-actions">
                             <Tooltip label="Edit">
@@ -1854,10 +1895,26 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
                 placeholder="DD/MM/YYYY"
               />
             </Field>
-            <Field label="Attachments">
-              <Tooltip label={d.attachment ? `Replace: ${d.attachment.name}` : 'Attach a file'}>
-                <label className="acm-doc-attach">
-                  <input type="file" hidden onChange={e => set('attachment', e.target.files?.[0] ?? null)} />
+            <Field label="Attachments" error={errs.attachment}>
+              <Tooltip label={d.attachment ? `Replace: ${d.attachment.name}` : 'PDF, DOC, DOCX, JPG, PNG — max 10 MB'}>
+                <label className={`acm-doc-attach ${errs.attachment ? 'acm-input-error' : ''}`}>
+                  <input
+                    type="file"
+                    hidden
+                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                    onChange={e => {
+                      const f = e.target.files?.[0] ?? null;
+                      if (!f) { set('attachment', null); return; }
+                      const err = validateUpload(f, 'doc');
+                      if (err) {
+                        setErrs(s => ({ ...s, attachment: err }));
+                        e.target.value = '';
+                        return;
+                      }
+                      setErrs(s => { const n = { ...s }; delete n.attachment; return n; });
+                      set('attachment', f);
+                    }}
+                  />
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                   <span className="acm-doc-attach-label">{d.attachment ? (d.attachment.name.length > 14 ? d.attachment.name.slice(0, 14) + '…' : d.attachment.name) : 'ATTACH FILE'}</span>
                 </label>
@@ -2141,11 +2198,33 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
    *  named field key so its placeholder + error text can vary. */
   const FileField = ({ field, label }: { field: 'idProof' | 'addressProof' | 'photograph'; label: string }) => {
     const file = d[field];
+    // Photograph is image-only (it's a picture of a person), the other
+    // two proof slots also accept PDF/DOC since scanned passports + bills
+    // commonly arrive in those formats.
+    const isPhoto = field === 'photograph';
+    const acceptAttr = isPhoto ? '.jpg,.jpeg,.png' : '.pdf,.jpg,.jpeg,.png,.doc,.docx';
+    const hintText = isPhoto ? 'JPG, JPEG, PNG — max 10 MB' : 'PDF, DOC, DOCX, JPG, PNG — max 10 MB';
     return (
       <Field label={label} required error={errs[field]}>
-        <Tooltip label={file ? `Replace: ${file.name}` : `Upload ${label}`}>
+        <Tooltip label={file ? `Replace: ${file.name}` : hintText}>
           <label className={`acm-doc-attach ${errs[field] ? 'acm-input-error' : ''}`}>
-            <input type="file" hidden onChange={e => set(field, e.target.files?.[0] ?? null)} />
+            <input
+              type="file"
+              hidden
+              accept={acceptAttr}
+              onChange={e => {
+                const f = e.target.files?.[0] ?? null;
+                if (!f) { set(field, null); return; }
+                const err = validateUpload(f, isPhoto ? 'photo' : 'doc');
+                if (err) {
+                  setErrs(s => ({ ...s, [field]: err }));
+                  e.target.value = '';
+                  return;
+                }
+                setErrs(s => { const n = { ...s }; delete n[field]; return n; });
+                set(field, f);
+              }}
+            />
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
             <span className="acm-doc-attach-label">
               {file ? (file.name.length > 18 ? file.name.slice(0, 18) + '…' : file.name) : `UPLOAD ${label.toUpperCase()}`}
@@ -2387,6 +2466,24 @@ function Field({ label, required, children, error, fieldKey }: { label: string; 
   );
 }
 
+/* Truncated table cell. Empty → muted dash. Short → render as-is.
+ * Long → trim with an ellipsis and wrap in the project's portal-based
+ * Tooltip so the full text shows on hover (clears table overflow
+ * clipping, matches the look used everywhere else in the project). */
+function TruncatedCell({ text, max = 28, mono = false }: { text: string; max?: number; mono?: boolean }) {
+  const t = (text ?? '').trim();
+  if (!t) return <span style={{ color: '#9ca3af' }}>—</span>;
+  const style: React.CSSProperties | undefined = mono
+    ? { fontFamily: 'ui-monospace, "JetBrains Mono", monospace', fontSize: 11.5 }
+    : undefined;
+  if (t.length <= max) return <span style={style}>{t}</span>;
+  return (
+    <Tooltip label={t} maxWidth={320}>
+      <span style={style}>{t.slice(0, max - 1)}…</span>
+    </Tooltip>
+  );
+}
+
 /* ───── Scoped CSS (root: .acm-root) ───── */
 const SCOPED_CSS = `
 .acm-root {
@@ -2409,8 +2506,8 @@ const SCOPED_CSS = `
      sub-tabs (the empty Address & Contact table is shorter than the
      full Identification form). Height = min(90vh, 100vh - 32px) keeps
      a small breathing gap on shorter viewports. */
-  width: 100%; max-width: 1200px;
-  height: min(90vh, calc(100vh - 32px));
+  width: 100%; max-width: 1440px;
+  height: min(92vh, calc(100vh - 24px));
   background: linear-gradient(165deg,#faf7ff 0%,#f5efff 45%,#ede9fe 100%);
   border: 1px solid rgba(167,139,250,.5);
   border-radius: 20px;
@@ -3129,4 +3226,114 @@ const SCOPED_CSS = `
 
 /* Error message text under invalid fields */
 [data-bs-theme="dark"] .acm-field-error { color: #fca5a5; }
+
+/* ============================================================
+ *  RESPONSIVE — tablet & mobile
+ *  Strategy: the modal is normally a fixed-width card centered on
+ *  the screen. On narrower viewports we (a) eat the side padding,
+ *  (b) collapse multi-col grids down toward 1 col, (c) stack the
+ *  header / footer rows that were side-by-side, (d) loosen the
+ *  step indicator and sub-modal so they fit, and (e) drop heavy
+ *  visual chrome (large icons, generous padding) so the form is
+ *  still usable on a phone.
+ * ============================================================ */
+
+/* ── Tablet (≤ 1024px) ───────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .acm-overlay { padding: 12px; }
+  .acm-wiz { max-width: 100%; }
+  /* 4-col grids → 2 cols; 3-col → 2 cols; 2-col → stays */
+  .acm-row-4 { grid-template-columns: 1fr 1fr; }
+  .acm-row-3 { grid-template-columns: 1fr 1fr; }
+  .acm-row-2 { grid-template-columns: 1fr 1fr; }
+  .acm-section-body, .acm-sec-pad { padding: 12px; }
+}
+
+/* ── Mobile (≤ 640px) ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  .acm-overlay { padding: 0; align-items: stretch; }
+  .acm-wiz {
+    border-radius: 0;
+    max-height: 100vh;
+    height: 100vh;
+    width: 100vw;
+  }
+  /* Header: stack icon + title, tighten font */
+  .acm-header { padding: 14px 16px; flex-direction: column; align-items: flex-start; gap: 10px; }
+  .acm-header-icon { width: 40px; height: 40px; }
+  .acm-title { font-size: 16px; }
+  .acm-sub   { font-size: 11.5px; }
+  .acm-close { position: absolute; top: 12px; right: 12px; }
+  /* Steps: stack vertically (or hide intermediate connectors) */
+  .acm-steps { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; }
+  .acm-steps-arrow, .acm-step-connector { display: none; }
+  .acm-step { width: 100%; }
+  /* Tabs */
+  .acm-tabs { flex-wrap: wrap; padding: 0 12px; }
+  .acm-tab { flex: 1 1 auto; min-width: 40%; font-size: 12px; padding: 8px 10px; }
+  /* Body padding */
+  .acm-body { padding: 12px; }
+  /* All grids → single column on phone */
+  .acm-row-4, .acm-row-3, .acm-row-2 { grid-template-columns: 1fr; }
+  .acm-row { gap: 10px; }
+  /* Inputs slightly smaller */
+  .acm-input { font-size: 13px; padding: 8px 10px; }
+  /* Section header tightens */
+  .acm-section-head { padding: 10px 12px; gap: 8px; }
+  .acm-section-title { font-size: 12.5px; }
+  .acm-section-sub { display: none; }
+  .acm-section-body, .acm-sec-pad { padding: 10px; }
+  /* Footer: stack actions, full-width buttons. Hide the "fields with *"
+     hint on phones to free up vertical space. Reset align-items so the
+     column-direction children actually stretch to full width (the base
+     rule uses align-items: center which would otherwise shrink the
+     buttons to content width and centre them — bad mobile look). */
+  .acm-footer {
+    padding: 10px 12px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .acm-req-note { display: none; }
+  .acm-footer-actions {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .acm-btn-prev, .acm-btn-next {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 11px 14px;
+    font-size: 13px;
+    justify-content: center;
+  }
+  /* Sub-modal */
+  .acm-sub-modal { padding: 0; align-items: stretch; }
+  .acm-sub-card { border-radius: 0; max-height: 100vh; height: 100vh; width: 100vw; }
+  .acm-sub-header { padding: 14px 16px; }
+  .acm-sub-body { padding: 14px; }
+  .acm-sub-footer {
+    padding: 12px 14px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .acm-btn-mini-cancel, .acm-btn-save, .acm-doc-save { width: 100%; flex: 0 0 auto; }
+  /* Map-Consignee popup (if present), Stage 2 toolbar */
+  .acm-doc-toolbar { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+  .acm-doc-search { max-width: 100%; }
+  .acm-doc-count { align-self: flex-start; }
+  /* Stage 2 sub-tabs wrap */
+  .acm-subtabs-row { flex-wrap: wrap; gap: 6px; }
+  /* History recap card collapses to single column */
+  .acm-recap-grid { grid-template-columns: 1fr; }
+  /* Same-as-Customer banner: tighter */
+  .acm-same-banner { padding: 10px 12px; gap: 10px; }
+  .acm-same-banner-sub { font-size: 11.5px; }
+  /* Address & Contact action button — wrap label */
+  .acm-add-pill { font-size: 11.5px; padding: 6px 12px; }
+  .acm-section-head-row { flex-wrap: wrap; gap: 8px; }
+}
 `;

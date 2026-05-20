@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -158,6 +159,18 @@ export default function Products() {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [expandedPanel, setExpandedPanel] = useState<string | null>(null);
 
+  /* Escape-to-close — a second exit path beyond the backdrop click and
+     the close button. Bound only while the drawer is open so we don't
+     listen forever. */
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFilterOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [filterOpen]);
+
   const togglePanel = (key: string) =>
     setExpandedPanel(prev => (prev === key ? null : key));
 
@@ -270,12 +283,12 @@ export default function Products() {
   }
 
   // Refetch from the API after any step is saved. The wizard does its own
-  // POST/PUT for each step, so this page just needs to mirror what's on
-  // the server.
-  const handleSaved = (productId: number, finalised: boolean) => {
+  // POST/PUT for each step AND fires its own step-specific toast
+  // (`Core saved`, `Sales saved`, `Quality saved`, `Product saved`), so
+  // this handler only mirrors server state — no extra toast or the user
+  // sees two stacked notifications for the same action.
+  const handleSaved = (_productId: number, _finalised: boolean) => {
     refresh();
-    if (finalised) toast.success('Product Saved', 'Product is now Active');
-    else           toast.info('Step Saved', `Draft saved (ID ${productId})`);
   };
 
   const handleEdit = (p: Product) => {
@@ -468,7 +481,14 @@ export default function Products() {
         />
       )}
 
-      {/* Filter sidebar — slides in from the left */}
+      {/* Filter sidebar — slides in from the left.
+          Portalled to <body> so the fixed positioning escapes the
+          page-content stacking context. Without the portal the drawer's
+          z-index loses to Velzon's #page-topbar (z-index 1002) in
+          horizontal layout and outside-clicks on the topbar area never
+          reach the overlay. */}
+      {createPortal((
+        <>
       <div
         className={`prd-filter-overlay ${filterOpen ? 'open' : ''}`}
         onClick={() => setFilterOpen(false)}
@@ -615,6 +635,8 @@ export default function Products() {
           </button>
         </div>
       </aside>
+        </>
+      ), document.body)}
     </div>
   );
 }
@@ -1364,19 +1386,31 @@ const SCOPED_CSS = `
   backdrop-filter: blur(2px);
   opacity: 0; pointer-events: none;
   transition: opacity .25s ease;
-  z-index: 998;
+  /* Sit above Velzon's #page-topbar (z-index 1002) so clicks anywhere
+     outside the drawer — including the topbar/navbar area — close it. */
+  z-index: 1090;
 }
 .prd-filter-overlay.open { opacity: 1; pointer-events: auto; }
 
 .prd-filter-drawer {
-  position: fixed; top: 0; bottom: 0; left: 0;
+  position: fixed; top: 0; bottom: 0;
+  /* Modal-style drawer: anchored to the viewport's left edge regardless
+     of sidebar layout. The overlay (z-index 1090) covers everything
+     beneath, including any visible sidebar/topbar, so the user has a
+     clear "you're in a focused filter flow, click anywhere to dismiss"
+     mental model. Earlier attempts to offset by --vz-vertical-menu-width
+     fought every Velzon layout variant (lg / md / sm / sm-hover /
+     horizontal / mobile) and broke in subtle ways — flat 0 is the only
+     position that's correct in all of them. */
+  left: 0;
   width: 340px; max-width: 88vw;
   background: #fff;
   border-right: 1.5px solid #ddd6fe;
   box-shadow: 14px 0 36px rgba(76, 29, 149, .18);
   transform: translateX(-100%);
   transition: transform .28s cubic-bezier(.4, 0, .2, 1);
-  z-index: 999;
+  /* Has to sit above the overlay (1090) and Velzon's topbar (1002). */
+  z-index: 1091;
   display: flex; flex-direction: column;
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
   overflow: hidden;       /* hard-clip anything that tries to grow past the drawer */

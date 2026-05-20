@@ -22,6 +22,29 @@ class ConsigneeOwner extends Model
         'status', 'created_by',
     ];
 
+    /**
+     * Auto-append resolved URLs for the three identity-proof slots —
+     * same pattern Client (logo_url, favicon_url, profile_photo_url)
+     * uses. The frontend reads *_url directly; controllers don't have
+     * to build URLs themselves.
+     */
+    protected $appends = ['id_proof_url', 'address_proof_url', 'photograph_url'];
+
+    public function getIdProofUrlAttribute(): ?string
+    {
+        return file_url($this->id_proof_path);
+    }
+
+    public function getAddressProofUrlAttribute(): ?string
+    {
+        return file_url($this->address_proof_path);
+    }
+
+    public function getPhotographUrlAttribute(): ?string
+    {
+        return file_url($this->photograph_path);
+    }
+
     public function consignee(): BelongsTo
     {
         return $this->belongsTo(Consignee::class);

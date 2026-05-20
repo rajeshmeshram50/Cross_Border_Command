@@ -96,6 +96,17 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put('/products/{id}/step/vendors',    [ProductController::class, 'storeVendors'])->whereNumber('id');
     Route::delete('/products/{id}',              [ProductController::class, 'destroy'])->whereNumber('id');
 
+    // Vendors — step-wise create/update (Identity → Contacts → KYC → Products).
+    // Stage 3 (Trade Documents) is purely a frontend repository view and has
+    // no backend persistence, so there's no /step/trade-documents endpoint.
+    Route::get   ('/vendors',                          [\App\Http\Controllers\Api\VendorController::class, 'index']);
+    Route::get   ('/vendors/{id}',                     [\App\Http\Controllers\Api\VendorController::class, 'show'])->whereNumber('id');
+    Route::post  ('/vendors/step/identity',            [\App\Http\Controllers\Api\VendorController::class, 'storeIdentity']);
+    Route::put   ('/vendors/{id}/step/contacts',       [\App\Http\Controllers\Api\VendorController::class, 'storeContacts'])->whereNumber('id');
+    Route::post  ('/vendors/{id}/step/kyc',            [\App\Http\Controllers\Api\VendorController::class, 'storeKyc'])->whereNumber('id');
+    Route::post  ('/vendors/{id}/step/products',       [\App\Http\Controllers\Api\VendorController::class, 'storeProducts'])->whereNumber('id');
+    Route::delete('/vendors/{id}',                     [\App\Http\Controllers\Api\VendorController::class, 'destroy'])->whereNumber('id');
+
     // Plans (admin CRUD)
     Route::apiResource('plans', PlanController::class);
 

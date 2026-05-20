@@ -306,15 +306,31 @@ export default function AddProductModal(props: {
   const labelOf = (opts: MasterOpt[], id: string, fallback = '—') =>
     opts.find(o => o.value === id)?.label || fallback;
 
+  /* Per-file image cap — keeps the multipart payload well under PHP's
+     post_max_size (typically 8 MB by default) so the server doesn't
+     reject the request with PostTooLargeException. Mirrors the
+     `max:2048` rule on ProductController::storeCore. */
+  const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+  const validateImageSize = (file: File): boolean => {
+    if (file.size <= MAX_IMAGE_BYTES) return true;
+    const mb = (file.size / (1024 * 1024)).toFixed(2);
+    toast.error('Image too large', `${file.name} is ${mb} MB — each image must be 2 MB or smaller.`);
+    return false;
+  };
+
   const onPrimaryUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    if (!validateImageSize(f)) { e.target.value = ''; return; }
     setPrimaryImageFile(f);
     setPrimaryImagePath(null); // queued file supersedes any stored path
   };
 
   const onSecondaryUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
+    const files = Array.from(e.target.files ?? []).filter(validateImageSize);
+    // Reset the input so the user can re-pick the same oversize file
+    // after shrinking it without the browser silently swallowing the change.
+    e.target.value = '';
     if (files.length) setSecondaryImageFiles(prev => [...prev, ...files]);
   };
 
@@ -1698,7 +1714,9 @@ function PreviousStages(props: {
                 {s.fields.map(f => (
                   <div key={f.label} className="apm-prev-field">
                     <div className="apm-prev-field-label">{f.label}</div>
-                    <div className="apm-prev-field-value">{f.value}</div>
+                    {/* `title` exposes the full value as a native tooltip
+                        when the cell truncates — cheap and a11y-friendly. */}
+                    <div className="apm-prev-field-value" title={f.value}>{f.value}</div>
                   </div>
                 ))}
               </div>
@@ -2538,29 +2556,29 @@ const SCOPED_CSS = `
 .apm-prev-stage.tone-amber  .apm-prev-stage-label { color: #b45309; }
 .apm-prev-stage.tone-green  .apm-prev-stage-label { color: #166534; }
 
+/* Flat label/value grid — no per-cell box. The PRODUCT CORE / SALES
+ * CONFIG / QUALITY headers already segment the data, so each cell is
+ * just two lines of text. Tooltips on the value pick up the slack
+ * when the cell still has to ellipsis-truncate. */
 .apm-prev-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  column-gap: 18px;
+  row-gap: 10px;
 }
 .apm-prev-field {
-  padding: 8px 12px;
-  background: #fff;
-  border: 1px solid transparent;
-  border-radius: 8px;
   min-width: 0;
+  padding: 0;
 }
-.apm-prev-stage.tone-violet .apm-prev-field { border-color: #ddd6fe; }
-.apm-prev-stage.tone-amber  .apm-prev-field { border-color: #fde68a; }
-.apm-prev-stage.tone-green  .apm-prev-field { border-color: #bbf7d0; }
 .apm-prev-field-label {
-  font-size: 9.5px; font-weight: 800; letter-spacing: .06em;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .08em;
   color: #94a3b8; text-transform: uppercase;
 }
 .apm-prev-field-value {
-  font-size: 12.5px; font-weight: 700; color: #1e1b4b;
+  font-size: 13px; font-weight: 600; color: #1e1b4b;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-top: 2px;
+  cursor: default;
 }
 
 /* ─── Vendor toolbar ─── */
@@ -2811,10 +2829,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .apm-prev-chip { background: #14241a; color: #bbf7d0; border-color: #166534; }
 [data-bs-theme="dark"] .apm-prev-toggle { background: #14241a; color: #bbf7d0; border-color: #166534; }
 [data-bs-theme="dark"] .apm-prev-toggle:hover { background: #1a3225; border-color: #22c55e; }
-[data-bs-theme="dark"] .apm-prev-field { background: #110c25; }
-[data-bs-theme="dark"] .apm-prev-stage.tone-violet .apm-prev-field { border-color: #4c1d95; }
-[data-bs-theme="dark"] .apm-prev-stage.tone-amber  .apm-prev-field { border-color: #78350f; }
-[data-bs-theme="dark"] .apm-prev-stage.tone-green  .apm-prev-field { border-color: #14532d; }
 [data-bs-theme="dark"] .apm-prev-field-label { color: #6d6391; }
 [data-bs-theme="dark"] .apm-prev-field-value { color: #ede9fe; }
 [data-bs-theme="dark"] .apm-prev-stage.tone-violet .apm-prev-stage-label { color: #c4b5fd; }

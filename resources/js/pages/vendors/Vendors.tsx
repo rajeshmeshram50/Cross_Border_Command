@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Button } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
-import AddVendorModal, { type VendorPayload } from './AddVendorModal';
+import api from '../../api';
+import AddVendorModal from './AddVendorModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Vendors — front-end only master list
@@ -39,12 +40,27 @@ export type Vendor = {
   pincode?: string;
 };
 
-const SEED: Vendor[] = [
-  { id: 1, code: 'V-01', companyName: 'Om Powertech Exports Pvt. Ltd.', legalName: 'Om Powertech Exports Pvt. Ltd.', type: 'Genuine',     state: 'Maharashtra', city: 'Mumbai',     contactName: 'Daniel Robertson', designation: 'Sales Manager',    phone: '9821456789', email: 'd.robertson@ompowertech.com', status: 'Active',   country: 'India', pincode: '400001' },
-  { id: 2, code: 'V-02', companyName: 'GreenHarvest Pvt Ltd',          legalName: 'GreenHarvest Pvt Ltd',           type: 'Genuine',     state: 'Gujarat',     city: 'Ahmedabad',  contactName: 'Anita Desai',      designation: 'Procurement Mgr',  phone: '9988877665', email: 'anita@greenharvest.co',       status: 'Active',   country: 'India', pincode: '380001' },
-  { id: 3, code: 'V-003', companyName: 'Shree Exports',                  legalName: 'Shree Exports LLP',              type: 'Verified',    state: 'Delhi',       city: 'New Delhi',  contactName: 'Mohit Sharma',     designation: 'Director',         phone: '9554422119', email: 'mohit@shreeexports.in',       status: 'Active',   country: 'India', pincode: '110001' },
-  { id: 4, code: 'V-004', companyName: 'Sun Agri Solutions',             legalName: 'Sun Agri Pvt Ltd',               type: 'Verified',    state: 'Karnataka',   city: 'Bengaluru',  contactName: 'Pooja Iyer',       designation: 'Account Mgr',      phone: '9123456789', email: 'pooja@sunagri.com',           status: 'Inactive', country: 'India', pincode: '560001' },
-];
+/* Shape of an item in the paginated GET /api/vendors response. Only
+ * the fields the list page actually renders are typed — anything else
+ * the backend ships is ignored. */
+type ApiVendor = {
+  id: number;
+  vendor_code: string | null;
+  company_name: string;
+  legal_name: string | null;
+  status: string;
+  primary_email: string | null;
+  vendor_type?: { id: number; name: string | null } | null;
+  segment?: { id: number; title: string | null } | null;
+  risk_level?: { id: number; name: string | null } | null;
+  primary_address?: {
+    city: string | null;
+    state_id: number | null;
+    contact_name: string | null;
+    email: string | null;
+    contact_no: string | null;
+  } | null;
+};
 
 const TYPE_COLORS: Record<string, string> = {
   Genuine:    '#16a34a',
@@ -59,10 +75,47 @@ export default function Vendors() {
   const { user } = useAuth();
   const toast = useToast();
 
-  const [vendors, setVendors] = useState<Vendor[]>(SEED);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
   const [search, setSearch] = useState('');
   const [statusTab, setStatusTab] = useState<'Active' | 'Inactive'>('Active');
   const [addOpen, setAddOpen] = useState(false);
+  /* Edit vs Add — same modal, just seeded with an existing vendor id.
+     Reset to null on close so the next "+ Add Vendor" click opens a
+     blank form. */
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  /* Map a paginated API row to the local list-page shape. Anything the
+     backend doesn't populate yet falls back to '—' so the table never
+     renders raw `null` cells. */
+  const apiToVendor = (row: ApiVendor): Vendor => ({
+    id:          row.id,
+    code:        row.vendor_code ?? `V-${row.id}`,
+    companyName: row.company_name ?? 'Untitled Vendor',
+    legalName:   row.legal_name ?? row.company_name ?? '—',
+    type:        row.vendor_type?.name ?? 'Pending',
+    state:       String(row.primary_address?.state_id ?? '—'),
+    city:        row.primary_address?.city ?? '—',
+    contactName: row.primary_address?.contact_name ?? '—',
+    designation: '—',
+    phone:       row.primary_address?.contact_no ?? '—',
+    email:       row.primary_address?.email ?? row.primary_email ?? '—',
+    status:      row.status === 'active' ? 'Active' : 'Inactive',
+    segment:     row.segment?.title ?? undefined,
+    risk:        row.risk_level?.name ?? undefined,
+  });
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await api.get<{ data: ApiVendor[] }>('/vendors?per_page=200');
+      const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+      setVendors(rows.map(apiToVendor));
+    } catch {
+      toast.error('Load failed', 'Could not load vendors');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
 
   const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
 
@@ -122,52 +175,35 @@ export default function Vendors() {
         || v.state.toLowerCase().includes(lo));
   }, [vendors, search, statusTab]);
 
-  const nextCode = () => {
-    let n = 0;
-    vendors.forEach(v => {
-      const m = v.code.match(/(\d+)$/);
-      if (m) n = Math.max(n, parseInt(m[1], 10));
-    });
-    // 2-digit padding: V-01, V-02, …, V-99. Beyond 99 the code grows
-    // naturally (V-100) — str_pad never truncates.
-    return 'V-' + String(n + 1).padStart(2, '0');
-  };
-
-  const handleSave = (p: VendorPayload) => {
-    const vendor: Vendor = {
-      id: Date.now(),
-      code: nextCode(),
-      companyName: p.companyName || 'Untitled Vendor',
-      legalName:   p.legalName   || p.companyName || 'Untitled Vendor',
-      type:        p.vendorType  || 'Pending',
-      state:       p.state       || '—',
-      city:        p.city        || '—',
-      contactName: p.contactName || '—',
-      designation: p.designation || '—',
-      phone:       p.contactNo   || '—',
-      email:       p.email       || '—',
-      status:      'Active',
-      segment:     p.segment,
-      risk:        p.riskLevel,
-      website:     p.website,
-      address:     p.registeredOffice,
-      country:     p.country,
-      pincode:     p.pincode,
-    };
-    setVendors(prev => [vendor, ...prev]);
+  /* The wizard now persists each step to /api/vendors/* directly, so
+     this handler only re-fetches and closes the modal. The payload is
+     ignored — its fields are already in the database by the time
+     onSubmit fires from the final Save Vendor click. */
+  const handleSave = () => {
     setAddOpen(false);
-    toast.success('Vendor saved', `${vendor.companyName} added to the vendor master`);
+    setEditingId(null);
+    void refresh();
   };
 
-  const removeVendor = (v: Vendor) => {
+  const removeVendor = async (v: Vendor) => {
     if (!confirm(`Delete ${v.companyName}?`)) return;
-    setVendors(prev => prev.filter(x => x.id !== v.id));
-    toast.info('Deleted', `${v.companyName} removed`);
+    try {
+      await api.delete(`/vendors/${v.id}`);
+      toast.success('Deleted', `${v.companyName} removed`);
+      await refresh();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not delete vendor';
+      toast.error('Delete failed', msg);
+    }
   };
 
+  /* Status toggle stays local-only for now — there's no PATCH endpoint
+     for vendor status. The Active/Inactive flag flips when Step 4 (map
+     products) saves; flipping it outside the wizard would skip the
+     creator-hierarchy mutate guard anyway. Tooltip + toast make the
+     "coming soon" affordance obvious. */
   const toggleStatus = (v: Vendor) => {
-    setVendors(prev => prev.map(x => x.id === v.id ? { ...x, status: x.status === 'Active' ? 'Inactive' : 'Active' } : x));
-    toast.success('Status changed', `${v.companyName} is now ${v.status === 'Active' ? 'Inactive' : 'Active'}`);
+    toast.info('Coming soon', `Toggle status for ${v.companyName} from the wizard`);
   };
 
   if (!allowed) {
@@ -449,7 +485,7 @@ export default function Vendors() {
                         <td>
                           <div className="d-flex gap-1 justify-content-center">
                             <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => toast.info('View', `Viewing ${v.companyName}`)} />
-                            <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => toast.info('Edit', `Editing ${v.companyName}`)} />
+                            <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => { setEditingId(v.id); setAddOpen(true); }} />
                             <ActionBtn
                               title={v.status === 'Active' ? 'Deactivate' : 'Activate'}
                               icon={v.status === 'Active' ? 'ri-pause-circle-line' : 'ri-play-circle-line'}
@@ -475,7 +511,8 @@ export default function Vendors() {
 
       {addOpen && (
         <AddVendorModal
-          onClose={() => setAddOpen(false)}
+          vendorId={editingId}
+          onClose={() => { setAddOpen(false); setEditingId(null); }}
           onSubmit={handleSave}
         />
       )}
