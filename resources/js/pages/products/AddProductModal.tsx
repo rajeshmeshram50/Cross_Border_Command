@@ -254,6 +254,11 @@ export default function AddProductModal(props: {
   const [length,      setLength]      = useState<string>('');
   const [width,       setWidth]       = useState<string>('');
   const [height,      setHeight]      = useState<string>('');
+  /* Inventory tracking — optional fields under the Quality tab. */
+  const [batchNo,  setBatchNo]  = useState<string>('');
+  const [serialNo, setSerialNo] = useState<string>('');
+  const [catNo,    setCatNo]    = useState<string>('');
+  const [lotNo,    setLotNo]    = useState<string>('');
   const [qcRecords,   setQcRecords]   = useState<QcRecord[]>([]);
   const [qcModalOpen, setQcModalOpen] = useState(false);
   const [qcDraft, setQcDraft] = useState<Omit<QcRecord, 'id'>>({
@@ -528,6 +533,10 @@ export default function AddProductModal(props: {
         setLength(p.length_cm != null ? String(p.length_cm) : '');
         setWidth(p.width_cm != null ? String(p.width_cm) : '');
         setHeight(p.height_cm != null ? String(p.height_cm) : '');
+        setBatchNo (((p as Record<string, unknown>).batch_no  ?? '') as string);
+        setSerialNo(((p as Record<string, unknown>).serial_no ?? '') as string);
+        setCatNo   (((p as Record<string, unknown>).cat_no    ?? '') as string);
+        setLotNo   (((p as Record<string, unknown>).lot_no    ?? '') as string);
         setQcRecords((p.qc_records ?? []).map(q => ({
           id: q.id,
           name: q.qc_name,
@@ -724,6 +733,10 @@ export default function AddProductModal(props: {
     setSaving(true);
     try {
       await api.put(`/products/${productId}/step/quality`, {
+        batch_no: batchNo || null,
+        serial_no: serialNo || null,
+        cat_no: catNo || null,
+        lot_no: lotNo || null,
         net_weight: parseFloat(netWeight) || null,
         gross_weight: parseFloat(grossWeight) || null,
         length_cm: parseFloat(length) || null,
@@ -1069,6 +1082,25 @@ export default function AddProductModal(props: {
                       <Field label="Height (Cm)" icon={<i className="ri-arrow-up-down-line" />} error={fieldErrors.height}>
                         <input className="apm-input apm-input-mf apm-input-amber" placeholder="Height" type="number" value={height} onChange={e => { setHeight(e.target.value); clearFieldError('height'); }} />
                       </Field>
+                    </div>
+
+                    {/* Inventory Details — optional batch / serial / cat / lot */}
+                    <div className="apm-inner-section">
+                      <div className="apm-inner-title">INVENTORY DETAILS</div>
+                      <div className="apm-grid-4">
+                        <Field label="Batch No" icon={<i className="ri-hashtag" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={batchNo} onChange={e => setBatchNo(e.target.value)} />
+                        </Field>
+                        <Field label="Serial No" icon={<i className="ri-barcode-line" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={serialNo} onChange={e => setSerialNo(e.target.value)} />
+                        </Field>
+                        <Field label="Cat No" icon={<i className="ri-price-tag-3-line" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={catNo} onChange={e => setCatNo(e.target.value)} />
+                        </Field>
+                        <Field label="Lot No" icon={<i className="ri-list-check-2" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={lotNo} onChange={e => setLotNo(e.target.value)} />
+                        </Field>
+                      </div>
                     </div>
                   </SectionCard>
 

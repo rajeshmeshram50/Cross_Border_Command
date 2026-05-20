@@ -40,8 +40,8 @@ export type Vendor = {
 };
 
 const SEED: Vendor[] = [
-  { id: 1, code: 'V-001', companyName: 'Om Powertech Exports Pvt. Ltd.', legalName: 'Om Powertech Exports Pvt. Ltd.', type: 'Genuine',     state: 'Maharashtra', city: 'Mumbai',     contactName: 'Daniel Robertson', designation: 'Sales Manager',    phone: '9821456789', email: 'd.robertson@ompowertech.com', status: 'Active',   country: 'India', pincode: '400001' },
-  { id: 2, code: 'V-002', companyName: 'GreenHarvest Pvt Ltd',          legalName: 'GreenHarvest Pvt Ltd',           type: 'Genuine',     state: 'Gujarat',     city: 'Ahmedabad',  contactName: 'Anita Desai',      designation: 'Procurement Mgr',  phone: '9988877665', email: 'anita@greenharvest.co',       status: 'Active',   country: 'India', pincode: '380001' },
+  { id: 1, code: 'V-01', companyName: 'Om Powertech Exports Pvt. Ltd.', legalName: 'Om Powertech Exports Pvt. Ltd.', type: 'Genuine',     state: 'Maharashtra', city: 'Mumbai',     contactName: 'Daniel Robertson', designation: 'Sales Manager',    phone: '9821456789', email: 'd.robertson@ompowertech.com', status: 'Active',   country: 'India', pincode: '400001' },
+  { id: 2, code: 'V-02', companyName: 'GreenHarvest Pvt Ltd',          legalName: 'GreenHarvest Pvt Ltd',           type: 'Genuine',     state: 'Gujarat',     city: 'Ahmedabad',  contactName: 'Anita Desai',      designation: 'Procurement Mgr',  phone: '9988877665', email: 'anita@greenharvest.co',       status: 'Active',   country: 'India', pincode: '380001' },
   { id: 3, code: 'V-003', companyName: 'Shree Exports',                  legalName: 'Shree Exports LLP',              type: 'Verified',    state: 'Delhi',       city: 'New Delhi',  contactName: 'Mohit Sharma',     designation: 'Director',         phone: '9554422119', email: 'mohit@shreeexports.in',       status: 'Active',   country: 'India', pincode: '110001' },
   { id: 4, code: 'V-004', companyName: 'Sun Agri Solutions',             legalName: 'Sun Agri Pvt Ltd',               type: 'Verified',    state: 'Karnataka',   city: 'Bengaluru',  contactName: 'Pooja Iyer',       designation: 'Account Mgr',      phone: '9123456789', email: 'pooja@sunagri.com',           status: 'Inactive', country: 'India', pincode: '560001' },
 ];
@@ -91,7 +91,9 @@ export default function Vendors() {
       const m = v.code.match(/(\d+)$/);
       if (m) n = Math.max(n, parseInt(m[1], 10));
     });
-    return 'V-' + String(n + 1).padStart(3, '0');
+    // 2-digit padding: V-01, V-02, …, V-99. Beyond 99 the code grows
+    // naturally (V-100) — str_pad never truncates.
+    return 'V-' + String(n + 1).padStart(2, '0');
   };
 
   const handleSave = (p: VendorPayload) => {

@@ -1,8 +1,12 @@
-import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import {
+  validateEmail, validatePhoneGeneric, validatePincode, validateWebsite,
+  validateGstin, validateIfsc, validateAccountNumber,
+} from '../../utils/fieldValidators';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Vendor — 4-step wizard
@@ -64,20 +68,11 @@ type KycSubTab = 'owner' | 'company' | 'license';
 // Vendor Behaviour stays frontend-only (4 fixed rating buckets). All other
 // classification dropdowns are loaded from their masters via the API loader
 // effect inside the component.
+// Fallback when the vendor_behaviour master returns empty — keeps the
+// dropdown usable while the master is being populated.
 const BEHAVIOURS = ['Excellent', 'Good', 'Medium', 'Poor'];
-const COUNTRIES  = ['India', 'United Arab Emirates', 'Singapore', 'United States', 'United Kingdom'];
-const STATES_BY_COUNTRY: Record<string, { name: string; code: string }[]> = {
-  India: [
-    { name: 'Maharashtra', code: 'MH' },
-    { name: 'Gujarat',     code: 'GJ' },
-    { name: 'Delhi',       code: 'DL' },
-    { name: 'Karnataka',   code: 'KA' },
-    { name: 'Tamil Nadu',  code: 'TN' },
-    { name: 'Telangana',   code: 'TS' },
-    { name: 'Rajasthan',   code: 'RJ' },
-    { name: 'West Bengal', code: 'WB' },
-  ],
-};
+// Countries / States / State Codes are loaded from masters at runtime
+// (see the loader effect inside the component).
 
 /* ─── Mock master document lists for steps 2 & 3 ─── */
 const DD_DOCS = [
@@ -140,6 +135,34 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
   const [riskLevelOpts,  setRiskLevelOpts]      = useState<Opt[]>([]);
   const [segmentOpts,    setSegmentOpts]        = useState<Opt[]>([]);
   const [complianceOpts, setComplianceOpts]     = useState<Opt[]>([]);
+  const [behaviourOpts,  setBehaviourOpts]      = useState<Opt[]>([]);
+  const [countryOpts,    setCountryOpts]        = useState<Opt[]>([]);
+  /* state_codes master rows (eager-loaded with state.name) drive the
+     State dropdown AND the State Code auto-fill. */
+  const [stateCodeRows, setStateCodeRows] = useState<Array<{
+    id: string;
+    state_id: string;
+    state_code: string;
+    state_name: string;
+  }>>([]);
+  const stateOpts = useMemo<Opt[]>(
+    () => stateCodeRows.map(r => ({ value: r.state_name, label: r.state_name })),
+    [stateCodeRows]
+  );
+
+  /* ─── Per-field validation errors keyed by field name ─── */
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const clearFieldError = (k: string) => {
+    setFieldErrors(prev => {
+      if (!prev[k]) return prev;
+      const next = { ...prev };
+      delete next[k];
+      return next;
+    });
+  };
+
+  /* ─── Master Quick-Add state (matches the Add Product wizard pattern) ─── */
+  const [quickAdd, setQuickAdd] = useState<VendorMasterSlug | null>(null);
 
   /* ─── Step 1: Identification ─── */
   const [companyName, setCompanyName] = useState('');
@@ -208,12 +231,17 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  /* ─── Master loader — Vendor Type / Risk Level / Segment / Compliance Behaviour
+  /* ─── Master loader — every classification dropdown on the form
    *
-   * Vendor Type            → customer_types       (label: `name`)
-   * Risk Level             → risk_levels          (label: `name`)
-   * Vendor Segment         → segments             (label: `title`)
-   * Compliance Behaviour   → compliance_behaviours (label: `name`)
+   *   Vendor Type            → customer_types        (label: name)
+   *   Risk Level             → risk_levels           (label: name)
+   *   Vendor Behaviour       → vendor_behaviour      (label: name)
+   *   Vendor Segment         → segments              (label: title)
+   *   Compliance Behaviour   → compliance_behaviours (label: name)
+   *   Country                → countries             (label: name)
+   *   State + State Code     → state_codes (eager-loads state.name) so
+   *                            one fetch drives both the State dropdown
+   *                            AND the State Code auto-fill.
    * ──────────────────────────────────────────────────────────── */
   useEffect(() => {
     type Row = Record<string, unknown> & { id: number | string; status?: string };
@@ -228,53 +256,99 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
         return [];
       }
     };
+    const fetchStateCodes = async () => {
+      try {
+        type Sc = { id: number | string; state_id: number | string; state_code: string; status?: string; state?: { id?: number; name?: string } };
+        const res = await api.get<Sc[]>(`/master/state_codes`);
+        return (res.data || [])
+          .filter(r => String(r.status ?? '').toLowerCase() !== 'inactive')
+          .map(r => ({
+            id: String(r.id),
+            state_id: String(r.state_id ?? ''),
+            state_code: String(r.state_code ?? ''),
+            state_name: String(r.state?.name ?? ''),
+          }))
+          .filter(r => r.state_name !== '');
+      } catch {
+        return [] as Array<{ id: string; state_id: string; state_code: string; state_name: string }>;
+      }
+    };
     (async () => {
-      const [vt, rl, sg, cb] = await Promise.all([
+      const [vt, rl, bh, sg, cb, co, sc] = await Promise.all([
         fetchMaster('customer_types',        'name'),
         fetchMaster('risk_levels',           'name'),
+        fetchMaster('vendor_behaviour',      'name'),
         fetchMaster('segments',              'title'),
         fetchMaster('compliance_behaviours', 'name'),
+        fetchMaster('countries',             'name'),
+        fetchStateCodes(),
       ]);
       setVendorTypeOpts(vt);
       setRiskLevelOpts(rl);
+      setBehaviourOpts(bh);
       setSegmentOpts(sg);
       setComplianceOpts(cb);
+      setCountryOpts(co);
+      setStateCodeRows(sc);
     })();
   }, []);
-
-  const stateOpts = STATES_BY_COUNTRY[country] ?? [];
 
   /* ──────────────────────────────────────────────────────────────────
    * Navigation
    * ────────────────────────────────────────────────────────────── */
-  const validateStep1 = (): string[] => {
-    const m: string[] = [];
-    if (!companyName.trim()) m.push('Company Name');
-    if (!vendorType)         m.push('Vendor Type');
-    if (!vendorBehaviour)    m.push('Vendor Behaviour');
-    if (!segment)            m.push('Vendor Segment');
-    if (!complianceBehaviour)m.push('Compliance Behaviour');
-    if (!registeredOffice.trim()) m.push('Registered Office');
-    if (!country)            m.push('Country');
-    if (!state)              m.push('State');
-    if (!city.trim())        m.push('City');
-    if (!contactName.trim()) m.push('Contact Person');
-    if (!designation.trim()) m.push('Designation');
-    if (!contactNo.trim())   m.push('Contact No');
-    if (!email.trim())       m.push('Email');
-    return m;
+  const validateStep1 = (): Record<string, string> => {
+    const errs: Record<string, string> = {};
+    // Required-field checks fire first so the "X is required" message
+    // wins over a "format wrong" message for blank inputs.
+    if (!companyName.trim())         errs.companyName         = 'Company Name is required';
+    if (!vendorType)                 errs.vendorType          = 'Vendor Type is required';
+    if (!riskLevel)                  errs.riskLevel           = 'Risk Level is required';
+    if (!vendorBehaviour)            errs.vendorBehaviour     = 'Vendor Behaviour is required';
+    if (!segment)                    errs.segment             = 'Vendor Segment is required';
+    if (!complianceBehaviour)        errs.complianceBehaviour = 'Compliance Behaviour is required';
+    if (!registeredOffice.trim())    errs.registeredOffice    = 'Registered Office Address is required';
+    if (!country)                    errs.country             = 'Country is required';
+    if (!state)                      errs.state               = 'State is required';
+    if (!stateCode)                  errs.stateCode           = 'State Code is required (pick a State to auto-fill)';
+    if (!city.trim())                errs.city                = 'City is required';
+    if (!contactName.trim())         errs.contactName         = 'Contact Person Name is required';
+    if (!designation.trim())         errs.designation         = 'Designation is required';
+    if (!contactNo.trim())           errs.contactNo           = 'Contact No is required';
+    if (!email.trim())               errs.email               = 'Email is required';
+
+    // Format checks — only run when the field is non-empty so we don't
+    // double-report "required" + "invalid".
+    if (!errs.email      && email)        { const e = validateEmail(email);              if (e) errs.email      = e; }
+    if (!errs.contactNo  && contactNo)    { const e = validatePhoneGeneric(contactNo, 'Contact No'); if (e) errs.contactNo  = e; }
+    if (pincode)                          { const e = validatePincode(pincode);          if (e) errs.pincode     = e; }
+    if (website)                          { const e = validateWebsite(website);          if (e) errs.website     = e; }
+    return errs;
   };
 
   const goNext = () => {
     if (step === 1) {
-      const m = validateStep1();
-      if (m.length) {
-        toast.error('Missing required fields', `Please fill: ${m.slice(0, 3).join(', ')}${m.length > 3 ? ` +${m.length - 3} more` : ''}`);
+      const errs = validateStep1();
+      if (Object.keys(errs).length) {
+        setFieldErrors(errs);
+        toast.error('Missing required fields', 'Please fix the highlighted fields');
         return;
       }
+      setFieldErrors({});
       toast.success('Identity saved', 'Vendor identity details captured');
       setStep(2);
     } else if (step === 2) {
+      // KYC format checks — only validate values that have been entered;
+      // none of these are required to leave the step.
+      const errs: Record<string, string> = {};
+      if (gstNumber) { const e = validateGstin(gstNumber);                if (e) errs.gstNumber = e; }
+      if (bankAcc)   { const e = validateAccountNumber(bankAcc);          if (e) errs.bankAcc   = e; }
+      if (ifsc)      { const e = validateIfsc(ifsc);                      if (e) errs.ifsc      = e; }
+      if (Object.keys(errs).length) {
+        setFieldErrors(errs);
+        toast.error('Please fix the highlighted fields', 'GST / Bank details are invalid');
+        return;
+      }
+      setFieldErrors({});
       toast.success('KYC saved', 'Due-diligence details captured');
       setStep(3);
     } else if (step === 3) {
@@ -318,6 +392,12 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
       toast.error('Missing required fields', `Please fill: ${missing.join(', ')}`);
       return;
     }
+    // Format checks — phone and email
+    const phoneErr = validatePhoneGeneric(contactDraft.phone, 'Contact No');
+    if (phoneErr) { toast.error('Invalid Contact No', phoneErr); return; }
+    const emailErr = validateEmail(contactDraft.email);
+    if (emailErr) { toast.error('Invalid Email', emailErr); return; }
+
     setExtraContacts(prev => [...prev, { id: Date.now(), ...contactDraft }]);
     setContactPopupOpen(false);
     toast.success('Contact added', `${contactDraft.name} added to the list`);
@@ -403,33 +483,33 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
               {idTab === 'identification' && (
                 <SectionCard tone="violet" icon={<i className="ri-building-line" />} title="Basic Company Details" subtitle="Identity, classification & sourcing readiness">
                   <div className="avm-grid-2">
-                    <Field label="Company Name" required>
-                      <input className="avm-input" placeholder="e.g. ABC Logistics" value={companyName} onChange={e => setCompanyName(e.target.value)} />
+                    <Field label="Company Name" required error={fieldErrors.companyName}>
+                      <input className="avm-input" placeholder="e.g. ABC Logistics" value={companyName} onChange={e => { setCompanyName(e.target.value); clearFieldError('companyName'); }} />
                     </Field>
                     <Field label="Company Legal Name">
                       <input className="avm-input" placeholder="ABC Logistics Pvt Ltd" value={legalName} onChange={e => setLegalName(e.target.value)} />
                     </Field>
                   </div>
                   <div className="avm-grid-3">
-                    <Field label="Vendor Type" required addNew>
-                      <SelectInput value={vendorType} onChange={setVendorType} placeholder="Select" options={vendorTypeOpts} />
+                    <Field label="Vendor Type" required addNew onAdd={() => setQuickAdd('customer_types')} error={fieldErrors.vendorType}>
+                      <SelectInput value={vendorType} onChange={(v) => { setVendorType(v); clearFieldError('vendorType'); }} placeholder="Select" options={vendorTypeOpts} />
                     </Field>
                     <Field label="Company Website">
                       <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => setWebsite(e.target.value)} />
                     </Field>
-                    <Field label="Risk Level" required addNew>
-                      <SelectInput value={riskLevel} onChange={setRiskLevel} placeholder="Select" options={riskLevelOpts} />
+                    <Field label="Risk Level" required addNew onAdd={() => setQuickAdd('risk_levels')} error={fieldErrors.riskLevel}>
+                      <SelectInput value={riskLevel} onChange={(v) => { setRiskLevel(v); clearFieldError('riskLevel'); }} placeholder="Select" options={riskLevelOpts} />
                     </Field>
                   </div>
                   <div className="avm-grid-3">
-                    <Field label="Vendor Behaviour" required addNew>
-                      <SelectInput value={vendorBehaviour} onChange={setVendorBehaviour} placeholder="Select" options={BEHAVIOURS} />
+                    <Field label="Vendor Behaviour" required addNew onAdd={() => setQuickAdd('vendor_behaviour')} error={fieldErrors.vendorBehaviour}>
+                      <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts.length ? behaviourOpts : BEHAVIOURS.map(b => ({ value: b, label: b }))} />
                     </Field>
-                    <Field label="Vendor Segment" required>
-                      <SelectInput value={segment} onChange={setSegment} placeholder="Select Segment" options={segmentOpts} />
+                    <Field label="Vendor Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
+                      <SelectInput value={segment} onChange={(v) => { setSegment(v); clearFieldError('segment'); }} placeholder="Select Segment" options={segmentOpts} />
                     </Field>
-                    <Field label="Compliance Behaviour" required addNew>
-                      <SelectInput value={complianceBehaviour} onChange={setComplianceBehaviour} placeholder="Select" options={complianceOpts} />
+                    <Field label="Compliance Behaviour" required addNew onAdd={() => setQuickAdd('compliance_behaviours')} error={fieldErrors.complianceBehaviour}>
+                      <SelectInput value={complianceBehaviour} onChange={(v) => { setComplianceBehaviour(v); clearFieldError('complianceBehaviour'); }} placeholder="Select" options={complianceOpts} />
                     </Field>
                   </div>
                 </SectionCard>
@@ -437,49 +517,59 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
 
               {idTab === 'identification' && (
                 <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Company Address & Contact Person Details" subtitle="Registered office and primary KYC contact">
-                  <Field label="Registered Office Address" required>
-                    <input className="avm-input" placeholder="Plot 21, Industrial Area" value={registeredOffice} onChange={e => setRegisteredOffice(e.target.value)} />
+                  <Field label="Registered Office Address" required error={fieldErrors.registeredOffice}>
+                    <input className="avm-input" placeholder="Plot 21, Industrial Area" value={registeredOffice} onChange={e => { setRegisteredOffice(e.target.value); clearFieldError('registeredOffice'); }} />
                   </Field>
                   <div className="avm-grid-4">
-                    <Field label="Country" required>
+                    <Field label="Country" required addNew onAdd={() => setQuickAdd('countries')} error={fieldErrors.country}>
                       <SelectInput
                         value={country}
-                        onChange={(v) => { setCountry(v); setState(''); setStateCode(''); }}
-                        placeholder="India"
-                        options={COUNTRIES}
+                        onChange={(v) => { setCountry(v); setState(''); setStateCode(''); clearFieldError('country'); }}
+                        placeholder="Select Country"
+                        options={countryOpts}
                       />
                     </Field>
-                    <Field label="State" required>
+                    <Field label="State" required error={fieldErrors.state}>
                       <SelectInput
                         value={state}
                         onChange={(v) => {
                           setState(v);
-                          const sc = stateOpts.find(s => s.name === v)?.code ?? '';
+                          // Auto-fill State Code from the master_state_codes row
+                          // whose state.name matches the chosen state.
+                          const sc = stateCodeRows.find(r => r.state_name === v)?.state_code ?? '';
                           setStateCode(sc);
+                          clearFieldError('state');
+                          clearFieldError('stateCode');
                         }}
-                        placeholder="Maharashtra"
-                        options={stateOpts.map(s => ({ value: s.name, label: s.name }))}
+                        placeholder="Select State"
+                        options={stateOpts}
                       />
                     </Field>
-                    <Field label="State Code" required>
-                      <input className="avm-input" placeholder="MH" value={stateCode} onChange={e => setStateCode(e.target.value)} />
+                    <Field label="State Code" required error={fieldErrors.stateCode}>
+                      <input
+                        className="avm-input"
+                        placeholder="Auto-filled from State"
+                        value={stateCode}
+                        readOnly
+                        title="Pulled from State Codes master based on the selected State"
+                      />
                     </Field>
-                    <Field label="City" required>
-                      <input className="avm-input" placeholder="PUNE" value={city} onChange={e => setCity(e.target.value)} />
+                    <Field label="City" required error={fieldErrors.city}>
+                      <input className="avm-input" placeholder="e.g. Pune" value={city} onChange={e => { setCity(e.target.value); clearFieldError('city'); }} />
                     </Field>
                   </div>
                   <div className="avm-grid-4">
-                    <Field label="Contact Person Name" required>
-                      <input className="avm-input" placeholder="Rahul Sharma" value={contactName} onChange={e => setContactName(e.target.value)} />
+                    <Field label="Contact Person Name" required error={fieldErrors.contactName}>
+                      <input className="avm-input" placeholder="Rahul Sharma" value={contactName} onChange={e => { setContactName(e.target.value); clearFieldError('contactName'); }} />
                     </Field>
-                    <Field label="Designation" required>
-                      <input className="avm-input" placeholder="admin" value={designation} onChange={e => setDesignation(e.target.value)} />
+                    <Field label="Designation" required error={fieldErrors.designation}>
+                      <input className="avm-input" placeholder="admin" value={designation} onChange={e => { setDesignation(e.target.value); clearFieldError('designation'); }} />
                     </Field>
-                    <Field label="Contact No" required>
-                      <input className="avm-input" placeholder="9876543210" value={contactNo} onChange={e => setContactNo(e.target.value)} />
+                    <Field label="Contact No" required error={fieldErrors.contactNo}>
+                      <input className="avm-input" placeholder="9876543210" value={contactNo} onChange={e => { setContactNo(e.target.value); clearFieldError('contactNo'); }} />
                     </Field>
-                    <Field label="Email" required>
-                      <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} onChange={e => setEmail(e.target.value)} />
+                    <Field label="Email" required error={fieldErrors.email}>
+                      <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
                     </Field>
                   </div>
                   <div className="avm-grid-2">
@@ -734,6 +824,162 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
           onSave={saveContactDraft}
         />
       )}
+
+      {quickAdd && (
+        <MasterQuickAddPopup
+          slug={quickAdd}
+          onClose={() => setQuickAdd(null)}
+          onSaved={(row) => {
+            const id = String(row.id ?? '');
+            switch (quickAdd) {
+              case 'customer_types': {
+                const label = String(row.name ?? '');
+                if (label) { setVendorTypeOpts(prev => [...prev, { value: label, label }]); setVendorType(label); clearFieldError('vendorType'); }
+                break;
+              }
+              case 'risk_levels': {
+                const label = String(row.name ?? '');
+                if (label) { setRiskLevelOpts(prev => [...prev, { value: label, label }]); setRiskLevel(label); clearFieldError('riskLevel'); }
+                break;
+              }
+              case 'vendor_behaviour': {
+                const label = String(row.name ?? '');
+                if (label) { setBehaviourOpts(prev => [...prev, { value: label, label }]); setVendorBehaviour(label); clearFieldError('vendorBehaviour'); }
+                break;
+              }
+              case 'segments': {
+                const label = String(row.title ?? '');
+                if (label) { setSegmentOpts(prev => [...prev, { value: label, label }]); setSegment(label); clearFieldError('segment'); }
+                break;
+              }
+              case 'compliance_behaviours': {
+                const label = String(row.name ?? '');
+                if (label) { setComplianceOpts(prev => [...prev, { value: label, label }]); setComplianceBehaviour(label); clearFieldError('complianceBehaviour'); }
+                break;
+              }
+              case 'countries': {
+                const label = String(row.name ?? '');
+                if (label) { setCountryOpts(prev => [...prev, { value: label, label }]); setCountry(label); clearFieldError('country'); }
+                break;
+              }
+            }
+            setQuickAdd(null);
+            void id; // id consumed only for parity with product popup
+          }}
+        />
+      )}
+    </div>
+  ), document.body);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Master Quick-Add popup — opens above the wizard when a "+" button is
+ * clicked on a master-backed field. Mirrors the Add Product wizard popup.
+ *
+ * NOTE on declaration order: `VendorMasterSlug` MUST be declared before
+ * `QUICK_ADD_SCHEMAS` because Vite/SWC processes the file top-to-bottom
+ * and doesn't always hoist type aliases used inside Record<…> generic
+ * arguments. A forward reference here trips the dev transformer with a
+ * 500 even though tsc itself is happy.
+ * ────────────────────────────────────────────────────────────────────── */
+type VendorMasterSlug = 'customer_types' | 'risk_levels' | 'vendor_behaviour' | 'segments' | 'compliance_behaviours' | 'countries';
+
+type QaField = { name: string; label: string; type?: 'text' | 'number'; required?: boolean; placeholder?: string };
+
+const QUICK_ADD_SCHEMAS: Record<VendorMasterSlug, { title: string; fields: QaField[] }> = {
+  customer_types:        { title: 'Add Vendor Type',         fields: [{ name: 'name',  label: 'Vendor Type',         required: true, placeholder: 'e.g. Genuine / Verified' }] },
+  risk_levels:           { title: 'Add Risk Level',          fields: [{ name: 'name',  label: 'Risk Level',          required: true, placeholder: 'e.g. Low, Medium, High' }] },
+  vendor_behaviour:      { title: 'Add Vendor Behaviour',    fields: [{ name: 'name',  label: 'Vendor Behaviour',    required: true, placeholder: 'e.g. Excellent / Good' }] },
+  segments:              { title: 'Add Segment',             fields: [{ name: 'title', label: 'Segment Name',        required: true, placeholder: 'e.g. Dry Fruits' }] },
+  compliance_behaviours: { title: 'Add Compliance Behaviour', fields: [{ name: 'name',  label: 'Behaviour Name',      required: true, placeholder: 'e.g. Compliant, Under Review' }] },
+  countries:             { title: 'Add Country',             fields: [{ name: 'name',  label: 'Country Name',        required: true, placeholder: 'e.g. India' }] },
+};
+
+function MasterQuickAddPopup(props: {
+  slug: VendorMasterSlug;
+  onClose: () => void;
+  onSaved: (row: Record<string, unknown>) => void;
+}) {
+  const { slug, onClose, onSaved } = props;
+  const toast = useToast();
+  const schema = QUICK_ADD_SCHEMAS[slug];
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const set = (k: string, v: string) => {
+    setValues(prev => ({ ...prev, [k]: v }));
+    if (errors[k]) setErrors(prev => { const n = { ...prev }; delete n[k]; return n; });
+  };
+
+  const submit = async () => {
+    const errs: Record<string, string> = {};
+    schema.fields.forEach(f => {
+      if (f.required && !(values[f.name] ?? '').toString().trim()) {
+        errs[f.name] = `${f.label} is required`;
+      }
+    });
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      toast.error('Missing required fields', 'Please fix the highlighted fields');
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload: Record<string, unknown> = { ...values, status: 'Active' };
+      schema.fields.forEach(f => {
+        if (f.type === 'number' && payload[f.name] !== undefined) {
+          payload[f.name] = Number(payload[f.name]);
+        }
+      });
+      const res = await api.post<Record<string, unknown>>(`/master/${slug}`, payload);
+      toast.success('Saved', `${schema.title.replace('Add ', '')} added`);
+      onSaved(res.data);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
+      const fieldErr = err?.response?.data?.errors;
+      if (fieldErr) {
+        const flat: Record<string, string> = {};
+        Object.entries(fieldErr).forEach(([k, v]) => { if (v?.[0]) flat[k] = v[0]; });
+        setErrors(flat);
+      }
+      toast.error('Save failed', err?.response?.data?.message || `Could not add to ${slug}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return createPortal((
+    <div className="avm-qa-backdrop" onClick={onClose}>
+      <div className="avm-qa-popup" onClick={(e) => e.stopPropagation()}>
+        <div className="avm-qa-head">
+          <div className="avm-qa-title">
+            <i className="ri-add-circle-line" /> {schema.title}
+          </div>
+          <button className="avm-close avm-qa-close" onClick={onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+        <div className="avm-qa-body">
+          {schema.fields.map(f => (
+            <Field key={f.name} label={f.label} required={f.required} error={errors[f.name]}>
+              <input
+                className="avm-input"
+                type={f.type === 'number' ? 'number' : 'text'}
+                placeholder={f.placeholder ?? ''}
+                value={values[f.name] ?? ''}
+                onChange={(e) => set(f.name, e.target.value)}
+              />
+            </Field>
+          ))}
+        </div>
+        <div className="avm-qa-foot">
+          <button className="avm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="avm-btn-primary" onClick={submit} disabled={saving}>
+            <i className="ri-save-line" /> Save
+          </button>
+        </div>
+      </div>
     </div>
   ), document.body);
 }
@@ -865,14 +1111,34 @@ function SectionCard(props: {
   );
 }
 
-function Field(props: { label: string; required?: boolean; addNew?: boolean; children: ReactNode }) {
+function Field(props: {
+  label: string;
+  required?: boolean;
+  addNew?: boolean;
+  onAdd?: () => void;
+  error?: string;
+  children: ReactNode;
+}) {
   return (
-    <label className="avm-field">
+    <label className={`avm-field${props.error ? ' has-error' : ''}`}>
       <span className="avm-field-label">
         {props.label}{props.required && <span className="avm-req">*</span>}
-        {props.addNew && <button type="button" className="avm-field-plus" tabIndex={-1} onClick={(e) => e.preventDefault()}>+</button>}
+        {props.addNew && (
+          <button
+            type="button"
+            className="avm-field-plus"
+            tabIndex={-1}
+            title={`Add new ${props.label}`}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onAdd?.(); }}
+          >+</button>
+        )}
       </span>
       {props.children}
+      {props.error && (
+        <span className="avm-field-error">
+          <i className="ri-error-warning-line" /> {props.error}
+        </span>
+      )}
     </label>
   );
 }
@@ -1243,6 +1509,30 @@ const SCOPED_CSS = `
 .avm-input::placeholder { color: #b3b3b3; }
 .avm-input:focus { border-color: #405189; box-shadow: 0 0 0 3px rgba(64,81,137,.15); }
 
+/* Inline per-field error — red text + warning icon under the input,
+   plus a red border on the input itself (matches the Add Product form). */
+.avm-field .avm-field-error,
+.avm-modal .avm-field-error,
+.avm-field-error {
+  display: inline-flex !important; align-items: center; gap: 4px;
+  font-size: 11.5px; font-weight: 600; color: #ef4444 !important;
+  margin-top: 4px; line-height: 1.2;
+}
+.avm-field .avm-field-error i,
+.avm-field-error i { font-size: 13px; color: #ef4444 !important; }
+.avm-field.has-error .avm-input,
+.avm-field.has-error textarea {
+  border-color: #ef4444 !important;
+}
+.avm-field.has-error .avm-input:focus,
+.avm-field.has-error textarea:focus {
+  box-shadow: 0 0 0 3px rgba(239,68,68,.15) !important;
+}
+.avm-field.has-error .master-select-wrap .master-select-toggle {
+  border-color: #ef4444 !important;
+}
+.avm-field.has-error .avm-field-label { color: #ef4444 !important; }
+
 /* MasterSelect inside this modal — match Velzon form-select chrome */
 .avm-master-select .master-select-wrap .master-select-toggle {
   min-height: 38px !important; height: 38px;
@@ -1438,4 +1728,88 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-prev-chip { background: #14241a; border-color: #166534; color: #bbf7d0; }
 [data-bs-theme="dark"] .avm-prev-field { background: #110c25; border-color: #14532d; }
 [data-bs-theme="dark"] .avm-prev-field-val { color: #ede9fe; }
+
+/* ─── Master Quick-Add popup ─── */
+.avm-qa-backdrop {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(15, 23, 42, .6);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 20px;
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+}
+.avm-qa-popup {
+  width: 100%; max-width: 480px;
+  background: #fff; border-radius: 16px; overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
+}
+.avm-qa-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #2b3a85, #6691e7);
+  color: #fff;
+}
+.avm-qa-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 800; }
+.avm-qa-title i { font-size: 18px; }
+.avm-qa-close {
+  width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.12); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s, transform .12s;
+}
+.avm-qa-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+.avm-qa-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.avm-qa-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 18px; border-top: 1px solid #ede9fe;
+}
+
+[data-bs-theme="dark"] .avm-qa-popup { background: #14102a; color: #ede9fe; }
+[data-bs-theme="dark"] .avm-qa-head  { background: linear-gradient(135deg, #2b3a85, #6691e7); }
+[data-bs-theme="dark"] .avm-qa-foot  { border-top-color: #3b2a6b; }
+
+/* ─── Contact Person popup ─── */
+.avm-cp-backdrop {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(15, 23, 42, .6);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 20px;
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+}
+.avm-cp-popup {
+  width: 100%; max-width: 880px;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
+}
+.avm-cp-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #2b3a85, #6691e7);
+  color: #fff;
+}
+.avm-cp-title { font-size: 16px; font-weight: 800; }
+.avm-cp-close {
+  width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.12); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s, transform .12s;
+}
+.avm-cp-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+.avm-cp-body  { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.avm-cp-foot {
+  display: flex; justify-content: center; gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid #e2e8f0;
+}
+
+[data-bs-theme="dark"] .avm-cp-popup { background: #14102a; color: #ede9fe; }
+[data-bs-theme="dark"] .avm-cp-head  { background: linear-gradient(135deg, #2b3a85, #6691e7); }
+[data-bs-theme="dark"] .avm-cp-foot  { border-top-color: #3b2a6b; }
 `;

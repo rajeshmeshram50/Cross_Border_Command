@@ -46,6 +46,10 @@ type ProductDto = {
   length_cm: string | number | null;
   width_cm: string | number | null;
   height_cm: string | number | null;
+  batch_no: string | null;
+  serial_no: string | null;
+  cat_no: string | null;
+  lot_no: string | null;
   status: string;
   step_completed: number;
   segment: AnyRec | null;
@@ -223,10 +227,10 @@ export default function ProductView() {
 
                 <h6 className="pv2-info-heading pv2-info-heading-sub">Inventory Details:</h6>
                 <div className="pv2-info-body">
-                  <Row k="Batch No"  v="—" />
-                  <Row k="Serial No" v="—" />
-                  <Row k="Cat No"    v="—" />
-                  <Row k="Lot No"    v="—" />
+                  <Row k="Batch No"  v={product.batch_no  || '—'} />
+                  <Row k="Serial No" v={product.serial_no || '—'} />
+                  <Row k="Cat No"    v={product.cat_no    || '—'} />
+                  <Row k="Lot No"    v={product.lot_no    || '—'} />
                 </div>
               </div>
 
