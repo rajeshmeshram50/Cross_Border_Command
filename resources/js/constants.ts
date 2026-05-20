@@ -328,6 +328,11 @@ export const MENU_ITEMS: MenuItem[] = [
   // defaultSlugs allow-list).
   { id: 'products', icon: 'Package', label: 'Products', roles: ['branch_user', 'employee'] },
 
+  // Vendor master — companies the branch buys product from. Sits next to
+  // Products so the purchasing trio (Products → Vendors → mappings) reads
+  // as a single section in the sidebar.
+  { id: 'vendors',  icon: 'Store',   label: 'Vendors',  roles: ['branch_user', 'employee'] },
+
   // Face-driven attendance — only employees punch in. The signed-in admin /
   // branch user has no Employee row to clock in for; surfaced ONLY to the
   // employee role so admins don't see a dead-end menu entry.

@@ -71,7 +71,9 @@ class ProductController extends Controller
         if ($last && preg_match('/(\d+)$/', $last, $m)) {
             $n = (int) $m[1];
         }
-        return 'P-' . str_pad((string)($n + 1), 3, '0', STR_PAD_LEFT);
+        // 2-digit padding: P-01, P-02, …, P-99. Codes beyond 99 fall back
+        // to natural width (P-100, P-101) — str_pad won't truncate.
+        return 'P-' . str_pad((string)($n + 1), 2, '0', STR_PAD_LEFT);
     }
 
     /* ──────────────────────────────────────────────────────────────────
