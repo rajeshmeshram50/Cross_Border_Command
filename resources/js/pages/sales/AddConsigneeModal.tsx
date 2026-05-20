@@ -1,5 +1,49 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
+import api from '../../api';
+import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
+import Tooltip from '../../components/ui/Tooltip';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+
+/* Each row in the Address & Contact Details table — mirrors the
+ * shape used by AddCustomerModal so the JSX patterns line up. */
+interface LocationRow {
+  id: string;
+  type: string; line: string; country: string; state: string; city: string; pin: string;
+  cpName: string; cpDesignation: string; cpContact: string; cpEmail: string; cpWhatsapp: 'yes' | 'no' | '';
+}
+/* Stage 2 KYC rows. Company Due Diligence + Trade Licence share the
+ * same shape (distinguished by `kind`). Owner KYC has its own. */
+interface KycDocRow {
+  id: string;
+  kind: 'dd' | 'tl';
+  name: string;
+  license_number?: string;
+  issuing_authority?: string;
+  issue_date?: string;        // YYYY-MM-DD
+  expiry_date?: string;       // YYYY-MM-DD
+  attachment_name?: string;
+  status: 'Active' | 'Inactive';
+}
+interface KycOwnerRow {
+  id: string;
+  owner_name: string;
+  designation?: string;
+  official_email?: string;
+  phone_number?: string;
+  id_proof_name?: string;
+  address_proof_name?: string;
+  photograph_name?: string;
+  status: 'Active' | 'Inactive';
+}
+type KycSubTab = 'company-dd' | 'owner-kyc' | 'trade-licence';
+type EvSubTab  = 'dd' | 'kyc' | 'tl';
+
+/* Master value — must match the seeded address_types row exactly so
+ * the dropdown selects it instead of inserting a synthetic fallback. */
+const DEFAULT_ADDRESS_TYPE = 'Registered Office';
+const newLocId = () => `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+const newKycId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Consignee — two-phase wizard
@@ -29,11 +73,14 @@ export type ConsigneeRow = {
   countryDetail: string;
 };
 
-// Stub of the customers the picker offers — same shape SalesCustomers uses
-// for its mock dataset. Real flow will fetch from /customers.
+/* Customer option shape consumed by the consignee picker. Fields
+ * are sourced from the live /api/customers response (the one
+ * populated by SalesCustomers' Add Customer flow), so creating a
+ * customer there makes them selectable here. */
 type CustomerOption = {
-  id: string;        // C-027
-  initials: string;  // AF
+  id: string;        // C-001 (display code from server)
+  db_id?: number;    // numeric PK — needed if/when the consignee POST stores customer_id
+  initials: string;  // SE
   name: string;
   legalName: string;
   segment: string;
@@ -49,14 +96,14 @@ type CustomerOption = {
   whatsapp: 'Yes' | 'No';
 };
 
-const CUSTOMER_OPTIONS: CustomerOption[] = [
-  { id: 'C-001', initials: 'SE', name: 'Shree Exports Pvt Ltd',     legalName: 'Shree Exports Private Limited', segment: 'Dry Fruits',      type: 'Retailer',   classification: 'Standard', country: 'India',  state: 'Maharashtra', city: 'Mumbai',     pin: '400001', contactPerson: 'Yash Mote',     phone: '+91-9011033444', email: 'yash@shreeexports.com',    whatsapp: 'Yes' },
-  { id: 'C-002', initials: 'GH', name: 'GreenHarvest Global',        legalName: 'GreenHarvest Global Limited',   segment: 'Agro',            type: 'Exporter',   classification: 'Standard', country: 'India',  state: 'Punjab',      city: 'Ludhiana',   pin: '141001', contactPerson: 'Ravi Vardhan',  phone: '+91-9123456789', email: 'ravi@greenharvestglobal.com', whatsapp: 'Yes' },
-  { id: 'C-004', initials: 'IB', name: 'International Buyer LLC',    legalName: 'International Buyer LLC',       segment: 'Spices',          type: 'Wholesaler', classification: 'Premium',  country: 'UAE',    state: 'Dubai',       city: 'Dubai',      pin: '00000',  contactPerson: 'Ahmed Al-Farsi',phone: '+971-501234567', email: 'ahmed@intlbuyer.ae',       whatsapp: 'Yes' },
-  { id: 'C-027', initials: 'AF', name: 'Agro Fresh Ltd',             legalName: 'Agro Fresh Limited',            segment: 'Organic Spices',  type: 'Retailer',   classification: 'Standard', country: 'India',  state: 'Tamil Nadu',  city: 'Coimbatore', pin: '641001', contactPerson: '—',             phone: '+91-9678901235', email: 'priya@agrofresh.in',       whatsapp: 'Yes' },
-  { id: 'C-028', initials: 'GT', name: 'Gulf Food Traders LLC',      legalName: 'Gulf Food Traders LLC',         segment: 'Dry Fruits',      type: 'Wholesaler', classification: 'Standard', country: 'UAE',    state: 'Dubai',       city: 'Dubai',      pin: '00000',  contactPerson: 'Omar Al-Rashid',phone: '+971-571234567', email: 'omar@gulffood.ae',         whatsapp: 'Yes' },
-  { id: 'C-029', initials: 'NA', name: 'Nwosu Agro Industries',      legalName: 'Nwosu Agro Industries Ltd',     segment: 'Cashew',          type: 'Exporter',   classification: 'Standard', country: 'Nigeria',state: 'Lagos',       city: 'Lagos',      pin: '100001', contactPerson: 'Amara Nwosu',   phone: '+234-8012345678',email: 'amara@nwosuagro.ng',       whatsapp: 'No' },
-];
+/* Derive two-letter initials from a company name — used by the
+ * picker's avatar tile when the API response doesn't carry one. */
+const initialsOf = (name: string): string => {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '—';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
 
 /* ─── KYC Documents mock dataset (Step 3) ─── */
 type KycDoc = {
@@ -84,7 +131,7 @@ interface Props {
 
 type Phase = 'pick-customer' | 'wizard';
 type Stage = 1 | 2 | 3;
-type IdentityTab = 'identification' | 'contact';
+type IdentityTab = 'identification' | 'address-contact';
 type VaultTab = 'kyc' | 'trade';
 
 export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
@@ -96,32 +143,73 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
   const [search, setSearch]     = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [linkedHidden, setLinkedHidden] = useState(false);
+  /* Live customer list pulled from /api/customers when the modal
+   * opens. This is the same endpoint SalesCustomers populates via
+   * its Add Customer flow, so a freshly-created customer shows up
+   * here without a refresh on the consignee side. */
+  const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
+
+  /* Master-data backed dropdowns. Pulled in parallel on modal open.
+   * Each list is normalized to { value, label } for MasterSelect.
+   * Segments use `title`; the rest use `name`. */
+  type Opt = { value: string; label: string };
+  type StateOpt = Opt & { countryId: number };
+  const [mSegments,        setMSegments]        = useState<Opt[]>([]);
+  const [mClassifications, setMClassifications] = useState<Opt[]>([]);
+  const [mRiskLevels,      setMRiskLevels]      = useState<Opt[]>([]);
+  const [mAddressTypes,    setMAddressTypes]    = useState<Opt[]>([]);
+  const [mCountries,       setMCountries]       = useState<(Opt & { id: number })[]>([]);
+  const [mStates,          setMStates]          = useState<StateOpt[]>([]);
+  const [mDesignations,    setMDesignations]    = useState<Opt[]>([]);
 
   // Stage 1 — Consignee Legal Identity
   const [idTab, setIdTab]         = useState<IdentityTab>('identification');
+  /* Inline validation errors for Stage 1 fields. Keyed by form1 field
+   * name. Each `goNext` from Stage 1 runs validateStage1() and refuses
+   * to advance if any required field is empty/invalid; the error map
+   * drives the red border + helper text under each affected Field. */
+  const [errors1, setErrors1] = useState<Record<string, string>>({});
   const [form1, setForm1] = useState({
+    /* Basic company */
     companyName: '', legalName: '', website: '', segment: '', classification: '', risk: '',
-    addressType: 'Register Office Address', address: '', country: '', state: '', city: '', pin: '',
+    /* Primary address (registered office) */
+    addressType: 'Registered Office', address: '', country: '', state: '', city: '', pin: '',
+    /* Primary contact at the registered office */
     contactName: '', designation: '', contactNo: '', email: '', whatsapp: 'Yes',
   });
 
-  // Stage 2 — KYC / Due Diligence
-  const [form2, setForm2] = useState({
-    pan: '', tan: '', gstin: '', iec: '', incorpDate: '',
-    ownerName: '', ownerDesignation: '', ownerPan: '', ownerEmail: '',
-    sanctionsCheck: 'No', pepCheck: 'No', adverseMedia: 'No',
-  });
+  /* Address & Contact table — each row carries an address plus the
+   * contact person who is authoritative at that location. Mirrors
+   * AddCustomerModal so the JSX stays uniform. */
+  const [locations, setLocations] = useState<LocationRow[]>([]);
+  const [locModal, setLocModal]   = useState<{ open: boolean; editing: string | null }>({ open: false, editing: null });
+  const [delModal, setDelModal]   = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
 
-  // Stage 3 — Evidence Vault
+  /* Stage 2 — KYC / Due Diligence
+   * Table-driven now (matches AddCustomerModal): docs covers both
+   * Company DD and Trade Licence (filtered by `kind`); owners are
+   * separate. All state is in-memory until the backend lands. */
+  const [kycSub, setKycSub]       = useState<KycSubTab>('company-dd');
+  const [kycSearch, setKycSearch] = useState('');
+  const [kycDocs, setKycDocs]     = useState<KycDocRow[]>([]);
+  const [kycOwners, setKycOwners] = useState<KycOwnerRow[]>([]);
+  const [docModal, setDocModal]   = useState<{ open: boolean; sub: KycSubTab; editingId: string | null }>({ open: false, sub: 'company-dd', editingId: null });
+  const [ownerModal, setOwnerModal] = useState<{ open: boolean; editingId: string | null }>({ open: false, editingId: null });
+  const [kycDelModal, setKycDelModal] = useState<{ open: boolean; kind: 'doc' | 'owner' | null; id: string | null; label?: string }>({ open: false, kind: null, id: null });
+
+  /* Stage 3 — Evidence Vault. Outer tab = KYC vs Trade. Inner sub-tab
+   * (when on KYC) = which KYC kind to view. */
   const [vaultTab, setVaultTab] = useState<VaultTab>('kyc');
+  const [evSub, setEvSub]       = useState<EvSubTab>('dd');
 
   // Reset everything when modal opens fresh.
   useEffect(() => {
     if (!open) return;
     if (consignee) {
-      // Edit mode — skip the customer picker; preload what we know.
-      const found = CUSTOMER_OPTIONS.find(c => c.id === consignee.customerId) || null;
-      setCustomer(found);
+      // Edit mode — skip the customer picker. The matching customer
+      // is populated by the fetch effect below once it lands; until
+      // then we keep `customer` null but jump straight to the wizard.
       setPhase('wizard');
     } else {
       setCustomer(null);
@@ -132,22 +220,114 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
     setSearchOpen(false);
     setLinkedHidden(false);
     setIdTab('identification');
+    setErrors1({});
     setVaultTab('kyc');
+    setEvSub('dd');
+    setLocations([]);
+    setLocModal({ open: false, editing: null });
+    setDelModal({ open: false, id: null });
+    setKycSub('company-dd');
+    setKycSearch('');
+    setKycDocs([]);
+    setKycOwners([]);
+    setDocModal({ open: false, sub: 'company-dd', editingId: null });
+    setOwnerModal({ open: false, editingId: null });
+    setKycDelModal({ open: false, kind: null, id: null });
   }, [open, consignee]);
+
+  /* Fetch the live customer list when the modal opens. Maps the API
+   * response (the same shape SalesCustomers consumes) into the
+   * picker's CustomerOption type. On edit mode the matching row is
+   * also resolved here so the linked-customer card prefills. */
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setCustomersLoading(true);
+    api.get('/customers')
+      .then(r => {
+        if (cancelled) return;
+        const rows: any[] = Array.isArray(r.data?.data) ? r.data.data : [];
+        const opts: CustomerOption[] = rows.map(c => ({
+          id:            String(c.id ?? ''),
+          db_id:         typeof c.db_id === 'number' ? c.db_id : undefined,
+          initials:      initialsOf(c.company || ''),
+          name:          c.company    ?? '',
+          legalName:     c.legalName  ?? c.company ?? '',
+          segment:       c.segment    ?? '',
+          type:          c.type       ?? '',
+          classification:c.classification ?? '',
+          country:       c.country    ?? '',
+          state:         c.state      ?? '',
+          city:          c.city       ?? '',
+          pin:           c.pin        ?? '',
+          contactPerson: c.contact    ?? '',
+          phone:         c.phone      ?? '',
+          email:         c.email      ?? '',
+          whatsapp:      c.whatsapp === 'Yes' ? 'Yes' : 'No',
+        }));
+        setCustomerOptions(opts);
+        // Resolve the linked customer for edit mode now that we have the list.
+        if (consignee) {
+          const found = opts.find(o => o.id === consignee.customerId) || null;
+          setCustomer(found);
+        }
+      })
+      .catch(() => { if (!cancelled) setCustomerOptions([]); })
+      .finally(() => { if (!cancelled) setCustomersLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, consignee]);
+
+  /* Fetch the masters that back this modal's dropdowns. Same endpoint
+   * pattern AddCustomerModal uses — segments, customer_classifications,
+   * risk_levels, address_types, countries, states, designations. Each
+   * call is independent so one failing master doesn't break the rest. */
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const pickName = (rows: any[], key = 'name'): Opt[] => (rows ?? [])
+      .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
+      .map(r => ({ value: String(r[key] ?? ''), label: String(r[key] ?? '') }))
+      .filter(o => o.value);
+    const pickCountries = (rows: any[]): (Opt & { id: number })[] => (rows ?? [])
+      .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
+      .map(r => ({ id: Number(r.id), value: String(r.name ?? ''), label: String(r.name ?? '') }))
+      .filter(o => o.value);
+    const pickStates = (rows: any[]): StateOpt[] => (rows ?? [])
+      .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
+      .map(r => ({ countryId: Number(r.country_id), value: String(r.name ?? ''), label: String(r.name ?? '') }))
+      .filter(o => o.value);
+
+    Promise.allSettled([
+      api.get('/master/segments').then(r => { if (!cancelled) setMSegments(pickName(r.data ?? [], 'title')); }),
+      api.get('/master/customer_classifications').then(r => { if (!cancelled) setMClassifications(pickName(r.data ?? [])); }),
+      api.get('/master/risk_levels').then(r => { if (!cancelled) setMRiskLevels(pickName(r.data ?? [])); }),
+      api.get('/master/address_types').then(r => { if (!cancelled) setMAddressTypes(pickName(r.data ?? [])); }),
+      api.get('/master/countries').then(r => {
+        if (cancelled) return;
+        const sorted = [...(r.data ?? [])].sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
+        setMCountries(pickCountries(sorted));
+      }),
+      api.get('/master/states').then(r => { if (!cancelled) setMStates(pickStates(r.data ?? [])); }),
+      api.get('/master/designations').then(r => { if (!cancelled) setMDesignations(pickName(r.data ?? [])); }),
+    ]);
+    return () => { cancelled = true; };
+  }, [open]);
 
   // useMemo MUST come before any conditional return — React enforces a
   // stable hook order across renders. Putting `if (!open) return null;`
   // before this trips "change in the order of Hooks called by
   // AddConsigneeModal" the first time the modal opens.
   const filteredCustomers = useMemo(() => {
-    if (!search) return CUSTOMER_OPTIONS;
+    if (!search) return customerOptions;
     const lo = search.toLowerCase();
-    return CUSTOMER_OPTIONS.filter(c =>
+    return customerOptions.filter(c =>
       c.name.toLowerCase().includes(lo) ||
       c.id.toLowerCase().includes(lo) ||
-      c.segment.toLowerCase().includes(lo),
+      c.segment.toLowerCase().includes(lo) ||
+      c.legalName.toLowerCase().includes(lo) ||
+      (c.country || '').toLowerCase().includes(lo),
     );
-  }, [search]);
+  }, [search, customerOptions]);
 
   if (!open) return null;
 
@@ -160,7 +340,50 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
     setStage(1);
   };
 
-  const goNext = () => setStage(s => (s < 3 ? (s + 1) as Stage : s));
+  /* Validate every required Stage 1 field. Returns the error map (empty
+   * when valid). The map keys match form1 field names so we can wire
+   * inline error display via the Field's `error` prop in Stage1. */
+  const validateStage1 = (): Record<string, string> => {
+    const e: Record<string, string> = {};
+    const f = form1;
+    if (!f.companyName.trim())                                e.companyName = 'Company name is required';
+    if (!f.legalName.trim())                                  e.legalName   = 'Company legal name is required';
+    if (!f.segment)                                           e.segment     = 'Select a segment';
+    if (!f.risk)                                              e.risk        = 'Select a risk level';
+    if (!f.addressType)                                       e.addressType = 'Select address type';
+    if (!f.address.trim())                                    e.address     = 'Address is required';
+    if (!f.country)                                           e.country     = 'Select country';
+    if (!f.state)                                             e.state       = 'Select state';
+    if (!f.city.trim())                                       e.city        = 'City is required';
+    if (!f.pin.trim())                                        e.pin         = 'PIN is required';
+    else if (!/^[A-Za-z0-9\-\s]{3,12}$/.test(f.pin))          e.pin         = 'PIN looks invalid';
+    if (!f.contactName.trim())                                e.contactName = 'Contact name is required';
+    if (!f.designation.trim())                                e.designation = 'Designation is required';
+    if (!f.contactNo.trim())                                  e.contactNo   = 'Contact number is required';
+    else if (!/^\+?[0-9\s-]{7,15}$/.test(f.contactNo))        e.contactNo   = 'Phone must be 7-15 digits';
+    if (!f.email.trim())                                      e.email       = 'Email is required';
+    else if (!/^\S+@\S+\.\S+$/.test(f.email))                 e.email       = 'Enter a valid email';
+    if (!f.whatsapp)                                          e.whatsapp    = 'Select WhatsApp preference';
+    return e;
+  };
+
+  const goNext = () => {
+    if (stage === 1) {
+      const e = validateStage1();
+      setErrors1(e);
+      if (Object.keys(e).length > 0) {
+        /* Surface the first error in a toast and bounce focus to the
+         * identification tab if any field there is missing — the
+         * Primary Address & Contact sections live alongside it on the
+         * same tab so a single focus shift is enough. */
+        const firstKey = Object.keys(e)[0];
+        toast.error('Please complete required fields', e[firstKey]);
+        setIdTab('identification');
+        return;
+      }
+    }
+    setStage(s => (s < 3 ? (s + 1) as Stage : s));
+  };
   const goBack = () => setStage(s => (s > 1 ? (s - 1) as Stage : s));
 
   const handleSave = () => {
@@ -198,7 +421,13 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
 
             {searchOpen && (
               <div className="acm-picker-list">
-                {filteredCustomers.length === 0 && (
+                {customersLoading && customerOptions.length === 0 && (
+                  <div className="acm-picker-empty">Loading customers…</div>
+                )}
+                {!customersLoading && customerOptions.length === 0 && (
+                  <div className="acm-picker-empty">No customers found. Add one from Sales Matrix → Customers first.</div>
+                )}
+                {!customersLoading && customerOptions.length > 0 && filteredCustomers.length === 0 && (
                   <div className="acm-picker-empty">No customers match — try a different search</div>
                 )}
                 {filteredCustomers.map(c => (
@@ -251,10 +480,16 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
   }
 
   /* ─── Render: phase B — full-page wizard ─── */
+  /* Blur the parent wizard whenever a sub-modal is open on top of it
+   * (Add/Edit Location, or the Delete confirm). Pure visual cue —
+   * pointer events also turn off so stray clicks don't reach the
+   * fields behind the popup. */
+  const subOpen = locModal.open || delModal.open || docModal.open || ownerModal.open || kycDelModal.open;
   return (
+    <>
     <div className="acm-overlay" onMouseDown={onClose}>
       <style>{SCOPED_CSS}</style>
-      <div className="acm-wiz" onMouseDown={e => e.stopPropagation()}>
+      <div className={`acm-wiz ${subOpen ? 'acm-wiz-blurred' : ''}`} onMouseDown={e => e.stopPropagation()}>
         {/* Header */}
         <div className="acm-wiz-header">
           <div className="acm-wiz-hicon"><IconTruck size={20} /></div>
@@ -335,20 +570,59 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
               setTab={setIdTab}
               form={form1}
               setForm={setForm1}
+              errors={errors1}
+              clearErr={(k) => setErrors1(prev => { if (!prev[k]) return prev; const n = { ...prev }; delete n[k]; return n; })}
+              locations={locations}
+              onAddLocation={() => setLocModal({ open: true, editing: null })}
+              onEditLocation={(id) => setLocModal({ open: true, editing: id })}
+              onDeleteLocation={(id) => setDelModal({ open: true, id })}
+              masters={{
+                segments: mSegments,
+                classifications: mClassifications,
+                riskLevels: mRiskLevels,
+                addressTypes: mAddressTypes,
+                countries: mCountries,
+                states: mStates,
+                designations: mDesignations,
+              }}
             />
           )}
           {stage === 2 && (
             <Stage2
-              form={form2}
-              setForm={setForm2}
+              sub={kycSub}
+              setSub={(s) => { setKycSub(s); setKycSearch(''); }}
+              search={kycSearch}
+              setSearch={setKycSearch}
+              docs={kycDocs}
+              owners={kycOwners}
+              onAddDoc={(s) => setDocModal({ open: true, sub: s, editingId: null })}
+              onEditDoc={(id) => {
+                const row = kycDocs.find(d => d.id === id);
+                if (!row) return;
+                setDocModal({ open: true, sub: row.kind === 'dd' ? 'company-dd' : 'trade-licence', editingId: id });
+              }}
+              onDeleteDoc={(id) => {
+                const row = kycDocs.find(d => d.id === id);
+                setKycDelModal({ open: true, kind: 'doc', id, label: row?.name });
+              }}
+              onAddOwner={() => setOwnerModal({ open: true, editingId: null })}
+              onEditOwner={(id) => setOwnerModal({ open: true, editingId: id })}
+              onDeleteOwner={(id) => {
+                const row = kycOwners.find(o => o.id === id);
+                setKycDelModal({ open: true, kind: 'owner', id, label: row?.owner_name });
+              }}
             />
           )}
           {stage === 3 && (
             <Stage3
               vaultTab={vaultTab}
               setVaultTab={setVaultTab}
+              evSub={evSub}
+              setEvSub={setEvSub}
               form1={form1}
-              form2={form2}
+              kycDocs={kycDocs}
+              kycOwners={kycOwners}
+              locations={locations}
             />
           )}
         </div>
@@ -376,6 +650,92 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
         </div>
       </div>
     </div>
+
+    {locModal.open && (
+      <LocationSubModal
+        editing={locModal.editing ? locations.find(l => l.id === locModal.editing) ?? null : null}
+        masters={{
+          addressTypes: mAddressTypes,
+          countries: mCountries,
+          states: mStates,
+          designations: mDesignations,
+        }}
+        onClose={() => setLocModal({ open: false, editing: null })}
+        onSave={(rec) => {
+          if (locModal.editing) {
+            setLocations(prev => prev.map(l => l.id === locModal.editing ? { ...rec, id: l.id } : l));
+          } else {
+            setLocations(prev => [...prev, { ...rec, id: newLocId() }]);
+          }
+          setLocModal({ open: false, editing: null });
+        }}
+      />
+    )}
+
+    <DeleteConfirmModal
+      open={delModal.open}
+      title="Delete Address & Contact"
+      itemName={delModal.id ? (locations.find(l => l.id === delModal.id)?.type || 'this location') : undefined}
+      subMessage="This will remove the address and its contact person from this consignee. The action cannot be undone."
+      onClose={() => setDelModal({ open: false, id: null })}
+      onConfirm={() => {
+        if (delModal.id) setLocations(prev => prev.filter(l => l.id !== delModal.id));
+        setDelModal({ open: false, id: null });
+      }}
+    />
+
+    {docModal.open && (
+      <KycDocSubModal
+        sub={docModal.sub}
+        editing={docModal.editingId ? kycDocs.find(d => d.id === docModal.editingId) ?? null : null}
+        onClose={() => setDocModal({ open: false, sub: 'company-dd', editingId: null })}
+        onSave={(rec) => {
+          const kind: 'dd' | 'tl' = docModal.sub === 'company-dd' ? 'dd' : 'tl';
+          if (docModal.editingId) {
+            setKycDocs(prev => prev.map(d => d.id === docModal.editingId ? { ...d, ...rec, id: d.id, kind } : d));
+          } else {
+            setKycDocs(prev => [...prev, { ...rec, kind, id: newKycId(kind) }]);
+          }
+          setDocModal({ open: false, sub: 'company-dd', editingId: null });
+        }}
+      />
+    )}
+
+    {ownerModal.open && (
+      <KycOwnerSubModal
+        editing={ownerModal.editingId ? kycOwners.find(o => o.id === ownerModal.editingId) ?? null : null}
+        onClose={() => setOwnerModal({ open: false, editingId: null })}
+        onSave={(rec) => {
+          if (ownerModal.editingId) {
+            setKycOwners(prev => prev.map(o => o.id === ownerModal.editingId ? { ...o, ...rec, id: o.id } : o));
+          } else {
+            setKycOwners(prev => [...prev, { ...rec, id: newKycId('own') }]);
+          }
+          setOwnerModal({ open: false, editingId: null });
+        }}
+      />
+    )}
+
+    <DeleteConfirmModal
+      open={kycDelModal.open}
+      title={kycDelModal.kind === 'owner' ? 'Delete Owner' : 'Delete KYC Document'}
+      itemName={kycDelModal.label}
+      subMessage={kycDelModal.kind === 'owner'
+        ? 'This will remove the owner KYC record from this consignee. The action cannot be undone.'
+        : 'This will remove the document from this consignee. The action cannot be undone.'}
+      onClose={() => setKycDelModal({ open: false, kind: null, id: null })}
+      onConfirm={() => {
+        if (kycDelModal.id) {
+          if (kycDelModal.kind === 'owner') {
+            setKycOwners(prev => prev.filter(o => o.id !== kycDelModal.id));
+          } else if (kycDelModal.kind === 'doc') {
+            setKycDocs(prev => prev.filter(d => d.id !== kycDelModal.id));
+          }
+        }
+        setKycDelModal({ open: false, kind: null, id: null });
+      }}
+    />
+    </>
   );
 }
 
@@ -416,31 +776,68 @@ const SectionHeader = ({ icon, title, sub, accent }: { icon: React.ReactNode; ti
   </div>
 );
 
-const Field = ({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) => (
+const Field = ({ label, required, error, children }: { label: string; required?: boolean; error?: string; children: React.ReactNode }) => (
   <div className="acm-field">
     <label className="acm-field-label">
       {label.toUpperCase()} {required && <span className="acm-req">*</span>}
     </label>
     {children}
+    {error && <span className="acm-err-text">{error}</span>}
   </div>
 );
 
 /* ─── Stage 1 — Consignee Legal Identity ─── */
-const Stage1 = ({ tab, setTab, form, setForm }: {
+type Stage1Masters = {
+  segments:        { value: string; label: string }[];
+  classifications: { value: string; label: string }[];
+  riskLevels:      { value: string; label: string }[];
+  addressTypes:    { value: string; label: string }[];
+  countries:       { value: string; label: string; id: number }[];
+  states:          { value: string; label: string; countryId: number }[];
+  designations:    { value: string; label: string }[];
+};
+
+/* Append the current value as a fallback option when it isn't in the
+ * fetched list yet — keeps already-saved values visible during edit. */
+const optsWith = (
+  opts: { value: string; label: string }[],
+  current?: string,
+): { value: string; label: string }[] => {
+  if (!current) return opts;
+  return opts.some(o => o.value === current)
+    ? opts
+    : [...opts, { value: current, label: current }];
+};
+
+const Stage1 = ({
+  tab, setTab, form, setForm, masters, errors, clearErr,
+  locations, onAddLocation, onEditLocation, onDeleteLocation,
+}: {
   tab: IdentityTab;
   setTab: (t: IdentityTab) => void;
   form: any;
   setForm: (next: any) => void;
+  masters: Stage1Masters;
+  errors: Record<string, string>;
+  clearErr: (k: string) => void;
+  locations: LocationRow[];
+  onAddLocation: () => void;
+  onEditLocation: (id: string) => void;
+  onDeleteLocation: (id: string) => void;
 }) => {
-  const set = (k: string, v: any) => setForm({ ...form, [k]: v });
+  const set = (k: string, v: any) => { setForm({ ...form, [k]: v }); clearErr(k); };
+  const selectedCountry = masters.countries.find(c => c.value === form.country);
+  const filteredStates = selectedCountry
+    ? masters.states.filter(s => s.countryId === selectedCountry.id)
+    : [];
   return (
     <>
       <div className="acm-id-tabs">
         <button className={`acm-id-tab ${tab === 'identification' ? 'on' : ''}`} onClick={() => setTab('identification')}>
           <IconTruck size={14} /> Consignee Identification Details
         </button>
-        <button className={`acm-id-tab ${tab === 'contact' ? 'on' : ''}`} onClick={() => setTab('contact')}>
-          <IconUser /> Contact Person Details
+        <button className={`acm-id-tab ${tab === 'address-contact' ? 'on' : ''}`} onClick={() => setTab('address-contact')}>
+          <IconPin /> Address &amp; Contact Details
         </button>
       </div>
 
@@ -448,84 +845,108 @@ const Stage1 = ({ tab, setTab, form, setForm }: {
         <>
           <SectionHeader icon={<IconHome />} title="Basic Company Details"     sub="Company identity, segment, and risk classification" accent="#10b981" />
           <div className="acm-grid-2 acm-sec-pad">
-            <Field label="Company Name" required>
-              <input className="acm-input" placeholder="Enter company name" value={form.companyName} onChange={e => set('companyName', e.target.value)} />
+            <Field label="Company Name" required error={errors.companyName}>
+              <input className={`acm-input ${errors.companyName ? 'acm-input-error' : ''}`} placeholder="Enter company name" value={form.companyName} onChange={e => set('companyName', e.target.value)} />
             </Field>
-            <Field label="Company Legal Name" required>
-              <input className="acm-input" placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} />
+            <Field label="Company Legal Name" required error={errors.legalName}>
+              <input className={`acm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} />
             </Field>
             <Field label="Company Website">
               <input className="acm-input" placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} />
             </Field>
-            <Field label="Consignee Segment" required>
-              <select className="acm-input" value={form.segment} onChange={e => set('segment', e.target.value)}>
-                <option value="">Select Segment</option>
-                <option>Agro</option><option>Dry Fruits</option><option>Spices</option>
-                <option>Rice &amp; Grains</option><option>Coffee Beans</option><option>Organic Spices</option>
-              </select>
+            <Field label="Consignee Segment" required error={errors.segment}>
+              <MasterSelect
+                value={form.segment}
+                options={optsWith(masters.segments, form.segment)}
+                placeholder="Select Segment"
+                invalid={!!errors.segment}
+                onChange={v => set('segment', v)}
+              />
             </Field>
             <Field label="Classification &amp; Flags">
-              <select className="acm-input" value={form.classification} onChange={e => set('classification', e.target.value)}>
-                <option value="">Select Classification</option>
-                <option>Standard</option><option>Premium</option><option>Strategic</option>
-              </select>
+              <MasterSelect
+                value={form.classification}
+                options={optsWith(masters.classifications, form.classification)}
+                placeholder="Select Classification"
+                onChange={v => set('classification', v)}
+              />
             </Field>
-            <Field label="Risk Level" required>
-              <select className="acm-input" value={form.risk} onChange={e => set('risk', e.target.value)}>
-                <option value="">Select Risk Level</option>
-                <option>Low</option><option>Medium</option><option>High</option>
-              </select>
+            <Field label="Risk Level" required error={errors.risk}>
+              <MasterSelect
+                value={form.risk}
+                options={optsWith(masters.riskLevels, form.risk)}
+                placeholder="Select Risk Level"
+                invalid={!!errors.risk}
+                onChange={v => set('risk', v)}
+              />
             </Field>
           </div>
 
-          <SectionHeader icon={<IconPin />} title="Company Address &amp; Primary Contact" sub="Registered office location and primary contact details" accent="#3b82f6" />
+          <SectionHeader icon={<IconPin />} title="Primary Address &amp; Contact Person" sub="Registered office and primary contact at this location" accent="#3b82f6" />
           <div className="acm-sec-pad">
             <div className="acm-grid-2">
-              <Field label="Address Type">
-                <select className="acm-input" value={form.addressType} onChange={e => set('addressType', e.target.value)}>
-                  <option>Register Office Address</option><option>Warehouse Address</option><option>Billing Address</option><option>Shipping Address</option>
-                </select>
+              <Field label="Address Type" required error={errors.addressType}>
+                <MasterSelect
+                  value={form.addressType}
+                  options={optsWith(masters.addressTypes, form.addressType)}
+                  placeholder="Select Address Type"
+                  invalid={!!errors.addressType}
+                  onChange={v => set('addressType', v)}
+                />
               </Field>
-              <Field label="Address" required>
-                <input className="acm-input" placeholder="Enter full address" value={form.address} onChange={e => set('address', e.target.value)} />
+              <Field label="Address" required error={errors.address}>
+                <input className={`acm-input ${errors.address ? 'acm-input-error' : ''}`} placeholder="Street, building, area" value={form.address} onChange={e => set('address', e.target.value)} />
               </Field>
             </div>
             <div className="acm-grid-4 acm-mt-12">
-              <Field label="Country" required>
-                <select className="acm-input" value={form.country} onChange={e => set('country', e.target.value)}>
-                  <option value="">Select Country</option><option>India</option><option>UAE</option><option>USA</option><option>UK</option><option>Singapore</option>
-                </select>
+              <Field label="Country" required error={errors.country}>
+                <MasterSelect
+                  value={form.country}
+                  options={optsWith(masters.countries, form.country)}
+                  placeholder="Select Country"
+                  invalid={!!errors.country}
+                  onChange={v => { setForm({ ...form, country: v, state: '' }); clearErr('country'); }}
+                />
               </Field>
-              <Field label="State" required>
-                <input className="acm-input" placeholder="Select country first" value={form.state} onChange={e => set('state', e.target.value)} disabled={!form.country} />
+              <Field label="State" required error={errors.state}>
+                <MasterSelect
+                  value={form.state}
+                  options={optsWith(filteredStates, form.state)}
+                  placeholder={form.country ? 'Select State' : 'Select country first'}
+                  disabled={!form.country}
+                  invalid={!!errors.state}
+                  onChange={v => set('state', v)}
+                />
               </Field>
-              <Field label="City" required>
-                <input className="acm-input" placeholder="Enter city" value={form.city} onChange={e => set('city', e.target.value)} />
+              <Field label="City" required error={errors.city}>
+                <input className={`acm-input ${errors.city ? 'acm-input-error' : ''}`} placeholder="City name" value={form.city} onChange={e => set('city', e.target.value)} />
               </Field>
-              <Field label="Pin / Postal Code" required>
-                <input className="acm-input" placeholder="Enter PIN code" value={form.pin} onChange={e => set('pin', e.target.value)} />
+              <Field label="Pin / Postal Code" required error={errors.pin}>
+                <input className={`acm-input ${errors.pin ? 'acm-input-error' : ''}`} placeholder="6-digit PIN" maxLength={12} value={form.pin} onChange={e => set('pin', e.target.value)} />
               </Field>
             </div>
-          </div>
-
-          <SectionHeader icon={<IconUser />} title="Primary Contact Details" sub="Key contact person for this consignee" accent="#10b981" />
-          <div className="acm-sec-pad">
-            <div className="acm-grid-4">
-              <Field label="Contact Person Name" required>
-                <input className="acm-input" placeholder="Enter contact name" value={form.contactName} onChange={e => set('contactName', e.target.value)} />
+            <div className="acm-grid-4 acm-mt-12">
+              <Field label="Contact Person Name" required error={errors.contactName}>
+                <input className={`acm-input ${errors.contactName ? 'acm-input-error' : ''}`} placeholder="Full name" value={form.contactName} onChange={e => set('contactName', e.target.value)} />
               </Field>
-              <Field label="Designation" required>
-                <input className="acm-input" placeholder="Enter designation" value={form.designation} onChange={e => set('designation', e.target.value)} />
+              <Field label="Designation" required error={errors.designation}>
+                <MasterSelect
+                  value={form.designation}
+                  options={optsWith(masters.designations, form.designation)}
+                  placeholder="Select Designation"
+                  invalid={!!errors.designation}
+                  onChange={v => set('designation', v)}
+                />
               </Field>
-              <Field label="Contact No" required>
-                <input className="acm-input" placeholder="Enter phone number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} />
+              <Field label="Contact No" required error={errors.contactNo}>
+                <input className={`acm-input ${errors.contactNo ? 'acm-input-error' : ''}`} type="tel" placeholder="7-15 digit number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} />
               </Field>
-              <Field label="Email ID" required>
-                <input className="acm-input" placeholder="Enter email address" value={form.email} onChange={e => set('email', e.target.value)} />
+              <Field label="Email" required error={errors.email}>
+                <input className={`acm-input ${errors.email ? 'acm-input-error' : ''}`} type="email" placeholder="name@company.com" value={form.email} onChange={e => set('email', e.target.value)} />
               </Field>
             </div>
             <div className="acm-mt-12">
-              <Field label="Whatsapp Enabled?" required>
+              <Field label="Whatsapp Enabled?" required error={errors.whatsapp}>
                 <div className="acm-radio-row">
                   <label className="acm-radio">
                     <input type="radio" name="acm-wa" checked={form.whatsapp === 'Yes'} onChange={() => set('whatsapp', 'Yes')} />
@@ -542,103 +963,284 @@ const Stage1 = ({ tab, setTab, form, setForm }: {
         </>
       )}
 
-      {tab === 'contact' && (
-        <div className="acm-sec-pad">
-          <SectionHeader icon={<IconUser />} title="Contact Person Details" sub="Designate authorised signatories and escalation contacts" accent="#10b981" />
-          <div className="acm-grid-2">
-            <Field label="Primary Contact Name" required>
-              <input className="acm-input" placeholder="Enter contact name" value={form.contactName} onChange={e => set('contactName', e.target.value)} />
-            </Field>
-            <Field label="Designation" required>
-              <input className="acm-input" placeholder="Enter designation" value={form.designation} onChange={e => set('designation', e.target.value)} />
-            </Field>
-            <Field label="Contact No" required>
-              <input className="acm-input" placeholder="Enter phone number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} />
-            </Field>
-            <Field label="Email ID" required>
-              <input className="acm-input" placeholder="Enter email address" value={form.email} onChange={e => set('email', e.target.value)} />
-            </Field>
-          </div>
-        </div>
+      {tab === 'address-contact' && (
+        <LocationsTable
+          locations={locations}
+          onAdd={onAddLocation}
+          onEdit={onEditLocation}
+          onDel={onDeleteLocation}
+        />
       )}
     </>
   );
 };
 
+/* ─── Stage 1 — Address & Contact table ─── */
+const LocationsTable = ({ locations, onAdd, onEdit, onDel }: {
+  locations: LocationRow[];
+  onAdd: () => void;
+  onEdit: (id: string) => void;
+  onDel: (id: string) => void;
+}) => (
+  <div className="acm-loc-card">
+    <div className="acm-loc-head">
+      <div className="acm-loc-head-row">
+        <div className="acm-loc-head-icon"><IconPin /></div>
+        <div className="acm-loc-head-text">
+          <span className="acm-loc-head-title">ADDRESS &amp; CONTACT DETAILS</span>
+          <span className="acm-loc-head-sub">| All addresses with their authorized contact person</span>
+        </div>
+        <button type="button" className="acm-add-pill" onClick={onAdd}>
+          <IconPlus /> Add More Address &amp; Contact
+        </button>
+      </div>
+    </div>
+    <div className="acm-loc-body">
+      <div className="acm-loc-table-wrap">
+        <table className="acm-loc-table">
+          <thead>
+            <tr>
+              <th>SR NO</th><th>ADDRESS TYPE</th><th>ADDRESS</th><th>CITY / STATE / COUNTRY</th>
+              <th>CONTACT PERSON</th><th>PHONE</th><th>EMAIL</th><th>WHATSAPP</th><th>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {locations.length === 0 ? (
+              <tr className="acm-loc-empty">
+                <td colSpan={9}>
+                  No additional locations yet. Click <strong>+ Add More Address &amp; Contact</strong> to capture a
+                  warehouse, billing, or shipping address with its contact person.
+                </td>
+              </tr>
+            ) : locations.map((l, i) => {
+              const place = [l.city, l.state, l.country].filter(Boolean).join(' • ');
+              return (
+                <tr key={l.id}>
+                  <td>{i + 1}</td>
+                  <td>{l.type}</td>
+                  <td title={l.line}>{l.line.length > 36 ? l.line.slice(0, 33) + '…' : l.line}</td>
+                  <td>{place}</td>
+                  <td>{l.cpName}{l.cpDesignation ? <span style={{ color: '#6b7280', fontWeight: 500 }}> ({l.cpDesignation})</span> : null}</td>
+                  <td>{l.cpContact}</td>
+                  <td>{l.cpEmail}</td>
+                  <td>{l.cpWhatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : <span className="acm-pill-no">✕ No</span>}</td>
+                  <td>
+                    <div className="acm-loc-actions">
+                      <Tooltip label="Edit">
+                        <button type="button" className="acm-loc-btn" aria-label="Edit" onClick={() => onEdit(l.id)}>
+                          <IconPencil />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Delete">
+                        <button type="button" className="acm-loc-btn acm-loc-btn-del" aria-label="Delete" onClick={() => onDel(l.id)}>
+                          <IconTrash />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+);
+
 /* ─── Stage 2 — KYC / Due Diligence ─── */
-const Stage2 = ({ form, setForm }: { form: any; setForm: (next: any) => void }) => {
-  const set = (k: string, v: any) => setForm({ ...form, [k]: v });
+/* ─── Stage 2 — KYC / Due Diligence (table-driven) ─── */
+const KYC_SUB_META: Record<KycSubTab, { title: string; sub: string; nameCol: string; placeholder: string; addLabel: string }> = {
+  'company-dd':   { title: 'COMPANY DUE DILIGENCE', sub: '| Licenses, statutory documents, and compliance proofs', nameCol: 'DD Document Name',  placeholder: 'Search DD document name…',    addLabel: 'Add Document / License' },
+  'owner-kyc':    { title: 'OWNER KYC DETAILS',     sub: '| Owner identity proofs, address proofs, and photographs', nameCol: 'KYC Document Name', placeholder: 'Search owner name…',          addLabel: 'Add Owner KYC' },
+  'trade-licence':{ title: 'TRADE LICENCE',         sub: '| Trade licence documents and regulatory approvals',     nameCol: 'Document Name',       placeholder: 'Search trade licence…',       addLabel: 'Add Trade Licence' },
+};
+
+const Stage2 = ({
+  sub, setSub, search, setSearch, docs, owners,
+  onAddDoc, onEditDoc, onDeleteDoc, onAddOwner, onEditOwner, onDeleteOwner,
+}: {
+  sub: KycSubTab;
+  setSub: (s: KycSubTab) => void;
+  search: string;
+  setSearch: (s: string) => void;
+  docs: KycDocRow[];
+  owners: KycOwnerRow[];
+  onAddDoc: (s: KycSubTab) => void;
+  onEditDoc: (id: string) => void;
+  onDeleteDoc: (id: string) => void;
+  onAddOwner: () => void;
+  onEditOwner: (id: string) => void;
+  onDeleteOwner: (id: string) => void;
+}) => {
+  const meta = KYC_SUB_META[sub];
+  const isOwners = sub === 'owner-kyc';
+  const kind: 'dd' | 'tl' = sub === 'company-dd' ? 'dd' : 'tl';
+  const q = search.toLowerCase().trim();
+  const filteredDocs = (docs || []).filter(d => d.kind === kind).filter(d => {
+    if (!q) return true;
+    return (d.name || '').toLowerCase().includes(q)
+        || (d.license_number || '').toLowerCase().includes(q)
+        || (d.issuing_authority || '').toLowerCase().includes(q);
+  });
+  const filteredOwners = (owners || []).filter(o => {
+    if (!q) return true;
+    return (o.owner_name || '').toLowerCase().includes(q)
+        || (o.designation || '').toLowerCase().includes(q)
+        || (o.official_email || '').toLowerCase().includes(q);
+  });
+  const totalRows = isOwners ? filteredOwners.length : filteredDocs.length;
+  const codeFor = (k: string, sr: number) => `${k.toUpperCase()}-${String(sr).padStart(3, '0')}`;
+  const fmtMy = (s?: string) => {
+    if (!s) return 'N/A';
+    const [y, m] = s.split('-');
+    return m && y ? `${m}/${y}` : s;
+  };
+
   return (
     <>
-      <SectionHeader icon={<IconDoc />} title="Statutory Identifiers" sub="Tax & regulatory registration numbers" accent="#10b981" />
-      <div className="acm-grid-3 acm-sec-pad">
-        <Field label="PAN" required>
-          <input className="acm-input" placeholder="ABCDE1234F" value={form.pan} onChange={e => set('pan', e.target.value)} />
-        </Field>
-        <Field label="TAN">
-          <input className="acm-input" placeholder="ABCD12345E" value={form.tan} onChange={e => set('tan', e.target.value)} />
-        </Field>
-        <Field label="GSTIN">
-          <input className="acm-input" placeholder="22AAAAA0000A1Z5" value={form.gstin} onChange={e => set('gstin', e.target.value)} />
-        </Field>
-        <Field label="IEC">
-          <input className="acm-input" placeholder="Import-Export Code" value={form.iec} onChange={e => set('iec', e.target.value)} />
-        </Field>
-        <Field label="Date of Incorporation">
-          <input className="acm-input" type="date" value={form.incorpDate} onChange={e => set('incorpDate', e.target.value)} />
-        </Field>
+      <div className="acm-kyc-subtabs">
+        {(['company-dd', 'owner-kyc', 'trade-licence'] as KycSubTab[]).map(s => (
+          <button
+            key={s}
+            type="button"
+            className={`acm-kyc-subtab ${sub === s ? 'on' : ''}`}
+            onClick={() => setSub(s)}
+          >
+            {s === 'company-dd' ? <IconHome size={12} /> : s === 'owner-kyc' ? <IconUser /> : <IconDoc />}
+            {s === 'company-dd' ? 'Company Due Diligence' : s === 'owner-kyc' ? 'Owner KYC' : 'Trade Licence'}
+          </button>
+        ))}
       </div>
 
-      <SectionHeader icon={<IconUser />} title="Authorised Signatory" sub="Primary owner / director on record" accent="#3b82f6" />
-      <div className="acm-grid-2 acm-sec-pad">
-        <Field label="Owner / Director Name" required>
-          <input className="acm-input" placeholder="Enter name" value={form.ownerName} onChange={e => set('ownerName', e.target.value)} />
-        </Field>
-        <Field label="Designation">
-          <input className="acm-input" placeholder="Director / Partner / Proprietor" value={form.ownerDesignation} onChange={e => set('ownerDesignation', e.target.value)} />
-        </Field>
-        <Field label="Owner PAN">
-          <input className="acm-input" placeholder="ABCDE1234F" value={form.ownerPan} onChange={e => set('ownerPan', e.target.value)} />
-        </Field>
-        <Field label="Owner Email">
-          <input className="acm-input" placeholder="owner@company.com" value={form.ownerEmail} onChange={e => set('ownerEmail', e.target.value)} />
-        </Field>
-      </div>
+      <div className="acm-kyc-card">
+        <div className="acm-kyc-head">
+          <div className="acm-kyc-head-row">
+            <div className="acm-kyc-head-icon"><IconDoc /></div>
+            <div className="acm-kyc-head-text">
+              <span className="acm-kyc-head-title">{meta.title}</span>
+              <span className="acm-kyc-head-sub">{meta.sub}</span>
+            </div>
+            <button
+              type="button"
+              className="acm-add-pill"
+              onClick={() => (isOwners ? onAddOwner() : onAddDoc(sub))}
+            >
+              <IconPlus /> {meta.addLabel}
+            </button>
+          </div>
+        </div>
 
-      <SectionHeader icon={<IconShield />} title="Compliance Screening" sub="Sanctions, PEP, and adverse media checks" accent="#f59e0b" />
-      <div className="acm-grid-3 acm-sec-pad">
-        <Field label="Sanctions List Hit?" required>
-          <YesNoRadio name="acm-sanctions" value={form.sanctionsCheck} onChange={(v) => set('sanctionsCheck', v)} />
-        </Field>
-        <Field label="PEP Match?" required>
-          <YesNoRadio name="acm-pep" value={form.pepCheck} onChange={(v) => set('pepCheck', v)} />
-        </Field>
-        <Field label="Adverse Media?" required>
-          <YesNoRadio name="acm-media" value={form.adverseMedia} onChange={(v) => set('adverseMedia', v)} />
-        </Field>
+        <div className="acm-kyc-toolbar">
+          <div className="acm-kyc-search">
+            <IconSearch />
+            <input
+              type="search"
+              placeholder={meta.placeholder}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="acm-kyc-count">
+            {totalRows} {isOwners ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}
+          </div>
+        </div>
+
+        <div className="acm-kyc-body">
+          <div className="acm-loc-table-wrap">
+            {isOwners ? (
+              <table className="acm-loc-table">
+                <thead>
+                  <tr>
+                    <th>SR NO</th><th>OWNER NAME</th><th>DESIGNATION</th><th>EMAIL</th><th>PHONE</th>
+                    <th>ID PROOF</th><th>ADDRESS PROOF</th><th>PHOTOGRAPH</th><th>STATUS</th><th>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredOwners.length === 0 ? (
+                    <tr className="acm-loc-empty"><td colSpan={10}>{q ? 'No owners match your search.' : 'No owners captured yet. Click "+ Add Owner KYC" to add one.'}</td></tr>
+                  ) : filteredOwners.map((o, i) => (
+                    <tr key={o.id}>
+                      <td>{String(i + 1).padStart(2, '0')}</td>
+                      <td style={{ fontWeight: 700 }}>{o.owner_name}</td>
+                      <td>{o.designation || '—'}</td>
+                      <td>{o.official_email || '—'}</td>
+                      <td>{o.phone_number || '—'}</td>
+                      <td>{o.id_proof_name ? <span className="acm-kyc-attach">{o.id_proof_name}</span> : '—'}</td>
+                      <td>{o.address_proof_name ? <span className="acm-kyc-attach">{o.address_proof_name}</span> : '—'}</td>
+                      <td>{o.photograph_name ? <span className="acm-kyc-attach">{o.photograph_name}</span> : '—'}</td>
+                      <td>{o.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
+                      <td>
+                        <div className="acm-loc-actions">
+                          <Tooltip label="Edit">
+                            <button type="button" className="acm-loc-btn" aria-label="Edit" onClick={() => onEditOwner(o.id)}><IconPencil /></button>
+                          </Tooltip>
+                          <Tooltip label="Delete">
+                            <button type="button" className="acm-loc-btn acm-loc-btn-del" aria-label="Delete" onClick={() => onDeleteOwner(o.id)}><IconTrash /></button>
+                          </Tooltip>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table className="acm-loc-table">
+                <thead>
+                  <tr>
+                    <th>SR NO</th><th>AUTO CODE</th><th>{meta.nameCol.toUpperCase()}</th><th>LICENSE #</th>
+                    <th>ISSUING AUTHORITY</th><th>ISSUE DATE</th><th>EXPIRY</th><th>STATUS</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredDocs.length === 0 ? (
+                    <tr className="acm-loc-empty"><td colSpan={10}>{q ? 'No documents match your search.' : `No ${kind === 'dd' ? 'DD' : 'trade licence'} documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
+                  ) : filteredDocs.map((d, i) => {
+                    const sr = i + 1;
+                    return (
+                      <tr key={d.id}>
+                        <td>{String(sr).padStart(2, '0')}</td>
+                        <td><span className="acm-kyc-code">{codeFor(kind, sr)}</span></td>
+                        <td style={{ fontWeight: 700 }}>{d.name}</td>
+                        <td>{d.license_number || '—'}</td>
+                        <td>{d.issuing_authority || '—'}</td>
+                        <td><span className={d.issue_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.issue_date)}</span></td>
+                        <td><span className={d.expiry_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.expiry_date)}</span></td>
+                        <td>{d.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
+                        <td>{d.attachment_name ? <span className="acm-kyc-attach">{d.attachment_name}</span> : '—'}</td>
+                        <td>
+                          <div className="acm-loc-actions">
+                            <Tooltip label="Edit">
+                              <button type="button" className="acm-loc-btn" aria-label="Edit" onClick={() => onEditDoc(d.id)}><IconPencil /></button>
+                            </Tooltip>
+                            <Tooltip label="Delete">
+                              <button type="button" className="acm-loc-btn acm-loc-btn-del" aria-label="Delete" onClick={() => onDeleteDoc(d.id)}><IconTrash /></button>
+                            </Tooltip>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
       </div>
     </>
   );
 };
 
-const YesNoRadio = ({ name, value, onChange }: { name: string; value: string; onChange: (v: string) => void }) => (
-  <div className="acm-radio-row">
-    <label className="acm-radio">
-      <input type="radio" name={name} checked={value === 'Yes'} onChange={() => onChange('Yes')} />
-      <span /> Yes
-    </label>
-    <label className="acm-radio">
-      <input type="radio" name={name} checked={value === 'No'} onChange={() => onChange('No')} />
-      <span /> No
-    </label>
-  </div>
-);
-
 /* ─── Stage 3 — Evidence Vault ─── */
-const Stage3 = ({ vaultTab, setVaultTab, form1, form2 }: {
+const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwners, locations }: {
+  locations: LocationRow[];
   vaultTab: VaultTab;
   setVaultTab: (t: VaultTab) => void;
-  form1: any; form2: any;
+  evSub: EvSubTab;
+  setEvSub: (s: EvSubTab) => void;
+  form1: any;
+  kycDocs: KycDocRow[];
+  kycOwners: KycOwnerRow[];
 }) => {
   const [recapHidden, setRecapHidden] = useState(false);
   return (
@@ -677,16 +1279,33 @@ const Stage3 = ({ vaultTab, setVaultTab, form1, form2 }: {
                 </div>
               </div>
               <div className="acm-recap-card">
-                <div className="acm-recap-sec-title"><IconPin size={12} /> ADDRESS &amp; CONTACT</div>
+                <div className="acm-recap-sec-title"><IconPin size={12} /> PRIMARY ADDRESS &amp; CONTACT</div>
                 <div className="acm-recap-grid">
-                  <RecapField label="Country" value={form1.country} />
-                  <RecapField label="State"   value={form1.state} />
-                  <RecapField label="City"    value={form1.city} />
-                  <RecapField label="Pin"     value={form1.pin} />
                   <RecapField label="Address Type" value={form1.addressType} />
-                  <RecapField label="Address" value={form1.address} />
+                  <RecapField label="Address"      value={form1.address} />
+                  <RecapField label="Country"      value={form1.country} />
+                  <RecapField label="State"        value={form1.state} />
+                  <RecapField label="City"         value={form1.city} />
+                  <RecapField label="Pin"          value={form1.pin} />
+                  <RecapField label="Contact"      value={form1.contactName} />
+                  <RecapField label="Designation"  value={form1.designation} />
                 </div>
               </div>
+              {locations.length > 0 && (
+                <div className="acm-recap-card">
+                  <div className="acm-recap-sec-title"><IconPin size={12} /> ADDITIONAL ADDRESSES ({locations.length})</div>
+                  <div className="acm-recap-grid">
+                    {locations.map(l => (
+                      <RecapField
+                        key={l.id}
+                        label={l.type || 'Address'}
+                        value={[l.line, [l.city, l.state, l.country].filter(Boolean).join(', '), l.cpName ? `Contact: ${l.cpName}` : '']
+                          .filter(Boolean).join(' • ')}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="acm-recap-stage">
@@ -698,8 +1317,9 @@ const Stage3 = ({ vaultTab, setVaultTab, form1, form2 }: {
               <div className="acm-recap-card">
                 <div className="acm-recap-sec-title"><IconCheck size={12} /> KYC SUMMARY</div>
                 <div className="acm-recap-pills">
-                  <span className="acm-recap-pill">✓ {form2.pan ? '1' : '0'} docs</span>
-                  <span className="acm-recap-pill">✓ {form2.ownerName ? '1' : '0'} owners</span>
+                  <span className="acm-recap-pill">✓ {kycDocs.filter(d => d.kind === 'dd').length} DD docs</span>
+                  <span className="acm-recap-pill">✓ {kycOwners.length} owners</span>
+                  <span className="acm-recap-pill">✓ {kycDocs.filter(d => d.kind === 'tl').length} trade licences</span>
                 </div>
               </div>
             </div>
@@ -719,48 +1339,20 @@ const Stage3 = ({ vaultTab, setVaultTab, form1, form2 }: {
 
       {vaultTab === 'kyc' && (
         <>
-          <SectionHeader icon={<IconCheck />} title="KYC Documents" sub="Verified licenses and compliance documents (read-only)" accent="#3b82f6" />
           <div className="acm-vault-tabs">
-            <button className="acm-vault-tab on"><IconHome size={12} /> Company Due Diligence</button>
-            <button className="acm-vault-tab"><IconUser /> Owner KYC</button>
-            <button className="acm-vault-tab"><IconDoc /> Trade License</button>
+            {(['dd', 'kyc', 'tl'] as EvSubTab[]).map(s => (
+              <button key={s} type="button" className={`acm-vault-tab ${evSub === s ? 'on' : ''}`} onClick={() => setEvSub(s)}>
+                {s === 'dd' ? <IconHome size={12} /> : s === 'kyc' ? <IconUser /> : <IconDoc />}
+                {s === 'dd' ? 'Company Due Diligence' : s === 'kyc' ? 'Owner KYC' : 'Trade Licence'}
+              </button>
+            ))}
           </div>
-          <div className="acm-vault-table-wrap">
-            <table className="acm-vault-table">
-              <thead>
-                <tr>
-                  <th>SR NO</th>
-                  <th>AUTO CODE</th>
-                  <th>DD DOCUMENT NAME</th>
-                  <th>ISSUING AUTHORITY</th>
-                  <th>EXPIRY</th>
-                  <th>STATUS</th>
-                  <th>ATTACHMENT</th>
-                </tr>
-              </thead>
-              <tbody>
-                {KYC_DOCS.map((d, i) => (
-                  <tr key={d.id}>
-                    <td className="acm-vault-srno">{i + 1}</td>
-                    <td><span className="acm-vault-code">{d.id}</span></td>
-                    <td className="acm-vault-name">{d.name}</td>
-                    <td className="acm-vault-auth">{d.authority}</td>
-                    <td><span className={`acm-vault-exp ${d.expired ? 'expired' : ''}`}>{d.expiry}</span></td>
-                    <td>
-                      {d.mandatory
-                        ? <span className="acm-vault-status acm-vault-mand">✓ Mandatory</span>
-                        : <span className="acm-vault-status acm-vault-opt">Optional</span>}
-                    </td>
-                    <td>
-                      <a className="acm-vault-attach" href="#" onClick={e => e.preventDefault()}>
-                        <IconAttach /> View Attachment
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+
+          {evSub === 'kyc' ? (
+            <VaultOwnersTable owners={kycOwners} />
+          ) : (
+            <VaultDocsTable docs={kycDocs.filter(d => d.kind === (evSub === 'dd' ? 'dd' : 'tl'))} kind={evSub === 'dd' ? 'dd' : 'tl'} />
+          )}
         </>
       )}
 
@@ -784,6 +1376,628 @@ const RecapField = ({ label, value }: { label: string; value?: string }) => (
     <div className="acm-recap-fvalue">{value || '—'}</div>
   </div>
 );
+
+/* ─── Polished file-upload field ─────
+ * Replaces the bare `<input type="file">` (which renders the
+ * browser's grey "Choose File / No file chosen" — looks out of place
+ * inside the emerald sub-modal). This is a clickable dropzone with
+ * an icon, accent border on hover, and a filename chip + remove
+ * button once a file is picked. Keeps the existing API: the parent
+ * just gets the picked filename string back. */
+function FileUploadField({ value, onPick, accept }: { value?: string; onPick: (name: string) => void; accept?: string }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  return (
+    <div className="acm-file-zone">
+      {value ? (
+        <div className="acm-file-chip">
+          <div className="acm-file-chip-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <span className="acm-file-chip-name" title={value}>{value}</span>
+          <button
+            type="button"
+            className="acm-file-chip-x"
+            aria-label="Remove file"
+            onClick={() => { onPick(''); if (inputRef.current) inputRef.current.value = ''; }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+          <button
+            type="button"
+            className="acm-file-chip-replace"
+            onClick={() => inputRef.current?.click()}
+          >
+            Replace
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="acm-file-drop" onClick={() => inputRef.current?.click()}>
+          <span className="acm-file-drop-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </span>
+          <span className="acm-file-drop-text">
+            <span className="acm-file-drop-title">Click to upload</span>
+            <span className="acm-file-drop-sub">PDF, JPG, PNG — max 10 MB</span>
+          </span>
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        style={{ display: 'none' }}
+        onChange={e => {
+          const f = e.target.files?.[0];
+          if (f) onPick(f.name);
+        }}
+      />
+    </div>
+  );
+}
+
+/* ─── Stage 3 — read-only Evidence Vault tables ─── */
+const VaultDocsTable = ({ docs, kind }: { docs: KycDocRow[]; kind: 'dd' | 'tl' }) => {
+  const codeFor = (k: string, sr: number) => `${k.toUpperCase()}-${String(sr).padStart(3, '0')}`;
+  const fmtMy = (s?: string) => {
+    if (!s) return 'N/A';
+    const [y, m] = s.split('-');
+    return m && y ? `${m}/${y}` : s;
+  };
+  return (
+    <div className="acm-kyc-card" style={{ marginTop: 12 }}>
+      <div className="acm-loc-table-wrap">
+        <table className="acm-loc-table">
+          <thead>
+            <tr>
+              <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
+              <th>LICENSE #</th><th>ISSUING AUTHORITY</th>
+              <th>ISSUE</th><th>EXPIRY</th><th>STATUS</th><th>ATTACHMENT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {docs.length === 0 ? (
+              <tr className="acm-loc-empty"><td colSpan={9}>No {kind === 'dd' ? 'company DD' : 'trade licence'} documents captured in Stage 2.</td></tr>
+            ) : docs.map((d, i) => (
+              <tr key={d.id}>
+                <td>{String(i + 1).padStart(2, '0')}</td>
+                <td><span className="acm-kyc-code">{codeFor(kind, i + 1)}</span></td>
+                <td style={{ fontWeight: 700 }}>{d.name}</td>
+                <td>{d.license_number || '—'}</td>
+                <td>{d.issuing_authority || '—'}</td>
+                <td><span className={d.issue_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.issue_date)}</span></td>
+                <td><span className={d.expiry_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.expiry_date)}</span></td>
+                <td>{d.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
+                <td>{d.attachment_name ? <span className="acm-kyc-attach">{d.attachment_name}</span> : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const VaultOwnersTable = ({ owners }: { owners: KycOwnerRow[] }) => (
+  <div className="acm-kyc-card" style={{ marginTop: 12 }}>
+    <div className="acm-loc-table-wrap">
+      <table className="acm-loc-table">
+        <thead>
+          <tr>
+            <th>SR NO</th><th>OWNER NAME</th><th>DESIGNATION</th><th>EMAIL</th><th>PHONE</th>
+            <th>ID PROOF</th><th>ADDRESS PROOF</th><th>PHOTOGRAPH</th><th>STATUS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {owners.length === 0 ? (
+            <tr className="acm-loc-empty"><td colSpan={9}>No owners captured in Stage 2.</td></tr>
+          ) : owners.map((o, i) => (
+            <tr key={o.id}>
+              <td>{String(i + 1).padStart(2, '0')}</td>
+              <td style={{ fontWeight: 700 }}>{o.owner_name}</td>
+              <td>{o.designation || '—'}</td>
+              <td>{o.official_email || '—'}</td>
+              <td>{o.phone_number || '—'}</td>
+              <td>{o.id_proof_name ? <span className="acm-kyc-attach">{o.id_proof_name}</span> : '—'}</td>
+              <td>{o.address_proof_name ? <span className="acm-kyc-attach">{o.address_proof_name}</span> : '—'}</td>
+              <td>{o.photograph_name ? <span className="acm-kyc-attach">{o.photograph_name}</span> : '—'}</td>
+              <td>{o.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
+
+/* ─── Stage 2 — Add/Edit KYC Document sub-modal (DD + Trade Licence) ─── */
+function KycDocSubModal({ sub, editing, onClose, onSave }: {
+  sub: KycSubTab;
+  editing: KycDocRow | null;
+  onClose: () => void;
+  onSave: (rec: Omit<KycDocRow, 'id' | 'kind'>) => void;
+}) {
+  const titleLabel = sub === 'company-dd' ? 'DD Document / License' : 'Trade Licence';
+  const [d, setD] = useState<Omit<KycDocRow, 'id' | 'kind'>>(() => editing ? {
+    name: editing.name,
+    license_number: editing.license_number ?? '',
+    issuing_authority: editing.issuing_authority ?? '',
+    issue_date: editing.issue_date ?? '',
+    expiry_date: editing.expiry_date ?? '',
+    attachment_name: editing.attachment_name ?? '',
+    status: editing.status,
+  } : {
+    name: '', license_number: '', issuing_authority: '',
+    issue_date: '', expiry_date: '', attachment_name: '', status: 'Active',
+  });
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => {
+    setD(prev => ({ ...prev, [k]: v }));
+    setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
+  };
+  const submit = () => {
+    const next: Record<string, string> = {};
+    if (!d.name.trim()) next.name = 'Document name is required';
+    setErrs(next);
+    if (Object.keys(next).length === 0) onSave(d);
+  };
+  return (
+    <div className="acm-loc-sub-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="acm-loc-sub-card" onMouseDown={e => e.stopPropagation()}>
+        <div className="acm-loc-sub-header">
+          <div className="acm-loc-sub-title">{editing ? 'Edit' : 'Add'} {titleLabel}</div>
+          <button type="button" className="acm-loc-sub-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+        </div>
+        <div className="acm-loc-sub-body">
+          <div className="acm-loc-grid-2">
+            <div className="acm-field">
+              <label className="acm-field-label">{titleLabel.toUpperCase()} NAME <span className="acm-req">*</span></label>
+              <input
+                className={`acm-input ${errs.name ? 'acm-input-error' : ''}`}
+                placeholder={`Enter ${titleLabel.toLowerCase()} name`}
+                value={d.name}
+                onChange={e => set('name', e.target.value)}
+              />
+              {errs.name && <span className="acm-err-text">{errs.name}</span>}
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">LICENSE / DOCUMENT NUMBER</label>
+              <input
+                className="acm-input"
+                placeholder="e.g. ABC123456789"
+                value={d.license_number ?? ''}
+                onChange={e => set('license_number', e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="acm-loc-grid-2 acm-mt-12">
+            <div className="acm-field">
+              <label className="acm-field-label">ISSUING AUTHORITY</label>
+              <input
+                className="acm-input"
+                placeholder="e.g. Registrar of Companies"
+                value={d.issuing_authority ?? ''}
+                onChange={e => set('issuing_authority', e.target.value)}
+              />
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">STATUS</label>
+              <MasterSelect
+                value={d.status}
+                options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]}
+                placeholder="Select status"
+                onChange={(v) => set('status', (v as 'Active' | 'Inactive'))}
+              />
+            </div>
+          </div>
+          <div className="acm-loc-grid-2 acm-mt-12">
+            <div className="acm-field">
+              <label className="acm-field-label">ISSUE DATE</label>
+              <MasterDatePicker
+                value={d.issue_date ?? ''}
+                maxDate={d.expiry_date || undefined}
+                placeholder="DD/MM/YYYY"
+                onChange={(v: string) => {
+                  set('issue_date', v);
+                  if (d.expiry_date && v && d.expiry_date < v) set('expiry_date', '');
+                }}
+              />
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">EXPIRY DATE</label>
+              <MasterDatePicker
+                value={d.expiry_date ?? ''}
+                minDate={d.issue_date || undefined}
+                placeholder="DD/MM/YYYY"
+                onChange={(v: string) => set('expiry_date', v)}
+              />
+            </div>
+          </div>
+          <div className="acm-mt-12">
+            <div className="acm-field">
+              <label className="acm-field-label">ATTACHMENT</label>
+              <FileUploadField
+                value={d.attachment_name}
+                onPick={(name) => set('attachment_name', name)}
+                accept=".pdf,.jpg,.jpeg,.png"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="acm-loc-sub-footer">
+          <button type="button" className="acm-btn acm-btn-light" onClick={onClose}>Cancel</button>
+          <button type="button" className="acm-btn acm-btn-primary" onClick={submit}>{editing ? 'Update' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Stage 2 — Add/Edit Owner KYC sub-modal ─── */
+function KycOwnerSubModal({ editing, onClose, onSave }: {
+  editing: KycOwnerRow | null;
+  onClose: () => void;
+  onSave: (rec: Omit<KycOwnerRow, 'id'>) => void;
+}) {
+  const [d, setD] = useState<Omit<KycOwnerRow, 'id'>>(() => editing ? {
+    owner_name: editing.owner_name,
+    designation: editing.designation ?? '',
+    official_email: editing.official_email ?? '',
+    phone_number: editing.phone_number ?? '',
+    id_proof_name: editing.id_proof_name ?? '',
+    address_proof_name: editing.address_proof_name ?? '',
+    photograph_name: editing.photograph_name ?? '',
+    status: editing.status,
+  } : {
+    owner_name: '', designation: '', official_email: '', phone_number: '',
+    id_proof_name: '', address_proof_name: '', photograph_name: '', status: 'Active',
+  });
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => {
+    setD(prev => ({ ...prev, [k]: v }));
+    setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
+  };
+  const submit = () => {
+    const next: Record<string, string> = {};
+    if (!d.owner_name.trim())                                    next.owner_name     = 'Owner name is required';
+    if (d.official_email && !/^\S+@\S+\.\S+$/.test(d.official_email)) next.official_email = 'Enter a valid email';
+    if (d.phone_number && !/^\+?[0-9\s-]{7,15}$/.test(d.phone_number)) next.phone_number = 'Phone must be 7-15 digits';
+    setErrs(next);
+    if (Object.keys(next).length === 0) onSave(d);
+  };
+  return (
+    <div className="acm-loc-sub-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="acm-loc-sub-card" onMouseDown={e => e.stopPropagation()}>
+        <div className="acm-loc-sub-header">
+          <div className="acm-loc-sub-title">{editing ? 'Edit' : 'Add'} Owner KYC</div>
+          <button type="button" className="acm-loc-sub-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+        </div>
+        <div className="acm-loc-sub-body">
+          <div className="acm-loc-grid-2">
+            <div className="acm-field">
+              <label className="acm-field-label">OWNER / DIRECTOR NAME <span className="acm-req">*</span></label>
+              <input
+                className={`acm-input ${errs.owner_name ? 'acm-input-error' : ''}`}
+                placeholder="Full name"
+                value={d.owner_name}
+                onChange={e => set('owner_name', e.target.value)}
+              />
+              {errs.owner_name && <span className="acm-err-text">{errs.owner_name}</span>}
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">DESIGNATION</label>
+              <input
+                className="acm-input"
+                placeholder="Director / Partner / Proprietor"
+                value={d.designation ?? ''}
+                onChange={e => set('designation', e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="acm-loc-grid-2 acm-mt-12">
+            <div className="acm-field">
+              <label className="acm-field-label">OFFICIAL EMAIL</label>
+              <input
+                className={`acm-input ${errs.official_email ? 'acm-input-error' : ''}`}
+                type="email"
+                placeholder="owner@company.com"
+                value={d.official_email ?? ''}
+                onChange={e => set('official_email', e.target.value)}
+              />
+              {errs.official_email && <span className="acm-err-text">{errs.official_email}</span>}
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">PHONE NUMBER</label>
+              <input
+                className={`acm-input ${errs.phone_number ? 'acm-input-error' : ''}`}
+                type="tel"
+                placeholder="7-15 digit number"
+                value={d.phone_number ?? ''}
+                onChange={e => set('phone_number', e.target.value)}
+              />
+              {errs.phone_number && <span className="acm-err-text">{errs.phone_number}</span>}
+            </div>
+          </div>
+          <div className="acm-loc-grid-2 acm-mt-12">
+            <div className="acm-field">
+              <label className="acm-field-label">ID PROOF</label>
+              <FileUploadField
+                value={d.id_proof_name}
+                onPick={(name) => set('id_proof_name', name)}
+                accept=".pdf,.jpg,.jpeg,.png"
+              />
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">ADDRESS PROOF</label>
+              <FileUploadField
+                value={d.address_proof_name}
+                onPick={(name) => set('address_proof_name', name)}
+                accept=".pdf,.jpg,.jpeg,.png"
+              />
+            </div>
+          </div>
+          <div className="acm-loc-grid-2 acm-mt-12">
+            <div className="acm-field">
+              <label className="acm-field-label">PHOTOGRAPH</label>
+              <FileUploadField
+                value={d.photograph_name}
+                onPick={(name) => set('photograph_name', name)}
+                accept="image/*"
+              />
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">STATUS</label>
+              <MasterSelect
+                value={d.status}
+                options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]}
+                placeholder="Select status"
+                onChange={(v) => set('status', (v as 'Active' | 'Inactive'))}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="acm-loc-sub-footer">
+          <button type="button" className="acm-btn acm-btn-light" onClick={onClose}>Cancel</button>
+          <button type="button" className="acm-btn acm-btn-primary" onClick={submit}>{editing ? 'Update' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Add/Edit Location & Contact sub-modal ─── */
+type LocSubModalMasters = {
+  addressTypes: { value: string; label: string }[];
+  countries:    { value: string; label: string; id: number }[];
+  states:       { value: string; label: string; countryId: number }[];
+  designations: { value: string; label: string }[];
+};
+
+function LocationSubModal({ editing, masters, onClose, onSave }: {
+  editing: LocationRow | null;
+  masters: LocSubModalMasters;
+  onClose: () => void;
+  onSave: (rec: Omit<LocationRow, 'id'>) => void;
+}) {
+  const [d, setD] = useState<Omit<LocationRow, 'id'>>(() => editing ? { ...editing } : {
+    type: DEFAULT_ADDRESS_TYPE, line: '', country: '', state: '', city: '', pin: '',
+    cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: '' as 'yes' | 'no' | '',
+  });
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => {
+    setD(prev => ({ ...prev, [k]: v }));
+    setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
+  };
+
+  /* Defensive local refetch — the parent fires the same masters on
+   * modal open, but if the user clicks Add before that lands (or one
+   * of those calls failed silently), the dropdowns would render empty.
+   * Holding a local copy and merging keeps the popup self-sufficient. */
+  const [local, setLocal] = useState<LocSubModalMasters>({ addressTypes: [], countries: [], states: [], designations: [] });
+  useEffect(() => {
+    let cancelled = false;
+    const isActive = (r: any) => !r.status || String(r.status).toLowerCase() === 'active';
+    const byName = (rows: any[], key = 'name') => (rows ?? []).filter(isActive)
+      .map((r: any) => ({ value: String(r[key] ?? ''), label: String(r[key] ?? '') }))
+      .filter((o: any) => o.value);
+    Promise.allSettled([
+      api.get('/master/address_types').then(r => { if (!cancelled) setLocal(s => ({ ...s, addressTypes: byName(r.data ?? []) })); }),
+      api.get('/master/countries').then(r => {
+        if (cancelled) return;
+        const rows = (r.data ?? []).filter(isActive)
+          .map((row: any) => ({ id: Number(row.id), value: String(row.name ?? ''), label: String(row.name ?? '') }))
+          .filter((o: any) => o.value)
+          .sort((a: any, b: any) => a.label.localeCompare(b.label));
+        setLocal(s => ({ ...s, countries: rows }));
+      }),
+      api.get('/master/states').then(r => {
+        if (cancelled) return;
+        const rows = (r.data ?? []).filter(isActive)
+          .map((row: any) => ({ countryId: Number(row.country_id), value: String(row.name ?? ''), label: String(row.name ?? '') }))
+          .filter((o: any) => o.value);
+        setLocal(s => ({ ...s, states: rows }));
+      }),
+      api.get('/master/designations').then(r => { if (!cancelled) setLocal(s => ({ ...s, designations: byName(r.data ?? []) })); }),
+    ]);
+    return () => { cancelled = true; };
+  }, []);
+
+  /* Effective lists — prefer whichever side actually has data so the
+   * dropdown is populated as soon as either fetch resolves. */
+  const addressTypes = masters.addressTypes.length ? masters.addressTypes : local.addressTypes;
+  const countries    = masters.countries.length    ? masters.countries    : local.countries;
+  const states       = masters.states.length       ? masters.states       : local.states;
+  const designations = masters.designations.length ? masters.designations : local.designations;
+
+  const selectedCountry = countries.find(c => c.value === d.country);
+  const filteredStates = selectedCountry ? states.filter(s => s.countryId === selectedCountry.id) : [];
+
+  const submit = () => {
+    const next: Record<string, string> = {};
+    if (!d.type)                                       next.type          = 'Select address type';
+    if (!d.line.trim())                                next.line          = 'Address is required';
+    if (!d.country)                                    next.country       = 'Select country';
+    if (!d.state)                                      next.state         = 'Select state';
+    if (!d.city.trim())                                next.city          = 'City is required';
+    if (!d.pin.trim())                                 next.pin           = 'PIN is required';
+    else if (!/^[A-Za-z0-9-\s]{3,12}$/.test(d.pin))    next.pin           = 'PIN looks invalid';
+    if (!d.cpName.trim())                              next.cpName        = 'Contact name required';
+    if (!d.cpDesignation.trim())                       next.cpDesignation = 'Designation required';
+    if (!d.cpContact.trim())                           next.cpContact     = 'Phone required';
+    else if (!/^\+?[0-9\s-]{7,15}$/.test(d.cpContact)) next.cpContact     = 'Phone must be 7-15 digits';
+    if (!d.cpEmail.trim())                             next.cpEmail       = 'Email required';
+    else if (!/^\S+@\S+\.\S+$/.test(d.cpEmail))        next.cpEmail       = 'Enter a valid email';
+    if (!d.cpWhatsapp)                                 next.cpWhatsapp    = 'Select WhatsApp preference';
+    setErrs(next);
+    if (Object.keys(next).length === 0) onSave(d);
+  };
+
+  return (
+    <div className="acm-loc-sub-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="acm-loc-sub-card" onMouseDown={e => e.stopPropagation()}>
+        <div className="acm-loc-sub-header">
+          <div className="acm-loc-sub-title">{editing ? 'Edit' : 'Add New'} Location &amp; Contact</div>
+          <button type="button" className="acm-loc-sub-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+        </div>
+        <div className="acm-loc-sub-body">
+          <div className="acm-loc-grid-2">
+            <div className="acm-field">
+              <label className="acm-field-label">ADDRESS TYPE <span className="acm-req">*</span></label>
+              <MasterSelect
+                value={d.type}
+                options={optsWith(addressTypes, d.type)}
+                placeholder="Select address type"
+                invalid={!!errs.type}
+                onChange={v => set('type', v)}
+              />
+              {errs.type && <span className="acm-err-text">{errs.type}</span>}
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">ADDRESS <span className="acm-req">*</span></label>
+              <input
+                className={`acm-input ${errs.line ? 'acm-input-error' : ''}`}
+                placeholder="Enter complete address"
+                value={d.line}
+                onChange={e => set('line', e.target.value)}
+              />
+              {errs.line && <span className="acm-err-text">{errs.line}</span>}
+            </div>
+          </div>
+          <div className="acm-loc-grid-4 acm-mt-12">
+            <div className="acm-field">
+              <label className="acm-field-label">COUNTRY <span className="acm-req">*</span></label>
+              <MasterSelect
+                value={d.country}
+                options={optsWith(countries, d.country)}
+                placeholder="Select country"
+                invalid={!!errs.country}
+                onChange={v => { setD(prev => ({ ...prev, country: v, state: '' })); setErrs(prev => { if (!prev.country) return prev; const n = { ...prev }; delete n.country; return n; }); }}
+              />
+              {errs.country && <span className="acm-err-text">{errs.country}</span>}
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">STATE <span className="acm-req">*</span></label>
+              <MasterSelect
+                value={d.state}
+                options={optsWith(filteredStates, d.state)}
+                placeholder={d.country ? 'Select state' : 'Select country first'}
+                disabled={!d.country}
+                invalid={!!errs.state}
+                onChange={v => set('state', v)}
+              />
+              {errs.state && <span className="acm-err-text">{errs.state}</span>}
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">CITY <span className="acm-req">*</span></label>
+              <input
+                className={`acm-input ${errs.city ? 'acm-input-error' : ''}`}
+                placeholder="Enter City"
+                value={d.city}
+                onChange={e => set('city', e.target.value)}
+              />
+              {errs.city && <span className="acm-err-text">{errs.city}</span>}
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">PIN / POSTAL CODE <span className="acm-req">*</span></label>
+              <input
+                className={`acm-input ${errs.pin ? 'acm-input-error' : ''}`}
+                placeholder="Enter PIN"
+                maxLength={12}
+                value={d.pin}
+                onChange={e => set('pin', e.target.value)}
+              />
+              {errs.pin && <span className="acm-err-text">{errs.pin}</span>}
+            </div>
+          </div>
+          <div className="acm-loc-grid-4 acm-mt-12">
+            <div className="acm-field">
+              <label className="acm-field-label">CONTACT PERSON NAME <span className="acm-req">*</span></label>
+              <input
+                className={`acm-input ${errs.cpName ? 'acm-input-error' : ''}`}
+                placeholder="Full name"
+                value={d.cpName}
+                onChange={e => set('cpName', e.target.value)}
+              />
+              {errs.cpName && <span className="acm-err-text">{errs.cpName}</span>}
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">DESIGNATION <span className="acm-req">*</span></label>
+              <MasterSelect
+                value={d.cpDesignation}
+                options={optsWith(designations, d.cpDesignation)}
+                placeholder="Select designation"
+                invalid={!!errs.cpDesignation}
+                onChange={v => set('cpDesignation', v)}
+              />
+              {errs.cpDesignation && <span className="acm-err-text">{errs.cpDesignation}</span>}
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">CONTACT NO <span className="acm-req">*</span></label>
+              <input
+                className={`acm-input ${errs.cpContact ? 'acm-input-error' : ''}`}
+                type="tel"
+                placeholder="7-15 digit mobile"
+                value={d.cpContact}
+                onChange={e => set('cpContact', e.target.value)}
+              />
+              {errs.cpContact && <span className="acm-err-text">{errs.cpContact}</span>}
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">EMAIL ID <span className="acm-req">*</span></label>
+              <input
+                className={`acm-input ${errs.cpEmail ? 'acm-input-error' : ''}`}
+                type="email"
+                placeholder="name@company.com"
+                value={d.cpEmail}
+                onChange={e => set('cpEmail', e.target.value)}
+              />
+              {errs.cpEmail && <span className="acm-err-text">{errs.cpEmail}</span>}
+            </div>
+          </div>
+          <div className="acm-mt-12">
+            <div className="acm-field">
+              <label className="acm-field-label">WHATSAPP ENABLED? <span className="acm-req">*</span></label>
+              <div className="acm-loc-radio-row">
+                <label className={`acm-loc-radio ${d.cpWhatsapp === 'yes' ? 'on' : ''}`}>
+                  <input type="radio" name="locWa" value="yes" checked={d.cpWhatsapp === 'yes'} onChange={() => set('cpWhatsapp', 'yes')} />
+                  <span /> YES
+                </label>
+                <label className={`acm-loc-radio ${d.cpWhatsapp === 'no' ? 'on' : ''}`}>
+                  <input type="radio" name="locWa" value="no" checked={d.cpWhatsapp === 'no'} onChange={() => set('cpWhatsapp', 'no')} />
+                  <span /> NO
+                </label>
+              </div>
+              {errs.cpWhatsapp && <span className="acm-err-text">{errs.cpWhatsapp}</span>}
+            </div>
+          </div>
+        </div>
+        <div className="acm-loc-sub-footer">
+          <button type="button" className="acm-btn acm-btn-light" onClick={onClose}>Cancel</button>
+          <button type="button" className="acm-btn acm-btn-primary" onClick={submit}>{editing ? 'Update' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ─── Icons ─── */
 const IconTruck = ({ size = 16 }: { size?: number }) => (
@@ -866,6 +2080,25 @@ const IconInfo = () => (
 const IconAttach = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
     <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+  </svg>
+);
+const IconPlus = ({ size = 11 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+const IconPencil = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+);
+const IconTrash = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6M14 11v6" />
+    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
   </svg>
 );
 
@@ -1287,6 +2520,9 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-recap-grid {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
 }
+.acm-recap-empty {
+  padding: 8px 4px; font-size: 12px; color: #6b7280; font-style: italic;
+}
 .acm-recap-field { display: flex; flex-direction: column; gap: 2px; }
 .acm-recap-flabel { font-size: 9.5px; font-weight: 700; color: #6b7280; letter-spacing: 0.08em; }
 .acm-recap-fvalue { font-size: 12.5px; font-weight: 700; color: #064e3b; }
@@ -1377,6 +2613,315 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 }
 .acm-footer-right { display: flex; align-items: center; gap: 10px; }
 
+/* When a popup-on-popup is open, blur the wizard underneath so the
+ * focus is squarely on the sub-modal. Disable pointer events too so
+ * clicks intended for the sub-modal don't accidentally hit fields
+ * behind it. The sub-modal sits in its own overlay outside .acm-wiz,
+ * so it isn't affected by this filter. */
+.acm-wiz-blurred {
+  filter: blur(4px) saturate(.85);
+  pointer-events: none;
+  user-select: none;
+  transition: filter .18s ease;
+}
+
+/* ─── Polished file upload ─── */
+.acm-file-zone { width: 100%; }
+.acm-file-drop {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  padding: 14px 14px;
+  background: #f9fafb;
+  border: 1.5px dashed #d1d5db;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: all .15s ease;
+}
+.acm-file-drop:hover,
+.acm-file-drop:focus-visible {
+  border-color: #10b981;
+  background: #ecfdf5;
+  outline: none;
+}
+.acm-file-drop-icon {
+  width: 36px; height: 36px;
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: #10b981;
+}
+.acm-file-drop:hover .acm-file-drop-icon {
+  border-color: #10b981; background: #10b981; color: #fff;
+}
+.acm-file-drop-text { display: flex; flex-direction: column; min-width: 0; }
+.acm-file-drop-title { font-size: 12.5px; font-weight: 600; color: #065f46; }
+.acm-file-drop-sub   { font-size: 11px; color: #6b7280; margin-top: 2px; }
+
+.acm-file-chip {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: #ecfdf5;
+  border: 1px solid rgba(16,185,129,.30);
+  border-radius: 10px;
+}
+.acm-file-chip-icon {
+  width: 28px; height: 28px;
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #10b981; color: #fff;
+  border-radius: 6px;
+}
+.acm-file-chip-name {
+  flex: 1; min-width: 0;
+  font-size: 12.5px; font-weight: 600; color: #065f46;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.acm-file-chip-replace {
+  flex-shrink: 0;
+  font-size: 11px; font-weight: 600;
+  padding: 4px 10px;
+  background: #fff; color: #047857;
+  border: 1px solid rgba(16,185,129,.40);
+  border-radius: 999px;
+  cursor: pointer; transition: all .15s ease;
+}
+.acm-file-chip-replace:hover { background: #10b981; color: #fff; border-color: #10b981; }
+.acm-file-chip-x {
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff; color: #b91c1c;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  cursor: pointer; transition: all .15s ease;
+}
+.acm-file-chip-x:hover { background: #fee2e2; border-color: #ef4444; }
+
+/* ─── Stage 2 — KYC sub-tabs + card ─── */
+.acm-kyc-subtabs {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.acm-kyc-subtab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 999px;
+  background: #fff; color: #4b5563;
+  border: 1px solid #e5e7eb;
+  font-weight: 600; font-size: 12.5px; letter-spacing: .01em;
+  cursor: pointer; transition: all .15s ease;
+}
+.acm-kyc-subtab:hover { border-color: #10b981; color: #047857; }
+.acm-kyc-subtab.on {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-color: transparent; color: #fff;
+  box-shadow: 0 4px 10px rgba(16,185,129,.30);
+}
+.acm-kyc-card {
+  background: #fff;
+  border: 1px solid rgba(16,185,129,.25);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15,42,35,.04);
+}
+.acm-kyc-head {
+  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
+  border-bottom: 1px solid rgba(16,185,129,.25);
+  padding: 12px 16px;
+}
+.acm-kyc-head-row { display: flex; align-items: center; gap: 12px; width: 100%; }
+.acm-kyc-head-icon {
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #10b981; color: #fff; border-radius: 8px;
+}
+.acm-kyc-head-text { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.acm-kyc-head-title { color: #065f46; font-weight: 700; font-size: 12.5px; letter-spacing: .04em; }
+.acm-kyc-head-sub   { color: #047857; font-weight: 500; font-size: 12px; }
+.acm-kyc-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  gap: 12px;
+}
+.acm-kyc-search {
+  flex: 1; max-width: 380px;
+  position: relative;
+  display: flex; align-items: center;
+}
+.acm-kyc-search svg { position: absolute; left: 10px; color: #9ca3af; }
+.acm-kyc-search input {
+  width: 100%;
+  padding: 7px 12px 7px 32px;
+  border: 1px solid #d1d5db; border-radius: 8px;
+  font-size: 13px; background: #fff;
+}
+.acm-kyc-search input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.12); }
+.acm-kyc-count {
+  font-size: 12px; color: #6b7280; font-weight: 600;
+  padding: 4px 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 999px;
+}
+.acm-kyc-body { padding: 0; }
+.acm-kyc-code {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 4px;
+  background: #ecfdf5; color: #047857;
+  border: 1px solid rgba(16,185,129,.30);
+  font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
+}
+.acm-kyc-exp {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  background: #f3f4f6; color: #374151;
+  font-size: 11px; font-weight: 600;
+}
+.acm-kyc-exp.na { color: #9ca3af; }
+.acm-kyc-attach {
+  font-size: 11.5px; color: #047857; font-weight: 600;
+  word-break: break-all;
+}
+
+/* ─── Address & Contact table card ─── */
+.acm-loc-card {
+  background: #fff;
+  border: 1px solid rgba(16,185,129,.25);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15,42,35,.04);
+}
+.acm-loc-head {
+  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
+  border-bottom: 1px solid rgba(16,185,129,.25);
+  padding: 12px 16px;
+}
+.acm-loc-head-row { display: flex; align-items: center; gap: 12px; width: 100%; }
+.acm-loc-head-icon {
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #10b981; color: #fff; border-radius: 8px;
+}
+.acm-loc-head-text { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.acm-loc-head-title { color: #065f46; font-weight: 700; font-size: 12.5px; letter-spacing: .04em; }
+.acm-loc-head-sub   { color: #047857; font-weight: 500; font-size: 12px; }
+.acm-add-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 999px;
+  background: #fff; color: #065f46;
+  border: 1px solid rgba(16,185,129,.40);
+  font-weight: 600; font-size: 12.5px;
+  cursor: pointer; transition: all .15s ease;
+}
+.acm-add-pill:hover { background: #10b981; color: #fff; border-color: #10b981; }
+.acm-loc-body { padding: 0; }
+.acm-loc-table-wrap { overflow-x: auto; }
+.acm-loc-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px; color: #1f2937;
+}
+.acm-loc-table thead tr {
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+.acm-loc-table thead th {
+  padding: 10px 12px; text-align: left;
+  font-weight: 700; font-size: 11px; letter-spacing: .04em;
+  color: #6b7280; text-transform: uppercase;
+  white-space: nowrap;
+}
+.acm-loc-table tbody td {
+  padding: 12px; border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+.acm-loc-table tbody tr:hover { background: #f0fdf4; }
+.acm-loc-empty td {
+  text-align: center; padding: 32px 16px !important;
+  color: #6b7280; font-size: 13px;
+}
+.acm-pill-yes {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  background: #d1fae5; color: #065f46;
+  font-weight: 600; font-size: 12px;
+}
+.acm-pill-no {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  background: #fee2e2; color: #991b1b;
+  font-weight: 600; font-size: 12px;
+}
+.acm-loc-actions { display: inline-flex; gap: 6px; }
+.acm-loc-btn {
+  width: 30px; height: 30px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff; color: #6b7280;
+  border: 1px solid #e5e7eb;
+  cursor: pointer; transition: all .15s ease;
+}
+.acm-loc-btn:hover { background: #ecfdf5; border-color: #10b981; color: #047857; }
+.acm-loc-btn-del:hover { background: #fef2f2; border-color: #ef4444; color: #b91c1c; }
+
+/* ─── Add/Edit Location & Contact sub-modal ─── */
+/* z-index 10001 = above the wizard overlay (1080) but BELOW the
+ * MasterSelect portal (11000) and MasterDatePicker portal (11100),
+ * so dropdowns + calendars opened from inside the sub-modal aren't
+ * clipped by this overlay. DeleteConfirmModal (11050) layers on top
+ * correctly without further adjustment. */
+.acm-loc-sub-overlay {
+  position: fixed; inset: 0;
+  background: rgba(15,42,35,.55);
+  z-index: 10001;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.acm-loc-sub-card {
+  width: min(900px, 100%);
+  max-height: calc(100vh - 40px);
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 24px 60px rgba(15,42,35,.30);
+}
+.acm-loc-sub-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #fff;
+}
+.acm-loc-sub-title { font-size: 16px; font-weight: 700; letter-spacing: .01em; }
+.acm-loc-sub-close {
+  width: 30px; height: 30px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.18); color: #fff; border: none;
+  cursor: pointer; transition: background .15s ease;
+}
+.acm-loc-sub-close:hover { background: rgba(255,255,255,.30); }
+.acm-loc-sub-body { padding: 20px; overflow-y: auto; }
+.acm-loc-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.acm-loc-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; }
+.acm-loc-sub-footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  padding: 14px 20px;
+  background: #f9fafb;
+  border-top: 1px solid #e5e7eb;
+}
+.acm-loc-radio-row { display: flex; gap: 10px; }
+.acm-loc-radio {
+  flex: 0 0 auto; min-width: 90px;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: 8px;
+  background: #fff; border: 1px solid #d1d5db;
+  font-weight: 600; font-size: 12.5px; color: #374151;
+  cursor: pointer; transition: all .15s ease;
+}
+.acm-loc-radio input { accent-color: #10b981; margin: 0; }
+.acm-loc-radio.on { background: #ecfdf5; border-color: #10b981; color: #065f46; }
+.acm-input-error { border-color: #ef4444 !important; background: #fef2f2 !important; }
+.acm-err-text { display: block; margin-top: 4px; color: #b91c1c; font-size: 11.5px; font-weight: 500; }
+
 /* ─── Dark mode ─── */
 [data-bs-theme="dark"] .acm-overlay { background: rgba(0,0,0,.65); }
 [data-bs-theme="dark"] .acm-pick    { background: #103129; }
@@ -1461,4 +3006,59 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-trade-empty-title { color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-trade-empty-sub   { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-wiz-footer  { background: #103129; border-top-color: rgba(16,185,129,.20); }
+
+/* Address & Contact table — dark */
+[data-bs-theme="dark"] .acm-loc-card     { background: #0f2a23; border-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-loc-head     { background: linear-gradient(180deg, rgba(16,185,129,.18) 0%, rgba(16,185,129,.10) 100%); border-bottom-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-loc-head-title { color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-loc-head-sub   { color: #34d399; }
+[data-bs-theme="dark"] .acm-add-pill     { background: #103129; color: #6ee7b7; border-color: rgba(16,185,129,.40); }
+[data-bs-theme="dark"] .acm-add-pill:hover { background: #10b981; color: #fff; }
+[data-bs-theme="dark"] .acm-loc-table thead tr { background: #103129; border-bottom-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-loc-table thead th { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-loc-table tbody td { color: #ecfdf5; border-bottom-color: rgba(16,185,129,.15); }
+[data-bs-theme="dark"] .acm-loc-table tbody tr:hover { background: rgba(16,185,129,.10); }
+[data-bs-theme="dark"] .acm-loc-empty td { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-pill-yes     { background: rgba(16,185,129,.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-pill-no      { background: rgba(239,68,68,.18); color: #fca5a5; }
+[data-bs-theme="dark"] .acm-loc-btn      { background: #103129; border-color: rgba(16,185,129,.25); color: #94a3b8; }
+[data-bs-theme="dark"] .acm-loc-btn:hover { background: rgba(16,185,129,.18); border-color: #10b981; color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-loc-btn-del:hover { background: rgba(239,68,68,.18); border-color: #ef4444; color: #fca5a5; }
+
+/* Location sub-modal — dark */
+[data-bs-theme="dark"] .acm-loc-sub-overlay { background: rgba(0,0,0,.65); }
+[data-bs-theme="dark"] .acm-loc-sub-card    { background: #0f2a23; }
+[data-bs-theme="dark"] .acm-loc-sub-footer  { background: #103129; border-top-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-loc-radio       { background: #103129; border-color: rgba(16,185,129,.25); color: #ecfdf5; }
+[data-bs-theme="dark"] .acm-loc-radio.on    { background: rgba(16,185,129,.18); border-color: #10b981; color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-input-error     { background: rgba(239,68,68,.10) !important; border-color: #ef4444 !important; }
+[data-bs-theme="dark"] .acm-err-text        { color: #fca5a5; }
+
+/* Polished file upload — dark */
+[data-bs-theme="dark"] .acm-file-drop          { background: #103129; border-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-file-drop:hover    { background: rgba(16,185,129,.12); border-color: #10b981; }
+[data-bs-theme="dark"] .acm-file-drop-icon     { background: #0f2a23; border-color: rgba(16,185,129,.25); color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-file-drop-title    { color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-file-drop-sub      { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-file-chip          { background: rgba(16,185,129,.15); border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .acm-file-chip-name     { color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-file-chip-replace  { background: #103129; color: #6ee7b7; border-color: rgba(16,185,129,.40); }
+[data-bs-theme="dark"] .acm-file-chip-x        { background: #103129; color: #fca5a5; border-color: rgba(239,68,68,.30); }
+[data-bs-theme="dark"] .acm-file-chip-x:hover  { background: rgba(239,68,68,.15); }
+
+/* KYC sub-tabs + card — dark */
+[data-bs-theme="dark"] .acm-kyc-subtab     { background: #103129; border-color: rgba(16,185,129,.20); color: #94a3b8; }
+[data-bs-theme="dark"] .acm-kyc-subtab:hover { color: #6ee7b7; border-color: #10b981; }
+[data-bs-theme="dark"] .acm-kyc-subtab.on  { background: linear-gradient(135deg,#10b981 0%,#059669 100%); color: #fff; }
+[data-bs-theme="dark"] .acm-kyc-card       { background: #0f2a23; border-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-kyc-head       { background: linear-gradient(180deg, rgba(16,185,129,.18) 0%, rgba(16,185,129,.10) 100%); border-bottom-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-kyc-head-title { color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-kyc-head-sub   { color: #34d399; }
+[data-bs-theme="dark"] .acm-kyc-toolbar    { background: #103129; border-bottom-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-kyc-search input { background: #0a1f1a; border-color: rgba(16,185,129,.25); color: #ecfdf5; }
+[data-bs-theme="dark"] .acm-kyc-count      { background: #103129; border-color: rgba(16,185,129,.25); color: #94a3b8; }
+[data-bs-theme="dark"] .acm-kyc-code       { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .acm-kyc-exp        { background: rgba(255,255,255,.06); color: #ecfdf5; }
+[data-bs-theme="dark"] .acm-kyc-exp.na     { color: #6b7280; }
+[data-bs-theme="dark"] .acm-kyc-attach     { color: #6ee7b7; }
 `;

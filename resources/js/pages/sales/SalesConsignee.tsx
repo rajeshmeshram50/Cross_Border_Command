@@ -3,6 +3,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import AddConsigneeModal, { type ConsigneeRow } from './AddConsigneeModal';
+import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Consignee
@@ -72,7 +73,6 @@ export default function SalesConsignee() {
   const canEdit = isSuperAdmin || !!perm?.can_edit;
 
   const [q, setQ] = useState('');
-  const [page, setPage] = useState(1);
   const [wdhOpen, setWdhOpen] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ConsigneeRow | null>(null);
@@ -104,14 +104,121 @@ export default function SalesConsignee() {
     );
   }, [q]);
 
-  const total = filtered.length;
-  const pages = Math.max(1, Math.ceil(total / ROWS_PER_PAGE));
-  const safePage = Math.min(page, pages);
-  const startIdx = (safePage - 1) * ROWS_PER_PAGE;
-  const rows = filtered.slice(startIdx, startIdx + ROWS_PER_PAGE);
-
-  const onSearch = (v: string) => { setQ(v); setPage(1); };
+  // TableContainer manages its own pagination — the page-local
+  // slice variables used by the old custom table are gone now.
+  const onSearch = (v: string) => { setQ(v); };
   const soon = (label: string) => toast.info(label, 'Coming in next phase');
+
+  /* ── Project-standard action button (same recipe as HR Employees /
+   * SalesCustomers). 30×30 tile using vz-* tokens that auto-adapt to
+   * light/dark mode; on hover border + icon shift to the column-
+   * specific accent. Always wrapped in <Tooltip>. */
+  const ActionBtn = ({ title, icon, color, onClick }: { title: string; icon: string; color: 'primary'|'success'|'info'|'danger'|'warning'; onClick: () => void }) => (
+    <Tooltip label={title}>
+      <button
+        type="button"
+        aria-label={title}
+        className="btn p-0 d-inline-flex align-items-center justify-content-center"
+        style={{
+          width: 30, height: 30, borderRadius: 8,
+          background: 'var(--vz-secondary-bg)',
+          border: '1px solid var(--vz-border-color)',
+          color: 'var(--vz-secondary-color)',
+          transition: 'all .15s ease',
+        }}
+        onMouseEnter={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.borderColor = `var(--vz-${color})`;
+          el.style.color = `var(--vz-${color})`;
+        }}
+        onMouseLeave={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.borderColor = 'var(--vz-border-color)';
+          el.style.color = 'var(--vz-secondary-color)';
+        }}
+        onClick={onClick}
+      >
+        <i className={`${icon} fs-14`} />
+      </button>
+    </Tooltip>
+  );
+
+  /* ── TanStack column defs. Cell renderers keep the emerald-themed
+   * pills/chips (ID chip, risk pill, country sub-text) so the page
+   * palette stays intact; only the table chrome + actions switch to
+   * project standards. */
+  const columns = useMemo<any[]>(() => [
+    {
+      header: 'Sr No',
+      id: '__sr',
+      meta: { align: 'center' },
+      cell: (info: any) => <span className="smcg-srno">{info.row.index + 1}</span>,
+      enableSorting: false,
+    },
+    {
+      header: 'Consignee ID',
+      accessorKey: 'id',
+      cell: (info: any) => <span className="smcg-id-chip">{info.getValue()}</span>,
+    },
+    {
+      header: 'Customer ID',
+      accessorKey: 'customerId',
+      cell: (info: any) => <span className="smcg-cust-chip">{info.getValue()}</span>,
+    },
+    {
+      header: 'Company Name',
+      accessorKey: 'company',
+      cell: (info: any) => <span className="smcg-company">{info.getValue() || '—'}</span>,
+    },
+    {
+      header: 'Segment',
+      accessorKey: 'segment',
+      cell: (info: any) => info.getValue() ? <span className="smcg-seg">{info.getValue()}</span> : <span className="text-muted">—</span>,
+    },
+    {
+      header: 'Risk Level',
+      accessorKey: 'risk',
+      cell: (info: any) => {
+        const v = info.getValue() as RiskLevel;
+        const r = RISK_COLORS[v] || RISK_COLORS['Low'];
+        return (
+          <span className="smcg-risk-pill" style={{ background: r.bg, color: r.color }}>
+            {v}
+          </span>
+        );
+      },
+    },
+    { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <span className="smcg-contact">{i.getValue() || '—'}</span> },
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <span className="smcg-email">{i.getValue() || '—'}</span> },
+    { header: 'Contact No',     accessorKey: 'phone',   cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
+    {
+      header: 'Country',
+      accessorKey: 'country',
+      cell: (info: any) => {
+        const c = info.row.original as Consignee;
+        return (
+          <span className="smcg-country">
+            {c.country} {c.countryDetail && <span className="smcg-country-sub">({c.countryDetail})</span>}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: '__actions',
+      meta: { align: 'center' },
+      enableSorting: false,
+      cell: (info: any) => {
+        const c = info.row.original as Consignee;
+        return (
+          <div className="d-inline-flex align-items-center gap-1">
+            {canEdit && <ActionBtn title="Edit Consignee"          icon="ri-pencil-line"      color="primary" onClick={() => { setEditing(c as any); setAddOpen(true); }} />}
+                       <ActionBtn title="Evidence Vault"           icon="ri-file-shield-line" color="info"    onClick={() => soon('Evidence Vault')} />
+          </div>
+        );
+      },
+    },
+  ], [canEdit]);
 
   // Hard-stop direct URL access for users whose Permissions sheet doesn't
   // include sales.consignee.can_view. Sidebar already hides the link, but
@@ -212,78 +319,25 @@ export default function SalesConsignee() {
         </div>
       </div>
 
-      {/* Table card */}
+      {/* Table card — project-standard TableContainer (sortable headers,
+          built-in pagination, vz-token chrome) wrapped in the
+          emerald-themed `.smcg-table-wrap` so page-level styling
+          (tinted header, hover wash) still applies. */}
       <div className="smcg-table-card">
         <div className="smcg-table-wrap">
-          <table className="smcg-table">
-            <thead>
-              <tr>
-                <th>Sr No</th>
-                <th>Consignee ID</th>
-                <th>Customer ID</th>
-                <th>Company Name</th>
-                <th>Segment</th>
-                <th>Risk Level</th>
-                <th>Contact Person</th>
-                <th>Email</th>
-                <th>Contact No</th>
-                <th>Country</th>
-                <th className="ta-c">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
-                <tr><td colSpan={11} className="smcg-empty">No consignees found</td></tr>
-              )}
-              {rows.map((c, i) => {
-                const r = RISK_COLORS[c.risk];
-                return (
-                  <tr key={c.id} className={i % 2 === 0 ? 'even' : 'odd'}>
-                    <td><span className="smcg-srno">{startIdx + i + 1}</span></td>
-                    <td><span className="smcg-id-chip">{c.id}</span></td>
-                    <td><span className="smcg-cust-chip">{c.customerId}</span></td>
-                    <td><span className="smcg-company">{c.company}</span></td>
-                    <td><span className="smcg-seg">{c.segment}</span></td>
-                    <td>
-                      <span className="smcg-risk-pill" style={{ background:r.bg, color:r.color }}>
-                        <span className="smcg-risk-dot" style={{ background:r.dot }} />
-                        {c.risk}
-                      </span>
-                    </td>
-                    <td className="smcg-contact">{c.contact}</td>
-                    <td className="smcg-email">{c.email}</td>
-                    <td className="smcg-mono">{c.phone}</td>
-                    <td className="smcg-country">{c.country} <span className="smcg-country-sub">({c.countryDetail})</span></td>
-                    <td className="ta-c">
-                      <div className="smcg-actions">
-                        {canEdit && (
-                          <Tooltip label="Edit Consignee">
-                            <button aria-label="Edit Consignee" className="smcg-act smcg-act-edit" onClick={() => { setEditing(c); setAddOpen(true); }}><IconEdit /></button>
-                          </Tooltip>
-                        )}
-                        <Tooltip label="Evidence Vault">
-                          <button aria-label="Evidence Vault" className="smcg-act smcg-act-vault" onClick={() => soon('Evidence Vault')}>
-                            <IconVault /> Vault
-                          </button>
-                        </Tooltip>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="smcg-pagination">
-          <span className="smcg-pag-pages">{safePage} / {pages}</span>
-          <span className="smcg-pag-info">
-            {total === 0 ? 'No records' : `Showing ${startIdx + 1}–${Math.min(startIdx + ROWS_PER_PAGE, total)} of ${total}`}
-          </span>
-          <div className="smcg-pag-right">
-            <button className="smcg-pag-btn" disabled={safePage <= 1}  onClick={() => setPage(p => Math.max(1, p - 1))}><IconChevronLeft /></button>
-            <button className="smcg-pag-btn" disabled={safePage >= pages || total === 0} onClick={() => setPage(p => Math.min(pages, p + 1))}><IconChevronRight /></button>
-          </div>
+          <TableContainer
+            columns={columns}
+            data={filtered}
+            isGlobalFilter={false}
+            customPageSize={ROWS_PER_PAGE}
+            tableClass="table align-middle table-nowrap mb-0"
+            theadClass="table-light"
+            divClass="table-responsive table-card border rounded"
+            SearchPlaceholder="Search consignees..."
+          />
+          {filtered.length === 0 && (
+            <div className="smcg-empty py-4">No consignees found</div>
+          )}
         </div>
       </div>
 
@@ -539,7 +593,110 @@ const SCOPED_CSS = `
 }
 
 /* ─── Table ─── */
-.smcg-table-wrap { overflow: auto; flex: 1; min-height: 0; }
+.smcg-table-wrap {
+  overflow: auto; flex: 1; min-height: 0;
+  /* Breathing room around the TableContainer-rendered card so its
+     rounded corners aren't clipped by the outer .smcg-table-card. */
+  padding: 14px 14px 12px;
+}
+
+/* ─── Project-standard TableContainer styling tinted with the
+       page's emerald palette. Same structure as SalesCustomers but
+       green instead of violet. */
+.smcg-table-wrap .table-responsive {
+  background: #fff !important;
+  border: 1px solid #d1fae5 !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+}
+.smcg-table-wrap .table { --bs-table-bg: transparent; margin-bottom: 0 !important; }
+
+/* Header — soft emerald wash with dark-green column text. */
+.smcg-table-wrap .table thead,
+.smcg-table-wrap .table thead tr,
+.smcg-table-wrap .table thead.table-light tr {
+  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%) !important;
+}
+.smcg-table-wrap .table thead th,
+.smcg-table-wrap .table thead.table-light th {
+  --bs-table-bg: transparent !important;
+  --bs-table-accent-bg: transparent !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  color: #065f46 !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: .01em !important;
+  padding: 10px 14px !important;
+  line-height: 1.3 !important;
+  border-bottom: 1px solid #6ee7b7 !important;
+  white-space: nowrap;
+  text-transform: none;
+  vertical-align: middle !important;
+}
+.smcg-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; color: #047857; }
+
+/* Body — white rows with soft emerald hover. */
+.smcg-table-wrap .table tbody tr { background: #fff; transition: background .12s ease; }
+.smcg-table-wrap .table tbody tr:hover { background: #f0fdf4 !important; }
+.smcg-table-wrap .table tbody td {
+  --bs-table-bg: transparent !important;
+  background: transparent !important;
+  padding: 12px 14px !important;
+  font-size: 13px;
+  color: #1f2937;
+  vertical-align: middle;
+  border-bottom: 1px solid #ecfdf5 !important;
+  white-space: nowrap;
+}
+.smcg-table-wrap .table tbody tr:last-child td { border-bottom: none !important; }
+
+/* Pagination strip — emerald-tinted pills with a green gradient on
+   the active page. */
+.smcg-table-wrap .pagination .page-link {
+  border-radius: 8px !important;
+  margin: 0 2px;
+  color: #047857;
+  border: 1px solid #d1fae5;
+  font-weight: 600;
+}
+.smcg-table-wrap .pagination .page-item.active .page-link {
+  background: linear-gradient(135deg, #10b981, #047857);
+  border-color: #10b981;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(16,185,129,.25);
+}
+.smcg-table-wrap .pagination .page-item.disabled .page-link { color: #6ee7b7; background: #f0fdf4; }
+
+/* Dark mode — neutral dark slate with emerald accents. */
+[data-bs-theme="dark"] .smcg-table-wrap .table-responsive {
+  background: #131c30 !important;
+  border-color: rgba(16,185,129,0.25) !important;
+}
+[data-bs-theme="dark"] .smcg-table-wrap .table thead,
+[data-bs-theme="dark"] .smcg-table-wrap .table thead tr,
+[data-bs-theme="dark"] .smcg-table-wrap .table thead.table-light tr {
+  background: linear-gradient(180deg, rgba(6,95,70,0.40) 0%, rgba(16,185,129,0.25) 100%) !important;
+}
+[data-bs-theme="dark"] .smcg-table-wrap .table thead th,
+[data-bs-theme="dark"] .smcg-table-wrap .table thead.table-light th {
+  color: #d1fae5 !important;
+  border-bottom-color: rgba(16,185,129,0.40) !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+[data-bs-theme="dark"] .smcg-table-wrap .table thead th i { color: #6ee7b7 !important; opacity: 0.8; }
+[data-bs-theme="dark"] .smcg-table-wrap .table tbody tr { background: #131c30; }
+[data-bs-theme="dark"] .smcg-table-wrap .table tbody tr:hover { background: rgba(16,185,129,0.10) !important; }
+[data-bs-theme="dark"] .smcg-table-wrap .table tbody td {
+  color: #e2e8f0 !important;
+  border-bottom-color: rgba(16,185,129,0.15) !important;
+}
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-link { background: #1c2531; color: #6ee7b7; border-color: rgba(16,185,129,0.25); }
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item.active .page-link { background: linear-gradient(135deg,#10b981,#047857); border-color: #10b981; color: #fff; }
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item.disabled .page-link { color: #475569; background: #131c30; }
+
+/* Legacy .smcg-table rules below — no longer apply since tableClass
+   uses "table …" (not smcg-table). Safe to delete in cleanup. */
 .smcg-table {
   width: 100%; min-width: 1200px;
   border-collapse: collapse;
@@ -575,47 +732,55 @@ const SCOPED_CSS = `
 .smcg-table tbody tr:last-child td { border-bottom: none; }
 .smcg-empty { text-align: center; padding: 32px !important; color: #10b981; font-size: 12px; font-style: italic; }
 
-.smcg-srno {
-  display:inline-flex; align-items:center; justify-content:center;
-  width:22px; height:22px; border-radius:6px;
-  background: #f0fdf4;
-  color:#047857; font-size:10px; font-weight:800;
-  border: 1px solid #a7f3d0;
-}
+/* Sr No — plain dark text (no bubble), matching SalesCustomers. */
+.smcg-srno { color: #495057; font-weight: 600; font-size: 13px; }
+
+/* Consignee ID — soft emerald mono chip (flat, no gradient). */
 .smcg-id-chip {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 10.5px; font-weight: 800; color: #047857;
-  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  font-size: 11px; font-weight: 600; color: #047857;
+  background: #ecfdf5;
   padding: 3px 9px; border-radius: 6px;
-  border: 1px solid #a7f3d0; letter-spacing: .02em;
+  border: 1px solid #a7f3d0;
+  letter-spacing: .02em;
 }
+/* Customer ID linkage — soft violet mono chip so the cross-reference
+   reads as a distinct "this points back to a customer" affordance. */
 .smcg-cust-chip {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 10.5px; font-weight: 800; color: #6d28d9;
-  background: linear-gradient(135deg, #faf5ff, #ede9fe);
+  font-size: 11px; font-weight: 600; color: #6d28d9;
+  background: #f3eeff;
   padding: 3px 9px; border-radius: 6px;
-  border: 1px solid #ddd6fe; letter-spacing: .02em;
+  border: 1px solid #e0d9f7;
+  letter-spacing: .02em;
 }
-.smcg-company { font-weight:700; color:#064e3b; letter-spacing:-.1px; }
+.smcg-company { font-weight: 600; color: #064e3b; }
+
+/* Flat solid pills — no gradients, no leading dots. Same density
+   and weight as SalesCustomers so the row reads as a tidy strip. */
 .smcg-seg {
-  display:inline-flex; align-items:center; gap:4px;
-  font-size:10.5px; font-weight:600; color:#047857;
-  background: linear-gradient(135deg, rgba(209,250,229,.85), rgba(167,243,208,.65));
-  border:1px solid #a7f3d0; border-radius:20px; padding:3px 10px; white-space:nowrap;
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 600; color: #047857;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0; border-radius: 20px;
+  padding: 3px 10px; white-space: nowrap;
 }
-.smcg-seg::before { content:''; width:4px; height:4px; border-radius:50%; background:#10b981; flex-shrink:0; }
+/* Segment chip leading dot removed — matches the SalesCustomers
+   cleanup where pill badges don't carry a leading dot indicator. */
 .smcg-risk-pill {
-  display:inline-flex; align-items:center; gap:5px;
-  padding:3px 10px; border-radius:20px;
-  font-size:10.5px; font-weight:700;
-  white-space:nowrap;
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600;
+  white-space: nowrap;
 }
-.smcg-risk-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
-.smcg-country { color:#064e3b; font-weight:600; }
-.smcg-country-sub { color:#6b7280; font-weight:500; font-size:11px; }
-.smcg-contact { font-weight:600; color:#1f2937; }
-.smcg-mono    { font-family: 'JetBrains Mono', monospace; color:#374151; font-size:11.5px; }
-.smcg-email   { color:#059669; font-size:11px; font-weight:500; }
+/* Legacy .smcg-risk-dot kept as a no-op (markup removed). */
+.smcg-risk-dot { display: none; }
+
+.smcg-country { color: #064e3b; font-weight: 600; font-size: 13px; }
+.smcg-country-sub { color: #6b7280; font-weight: 500; font-size: 11.5px; }
+.smcg-contact { color: #495057; font-weight: 500; }
+.smcg-mono    { font-family: 'JetBrains Mono', ui-monospace, monospace; color: #495057; font-size: 12px; }
+.smcg-email   { color: #059669; font-size: 12px; font-weight: 500; }
 
 .smcg-actions { display:flex; align-items:center; justify-content:center; gap:6px; flex-wrap:nowrap; }
 .smcg-act {
