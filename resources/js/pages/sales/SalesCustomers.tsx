@@ -1,8 +1,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import AddCustomerModal, { type EditCustomer } from './AddCustomerModal';
+import CustomerConsigneesModal, { type CustomerLite } from './CustomerConsigneesModal';
 import api from '../../api';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 
@@ -26,6 +28,11 @@ type Customer = {
   company: string; type: string; segment: string;
   country: string; contact: string; phone: string; email: string;
   whatsapp: 'Yes' | 'No'; consignees: number;
+  /* Set when at least one consignee linked to this customer was
+   * created with "Same as Customer" on. Drives the warning popup
+   * on the Edit Customer action. */
+  hasSameAsCustomerConsignees?: boolean;
+  sameAsCustomerConsigneeCount?: number;
 };
 
 const TYPE_COLORS: Record<string, { bg: string; color: string; border: string; dot: string }> = {
@@ -40,6 +47,7 @@ const ROWS_PER_PAGE = 10;
 export default function SalesCustomers() {
   const toast = useToast();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isSuperAdmin = user?.user_type === 'super_admin';
   // Match the Permissions sheet exactly: the row is keyed by the leaf slug
   // `sales.customers` and exposes can_view/add/edit/delete/etc. as booleans.
@@ -54,6 +62,15 @@ export default function SalesCustomers() {
   const [wdhOpen, setWdhOpen] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<EditCustomer | null>(null);
+  /* "Map Consignee" popup — opened from the row action; shows every
+   * consignee linked to the picked customer and lets the user add
+   * more without leaving the customer list. */
+  const [mapTarget, setMapTarget] = useState<CustomerLite | null>(null);
+  /* Linked-consignee warning. When the user clicks Edit on a customer
+   * that has at least one same-as-customer consignee mirroring its
+   * Stage 1 data, we ask for confirmation before opening the wizard.
+   * Empty = no popup; otherwise holds the customer being asked about. */
+  const [pendingEdit, setPendingEdit] = useState<Customer | null>(null);
 
   /* ── Live customer list pulled from /api/customers. The previous
    * hardcoded FRESH/RECURRING arrays were a stub while the DB tables
@@ -203,8 +220,22 @@ export default function SalesCustomers() {
         const c = info.row.original as Customer;
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
-            {canEdit && <ActionBtn title="Edit Customer"           icon="ri-pencil-line"     color="primary" onClick={() => { setEditing(c); setAddOpen(true); }} />}
-                       <ActionBtn title="Map Consignee"            icon="ri-team-line"       color="success" onClick={() => soon('Map Consignee')} />
+            {canEdit && <ActionBtn title="Edit Customer"           icon="ri-pencil-line"     color="primary" onClick={() => {
+              /* If the customer has any consignees mapped to it,
+               * prompt before opening edit — changes here can
+               * affect every downstream consignee. Customers with no
+               * mapped consignees jump straight into the wizard. */
+              if ((c.consignees ?? 0) > 0) {
+                setPendingEdit(c);
+              } else {
+                setEditing(c);
+                setAddOpen(true);
+              }
+            }} />}
+                       <ActionBtn title="Map Consignee"            icon="ri-team-line"       color="success" onClick={() => {
+                         if (!c.db_id) { toast.info('Save customer first', 'Map Consignee needs a saved customer record.'); return; }
+                         setMapTarget({ id: c.id, db_id: c.db_id, company: c.company, country: c.country });
+                       }} />
                        <ActionBtn title="Customer Evidence Vault"  icon="ri-file-shield-line" color="info"   onClick={() => soon('Evidence Vault')} />
           </div>
         );
@@ -241,6 +272,20 @@ export default function SalesCustomers() {
         <span className="smc-glow" />
         <span className="smc-sheen" />
         <div className="smc-cstrip-left">
+          {/* Back button — routes to the Sales Matrix landing. Falls
+              back to browser history when there's no /sales route
+              registered (defensive — keeps the button useful even
+              outside the normal nav flow). */}
+          <button
+            type="button"
+            className="smc-back-btn"
+            aria-label="Back"
+            onClick={() => navigate(-1)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
           <div className="smc-avatar-wrap">
             <div className="smc-avatar"><IconUsers /></div>
             <span className="smc-online-dot" />
@@ -349,6 +394,52 @@ export default function SalesCustomers() {
         onClose={() => { setAddOpen(false); setEditing(null); }}
         onSaved={() => { fetchCustomers(); toast.success(editing ? 'Customer updated' : 'Customer added'); }}
       />
+
+      <CustomerConsigneesModal
+        open={!!mapTarget}
+        customer={mapTarget}
+        onClose={() => { setMapTarget(null); fetchCustomers(); }}
+      />
+
+      {/* Linked-consignee warning — appears only when the user clicks
+          Edit on a customer that has at least one same-as-customer
+          consignee mirroring its Stage 1 data. Confirm = open the
+          wizard. Cancel = drop the pending edit, nothing else. */}
+      {pendingEdit && (
+        <div className="smc-confirm-overlay" onMouseDown={() => setPendingEdit(null)}>
+          <div className="smc-confirm-card" onMouseDown={e => e.stopPropagation()}>
+            <div className="smc-confirm-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+            </div>
+            <div className="smc-confirm-title">Linked Consignee Alert</div>
+            <div className="smc-confirm-body">
+              This customer has{' '}
+              {pendingEdit.consignees && pendingEdit.consignees > 1
+                ? <><strong>{pendingEdit.consignees}</strong> consignees mapped to it.</>
+                : <>a consignee mapped to it.</>}
+              <br />
+              Updating <strong>{pendingEdit.company}</strong> may also affect{' '}
+              {pendingEdit.consignees && pendingEdit.consignees > 1 ? 'those linked consignees' : 'the linked consignee'}.
+              <br />
+              Do you want to continue?
+            </div>
+            <div className="smc-confirm-actions">
+              <button type="button" className="smc-confirm-cancel" onClick={() => setPendingEdit(null)}>Cancel</button>
+              <button
+                type="button"
+                className="smc-confirm-ok"
+                onClick={() => { const c = pendingEdit; setPendingEdit(null); setEditing(c); setAddOpen(true); }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -368,12 +459,6 @@ const IconUsers = () => (
     <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
   </svg>
 );
-const IconUsersSm = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
-  </svg>
-);
 const IconPlus = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8">
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -387,11 +472,6 @@ const IconChevronUp = () => (
 const IconChevronDown = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5">
     <polyline points="7 13 12 18 17 13" /><polyline points="7 6 12 11 17 6" />
-  </svg>
-);
-const IconChevronLeft = () => (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <polyline points="15 18 9 12 15 6" />
   </svg>
 );
 const IconChevronRight = () => (
@@ -413,19 +493,6 @@ const IconRepeat = () => (
 const IconSearch = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round">
     <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-  </svg>
-);
-const IconEdit = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" />
-  </svg>
-);
-const IconFile = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-    <polyline points="14 2 14 8 20 8" />
-    <line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" />
   </svg>
 );
 
@@ -472,6 +539,20 @@ const SCOPED_CSS = `
   border-radius: 16px 16px 0 0;
 }
 .smc-cstrip-left  { display:flex; align-items:center; gap:13px; z-index:1; padding-left:4px; }
+.smc-back-btn {
+  flex-shrink: 0;
+  width: 34px; height: 34px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.75);
+  border: 1px solid rgba(124,58,237,.20);
+  color: #6d28d9; cursor: pointer;
+  transition: all .18s ease;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04);
+}
+.smc-back-btn:hover  { background: #fff; border-color: #7c3aed; transform: translateX(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.18); }
+.smc-back-btn:active { transform: translateX(-1px) scale(.97); }
+[data-bs-theme="dark"] .smc-back-btn         { background: rgba(255,255,255,.06); border-color: rgba(167,139,250,.30); color: #c4b5fd; }
+[data-bs-theme="dark"] .smc-back-btn:hover   { background: rgba(124,58,237,.18); border-color: #a78bfa; color: #ddd6fe; }
 .smc-avatar-wrap  { position: relative; flex-shrink: 0; }
 .smc-avatar {
   width: 38px; height: 38px; border-radius: 12px;
@@ -810,6 +891,73 @@ const SCOPED_CSS = `
 .smc-table tbody tr:hover td { background: linear-gradient(90deg, rgba(196,181,253,.25), rgba(167,139,250,.2), rgba(196,181,253,.25)) !important; }
 .smc-table tbody tr:last-child td { border-bottom: none; }
 .smc-empty { text-align: center; padding: 32px !important; color: #a78bfa; font-size: 12px; font-style: italic; }
+
+/* ─── Linked-consignee warning popup ─────
+ * Sits above the wizard band so it can't be hidden by an open
+ * AddCustomerModal. Amber accent because this is a destructive-
+ * adjacent action (will propagate to children) — not the standard
+ * "all good, proceed" purple. */
+.smc-confirm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(46,16,101,.55);
+  backdrop-filter: blur(6px);
+  z-index: 11200;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+}
+.smc-confirm-card {
+  width: min(460px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  padding: 22px 22px 18px;
+  box-shadow: 0 24px 60px rgba(46,16,101,.32);
+  text-align: center;
+}
+.smc-confirm-icon {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  color: #b45309;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-bottom: 12px;
+  box-shadow: 0 6px 18px rgba(245,158,11,.25);
+}
+.smc-confirm-title {
+  font-size: 17px; font-weight: 800; color: #111827; margin-bottom: 8px;
+}
+.smc-confirm-body {
+  font-size: 13.5px; color: #4b5563; line-height: 1.55; margin-bottom: 18px;
+}
+.smc-confirm-body strong { color: #6d28d9; font-weight: 700; }
+.smc-confirm-actions {
+  display: flex; gap: 10px; justify-content: center;
+}
+.smc-confirm-cancel,
+.smc-confirm-ok {
+  flex: 1 1 0;
+  padding: 10px 16px; border-radius: 10px;
+  font-weight: 700; font-size: 13px;
+  cursor: pointer; transition: all .15s ease;
+  border: 1px solid transparent;
+}
+.smc-confirm-cancel {
+  background: #fff; color: #4b5563;
+  border-color: #e5e7eb;
+}
+.smc-confirm-cancel:hover { background: #f9fafb; border-color: #d1d5db; }
+.smc-confirm-ok {
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(124,58,237,.30);
+}
+.smc-confirm-ok:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.40); }
+[data-bs-theme="dark"] .smc-confirm-overlay { background: rgba(0,0,0,.65); }
+[data-bs-theme="dark"] .smc-confirm-card    { background: #1e1b4b; }
+[data-bs-theme="dark"] .smc-confirm-title   { color: #ede9fe; }
+[data-bs-theme="dark"] .smc-confirm-body    { color: #c4b5fd; }
+[data-bs-theme="dark"] .smc-confirm-body strong { color: #ddd6fe; }
+[data-bs-theme="dark"] .smc-confirm-cancel  { background: #2e1065; color: #c4b5fd; border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .smc-confirm-cancel:hover { background: rgba(124,58,237,.18); }
 
 /* Sr No + Consignees — plain dark text (no badge bubble). Matches
    the Admin Clients table where the row number is rendered as a

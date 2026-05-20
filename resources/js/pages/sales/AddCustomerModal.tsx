@@ -238,6 +238,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   // the message rendered under the input. Cleared on next keystroke.
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  /* Numeric PK of the saved customer. In edit mode it comes from the
+   * `customer` prop (passed in from the list). In create mode it's set
+   * by the Stage 1 → 2 auto-save POST so Stage 2 KYC upload calls have
+   * a `/customers/{id}/documents` target without forcing the user to
+   * close + re-open the modal. */
+  const [savedDbId, setSavedDbId] = useState<number | null>(customer?.db_id ?? null);
+
   // Trade docs selection
   const [tdDocs, setTdDocs] = useState([
     { id:'td1', name:'Bill of Lading',           selected:true, sent:false },
@@ -332,6 +339,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     setKycDocs([]);
     setKycOwners([]);
     setErrors({});
+    // Edit mode arrives with db_id (Stage 2 KYC POSTs work
+    // immediately); create mode starts null and gets filled by the
+    // Stage 1 → 2 auto-save POST so KYC uploads gain a target in the
+    // same modal session.
+    setSavedDbId(customer?.db_id ?? null);
     setTdDocs([
       { id:'td1', name:'Bill of Lading',           selected:true, sent:false },
       { id:'td2', name:'Phytosanitary Certificate', selected:true, sent:false },
@@ -579,7 +591,60 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     }
   };
 
-  const goNext = () => {
+  /* Auto-save Stage 1 when transitioning from the Address & Contact
+   * sub-tab to Stage 2. Without this, Stage 2 KYC upload calls have
+   * no `/customers/{id}/documents` target — the user would have to
+   * Save Customer (Stage 3), close the modal, find the row in the
+   * list, and re-open as edit. Same auto-save pattern is used by
+   * AddConsigneeModal. */
+  const persistStage1 = async (): Promise<number | null> => {
+    if (saving) return savedDbId;
+    setSaving(true);
+    try {
+      const payload = buildPayload();
+      if (savedDbId) {
+        await api.put(`/customers/${savedDbId}`, payload);
+        return savedDbId;
+      }
+      const r = await api.post('/customers', payload);
+      const newId = r.data?.data?.db_id ?? null;
+      if (newId) setSavedDbId(newId);
+      return newId;
+    } catch (err: any) {
+      // Replay the same 422 → inline-error mapping that submitCustomer uses.
+      const apiErrors = err?.response?.data?.errors ?? null;
+      if (apiErrors && typeof apiErrors === 'object') {
+        const next: Record<string, string> = {};
+        const map: Record<string, string> = {
+          'company_name': 'coName', 'legal_name': 'coLegal',
+          'type': 'coType', 'segment': 'coSeg',
+          'classification': 'coClass', 'risk_level': 'coRisk',
+          'primary_address.type': 'addrType', 'primary_address.address_line': 'addr',
+          'primary_address.country': 'country', 'primary_address.state': 'state',
+          'primary_address.city': 'city', 'primary_address.pin': 'pin',
+          'primary_address.cp_name': 'cpName', 'primary_address.cp_designation': 'cpDesig',
+          'primary_address.cp_contact': 'cpTel', 'primary_address.cp_email': 'cpEmail',
+          'primary_address.cp_whatsapp': 'cpWa',
+        };
+        for (const [key, msgs] of Object.entries(apiErrors)) {
+          const msg = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
+          next[map[key] ?? key] = msg;
+        }
+        setErrors(next);
+        setStage(1);
+        setTab('identification');
+        const firstKey = Object.keys(next)[0];
+        document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        alert(err?.response?.data?.message ?? 'Save failed. Please try again.');
+      }
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const goNext = async () => {
     if (stage === 1) {
       /* Always validate Stage 1 before leaving it, no matter which
        * sub-tab is active. Previously the gate only fired from the
@@ -593,9 +658,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       }
       if (tab === 'identification') {
         setTab('address-contact');
-      } else {
-        setStage(2); setMaxStage(m => Math.max(m, 2) as Stage);
+        return;
       }
+      // Leaving Stage 1 entirely → persist so Stage 2 KYC has a target.
+      const id = await persistStage1();
+      if (!id) return;
+      setStage(2); setMaxStage(m => Math.max(m, 2) as Stage);
+      onSaved?.();
     } else if (stage === 2) {
       setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
     } else {
@@ -721,7 +790,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               onAdd={(s) => { setEditDocId(null); setEditOwnerId(null); setDocModal({ open: true, sub: s }); }}
               docs={kycDocs}
               owners={kycOwners}
-              customerSaved={!!customer?.db_id}
+              customerSaved={!!savedDbId}
               onEditDoc={(id) => {
                 const row = kycDocs.find(d => d.id === id);
                 if (!row) return;
@@ -849,7 +918,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       {docModal.open && docModal.sub === 'owner-kyc' && (
         <OwnerDDSubModal
           masters={masters}
-          customerId={customer?.db_id ?? null}
+          customerId={savedDbId}
           editing={editOwnerId ? kycOwners.find(o => o.id === editOwnerId) ?? null : null}
           onClose={() => { setEditOwnerId(null); setDocModal(m => ({ ...m, open: false })); }}
           onSaved={(row) => {
@@ -865,7 +934,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         <DocumentSubModal
           sub={docModal.sub}
           masters={masters}
-          customerId={customer?.db_id ?? null}
+          customerId={savedDbId}
           editing={editDocId ? kycDocs.find(d => d.id === editDocId) ?? null : null}
           /* When a new Document Type is added via the popup-on-popup,
              append it to masters.documentTypes so the dropdown picks

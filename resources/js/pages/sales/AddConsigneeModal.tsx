@@ -45,6 +45,18 @@ const DEFAULT_ADDRESS_TYPE = 'Registered Office';
 const newLocId = () => `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 const newKycId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
+/* Esc-to-close keyboard shortcut, scoped to whichever sub-modal is
+ * currently mounted. We attach to keydown only while the modal is
+ * open; passing it to every sub-modal keeps the keyboard UX uniform
+ * (Location / KycDoc / KycOwner all close the same way). */
+const useEscapeKey = (onEscape: () => void) => {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onEscape(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onEscape]);
+};
+
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Consignee — two-phase wizard
  *
@@ -62,15 +74,28 @@ const newKycId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().to
 
 export type ConsigneeRow = {
   id: string;
+  /** Numeric primary key — present once the row has been saved to the
+   *  consignees table. Required to fire PUT/DELETE during edit. */
+  db_id?: number;
   customerId: string;
+  customer_db_id?: number;
   company: string;
   segment: string;
-  risk: 'Low' | 'Medium' | 'High';
+  /* Free-text master value coming back from /master/risk_levels.
+   * Common values are Low / Medium / High but the master can hold
+   * any tenant-defined tier (Tier-1, Critical, etc.) so we keep the
+   * type honest as a plain string. */
+  risk: string;
   contact: string;
   email: string;
   phone: string;
   country: string;
   countryDetail: string;
+  /* True iff this consignee was created with "Same as Customer" on.
+   * Lets the edit flow keep the toggle ticked + lets the front-end
+   * differentiate "this row IS the mirror" from "another consignee
+   * is the mirror" when gating the toggle. */
+  same_as_customer?: boolean;
 };
 
 /* Customer option shape consumed by the consignee picker. Fields
@@ -86,6 +111,15 @@ type CustomerOption = {
   segment: string;
   type: string;
   classification: string;
+  /* Optional fields surfaced from /customers — used by the "Same as
+   * Customer" checkbox on Stage 1 to fully copy the customer onto the
+   * consignee in one click. Older list responses may omit some of
+   * these so all extras stay nullable. */
+  risk?: string;
+  website?: string;
+  addressType?: string;
+  address?: string;
+  designation?: string;
   country: string;
   state: string;
   city: string;
@@ -94,6 +128,12 @@ type CustomerOption = {
   phone: string;
   email: string;
   whatsapp: 'Yes' | 'No';
+  /* True when this customer already has a same-as-customer consignee
+   * attached. Drives the disabled state on the "Same as Customer"
+   * banner so the user can't create / convert a second mirror — the
+   * business rule is one mirror per customer. */
+  hasSameAsCustomerConsignees?: boolean;
+  sameAsCustomerConsigneeCount?: number;
 };
 
 /* Derive two-letter initials from a company name — used by the
@@ -105,28 +145,17 @@ const initialsOf = (name: string): string => {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
-/* ─── KYC Documents mock dataset (Step 3) ─── */
-type KycDoc = {
-  id: string;       // DD-001
-  name: string;
-  authority: string;
-  expiry: string;   // 12/2026, N/A
-  expired: boolean; // drives red expiry pill
-  mandatory: boolean;
-};
-const KYC_DOCS: KycDoc[] = [
-  { id: 'DD-001', name: 'Certificate of Incorporation',         authority: 'Registrar of Companies (ROC)', expiry: 'N/A',     expired: false, mandatory: true },
-  { id: 'DD-002', name: 'Memorandum & Articles of Association (MOA/AOA)', authority: 'Registrar of Companies (ROC)', expiry: 'N/A', expired: false, mandatory: true },
-  { id: 'DD-003', name: 'Board Resolution for Authorized Signatory',     authority: 'Company Board',           expiry: '12/2026', expired: true,  mandatory: true },
-  { id: 'DD-004', name: 'Financial Statements (Last 2-3 Years)',         authority: 'Statutory Auditor',       expiry: '03/2026', expired: true,  mandatory: true },
-  { id: 'DD-005', name: 'Bank Account Verification Letter / Cancelled Cheque', authority: 'Authorized Dealer Bank', expiry: 'N/A', expired: false, mandatory: true },
-  { id: 'DD-006', name: 'Tax Registration Certificate',                  authority: 'Income Tax Department',   expiry: 'N/A',     expired: false, mandatory: false },
-];
-
 interface Props {
   open: boolean;
   consignee: ConsigneeRow | null; // null = create; non-null = edit (skip phase A)
   onClose: () => void;
+  /** Fired after a successful POST or PUT so the parent list can refetch. */
+  onSaved?: () => void;
+  /** When set, the picker is bypassed and this customer is used as the
+   *  pre-selected link. Used by SalesCustomers' "Map Consignee" flow
+   *  (the user is already on a specific customer — they shouldn't have
+   *  to pick again, and they should NOT be able to switch). */
+  preselectedCustomerId?: string;
 }
 
 type Phase = 'pick-customer' | 'wizard';
@@ -134,7 +163,7 @@ type Stage = 1 | 2 | 3;
 type IdentityTab = 'identification' | 'address-contact';
 type VaultTab = 'kyc' | 'trade';
 
-export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
+export default function AddConsigneeModal({ open, consignee, onClose, onSaved, preselectedCustomerId }: Props) {
   const toast = useToast();
 
   const [phase, setPhase]   = useState<Phase>('pick-customer');
@@ -162,14 +191,31 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
   const [mCountries,       setMCountries]       = useState<(Opt & { id: number })[]>([]);
   const [mStates,          setMStates]          = useState<StateOpt[]>([]);
   const [mDesignations,    setMDesignations]    = useState<Opt[]>([]);
+  /* Document Type master — backs the DD Document / License Name and
+   * Trade Licence Name dropdowns in the Stage 2 sub-modal. Field key
+   * on the master is `title` (managed in Master → Document Types). */
+  const [mDocumentTypes,   setMDocumentTypes]   = useState<Opt[]>([]);
 
   // Stage 1 — Consignee Legal Identity
   const [idTab, setIdTab]         = useState<IdentityTab>('identification');
+  /* "Same as Customer" toggle. When on, Stage 1's Basic Company +
+   * Primary Address & Contact fields mirror the linked customer's
+   * details and the inputs lock to read-only. Untick to edit
+   * individually. The flag itself isn't persisted server-side — it's
+   * a UX shortcut for copy-once-and-edit. */
+  const [sameAsCustomer, setSameAsCustomer] = useState(false);
   /* Inline validation errors for Stage 1 fields. Keyed by form1 field
    * name. Each `goNext` from Stage 1 runs validateStage1() and refuses
    * to advance if any required field is empty/invalid; the error map
    * drives the red border + helper text under each affected Field. */
   const [errors1, setErrors1] = useState<Record<string, string>>({});
+  /* Saving state — disables the Save button while api.post/put is in
+   * flight so a double-click can't fire two creates. */
+  const [saving, setSaving] = useState(false);
+  /* Numeric PK of the saved consignee (created at Stage 1→2 transition
+   * for new records, or pre-filled from the edit-mode prop). Drives all
+   * Stage 2 KYC POSTs to /consignees/{id}/documents and /owners. */
+  const [savedDbId, setSavedDbId] = useState<number | null>(null);
   const [form1, setForm1] = useState({
     /* Basic company */
     companyName: '', legalName: '', website: '', segment: '', classification: '', risk: '',
@@ -211,6 +257,11 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
       // is populated by the fetch effect below once it lands; until
       // then we keep `customer` null but jump straight to the wizard.
       setPhase('wizard');
+    } else if (preselectedCustomerId) {
+      // Map-Consignee flow — caller already knows which customer this
+      // consignee belongs to. Skip the picker. `customer` is resolved
+      // by the customer-list fetch effect below as soon as it lands.
+      setPhase('wizard');
     } else {
       setCustomer(null);
       setPhase('pick-customer');
@@ -221,6 +272,7 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
     setLinkedHidden(false);
     setIdTab('identification');
     setErrors1({});
+    setSameAsCustomer(false);
     setVaultTab('kyc');
     setEvSub('dd');
     setLocations([]);
@@ -233,6 +285,9 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
     setDocModal({ open: false, sub: 'company-dd', editingId: null });
     setOwnerModal({ open: false, editingId: null });
     setKycDelModal({ open: false, kind: null, id: null });
+    /* Edit mode arrives with db_id; create mode starts null and gets
+     * filled by the Stage 1→2 auto-save POST. */
+    setSavedDbId(consignee?.db_id ?? null);
   }, [open, consignee]);
 
   /* Fetch the live customer list when the modal opens. Maps the API
@@ -256,6 +311,11 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
           segment:       c.segment    ?? '',
           type:          c.type       ?? '',
           classification:c.classification ?? '',
+          risk:          c.riskLevel  ?? '',
+          website:       c.website    ?? '',
+          addressType:   c.addrType   ?? '',
+          address:       c.addr       ?? '',
+          designation:   c.cpDesig    ?? '',
           country:       c.country    ?? '',
           state:         c.state      ?? '',
           city:          c.city       ?? '',
@@ -264,11 +324,17 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
           phone:         c.phone      ?? '',
           email:         c.email      ?? '',
           whatsapp:      c.whatsapp === 'Yes' ? 'Yes' : 'No',
+          hasSameAsCustomerConsignees:  !!c.hasSameAsCustomerConsignees,
+          sameAsCustomerConsigneeCount: typeof c.sameAsCustomerConsigneeCount === 'number' ? c.sameAsCustomerConsigneeCount : 0,
         }));
         setCustomerOptions(opts);
         // Resolve the linked customer for edit mode now that we have the list.
         if (consignee) {
           const found = opts.find(o => o.id === consignee.customerId) || null;
+          setCustomer(found);
+        } else if (preselectedCustomerId) {
+          // Map-Consignee flow — find the customer the parent locked us to.
+          const found = opts.find(o => o.id === preselectedCustomerId) || null;
           setCustomer(found);
         }
       })
@@ -276,6 +342,131 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
       .finally(() => { if (!cancelled) setCustomersLoading(false); });
     return () => { cancelled = true; };
   }, [open, consignee]);
+
+  /* "Same as Customer" copy effect. When the toggle flips on (or the
+   * linked customer changes while it's on), mirror every Stage 1
+   * field from the customer onto form1. Untick is a no-op: the
+   * already-copied values stay and become editable again — so the
+   * user can copy → tweak one field → save without losing their
+   * inputs. */
+  useEffect(() => {
+    if (!sameAsCustomer || !customer) return;
+    setForm1(prev => ({
+      ...prev,
+      companyName:    customer.name ?? '',
+      legalName:      customer.legalName ?? '',
+      website:        customer.website ?? '',
+      segment:        customer.segment ?? '',
+      classification: customer.classification ?? '',
+      risk:           customer.risk ?? '',
+      addressType:    customer.addressType || 'Registered Office',
+      address:        customer.address ?? '',
+      country:        customer.country ?? '',
+      state:          customer.state ?? '',
+      city:           customer.city ?? '',
+      pin:            customer.pin ?? '',
+      contactName:    customer.contactPerson ?? '',
+      designation:    customer.designation ?? '',
+      contactNo:      customer.phone ?? '',
+      email:          customer.email ?? '',
+      whatsapp:       customer.whatsapp === 'Yes' ? 'Yes' : 'No',
+    }));
+    setErrors1({}); // a full copy from a saved customer is presumed clean
+
+    /* Pull the customer's *additional* locations too — Stage 1's
+     * Address & Contact Details table should mirror those when the
+     * checkbox is ticked. CustomerOption is the picker shape and
+     * doesn't carry locations, so we hit /customers/{db_id} for the
+     * full record. The primary address already flows through the
+     * `customer.address/country/state/city/pin` block above. */
+    if (customer.db_id) {
+      let cancelled = false;
+      api.get(`/customers/${customer.db_id}`)
+        .then(r => {
+          if (cancelled) return;
+          const extra: any[] = Array.isArray(r.data?.data?.locations) ? r.data.data.locations : [];
+          setLocations(extra.map((a: any) => ({
+            id:            `cloc_${a.id ?? Math.random().toString(36).slice(2, 7)}`,
+            type:          a.type ?? '',
+            line:          a.address_line ?? '',
+            country:       a.country ?? '',
+            state:         a.state ?? '',
+            city:          a.city ?? '',
+            pin:           a.pin ?? '',
+            cpName:        a.cp_name ?? '',
+            cpDesignation: a.cp_designation ?? '',
+            cpContact:     a.cp_contact ?? '',
+            cpEmail:       a.cp_email ?? '',
+            cpWhatsapp:    (a.cp_whatsapp === 'yes' || a.cp_whatsapp === 'no') ? a.cp_whatsapp : '',
+          })));
+        })
+        .catch(() => { /* silent — the rest of the mirror still works */ });
+      return () => { cancelled = true; };
+    }
+  }, [sameAsCustomer, customer]);
+
+  /* Edit-mode hydration. When the parent opens the modal with a row
+   * that already has db_id, fetch /consignees/{db_id} and replay the
+   * payload into form1 + locations. The customer-list effect above
+   * resolves the linked customer card; this one fills the wizard. */
+  useEffect(() => {
+    if (!open) return;
+    if (!consignee?.db_id) return;
+    let cancelled = false;
+    api.get(`/consignees/${consignee.db_id}`)
+      .then(r => {
+        if (cancelled) return;
+        const d = r.data?.data ?? null;
+        if (!d) return;
+        const wa = (d.primary_address?.cp_whatsapp ?? '').toLowerCase();
+        setForm1({
+          companyName:    d.company       ?? '',
+          legalName:      d.legalName     ?? '',
+          website:        d.website       ?? '',
+          segment:        d.segment       ?? '',
+          classification: d.classification ?? '',
+          risk:           d.riskLevel     ?? '',
+          addressType:    d.primary_address?.type       ?? 'Registered Office',
+          address:        d.primary_address?.address_line ?? '',
+          country:        d.primary_address?.country    ?? '',
+          state:          d.primary_address?.state      ?? '',
+          city:           d.primary_address?.city       ?? '',
+          pin:            d.primary_address?.pin        ?? '',
+          contactName:    d.primary_address?.cp_name        ?? '',
+          designation:    d.primary_address?.cp_designation ?? '',
+          contactNo:      d.primary_address?.cp_contact     ?? '',
+          email:          d.primary_address?.cp_email       ?? '',
+          whatsapp:       wa === 'yes' ? 'Yes' : 'No',
+        });
+        // Restore the toggle from the server so the user sees the
+        // same banner state they left in — and so Save & Next keeps
+        // the consignee flagged as same-as-customer on update.
+        if (typeof d.same_as_customer === 'boolean') {
+          setSameAsCustomer(d.same_as_customer);
+        }
+        const extra: any[] = Array.isArray(d.locations) ? d.locations : [];
+        setLocations(extra.map((a: any) => ({
+          id:            `loc_db_${a.id}`,
+          type:          a.type ?? '',
+          line:          a.address_line ?? '',
+          country:       a.country ?? '',
+          state:         a.state ?? '',
+          city:          a.city ?? '',
+          pin:           a.pin ?? '',
+          cpName:        a.cp_name ?? '',
+          cpDesignation: a.cp_designation ?? '',
+          cpContact:     a.cp_contact ?? '',
+          cpEmail:       a.cp_email ?? '',
+          cpWhatsapp:    (a.cp_whatsapp ?? '').toLowerCase() === 'yes' ? 'yes' : (a.cp_whatsapp ?? '').toLowerCase() === 'no' ? 'no' : '',
+        })));
+      })
+      .catch(() => { /* silent — toast was added on the save path; on hydration just keep the empty form */ });
+    // Stage 2 hydration — pull existing docs + owners so the user
+    // sees what's already been captured before they edit.
+    refetchKyc(consignee.db_id);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, consignee?.db_id]);
 
   /* Fetch the masters that back this modal's dropdowns. Same endpoint
    * pattern AddCustomerModal uses — segments, customer_classifications,
@@ -309,6 +500,7 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
       }),
       api.get('/master/states').then(r => { if (!cancelled) setMStates(pickStates(r.data ?? [])); }),
       api.get('/master/designations').then(r => { if (!cancelled) setMDesignations(pickName(r.data ?? [])); }),
+      api.get('/master/document_type').then(r => { if (!cancelled) setMDocumentTypes(pickName(r.data ?? [], 'title')); }),
     ]);
     return () => { cancelled = true; };
   }, [open]);
@@ -367,28 +559,276 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
     return e;
   };
 
-  const goNext = () => {
+  /* Refetch KYC docs + owners from the server. Called after every
+   * Stage 2 sub-modal save so the table picks up the canonical row
+   * (with auto-generated codes, attachment URLs, etc.) instead of
+   * the optimistic in-memory copy. */
+  const refetchKyc = async (id: number | null = savedDbId) => {
+    if (!id) return;
+    try {
+      const [docsR, ownersR] = await Promise.all([
+        api.get(`/consignees/${id}/documents`),
+        api.get(`/consignees/${id}/owners`),
+      ]);
+      const docs: any[] = Array.isArray(docsR.data?.data) ? docsR.data.data : [];
+      const owners: any[] = Array.isArray(ownersR.data?.data) ? ownersR.data.data : [];
+      setKycDocs(docs.map((x: any) => ({
+        id: `db_${x.id}`,
+        kind: x.kind === 'tl' ? 'tl' : 'dd',
+        name: x.name ?? '',
+        license_number: x.license_number ?? '',
+        issuing_authority: x.issuing_authority ?? '',
+        issue_date: x.issue_date ?? '',
+        expiry_date: x.expiry_date ?? '',
+        attachment_name: x.attachment_name ?? '',
+        status: x.status === 'Inactive' ? 'Inactive' : 'Active',
+      })));
+      setKycOwners(owners.map((x: any) => ({
+        id: `db_${x.id}`,
+        owner_name: x.owner_name ?? '',
+        designation: x.designation ?? '',
+        official_email: x.official_email ?? '',
+        phone_number: x.phone_number ?? '',
+        id_proof_name: x.id_proof_name ?? '',
+        address_proof_name: x.address_proof_name ?? '',
+        photograph_name: x.photograph_name ?? '',
+        status: x.status === 'Inactive' ? 'Inactive' : 'Active',
+      })));
+    } catch { /* silent — KYC table just stays empty until next fetch */ }
+  };
+
+  /* Auto-save Stage 1 on the way to Stage 2. Creates the consignee
+   * row (POST) the first time, then PUTs on subsequent transitions
+   * to keep the saved record in sync with any edits made via the
+   * Previous button. Without this, Stage 2 KYC POSTs have no
+   * consignee_id to nest under. */
+  const persistStage1 = async (): Promise<number | null> => {
+    // Guard: in the Map-Consignee flow we receive a preselected
+    // customer code but `customer` resolves only after /customers
+    // returns. If the user mashes Save & Next during that window, we
+    // would POST with customer_id = null and the server 422s. Refuse
+    // to advance and surface a clear info toast instead — far better
+    // than a cryptic backend error.
+    if (!customer) {
+      toast.info('Hold on', 'Loading the linked customer. Try again in a moment.');
+      return null;
+    }
+    setSaving(true);
+    try {
+      const payload = buildPayload();
+      let dbId = consignee?.db_id ?? savedDbId;
+      if (dbId) {
+        await api.put(`/consignees/${dbId}`, payload);
+      } else {
+        const r = await api.post('/consignees', payload);
+        dbId = r.data?.data?.db_id ?? null;
+        if (dbId) setSavedDbId(dbId);
+      }
+      return dbId;
+    } catch (err: any) {
+      const apiErrors = err?.response?.data?.errors ?? null;
+      if (apiErrors && typeof apiErrors === 'object') {
+        // Backend "max 1 same-as-customer per customer" rejection.
+        // Auto-untick the toggle so the user can save with their own
+        // details — staying ticked would just trip the same 422 again.
+        if (apiErrors.same_as_customer) {
+          const msg = Array.isArray(apiErrors.same_as_customer)
+            ? String(apiErrors.same_as_customer[0])
+            : String(apiErrors.same_as_customer);
+          setSameAsCustomer(false);
+          toast.error('Same-as-Customer blocked', msg);
+          return null;
+        }
+        const map: Record<string, string> = {
+          'company_name':   'companyName',
+          'legal_name':     'legalName',
+          'segment':        'segment',
+          'classification': 'classification',
+          'risk_level':     'risk',
+          'website':        'website',
+          'primary_address.type':           'addressType',
+          'primary_address.address_line':   'address',
+          'primary_address.country':        'country',
+          'primary_address.state':          'state',
+          'primary_address.city':           'city',
+          'primary_address.pin':            'pin',
+          'primary_address.cp_name':        'contactName',
+          'primary_address.cp_designation': 'designation',
+          'primary_address.cp_contact':     'contactNo',
+          'primary_address.cp_email':       'email',
+          'primary_address.cp_whatsapp':    'whatsapp',
+        };
+        const next: Record<string, string> = {};
+        for (const [k, msgs] of Object.entries(apiErrors)) {
+          const msg = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
+          next[map[k] ?? k] = msg;
+        }
+        setErrors1(next);
+        toast.error('Save failed', Object.values(next)[0] ?? 'Please review the form');
+      } else {
+        toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
+      }
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const goNext = async () => {
     if (stage === 1) {
       const e = validateStage1();
       setErrors1(e);
       if (Object.keys(e).length > 0) {
-        /* Surface the first error in a toast and bounce focus to the
-         * identification tab if any field there is missing — the
-         * Primary Address & Contact sections live alongside it on the
-         * same tab so a single focus shift is enough. */
         const firstKey = Object.keys(e)[0];
         toast.error('Please complete required fields', e[firstKey]);
         setIdTab('identification');
+        // Scroll the first offending field into view so the red
+        // border is visible even when the body has scrolled past it.
+        setTimeout(() => {
+          document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 0);
         return;
       }
+      // Auto-save Stage 1 before advancing so Stage 2 KYC has a
+      // consignee_id to nest under.
+      const id = await persistStage1();
+      if (!id) return;
+      /* If "Same as Customer" is ticked, fire the deep-clone endpoint.
+       * The backend uses replace semantics — each call wipes the
+       * consignee's existing Stage 2 KYC and re-mirrors fresh from
+       * the customer. So re-ticking + re-saving always produces an
+       * exact mirror, even after the customer's KYC has been edited
+       * since the consignee was first created. */
+      if (sameAsCustomer && customer?.db_id) {
+        try {
+          const r = await api.post(`/consignees/${id}/clone-from-customer`, { customer_id: customer.db_id });
+          await refetchKyc(id);
+          const cloned = r.data?.cloned ?? { documents: 0, owners: 0 };
+          toast.success('Customer KYC mirrored',
+            `${cloned.documents} doc${cloned.documents === 1 ? '' : 's'} + ${cloned.owners} owner${cloned.owners === 1 ? '' : 's'} copied with files.`);
+        } catch (err: any) {
+          toast.warning('KYC clone partial', err?.response?.data?.message ?? 'Some KYC rows may not have copied — review Stage 2.');
+        }
+      }
+      setStage(2);
+      return;
     }
     setStage(s => (s < 3 ? (s + 1) as Stage : s));
   };
   const goBack = () => setStage(s => (s > 1 ? (s - 1) as Stage : s));
 
-  const handleSave = () => {
-    toast.success('Consignee saved', `${form1.companyName || 'Consignee'} linked to ${customer?.name || 'customer'}`);
-    onClose();
+  /* Build the POST/PUT payload from form1 + locations. Mirrors the
+   * shape declared in ConsigneeController::validatePayload(). The
+   * additional `locations` table is included; Stage 2 KYC docs + Owner
+   * KYC rows stay in-memory until the KYC backend lands. */
+  const buildPayload = () => ({
+    customer_id:      customer?.db_id ?? (Number(customer?.id?.replace(/[^0-9]/g, '')) || null),
+    company_name:     form1.companyName,
+    legal_name:       form1.legalName || null,
+    segment:          form1.segment || null,
+    classification:   form1.classification || null,
+    risk_level:       form1.risk || null,
+    website:          form1.website || null,
+    status:           'Active' as const,
+    /* Persist the "Same as Customer" toggle so the Customers list
+     * knows which customers have mirrored consignees attached. The
+     * Edit Customer button uses this flag to prompt a confirmation
+     * warning before opening the wizard. */
+    same_as_customer: sameAsCustomer,
+    primary_address: {
+      type:           form1.addressType,
+      address_line:   form1.address,
+      country:        form1.country,
+      state:          form1.state,
+      city:           form1.city,
+      pin:            form1.pin,
+      cp_name:        form1.contactName,
+      cp_designation: form1.designation,
+      cp_contact:     form1.contactNo,
+      cp_email:       form1.email,
+      cp_whatsapp:    form1.whatsapp?.toLowerCase() === 'yes' ? 'yes' : 'no',
+    },
+    locations: locations.map(l => ({
+      type:           l.type,
+      address_line:   l.line,
+      country:        l.country,
+      state:          l.state,
+      city:           l.city,
+      pin:            l.pin,
+      cp_name:        l.cpName,
+      cp_designation: l.cpDesignation,
+      cp_contact:     l.cpContact,
+      cp_email:       l.cpEmail,
+      cp_whatsapp:    l.cpWhatsapp,
+    })),
+  });
+
+  const handleSave = async () => {
+    if (saving) return;
+    // Final Stage 1 validation — a user can navigate back from Stage 3
+    // and edit the form before Save Consignee, so the gate has to fire
+    // here too. Snap back to Stage 1 / identification tab if anything
+    // is missing so the inline red borders are visible.
+    const e = validateStage1();
+    if (Object.keys(e).length > 0) {
+      setErrors1(e);
+      setStage(1);
+      setIdTab('identification');
+      const firstKey = Object.keys(e)[0];
+      toast.error('Please complete required fields', e[firstKey]);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = buildPayload();
+      if (consignee?.db_id) {
+        await api.put(`/consignees/${consignee.db_id}`, payload);
+      } else {
+        await api.post('/consignees', payload);
+      }
+      toast.success('Consignee saved', `${form1.companyName} linked to ${customer?.name ?? 'customer'}`);
+      onSaved?.();
+      onClose();
+    } catch (err: any) {
+      // Surface Laravel 422 errors back to the matching field. Server
+      // sends { errors: { 'primary_address.cp_email': [...] } }.
+      const apiErrors = err?.response?.data?.errors ?? null;
+      if (apiErrors && typeof apiErrors === 'object') {
+        const map: Record<string, string> = {
+          'company_name':   'companyName',
+          'legal_name':     'legalName',
+          'segment':        'segment',
+          'classification': 'classification',
+          'risk_level':     'risk',
+          'website':        'website',
+          'primary_address.type':           'addressType',
+          'primary_address.address_line':   'address',
+          'primary_address.country':        'country',
+          'primary_address.state':          'state',
+          'primary_address.city':           'city',
+          'primary_address.pin':            'pin',
+          'primary_address.cp_name':        'contactName',
+          'primary_address.cp_designation': 'designation',
+          'primary_address.cp_contact':     'contactNo',
+          'primary_address.cp_email':       'email',
+          'primary_address.cp_whatsapp':    'whatsapp',
+        };
+        const next: Record<string, string> = {};
+        for (const [k, msgs] of Object.entries(apiErrors)) {
+          const msg = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
+          next[map[k] ?? k] = msg;
+        }
+        setErrors1(next);
+        setStage(1);
+        setIdTab('identification');
+        toast.error('Save failed', Object.values(next)[0] ?? 'Please review the form');
+      } else {
+        toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   /* ─── Render: phase A — customer picker ─── */
@@ -572,6 +1012,60 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
               setForm={setForm1}
               errors={errors1}
               clearErr={(k) => setErrors1(prev => { if (!prev[k]) return prev; const n = { ...prev }; delete n[k]; return n; })}
+              sameAsCustomer={sameAsCustomer}
+              setSameAsCustomer={(v) => {
+                /* Block-on-tick: if the user tries to enable
+                 * Same-as-Customer for a customer that already has its
+                 * one allowed mirror (and we're not editing that mirror
+                 * ourselves), surface the constraint *immediately* via
+                 * toast instead of letting them fill the form and then
+                 * hit a 422 at Save & Next. Toggle stays unticked
+                 * because we return before setSameAsCustomer fires. */
+                const alreadyMirrored =
+                  (customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
+                  !(consignee?.same_as_customer === true);
+                if (v && alreadyMirrored) {
+                  toast.error(
+                    'Same-as-Customer not allowed',
+                    `${customer?.name ?? 'This customer'} already has a same-as-customer consignee. Only one mirror is allowed per customer — open the existing one to edit it, or save this consignee with its own details.`
+                  );
+                  return;
+                }
+
+                setSameAsCustomer(v);
+                /* Tick  = useEffect mirrors customer's Stage 1 fields +
+                 *         additional addresses onto form1 + locations[].
+                 *         After Stage 1 save, persistStage1 then fires the
+                 *         clone-from-customer backend endpoint to copy KYC
+                 *         docs + owners (with file attachments).
+                 * Untick = wipe everything mirrored from the form so "data
+                 *         present iff box checked" actually holds. Stage 2
+                 *         KYC isn't cleared here because it lives on the
+                 *         server — see handleSave / refetchKyc for that.
+                 */
+                if (!v) {
+                  setForm1(prev => ({
+                    ...prev,
+                    companyName: '', legalName: '', website: '',
+                    segment: '', classification: '', risk: '',
+                    addressType: 'Registered Office',
+                    address: '', country: '', state: '', city: '', pin: '',
+                    contactName: '', designation: '', contactNo: '', email: '',
+                    whatsapp: 'Yes',
+                  }));
+                  setLocations([]);
+                  setErrors1({});
+                }
+              }}
+              customer={customer}
+              /* Block ticking when this customer already has another
+               * same-as-customer consignee. Editing the mirror itself
+               * stays allowed (the row being edited IS the mirror, so
+               * keeping the tick is just preservation). */
+              mirrorAlreadyTakenByOther={
+                (customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
+                !(consignee?.same_as_customer === true)
+              }
               locations={locations}
               onAddLocation={() => setLocModal({ open: true, editing: null })}
               onEditLocation={(id) => setLocModal({ open: true, editing: id })}
@@ -642,8 +1136,13 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
               </button>
             )}
             {stage === 3 && (
-              <button className="acm-btn acm-btn-primary" onClick={handleSave}>
-                <IconCheck /> Save Consignee
+              <button
+                className="acm-btn acm-btn-primary"
+                onClick={handleSave}
+                disabled={saving}
+                style={saving ? { opacity: 0.7, cursor: 'wait' } : undefined}
+              >
+                <IconCheck /> {saving ? 'Saving…' : 'Save Consignee'}
               </button>
             )}
           </div>
@@ -687,15 +1186,12 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
     {docModal.open && (
       <KycDocSubModal
         sub={docModal.sub}
+        documentTypes={mDocumentTypes}
         editing={docModal.editingId ? kycDocs.find(d => d.id === docModal.editingId) ?? null : null}
+        consigneeId={savedDbId}
         onClose={() => setDocModal({ open: false, sub: 'company-dd', editingId: null })}
-        onSave={(rec) => {
-          const kind: 'dd' | 'tl' = docModal.sub === 'company-dd' ? 'dd' : 'tl';
-          if (docModal.editingId) {
-            setKycDocs(prev => prev.map(d => d.id === docModal.editingId ? { ...d, ...rec, id: d.id, kind } : d));
-          } else {
-            setKycDocs(prev => [...prev, { ...rec, kind, id: newKycId(kind) }]);
-          }
+        onSaved={async () => {
+          await refetchKyc(savedDbId);
           setDocModal({ open: false, sub: 'company-dd', editingId: null });
         }}
       />
@@ -704,13 +1200,10 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
     {ownerModal.open && (
       <KycOwnerSubModal
         editing={ownerModal.editingId ? kycOwners.find(o => o.id === ownerModal.editingId) ?? null : null}
+        consigneeId={savedDbId}
         onClose={() => setOwnerModal({ open: false, editingId: null })}
-        onSave={(rec) => {
-          if (ownerModal.editingId) {
-            setKycOwners(prev => prev.map(o => o.id === ownerModal.editingId ? { ...o, ...rec, id: o.id } : o));
-          } else {
-            setKycOwners(prev => [...prev, { ...rec, id: newKycId('own') }]);
-          }
+        onSaved={async () => {
+          await refetchKyc(savedDbId);
           setOwnerModal({ open: false, editingId: null });
         }}
       />
@@ -724,15 +1217,33 @@ export default function AddConsigneeModal({ open, consignee, onClose }: Props) {
         ? 'This will remove the owner KYC record from this consignee. The action cannot be undone.'
         : 'This will remove the document from this consignee. The action cannot be undone.'}
       onClose={() => setKycDelModal({ open: false, kind: null, id: null })}
-      onConfirm={() => {
-        if (kycDelModal.id) {
-          if (kycDelModal.kind === 'owner') {
-            setKycOwners(prev => prev.filter(o => o.id !== kycDelModal.id));
-          } else if (kycDelModal.kind === 'doc') {
-            setKycDocs(prev => prev.filter(d => d.id !== kycDelModal.id));
-          }
-        }
+      onConfirm={async () => {
+        const id = kycDelModal.id;
+        const kind = kycDelModal.kind;
         setKycDelModal({ open: false, kind: null, id: null });
+        if (!id || !savedDbId) return;
+        // Server rows are stored under id = 'db_<numeric>' so we can
+        // map back to the persisted row. Bare in-memory rows (no db_
+        // prefix) can only be dropped from the table since they were
+        // never persisted (shouldn't happen now that we auto-save
+        // Stage 1, but kept as a defensive branch).
+        if (id.startsWith('db_')) {
+          const numericId = Number(id.replace('db_', ''));
+          try {
+            if (kind === 'owner') {
+              await api.delete(`/consignees/${savedDbId}/owners/${numericId}`);
+            } else {
+              await api.delete(`/consignees/${savedDbId}/documents/${numericId}`);
+            }
+            await refetchKyc(savedDbId);
+          } catch (err: any) {
+            toast.error('Delete failed', err?.response?.data?.message ?? 'Please try again.');
+          }
+        } else {
+          // Optimistic local-only drop fallback.
+          if (kind === 'owner') setKycOwners(prev => prev.filter(o => o.id !== id));
+          else if (kind === 'doc') setKycDocs(prev => prev.filter(d => d.id !== id));
+        }
       }}
     />
     </>
@@ -776,8 +1287,8 @@ const SectionHeader = ({ icon, title, sub, accent }: { icon: React.ReactNode; ti
   </div>
 );
 
-const Field = ({ label, required, error, children }: { label: string; required?: boolean; error?: string; children: React.ReactNode }) => (
-  <div className="acm-field">
+const Field = ({ label, required, error, fieldKey, children }: { label: string; required?: boolean; error?: string; fieldKey?: string; children: React.ReactNode }) => (
+  <div className="acm-field" data-field={fieldKey}>
     <label className="acm-field-label">
       {label.toUpperCase()} {required && <span className="acm-req">*</span>}
     </label>
@@ -811,6 +1322,7 @@ const optsWith = (
 
 const Stage1 = ({
   tab, setTab, form, setForm, masters, errors, clearErr,
+  sameAsCustomer, setSameAsCustomer, customer, mirrorAlreadyTakenByOther,
   locations, onAddLocation, onEditLocation, onDeleteLocation,
 }: {
   tab: IdentityTab;
@@ -820,11 +1332,23 @@ const Stage1 = ({
   masters: Stage1Masters;
   errors: Record<string, string>;
   clearErr: (k: string) => void;
+  sameAsCustomer: boolean;
+  setSameAsCustomer: (v: boolean) => void;
+  customer: CustomerOption | null;
+  /** True when this customer already has a *different* consignee
+   *  marked same-as-customer. Disables the toggle so the user can't
+   *  create a second mirror — the business rule is 1 mirror / customer. */
+  mirrorAlreadyTakenByOther: boolean;
   locations: LocationRow[];
   onAddLocation: () => void;
   onEditLocation: (id: string) => void;
   onDeleteLocation: (id: string) => void;
 }) => {
+  /* When the "Same as Customer" toggle is on, Stage 1's basic
+   * company + primary address fields lock to read-only — every
+   * input + MasterSelect receives `disabled={lock}` so the user can
+   * tell at a glance the values are being mirrored. */
+  const lock = sameAsCustomer && !!customer;
   const set = (k: string, v: any) => { setForm({ ...form, [k]: v }); clearErr(k); };
   const selectedCountry = masters.countries.find(c => c.value === form.country);
   const filteredStates = selectedCountry
@@ -843,23 +1367,64 @@ const Stage1 = ({
 
       {tab === 'identification' && (
         <>
+          {/* "Same as Customer" toggle. Three visual states:
+                - normal:   regular emerald banner, click toggles
+                - is-on:    emerald-filled, fields mirroring customer
+                - is-blocked: amber warning style, customer already has
+                            its one allowed mirror. Click still fires
+                            but the parent's setSameAsCustomer wrapper
+                            intercepts and shows a toast — user gets
+                            *immediate* feedback instead of waiting
+                            until Save & Next.
+                - is-disabled: greyed out, no customer resolved yet */}
+          <label className={`acm-same-banner ${sameAsCustomer ? 'is-on' : ''} ${!customer ? 'is-disabled' : ''} ${mirrorAlreadyTakenByOther && customer ? 'is-blocked' : ''}`}>
+            <input
+              type="checkbox"
+              checked={sameAsCustomer}
+              disabled={!customer}
+              onChange={e => setSameAsCustomer(e.target.checked)}
+            />
+            <span className="acm-same-banner-box" aria-hidden>
+              {sameAsCustomer && (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              )}
+            </span>
+            <span className="acm-same-banner-text">
+              <span className="acm-same-banner-title">
+                {mirrorAlreadyTakenByOther && customer
+                  ? <>Same as Customer <span className="acm-same-banner-warn">— not available</span></>
+                  : 'Same as Customer'}
+              </span>
+              <span className="acm-same-banner-sub">
+                {!customer
+                  ? <>Pick a customer first to enable this shortcut.</>
+                  : mirrorAlreadyTakenByOther
+                    ? <><strong>{customer.name}</strong> already has a same-as-customer consignee. Only one mirror is allowed per customer — open the existing one to edit it, or save this consignee with its own details.</>
+                    : <>Use <strong>{customer.name}</strong>&rsquo;s company identity, address, and primary contact for this consignee. Untick anytime to edit individual fields.</>}
+              </span>
+            </span>
+          </label>
+
           <SectionHeader icon={<IconHome />} title="Basic Company Details"     sub="Company identity, segment, and risk classification" accent="#10b981" />
           <div className="acm-grid-2 acm-sec-pad">
-            <Field label="Company Name" required error={errors.companyName}>
-              <input className={`acm-input ${errors.companyName ? 'acm-input-error' : ''}`} placeholder="Enter company name" value={form.companyName} onChange={e => set('companyName', e.target.value)} />
+            <Field label="Company Name" required error={errors.companyName} fieldKey="companyName">
+              <input className={`acm-input ${errors.companyName ? 'acm-input-error' : ''}`} placeholder="Enter company name" value={form.companyName} onChange={e => set('companyName', e.target.value)} disabled={lock} />
             </Field>
-            <Field label="Company Legal Name" required error={errors.legalName}>
-              <input className={`acm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} />
+            <Field label="Company Legal Name" required error={errors.legalName} fieldKey="legalName">
+              <input className={`acm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} disabled={lock} />
             </Field>
             <Field label="Company Website">
-              <input className="acm-input" placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} />
+              <input className="acm-input" placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
             </Field>
-            <Field label="Consignee Segment" required error={errors.segment}>
+            <Field label="Consignee Segment" required error={errors.segment} fieldKey="segment">
               <MasterSelect
                 value={form.segment}
                 options={optsWith(masters.segments, form.segment)}
                 placeholder="Select Segment"
                 invalid={!!errors.segment}
+                disabled={lock}
                 onChange={v => set('segment', v)}
               />
             </Field>
@@ -868,15 +1433,17 @@ const Stage1 = ({
                 value={form.classification}
                 options={optsWith(masters.classifications, form.classification)}
                 placeholder="Select Classification"
+                disabled={lock}
                 onChange={v => set('classification', v)}
               />
             </Field>
-            <Field label="Risk Level" required error={errors.risk}>
+            <Field label="Risk Level" required error={errors.risk} fieldKey="risk">
               <MasterSelect
                 value={form.risk}
                 options={optsWith(masters.riskLevels, form.risk)}
                 placeholder="Select Risk Level"
                 invalid={!!errors.risk}
+                disabled={lock}
                 onChange={v => set('risk', v)}
               />
             </Field>
@@ -885,75 +1452,78 @@ const Stage1 = ({
           <SectionHeader icon={<IconPin />} title="Primary Address &amp; Contact Person" sub="Registered office and primary contact at this location" accent="#3b82f6" />
           <div className="acm-sec-pad">
             <div className="acm-grid-2">
-              <Field label="Address Type" required error={errors.addressType}>
+              <Field label="Address Type" required error={errors.addressType} fieldKey="addressType">
                 <MasterSelect
                   value={form.addressType}
                   options={optsWith(masters.addressTypes, form.addressType)}
                   placeholder="Select Address Type"
                   invalid={!!errors.addressType}
+                  disabled={lock}
                   onChange={v => set('addressType', v)}
                 />
               </Field>
-              <Field label="Address" required error={errors.address}>
-                <input className={`acm-input ${errors.address ? 'acm-input-error' : ''}`} placeholder="Street, building, area" value={form.address} onChange={e => set('address', e.target.value)} />
+              <Field label="Address" required error={errors.address} fieldKey="address">
+                <input className={`acm-input ${errors.address ? 'acm-input-error' : ''}`} placeholder="Street, building, area" value={form.address} onChange={e => set('address', e.target.value)} disabled={lock} />
               </Field>
             </div>
             <div className="acm-grid-4 acm-mt-12">
-              <Field label="Country" required error={errors.country}>
+              <Field label="Country" required error={errors.country} fieldKey="country">
                 <MasterSelect
                   value={form.country}
                   options={optsWith(masters.countries, form.country)}
                   placeholder="Select Country"
                   invalid={!!errors.country}
+                  disabled={lock}
                   onChange={v => { setForm({ ...form, country: v, state: '' }); clearErr('country'); }}
                 />
               </Field>
-              <Field label="State" required error={errors.state}>
+              <Field label="State" required error={errors.state} fieldKey="state">
                 <MasterSelect
                   value={form.state}
                   options={optsWith(filteredStates, form.state)}
                   placeholder={form.country ? 'Select State' : 'Select country first'}
-                  disabled={!form.country}
+                  disabled={lock || !form.country}
                   invalid={!!errors.state}
                   onChange={v => set('state', v)}
                 />
               </Field>
-              <Field label="City" required error={errors.city}>
-                <input className={`acm-input ${errors.city ? 'acm-input-error' : ''}`} placeholder="City name" value={form.city} onChange={e => set('city', e.target.value)} />
+              <Field label="City" required error={errors.city} fieldKey="city">
+                <input className={`acm-input ${errors.city ? 'acm-input-error' : ''}`} placeholder="City name" value={form.city} onChange={e => set('city', e.target.value)} disabled={lock} />
               </Field>
-              <Field label="Pin / Postal Code" required error={errors.pin}>
-                <input className={`acm-input ${errors.pin ? 'acm-input-error' : ''}`} placeholder="6-digit PIN" maxLength={12} value={form.pin} onChange={e => set('pin', e.target.value)} />
+              <Field label="Pin / Postal Code" required error={errors.pin} fieldKey="pin">
+                <input className={`acm-input ${errors.pin ? 'acm-input-error' : ''}`} placeholder="6-digit PIN" maxLength={12} value={form.pin} onChange={e => set('pin', e.target.value)} disabled={lock} />
               </Field>
             </div>
             <div className="acm-grid-4 acm-mt-12">
-              <Field label="Contact Person Name" required error={errors.contactName}>
-                <input className={`acm-input ${errors.contactName ? 'acm-input-error' : ''}`} placeholder="Full name" value={form.contactName} onChange={e => set('contactName', e.target.value)} />
+              <Field label="Contact Person Name" required error={errors.contactName} fieldKey="contactName">
+                <input className={`acm-input ${errors.contactName ? 'acm-input-error' : ''}`} placeholder="Full name" value={form.contactName} onChange={e => set('contactName', e.target.value)} disabled={lock} />
               </Field>
-              <Field label="Designation" required error={errors.designation}>
+              <Field label="Designation" required error={errors.designation} fieldKey="designation">
                 <MasterSelect
                   value={form.designation}
                   options={optsWith(masters.designations, form.designation)}
                   placeholder="Select Designation"
                   invalid={!!errors.designation}
+                  disabled={lock}
                   onChange={v => set('designation', v)}
                 />
               </Field>
-              <Field label="Contact No" required error={errors.contactNo}>
-                <input className={`acm-input ${errors.contactNo ? 'acm-input-error' : ''}`} type="tel" placeholder="7-15 digit number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} />
+              <Field label="Contact No" required error={errors.contactNo} fieldKey="contactNo">
+                <input className={`acm-input ${errors.contactNo ? 'acm-input-error' : ''}`} type="tel" placeholder="7-15 digit number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} disabled={lock} />
               </Field>
-              <Field label="Email" required error={errors.email}>
-                <input className={`acm-input ${errors.email ? 'acm-input-error' : ''}`} type="email" placeholder="name@company.com" value={form.email} onChange={e => set('email', e.target.value)} />
+              <Field label="Email" required error={errors.email} fieldKey="email">
+                <input className={`acm-input ${errors.email ? 'acm-input-error' : ''}`} type="email" placeholder="name@company.com" value={form.email} onChange={e => set('email', e.target.value)} disabled={lock} />
               </Field>
             </div>
             <div className="acm-mt-12">
-              <Field label="Whatsapp Enabled?" required error={errors.whatsapp}>
+              <Field label="Whatsapp Enabled?" required error={errors.whatsapp} fieldKey="whatsapp">
                 <div className="acm-radio-row">
                   <label className="acm-radio">
-                    <input type="radio" name="acm-wa" checked={form.whatsapp === 'Yes'} onChange={() => set('whatsapp', 'Yes')} />
+                    <input type="radio" name="acm-wa" checked={form.whatsapp === 'Yes'} disabled={lock} onChange={() => set('whatsapp', 'Yes')} />
                     <span /> Yes
                   </label>
                   <label className="acm-radio">
-                    <input type="radio" name="acm-wa" checked={form.whatsapp === 'No'} onChange={() => set('whatsapp', 'No')} />
+                    <input type="radio" name="acm-wa" checked={form.whatsapp === 'No'} disabled={lock} onChange={() => set('whatsapp', 'No')} />
                     <span /> No
                   </label>
                 </div>
@@ -1378,27 +1948,34 @@ const RecapField = ({ label, value }: { label: string; value?: string }) => (
 );
 
 /* ─── Polished file-upload field ─────
- * Replaces the bare `<input type="file">` (which renders the
- * browser's grey "Choose File / No file chosen" — looks out of place
- * inside the emerald sub-modal). This is a clickable dropzone with
- * an icon, accent border on hover, and a filename chip + remove
- * button once a file is picked. Keeps the existing API: the parent
- * just gets the picked filename string back. */
-function FileUploadField({ value, onPick, accept }: { value?: string; onPick: (name: string) => void; accept?: string }) {
+ * Replaces the bare `<input type="file">` (browser's grey "Choose File"
+ * looks out of place inside the emerald sub-modal). Hands the parent
+ * the actual File object so it can be POSTed via multipart/form-data,
+ * along with a display name. `displayName` allows pre-filling the
+ * filename when editing an already-uploaded row (no File available
+ * but we know the name from the server). */
+function FileUploadField({ value, displayName, onPick, accept }: {
+  value: File | null;
+  displayName?: string;
+  onPick: (file: File | null) => void;
+  accept?: string;
+}) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const labelText = value ? value.name : (displayName || '');
+  const hasFile = !!labelText;
   return (
     <div className="acm-file-zone">
-      {value ? (
+      {hasFile ? (
         <div className="acm-file-chip">
           <div className="acm-file-chip-icon">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           </div>
-          <span className="acm-file-chip-name" title={value}>{value}</span>
+          <span className="acm-file-chip-name" title={labelText}>{labelText}</span>
           <button
             type="button"
             className="acm-file-chip-x"
             aria-label="Remove file"
-            onClick={() => { onPick(''); if (inputRef.current) inputRef.current.value = ''; }}
+            onClick={() => { onPick(null); if (inputRef.current) inputRef.current.value = ''; }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -1428,7 +2005,7 @@ function FileUploadField({ value, onPick, accept }: { value?: string; onPick: (n
         style={{ display: 'none' }}
         onChange={e => {
           const f = e.target.files?.[0];
-          if (f) onPick(f.name);
+          if (f) onPick(f);
         }}
       />
     </div>
@@ -1510,35 +2087,132 @@ const VaultOwnersTable = ({ owners }: { owners: KycOwnerRow[] }) => (
 );
 
 /* ─── Stage 2 — Add/Edit KYC Document sub-modal (DD + Trade Licence) ─── */
-function KycDocSubModal({ sub, editing, onClose, onSave }: {
+function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onSaved }: {
   sub: KycSubTab;
+  /** Document Type master rows — backs the Name dropdown. Parent
+   *  fetches once on modal open; we also refetch locally as a safety
+   *  net in case the parent's fetch hasn't landed yet. */
+  documentTypes: { value: string; label: string }[];
   editing: KycDocRow | null;
+  /** Parent consignee's numeric PK — needed to POST/PUT under
+   *  /consignees/{id}/documents. Null if Stage 1 hasn't auto-saved
+   *  yet; in that case the submit shows a guidance error. */
+  consigneeId: number | null;
   onClose: () => void;
-  onSave: (rec: Omit<KycDocRow, 'id' | 'kind'>) => void;
+  /** Fires with the server-saved row so the parent can refetch the
+   *  full KYC docs list (keeps codes/URLs consistent with the DB). */
+  onSaved: () => void;
 }) {
   const titleLabel = sub === 'company-dd' ? 'DD Document / License' : 'Trade Licence';
-  const [d, setD] = useState<Omit<KycDocRow, 'id' | 'kind'>>(() => editing ? {
-    name: editing.name,
-    license_number: editing.license_number ?? '',
-    issuing_authority: editing.issuing_authority ?? '',
-    issue_date: editing.issue_date ?? '',
-    expiry_date: editing.expiry_date ?? '',
-    attachment_name: editing.attachment_name ?? '',
-    status: editing.status,
-  } : {
-    name: '', license_number: '', issuing_authority: '',
-    issue_date: '', expiry_date: '', attachment_name: '', status: 'Active',
+  const [d, setD] = useState({
+    name: editing?.name ?? '',
+    license_number: editing?.license_number ?? '',
+    issuing_authority: editing?.issuing_authority ?? '',
+    issue_date: editing?.issue_date ?? '',
+    expiry_date: editing?.expiry_date ?? '',
+    status: (editing?.status ?? 'Active') as 'Active' | 'Inactive',
   });
+  /* Separate file slot — `file` is the just-picked File, ready to
+   * POST. `existingAttachmentName` is the filename returned by the
+   * server when editing (so the chip still shows the existing
+   * attachment even though no File is in memory yet). */
+  const [file, setFile] = useState<File | null>(null);
+  const existingAttachmentName = editing?.attachment_name ?? '';
   const [errs, setErrs] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  useEscapeKey(() => { if (!saving) onClose(); });
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => {
     setD(prev => ({ ...prev, [k]: v }));
     setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
   };
-  const submit = () => {
+
+  /* Defensive local fetch — same pattern as LocationSubModal. If the
+   * parent's fetch hasn't landed yet, this one ensures the dropdown
+   * is still populated. The effective list prefers whichever side has
+   * data. */
+  const [localDocTypes, setLocalDocTypes] = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/master/document_type').then(r => {
+      if (cancelled) return;
+      const rows = (r.data ?? [])
+        .filter((x: any) => !x.status || String(x.status).toLowerCase() === 'active')
+        .map((x: any) => ({ value: String(x.title ?? ''), label: String(x.title ?? '') }))
+        .filter((o: any) => o.value);
+      setLocalDocTypes(rows);
+    }).catch(() => { /* silent — parent copy is usually enough */ });
+    return () => { cancelled = true; };
+  }, []);
+  const docOptions = (() => {
+    const base = (documentTypes.length ? documentTypes : localDocTypes);
+    if (d.name && !base.some(o => o.value === d.name)) {
+      return [{ value: d.name, label: d.name }, ...base];
+    }
+    return base;
+  })();
+
+  const submit = async () => {
+    if (saving) return;
+    /* Validation parity with AddCustomerModal's DocSubModal so the
+     * same fields are mandatory on both sides — testers shouldn't
+     * find a looser gate on consignee. Backend stays nullable for all
+     * non-name fields (intentional — bulk seeds / data backfills),
+     * the UI just makes them required at capture time. */
     const next: Record<string, string> = {};
-    if (!d.name.trim()) next.name = 'Document name is required';
+    if (!d.name.trim())                                   next.name              = 'Document name is required';
+    if (!(d.license_number ?? '').trim())                 next.license_number    = 'License / document number is required';
+    if (!(d.issuing_authority ?? '').trim())              next.issuing_authority = 'Issuing authority is required';
+    if (!d.issue_date)                                    next.issue_date        = 'Issue date is required';
+    if (!d.expiry_date)                                   next.expiry_date       = 'Expiry date is required';
+    else if (d.issue_date && d.expiry_date < d.issue_date) next.expiry_date      = 'Expiry date must be on or after the issue date';
     setErrs(next);
-    if (Object.keys(next).length === 0) onSave(d);
+    if (Object.keys(next).length > 0) {
+      // Bring the first offending field into view so the user sees the red border.
+      const firstKey = Object.keys(next)[0];
+      document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    if (!consigneeId) {
+      setErrs({ name: 'Please complete Stage 1 first so the consignee gets an ID.' });
+      return;
+    }
+
+    const kind = sub === 'company-dd' ? 'dd' : 'tl';
+    const fd = new FormData();
+    fd.append('kind', kind);
+    fd.append('name', d.name);
+    if (d.license_number)    fd.append('license_number', d.license_number);
+    if (d.issuing_authority) fd.append('issuing_authority', d.issuing_authority);
+    if (d.issue_date)        fd.append('issue_date', d.issue_date);
+    if (d.expiry_date)       fd.append('expiry_date', d.expiry_date);
+    if (d.status)            fd.append('status', d.status);
+    if (file)                fd.append('attachment', file);
+
+    setSaving(true);
+    try {
+      if (editing?.id && editing.id.startsWith('db_')) {
+        // db_-prefixed id encodes the server PK so we can find the
+        // row again across refetches without re-keying.
+        const numericId = Number(editing.id.replace('db_', ''));
+        await api.post(`/consignees/${consigneeId}/documents/${numericId}`, fd);
+      } else {
+        await api.post(`/consignees/${consigneeId}/documents`, fd);
+      }
+      onSaved();
+    } catch (err: any) {
+      const apiErrors = err?.response?.data?.errors ?? null;
+      if (apiErrors && typeof apiErrors === 'object') {
+        const next: Record<string, string> = {};
+        for (const [k, msgs] of Object.entries(apiErrors)) {
+          next[k] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
+        }
+        setErrs(next);
+      } else {
+        setErrs({ name: err?.response?.data?.message ?? 'Save failed. Please try again.' });
+      }
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <div className="acm-loc-sub-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -1549,35 +2223,38 @@ function KycDocSubModal({ sub, editing, onClose, onSave }: {
         </div>
         <div className="acm-loc-sub-body">
           <div className="acm-loc-grid-2">
-            <div className="acm-field">
+            <div className="acm-field" data-field="name">
               <label className="acm-field-label">{titleLabel.toUpperCase()} NAME <span className="acm-req">*</span></label>
-              <input
-                className={`acm-input ${errs.name ? 'acm-input-error' : ''}`}
-                placeholder={`Enter ${titleLabel.toLowerCase()} name`}
+              <MasterSelect
                 value={d.name}
-                onChange={e => set('name', e.target.value)}
+                options={docOptions}
+                placeholder={`Select ${titleLabel.toLowerCase()}`}
+                invalid={!!errs.name}
+                onChange={(v) => set('name', v)}
               />
               {errs.name && <span className="acm-err-text">{errs.name}</span>}
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">LICENSE / DOCUMENT NUMBER</label>
+            <div className="acm-field" data-field="license_number">
+              <label className="acm-field-label">LICENSE / DOCUMENT NUMBER <span className="acm-req">*</span></label>
               <input
-                className="acm-input"
+                className={`acm-input ${errs.license_number ? 'acm-input-error' : ''}`}
                 placeholder="e.g. ABC123456789"
                 value={d.license_number ?? ''}
                 onChange={e => set('license_number', e.target.value)}
               />
+              {errs.license_number && <span className="acm-err-text">{errs.license_number}</span>}
             </div>
           </div>
           <div className="acm-loc-grid-2 acm-mt-12">
-            <div className="acm-field">
-              <label className="acm-field-label">ISSUING AUTHORITY</label>
+            <div className="acm-field" data-field="issuing_authority">
+              <label className="acm-field-label">ISSUING AUTHORITY <span className="acm-req">*</span></label>
               <input
-                className="acm-input"
+                className={`acm-input ${errs.issuing_authority ? 'acm-input-error' : ''}`}
                 placeholder="e.g. Registrar of Companies"
                 value={d.issuing_authority ?? ''}
                 onChange={e => set('issuing_authority', e.target.value)}
               />
+              {errs.issuing_authority && <span className="acm-err-text">{errs.issuing_authority}</span>}
             </div>
             <div className="acm-field">
               <label className="acm-field-label">STATUS</label>
@@ -1590,42 +2267,55 @@ function KycDocSubModal({ sub, editing, onClose, onSave }: {
             </div>
           </div>
           <div className="acm-loc-grid-2 acm-mt-12">
-            <div className="acm-field">
-              <label className="acm-field-label">ISSUE DATE</label>
+            <div className="acm-field" data-field="issue_date">
+              <label className="acm-field-label">ISSUE DATE <span className="acm-req">*</span></label>
               <MasterDatePicker
                 value={d.issue_date ?? ''}
                 maxDate={d.expiry_date || undefined}
                 placeholder="DD/MM/YYYY"
+                invalid={!!errs.issue_date}
                 onChange={(v: string) => {
                   set('issue_date', v);
                   if (d.expiry_date && v && d.expiry_date < v) set('expiry_date', '');
                 }}
               />
+              {errs.issue_date && <span className="acm-err-text">{errs.issue_date}</span>}
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">EXPIRY DATE</label>
+            <div className="acm-field" data-field="expiry_date">
+              <label className="acm-field-label">EXPIRY DATE <span className="acm-req">*</span></label>
               <MasterDatePicker
                 value={d.expiry_date ?? ''}
                 minDate={d.issue_date || undefined}
                 placeholder="DD/MM/YYYY"
+                invalid={!!errs.expiry_date}
                 onChange={(v: string) => set('expiry_date', v)}
               />
+              {errs.expiry_date && <span className="acm-err-text">{errs.expiry_date}</span>}
             </div>
           </div>
           <div className="acm-mt-12">
             <div className="acm-field">
               <label className="acm-field-label">ATTACHMENT</label>
               <FileUploadField
-                value={d.attachment_name}
-                onPick={(name) => set('attachment_name', name)}
+                value={file}
+                displayName={file ? '' : existingAttachmentName}
+                onPick={(f) => setFile(f)}
                 accept=".pdf,.jpg,.jpeg,.png"
               />
             </div>
           </div>
         </div>
         <div className="acm-loc-sub-footer">
-          <button type="button" className="acm-btn acm-btn-light" onClick={onClose}>Cancel</button>
-          <button type="button" className="acm-btn acm-btn-primary" onClick={submit}>{editing ? 'Update' : 'Save'}</button>
+          <button type="button" className="acm-btn acm-btn-light" onClick={onClose} disabled={saving}>Cancel</button>
+          <button
+            type="button"
+            className="acm-btn acm-btn-primary"
+            onClick={submit}
+            disabled={saving}
+            style={saving ? { opacity: 0.7, cursor: 'wait' } : undefined}
+          >
+            {saving ? 'Saving…' : (editing ? 'Update' : 'Save')}
+          </button>
         </div>
       </div>
     </div>
@@ -1633,36 +2323,81 @@ function KycDocSubModal({ sub, editing, onClose, onSave }: {
 }
 
 /* ─── Stage 2 — Add/Edit Owner KYC sub-modal ─── */
-function KycOwnerSubModal({ editing, onClose, onSave }: {
+function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
   editing: KycOwnerRow | null;
+  consigneeId: number | null;
   onClose: () => void;
-  onSave: (rec: Omit<KycOwnerRow, 'id'>) => void;
+  onSaved: () => void;
 }) {
-  const [d, setD] = useState<Omit<KycOwnerRow, 'id'>>(() => editing ? {
-    owner_name: editing.owner_name,
-    designation: editing.designation ?? '',
-    official_email: editing.official_email ?? '',
-    phone_number: editing.phone_number ?? '',
-    id_proof_name: editing.id_proof_name ?? '',
-    address_proof_name: editing.address_proof_name ?? '',
-    photograph_name: editing.photograph_name ?? '',
-    status: editing.status,
-  } : {
-    owner_name: '', designation: '', official_email: '', phone_number: '',
-    id_proof_name: '', address_proof_name: '', photograph_name: '', status: 'Active',
+  const [d, setD] = useState({
+    owner_name: editing?.owner_name ?? '',
+    designation: editing?.designation ?? '',
+    official_email: editing?.official_email ?? '',
+    phone_number: editing?.phone_number ?? '',
+    status: (editing?.status ?? 'Active') as 'Active' | 'Inactive',
   });
+  /* Three separate file slots — each holds the just-picked File, ready
+   * to POST. Existing filenames (when editing) live alongside so the
+   * chip still shows the existing upload before the user replaces it. */
+  const [idProof,      setIdProof]      = useState<File | null>(null);
+  const [addressProof, setAddressProof] = useState<File | null>(null);
+  const [photograph,   setPhotograph]   = useState<File | null>(null);
+  const existingIdProofName      = editing?.id_proof_name ?? '';
+  const existingAddressProofName = editing?.address_proof_name ?? '';
+  const existingPhotographName   = editing?.photograph_name ?? '';
   const [errs, setErrs] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  useEscapeKey(() => { if (!saving) onClose(); });
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => {
     setD(prev => ({ ...prev, [k]: v }));
     setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
   };
-  const submit = () => {
+  const submit = async () => {
+    if (saving) return;
     const next: Record<string, string> = {};
-    if (!d.owner_name.trim())                                    next.owner_name     = 'Owner name is required';
-    if (d.official_email && !/^\S+@\S+\.\S+$/.test(d.official_email)) next.official_email = 'Enter a valid email';
-    if (d.phone_number && !/^\+?[0-9\s-]{7,15}$/.test(d.phone_number)) next.phone_number = 'Phone must be 7-15 digits';
+    if (!d.owner_name.trim())                                          next.owner_name     = 'Owner name is required';
+    if (d.official_email && !/^\S+@\S+\.\S+$/.test(d.official_email))  next.official_email = 'Enter a valid email';
+    if (d.phone_number && !/^\+?[0-9\s-]{7,15}$/.test(d.phone_number)) next.phone_number   = 'Phone must be 7-15 digits';
     setErrs(next);
-    if (Object.keys(next).length === 0) onSave(d);
+    if (Object.keys(next).length > 0) return;
+    if (!consigneeId) {
+      setErrs({ owner_name: 'Please complete Stage 1 first so the consignee gets an ID.' });
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append('owner_name', d.owner_name);
+    if (d.designation)    fd.append('designation', d.designation);
+    if (d.official_email) fd.append('official_email', d.official_email);
+    if (d.phone_number)   fd.append('phone_number', d.phone_number);
+    if (d.status)         fd.append('status', d.status);
+    if (idProof)      fd.append('id_proof', idProof);
+    if (addressProof) fd.append('address_proof', addressProof);
+    if (photograph)   fd.append('photograph', photograph);
+
+    setSaving(true);
+    try {
+      if (editing?.id && editing.id.startsWith('db_')) {
+        const numericId = Number(editing.id.replace('db_', ''));
+        await api.post(`/consignees/${consigneeId}/owners/${numericId}`, fd);
+      } else {
+        await api.post(`/consignees/${consigneeId}/owners`, fd);
+      }
+      onSaved();
+    } catch (err: any) {
+      const apiErrors = err?.response?.data?.errors ?? null;
+      if (apiErrors && typeof apiErrors === 'object') {
+        const next: Record<string, string> = {};
+        for (const [k, msgs] of Object.entries(apiErrors)) {
+          next[k] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
+        }
+        setErrs(next);
+      } else {
+        setErrs({ owner_name: err?.response?.data?.message ?? 'Save failed. Please try again.' });
+      }
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <div className="acm-loc-sub-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -1721,16 +2456,18 @@ function KycOwnerSubModal({ editing, onClose, onSave }: {
             <div className="acm-field">
               <label className="acm-field-label">ID PROOF</label>
               <FileUploadField
-                value={d.id_proof_name}
-                onPick={(name) => set('id_proof_name', name)}
+                value={idProof}
+                displayName={idProof ? '' : existingIdProofName}
+                onPick={setIdProof}
                 accept=".pdf,.jpg,.jpeg,.png"
               />
             </div>
             <div className="acm-field">
               <label className="acm-field-label">ADDRESS PROOF</label>
               <FileUploadField
-                value={d.address_proof_name}
-                onPick={(name) => set('address_proof_name', name)}
+                value={addressProof}
+                displayName={addressProof ? '' : existingAddressProofName}
+                onPick={setAddressProof}
                 accept=".pdf,.jpg,.jpeg,.png"
               />
             </div>
@@ -1739,8 +2476,9 @@ function KycOwnerSubModal({ editing, onClose, onSave }: {
             <div className="acm-field">
               <label className="acm-field-label">PHOTOGRAPH</label>
               <FileUploadField
-                value={d.photograph_name}
-                onPick={(name) => set('photograph_name', name)}
+                value={photograph}
+                displayName={photograph ? '' : existingPhotographName}
+                onPick={setPhotograph}
                 accept="image/*"
               />
             </div>
@@ -1756,8 +2494,16 @@ function KycOwnerSubModal({ editing, onClose, onSave }: {
           </div>
         </div>
         <div className="acm-loc-sub-footer">
-          <button type="button" className="acm-btn acm-btn-light" onClick={onClose}>Cancel</button>
-          <button type="button" className="acm-btn acm-btn-primary" onClick={submit}>{editing ? 'Update' : 'Save'}</button>
+          <button type="button" className="acm-btn acm-btn-light" onClick={onClose} disabled={saving}>Cancel</button>
+          <button
+            type="button"
+            className="acm-btn acm-btn-primary"
+            onClick={submit}
+            disabled={saving}
+            style={saving ? { opacity: 0.7, cursor: 'wait' } : undefined}
+          >
+            {saving ? 'Saving…' : (editing ? 'Update' : 'Save')}
+          </button>
         </div>
       </div>
     </div>
@@ -1783,6 +2529,7 @@ function LocationSubModal({ editing, masters, onClose, onSave }: {
     cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: '' as 'yes' | 'no' | '',
   });
   const [errs, setErrs] = useState<Record<string, string>>({});
+  useEscapeKey(onClose);
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => {
     setD(prev => ({ ...prev, [k]: v }));
     setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
@@ -2109,7 +2856,13 @@ const SCOPED_CSS = `
   background: rgba(15, 42, 35, 0.55);
   backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
-  z-index: 1080;
+  /* Same base z-index as AddCustomerModal so any modal launched from
+   * a sibling popup (e.g. CustomerConsigneesModal at 1090) stacks
+   * predictably. The full project stack: customer-consignee popup
+   * 1090 < wizard 10000 < wizard sub-modals (loc/KYC) 10001 < doc
+   * type popup-on-popup 10002 < MasterSelect 11000 < DeleteConfirm
+   * 11050 < MasterDatePicker 11100. */
+  z-index: 10000;
   font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
   padding: 24px;
   overflow-y: auto;
@@ -2700,6 +3453,88 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   cursor: pointer; transition: all .15s ease;
 }
 .acm-file-chip-x:hover { background: #fee2e2; border-color: #ef4444; }
+
+/* ─── "Same as Customer" banner (Stage 1) ─── */
+.acm-same-banner {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+  border: 1px solid rgba(16,185,129,.30);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all .15s ease;
+  user-select: none;
+}
+.acm-same-banner:hover { border-color: #10b981; box-shadow: 0 2px 8px rgba(16,185,129,.10); }
+.acm-same-banner.is-on {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  border-color: #10b981;
+  box-shadow: 0 2px 10px rgba(16,185,129,.18);
+}
+.acm-same-banner.is-disabled { opacity: 0.55; cursor: not-allowed; }
+/* "Blocked" state — customer already has its one mirror. Amber accent
+ * so the user can tell at a glance this is a warning, not just "off".
+ * The label stays clickable (cursor unchanged) because the click
+ * fires the toast — that's the whole point. */
+.acm-same-banner.is-blocked {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-color: rgba(245,158,11,.45);
+}
+.acm-same-banner.is-blocked:hover {
+  border-color: #d97706;
+  box-shadow: 0 2px 10px rgba(245,158,11,.20);
+}
+.acm-same-banner.is-blocked .acm-same-banner-box {
+  border-color: #d97706;
+}
+.acm-same-banner.is-blocked .acm-same-banner-title { color: #92400e; }
+.acm-same-banner.is-blocked .acm-same-banner-sub   { color: #b45309; }
+.acm-same-banner.is-blocked .acm-same-banner-sub strong { color: #78350f; }
+.acm-same-banner-warn {
+  display: inline-block;
+  font-weight: 600;
+  font-size: 11.5px;
+  letter-spacing: .01em;
+  color: #b45309;
+  margin-left: 2px;
+}
+[data-bs-theme="dark"] .acm-same-banner.is-blocked {
+  background: linear-gradient(135deg, rgba(245,158,11,.20) 0%, rgba(245,158,11,.10) 100%);
+  border-color: rgba(245,158,11,.40);
+}
+[data-bs-theme="dark"] .acm-same-banner.is-blocked .acm-same-banner-title { color: #fcd34d; }
+[data-bs-theme="dark"] .acm-same-banner.is-blocked .acm-same-banner-sub   { color: #fbbf24; }
+[data-bs-theme="dark"] .acm-same-banner-warn { color: #fbbf24; }
+.acm-same-banner input[type="checkbox"] { display: none; }
+.acm-same-banner-box {
+  flex-shrink: 0;
+  width: 22px; height: 22px; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff;
+  border: 2px solid #10b981;
+  color: #fff;
+  transition: all .15s ease;
+  margin-top: 1px;
+}
+.acm-same-banner.is-on .acm-same-banner-box {
+  background: #10b981; border-color: #10b981;
+  box-shadow: 0 1px 3px rgba(16,185,129,.30);
+}
+.acm-same-banner-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; line-height: 1.4; }
+.acm-same-banner-title { font-size: 13px; font-weight: 700; color: #065f46; letter-spacing: .01em; }
+.acm-same-banner-sub   { font-size: 12px; color: #047857; }
+.acm-same-banner-sub strong { color: #065f46; }
+/* Locked-input visual cue — pairs with the disabled prop wired on
+ * every field in the Basic Company + Primary Address sections. */
+.acm-input:disabled { background: #f9fafb; color: #6b7280; cursor: not-allowed; }
+[data-bs-theme="dark"] .acm-same-banner    { background: linear-gradient(135deg, rgba(16,185,129,.18) 0%, rgba(16,185,129,.10) 100%); border-color: rgba(16,185,129,.35); }
+[data-bs-theme="dark"] .acm-same-banner.is-on { background: linear-gradient(135deg, rgba(16,185,129,.28) 0%, rgba(16,185,129,.16) 100%); }
+[data-bs-theme="dark"] .acm-same-banner-box   { background: #0a1f1a; border-color: #10b981; }
+[data-bs-theme="dark"] .acm-same-banner-title { color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-same-banner-sub   { color: #34d399; }
+[data-bs-theme="dark"] .acm-same-banner-sub strong { color: #d1fae5; }
+[data-bs-theme="dark"] .acm-input:disabled { background: #14241f; color: #6b8a7e; }
 
 /* ─── Stage 2 — KYC sub-tabs + card ─── */
 .acm-kyc-subtabs {
