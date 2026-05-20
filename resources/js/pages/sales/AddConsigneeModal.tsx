@@ -735,6 +735,23 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setStage(2);
       return;
     }
+    if (stage === 2) {
+      /* Stage 2 gate — KYC compliance needs at least one Owner KYC
+       * entry AND at least one Company DD document before moving on.
+       * Trade Licence stays optional. The missing sub-tab gets
+       * focused so the user lands on the exact place to fill in. */
+      const hasOwner = kycOwners.length > 0;
+      const hasDD = kycDocs.some(d => d.kind === 'dd');
+      if (!hasOwner || !hasDD) {
+        if (!hasOwner) setKycSub('owner-kyc');
+        else if (!hasDD) setKycSub('company-dd');
+        const missing = !hasOwner && !hasDD
+          ? 'at least one Owner KYC entry and one Company DD document'
+          : !hasOwner ? 'at least one Owner KYC entry' : 'at least one Company Due Diligence document';
+        toast.error('KYC required', `Add ${missing} before continuing to Evidence Vault.`);
+        return;
+      }
+    }
     setStage(s => (s < 3 ? (s + 1) as Stage : s));
   };
   const goBack = () => setStage(s => (s > 1 ? (s - 1) as Stage : s));

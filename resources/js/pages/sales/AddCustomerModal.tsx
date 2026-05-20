@@ -666,6 +666,22 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       setStage(2); setMaxStage(m => Math.max(m, 2) as Stage);
       onSaved?.();
     } else if (stage === 2) {
+      /* Stage 2 gate: KYC compliance needs at least one Owner KYC
+       * entry AND at least one Company DD document. Trade Licence
+       * stays optional (not every business has one). Each missing
+       * piece flips the offending sub-tab so the user lands on the
+       * exact place they need to fill in. */
+      const hasOwner = kycOwners.length > 0;
+      const hasDD = kycDocs.some(d => d.kind === 'dd');
+      if (!hasOwner || !hasDD) {
+        if (!hasOwner) setKycSub('owner-kyc');
+        else if (!hasDD) setKycSub('company-dd');
+        const missing = !hasOwner && !hasDD
+          ? 'at least one Owner KYC entry and one Company DD document'
+          : !hasOwner ? 'at least one Owner KYC entry' : 'at least one Company Due Diligence document';
+        alert(`KYC required — add ${missing} before continuing.`);
+        return;
+      }
       setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
     } else {
       if (!validateStage1()) { setStage(1); setTab('identification'); return; }
