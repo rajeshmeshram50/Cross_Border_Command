@@ -267,9 +267,16 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
               title={collapsed ? m.label : undefined}
               className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-full text-[12.5px] font-medium cursor-pointer transition-all duration-150 whitespace-nowrap ${
                 active
-                  ? 'bg-gradient-to-r from-primary to-primary/85 text-white font-semibold shadow-[0_4px_18px_-4px] shadow-primary/60 ring-1 ring-primary/30'
+                  ? 'text-white font-semibold ring-1 ring-white/10'
                   : 'text-sidebar-text hover:bg-white/[.06] hover:text-slate-300 hover:translate-x-0.5'
               }`}
+              style={active ? {
+                // Velzon brand blue gradient — same palette used by the
+                // Master / Legal Entities header. Softer than the previous
+                // saturated violet primary.
+                backgroundImage: 'linear-gradient(120deg, #405189 0%, #6691e7 100%)',
+                boxShadow: '0 6px 18px -4px rgba(64,81,137,0.55)',
+              } : undefined}
             >
               <Icon size={14} className={`flex-shrink-0 ${active ? 'opacity-100' : 'opacity-50'}`} />
               {!collapsed && <span>{m.label}</span>}

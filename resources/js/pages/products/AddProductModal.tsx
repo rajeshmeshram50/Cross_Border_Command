@@ -467,11 +467,11 @@ export default function AddProductModal(props: {
           remarks: String(v.remarks ?? ''),
         })));
 
-        // Jump the wizard to the next pending step
-        const sc = Number(p.step_completed ?? 0);
-        if (sc >= 3)      { setStep(2); }
-        else if (sc === 2) { setTab('quality'); }
-        else if (sc === 1) { setTab('sales'); }
+        // Edit always opens at Step 1 → Product Core Information so the
+        // user can walk through every section with the prefilled data
+        // instead of being dropped into the middle of the wizard.
+        setStep(1);
+        setTab('core');
       } catch {
         setError('Failed to load product. Closing…');
         setTimeout(onClose, 1200);
@@ -708,11 +708,17 @@ export default function AddProductModal(props: {
               </svg>
             </div>
             <div>
-              <div className="apm-title">{step === 1 ? 'Add Product' : 'Map Product Vendor'}</div>
+              <div className="apm-title">
+                {step === 2
+                  ? 'Map Product Vendor'
+                  : (initialId ? 'Edit Product' : 'Add Product')}
+              </div>
               <div className="apm-sub">
-                {step === 1
-                  ? 'Add complete product details — identity, pricing, compliance and dimensions.'
-                  : 'Link this product to one or more vendors with purchase pricing.'}
+                {step === 2
+                  ? 'Link this product to one or more vendors with purchase pricing.'
+                  : (initialId
+                      ? 'Update product details — identity, pricing, compliance and dimensions.'
+                      : 'Add complete product details — identity, pricing, compliance and dimensions.')}
               </div>
             </div>
           </div>

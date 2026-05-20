@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
+import { MasterSelect } from '../../components/ui/MasterSelect';
 import AddProductModal from './AddProductModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -365,18 +366,35 @@ export default function Products() {
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        <select className="prd-select" value={segment} onChange={(e) => setSegment(e.target.value)}>
-          {SEGMENTS.map(s => <option key={s}>{s}</option>)}
-        </select>
-        <select className="prd-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          {STATUSES.map(s => <option key={s}>{s}</option>)}
-        </select>
-        <select className="prd-select" value={sort} onChange={(e) => setSort(e.target.value as typeof sort)}>
-          <option value="recent">Sort: Recent</option>
-          <option value="price-asc">Price: Low to High</option>
-          <option value="price-desc">Price: High to Low</option>
-          <option value="rating">Top Rated</option>
-        </select>
+        <div className="prd-ms-wrap">
+          <MasterSelect
+            value={segment}
+            onChange={setSegment}
+            placeholder="All Segments"
+            options={SEGMENTS.map(s => ({ value: s, label: s }))}
+          />
+        </div>
+        <div className="prd-ms-wrap">
+          <MasterSelect
+            value={statusFilter}
+            onChange={setStatusFilter}
+            placeholder="All Status"
+            options={STATUSES.map(s => ({ value: s, label: s }))}
+          />
+        </div>
+        <div className="prd-ms-wrap">
+          <MasterSelect
+            value={sort}
+            onChange={(v) => setSort(v as typeof sort)}
+            placeholder="Sort"
+            options={[
+              { value: 'recent',     label: 'Sort: Recent' },
+              { value: 'price-asc',  label: 'Price: Low to High' },
+              { value: 'price-desc', label: 'Price: High to Low' },
+              { value: 'rating',     label: 'Top Rated' },
+            ]}
+          />
+        </div>
         <div className="prd-view-toggle">
           <button className={`prd-view-btn ${view === 'grid' ? 'on' : ''}`} onClick={() => setView('grid')} aria-label="Grid view" title="Grid view">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
@@ -1007,14 +1025,27 @@ const SCOPED_CSS = `
 .prd-search input { flex: 1; height: 100%; border: none; outline: none; background: transparent; font-family: inherit; font-size: 12.5px; color: #1e1b4b; }
 .prd-search input::placeholder { color: #94a3b8; }
 
-.prd-select {
-  height: 40px; padding: 0 12px;
-  border: 1.5px solid #ddd6fe; border-radius: 10px;
-  background: #fff; color: #5b21b6;
-  font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
-  outline: none;
+/* MasterSelect — sized to fit the 40px filter row, with the same violet
+   accent as the other prd-* controls. Same chrome the master modal uses. */
+.prd-ms-wrap { min-width: 160px; }
+.prd-ms-wrap .master-select-wrap .master-select-toggle {
+  min-height: 40px !important; height: 40px;
+  padding: 0 32px 0 12px !important;
+  font-size: 12px !important;
+  font-weight: 700;
+  background: #fff !important;
+  border: 1.5px solid #ddd6fe !important;
+  border-radius: 10px !important;
+  color: #5b21b6 !important;
 }
-.prd-select:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
+.prd-ms-wrap .master-select-wrap .master-select-toggle:hover {
+  border-color: #c4b5fd !important;
+}
+.prd-ms-wrap .master-select-wrap.show .master-select-toggle {
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.12) !important;
+}
+.prd-ms-wrap .master-select-placeholder { color: #94a3b8 !important; font-weight: 700 !important; }
 
 .prd-view-toggle {
   display: inline-flex; gap: 4px; padding: 4px;
@@ -1528,12 +1559,20 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .prd-search input { color: #ede9fe; }
 [data-bs-theme="dark"] .prd-search input::placeholder { color: #6d6391; }
-[data-bs-theme="dark"] .prd-select {
-  background: #110c25;
-  border-color: #3b2a6b;
-  color: #d8c9ff;
+[data-bs-theme="dark"] .prd-ms-wrap .master-select-wrap .master-select-toggle {
+  background: #110c25 !important;
+  border-color: #3b2a6b !important;
+  color: #d8c9ff !important;
 }
-[data-bs-theme="dark"] .prd-select option { background: #1a1430; color: #ede9fe; }
+[data-bs-theme="dark"] .prd-ms-wrap .master-select-wrap .master-select-toggle:hover {
+  border-color: #4c1d95 !important;
+}
+[data-bs-theme="dark"] .prd-ms-wrap .master-select-wrap.show .master-select-toggle {
+  background: #1a1430 !important;
+  border-color: #a78bfa !important;
+  box-shadow: 0 0 0 3px rgba(167,139,250,.18) !important;
+}
+[data-bs-theme="dark"] .prd-ms-wrap .master-select-placeholder { color: #6d6391 !important; }
 [data-bs-theme="dark"] .prd-view-toggle {
   background: #110c25;
   border-color: #3b2a6b;
