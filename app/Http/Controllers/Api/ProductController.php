@@ -137,11 +137,11 @@ class ProductController extends Controller
             //   secondary_images[]     existing paths to keep
             //   secondary_image_files[] new files to append
             'primary_image'         => 'nullable|string|max:500',
-            'primary_image_file'    => 'nullable|file|image|mimes:jpg,jpeg,png,webp|max:4096',
+            'primary_image_file'    => 'nullable|file|image|mimes:jpg,jpeg,png,webp|max:2048',
             'secondary_images'      => 'nullable|array',
             'secondary_images.*'    => 'nullable|string|max:500',
             'secondary_image_files'   => 'nullable|array|max:10',
-            'secondary_image_files.*' => 'file|image|mimes:jpg,jpeg,png,webp|max:4096',
+            'secondary_image_files.*' => 'file|image|mimes:jpg,jpeg,png,webp|max:2048',
         ]);
 
         $product = isset($data['id'])
