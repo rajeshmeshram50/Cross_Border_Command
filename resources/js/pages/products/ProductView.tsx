@@ -3,28 +3,24 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../api';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
+import Tooltip from '../../components/ui/Tooltip';
 import AddProductModal from './AddProductModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Product Detail view (route: /products/:id)
+ * Product Detail view (route: /products/:id) — matches the shared design:
  *
- * Two-card layout (matches the shared design):
- *   ┌─────────────────────────────────────────────────────────────────────┐
- *   │ Image gallery │ Product header + 3 info columns │ Edit button       │
- *   └─────────────────────────────────────────────────────────────────────┘
- *   ┌──────────────────────────────────────┐ ┌────────────────────────────┐
- *   │ Tabs + content                       │ │ Product Vendors table      │
- *   └──────────────────────────────────────┘ └────────────────────────────┘
- *
- * Tabs:
- *   • Product Printable Description
- *   • Make/Brand/Specifications
- *   • Confidential Information
- *   • QC & Compliance
- *
- * The detail page loads the product via GET /products/{id} and surfaces all
- * relations (segment, uom, hsn, condition, packaging_material, gst_percentage,
- * qc_records, vendor_maps).
+ *   ┌─ rainbow accent bar ─────────────────────────────────────────────────┐
+ *   │  thumbs │ main image    │  P-XXX | Name             Back   Edit     │
+ *   │         │               │  [Sold N]  [Active]                       │
+ *   │         │               │  Total: ₹X                                │
+ *   │         │               │                                            │
+ *   │         │               │  ┌─PRODUCT─┐  ┌─BOX MATRIX─┐  ┌─PRICING─┐ │
+ *   │         │               │  │ ...     │  │ ...        │  │ ...     │ │
+ *   │         │               │  └─────────┘  └────────────┘  └─────────┘ │
+ *   │  Wishlist · Add to Cart                                              │
+ *   └────────────────────────────────────────────────────────────────────────┘
+ *   ┌─ Tabs (Description / Make / Confidential / QC) ─────┬─ Vendors table ┐
+ *   └──────────────────────────────────────────────────────┴─────────────────┘
  * ──────────────────────────────────────────────────────────────────────── */
 
 type AnyRec = Record<string, unknown>;
@@ -51,6 +47,10 @@ type ProductDto = {
   length_cm: string | number | null;
   width_cm: string | number | null;
   height_cm: string | number | null;
+  batch_no: string | null;
+  serial_no: string | null;
+  cat_no: string | null;
+  lot_no: string | null;
   status: string;
   step_completed: number;
   segment: AnyRec | null;
@@ -62,6 +62,8 @@ type ProductDto = {
   gst_percentage: AnyRec | null;
   qc_records: AnyRec[];
   vendor_maps: AnyRec[];
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export default function ProductView() {
@@ -92,8 +94,6 @@ export default function ProductView() {
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
 
-  /* ─── Image list — prefer the *_url accessors, fall back to raw paths
-     resolved client-side. Filters out anything blank/blob: garbage. ─── */
   const images = useMemo(() => {
     if (!product) return [] as string[];
     const list: (string | null | undefined)[] = [
@@ -108,9 +108,9 @@ export default function ProductView() {
 
   if (loading) {
     return (
-      <div className="pv-root">
+      <div className="pv2-root">
         <style>{SCOPED_CSS}</style>
-        <div className="pv-loading">Loading product…</div>
+        <div className="pv2-loading">Loading product…</div>
       </div>
     );
   }
@@ -120,197 +120,194 @@ export default function ProductView() {
   const isActive = product.status === 'active';
   const isHaz = String(product.haz_type ?? '').toLowerCase() === 'haz';
 
-  const segmentName = (product.segment?.title as string) ?? '—';
-  const hazClassName = (product.haz_class?.name as string) ?? '—';
-  const uomName = (product.uom?.short_code as string) ?? (product.uom?.title as string) ?? '—';
-  const hsnCode = (product.hsn?.hsn_code as string) ?? '—';
-  const conditionName = (product.condition?.title as string) ?? '—';
-  const packagingName = (product.packaging_material?.title as string) ?? '—';
-  const gstPct = Number(product.gst_percentage?.percentage ?? 0);
+  const segmentName    = (product.segment?.title as string) ?? '—';
+  const hazClassName   = (product.haz_class?.name as string) ?? '—';
+  const uomName        = (product.uom?.short_code as string) ?? (product.uom?.title as string) ?? '—';
+  const hsnCode        = (product.hsn?.hsn_code as string) ?? '—';
+  const conditionName  = (product.condition?.title as string) ?? '—';
+  const packagingName  = (product.packaging_material?.title as string) ?? '—';
+  const gstPct         = Number(product.gst_percentage?.percentage ?? 0);
 
   const fmtNum = (v: string | number | null | undefined, unit = '') =>
-    v == null || v === '' ? '—' : `${Number(v).toLocaleString('en-IN')}${unit ? ' ' + unit : ''}`;
+    v == null || v === '' ? '—' : `${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 3 })}${unit ? ' ' + unit : ''}`;
   const fmtMoney = (v: string | number | null | undefined) =>
     v == null || v === '' ? '—' : `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
+  // Mocked sold-count badge (no backend field yet). Replace with real value when available.
+  const soldCount = '35,000';
+
   return (
-    <div className="pv-root">
+    <div className="pv2-root">
       <style>{SCOPED_CSS}</style>
 
-      <div className="pv-toolbar">
-        <button className="pv-back" onClick={() => navigate('/products')}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-          Back to Products
-        </button>
-      </div>
-
-      {/* ─── Top card: gallery + info columns ─── */}
-      <div className="pv-card pv-top">
-        <div className="pv-top-left">
-          <div className="pv-gallery">
-            <div className="pv-thumbs">
+      {/* ─── Top card ─── */}
+      <div className="pv2-card pv2-top">
+        <div className="pv2-top-grid">
+          {/* Left: gallery */}
+          <div className="pv2-gallery">
+            <div className="pv2-thumbs">
               {images.length === 0 && (
-                <div className="pv-thumb pv-thumb-empty">
-                  {product.name?.charAt(0)?.toUpperCase() || 'P'}
-                </div>
+                <div className="pv2-thumb pv2-thumb-empty">{product.name?.charAt(0)?.toUpperCase() || 'P'}</div>
               )}
               {images.map((src, i) => (
                 <button
                   key={i}
-                  className={`pv-thumb ${i === activeImg ? 'on' : ''}`}
+                  className={`pv2-thumb ${i === activeImg ? 'on' : ''}`}
                   onClick={() => setActiveImg(i)}
+                  aria-label={`Thumbnail ${i + 1}`}
                 >
                   <img src={src} alt="" />
                 </button>
               ))}
             </div>
-            <div className="pv-main-image">
+            <div className="pv2-main-image">
               {images.length > 0 ? (
                 <img src={images[activeImg]} alt={product.name} />
               ) : (
-                <div className="pv-main-empty">
-                  {product.name?.charAt(0)?.toUpperCase() || 'P'}
-                </div>
-              )}
-              {images.length > 1 && (
-                <div className="pv-dots">
-                  {images.map((_, i) => (
-                    <button
-                      key={i}
-                      className={`pv-dot ${i === activeImg ? 'on' : ''}`}
-                      onClick={() => setActiveImg(i)}
-                      aria-label={`Image ${i + 1}`}
-                    />
-                  ))}
-                </div>
+                <div className="pv2-main-empty">{product.name?.charAt(0)?.toUpperCase() || 'P'}</div>
               )}
             </div>
           </div>
 
-        </div>
-
-        <div className="pv-top-right">
-          <div className="pv-head">
-            <div className="pv-head-text">
-              <div className="pv-title">
-                <span className="pv-code">{product.product_code}</span>
-                <span className="pv-sep">|</span>
-                <span className="pv-name">{product.name}</span>
+          {/* Right: header + 3 info columns */}
+          <div className="pv2-right">
+            <div className="pv2-head">
+              <div className="pv2-head-text">
+                <div className="pv2-title">
+                  <span className="pv2-code">{product.product_code}</span>
+                  <span className="pv2-sep">|</span>
+                  <span className="pv2-name">{product.name}</span>
+                </div>
+                <div className="pv2-meta-row">
+                  <span className="pv2-sold-chip">
+                    <i className="ri-price-tag-3-fill" /> {soldCount}
+                  </span>
+                  <span className="pv2-sold-text">This product sold out {soldCount} times</span>
+                </div>
+                <div className="pv2-price-row">
+                  <span className="pv2-price-label">Total Selling Price:</span>
+                  <span className="pv2-price-val">{fmtMoney(product.total_price)}</span>
+                  <span className={`pv2-status-text ${isActive ? 'is-active' : 'is-inactive'}`}>● {statusText}</span>
+                </div>
               </div>
-              <div className="pv-meta-row">
-                <span className="pv-sold-chip">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M20.59 13.41 12 22l-9-9V4h9z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                  10
-                </span>
-                <span className="pv-sold-text">This product sold out 10 times</span>
-              </div>
-              <div className="pv-price-row">
-                <span className="pv-price-key">Total Selling Price:</span>
-                <span className="pv-price-val">{fmtMoney(product.total_price)}</span>
-                <span className={`pv-status ${isActive ? 'is-active' : 'is-inactive'}`}>{statusText}</span>
+              <div className="pv2-head-actions">
+                <button className="pv2-back" onClick={() => navigate('/products')}>
+                  <i className="ri-arrow-left-s-line" /> Back
+                </button>
+                <button className="pv2-edit" onClick={() => setEditOpen(true)}>
+                  <i className="ri-edit-box-line" /> Edit Product
+                </button>
               </div>
             </div>
-            <button className="pv-edit" onClick={() => setEditOpen(true)}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              Edit Product
-            </button>
-          </div>
 
-          <div className="pv-info-grid">
-            {/* Product Details column */}
-            <div className="pv-info-col">
-              <div className="pv-info-title">Product Details:</div>
-              <Field k="Product Generic Name" v={product.generic_name || '—'} />
-              <Field k="HSN / SAC" v={hsnCode} />
-              <Field k="Segment" v={segmentName} />
-              <Field k="Haz / Non-Haz" v={product.haz_type || '—'} />
-              <Field k="Haz Class" v={isHaz ? hazClassName : '—'} />
-              <Field k="Unit Of Measurement" v={uomName} />
-              <Field k="Condition" v={conditionName} />
-              <Field k="Packaging Material" v={packagingName} />
-              <Field k="Bottom / Non-Bottom" v={product.mark_bottom || '—'} />
-            </div>
+            <div className="pv2-info-grid">
+              {/* Product Details */}
+              <div className="pv2-info-block">
+                <h6 className="pv2-info-heading">Product Details:</h6>
+                <div className="pv2-info-body">
+                  <Row k="Product Generic Name" v={product.generic_name || '—'} />
+                  <Row k="HSN / SAC"            v={hsnCode} />
+                  <Row k="Segment"              v={segmentName} />
+                  <Row k="Haz / Non-Haz"        v={product.haz_type || '—'} accent={isHaz ? 'danger' : 'success'} />
+                  <Row k="Haz Class"            v={isHaz ? hazClassName : '—'} />
+                  <Row k="Unit Of Measurement"  v={uomName} />
+                  <Row k="Condition"            v={conditionName} />
+                  <Row k="Packaging Material"   v={packagingName} />
+                  <Row k="Bottom / Non-Bottom"  v={product.mark_bottom || '—'} />
+                </div>
+              </div>
 
-            {/* Box Matrix + Inventory column */}
-            <div className="pv-info-col">
-              <div className="pv-info-title">Box Matrix Details:</div>
-              <Field k="Per Box Net Weight"   v={fmtNum(product.net_weight, 'kg')} />
-              <Field k="Per Box Gross Weight" v={fmtNum(product.gross_weight, 'kg')} />
-              <Field k="Per Box Length"       v={fmtNum(product.length_cm, 'cm')} />
-              <Field k="Per Box Width"        v={fmtNum(product.width_cm, 'cm')} />
-              <Field k="Per Box Height"       v={fmtNum(product.height_cm, 'cm')} />
+              {/* Box Matrix + Inventory (stacked in one column) */}
+              <div className="pv2-info-block">
+                <h6 className="pv2-info-heading">Box Matrix Details:</h6>
+                <div className="pv2-info-body">
+                  <Row k="Per Box Net Weight"   v={fmtNum(product.net_weight, 'kg')} />
+                  <Row k="Per Box Gross Weight" v={fmtNum(product.gross_weight, 'kg')} />
+                  <Row k="Per Box Length"       v={fmtNum(product.length_cm, 'cm')} />
+                  <Row k="Per Box Width"        v={fmtNum(product.width_cm, 'cm')} />
+                  <Row k="Per Box Height"       v={fmtNum(product.height_cm, 'cm')} />
+                </div>
 
-              <div className="pv-info-title pv-info-title-sub">Inventory Details:</div>
-              <Field k="Batch No"  v="—" />
-              <Field k="Serial No" v="—" />
-              <Field k="Cat No"    v="—" />
-              <Field k="Lot No"    v="—" />
-            </div>
+                <h6 className="pv2-info-heading pv2-info-heading-sub">Inventory Details:</h6>
+                <div className="pv2-info-body">
+                  <Row k="Batch No"  v={product.batch_no  || '—'} />
+                  <Row k="Serial No" v={product.serial_no || '—'} />
+                  <Row k="Cat No"    v={product.cat_no    || '—'} />
+                  <Row k="Lot No"    v={product.lot_no    || '—'} />
+                </div>
+              </div>
 
-            {/* Pricing column */}
-            <div className="pv-info-col">
-              <div className="pv-info-title">Product Pricing Details:</div>
-              <Field k="Product Base Price" v={fmtMoney(product.base_price)} />
-              <Field k="GST %"              v={gstPct ? `${gstPct}%` : '—'} />
-              <Field k="GST Amount"         v={fmtMoney(product.gst_amount)} />
-              <div className="pv-info-divider" />
-              <div className="pv-info-row pv-total-row">
-                <span className="pv-info-key">Total Selling Price:</span>
-                <span className="pv-total-val">{fmtMoney(product.total_price)}</span>
+              {/* Pricing */}
+              <div className="pv2-info-block">
+                <h6 className="pv2-info-heading">Product Pricing Details:</h6>
+                <div className="pv2-info-body">
+                  <Row k="Product Base Price" v={fmtMoney(product.base_price)} />
+                  <Row k="GST %"              v={gstPct ? `${gstPct}%` : '—'} />
+                  <Row k="GST Amount"         v={fmtMoney(product.gst_amount)} />
+                  <div className="pv2-info-divider" />
+                  <div className="pv2-info-row pv2-total-line">
+                    <span className="pv2-info-key">Total Selling Price:</span>
+                    <span className="pv2-total-strong">{fmtMoney(product.total_price)}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ─── Bottom row: Tabs + Vendors table ─── */}
-      <div className="pv-bottom">
-        <div className="pv-card pv-tabs-card">
-          <div className="pv-tabs">
-            <button className={`pv-tab ${tab === 'desc' ? 'on' : ''}`}         onClick={() => setTab('desc')}>Product Printable Description</button>
-            <button className={`pv-tab ${tab === 'brand' ? 'on' : ''}`}        onClick={() => setTab('brand')}>Make/Brand/Specifications</button>
-            <button className={`pv-tab ${tab === 'confidential' ? 'on' : ''}`} onClick={() => setTab('confidential')}>Confidential Information</button>
-            <button className={`pv-tab ${tab === 'qc' ? 'on' : ''}`}           onClick={() => setTab('qc')}>QC &amp; Compliance</button>
+      {/* ─── Bottom row: tabs + vendors table ─── */}
+      <div className="pv2-bottom">
+        <div className="pv2-card pv2-tabs-card">
+          <div className="pv2-tabs">
+            <button className={`pv2-tab ${tab === 'desc' ? 'on' : ''}`}         onClick={() => setTab('desc')}>Product Description</button>
+            <button className={`pv2-tab ${tab === 'brand' ? 'on' : ''}`}        onClick={() => setTab('brand')}>Make / Brand / Specifications</button>
+            <button className={`pv2-tab ${tab === 'confidential' ? 'on' : ''}`} onClick={() => setTab('confidential')}>Confidential Info</button>
+            <button className={`pv2-tab ${tab === 'qc' ? 'on' : ''}`}           onClick={() => setTab('qc')}>QC &amp; Compliance</button>
           </div>
-          <div className="pv-tab-body">
+          <div className="pv2-tab-body">
             {tab === 'desc' && (
-              <p className="pv-tab-text">{product.description || <em className="pv-muted">No description provided.</em>}</p>
+              <p className="pv2-tab-text">{product.description || <em className="pv2-muted">No description provided.</em>}</p>
             )}
             {tab === 'brand' && (
-              <p className="pv-tab-text">{product.brand || <em className="pv-muted">No brand / make / specifications recorded.</em>}</p>
+              <p className="pv2-tab-text">{product.brand || <em className="pv2-muted">No brand / make / specifications recorded.</em>}</p>
             )}
             {tab === 'confidential' && (
-              <p className="pv-tab-text">{product.confidential_info || <em className="pv-muted">No confidential information.</em>}</p>
+              <p className="pv2-tab-text">{product.confidential_info || <em className="pv2-muted">No confidential information.</em>}</p>
             )}
             {tab === 'qc' && (
               product.qc_records.length === 0 ? (
-                <p className="pv-tab-text"><em className="pv-muted">No QC records.</em></p>
+                <p className="pv2-tab-text"><em className="pv2-muted">No QC records.</em></p>
               ) : (
                 <div className="table-responsive">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th>Sr No</th>
-                        <th>QC Name</th>
-                        <th>Purpose</th>
-                        <th>Issued By</th>
-                        <th>Testing Parameter</th>
-                        <th>Min Acceptance</th>
+                        <th>SR</th><th>QC Name</th><th>Purpose</th><th>Issued By</th><th>Testing</th><th>Min Acceptance</th><th>Attachment</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {product.qc_records.map((q, i) => (
-                        <tr key={String(q.id ?? i)}>
-                          <td>{i + 1}</td>
-                          <td><strong>{String(q.qc_name ?? '')}</strong></td>
-                          <td>{String(q.qc_purpose ?? '—')}</td>
-                          <td>{String(q.issued_by ?? '—')}</td>
-                          <td>{String(q.qa_testing_parameter ?? '—')}</td>
-                          <td>{String(q.min_acceptance_criteria ?? '—')}</td>
-                        </tr>
-                      ))}
+                      {product.qc_records.map((q, i) => {
+                        const att = (q.attachment_path as string | null) ?? null;
+                        const attUrl = att ? resolveFileUrl(att) : '';
+                        return (
+                          <tr key={String(q.id ?? i)}>
+                            <td>{i + 1}</td>
+                            <td><strong>{String(q.qc_name ?? '')}</strong></td>
+                            <td>{String(q.qc_purpose ?? '—')}</td>
+                            <td>{String(q.issued_by ?? '—')}</td>
+                            <td>{String(q.qa_testing_parameter ?? '—')}</td>
+                            <td>{String(q.min_acceptance_criteria ?? '—')}</td>
+                            <td>
+                              {attUrl ? (
+                                <a href={attUrl} target="_blank" rel="noopener noreferrer" className="pv2-attach-link">
+                                  <i className="ri-attachment-2" /> View
+                                </a>
+                              ) : <span className="pv2-muted">—</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -319,34 +316,62 @@ export default function ProductView() {
           </div>
         </div>
 
-        <div className="pv-card pv-vendors-card">
-          <div className="pv-vendors-head">Product Vendors</div>
+        <div className="pv2-card pv2-vendors-card">
+          <div className="pv2-vendors-head">
+            <i className="ri-links-line" />
+            Product Vendors
+            <span className="pv2-vendors-count">{product.vendor_maps.length}</span>
+          </div>
           {product.vendor_maps.length === 0 ? (
-            <div className="pv-vendors-empty">No vendors mapped to this product.</div>
+            <div className="pv2-vendors-empty">No vendors mapped to this product.</div>
           ) : (
-            <div className="table-responsive">
-              <table className="table align-middle table-nowrap mb-0">
-                <thead className="table-light pv-vendors-thead">
-                  <tr>
-                    <th>Sr No</th>
-                    <th>Vendor Code</th>
-                    <th>Vendor Company Name</th>
-                    <th>Contact Person Name</th>
-                    <th>Contact No</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {product.vendor_maps.map((v, i) => (
-                    <tr key={String(v.id ?? i)}>
-                      <td>{i + 1}</td>
-                      <td><span className="fw-medium text-primary font-monospace fs-13">{String(v.vendor_code ?? '—')}</span></td>
-                      <td>{String(v.vendor_name ?? '—')}</td>
-                      <td>{String(v.contact_person ?? '—')}</td>
-                      <td>{String(v.contact_no ?? '—')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="pv2-vendor-cards">
+              {product.vendor_maps.map((v, i) => {
+                const att = (v.attachment_path as string | null) ?? null;
+                const attUrl = att ? resolveFileUrl(att) : '';
+                const website = (v.vendor_website as string | null) ?? '';
+                const mapDate = (v.map_date as string | null) ?? '';
+                return (
+                  <div className="pv2-vendor-card" key={String(v.id ?? i)}>
+                    <div className="pv2-vendor-card-head">
+                      <div className="pv2-vendor-card-title">
+                        <span className="pv2-vendor-sr">#{i + 1}</span>
+                        <span className="pv2-vendor-code">{String(v.vendor_code ?? '—')}</span>
+                        <span className="pv2-sep">|</span>
+                        <span className="pv2-vendor-name">{String(v.vendor_name ?? '—')}</span>
+                      </div>
+                      <div className="pv2-vendor-card-total">
+                        <span className="pv2-info-key">Total</span>
+                        <span className="pv2-total-strong">₹{Number(v.total_amount ?? 0).toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                    <div className="pv2-vendor-grid">
+                      <Row k="Contact Person" v={String(v.contact_person ?? '—')} />
+                      <Row k="Phone"          v={String(v.contact_no ?? '—')} />
+                      <Row k="Email"          v={String(v.email ?? '—')} />
+                      <Row k="Designation"    v={String(v.designation ?? '—')} />
+                      <Row k="Website"        v={website || '—'} />
+                      <Row k="Map Date"       v={mapDate ? new Date(mapDate).toLocaleDateString('en-IN') : '—'} />
+                      <Row k="Purchase Price" v={fmtMoney(v.purchase_price as string | number | null)} />
+                      <Row k="GST %"          v={`${Number(v.gst_percentage ?? 0)}%`} />
+                      <Row k="GST Amount"     v={fmtMoney(v.gst_amount as string | number | null)} />
+                    </div>
+                    {v.remarks ? (
+                      <div className="pv2-vendor-remarks">
+                        <span className="pv2-info-key">Remarks:</span>
+                        <span className="pv2-vendor-remarks-text">{String(v.remarks)}</span>
+                      </div>
+                    ) : null}
+                    {attUrl ? (
+                      <div className="pv2-vendor-attach">
+                        <a href={attUrl} target="_blank" rel="noopener noreferrer" className="pv2-attach-link">
+                          <i className="ri-attachment-2" /> View Attachment
+                        </a>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -358,7 +383,7 @@ export default function ProductView() {
           onClose={() => setEditOpen(false)}
           onSaved={(_pid, finalised) => {
             load();
-            if (finalised) { setEditOpen(false); }
+            if (finalised) setEditOpen(false);
           }}
         />
       )}
@@ -367,185 +392,227 @@ export default function ProductView() {
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-function Field(props: { k: string; v: string }) {
+function Row(props: { k: string; v: string; accent?: 'success' | 'danger' }) {
+  const hasValue = props.v && props.v !== '—';
   return (
-    <div className="pv-info-row">
-      <span className="pv-info-key">{props.k}:</span>
-      <span className="pv-info-val">{props.v}</span>
+    <div className="pv2-info-row">
+      <span className="pv2-info-key">{props.k}</span>
+      {hasValue ? (
+        <Tooltip label={props.v} position="top" maxWidth={320}>
+          <span className={`pv2-info-val${props.accent ? ` pv2-info-val-${props.accent}` : ''}`}>{props.v}</span>
+        </Tooltip>
+      ) : (
+        <span className={`pv2-info-val${props.accent ? ` pv2-info-val-${props.accent}` : ''}`}>{props.v}</span>
+      )}
     </div>
   );
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
 const SCOPED_CSS = `
-.pv-root {
+.pv2-root {
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
-  background: #ffffff;
+  background: #f8fafc;
   padding: 14px 18px 24px;
   margin: -1rem -0.75rem;
   min-height: calc(100vh - 70px);
-  color: #1e1b4b;
+  color: #1e293b;
   display: flex; flex-direction: column; gap: 14px;
 }
-.pv-root *, .pv-root *::before, .pv-root *::after { box-sizing: border-box; }
+.pv2-root *, .pv2-root *::before, .pv2-root *::after { box-sizing: border-box; }
+.pv2-loading { padding: 60px 20px; text-align: center; color: #6b7280; font-weight: 600; }
 
-.pv-loading { padding: 60px 20px; text-align: center; color: #6b7280; font-weight: 600; }
-
-/* Back button */
-.pv-toolbar { display: flex; align-items: center; }
-.pv-back {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 36px; padding: 0 14px;
-  border: 1.5px solid #e2e8f0; background: #fff; color: #475569;
-  border-radius: 10px;
-  font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
-  transition: background .15s, border-color .15s, color .15s;
-}
-.pv-back:hover { background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6; }
-
-/* Card surface — mirrors the Velzon table-card chrome used elsewhere */
-.pv-card {
+/* Surface card */
+.pv2-card {
   background: #fff;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--vz-border-color, #e9ebec);
   border-radius: 14px;
-  padding: 18px 20px;
-  box-shadow: 0 2px 10px rgba(0,0,0,.04);
+  box-shadow: 0 2px 12px rgba(0,0,0,.04);
+  position: relative;
+  overflow: hidden;
 }
 
-/* ─── Top card ─── */
-.pv-top {
+/* ── Top card ── */
+.pv2-top { padding: 0; }
+.pv2-top-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   gap: 24px;
+  padding: 18px 20px 20px;
 }
-.pv-top-left { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.pv-top-right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 /* Gallery */
-.pv-gallery { display: grid; grid-template-columns: 88px 1fr; gap: 12px; min-width: 0; }
-.pv-thumbs { display: flex; flex-direction: column; gap: 8px; }
-.pv-thumb {
-  width: 88px; height: 88px; border-radius: 10px;
+.pv2-gallery { display: grid; grid-template-columns: 110px 1fr; gap: 12px; min-width: 0; align-items: start; }
+.pv2-thumbs {
+  display: flex; flex-direction: column; gap: 10px;
+  width: 110px;
+  max-height: 380px;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #c4b5fd transparent;
+  scrollbar-gutter: stable;
+}
+.pv2-thumbs::-webkit-scrollbar { width: 6px; height: 0; }
+.pv2-thumbs::-webkit-scrollbar:horizontal { display: none; height: 0; }
+.pv2-thumbs::-webkit-scrollbar-track { background: transparent; }
+.pv2-thumbs::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #a78bfa, #7c3aed);
+  border-radius: 99px;
+}
+.pv2-thumbs::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #7c3aed, #5b21b6); }
+.pv2-thumb {
+  width: 110px; height: 90px; border-radius: 10px;
   border: 1.5px solid #e2e8f0; background: #f8fafc;
-  cursor: pointer; padding: 0; overflow: hidden;
+  cursor: pointer; padding: 0; overflow: hidden; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   transition: border-color .15s, transform .12s;
 }
-.pv-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.pv-thumb.on { border-color: #7c3aed; transform: scale(1.03); }
-.pv-thumb:hover { border-color: #c4b5fd; }
-.pv-thumb-empty {
-  color: #94a3b8; font-size: 24px; font-weight: 800;
-}
+.pv2-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.pv2-thumb.on { border-color: #7c3aed; transform: scale(1.03); }
+.pv2-thumb:hover { border-color: #c4b5fd; }
+.pv2-thumb-empty { color: #94a3b8; font-size: 22px; font-weight: 800; }
 
-.pv-main-image {
-  position: relative;
-  aspect-ratio: 1 / 1;
+.pv2-main-image {
+  aspect-ratio: 4 / 3;
+  max-height: 380px;
   border-radius: 12px; overflow: hidden;
   border: 1.5px solid #e2e8f0;
   background: #f8fafc;
   display: flex; align-items: center; justify-content: center;
   min-width: 0;
 }
-.pv-main-image img { width: 100%; height: 100%; object-fit: contain; }
-.pv-main-empty {
-  font-size: 110px; font-weight: 800; color: #c4b5fd; letter-spacing: -2px;
-}
-.pv-dots {
-  position: absolute; left: 0; right: 0; bottom: 10px;
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-}
-.pv-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: rgba(15, 23, 42, .25); border: none; cursor: pointer; padding: 0;
-  transition: background .15s, transform .15s;
-}
-.pv-dot.on { background: #7c3aed; transform: scale(1.25); }
+.pv2-main-image img { width: 100%; height: 100%; object-fit: cover; }
+.pv2-main-empty { font-size: 80px; font-weight: 800; color: #c4b5fd; }
 
-/* Head row (right side) */
-.pv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; }
-.pv-head-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.pv-title {
-  display: flex; align-items: baseline; gap: 6px;
-  font-size: 18px; font-weight: 800; color: #1e1b4b;
-  min-width: 0; flex-wrap: wrap;
+/* Head row */
+.pv2-right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.pv2-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.pv2-head-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pv2-title {
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  font-size: 17px; font-weight: 800; color: #1e293b;
 }
-.pv-code { color: #5b21b6; flex-shrink: 0; }
-.pv-sep  { color: #c4b5fd; }
-.pv-name { color: #1e1b4b; }
-.pv-meta-row { display: inline-flex; align-items: center; gap: 8px; }
-.pv-sold-chip {
+.pv2-code { color: #5b21b6; }
+.pv2-sep  { color: #cbd5e1; }
+.pv2-name { color: #1e293b; }
+
+/* "Sold N — This product sold out N times" */
+.pv2-meta-row { display: inline-flex; align-items: center; gap: 8px; }
+.pv2-sold-chip {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 9px; border-radius: 99px;
+  padding: 3px 10px; border-radius: 99px;
   background: linear-gradient(135deg, #22c55e, #15803d);
-  color: #fff; font-size: 11px; font-weight: 800;
+  color: #fff;
+  font-size: 11px; font-weight: 700;
 }
-.pv-sold-text { font-size: 12px; color: #6b7280; }
-.pv-price-row { display: inline-flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.pv-price-key { font-size: 13px; font-weight: 800; color: #1e1b4b; }
-.pv-price-val { font-size: 17px; font-weight: 800; color: #5b21b6; }
-.pv-status {
-  padding: 2px 9px; border-radius: 99px;
-  font-size: 10.5px; font-weight: 800; letter-spacing: .02em;
-}
-.pv-status.is-active   { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
-.pv-status.is-inactive { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+.pv2-sold-chip i { font-size: 11px; }
+.pv2-sold-text { font-size: 12px; color: #6b7280; }
 
-.pv-edit {
+/* "Total Selling Price: ₹900  ● Active" */
+.pv2-price-row { display: inline-flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pv2-price-label { font-size: 14px; font-weight: 800; color: #1e293b; }
+.pv2-price-val   { font-size: 16px; font-weight: 800; color: #5b21b6; }
+.pv2-status-text { font-size: 12px; font-weight: 700; }
+.pv2-status-text.is-active   { color: #16a34a; }
+.pv2-status-text.is-inactive { color: #b45309; }
+
+.pv2-head-actions { display: inline-flex; gap: 8px; flex-shrink: 0; }
+.pv2-back, .pv2-edit {
   display: inline-flex; align-items: center; gap: 6px;
-  height: 38px; padding: 0 16px;
-  background: linear-gradient(135deg, #1e293b, #0f172a);
-  color: #fff; border: none; border-radius: 10px;
-  font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer;
-  box-shadow: 0 4px 12px rgba(15,23,42,.3);
-  transition: transform .12s, box-shadow .15s;
-  flex-shrink: 0;
+  height: 38px; padding: 0 18px;
+  font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  border-radius: 8px;
+  transition: transform .15s, box-shadow .15s, background .15s, border-color .15s;
 }
-.pv-edit:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(15,23,42,.45); }
+.pv2-back i, .pv2-edit i { font-size: 15px; }
+.pv2-back {
+  background: #fff;
+  border: 1.5px solid var(--vz-border-color, #e9ebec);
+  color: #475569;
+}
+.pv2-back:hover {
+  background: #f5f7fb;
+  border-color: #c0cffb;
+  color: #405189;
+  transform: translateY(-1px);
+}
+/* Edit Product — matches the rounded gradient "Add Product" button */
+.pv2-edit {
+  background: linear-gradient(120deg, #405189 0%, #6691e7 100%);
+  color: #fff; border: none;
+  border-radius: 99px;
+  box-shadow: 0 4px 12px rgba(64,81,137,.3);
+}
+.pv2-edit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(64,81,137,.4);
+}
+.pv2-edit:active { transform: translateY(0); }
 
-/* Info grid */
-.pv-info-grid {
+/* Info grid — flat text-heading style (no coloured header strips).
+   Three side-by-side columns of key/value rows separated by light
+   dividers. Each column scrolls internally if rows overflow. */
+.pv2-info-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-  padding-top: 10px;
+  gap: 20px;
+  padding-top: 12px;
   border-top: 1px solid #e2e8f0;
 }
-.pv-info-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.pv-info-title {
-  font-size: 13.5px; font-weight: 800; color: #1e1b4b;
-  margin-bottom: 4px;
-}
-.pv-info-title-sub { margin-top: 12px; }
-.pv-info-row {
-  display: flex; align-items: baseline; gap: 6px;
-  font-size: 12.5px;
+.pv2-info-block {
+  display: flex; flex-direction: column;
+  max-height: 380px;
   min-width: 0;
 }
-.pv-info-key { color: #1e1b4b; font-weight: 700; flex-shrink: 0; }
-.pv-info-val {
-  color: #6b7280; font-weight: 600;
+.pv2-info-heading {
+  font-size: 14px; font-weight: 800; color: #5b21b6;
+  margin: 0 0 8px 0;
+  letter-spacing: -.01em;
+}
+.pv2-info-heading-sub { margin-top: 14px; }
+.pv2-info-body {
+  display: flex; flex-direction: column; gap: 4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+  padding-right: 4px;
+}
+.pv2-info-body::-webkit-scrollbar { width: 5px; }
+.pv2-info-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+.pv2-info-body::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.pv2-info-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-size: 12.5px;
+  padding: 1px 0;
+}
+.pv2-info-key { color: #475569; font-weight: 500; }
+.pv2-info-val {
+  color: #94a3b8; font-weight: 500;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  min-width: 0; flex: 1;
+  max-width: 55%;
+  text-align: right;
 }
-.pv-info-divider { height: 1px; background: #e2e8f0; margin: 8px 0; }
-.pv-total-row .pv-info-key { color: #1e1b4b; }
-.pv-total-val { color: #5b21b6; font-size: 17px; font-weight: 800; }
+.pv2-info-val-success { color: #16a34a; font-weight: 700; }
+.pv2-info-val-danger  { color: #dc2626; font-weight: 700; }
+.pv2-info-divider { height: 1px; background: #e2e8f0; margin: 6px 0; }
+.pv2-total-line .pv2-info-key { font-weight: 800; color: #1e293b; }
+.pv2-total-strong { color: #5b21b6; font-size: 15px; font-weight: 800; }
 
-/* ─── Bottom row ─── */
-.pv-bottom {
+/* ── Bottom row ── */
+.pv2-bottom {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 14px;
 }
-.pv-tabs-card,
-.pv-vendors-card { min-width: 0; }
-.pv-tabs {
+.pv2-tabs-card, .pv2-vendors-card { padding: 14px 16px; }
+.pv2-tabs {
   display: flex; gap: 4px; flex-wrap: wrap;
   border-bottom: 1.5px solid #e2e8f0;
   margin-bottom: 14px;
 }
-.pv-tab {
+.pv2-tab {
   background: none; border: none; padding: 8px 14px;
   font-family: inherit; font-size: 12.5px; font-weight: 700;
   color: #94a3b8; cursor: pointer;
@@ -553,81 +620,132 @@ const SCOPED_CSS = `
   margin-bottom: -1.5px;
   transition: color .15s, border-color .15s;
 }
-.pv-tab:hover { color: #6d28d9; }
-.pv-tab.on { color: #5b21b6; border-bottom-color: #7c3aed; }
-.pv-tab-body { min-height: 80px; }
-.pv-tab-text { font-size: 13px; color: #475569; line-height: 1.55; margin: 0; }
-.pv-muted { color: #94a3b8; font-style: italic; }
+.pv2-tab:hover { color: #4f46e5; }
+.pv2-tab.on { color: #4f46e5; border-bottom-color: #4f46e5; }
+.pv2-tab-body { min-height: 80px; }
+.pv2-tab-text { font-size: 13px; color: #475569; line-height: 1.55; margin: 0; }
+.pv2-muted { color: #94a3b8; font-style: italic; }
 
-/* Vendors card */
-.pv-vendors-head {
-  font-size: 14px; font-weight: 800; color: #1e1b4b;
+.pv2-vendors-head {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 800; color: #1e293b;
   margin-bottom: 12px;
 }
-.pv-vendors-empty {
-  padding: 24px; text-align: center; color: #94a3b8; font-size: 12.5px;
+.pv2-vendors-head i { color: #4f46e5; font-size: 18px; }
+.pv2-vendors-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 8px; border-radius: 99px;
+  background: #4f46e5; color: #fff;
+  font-size: 11px; font-weight: 800;
+}
+.pv2-vendors-empty {
+  padding: 22px; text-align: center; color: #94a3b8; font-size: 12.5px;
   border: 1.5px dashed #e2e8f0; border-radius: 10px;
 }
-.pv-vendors-thead th {
-  background: linear-gradient(135deg, #312e81, #4338ca) !important;
-  color: #fff !important; font-weight: 700; font-size: 11.5px;
-  letter-spacing: .02em;
-}
 
-@media (max-width: 1100px) {
-  .pv-top { grid-template-columns: 1fr; }
-  .pv-bottom { grid-template-columns: 1fr; }
+/* Vendor cards — show every mapped-vendor field */
+.pv2-vendor-cards {
+  display: flex; flex-direction: column; gap: 10px;
+  max-height: 500px; overflow-y: auto; padding-right: 4px;
+  scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
+}
+.pv2-vendor-cards::-webkit-scrollbar { width: 6px; }
+.pv2-vendor-cards::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+.pv2-vendor-card {
+  border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px;
+  background: #fafbff;
+}
+.pv2-vendor-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 8px;
+  padding-bottom: 8px; border-bottom: 1px dashed #e2e8f0;
+}
+.pv2-vendor-card-title {
+  display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  font-size: 13px; font-weight: 700;
+}
+.pv2-vendor-sr {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 22px; padding: 0 6px; border-radius: 99px;
+  background: #ede9fe; color: #5b21b6; font-size: 11px; font-weight: 800;
+}
+.pv2-vendor-code { color: #5b21b6; font-family: ui-monospace, monospace; font-size: 12.5px; }
+.pv2-vendor-name { color: #1e293b; }
+.pv2-vendor-card-total {
+  display: inline-flex; align-items: baseline; gap: 6px; flex-shrink: 0;
+}
+.pv2-vendor-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 14px;
+}
+.pv2-vendor-remarks {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0;
+  font-size: 12px;
+}
+.pv2-vendor-remarks-text { color: #475569; margin-left: 6px; }
+.pv2-vendor-attach { margin-top: 8px; }
+
+/* Attachment link (QC + vendor) */
+.pv2-attach-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 700; color: #4f46e5;
+  text-decoration: none;
+}
+.pv2-attach-link:hover { color: #3730a3; text-decoration: underline; }
+
+@media (max-width: 1200px) {
+  .pv2-top-grid { grid-template-columns: 1fr; }
+  .pv2-bottom   { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
-  .pv-info-grid { grid-template-columns: 1fr; }
-  .pv-gallery { grid-template-columns: 64px 1fr; }
-  .pv-thumb { width: 64px; height: 64px; }
+  .pv2-info-grid { grid-template-columns: 1fr; }
+  .pv2-gallery   { grid-template-columns: 56px 1fr; }
+  .pv2-thumb     { width: 56px; height: 56px; }
 }
 
 /* ════════════════════════════════════════════════════════════════════════
  * Dark mode
  * ════════════════════════════════════════════════════════════════════ */
-[data-bs-theme="dark"] .pv-root {
-  background: #0f0d1f;
-  color: #ede9fe;
+[data-bs-theme="dark"] .pv2-root { background: #161c24; color: #ced4da; }
+[data-bs-theme="dark"] .pv2-card { background: #1c2531; border-color: rgba(255,255,255,.08); box-shadow: 0 2px 12px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .pv2-thumb { background: #161c24; border-color: rgba(255,255,255,.1); }
+[data-bs-theme="dark"] .pv2-thumbs { scrollbar-color: #4c1d95 transparent; }
+[data-bs-theme="dark"] .pv2-thumbs::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #a78bfa, #6d28d9);
 }
-[data-bs-theme="dark"] .pv-back {
-  background: #1a1430; border-color: #3b2a6b; color: #c4b5fd;
-}
-[data-bs-theme="dark"] .pv-back:hover { background: #221852; border-color: #4c1d95; color: #ede9fe; }
-[data-bs-theme="dark"] .pv-card {
-  background: #1a1430; border-color: #3b2a6b;
-  box-shadow: 0 2px 10px rgba(0,0,0,.4);
-}
-[data-bs-theme="dark"] .pv-thumb { background: #110c25; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .pv-thumb.on { border-color: #a78bfa; }
-[data-bs-theme="dark"] .pv-main-image { background: #110c25; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .pv-main-empty { color: #4c1d95; }
-[data-bs-theme="dark"] .pv-dot { background: rgba(255,255,255,.25); }
-[data-bs-theme="dark"] .pv-dot.on { background: #a78bfa; }
-[data-bs-theme="dark"] .pv-title,
-[data-bs-theme="dark"] .pv-name,
-[data-bs-theme="dark"] .pv-info-title,
-[data-bs-theme="dark"] .pv-info-key,
-[data-bs-theme="dark"] .pv-vendors-head { color: #ede9fe; }
-[data-bs-theme="dark"] .pv-code { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv-sep  { color: #4c1d95; }
-[data-bs-theme="dark"] .pv-sold-text,
-[data-bs-theme="dark"] .pv-info-val { color: #a89fc7; }
-[data-bs-theme="dark"] .pv-price-val,
-[data-bs-theme="dark"] .pv-total-val { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv-info-divider { background: #3b2a6b; }
-[data-bs-theme="dark"] .pv-info-grid { border-top-color: #3b2a6b; }
-[data-bs-theme="dark"] .pv-status.is-active   { background: #14241a; color: #4ade80; border-color: #14532d; }
-[data-bs-theme="dark"] .pv-status.is-inactive { background: #3f2c0a; color: #fde68a; border-color: #78350f; }
-[data-bs-theme="dark"] .pv-edit {
-  background: linear-gradient(135deg, #4338ca, #312e81);
-  box-shadow: 0 4px 12px rgba(67,56,202,.4);
-}
-[data-bs-theme="dark"] .pv-tabs { border-bottom-color: #3b2a6b; }
-[data-bs-theme="dark"] .pv-tab { color: #6d6391; }
-[data-bs-theme="dark"] .pv-tab:hover { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv-tab.on { color: #c4b5fd; border-bottom-color: #a78bfa; }
-[data-bs-theme="dark"] .pv-tab-text { color: #a89fc7; }
-[data-bs-theme="dark"] .pv-vendors-empty { border-color: #3b2a6b; color: #6d6391; }
+[data-bs-theme="dark"] .pv2-main-image { background: #161c24; border-color: rgba(255,255,255,.1); }
+[data-bs-theme="dark"] .pv2-name { color: #ede9fe; }
+[data-bs-theme="dark"] .pv2-code { color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-sep  { color: rgba(255,255,255,.2); }
+[data-bs-theme="dark"] .pv2-back { background: #1c2531; border-color: rgba(255,255,255,.1); color: #ced4da; }
+[data-bs-theme="dark"] .pv2-back:hover { background: #232c38; }
+[data-bs-theme="dark"] .pv2-sold-text { color: #adb5bd; }
+[data-bs-theme="dark"] .pv2-price-label { color: #ede9fe; }
+[data-bs-theme="dark"] .pv2-price-val   { color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-edit { box-shadow: 0 4px 12px rgba(64,81,137,.45); }
+[data-bs-theme="dark"] .pv2-edit:hover { box-shadow: 0 6px 18px rgba(64,81,137,.55); }
+[data-bs-theme="dark"] .pv2-info-grid { border-top-color: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .pv2-info-heading { color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-info-row .pv2-info-key { color: #adb5bd; font-weight: 500; }
+[data-bs-theme="dark"] .pv2-info-row .pv2-info-val { color: #a89fc7; }
+[data-bs-theme="dark"] .pv2-info-divider { background: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .pv2-total-line .pv2-info-key { color: #ede9fe; }
+[data-bs-theme="dark"] .pv2-total-strong { color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-tabs { border-bottom-color: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .pv2-tab { color: #6b7280; }
+[data-bs-theme="dark"] .pv2-tab:hover { color: #a8b6e9; }
+[data-bs-theme="dark"] .pv2-tab.on { color: #a8b6e9; border-bottom-color: #6366f1; }
+[data-bs-theme="dark"] .pv2-tab-text { color: #ced4da; }
+[data-bs-theme="dark"] .pv2-vendors-head { color: #ede9fe; }
+[data-bs-theme="dark"] .pv2-vendors-empty { border-color: rgba(255,255,255,.08); color: #6b7280; }
+[data-bs-theme="dark"] .pv2-vendor-card { background: #161c24; border-color: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .pv2-vendor-card-head { border-bottom-color: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .pv2-vendor-sr { background: rgba(139,92,246,.15); color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-vendor-code { color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-vendor-name { color: #ede9fe; }
+[data-bs-theme="dark"] .pv2-vendor-remarks { border-top-color: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .pv2-vendor-remarks-text { color: #ced4da; }
+[data-bs-theme="dark"] .pv2-attach-link { color: #a8b6e9; }
+[data-bs-theme="dark"] .pv2-attach-link:hover { color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-status.is-active { background: rgba(34,197,94,.12); color: #4ade80; border-color: rgba(34,197,94,.3); }
+[data-bs-theme="dark"] .pv2-status.is-inactive { background: rgba(245,158,11,.12); color: #fcd34d; border-color: rgba(245,158,11,.3); }
 `;

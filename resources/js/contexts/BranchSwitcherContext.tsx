@@ -71,6 +71,19 @@ function computeInitial(
   return null; // client_admin default
 }
 
+// Client-level roles always operate across all their branches. The branch
+// switcher UI is hidden for them, so a stale saved selection from a previous
+// session (when the switcher might have been visible) must be wiped — otherwise
+// the api.ts interceptor would keep injecting branch_id and silently scope
+// every list to that one branch with no way for the user to undo it.
+function clearSavedForTenantRole(userType: string | undefined, userId: number | undefined) {
+  if (!userId) return;
+  if (userType !== 'client_admin' && userType !== 'client_user') return;
+  const key = storageKey(userId);
+  if (!key) return;
+  try { localStorage.removeItem(key); } catch {}
+}
+
 export function BranchSwitcherProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -88,6 +101,10 @@ export function BranchSwitcherProvider({ children }: { children: ReactNode }) {
 
   // Reset + reload branches whenever the active user changes.
   useEffect(() => {
+    // For client-level roles the switcher is hidden — wipe any stale saved id
+    // so the user isn't silently locked to a previously-selected branch.
+    clearSavedForTenantRole(user?.user_type, user?.id);
+
     // Hard reset to prevent the previous user's selection bleeding into the new
     // user's session before /branches comes back.
     setSelectedBranchIdState(computeInitial(user?.user_type, user?.branch_id, user?.id, []));

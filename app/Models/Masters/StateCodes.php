@@ -35,4 +35,15 @@ class StateCodes extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    /**
+     * The state this code is for. Eager-loaded by MasterController so the
+     * list endpoint returns the state name inline — without this the
+     * frontend would have to download every row of master_states (tens
+     * of thousands of subdivisions) just to translate the id.
+     */
+    public function state(): BelongsTo
+    {
+        return $this->belongsTo(States::class, 'state_id');
+    }
 }

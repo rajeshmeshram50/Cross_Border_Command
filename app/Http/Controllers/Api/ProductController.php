@@ -318,6 +318,12 @@ class ProductController extends Controller
             'length_cm'                   => 'nullable|numeric|min:0',
             'width_cm'                    => 'nullable|numeric|min:0',
             'height_cm'                   => 'nullable|numeric|min:0',
+            // Inventory tracking — all optional. Captured on the Quality
+            // tab and surfaced on the Product Detail view's Inventory block.
+            'batch_no'                    => 'nullable|string|max:100',
+            'serial_no'                   => 'nullable|string|max:100',
+            'cat_no'                      => 'nullable|string|max:100',
+            'lot_no'                      => 'nullable|string|max:100',
             'qc_records'                  => 'nullable|array',
             'qc_records.*.qc_name'        => 'required_with:qc_records|string|max:100',
             'qc_records.*.qc_purpose'     => 'nullable|string|max:255',

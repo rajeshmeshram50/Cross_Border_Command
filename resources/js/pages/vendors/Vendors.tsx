@@ -40,8 +40,8 @@ export type Vendor = {
 };
 
 const SEED: Vendor[] = [
-  { id: 1, code: 'V-001', companyName: 'Om Powertech Exports Pvt. Ltd.', legalName: 'Om Powertech Exports Pvt. Ltd.', type: 'Genuine',     state: 'Maharashtra', city: 'Mumbai',     contactName: 'Daniel Robertson', designation: 'Sales Manager',    phone: '9821456789', email: 'd.robertson@ompowertech.com', status: 'Active',   country: 'India', pincode: '400001' },
-  { id: 2, code: 'V-002', companyName: 'GreenHarvest Pvt Ltd',          legalName: 'GreenHarvest Pvt Ltd',           type: 'Genuine',     state: 'Gujarat',     city: 'Ahmedabad',  contactName: 'Anita Desai',      designation: 'Procurement Mgr',  phone: '9988877665', email: 'anita@greenharvest.co',       status: 'Active',   country: 'India', pincode: '380001' },
+  { id: 1, code: 'V-01', companyName: 'Om Powertech Exports Pvt. Ltd.', legalName: 'Om Powertech Exports Pvt. Ltd.', type: 'Genuine',     state: 'Maharashtra', city: 'Mumbai',     contactName: 'Daniel Robertson', designation: 'Sales Manager',    phone: '9821456789', email: 'd.robertson@ompowertech.com', status: 'Active',   country: 'India', pincode: '400001' },
+  { id: 2, code: 'V-02', companyName: 'GreenHarvest Pvt Ltd',          legalName: 'GreenHarvest Pvt Ltd',           type: 'Genuine',     state: 'Gujarat',     city: 'Ahmedabad',  contactName: 'Anita Desai',      designation: 'Procurement Mgr',  phone: '9988877665', email: 'anita@greenharvest.co',       status: 'Active',   country: 'India', pincode: '380001' },
   { id: 3, code: 'V-003', companyName: 'Shree Exports',                  legalName: 'Shree Exports LLP',              type: 'Verified',    state: 'Delhi',       city: 'New Delhi',  contactName: 'Mohit Sharma',     designation: 'Director',         phone: '9554422119', email: 'mohit@shreeexports.in',       status: 'Active',   country: 'India', pincode: '110001' },
   { id: 4, code: 'V-004', companyName: 'Sun Agri Solutions',             legalName: 'Sun Agri Pvt Ltd',               type: 'Verified',    state: 'Karnataka',   city: 'Bengaluru',  contactName: 'Pooja Iyer',       designation: 'Account Mgr',      phone: '9123456789', email: 'pooja@sunagri.com',           status: 'Inactive', country: 'India', pincode: '560001' },
 ];
@@ -65,6 +65,43 @@ export default function Vendors() {
   const [addOpen, setAddOpen] = useState(false);
 
   const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
+
+  // Outline icon-pill action button — matches the style used in Clients.tsx
+  // so every list page in the shell shares the same affordance.
+  const ActionBtn = ({
+    title, icon, color, onClick, disabled,
+  }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
+    <Tooltip label={title}>
+      <button
+        type="button"
+        aria-label={title}
+        disabled={disabled}
+        className="btn p-0 d-inline-flex align-items-center justify-content-center"
+        style={{
+          width: 30, height: 30, borderRadius: 8,
+          background: 'var(--vz-secondary-bg)',
+          border: '1px solid var(--vz-border-color)',
+          color: 'var(--vz-secondary-color)',
+          transition: 'all .15s ease',
+        }}
+        onMouseEnter={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = `var(--vz-${color}-bg-subtle, ${color === 'primary' ? '#40518918' : color === 'danger' ? '#f0654818' : color === 'success' ? '#0ab39c18' : color === 'info' ? '#299cdb18' : color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)'})`;
+          el.style.borderColor = `var(--vz-${color})`;
+          el.style.color = `var(--vz-${color})`;
+        }}
+        onMouseLeave={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = 'var(--vz-secondary-bg)';
+          el.style.borderColor = 'var(--vz-border-color)';
+          el.style.color = 'var(--vz-secondary-color)';
+        }}
+        onClick={onClick}
+      >
+        <i className={`${icon} fs-14`} />
+      </button>
+    </Tooltip>
+  );
 
   const stats = useMemo(() => ({
     active:   vendors.filter(v => v.status === 'Active').length,
@@ -91,7 +128,9 @@ export default function Vendors() {
       const m = v.code.match(/(\d+)$/);
       if (m) n = Math.max(n, parseInt(m[1], 10));
     });
-    return 'V-' + String(n + 1).padStart(3, '0');
+    // 2-digit padding: V-01, V-02, …, V-99. Beyond 99 the code grows
+    // naturally (V-100) — str_pad never truncates.
+    return 'V-' + String(n + 1).padStart(2, '0');
   };
 
   const handleSave = (p: VendorPayload) => {
@@ -361,14 +400,13 @@ export default function Vendors() {
                         </td>
                         <td>
                           <span
-                            className="v-type-chip"
+                            className="badge rounded-pill fw-semibold px-3 py-2 fs-13"
                             style={{
                               background: `${typeColor}15`,
                               color: typeColor,
                               border: `1px solid ${typeColor}40`,
                             }}
                           >
-                            <i className="ri-checkbox-circle-fill" />
                             {v.type}
                           </span>
                         </td>
@@ -398,22 +436,28 @@ export default function Vendors() {
                           </a>
                         </td>
                         <td>
-                          <span className={`badge ${v.status === 'Active' ? 'bg-success-subtle text-success' : 'bg-warning-subtle text-warning'}`} style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700 }}>
-                            <span className={`v-status-dot ${v.status === 'Active' ? 'is-active' : 'is-inactive'} me-1`} />
-                            {v.status}
-                          </span>
+                          {(() => {
+                            const isActive = v.status === 'Active';
+                            const color = isActive ? 'success' : 'danger';
+                            return (
+                              <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2 fs-13`}>
+                                {v.status}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td>
-                          <div className="v-actions">
-                            <Tooltip label="View"><button type="button" className="btn btn-sm btn-soft-info"     onClick={() => toast.info('View', `Viewing ${v.companyName}`)}><i className="ri-eye-line" /></button></Tooltip>
-                            <Tooltip label="Edit"><button type="button" className="btn btn-sm btn-soft-primary"  onClick={() => toast.info('Edit', `Editing ${v.companyName}`)}><i className="ri-pencil-line" /></button></Tooltip>
-                            <Tooltip label={v.status === 'Active' ? 'Deactivate' : 'Activate'}>
-                              <button type="button" className={`btn btn-sm ${v.status === 'Active' ? 'btn-soft-warning' : 'btn-soft-success'}`} onClick={() => toggleStatus(v)}>
-                                <i className={v.status === 'Active' ? 'ri-pause-circle-line' : 'ri-play-circle-line'} />
-                              </button>
-                            </Tooltip>
-                            <Tooltip label="Vault"><button type="button" className="btn btn-sm btn-soft-secondary" onClick={() => toast.info('Vault', 'Vendor vault coming soon')}><i className="ri-folder-3-line" /></button></Tooltip>
-                            <Tooltip label="Delete"><button type="button" className="btn btn-sm btn-soft-danger"   onClick={() => removeVendor(v)}><i className="ri-delete-bin-line" /></button></Tooltip>
+                          <div className="d-flex gap-1 justify-content-center">
+                            <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => toast.info('View', `Viewing ${v.companyName}`)} />
+                            <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => toast.info('Edit', `Editing ${v.companyName}`)} />
+                            <ActionBtn
+                              title={v.status === 'Active' ? 'Deactivate' : 'Activate'}
+                              icon={v.status === 'Active' ? 'ri-pause-circle-line' : 'ri-play-circle-line'}
+                              color={v.status === 'Active' ? 'warning' : 'success'}
+                              onClick={() => toggleStatus(v)}
+                            />
+                            <ActionBtn title="Vault"  icon="ri-folder-3-line"   color="secondary" onClick={() => toast.info('Vault', 'Vendor vault coming soon')} />
+                            <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger"  onClick={() => removeVendor(v)} />
                           </div>
                         </td>
                       </tr>

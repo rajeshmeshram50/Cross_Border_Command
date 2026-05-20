@@ -239,6 +239,13 @@ class MasterController extends Controller
         $this->authorizeMaster($request, $slug, 'can_view');
         $modelClass = $this->resolveModel($slug);
         $q = $modelClass::query()->with(self::OWNERSHIP_WITH)->orderByDesc('id');
+        // Eager-load the state relation for state_codes so the list endpoint
+        // returns the state name inline (master_states has tens of thousands
+        // of subdivisions — downloading the whole table just to translate an
+        // id on the frontend was prohibitively slow).
+        if ($slug === 'state_codes') {
+            $q->with('state:id,name');
+        }
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($search = $request->query('search')) {
@@ -306,39 +313,9 @@ class MasterController extends Controller
         $this->applyScope($q, $request->user());
         $row = $q->findOrFail($id);
 
-        /* ── Hierarchical edit rule (mirrors destroy()) ───────────────
-         *  super_admin always passes. Lower-ranked users may not edit
-         *  records created by users above them in the hierarchy.
-         *  Rule: creator's role-rank must be <= current user's role-rank.
-         *  super_admin = 3, client_* = 2, branch_user = 1.
-         */
-        $user = $request->user();
-        if ($user && $user->user_type !== 'super_admin' && $row->created_by) {
-            $creator = User::find($row->created_by);
-            if ($creator && $creator->id !== $user->id) {
-                $rank = function (?string $type): int {
-                    return match ($type) {
-                        'super_admin'  => 3,
-                        'client_admin' => 2,
-                        'client_user'  => 2,
-                        'branch_user'  => 1,
-                        default        => 0,
-                    };
-                };
-                if ($rank($creator->user_type) > $rank($user->user_type)) {
-                    $byWhom = match ($creator->user_type) {
-                        'super_admin'  => 'a Super Admin',
-                        'client_admin' => 'a Client Admin',
-                        'client_user'  => 'a Client user',
-                        'branch_user'  => 'a Branch user',
-                        default        => 'a higher-privileged user',
-                    };
-                    return response()->json([
-                        'message' => "You cannot edit this record — it was created by {$byWhom}.",
-                    ], 403);
-                }
-            }
-        }
+        /* ── Hierarchical edit rule ─── */
+        $denial = $this->hierarchicalDenial($request->user(), $row, 'edit');
+        if ($denial) return response()->json(['message' => $denial], 403);
 
         $data = $this->validatePayload($request, $slug, $id);
 
@@ -457,45 +434,9 @@ class MasterController extends Controller
         $this->applyScope($q, $request->user());
         $row = $q->findOrFail($id);
 
-        /* ── Hierarchical delete rule ──────────────────────────────────
-         *  super_admin   : may delete any record (highest privilege).
-         *  client_admin  : may delete records created by self or by any
-         *  client_user     branch under their client. CANNOT delete
-         *                  records created by a super_admin.
-         *  branch_user   : may delete records created by self only.
-         *                  CANNOT delete records created by super_admin
-         *                  or client_admin / client_user.
-         *
-         *  Rule = creator's role-rank must be <= current user's role-rank.
-         *  super_admin = 3, client_* = 2, branch_user = 1.
-         */
-        $user = $request->user();
-        if ($user && $user->user_type !== 'super_admin' && $row->created_by) {
-            $creator = User::find($row->created_by);
-            if ($creator && $creator->id !== $user->id) {
-                $rank = function (?string $type): int {
-                    return match ($type) {
-                        'super_admin'  => 3,
-                        'client_admin' => 2,
-                        'client_user'  => 2,
-                        'branch_user'  => 1,
-                        default        => 0,
-                    };
-                };
-                if ($rank($creator->user_type) > $rank($user->user_type)) {
-                    $byWhom = match ($creator->user_type) {
-                        'super_admin'  => 'a Super Admin',
-                        'client_admin' => 'a Client Admin',
-                        'client_user'  => 'a Client user',
-                        'branch_user'  => 'a Branch user',
-                        default        => 'a higher-privileged user',
-                    };
-                    return response()->json([
-                        'message' => "You cannot delete this record — it was created by {$byWhom}.",
-                    ], 403);
-                }
-            }
-        }
+        /* ── Hierarchical delete rule ─── */
+        $denial = $this->hierarchicalDenial($request->user(), $row, 'delete');
+        if ($denial) return response()->json(['message' => $denial], 403);
 
         // System-seeded rows are pinned. Stage 1 of employee onboarding
         // pulls Laptop / Mobile asset lists by category name; deleting
@@ -589,6 +530,74 @@ class MasterController extends Controller
             abort(404, "Unknown master: {$slug}");
         }
         return self::MODELS[$slug];
+    }
+
+    /**
+     * Hierarchical edit/delete gate.
+     *
+     * Returns a denial message (string) if the current user is NOT allowed
+     * to mutate this row, or `null` if they may proceed.
+     *
+     * Rank order (higher = more privileged):
+     *   super_admin              5
+     *   client_admin / user      4
+     *   branch_user on MAIN      3
+     *   branch_user on SUB       2
+     *   employee                 1
+     *
+     * Rule: rank(creator) must be <= rank(currentUser). The creator's
+     * "level" is computed at row-creation time from the user_type AND
+     * (for branch_user) the branches.is_main flag of the user's branch
+     * stored on the row's `branch_id` column when applicable.
+     *
+     * Users may always mutate their OWN rows (created_by === user.id).
+     */
+    private function hierarchicalDenial(?User $user, $row, string $action): ?string
+    {
+        if (!$user || $user->user_type === 'super_admin') return null;
+        if (!$row->created_by) return null;
+        if ($row->created_by === $user->id)  return null;          // your own row is always fair game
+
+        // Resolve creator (and their branch, if any) once.
+        $creator = User::find($row->created_by);
+        if (!$creator) return null;
+
+        $rankFor = function (?User $u, $rowBranchId = null) {
+            if (!$u) return 0;
+            switch ($u->user_type) {
+                case 'super_admin':                       return 5;
+                case 'client_admin':
+                case 'client_user':                       return 4;
+                case 'branch_user': {
+                    // Main branch users outrank sub-branch users.
+                    $branchId = $u->branch_id ?: $rowBranchId;
+                    if ($branchId) {
+                        $isMain = \App\Models\Branch::where('id', $branchId)->value('is_main');
+                        if ($isMain) return 3;
+                    }
+                    return 2;
+                }
+                case 'employee':                          return 1;
+                default:                                   return 0;
+            }
+        };
+
+        $creatorRank = $rankFor($creator, $row->branch_id);
+        $userRank    = $rankFor($user);
+
+        if ($creatorRank > $userRank) {
+            $byWhom = match ($creator->user_type) {
+                'super_admin'  => 'a Super Admin',
+                'client_admin' => 'a Client Admin',
+                'client_user'  => 'a Client user',
+                'branch_user'  => $creatorRank === 3 ? 'the Main Branch' : 'another Branch user',
+                'employee'     => 'an Employee',
+                default        => 'a higher-privileged user',
+            };
+            $verb = $action === 'delete' ? 'delete' : 'edit';
+            return "You cannot {$verb} this record — it was created by {$byWhom}.";
+        }
+        return null;
     }
 
     /**

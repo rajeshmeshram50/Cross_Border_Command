@@ -147,10 +147,44 @@ export default function AddProductModal(props: {
   const [step, setStep] = useState<1 | 2>(1);
   const [tab, setTab] = useState<Tab>('core');
   const [previousOpen, setPreviousOpen] = useState(true);
+
+  /* Add-mode tab-lock — user can only click into tabs they've already
+   * reached via Save & Next. Edit mode unlocks everything because the
+   * full record already exists on the server.
+   *
+   *   reachedTabs always contains 'core' on first render. saveCore() /
+   *   saveSales() append the next tab as they succeed. The edit loader
+   *   effect floods all three on prefill. */
+  const [reachedTabs, setReachedTabs] = useState<Set<Tab>>(() => new Set<Tab>(['core']));
+  const markTabReached = (t: Tab) => setReachedTabs(prev => new Set(prev).add(t));
+  const canSwitchToTab = (t: Tab) => reachedTabs.has(t);
   const [productId, setProductId] = useState<number | null>(initialId ?? null);
   const [productCodeFromApi, setProductCodeFromApi] = useState<string>('');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>('');
+  /**
+   * Per-field validation errors keyed by field name. Each saver populates
+   * this on validation failure; the matching `Field` shows a red border +
+   * inline "ri-error-warning" message. Typing in a field clears its entry.
+   */
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const clearFieldError = (k: string) => {
+    setFieldErrors(prev => {
+      if (!prev[k]) return prev;
+      const next = { ...prev };
+      delete next[k];
+      return next;
+    });
+  };
+
+  /* ─── Master Quick-Add state ───────────────────────────────────────
+   * The `+` button next to a master-backed field sets this to the
+   * master slug; the MasterQuickAddPopup component renders the right
+   * form for that slug and POSTs to /api/master/{slug}. On save the
+   * new row is appended to the right opt* list and selected on the
+   * field that triggered the popup.
+   * ──────────────────────────────────────────────────────────── */
+  type MasterSlug = 'segments' | 'haz_class' | 'uom' | 'hsn_codes' | 'conditions' | 'packaging_material' | 'gst_percentage';
+  const [quickAdd, setQuickAdd] = useState<MasterSlug | null>(null);
 
   /* ─── Master options (loaded from API on mount) ─── */
   const [optSegments, setOptSegments] = useState<MasterOpt[]>([]);
@@ -214,12 +248,30 @@ export default function AddProductModal(props: {
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
   const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
 
+  // Adapter list of percentage-string options for the vendor draft GST picker.
+  // The vendor sub-form stores the GST as a "18%" string (parsed via replace('%','')),
+  // so we project the master rows into that shape rather than passing IDs.
+  const vendorGstOptions = useMemo(
+    () => optGst
+      .map(o => {
+        const pct = parseFloat(String(o.extra?.percentage ?? '0')) || 0;
+        return { value: `${pct}%`, label: `${pct}%` };
+      })
+      .filter(o => o.value !== '0%'),
+    [optGst],
+  );
+
   /* ─── Step 1: Quality ─── */
   const [netWeight,   setNetWeight]   = useState<string>('');
   const [grossWeight, setGrossWeight] = useState<string>('');
   const [length,      setLength]      = useState<string>('');
   const [width,       setWidth]       = useState<string>('');
   const [height,      setHeight]      = useState<string>('');
+  /* Inventory tracking — optional fields under the Quality tab. */
+  const [batchNo,  setBatchNo]  = useState<string>('');
+  const [serialNo, setSerialNo] = useState<string>('');
+  const [catNo,    setCatNo]    = useState<string>('');
+  const [lotNo,    setLotNo]    = useState<string>('');
   const [qcRecords,   setQcRecords]   = useState<QcRecord[]>([]);
   const [qcModalOpen, setQcModalOpen] = useState(false);
   const [qcDraft, setQcDraft] = useState<Omit<QcRecord, 'id'>>({
@@ -392,6 +444,61 @@ export default function AddProductModal(props: {
     })();
   }, []);
 
+  /**
+   * Called by the MasterQuickAddPopup after a successful POST. Pushes
+   * the new row into the matching opt* list and selects it on the
+   * dropdown that triggered the popup, so the user can keep typing
+   * without manually reopening the select.
+   */
+  const onMasterAdded = (slug: MasterSlug, row: Record<string, unknown>) => {
+    const id = String(row.id ?? '');
+    if (!id) return;
+    const labelOf = (key: string) => String(row[key] ?? '');
+    switch (slug) {
+      case 'segments':
+        setOptSegments(prev => [...prev, { value: id, label: labelOf('title') }]);
+        setSegmentId(id);
+        clearFieldError('segmentId');
+        break;
+      case 'haz_class':
+        setOptHazClasses(prev => [...prev, { value: id, label: labelOf('name') }]);
+        setHazClassId(id);
+        clearFieldError('hazClassId');
+        break;
+      case 'uom': {
+        const short = labelOf('short_code');
+        const title = labelOf('title');
+        setOptUoms(prev => [...prev, { value: id, label: title + (short ? ` (${short})` : '') }]);
+        setUomId(id);
+        clearFieldError('uomId');
+        break;
+      }
+      case 'hsn_codes': {
+        const code = labelOf('hsn_code');
+        const desc = labelOf('description');
+        setOptHsn(prev => [...prev, { value: id, label: code + (desc ? ` — ${desc.slice(0, 40)}` : '') }]);
+        setHsnId(id);
+        clearFieldError('hsnId');
+        break;
+      }
+      case 'conditions':
+        setOptConditions(prev => [...prev, { value: id, label: labelOf('title') }]);
+        setConditionId(id);
+        clearFieldError('conditionId');
+        break;
+      case 'packaging_material':
+        setOptPackaging(prev => [...prev, { value: id, label: labelOf('title') }]);
+        setPackagingMaterialId(id);
+        clearFieldError('packagingMaterialId');
+        break;
+      case 'gst_percentage':
+        setOptGst(prev => [...prev, { value: id, label: `${labelOf('percentage')}%`, extra: { percentage: row.percentage } }]);
+        setGstId(id);
+        clearFieldError('gstId');
+        break;
+    }
+  };
+
   /* ─── If editing, load the product and prefill ─── */
   useEffect(() => {
     if (!initialId) return;
@@ -439,6 +546,10 @@ export default function AddProductModal(props: {
         setLength(p.length_cm != null ? String(p.length_cm) : '');
         setWidth(p.width_cm != null ? String(p.width_cm) : '');
         setHeight(p.height_cm != null ? String(p.height_cm) : '');
+        setBatchNo (((p as Record<string, unknown>).batch_no  ?? '') as string);
+        setSerialNo(((p as Record<string, unknown>).serial_no ?? '') as string);
+        setCatNo   (((p as Record<string, unknown>).cat_no    ?? '') as string);
+        setLotNo   (((p as Record<string, unknown>).lot_no    ?? '') as string);
         setQcRecords((p.qc_records ?? []).map(q => ({
           id: q.id,
           name: q.qc_name,
@@ -467,13 +578,16 @@ export default function AddProductModal(props: {
           remarks: String(v.remarks ?? ''),
         })));
 
-        // Jump the wizard to the next pending step
-        const sc = Number(p.step_completed ?? 0);
-        if (sc >= 3)      { setStep(2); }
-        else if (sc === 2) { setTab('quality'); }
-        else if (sc === 1) { setTab('sales'); }
+        // Edit always opens at Step 1 → Product Core Information so the
+        // user can walk through every section with the prefilled data
+        // instead of being dropped into the middle of the wizard.
+        // All inner tabs are unlocked in edit mode since the full record
+        // already exists on the server.
+        setStep(1);
+        setTab('core');
+        setReachedTabs(new Set<Tab>(['core', 'sales', 'quality']));
       } catch {
-        setError('Failed to load product. Closing…');
+        toast.error('Not found', 'Failed to load product. Closing…');
         setTimeout(onClose, 1200);
       }
     })();
@@ -488,27 +602,26 @@ export default function AddProductModal(props: {
    * keep the user on the current tab so they can correct the error.
    * ────────────────────────────────────────────────────────────── */
   const saveCore = async () => {
-    setError('');
-    // Required-field validation. Each missing piece becomes a labelled
-    // toast so the user can see exactly what to fix without scrolling.
-    const missing: string[] = [];
-    if (!name.trim())            missing.push('Product Name');
-    if (!genericName.trim())     missing.push('Generic Name');
-    if (!description.trim())     missing.push('Product Printable Description');
-    if (!brand.trim())           missing.push('Make / Brand / Specifications');
-    if (!segmentId)              missing.push('Segment');
-    if (!hazType)                missing.push('Haz / Non-Haz');
-    if (hazType === 'Haz' && !hazClassId) missing.push('Haz Class');
-    if (!uomId)                  missing.push('UOM');
-    if (!hsnId)                  missing.push('HSN / SAC Code');
-    if (!conditionId)            missing.push('Condition');
-    if (!packagingMaterialId)    missing.push('Packaging Material');
-    if (missing.length) {
-      const msg = `Please fill: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ` +${missing.length - 3} more` : ''}`;
-      setError(msg);
-      toast.error('Missing required fields', msg);
+    // Per-field validation — collect errors keyed by field so the matching
+    // `Field` wrapper can render a red border + inline message.
+    const errs: Record<string, string> = {};
+    if (!name.trim())            errs.name              = 'Product name is required';
+    if (!genericName.trim())     errs.genericName       = 'Generic name is required';
+    if (!description.trim())     errs.description       = 'Printable description is required';
+    if (!brand.trim())           errs.brand             = 'Make / Brand / Specifications is required';
+    if (!segmentId)              errs.segmentId         = 'Segment is required';
+    if (!hazType)                errs.hazType           = 'Haz / Non-Haz is required';
+    if (hazType === 'Haz' && !hazClassId) errs.hazClassId = 'Haz Class is required when Haz Type is Haz';
+    if (!uomId)                  errs.uomId             = 'UOM is required';
+    if (!hsnId)                  errs.hsnId             = 'HSN / SAC Code is required';
+    if (!conditionId)            errs.conditionId       = 'Condition is required';
+    if (!packagingMaterialId)    errs.packagingMaterialId = 'Packaging Material is required';
+    if (Object.keys(errs).length) {
+      setFieldErrors(errs);
+      toast.error('Missing required fields', 'Please fix the highlighted fields');
       return;
     }
+    setFieldErrors({});
     setSaving(true);
     try {
       // Always send multipart so file uploads work; Laravel handles either
@@ -557,10 +670,10 @@ export default function AddProductModal(props: {
 
       onSaved(res.data.id, false);
       toast.success('Core saved', 'Product Core Information saved');
+      markTabReached('sales');
       setTab('sales');
     } catch (e: unknown) {
       const msg = extractError(e, 'Failed to save Core information.');
-      setError(msg);
       toast.error('Save failed', msg);
     } finally {
       setSaving(false);
@@ -569,19 +682,19 @@ export default function AddProductModal(props: {
 
   const saveSales = async () => {
     if (!productId) {
-      const msg = 'Save Core information first.';
-      setError(msg); toast.error('Step blocked', msg); return;
+      toast.error('Step blocked', 'Save Core information first.'); return;
     }
-    // Sales validation
-    const missing: string[] = [];
-    if (!basePrice || basePriceNum <= 0) missing.push('Selling Price');
-    if (!gstId)                          missing.push('GST %');
-    if (!markBottom)                     missing.push('Mark Bottom / Non Bottom');
-    if (missing.length) {
-      const msg = `Please fill: ${missing.join(', ')}`;
-      setError(msg); toast.error('Missing required fields', msg); return;
+    const errs: Record<string, string> = {};
+    if (!basePrice || basePriceNum <= 0) errs.basePrice  = 'Selling Price is required (must be greater than 0)';
+    if (!gstId)                          errs.gstId      = 'GST % is required';
+    if (!markBottom)                     errs.markBottom = 'Mark Bottom / Non Bottom is required';
+    if (Object.keys(errs).length) {
+      setFieldErrors(errs);
+      toast.error('Missing required fields', 'Please fix the highlighted fields');
+      return;
     }
-    setError(''); setSaving(true);
+    setFieldErrors({});
+    setSaving(true);
     try {
       await api.put(`/products/${productId}/step/sales`, {
         base_price: basePriceNum || null,
@@ -592,10 +705,10 @@ export default function AddProductModal(props: {
       });
       onSaved(productId, false);
       toast.success('Sales saved', 'Pricing and GST saved');
+      markTabReached('quality');
       setTab('quality');
     } catch (e: unknown) {
       const msg = extractError(e, 'Failed to save Sales information.');
-      setError(msg);
       toast.error('Save failed', msg);
     } finally {
       setSaving(false);
@@ -604,29 +717,39 @@ export default function AddProductModal(props: {
 
   const saveQuality = async () => {
     if (!productId) {
-      const msg = 'Save Core information first.';
-      setError(msg); toast.error('Step blocked', msg); return;
+      toast.error('Step blocked', 'Save Core information first.'); return;
     }
-    // Quality validation — all five box-matrix fields are required, must be > 0
-    const missing: string[] = [];
-    if (!netWeight   || parseFloat(netWeight)   <= 0) missing.push('Net Weight');
-    if (!grossWeight || parseFloat(grossWeight) <= 0) missing.push('Gross Weight');
-    if (!length      || parseFloat(length)      <= 0) missing.push('Length');
-    if (!width       || parseFloat(width)       <= 0) missing.push('Width');
-    if (!height      || parseFloat(height)      <= 0) missing.push('Height');
-    if (missing.length) {
-      const msg = `Please fill: ${missing.join(', ')}`;
-      setError(msg); toast.error('Missing required fields', msg); return;
+    const errs: Record<string, string> = {};
+    const netN   = parseFloat(netWeight)   || 0;
+    const grossN = parseFloat(grossWeight) || 0;
+    if (!netWeight   || netN   <= 0) errs.netWeight   = 'Net Weight is required (must be greater than 0)';
+    if (!grossWeight || grossN <= 0) errs.grossWeight = 'Gross Weight is required (must be greater than 0)';
+    if (!length      || parseFloat(length)      <= 0) errs.length      = 'Length is required (must be greater than 0)';
+    if (!width       || parseFloat(width)       <= 0) errs.width       = 'Width is required (must be greater than 0)';
+    if (!height      || parseFloat(height)      <= 0) errs.height      = 'Height is required (must be greater than 0)';
+    // Gross must exceed Net — gross includes packaging weight on top of
+    // the net product weight, so they can't be equal or inverted.
+    if (!errs.netWeight && !errs.grossWeight && grossN <= netN) {
+      errs.grossWeight = 'Gross Weight must be greater than Net Weight.';
     }
-    // QC records (if any) — each must have a name
+    if (Object.keys(errs).length) {
+      setFieldErrors(errs);
+      toast.error('Missing required fields', 'Please fix the highlighted fields');
+      return;
+    }
     const badQc = qcRecords.findIndex(q => !q.name.trim());
     if (badQc !== -1) {
-      const msg = `QC record #${badQc + 1} is missing the QC Name`;
-      setError(msg); toast.error('Invalid QC record', msg); return;
+      toast.error('Invalid QC record', `QC record #${badQc + 1} is missing the QC Name`);
+      return;
     }
-    setError(''); setSaving(true);
+    setFieldErrors({});
+    setSaving(true);
     try {
       await api.put(`/products/${productId}/step/quality`, {
+        batch_no: batchNo || null,
+        serial_no: serialNo || null,
+        cat_no: catNo || null,
+        lot_no: lotNo || null,
         net_weight: parseFloat(netWeight) || null,
         gross_weight: parseFloat(grossWeight) || null,
         length_cm: parseFloat(length) || null,
@@ -647,7 +770,6 @@ export default function AddProductModal(props: {
       setStep(2);
     } catch (e: unknown) {
       const msg = extractError(e, 'Failed to save Quality information.');
-      setError(msg);
       toast.error('Save failed', msg);
     } finally {
       setSaving(false);
@@ -656,14 +778,14 @@ export default function AddProductModal(props: {
 
   const saveVendorsAndFinish = async () => {
     if (!productId) {
-      const msg = 'Save Core information first.';
-      setError(msg); toast.error('Step blocked', msg); return;
+      toast.error('Step blocked', 'Save Core information first.'); return;
     }
     if (vendors.length === 0) {
-      const msg = 'Map at least one vendor before saving the product.';
-      setError(msg); toast.error('No vendors mapped', msg); return;
+      toast.error('No vendors mapped', 'Map at least one vendor before saving the product.');
+      return;
     }
-    setError(''); setSaving(true);
+    setFieldErrors({});
+    setSaving(true);
     try {
       await api.put(`/products/${productId}/step/vendors`, {
         vendors: vendors.map(v => ({
@@ -686,7 +808,6 @@ export default function AddProductModal(props: {
       toast.success('Product saved', 'Vendors mapped — product is now Active');
     } catch (e: unknown) {
       const msg = extractError(e, 'Failed to save vendors.');
-      setError(msg);
       toast.error('Save failed', msg);
     } finally {
       setSaving(false);
@@ -708,11 +829,17 @@ export default function AddProductModal(props: {
               </svg>
             </div>
             <div>
-              <div className="apm-title">{step === 1 ? 'Add Product' : 'Map Product Vendor'}</div>
+              <div className="apm-title">
+                {step === 2
+                  ? 'Map Product Vendor'
+                  : (initialId ? 'Edit Product' : 'Add Product')}
+              </div>
               <div className="apm-sub">
-                {step === 1
-                  ? 'Add complete product details — identity, pricing, compliance and dimensions.'
-                  : 'Link this product to one or more vendors with purchase pricing.'}
+                {step === 2
+                  ? 'Link this product to one or more vendors with purchase pricing.'
+                  : (initialId
+                      ? 'Update product details — identity, pricing, compliance and dimensions.'
+                      : 'Add complete product details — identity, pricing, compliance and dimensions.')}
               </div>
             </div>
           </div>
@@ -721,11 +848,10 @@ export default function AddProductModal(props: {
           </button>
         </div>
 
-        {/* ─── Step strip ─── */}
+        {/* ─── Step strip — two pill cards side by side ─── */}
         <div className="apm-stepper">
-          <StepperItem n={1} title="Product Information" sub="Identity, pricing, compliance" current={step} />
-          <div className={`apm-step-line ${step > 1 ? 'done' : ''}`} />
-          <StepperItem n={2} title="Map Product Vendor" sub="Link vendors with pricing" current={step} />
+          <StepperItem n={1} title="Product Information" sub="Identity, pricing, compliance" current={step} icon={<i className="ri-home-line" />} />
+          <StepperItem n={2} title="Map Product Vendor"  sub="Link vendors with pricing"    current={step} icon={<i className="ri-shield-check-line" />} />
         </div>
 
         {/* ─── Body ─── */}
@@ -770,9 +896,26 @@ export default function AddProductModal(props: {
               )}
 
               <div className="apm-tabs">
-                <button className={`apm-tab ${tab === 'core'    ? 'on' : ''}`} onClick={() => setTab('core')}>Product Core Information</button>
-                <button className={`apm-tab ${tab === 'sales'   ? 'on' : ''}`} onClick={() => setTab('sales')}>For Sales Department</button>
-                <button className={`apm-tab ${tab === 'quality' ? 'on' : ''}`} onClick={() => setTab('quality')}>Quality &amp; Compliance</button>
+                {(['core', 'sales', 'quality'] as Tab[]).map(t => {
+                  const labels: Record<Tab, string> = { core: 'Product Core Information', sales: 'For Sales Department', quality: 'Quality & Compliance' };
+                  const locked = !canSwitchToTab(t);
+                  return (
+                    <button
+                      key={t}
+                      className={`apm-tab ${tab === t ? 'on' : ''}${locked ? ' is-locked' : ''}`}
+                      onClick={() => {
+                        if (locked) {
+                          toast.error('Locked', 'Complete the previous step with "Save & Next" to unlock this tab.');
+                          return;
+                        }
+                        setTab(t);
+                      }}
+                      title={locked ? 'Locked — complete the previous step first' : undefined}
+                    >
+                      {labels[t]}{locked && <i className="ri-lock-line" style={{ marginLeft: 6, fontSize: 12 }} />}
+                    </button>
+                  );
+                })}
               </div>
 
               {tab === 'core' && (
@@ -785,24 +928,24 @@ export default function AddProductModal(props: {
                   subtitle="Basic identity, classification and media"
                 >
                   <div className="apm-grid-2">
-                    <Field label="Product Name" required icon={<i className="ri-product-hunt-line" />}>
-                      <input className="apm-input apm-input-mf" placeholder="Enter product name" value={name} onChange={e => setName(e.target.value)} />
+                    <Field label="Product Name" required icon={<i className="ri-product-hunt-line" />} error={fieldErrors.name}>
+                      <input className="apm-input apm-input-mf" placeholder="Enter product name" value={name} onChange={e => { setName(e.target.value); clearFieldError('name'); }} />
                     </Field>
-                    <Field label="Generic Name" required icon={<i className="ri-price-tag-3-line" />}>
-                      <input className="apm-input apm-input-mf" placeholder="Enter generic name" value={genericName} onChange={e => setGenericName(e.target.value)} />
+                    <Field label="Generic Name" required icon={<i className="ri-price-tag-3-line" />} error={fieldErrors.genericName}>
+                      <input className="apm-input apm-input-mf" placeholder="Enter generic name" value={genericName} onChange={e => { setGenericName(e.target.value); clearFieldError('genericName'); }} />
                     </Field>
                   </div>
 
-                  <Field label="Product Printable Description" required icon={<i className="ri-file-text-line" />}>
-                    <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Enter printable description" value={description} onChange={e => setDescription(e.target.value)} rows={3} />
+                  <Field label="Product Printable Description" required icon={<i className="ri-file-text-line" />} error={fieldErrors.description}>
+                    <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Enter printable description" value={description} onChange={e => { setDescription(e.target.value); clearFieldError('description'); }} rows={3} />
                   </Field>
 
                   <div className="apm-grid-2">
-                    <Field label="Make / Brand / Specifications" required icon={<i className="ri-store-2-line" />}>
-                      <input className="apm-input apm-input-mf" placeholder="Make / Brand / Specifications" value={brand} onChange={e => setBrand(e.target.value)} />
+                    <Field label="Make / Brand / Specifications" required icon={<i className="ri-store-2-line" />} error={fieldErrors.brand}>
+                      <input className="apm-input apm-input-mf" placeholder="Make / Brand / Specifications" value={brand} onChange={e => { setBrand(e.target.value); clearFieldError('brand'); }} />
                     </Field>
-                    <Field label="Segment" required addNew>
-                      <SelectInput value={segmentId} onChange={setSegmentId} placeholder="Select" options={optSegments} />
+                    <Field label="Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segmentId}>
+                      <SelectInput value={segmentId} onChange={(v) => { setSegmentId(v); clearFieldError('segmentId'); }} placeholder="Select" options={optSegments} />
                     </Field>
                   </div>
 
@@ -830,30 +973,74 @@ export default function AddProductModal(props: {
                   <div className="apm-inner-section">
                     <div className="apm-inner-title">PRODUCT GENERAL INFORMATION</div>
                     <div className="apm-grid-3">
-                      <Field label="Haz / Non Haz" required>
-                        <SelectInput value={hazType} onChange={setHazType} placeholder="Select" options={HAZ_TYPES} />
+                      <Field label="Haz / Non Haz" required error={fieldErrors.hazType}>
+                        <SelectInput
+                          value={hazType}
+                          onChange={(v) => {
+                            setHazType(v);
+                            clearFieldError('hazType');
+                            // Switching away from Haz wipes any previously
+                            // picked Haz Class so we never persist a stale
+                            // (and now hidden) classification.
+                            if (v !== 'Haz') {
+                              setHazClassId('');
+                              clearFieldError('hazClassId');
+                            }
+                          }}
+                          placeholder="Select"
+                          options={HAZ_TYPES}
+                        />
                       </Field>
-                      <Field label="Haz Class" required addNew>
-                        <SelectInput value={hazClassId} onChange={setHazClassId} placeholder="Select" options={optHazClasses} disabled={hazType !== 'Haz'} />
+                      <Field
+                        label="Haz Class"
+                        required={hazType === 'Haz'}
+                        addNew={hazType === 'Haz'}
+                        onAdd={hazType === 'Haz' ? () => setQuickAdd('haz_class') : undefined}
+                        disabled={hazType !== 'Haz'}
+                        error={fieldErrors.hazClassId}
+                      >
+                        <SelectInput
+                          value={hazClassId}
+                          onChange={(v) => { setHazClassId(v); clearFieldError('hazClassId'); }}
+                          placeholder={hazType === 'Haz' ? 'Select' : 'Choose Haz first'}
+                          options={optHazClasses}
+                          disabled={hazType !== 'Haz'}
+                        />
                       </Field>
-                      <Field label="UOM" required addNew>
-                        <SelectInput value={uomId} onChange={setUomId} placeholder="Select" options={optUoms} />
+                      <Field label="UOM" required addNew onAdd={() => setQuickAdd('uom')} error={fieldErrors.uomId}>
+                        <SelectInput value={uomId} onChange={(v) => { setUomId(v); clearFieldError('uomId'); }} placeholder="Select" options={optUoms} />
                       </Field>
                     </div>
                     <div className="apm-grid-3">
-                      <Field label="HSN / SAC Code" required addNew>
-                        <SelectInput value={hsnId} onChange={setHsnId} placeholder="Select" options={optHsn} />
+                      <Field label="HSN / SAC Code" required addNew onAdd={() => setQuickAdd('hsn_codes')} error={fieldErrors.hsnId}>
+                        <SelectInput value={hsnId} onChange={(v) => { setHsnId(v); clearFieldError('hsnId'); }} placeholder="Select" options={optHsn} />
                       </Field>
-                      <Field label="Condition" required addNew>
-                        <SelectInput value={conditionId} onChange={setConditionId} placeholder="Select" options={optConditions} />
+                      <Field label="Condition" required addNew onAdd={() => setQuickAdd('conditions')} error={fieldErrors.conditionId}>
+                        <SelectInput value={conditionId} onChange={(v) => { setConditionId(v); clearFieldError('conditionId'); }} placeholder="Select" options={optConditions} />
                       </Field>
-                      <Field label="Packaging Material" required addNew>
-                        <SelectInput value={packagingMaterialId} onChange={setPackagingMaterialId} placeholder="Select" options={optPackaging} />
+                      <Field label="Packaging Material" required addNew onAdd={() => setQuickAdd('packaging_material')} error={fieldErrors.packagingMaterialId}>
+                        <SelectInput value={packagingMaterialId} onChange={(v) => { setPackagingMaterialId(v); clearFieldError('packagingMaterialId'); }} placeholder="Select" options={optPackaging} />
                       </Field>
                     </div>
-                    <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
-                      <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Confidential information" value={confidential} onChange={e => setConfidential(e.target.value)} rows={2} />
-                    </Field>
+                    <div className="apm-grid-2 apm-inv-conf-row">
+                      <div className="apm-inv-grid">
+                        <Field label="Batch No" icon={<i className="ri-hashtag" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={batchNo} onChange={e => setBatchNo(e.target.value)} />
+                        </Field>
+                        <Field label="Serial No" icon={<i className="ri-barcode-line" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={serialNo} onChange={e => setSerialNo(e.target.value)} />
+                        </Field>
+                        <Field label="Cat No" icon={<i className="ri-price-tag-3-line" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={catNo} onChange={e => setCatNo(e.target.value)} />
+                        </Field>
+                        <Field label="Lot No" icon={<i className="ri-list-check-2" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={lotNo} onChange={e => setLotNo(e.target.value)} />
+                        </Field>
+                      </div>
+                      <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
+                        <textarea className="apm-input apm-input-mf apm-textarea apm-conf-textarea" placeholder="Confidential information" value={confidential} onChange={e => setConfidential(e.target.value)} rows={6} />
+                      </Field>
+                    </div>
                   </div>
                 </SectionCard>
               )}
@@ -870,14 +1057,14 @@ export default function AddProductModal(props: {
                   subtitle="Pricing, GST and sales configuration"
                 >
                   <div className="apm-grid-2">
-                    <Field label="Product Selling Price (Without GST)" required>
+                    <Field label="Product Selling Price (Without GST)" required error={fieldErrors.basePrice}>
                       <div className="apm-input-icon">
                         <span className="apm-input-icon-prefix">₹</span>
-                        <input className="apm-input has-prefix" placeholder="Enter base price" type="number" value={basePrice} onChange={e => setBasePrice(e.target.value)} />
+                        <input className="apm-input has-prefix" placeholder="Enter base price" type="number" value={basePrice} onChange={e => { setBasePrice(e.target.value); clearFieldError('basePrice'); }} />
                       </div>
                     </Field>
-                    <Field label="GST %" required addNew>
-                      <SelectInput value={gstId} onChange={setGstId} placeholder="Select" options={optGst} />
+                    <Field label="GST %" required addNew onAdd={() => setQuickAdd('gst_percentage')} error={fieldErrors.gstId}>
+                      <SelectInput value={gstId} onChange={(v) => { setGstId(v); clearFieldError('gstId'); }} placeholder="Select" options={optGst} />
                     </Field>
                   </div>
                   <div className="apm-grid-2">
@@ -894,8 +1081,8 @@ export default function AddProductModal(props: {
                       </div>
                     </Field>
                   </div>
-                  <Field label="Mark Bottom / Non Bottom" required>
-                    <SelectInput value={markBottom} onChange={setMarkBottom} placeholder="Select" options={BOTTOM_OPTIONS} />
+                  <Field label="Mark Bottom / Non Bottom" required error={fieldErrors.markBottom}>
+                    <SelectInput value={markBottom} onChange={(v) => { setMarkBottom(v); clearFieldError('markBottom'); }} placeholder="Select" options={BOTTOM_OPTIONS} />
                   </Field>
                 </SectionCard>
               )}
@@ -909,20 +1096,20 @@ export default function AddProductModal(props: {
                     subtitle="Physical dimensions and weight specifications"
                   >
                     <div className="apm-grid-5">
-                      <Field label="Net Weight (Kg)" icon={<i className="ri-scales-2-line" />}>
-                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Net Weight" type="number" value={netWeight} onChange={e => setNetWeight(e.target.value)} />
+                      <Field label="Net Weight (Kg)" icon={<i className="ri-scales-2-line" />} error={fieldErrors.netWeight}>
+                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Net Weight" type="number" value={netWeight} onChange={e => { setNetWeight(e.target.value); clearFieldError('netWeight'); }} />
                       </Field>
-                      <Field label="Gross Weight (Kg)" icon={<i className="ri-scales-3-line" />}>
-                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Gross Weight" type="number" value={grossWeight} onChange={e => setGrossWeight(e.target.value)} />
+                      <Field label="Gross Weight (Kg)" icon={<i className="ri-scales-3-line" />} error={fieldErrors.grossWeight}>
+                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Gross Weight" type="number" value={grossWeight} onChange={e => { setGrossWeight(e.target.value); clearFieldError('grossWeight'); }} />
                       </Field>
-                      <Field label="Length (Cm)" icon={<i className="ri-ruler-2-line" />}>
-                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Length" type="number" value={length} onChange={e => setLength(e.target.value)} />
+                      <Field label="Length (Cm)" icon={<i className="ri-ruler-2-line" />} error={fieldErrors.length}>
+                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Length" type="number" value={length} onChange={e => { setLength(e.target.value); clearFieldError('length'); }} />
                       </Field>
-                      <Field label="Width (Cm)" icon={<i className="ri-ruler-line" />}>
-                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Width" type="number" value={width} onChange={e => setWidth(e.target.value)} />
+                      <Field label="Width (Cm)" icon={<i className="ri-ruler-line" />} error={fieldErrors.width}>
+                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Width" type="number" value={width} onChange={e => { setWidth(e.target.value); clearFieldError('width'); }} />
                       </Field>
-                      <Field label="Height (Cm)" icon={<i className="ri-arrow-up-down-line" />}>
-                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Height" type="number" value={height} onChange={e => setHeight(e.target.value)} />
+                      <Field label="Height (Cm)" icon={<i className="ri-arrow-up-down-line" />} error={fieldErrors.height}>
+                        <input className="apm-input apm-input-mf apm-input-amber" placeholder="Height" type="number" value={height} onChange={e => { setHeight(e.target.value); clearFieldError('height'); }} />
                       </Field>
                     </div>
                   </SectionCard>
@@ -1104,7 +1291,7 @@ export default function AddProductModal(props: {
                       </div>
                     </Field>
                     <Field label="GST %">
-                      <SelectInput value={vendorGstPct} onChange={setVendorGstPct} placeholder="0%" options={GST_OPTIONS} />
+                      <SelectInput value={vendorGstPct} onChange={setVendorGstPct} placeholder="0%" options={vendorGstOptions} />
                     </Field>
                     <Field label="GST Amount">
                       <div className="apm-input-icon">
@@ -1232,7 +1419,6 @@ export default function AddProductModal(props: {
         <div className="apm-foot">
           <div className="apm-foot-left">
             <button className="apm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-            {error && <span className="apm-foot-error">{error}</span>}
           </div>
           <div className="apm-foot-right">
             {(step === 2 || (step === 1 && tab !== 'core')) && (
@@ -1293,6 +1479,17 @@ export default function AddProductModal(props: {
           onSave={saveQcDraft}
         />
       )}
+
+      {quickAdd && (
+        <MasterQuickAddPopup
+          slug={quickAdd}
+          onClose={() => setQuickAdd(null)}
+          onSaved={(row) => {
+            onMasterAdded(quickAdd, row);
+            setQuickAdd(null);
+          }}
+        />
+      )}
     </div>
   ), document.body);
 }
@@ -1300,15 +1497,21 @@ export default function AddProductModal(props: {
 /* ──────────────────────────────────────────────────────────────────────────
  * Sub-components
  * ────────────────────────────────────────────────────────────────────── */
-function StepperItem(props: { n: number; title: string; sub: string; current: number }) {
-  const { n, title, sub, current } = props;
+function StepperItem(props: { n: number; title: string; sub: string; current: number; icon?: ReactNode }) {
+  const { n, title, sub, current, icon } = props;
   const state = current > n ? 'done' : current === n ? 'active' : 'idle';
+  const defaultIcon = n === 1
+    ? <i className="ri-home-line" />
+    : <i className="ri-shield-check-line" />;
   return (
     <div className={`apm-step apm-step-${state}`}>
-      <div className="apm-step-num">
-        {state === 'done' ? (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-        ) : n}
+      <div className="apm-step-icon-wrap">
+        <span className="apm-step-icon">
+          {state === 'done'
+            ? <i className="ri-check-line" />
+            : (icon ?? defaultIcon)}
+        </span>
+        <span className="apm-step-num-badge">{n}</span>
       </div>
       <div className="apm-step-text">
         <div className="apm-step-title">{title}</div>
@@ -1347,15 +1550,25 @@ function Field(props: {
   label: string;
   required?: boolean;
   addNew?: boolean;
+  onAdd?: () => void;
   icon?: ReactNode;
+  error?: string;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
-    <label className="apm-field">
+    <label className={`apm-field${props.error ? ' has-error' : ''}${props.disabled ? ' is-disabled' : ''}`}>
       <span className="apm-field-label">
         {props.label} {props.required && <span className="apm-req">*</span>}
-        {props.addNew && (
-          <button type="button" className="apm-field-plus" aria-label="Add new option" tabIndex={-1} onClick={(e) => e.preventDefault()}>+</button>
+        {props.addNew && !props.disabled && (
+          <button
+            type="button"
+            className="apm-field-plus"
+            aria-label="Add new option"
+            tabIndex={-1}
+            title={`Add new ${props.label}`}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onAdd?.(); }}
+          >+</button>
         )}
       </span>
       {props.icon ? (
@@ -1364,6 +1577,11 @@ function Field(props: {
           {props.children}
         </div>
       ) : props.children}
+      {props.error && (
+        <span className="apm-field-error">
+          <i className="ri-error-warning-line" /> {props.error}
+        </span>
+      )}
     </label>
   );
 }
@@ -1601,6 +1819,129 @@ function QcAddPopup(props: {
   ), document.body);
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * Master Quick-Add popup — opens above the wizard when a "+" button is
+ * clicked next to a master-backed field. Posts the new row directly to
+ * /api/master/{slug} and hands the result back to the wizard so the
+ * dropdown can refresh + auto-select it.
+ *
+ * Each slug declares its own minimal field list. Status is always sent
+ * as "Active" so the new row immediately shows up in the dropdown
+ * filter (which strips Inactive rows).
+ * ────────────────────────────────────────────────────────────────────── */
+type QuickAddSlug = 'segments' | 'haz_class' | 'uom' | 'hsn_codes' | 'conditions' | 'packaging_material' | 'gst_percentage';
+type QaField = { name: string; label: string; type?: 'text' | 'number'; required?: boolean; placeholder?: string };
+
+const QUICK_ADD_SCHEMAS: Record<QuickAddSlug, { title: string; fields: QaField[] }> = {
+  segments:           { title: 'Add Segment',            fields: [{ name: 'title', label: 'Segment Name', required: true, placeholder: 'e.g. Dry Fruits' }] },
+  haz_class:          { title: 'Add Haz Class',          fields: [{ name: 'name',  label: 'Haz Class Name', required: true, placeholder: 'e.g. Class 3 - Flammable Liquids' }] },
+  uom:                { title: 'Add Unit of Measurement', fields: [
+                          { name: 'title',      label: 'Title', required: true, placeholder: 'e.g. Kilogram' },
+                          { name: 'short_code', label: 'Short Code', required: true, placeholder: 'e.g. KG' },
+                          { name: 'unit_type',  label: 'Unit Type', placeholder: 'e.g. Weight / Volume / Count' },
+                        ] },
+  hsn_codes:          { title: 'Add HSN / SAC Code',     fields: [
+                          { name: 'hsn_code',    label: 'HSN / SAC Code', required: true, placeholder: 'e.g. 08013100' },
+                          { name: 'description', label: 'Description', placeholder: 'Brief description' },
+                        ] },
+  conditions:         { title: 'Add Condition',          fields: [{ name: 'title', label: 'Condition Name', required: true, placeholder: 'e.g. New, Refurbished' }] },
+  packaging_material: { title: 'Add Packaging Material', fields: [
+                          { name: 'title',         label: 'Title', required: true, placeholder: 'e.g. Carton Box' },
+                          { name: 'material_type', label: 'Material Type', placeholder: 'e.g. Cardboard' },
+                        ] },
+  gst_percentage:     { title: 'Add GST Percentage',     fields: [{ name: 'percentage', label: 'GST %', type: 'number', required: true, placeholder: 'e.g. 18' }] },
+};
+
+function MasterQuickAddPopup(props: {
+  slug: QuickAddSlug;
+  onClose: () => void;
+  onSaved: (row: Record<string, unknown>) => void;
+}) {
+  const { slug, onClose, onSaved } = props;
+  const toast = useToast();
+  const schema = QUICK_ADD_SCHEMAS[slug];
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const set = (k: string, v: string) => {
+    setValues(prev => ({ ...prev, [k]: v }));
+    if (errors[k]) setErrors(prev => { const n = { ...prev }; delete n[k]; return n; });
+  };
+
+  const submit = async () => {
+    const errs: Record<string, string> = {};
+    schema.fields.forEach(f => {
+      if (f.required && !(values[f.name] ?? '').toString().trim()) {
+        errs[f.name] = `${f.label} is required`;
+      }
+    });
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      toast.error('Missing required fields', 'Please fix the highlighted fields');
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload: Record<string, unknown> = { ...values, status: 'Active' };
+      // Numeric fields go in as Number so the master accepts the schema cast.
+      schema.fields.forEach(f => {
+        if (f.type === 'number' && payload[f.name] !== undefined) {
+          payload[f.name] = Number(payload[f.name]);
+        }
+      });
+      const res = await api.post<Record<string, unknown>>(`/master/${slug}`, payload);
+      toast.success('Saved', `${schema.title.replace('Add ', '')} added`);
+      onSaved(res.data);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
+      const fieldErr = err?.response?.data?.errors;
+      if (fieldErr) {
+        const flat: Record<string, string> = {};
+        Object.entries(fieldErr).forEach(([k, v]) => { if (v?.[0]) flat[k] = v[0]; });
+        setErrors(flat);
+      }
+      toast.error('Save failed', err?.response?.data?.message || `Could not add to ${slug}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return createPortal((
+    <div className="apm-qa-backdrop" onClick={onClose}>
+      <div className="apm-qa-popup" onClick={(e) => e.stopPropagation()}>
+        <div className="apm-qa-head">
+          <div className="apm-qa-title">
+            <i className="ri-add-circle-line" /> {schema.title}
+          </div>
+          <button className="apm-close apm-qa-close" onClick={onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+        <div className="apm-qa-body">
+          {schema.fields.map(f => (
+            <Field key={f.name} label={f.label} required={f.required} error={errors[f.name]}>
+              <input
+                className="apm-input"
+                type={f.type === 'number' ? 'number' : 'text'}
+                placeholder={f.placeholder ?? ''}
+                value={values[f.name] ?? ''}
+                onChange={(e) => set(f.name, e.target.value)}
+              />
+            </Field>
+          ))}
+        </div>
+        <div className="apm-qa-foot">
+          <button className="apm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="apm-btn-primary" onClick={submit} disabled={saving}>
+            {saving ? <span className="apm-spinner" /> : <i className="ri-save-line" />} Save
+          </button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
+}
+
 function QcProd(props: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="apm-qc-prod">
@@ -1626,7 +1967,7 @@ const SCOPED_CSS = `
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
 }
 .apm-modal {
-  width: 100%; max-width: 1140px;
+  width: 100%; max-width: 1360px;
   max-height: calc(100vh - 48px);
   margin: auto;
   background: #fff;
@@ -1667,28 +2008,77 @@ const SCOPED_CSS = `
 }
 .apm-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
 
-/* ─── Stepper ─── */
+/* ─── Stepper — pill-card style matching the Customer Legal Identity sample.
+   Each step is its own rounded card with a coloured icon tile + step number
+   badge in the corner. Active step gets a violet border + glow + tinted
+   background; idle steps fade out so the focus reads at a glance. */
 .apm-stepper {
-  display: flex; align-items: center; gap: 14px;
-  padding: 16px 22px;
+  display: flex; align-items: stretch; gap: 14px;
+  padding: 18px 22px;
   background: #faf5ff;
   border-bottom: 1px solid #ede9fe;
 }
-.apm-step { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; border-radius: 12px; }
-.apm-step-num {
-  width: 32px; height: 32px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 800;
-  background: #ede9fe; color: #6b7280; flex-shrink: 0;
-  border: 2px solid #ddd6fe;
+.apm-step {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px;
+  background: #fff;
+  border: 1.5px solid #ede9fe;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.03);
+  transition: border-color .2s, box-shadow .2s, transform .2s, background .2s;
+  position: relative;
+}
+.apm-step-icon-wrap { position: relative; flex-shrink: 0; }
+.apm-step-icon {
+  width: 46px; height: 46px; border-radius: 12px;
+  background: #f1f5f9; color: #94a3b8;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  transition: background .25s, color .25s, box-shadow .25s;
+}
+.apm-step-num-badge {
+  position: absolute;
+  bottom: -6px; right: -6px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #cbd5e1; color: #fff;
+  border: 2px solid #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10.5px; font-weight: 800;
+  transition: background .25s;
 }
 .apm-step-text { min-width: 0; }
-.apm-step-title { font-size: 12.5px; font-weight: 800; color: #1e1b4b; }
-.apm-step-sub   { font-size: 10.5px; color: #6b7280; }
-.apm-step-active .apm-step-num { background: linear-gradient(135deg,#8b5cf6,#7c3aed); color:#fff; border-color: #7c3aed; box-shadow: 0 4px 12px rgba(124,58,237,.35); }
+.apm-step-title { font-size: 14px; font-weight: 800; color: #1e1b4b; letter-spacing: -.01em; }
+.apm-step-sub   { font-size: 11.5px; color: #94a3b8; margin-top: 2px; }
+
+/* Active step — violet tinted card */
+.apm-step-active {
+  border-color: #7c3aed;
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+  box-shadow: 0 6px 24px rgba(124,58,237,.18);
+}
+.apm-step-active .apm-step-icon {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(124,58,237,.35);
+}
+.apm-step-active .apm-step-num-badge { background: #5b21b6; }
 .apm-step-active .apm-step-title { color: #5b21b6; }
-.apm-step-done   .apm-step-num { background: #16a34a; color:#fff; border-color: #16a34a; }
-.apm-step-done   .apm-step-title { color: #15803d; }
+
+/* Done step — soft green */
+.apm-step-done {
+  border-color: #86efac;
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+}
+.apm-step-done .apm-step-icon {
+  background: linear-gradient(135deg, #22c55e, #15803d);
+  color: #fff;
+}
+.apm-step-done .apm-step-num-badge { background: #16a34a; }
+.apm-step-done .apm-step-title { color: #15803d; }
+
+/* Idle step — fade so the active step pops */
+.apm-step-idle { opacity: .8; }
 .apm-step-line {
   flex: 1; height: 2px; background: #ddd6fe; border-radius: 2px;
   transition: background .25s;
@@ -1722,6 +2112,8 @@ const SCOPED_CSS = `
 }
 .apm-tab:hover { color: #6d28d9; }
 .apm-tab.on { color: #5b21b6; border-bottom-color: #7c3aed; }
+.apm-tab.is-locked { color: #cbd5e1; cursor: not-allowed; }
+.apm-tab.is-locked:hover { color: #94a3b8; }
 
 /* ─── Section card ─── */
 .apm-section {
@@ -1798,6 +2190,12 @@ const SCOPED_CSS = `
 .apm-grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
 .apm-grid-5 { display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; }
 
+/* Inventory (2x2) + Confidential Info side-by-side row */
+.apm-inv-conf-row { align-items: stretch; }
+.apm-inv-conf-row > .apm-field { display: flex; }
+.apm-inv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.apm-conf-textarea { flex: 1; min-height: 100%; resize: vertical; }
+
 /* ─── Field ─── */
 .apm-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .apm-field-label {
@@ -1814,6 +2212,45 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
 }
 .apm-field-plus:hover { background: #6d28d9; }
+
+/* Inline per-field error — small red row right under the input, with a
+   warning icon. Pairs with .apm-field.has-error flipping the input
+   border to red so the user can spot every wrong field at a glance.
+   Specificity is bumped so the parent label / root colour can't bleed
+   through and turn the message dark. */
+.apm-field .apm-field-error,
+.apm-modal .apm-field-error,
+.apm-field-error {
+  display: inline-flex !important; align-items: center; gap: 4px;
+  font-size: 11.5px; font-weight: 600; color: #ef4444 !important;
+  margin-top: 4px;
+  line-height: 1.2;
+}
+.apm-field .apm-field-error i,
+.apm-modal .apm-field-error i,
+.apm-field-error i { font-size: 13px; color: #ef4444 !important; }
+.apm-field.has-error .apm-input,
+.apm-field.has-error .apm-master-field,
+.apm-field.has-error textarea {
+  border-color: #ef4444 !important;
+}
+.apm-field.has-error .apm-input:focus,
+.apm-field.has-error textarea:focus {
+  box-shadow: 0 0 0 3px rgba(239,68,68,.15) !important;
+}
+.apm-field.has-error .master-select-wrap .master-select-toggle {
+  border-color: #ef4444 !important;
+}
+.apm-field.has-error .apm-field-label { color: #ef4444 !important; }
+
+/* Disabled field — gated dropdown (e.g. Haz Class until Haz Type is chosen) */
+.apm-field.is-disabled { opacity: .55; }
+.apm-field.is-disabled .apm-field-label { color: #94a3b8; }
+.apm-field.is-disabled .apm-input,
+.apm-field.is-disabled .master-select-wrap .master-select-toggle {
+  background: #f1f5f9 !important;
+  cursor: not-allowed !important;
+}
 
 /* ─── Master-form-style field container (with leading icon) ─── */
 .apm-master-field { position: relative; }
@@ -2255,13 +2692,15 @@ const SCOPED_CSS = `
   background: #1a1430;
   border-bottom-color: #3b2a6b;
 }
-[data-bs-theme="dark"] .apm-step-num { background: #2a1d5c; color: #a89fc7; border-color: #4c1d95; }
+[data-bs-theme="dark"] .apm-step { background: #110c25; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .apm-step-icon { background: #2a1d5c; color: #a89fc7; }
+[data-bs-theme="dark"] .apm-step-num-badge { border-color: #110c25; }
 [data-bs-theme="dark"] .apm-step-title { color: #ede9fe; }
 [data-bs-theme="dark"] .apm-step-sub   { color: #a89fc7; }
+[data-bs-theme="dark"] .apm-step-active { background: linear-gradient(135deg, #221852 0%, #2a1d5c 100%); border-color: #a78bfa; box-shadow: 0 6px 24px rgba(167,139,250,.25); }
 [data-bs-theme="dark"] .apm-step-active .apm-step-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-step-done   { background: linear-gradient(135deg, #14241a 0%, #1a3225 100%); border-color: #166534; }
 [data-bs-theme="dark"] .apm-step-done   .apm-step-title { color: #4ade80; }
-[data-bs-theme="dark"] .apm-step-line { background: #3b2a6b; }
-[data-bs-theme="dark"] .apm-step-line.done { background: #16a34a; }
 
 [data-bs-theme="dark"] .apm-body {
   background: linear-gradient(180deg, #110c25 0%, #1a1430 100%);
@@ -2400,4 +2839,48 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .apm-btn-ghost:hover { background: #221852; border-color: #4c1d95; }
 [data-bs-theme="dark"] .apm-btn-outline { background: #1a1430; border-color: #4c1d95; color: #c4b5fd; }
 [data-bs-theme="dark"] .apm-btn-outline:hover { background: #221852; border-color: #a78bfa; }
+
+/* ─── Master Quick-Add popup ─── */
+.apm-qa-backdrop {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(15, 23, 42, .6);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 20px;
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+}
+.apm-qa-popup {
+  width: 100%; max-width: 480px;
+  background: #fff; border-radius: 16px; overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
+}
+.apm-qa-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #5b21b6, #7c3aed);
+  color: #fff;
+}
+.apm-qa-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 800; }
+.apm-qa-title i { font-size: 18px; }
+.apm-qa-close {
+  width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.12); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s, transform .12s;
+}
+.apm-qa-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+.apm-qa-body {
+  padding: 18px; display: flex; flex-direction: column; gap: 12px;
+  max-height: calc(100vh - 240px); overflow-y: auto;
+}
+.apm-qa-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 18px; border-top: 1px solid #ede9fe;
+}
+
+[data-bs-theme="dark"] .apm-qa-popup { background: #14102a; color: #ede9fe; }
+[data-bs-theme="dark"] .apm-qa-head { background: linear-gradient(135deg, #4c1d95, #7c3aed); }
+[data-bs-theme="dark"] .apm-qa-foot { border-top-color: #3b2a6b; }
 `;

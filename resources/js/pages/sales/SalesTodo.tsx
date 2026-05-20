@@ -392,7 +392,10 @@ export default function SalesTodo() {
     if (!canAdd) return;
     setForm(tab === 'reminder'
       ? { editId: null, oppId:'', oppDate: TODAY_STR, subject:'', setDate: TODAY_STR, tat:'24 Hours', remark:'', status:'In Progress' }
-      : { editId: null, code:'', oppId:'', customer:'', email:'', contact:'', platform:'Zoom', date: TODAY_STR, startTime:'10:00', endTime:'11:00', link:'', venue:'', agenda:'', status:'In Progress', type: meetingSub });
+      // platform left empty intentionally — pre-filling "Zoom" silently
+      // satisfied the required validation, so the user could save without
+      // ever opening the dropdown. Forcing an active selection.
+      : { editId: null, code:'', oppId:'', customer:'', email:'', contact:'', platform:'', date: TODAY_STR, startTime:'10:00', endTime:'11:00', link:'', venue:'', agenda:'', status:'In Progress', type: meetingSub });
     setFormError('');
     setModalOpen(true);
   };
@@ -501,13 +504,13 @@ export default function SalesTodo() {
 
     if (tab === 'reminder') {
       const subj = (form.subject || '').trim();
-      if (!subj) { setFormError('Subject is required.'); return; }
-      // Reject "only special chars / digits" — at least one letter required so
-      // a reminder like "!!!!!" or "1234" can't slip through. Allows mixed
-      // strings like "Follow-up #5" because that contains letters.
-      if (!/[A-Za-z]/.test(subj)) { setFormError('Subject must contain at least one letter.'); return; }
-      if (subj.length < 3)        { setFormError('Subject must be at least 3 characters.'); return; }
-      if (!form.setDate)          { setFormError('Set date is required.'); return; }
+      if (!subj)                          { setFormError('Subject is required.'); return; }
+      // Only letters, digits and spaces allowed. Anything else is rejected.
+      if (!/^[A-Za-z0-9 ]+$/.test(subj))  { setFormError('Special characters are not allowed.'); return; }
+      if (subj.length < 3)                { setFormError('Subject must be at least 3 characters.'); return; }
+      if (subj.length > 255)              { setFormError('Subject cannot exceed 255 characters.'); return; }
+
+      if (!form.setDate)                  { setFormError('Set date is required.'); return; }
 
       const payload = {
         opp_id: form.oppId || undefined,
@@ -967,7 +970,7 @@ export default function SalesTodo() {
                   <th style={{ width: 110 }}>Meeting Date</th>
                   <th style={{ width: 110 }}>Time</th>
                   <th>{meetingSub === 'physical' ? 'Venue' : 'Meeting Link'}</th>
-                  <th style={{ width: 120 }}>Status</th>
+                  <th style={{ width: 130, whiteSpace: 'nowrap' }}>Status</th>
                   <th style={{ width: 170, textAlign: 'center' }}>Actions</th>
                 </tr>
               </thead>
@@ -1156,7 +1159,24 @@ export default function SalesTodo() {
                       />
                     </Field>
                     <Field label="Reminder Subject" required>
-                      <input className="td-inp" value={form.subject || ''} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} placeholder="Subject" />
+                      {(() => {
+                        const v = form.subject || '';
+                        // Single rule: only letters, digits and spaces allowed.
+                        const invalid = v.length > 0 && !/^[A-Za-z0-9 ]+$/.test(v);
+                        return (
+                          <>
+                            <input
+                              className={`td-inp ${invalid ? 'td-inp-invalid' : ''}`}
+                              value={v}
+                              maxLength={255}
+                              onChange={e => setForm(p => ({ ...p, subject: e.target.value }))}
+                              placeholder="Subject"
+                              aria-invalid={invalid || undefined}
+                            />
+                            {invalid && <span className="td-inline-err">Special characters are not allowed.</span>}
+                          </>
+                        );
+                      })()}
                     </Field>
                   </div>
                   <div className="td-form-row">
@@ -2090,7 +2110,7 @@ const SCOPED_CSS = `
   background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd;
 }
 
-.td-root .td-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:700; }
+.td-root .td-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:20px; font-size:10.5px; font-weight:700; white-space:nowrap; line-height:1.2; }
 .td-root .td-badge-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .td-root .td-inprog { background:#dbeafe; color:#1d4ed8; border:1px solid #bfdbfe; }
 .td-root .td-done   { background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; }
@@ -2244,15 +2264,54 @@ const SCOPED_CSS = `
   line-height: 1.3;
 }
 /* Force every form control (input, native select via .td-inp, custom select
-   trigger via .td-cs-trigger, date/time inputs) to share the same height so
-   adjacent fields line up — the Edit Meeting popup was visually broken
-   because the custom select read a few pixels taller than the inputs next
-   to it on the same row. */
+   trigger via .td-cs-trigger, date/time inputs) to share the SAME box —
+   exact height, identical padding, identical font metrics — so adjacent
+   fields in a row sit on the same baseline. Without these overrides the
+   browser's native UI for date/time inputs renders slightly taller than a
+   plain text input, which made the Edit Meeting popup's 3-col row
+   (Date / Start / End) look misaligned. */
 .td-modal .td-inp,
-.td-modal .td-cs-trigger { min-height: 34px; padding: 7px 11px; }
-.td-modal textarea.td-inp { min-height: 60px; padding: 8px 11px; }
+.td-modal .td-cs-trigger {
+  box-sizing: border-box;
+  height: 36px;
+  min-height: 36px;
+  padding: 6px 11px;
+  font-size: 12px;
+  line-height: 22px;       /* 22 + 6 + 6 + 2 border = 36px exactly */
+  vertical-align: middle;
+}
+.td-modal textarea.td-inp {
+  height: auto;
+  min-height: 60px;
+  padding: 8px 11px;
+  line-height: 1.45;
+}
+/* Date / time inputs — strip the browser-injected internal padding so the
+   value text aligns vertically with the text-input siblings in the same
+   row, and stretch them to the full cell width. */
 .td-modal input[type="date"].td-inp,
-.td-modal input[type="time"].td-inp { padding-top: 5px; padding-bottom: 5px; }
+.td-modal input[type="time"].td-inp {
+  width: 100%;
+  padding: 6px 11px;
+  font-variant-numeric: tabular-nums;
+}
+.td-modal input[type="date"].td-inp::-webkit-datetime-edit,
+.td-modal input[type="time"].td-inp::-webkit-datetime-edit { padding: 0; }
+.td-modal input[type="date"].td-inp::-webkit-calendar-picker-indicator,
+.td-modal input[type="time"].td-inp::-webkit-calendar-picker-indicator {
+  margin: 0; padding: 0; cursor: pointer; opacity: .65;
+}
+.td-modal input[type="date"].td-inp::-webkit-calendar-picker-indicator:hover,
+.td-modal input[type="time"].td-inp::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+/* 3-column rows (Date / Start / End) — slightly tighter gap looks balanced
+   when the three controls are narrow, and gives the row visual rhythm.
+   Extra top margin separates this row from the standalone Meeting Link /
+   Venue field above it (those use colSpan=2 without a .td-form-row wrapper,
+   so they don't contribute a bottom margin). */
+.td-form-row-3 { gap: 12px 12px; margin-top: 14px; }
+/* Standalone colSpan=2 fields (Meeting Link / Venue / Meeting Agenda) — give
+   them their own bottom margin so they don't crowd the next row. */
+.td-modal-body > .td-field { margin-bottom: 12px; }
 
 /* Virtual / Physical toggle at top of meeting modal */
 .td-mtg-toggle {
@@ -2405,6 +2464,24 @@ const SCOPED_CSS = `
   transition: all .15s; line-height:1.4;
 }
 .td-inp:focus { border-color:#14b8a6; box-shadow:0 0 0 3px rgba(20,184,166,.1); }
+.td-inp.td-inp-invalid {
+  border-color: #e11d48 !important;
+  background: #fff1f2;
+}
+.td-inp.td-inp-invalid:focus {
+  border-color: #e11d48 !important;
+  box-shadow: 0 0 0 3px rgba(225,29,72,.15);
+}
+.td-inline-err {
+  display: block; margin-top: 4px;
+  font-size: 11px; font-weight: 600; color: #e11d48;
+  line-height: 1.3;
+}
+[data-bs-theme="dark"] .td-inp.td-inp-invalid {
+  background: rgba(225,29,72,.10);
+  border-color: #fb7185 !important;
+}
+[data-bs-theme="dark"] .td-inline-err { color: #fda4af; }
 .td-inp::placeholder { color:#94a3b8; font-size:11.5px; }
 .td-sel {
   appearance:none; -webkit-appearance:none; cursor:pointer;
@@ -2882,6 +2959,27 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .td-cal-cell { background: #0e1726; border-color: rgba(255,255,255,.06); }
 [data-bs-theme="dark"] .td-cal-cell-out { background: rgba(15,23,42,.4); }
 [data-bs-theme="dark"] .td-cal-cell-out-num { color: #475569; }
+/* Calendar hover — the light-mode rules use near-white tints (#f5fffe etc.)
+   which bleed through to dark mode and create a harsh bright flash on
+   hover. Override each hover variant with a soft teal-tinted dark surface
+   that reads as "highlighted" without losing the dark-mode feel. */
+[data-bs-theme="dark"] .td-cal-cell:hover {
+  background: rgba(20,184,166,.10) !important;
+  border-color: rgba(94,234,212,.30);
+}
+[data-bs-theme="dark"] .td-cal-cell-weekend { background: rgba(15,23,42,.55); }
+[data-bs-theme="dark"] .td-cal-cell-weekend:hover {
+  background: rgba(20,184,166,.13) !important;
+}
+[data-bs-theme="dark"] .td-cal-cell-today:hover {
+  background: linear-gradient(160deg, rgba(20,184,166,.22), rgba(13,148,136,.18)) !important;
+  border-color: rgba(94,234,212,.45);
+}
+[data-bs-theme="dark"] .td-cal-cell-out:hover {
+  background: repeating-linear-gradient(135deg,
+    rgba(15,23,42,.55) 0px, rgba(15,23,42,.55) 10px,
+    rgba(20,184,166,.08) 10px, rgba(20,184,166,.08) 20px) !important;
+}
 [data-bs-theme="dark"] .td-cal-num { color: #e2e8f0; }
 [data-bs-theme="dark"] .td-cal-popover { background: #0e1726; border-color: rgba(94,234,212,.35); }
 
