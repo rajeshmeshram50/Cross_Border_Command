@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import {
   validateEmail, validatePhoneGeneric, validatePincode, validateWebsite,
   validateGstin, validateIfsc, validateAccountNumber,
@@ -172,6 +173,11 @@ type KycTab = 'company' | 'owner' | 'license' | 'bank' | 'gst';
  * before advancing to Step 3. Clicking any pill in the header still
  * jumps freely; this only controls what the footer button does. */
 const KYC_TAB_ORDER: KycTab[] = ['company', 'owner', 'license', 'bank', 'gst'];
+
+/* Forward order of the Step 3 → KYC sub-pills. Save & Next walks
+ * Owner KYC → Company Due Diligence → Trade License, then flips the
+ * Step 3 top tab to "Trade Documents", then advances to Step 4. */
+const KYC_SUB_ORDER: KycSubTab[] = ['owner', 'company', 'license'];
 type TradeTab = 'kyc' | 'trade';
 type KycSubTab = 'owner' | 'company' | 'license';
 
@@ -885,9 +891,21 @@ export default function AddVendorModal(props: {
         setStep(3);
       }
     } else if (step === 3) {
-      // Stage 3 is a frontend-only repository view — no backend.
-      toast.success('Documents reviewed', 'Trade documents captured');
-      setStep(4);
+      // Stage 3 has 2 top tabs and (inside the KYC tab) 3 sub-pills:
+      //   KYC  → Owner KYC → Company Due Diligence → Trade License
+      //   Trade Documents
+      // Save & Next walks the pills, then the top tabs, then Step 4.
+      // Stage 3 is frontend-only — no API call between sub-tabs.
+      if (tradeTab === 'kyc') {
+        const idx = KYC_SUB_ORDER.indexOf(kycSub);
+        if (idx >= 0 && idx < KYC_SUB_ORDER.length - 1) {
+          setKycSub(KYC_SUB_ORDER[idx + 1]);
+        } else {
+          setTradeTab('trade');
+        }
+      } else {
+        setStep(4);
+      }
     }
   };
 
@@ -1245,28 +1263,95 @@ export default function AddVendorModal(props: {
 
         {/* ─── Body ─── */}
         <div className="avm-body">
-          {step > 1 && (
-            <div className="avm-prev">
-              <div className="avm-prev-head">
-                <div className="avm-prev-title">
-                  <span className="avm-prev-check"><i className="ri-check-line" /></span>
-                  What you did in the previous stage
-                  <span className="avm-prev-chip">Step 1{step > 2 ? `–${step - 1}` : ''} Complete</span>
+          {step > 1 && (() => {
+            /* Step-grouped summary of everything captured in earlier
+               steps — mirrors the Add Product wizard's PreviousStages
+               block. Each completed step gets its own section so the
+               user can scan exactly what's already done before moving
+               forward; the Hide toggle collapses everything. */
+            type PrevStage = {
+              name: string;
+              tone: 'violet' | 'teal' | 'purple';
+              fields: { label: string; value: string }[];
+            };
+            const prevStages: PrevStage[] = [];
+            if (step > 1) {
+              prevStages.push({
+                name: 'Vendor Legal Identity',
+                tone: 'violet',
+                fields: [
+                  { label: 'Company Name',        value: companyName || '—' },
+                  { label: 'Legal Name',          value: legalName || '—' },
+                  { label: 'Vendor Type',         value: labelFor(vendorType, vendorTypeOpts) || '—' },
+                  { label: 'Risk Level',          value: labelFor(riskLevel, riskLevelOpts) || '—' },
+                  { label: 'Vendor Behaviour',    value: labelFor(vendorBehaviour, behaviourOpts) || '—' },
+                  { label: 'Segment',             value: labelFor(segment, segmentOpts) || '—' },
+                  { label: 'Compliance Behaviour',value: labelFor(complianceBehaviour, complianceOpts) || '—' },
+                  { label: 'Country / State',     value: `${labelFor(country, countryOpts) || '—'} / ${labelFor(state, stateOpts) || '—'}` },
+                  { label: 'City / Pincode',      value: `${city || '—'} / ${pincode || '—'}` },
+                  { label: 'Primary Contact',     value: contactName ? `${contactName} (${designation || '—'})` : '—' },
+                  { label: 'Phone',               value: contactNo || '—' },
+                  { label: 'Email',               value: email || '—' },
+                  { label: 'Extra Contacts',      value: String(extraContacts.length) },
+                ],
+              });
+            }
+            if (step > 2) {
+              prevStages.push({
+                name: 'Vendor KYC / Due Diligence',
+                tone: 'teal',
+                fields: [
+                  { label: 'Due Diligence Docs', value: String(ddRows.length) },
+                  { label: 'Owner KYC Docs',     value: String(ownerRows.length) },
+                  { label: 'Trade Licenses',     value: String(licenseRows.length) },
+                  { label: 'Bank Accounts',      value: String(bankRows.length) },
+                  { label: 'GST Scrutiny',       value: String(gstRows.length) },
+                ],
+              });
+            }
+            if (step > 3) {
+              const sent = tradeDocRows.filter(r => r.status !== 'N/A').length;
+              prevStages.push({
+                name: 'Trade Document Management',
+                tone: 'purple',
+                fields: [
+                  { label: 'Trade Documents',     value: `${sent} of ${tradeDocRows.length} sent` },
+                ],
+              });
+            }
+
+            return (
+              <div className="avm-prev">
+                <div className="avm-prev-head">
+                  <div className="avm-prev-title">
+                    <span className="avm-prev-check"><i className="ri-check-line" /></span>
+                    What you did in previous stages
+                    <span className="avm-prev-chip">Stage {step - 1} of 4 Complete</span>
+                  </div>
+                  <button className="avm-prev-toggle" onClick={() => setPrevOpen(o => !o)}>{prevOpen ? 'Hide' : 'Show'}</button>
                 </div>
-                <button className="avm-prev-toggle" onClick={() => setPrevOpen(o => !o)}>{prevOpen ? 'Hide' : 'Show'}</button>
+                {prevOpen && (
+                  <div className="avm-prev-body">
+                    {prevStages.map(s => (
+                      <div key={s.name} className={`avm-prev-stage tone-${s.tone}`}>
+                        <div className="avm-prev-stage-label">⊕ {s.name}</div>
+                        <div className="avm-prev-grid">
+                          {s.fields.map(f => (
+                            <div key={f.label} className="avm-prev-field-cell">
+                              <div className="avm-prev-field-label">{f.label}</div>
+                              {/* `title` exposes the full value as a native tooltip
+                                  when the cell truncates. */}
+                              <div className="avm-prev-field-value" title={f.value}>{f.value}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              {prevOpen && (
-                <div className="avm-prev-body">
-                  <PrevField k="Company Name" v={companyName || '—'} />
-                  <PrevField k="Vendor Type"  v={labelFor(vendorType, vendorTypeOpts) || '—'} />
-                  <PrevField k="Segment"      v={labelFor(segment, segmentOpts) || '—'} />
-                  <PrevField k="State / City" v={`${labelFor(state, stateOpts) || '—'} / ${city || '—'}`} />
-                  <PrevField k="Contact"      v={contactName ? `${contactName} (${designation})` : '—'} />
-                  <PrevField k="Email"        v={email || '—'} />
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
 
           {/* ─── STEP 1 ─── */}
           {step === 1 && (
@@ -2034,15 +2119,6 @@ function FileChooser(props: { file: File | null; onPick: (f: File | null) => voi
   );
 }
 
-function PrevField(props: { k: string; v: string }) {
-  return (
-    <div className="avm-prev-field">
-      <div className="avm-prev-field-key">{props.k}</div>
-      <div className="avm-prev-field-val">{props.v}</div>
-    </div>
-  );
-}
-
 /* ──────────────────────────────────────────────────────────────────────────
  * Step 2 row tables — one per KYC tab. Each table renders the user-added
  * row list, an empty state, and per-row actions (delete + optional file
@@ -2646,7 +2722,7 @@ function OwnerKycAddPopup(props: {
       </div>
       <div className="avm-grid-3">
         <Field label="Issue Date">
-          <input className="avm-input" type="date" value={draft.issueDate} onChange={e => set('issueDate', e.target.value)} />
+          <MasterDatePicker value={draft.issueDate} onChange={(v) => set('issueDate', v)} placeholder="dd/mm/yyyy" />
         </Field>
         <Field label="Expiry">
           <input className="avm-input" placeholder="MM/YYYY or N/A" value={draft.expiry} onChange={e => set('expiry', e.target.value)} />
@@ -2689,10 +2765,10 @@ function TradeLicenseAddPopup(props: {
           <input className="avm-input" placeholder="e.g. FSSAI, Govt. of India" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
         </Field>
         <Field label="Issue Date" required>
-          <input className="avm-input" type="date" value={draft.issueDate} onChange={e => set('issueDate', e.target.value)} />
+          <MasterDatePicker value={draft.issueDate} onChange={(v) => set('issueDate', v)} placeholder="dd/mm/yyyy" />
         </Field>
         <Field label="Expiry Date" required>
-          <input className="avm-input" type="date" value={draft.expiryDate} onChange={e => set('expiryDate', e.target.value)} />
+          <MasterDatePicker value={draft.expiryDate} onChange={(v) => set('expiryDate', v)} placeholder="dd/mm/yyyy" />
         </Field>
       </div>
       <Field label="License Document" required>
@@ -2758,7 +2834,7 @@ function GstScrutinyAddPopup(props: {
           <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Suspended' | 'Cancelled')} placeholder="Select GST status" options={['Active', 'Suspended', 'Cancelled']} />
         </Field>
         <Field label="GST Last Filing Date" required>
-          <input className="avm-input" type="date" value={draft.lastFilingDate} onChange={e => set('lastFilingDate', e.target.value)} />
+          <MasterDatePicker value={draft.lastFilingDate} onChange={(v) => set('lastFilingDate', v)} placeholder="dd/mm/yyyy" />
         </Field>
       </div>
       <div className="avm-grid-2">
@@ -2950,9 +3026,37 @@ const SCOPED_CSS = `
 .avm-prev-chip { padding: 3px 10px; border-radius: 99px; background: #fff; color: #166534; font-size: 11px; font-weight: 700; border: 1px solid #bbf7d0; }
 .avm-prev-toggle { height: 28px; padding: 0 12px; background: #fff; border: 1px solid #bbf7d0; color: #166534; border-radius: 7px; font-family: inherit; font-size: 11.5px; font-weight: 800; cursor: pointer; }
 .avm-prev-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; padding: 12px 14px; }
-.avm-prev-field { padding: 8px 12px; background: #fff; border: 1px solid #bbf7d0; border-radius: 8px; }
-.avm-prev-field-key { font-size: 9.5px; font-weight: 800; letter-spacing: .06em; color: #94a3b8; text-transform: uppercase; }
-.avm-prev-field-val { font-size: 12.5px; font-weight: 700; color: #1e1b4b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Step-grouped summary — each stage gets a tone-coloured label
+   followed by a flat grid of label/value pairs. No per-cell box;
+   stage labels do the visual grouping. Mirrors the Add Product
+   wizard's PreviousStages styling. */
+.avm-prev-stage { display: flex; flex-direction: column; gap: 6px; }
+.avm-prev-stage + .avm-prev-stage { margin-top: 10px; }
+.avm-prev-stage-label {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
+  display: inline-flex; align-items: center;
+}
+.avm-prev-stage.tone-violet .avm-prev-stage-label { color: #5b21b6; }
+.avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #0f766e; }
+.avm-prev-stage.tone-purple .avm-prev-stage-label { color: #6b21a8; }
+
+.avm-prev-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  column-gap: 18px;
+  row-gap: 10px;
+}
+.avm-prev-field-cell { min-width: 0; padding: 0; }
+.avm-prev-field-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .08em;
+  color: #94a3b8; text-transform: uppercase;
+}
+.avm-prev-field-value {
+  font-size: 13px; font-weight: 600; color: #1e1b4b;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 2px;
+  cursor: default;
+}
 
 /* Tabs */
 .avm-tabs {
@@ -3291,8 +3395,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-prev-title { color: #bbf7d0; }
 [data-bs-theme="dark"] .avm-prev-toggle { background: #14241a; color: #bbf7d0; border-color: #166534; }
 [data-bs-theme="dark"] .avm-prev-chip { background: #14241a; border-color: #166534; color: #bbf7d0; }
-[data-bs-theme="dark"] .avm-prev-field { background: #110c25; border-color: #14532d; }
-[data-bs-theme="dark"] .avm-prev-field-val { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-prev-field-label { color: #6d6391; }
+[data-bs-theme="dark"] .avm-prev-field-value { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-prev-stage.tone-violet .avm-prev-stage-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #5eead4; }
+[data-bs-theme="dark"] .avm-prev-stage.tone-purple .avm-prev-stage-label { color: #d8b4fe; }
 
 /* ─── Master Quick-Add popup ─── */
 .avm-qa-backdrop {
