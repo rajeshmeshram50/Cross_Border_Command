@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../api';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
+import Tooltip from '../../components/ui/Tooltip';
 import AddProductModal from './AddProductModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -61,6 +62,8 @@ type ProductDto = {
   gst_percentage: AnyRec | null;
   qc_records: AnyRec[];
   vendor_maps: AnyRec[];
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export default function ProductView() {
@@ -280,20 +283,31 @@ export default function ProductView() {
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th>SR</th><th>QC Name</th><th>Purpose</th><th>Issued By</th><th>Testing</th><th>Min Acceptance</th>
+                        <th>SR</th><th>QC Name</th><th>Purpose</th><th>Issued By</th><th>Testing</th><th>Min Acceptance</th><th>Attachment</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {product.qc_records.map((q, i) => (
-                        <tr key={String(q.id ?? i)}>
-                          <td>{i + 1}</td>
-                          <td><strong>{String(q.qc_name ?? '')}</strong></td>
-                          <td>{String(q.qc_purpose ?? '—')}</td>
-                          <td>{String(q.issued_by ?? '—')}</td>
-                          <td>{String(q.qa_testing_parameter ?? '—')}</td>
-                          <td>{String(q.min_acceptance_criteria ?? '—')}</td>
-                        </tr>
-                      ))}
+                      {product.qc_records.map((q, i) => {
+                        const att = (q.attachment_path as string | null) ?? null;
+                        const attUrl = att ? resolveFileUrl(att) : '';
+                        return (
+                          <tr key={String(q.id ?? i)}>
+                            <td>{i + 1}</td>
+                            <td><strong>{String(q.qc_name ?? '')}</strong></td>
+                            <td>{String(q.qc_purpose ?? '—')}</td>
+                            <td>{String(q.issued_by ?? '—')}</td>
+                            <td>{String(q.qa_testing_parameter ?? '—')}</td>
+                            <td>{String(q.min_acceptance_criteria ?? '—')}</td>
+                            <td>
+                              {attUrl ? (
+                                <a href={attUrl} target="_blank" rel="noopener noreferrer" className="pv2-attach-link">
+                                  <i className="ri-attachment-2" /> View
+                                </a>
+                              ) : <span className="pv2-muted">—</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -311,42 +325,53 @@ export default function ProductView() {
           {product.vendor_maps.length === 0 ? (
             <div className="pv2-vendors-empty">No vendors mapped to this product.</div>
           ) : (
-            <div className="table-responsive">
-              <table className="table align-middle table-nowrap mb-0">
-                <thead className="table-light pv2-vendors-thead">
-                  <tr>
-                    <th>SR</th>
-                    <th>CODE</th>
-                    <th>COMPANY</th>
-                    <th>CONTACT</th>
-                    <th>PHONE</th>
-                    <th>PRICE</th>
-                    <th>GST%</th>
-                    <th>TOTAL</th>
-                    <th>ACT</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {product.vendor_maps.map((v, i) => (
-                    <tr key={String(v.id ?? i)}>
-                      <td>{i + 1}</td>
-                      <td><span className="fw-medium text-primary font-monospace fs-13">{String(v.vendor_code ?? '—')}</span></td>
-                      <td>{String(v.vendor_name ?? '—')}</td>
-                      <td>{String(v.contact_person ?? '—')}</td>
-                      <td><span className="font-monospace fs-13">{String(v.contact_no ?? '—')}</span></td>
-                      <td><span className="fs-13">₹{Number(v.purchase_price ?? 0).toLocaleString('en-IN')}</span></td>
-                      <td><span className="fs-13">{Number(v.gst_percentage ?? 0)}%</span></td>
-                      <td><span className="text-success fw-semibold fs-13">₹{Number(v.total_amount ?? 0).toLocaleString('en-IN')}</span></td>
-                      <td>
-                        <div className="hstack gap-1">
-                          <button className="btn btn-sm btn-soft-info"    type="button" title="View"><i className="ri-eye-line" /></button>
-                          <button className="btn btn-sm btn-soft-primary" type="button" title="Edit"><i className="ri-pencil-line" /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="pv2-vendor-cards">
+              {product.vendor_maps.map((v, i) => {
+                const att = (v.attachment_path as string | null) ?? null;
+                const attUrl = att ? resolveFileUrl(att) : '';
+                const website = (v.vendor_website as string | null) ?? '';
+                const mapDate = (v.map_date as string | null) ?? '';
+                return (
+                  <div className="pv2-vendor-card" key={String(v.id ?? i)}>
+                    <div className="pv2-vendor-card-head">
+                      <div className="pv2-vendor-card-title">
+                        <span className="pv2-vendor-sr">#{i + 1}</span>
+                        <span className="pv2-vendor-code">{String(v.vendor_code ?? '—')}</span>
+                        <span className="pv2-sep">|</span>
+                        <span className="pv2-vendor-name">{String(v.vendor_name ?? '—')}</span>
+                      </div>
+                      <div className="pv2-vendor-card-total">
+                        <span className="pv2-info-key">Total</span>
+                        <span className="pv2-total-strong">₹{Number(v.total_amount ?? 0).toLocaleString('en-IN')}</span>
+                      </div>
+                    </div>
+                    <div className="pv2-vendor-grid">
+                      <Row k="Contact Person" v={String(v.contact_person ?? '—')} />
+                      <Row k="Phone"          v={String(v.contact_no ?? '—')} />
+                      <Row k="Email"          v={String(v.email ?? '—')} />
+                      <Row k="Designation"    v={String(v.designation ?? '—')} />
+                      <Row k="Website"        v={website || '—'} />
+                      <Row k="Map Date"       v={mapDate ? new Date(mapDate).toLocaleDateString('en-IN') : '—'} />
+                      <Row k="Purchase Price" v={fmtMoney(v.purchase_price as string | number | null)} />
+                      <Row k="GST %"          v={`${Number(v.gst_percentage ?? 0)}%`} />
+                      <Row k="GST Amount"     v={fmtMoney(v.gst_amount as string | number | null)} />
+                    </div>
+                    {v.remarks ? (
+                      <div className="pv2-vendor-remarks">
+                        <span className="pv2-info-key">Remarks:</span>
+                        <span className="pv2-vendor-remarks-text">{String(v.remarks)}</span>
+                      </div>
+                    ) : null}
+                    {attUrl ? (
+                      <div className="pv2-vendor-attach">
+                        <a href={attUrl} target="_blank" rel="noopener noreferrer" className="pv2-attach-link">
+                          <i className="ri-attachment-2" /> View Attachment
+                        </a>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -368,10 +393,17 @@ export default function ProductView() {
 
 /* ────────────────────────────────────────────────────────────────────────── */
 function Row(props: { k: string; v: string; accent?: 'success' | 'danger' }) {
+  const hasValue = props.v && props.v !== '—';
   return (
     <div className="pv2-info-row">
       <span className="pv2-info-key">{props.k}</span>
-      <span className={`pv2-info-val${props.accent ? ` pv2-info-val-${props.accent}` : ''}`}>{props.v}</span>
+      {hasValue ? (
+        <Tooltip label={props.v} position="top" maxWidth={320}>
+          <span className={`pv2-info-val${props.accent ? ` pv2-info-val-${props.accent}` : ''}`}>{props.v}</span>
+        </Tooltip>
+      ) : (
+        <span className={`pv2-info-val${props.accent ? ` pv2-info-val-${props.accent}` : ''}`}>{props.v}</span>
+      )}
     </div>
   );
 }
@@ -506,16 +538,16 @@ const SCOPED_CSS = `
   color: #405189;
   transform: translateY(-1px);
 }
-/* Edit Product — dark navy block button matching the design */
+/* Edit Product — matches the rounded gradient "Add Product" button */
 .pv2-edit {
-  background: linear-gradient(135deg, #1e293b, #0f172a);
+  background: linear-gradient(120deg, #405189 0%, #6691e7 100%);
   color: #fff; border: none;
-  box-shadow: 0 4px 12px rgba(15,23,42,.3);
+  border-radius: 99px;
+  box-shadow: 0 4px 12px rgba(64,81,137,.3);
 }
 .pv2-edit:hover {
   transform: translateY(-1px);
-  background: linear-gradient(135deg, #334155, #1e293b);
-  box-shadow: 0 6px 18px rgba(15,23,42,.45);
+  box-shadow: 0 6px 18px rgba(64,81,137,.4);
 }
 .pv2-edit:active { transform: translateY(0); }
 
@@ -555,7 +587,7 @@ const SCOPED_CSS = `
   font-size: 12.5px;
   padding: 1px 0;
 }
-.pv2-info-key { color: #5b21b6; font-weight: 700; }
+.pv2-info-key { color: #475569; font-weight: 500; }
 .pv2-info-val {
   color: #94a3b8; font-weight: 500;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -611,6 +643,55 @@ const SCOPED_CSS = `
   border: 1.5px dashed #e2e8f0; border-radius: 10px;
 }
 
+/* Vendor cards — show every mapped-vendor field */
+.pv2-vendor-cards {
+  display: flex; flex-direction: column; gap: 10px;
+  max-height: 500px; overflow-y: auto; padding-right: 4px;
+  scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
+}
+.pv2-vendor-cards::-webkit-scrollbar { width: 6px; }
+.pv2-vendor-cards::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+.pv2-vendor-card {
+  border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px;
+  background: #fafbff;
+}
+.pv2-vendor-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 8px;
+  padding-bottom: 8px; border-bottom: 1px dashed #e2e8f0;
+}
+.pv2-vendor-card-title {
+  display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  font-size: 13px; font-weight: 700;
+}
+.pv2-vendor-sr {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 22px; padding: 0 6px; border-radius: 99px;
+  background: #ede9fe; color: #5b21b6; font-size: 11px; font-weight: 800;
+}
+.pv2-vendor-code { color: #5b21b6; font-family: ui-monospace, monospace; font-size: 12.5px; }
+.pv2-vendor-name { color: #1e293b; }
+.pv2-vendor-card-total {
+  display: inline-flex; align-items: baseline; gap: 6px; flex-shrink: 0;
+}
+.pv2-vendor-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 14px;
+}
+.pv2-vendor-remarks {
+  margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0;
+  font-size: 12px;
+}
+.pv2-vendor-remarks-text { color: #475569; margin-left: 6px; }
+.pv2-vendor-attach { margin-top: 8px; }
+
+/* Attachment link (QC + vendor) */
+.pv2-attach-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 700; color: #4f46e5;
+  text-decoration: none;
+}
+.pv2-attach-link:hover { color: #3730a3; text-decoration: underline; }
+
 @media (max-width: 1200px) {
   .pv2-top-grid { grid-template-columns: 1fr; }
   .pv2-bottom   { grid-template-columns: 1fr; }
@@ -640,11 +721,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .pv2-sold-text { color: #adb5bd; }
 [data-bs-theme="dark"] .pv2-price-label { color: #ede9fe; }
 [data-bs-theme="dark"] .pv2-price-val   { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-edit { background: linear-gradient(135deg, #334155, #1e293b); }
-[data-bs-theme="dark"] .pv2-edit:hover { background: linear-gradient(135deg, #475569, #334155); }
+[data-bs-theme="dark"] .pv2-edit { box-shadow: 0 4px 12px rgba(64,81,137,.45); }
+[data-bs-theme="dark"] .pv2-edit:hover { box-shadow: 0 6px 18px rgba(64,81,137,.55); }
 [data-bs-theme="dark"] .pv2-info-grid { border-top-color: rgba(255,255,255,.08); }
 [data-bs-theme="dark"] .pv2-info-heading { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-info-row .pv2-info-key { color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-info-row .pv2-info-key { color: #adb5bd; font-weight: 500; }
 [data-bs-theme="dark"] .pv2-info-row .pv2-info-val { color: #a89fc7; }
 [data-bs-theme="dark"] .pv2-info-divider { background: rgba(255,255,255,.08); }
 [data-bs-theme="dark"] .pv2-total-line .pv2-info-key { color: #ede9fe; }
@@ -656,6 +737,15 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .pv2-tab-text { color: #ced4da; }
 [data-bs-theme="dark"] .pv2-vendors-head { color: #ede9fe; }
 [data-bs-theme="dark"] .pv2-vendors-empty { border-color: rgba(255,255,255,.08); color: #6b7280; }
+[data-bs-theme="dark"] .pv2-vendor-card { background: #161c24; border-color: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .pv2-vendor-card-head { border-bottom-color: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .pv2-vendor-sr { background: rgba(139,92,246,.15); color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-vendor-code { color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-vendor-name { color: #ede9fe; }
+[data-bs-theme="dark"] .pv2-vendor-remarks { border-top-color: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .pv2-vendor-remarks-text { color: #ced4da; }
+[data-bs-theme="dark"] .pv2-attach-link { color: #a8b6e9; }
+[data-bs-theme="dark"] .pv2-attach-link:hover { color: #c4b5fd; }
 [data-bs-theme="dark"] .pv2-status.is-active { background: rgba(34,197,94,.12); color: #4ade80; border-color: rgba(34,197,94,.3); }
 [data-bs-theme="dark"] .pv2-status.is-inactive { background: rgba(245,158,11,.12); color: #fcd34d; border-color: rgba(245,158,11,.3); }
 `;

@@ -248,6 +248,19 @@ export default function AddProductModal(props: {
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
   const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
 
+  // Adapter list of percentage-string options for the vendor draft GST picker.
+  // The vendor sub-form stores the GST as a "18%" string (parsed via replace('%','')),
+  // so we project the master rows into that shape rather than passing IDs.
+  const vendorGstOptions = useMemo(
+    () => optGst
+      .map(o => {
+        const pct = parseFloat(String(o.extra?.percentage ?? '0')) || 0;
+        return { value: `${pct}%`, label: `${pct}%` };
+      })
+      .filter(o => o.value !== '0%'),
+    [optGst],
+  );
+
   /* ─── Step 1: Quality ─── */
   const [netWeight,   setNetWeight]   = useState<string>('');
   const [grossWeight, setGrossWeight] = useState<string>('');
@@ -1278,7 +1291,7 @@ export default function AddProductModal(props: {
                       </div>
                     </Field>
                     <Field label="GST %">
-                      <SelectInput value={vendorGstPct} onChange={setVendorGstPct} placeholder="0%" options={GST_OPTIONS} />
+                      <SelectInput value={vendorGstPct} onChange={setVendorGstPct} placeholder="0%" options={vendorGstOptions} />
                     </Field>
                     <Field label="GST Amount">
                       <div className="apm-input-icon">

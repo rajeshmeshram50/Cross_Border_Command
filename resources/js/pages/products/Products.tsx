@@ -841,7 +841,6 @@ function ProductRow(props: {
           </span>
           {product.hazClass === 'HAZ' && product.hazClassName && (
             <span className="prd-card-haz-class">
-              <span className="prd-card-haz-class-key">Haz:</span>
               <span className="prd-card-haz-class-val">{product.hazClassName}</span>
             </span>
           )}
