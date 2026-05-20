@@ -1369,7 +1369,12 @@ const SCOPED_CSS = `
 .prd-filter-overlay.open { opacity: 1; pointer-events: auto; }
 
 .prd-filter-drawer {
-  position: fixed; top: 0; bottom: 0; left: 0;
+  position: fixed; top: 0; bottom: 0;
+  /* Anchor to the right edge of the vertical sidebar so the drawer
+     doesn't overlap the nav. The Velzon theme exposes
+     --vz-vertical-menu-width on :root; per-sidebar-size overrides
+     below pick the matching width when the user collapses the menu. */
+  left: var(--vz-vertical-menu-width, 0px);
   width: 340px; max-width: 88vw;
   background: #fff;
   border-right: 1.5px solid #ddd6fe;
@@ -1382,6 +1387,10 @@ const SCOPED_CSS = `
   overflow: hidden;       /* hard-clip anything that tries to grow past the drawer */
   box-sizing: border-box;
 }
+[data-sidebar-size="md"] .prd-filter-drawer { left: var(--vz-vertical-menu-width-md, 180px); }
+[data-sidebar-size="sm"] .prd-filter-drawer,
+[data-sidebar-size="sm-hover"] .prd-filter-drawer,
+[data-sidebar-size="sm-hover-active"] .prd-filter-drawer { left: var(--vz-vertical-menu-width-sm, 70px); }
 .prd-filter-drawer *,
 .prd-filter-drawer *::before,
 .prd-filter-drawer *::after { box-sizing: border-box; }
@@ -1572,6 +1581,16 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
 }
 
+/* On mobile the Velzon sidebar slides off-screen, so the drawer can
+   reclaim the full viewport's left edge instead of indenting past a
+   menu that isn't there. */
+@media (max-width: 767.98px) {
+  .prd-filter-drawer,
+  [data-sidebar-size="md"] .prd-filter-drawer,
+  [data-sidebar-size="sm"] .prd-filter-drawer,
+  [data-sidebar-size="sm-hover"] .prd-filter-drawer,
+  [data-sidebar-size="sm-hover-active"] .prd-filter-drawer { left: 0; }
+}
 @media (max-width: 480px) {
   .prd-filter-drawer { width: 88vw; }
 }
