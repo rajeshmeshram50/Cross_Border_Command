@@ -1177,7 +1177,11 @@ export default function AddVendorModal(props: {
 
 
   return createPortal((
-    <div className="avm-backdrop" onClick={onClose}>
+    // Backdrop click intentionally does NOT close the wizard — the
+    // user has stepped through multiple tabs of form data and an
+    // accidental click outside would lose all of it. The Cancel button
+    // and the top-right X are the only dismissal paths.
+    <div className="avm-backdrop">
       <style>{SCOPED_CSS}</style>
       <div className="avm-modal" onClick={(e) => e.stopPropagation()}>
         {/* ─── Header ─── */}

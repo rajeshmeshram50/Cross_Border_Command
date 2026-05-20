@@ -955,7 +955,11 @@ export default function AddProductModal(props: {
   };
 
   return createPortal((
-    <div className="apm-backdrop" onClick={onClose}>
+    // Backdrop click intentionally does NOT close the wizard — the
+    // user has multi-step form data in flight; an accidental click
+    // outside would wipe everything. The Cancel button and the
+    // top-right X are the only dismissal paths.
+    <div className="apm-backdrop">
       <style>{SCOPED_CSS}</style>
       <div className="apm-modal" onClick={(e) => e.stopPropagation()}>
         {/* ─── Gradient header ─── */}
