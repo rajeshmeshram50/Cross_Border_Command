@@ -1013,8 +1013,10 @@ function ContactAddPopup(props: {
     <div className="avm-cp-backdrop" onClick={onClose}>
       <div className="avm-cp-popup" onClick={(e) => e.stopPropagation()}>
         <div className="avm-cp-head">
-          <div className="avm-cp-title">Add Contact Person</div>
-          <button className="avm-cp-close" onClick={onClose} aria-label="Close">
+          <div className="avm-cp-title">
+            <i className="ri-user-add-line" /> Add Contact Person
+          </div>
+          <button className="avm-close avm-cp-close" onClick={onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
@@ -1057,8 +1059,10 @@ function ContactAddPopup(props: {
         </div>
 
         <div className="avm-cp-foot">
-          <button className="avm-cp-cancel" onClick={onClose}>Cancel</button>
-          <button className="avm-cp-save" onClick={onSave}>Save</button>
+          <button className="avm-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="avm-btn-primary" onClick={onSave}>
+            <i className="ri-save-line" /> Save
+          </button>
         </div>
       </div>
     </div>
@@ -1793,7 +1797,8 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, #2b3a85, #6691e7);
   color: #fff;
 }
-.avm-cp-title { font-size: 16px; font-weight: 800; }
+.avm-cp-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 800; }
+.avm-cp-title i { font-size: 18px; }
 .avm-cp-close {
   width: 30px; height: 30px; border-radius: 8px;
   border: 1px solid rgba(255,255,255,.25);
@@ -1804,9 +1809,9 @@ const SCOPED_CSS = `
 .avm-cp-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
 .avm-cp-body  { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
 .avm-cp-foot {
-  display: flex; justify-content: center; gap: 10px;
-  padding: 14px 18px;
-  border-top: 1px solid #e2e8f0;
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid #ede9fe;
 }
 
 [data-bs-theme="dark"] .avm-cp-popup { background: #14102a; color: #ede9fe; }
