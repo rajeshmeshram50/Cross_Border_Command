@@ -57,7 +57,7 @@ class ConsigneeDocumentController extends Controller
 
     public function store(Request $request, $consigneeId): JsonResponse
     {
-        $consignee = $this->resolveConsignee($request, $consigneeId);
+        $consignee = $this->resolveConsignee($request, $consigneeId, 'edit');
         $data = $this->validatePayload($request);
 
         $data['consignee_id'] = $consignee->id;
@@ -72,7 +72,7 @@ class ConsigneeDocumentController extends Controller
 
     public function update(Request $request, $consigneeId, $id): JsonResponse
     {
-        $consignee = $this->resolveConsignee($request, $consigneeId);
+        $consignee = $this->resolveConsignee($request, $consigneeId, 'edit');
         $doc = $consignee->documents()->findOrFail($id);
         $data = $this->validatePayload($request, $doc->id);
 
@@ -95,7 +95,7 @@ class ConsigneeDocumentController extends Controller
 
     public function destroy(Request $request, $consigneeId, $id): JsonResponse
     {
-        $consignee = $this->resolveConsignee($request, $consigneeId);
+        $consignee = $this->resolveConsignee($request, $consigneeId, 'delete');
         $doc = $consignee->documents()->findOrFail($id);
         if ($doc->attachment_path) {
             Storage::disk('public')->delete($doc->attachment_path);
@@ -152,10 +152,15 @@ class ConsigneeDocumentController extends Controller
      * ConsigneeController. Aborts with 404 before any document touch
      * if the caller isn't entitled to see this consignee.
      */
-    private function resolveConsignee(Request $request, $consigneeId): Consignee
+    private function resolveConsignee(Request $request, $consigneeId, ?string $action = null): Consignee
     {
-        return Consignee::query()
+        $consignee = Consignee::query()
             ->forUser($request->user())
             ->findOrFail($consigneeId);
+        if ($action) {
+            $denial = \App\Support\MasterVisibility::hierarchicalDenial($request->user(), $consignee, $action);
+            if ($denial) abort(403, $denial);
+        }
+        return $consignee;
     }
 }

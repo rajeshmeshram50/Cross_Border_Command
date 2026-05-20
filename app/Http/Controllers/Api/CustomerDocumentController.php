@@ -57,7 +57,7 @@ class CustomerDocumentController extends Controller
 
     public function store(Request $request, $customerId): JsonResponse
     {
-        $customer = $this->resolveCustomer($request, $customerId);
+        $customer = $this->resolveCustomer($request, $customerId, 'edit');
         $data = $this->validatePayload($request);
 
         $data['customer_id'] = $customer->id;
@@ -75,7 +75,7 @@ class CustomerDocumentController extends Controller
 
     public function update(Request $request, $customerId, $id): JsonResponse
     {
-        $customer = $this->resolveCustomer($request, $customerId);
+        $customer = $this->resolveCustomer($request, $customerId, 'edit');
         $doc = $customer->documents()->findOrFail($id);
         $data = $this->validatePayload($request, $doc->id);
 
@@ -98,7 +98,7 @@ class CustomerDocumentController extends Controller
 
     public function destroy(Request $request, $customerId, $id): JsonResponse
     {
-        $customer = $this->resolveCustomer($request, $customerId);
+        $customer = $this->resolveCustomer($request, $customerId, 'delete');
         $doc = $customer->documents()->findOrFail($id);
         if ($doc->attachment_path) {
             Storage::disk('public')->delete($doc->attachment_path);
@@ -156,10 +156,15 @@ class CustomerDocumentController extends Controller
      * CustomerController. Failing this aborts with 404 before any
      * document touches happen.
      */
-    private function resolveCustomer(Request $request, $customerId): Customer
+    private function resolveCustomer(Request $request, $customerId, ?string $action = null): Customer
     {
-        return Customer::query()
+        $customer = Customer::query()
             ->forUser($request->user())
             ->findOrFail($customerId);
+        if ($action) {
+            $denial = \App\Support\MasterVisibility::hierarchicalDenial($request->user(), $customer, $action);
+            if ($denial) abort(403, $denial);
+        }
+        return $customer;
     }
 }

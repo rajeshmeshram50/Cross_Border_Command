@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductQcRecord;
 use App\Models\ProductVendorMap;
+use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -15,39 +16,13 @@ class ProductController extends Controller
     /* ──────────────────────────────────────────────────────────────────
      * Tenant scoping
      *
-     * Products are owned by client + branch. Visibility rules mirror the
-     * MasterController convention used elsewhere in the app.
+     * Products use the shared creator-hierarchy read rule — sub-branch
+     * users see globals + client-level + main-branch + own sub-branch
+     * rows; sibling sub-branches are blocked. See MasterVisibility.
      * ────────────────────────────────────────────────────────────── */
     private function applyScope($query, Request $request)
     {
-        $user = $request->user();
-
-        // Super admin sees everything. Call the helper as a method —
-        // `$user->isSuperAdmin` (no parens) makes Eloquent try to resolve
-        // `isSuperAdmin` as a relationship and blows up with
-        // "must return a relationship instance".
-        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
-            return $query;
-        }
-
-        $clientId = $user->client_id;
-        $branchId = $user->branch_id;
-        $type     = $user->user_type ?? null;
-
-        if ($type === 'client_admin' || $type === 'client_user') {
-            // Whole client visible
-            $query->where('client_id', $clientId);
-        } elseif ($type === 'branch_user' || $type === 'employee') {
-            // Branch user sees own branch + any client-wide rows (branch_id null)
-            $query->where('client_id', $clientId)
-                  ->where(function ($q) use ($branchId) {
-                      $q->whereNull('branch_id')->orWhere('branch_id', $branchId);
-                  });
-        } else {
-            // Fallback — own rows only
-            $query->where('client_id', $clientId)->where('branch_id', $branchId);
-        }
-
+        MasterVisibility::applyReadScope($query, $request->user());
         return $query;
     }
 
@@ -169,7 +144,13 @@ class ProductController extends Controller
             'secondary_image_files.*' => 'file|image|mimes:jpg,jpeg,png,webp|max:4096',
         ]);
 
-        $product = isset($data['id']) ? Product::findOrFail($data['id']) : new Product();
+        $product = isset($data['id'])
+            ? $this->applyScope(Product::query(), $request)->findOrFail($data['id'])
+            : new Product();
+        if ($product->exists) {
+            $denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit');
+            if ($denial) return response()->json(['message' => $denial], 403);
+        }
         $ownership = $this->ownershipFor($request);
 
         if (!$product->exists) {
@@ -288,6 +269,9 @@ class ProductController extends Controller
     public function storeSales(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
 
         $data = $request->validate([
             'base_price'  => 'nullable|numeric|min:0',
@@ -311,6 +295,9 @@ class ProductController extends Controller
     public function storeQuality(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
 
         $data = $request->validate([
             'net_weight'                  => 'nullable|numeric|min:0',
@@ -361,6 +348,9 @@ class ProductController extends Controller
     public function storeVendors(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
 
         $data = $request->validate([
             'vendors'                    => 'required|array|min:1',
@@ -400,6 +390,9 @@ class ProductController extends Controller
     public function destroy(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'delete')) {
+            return response()->json(['message' => $denial], 403);
+        }
         $product->delete();
         return response()->json(['deleted' => true]);
     }
