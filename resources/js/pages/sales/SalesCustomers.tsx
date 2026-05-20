@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import AddCustomerModal, { type EditCustomer } from './AddCustomerModal';
 import CustomerConsigneesModal, { type CustomerLite } from './CustomerConsigneesModal';
+import { Shimmer } from '../../components/ui/Shimmer';
 import api from '../../api';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 
@@ -369,18 +370,19 @@ export default function SalesCustomers() {
               produce the colored type pills + segment chips so the
               row reads with personality, but the chrome is the same
               clean look used in HR Employees, Clients, etc. */}
-          <TableContainer
-            columns={columns}
-            data={filtered}
-            isGlobalFilter={false}
-            customPageSize={ROWS_PER_PAGE}
-            tableClass="table align-middle table-nowrap mb-0"
-            theadClass="table-light"
-            divClass="table-responsive table-card border rounded"
-            SearchPlaceholder="Search customers..."
-          />
-          {loading && filtered.length === 0 && (
-            <div className="smc-empty py-4">Loading customers…</div>
+          {loading && customers.length === 0 ? (
+            <CustomerListShimmer rows={ROWS_PER_PAGE} />
+          ) : (
+            <TableContainer
+              columns={columns}
+              data={filtered}
+              isGlobalFilter={false}
+              customPageSize={ROWS_PER_PAGE}
+              tableClass="table align-middle table-nowrap mb-0"
+              theadClass="table-light"
+              divClass="table-responsive table-card border rounded"
+              SearchPlaceholder="Search customers..."
+            />
           )}
           {!loading && filtered.length === 0 && (
             <div className="smc-empty py-4">No customers found</div>
@@ -459,6 +461,35 @@ const IconUsers = () => (
     <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
   </svg>
 );
+/* ─── List-page shimmer ─────
+ * Drop-in replacement for the empty TableContainer while the initial
+ * /customers fetch is in flight. Mirrors the live column count + the
+ * lavender header strip so the layout doesn't reflow when the real
+ * data lands. Light + dark mode both inherit from app.css's
+ * `.shimmer` token. */
+function CustomerListShimmer({ rows = 10 }: { rows?: number }) {
+  // 11 columns to match the live table: Sr No, Customer ID, Company,
+  // Type, Segment, Country, Contact, Phone, Email, WhatsApp,
+  // Consignees, Actions.
+  const cols = 12;
+  return (
+    <div className="smc-shimmer-wrap">
+      <div className="smc-shimmer-head">
+        {Array.from({ length: cols }).map((_, i) => (
+          <Shimmer key={i} height={10} width="65%" radius={4} />
+        ))}
+      </div>
+      {Array.from({ length: rows }).map((_, r) => (
+        <div key={r} className="smc-shimmer-row">
+          {Array.from({ length: cols }).map((_, c) => (
+            <Shimmer key={c} height={14} radius={6} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const IconPlus = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8">
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -891,6 +922,35 @@ const SCOPED_CSS = `
 .smc-table tbody tr:hover td { background: linear-gradient(90deg, rgba(196,181,253,.25), rgba(167,139,250,.2), rgba(196,181,253,.25)) !important; }
 .smc-table tbody tr:last-child td { border-bottom: none; }
 .smc-empty { text-align: center; padding: 32px !important; color: #a78bfa; font-size: 12px; font-style: italic; }
+
+/* List-page shimmer wrapper. CSS grid keeps each shimmer cell
+ * aligned with the live column count + lavender header strip. */
+.smc-shimmer-wrap {
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid var(--vz-border-color, #e9ecef);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.smc-shimmer-head {
+  display: grid;
+  grid-template-columns: 60px 110px minmax(160px, 1.5fr) 110px 130px 100px 1fr 120px 1.5fr 90px 110px 90px;
+  gap: 16px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #f5f0ff 0%, #ede9fe 100%);
+  border-bottom: 1px solid rgba(167,139,250,.30);
+}
+.smc-shimmer-row {
+  display: grid;
+  grid-template-columns: 60px 110px minmax(160px, 1.5fr) 110px 130px 100px 1fr 120px 1.5fr 90px 110px 90px;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--vz-border-color, #f3f4f6);
+  align-items: center;
+}
+.smc-shimmer-row:last-child { border-bottom: none; }
+[data-bs-theme="dark"] .smc-shimmer-wrap { background: var(--vz-card-bg, #1e2837); border-color: rgba(167,139,250,.20); }
+[data-bs-theme="dark"] .smc-shimmer-head { background: linear-gradient(180deg, rgba(124,58,237,.18) 0%, rgba(124,58,237,.10) 100%); border-bottom-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .smc-shimmer-row  { border-bottom-color: rgba(255,255,255,.06); }
 
 /* ─── Linked-consignee warning popup ─────
  * Sits above the wizard band so it can't be hidden by an open

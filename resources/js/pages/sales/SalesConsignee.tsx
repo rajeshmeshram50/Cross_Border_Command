@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import AddConsigneeModal, { type ConsigneeRow } from './AddConsigneeModal';
+import { Shimmer } from '../../components/ui/Shimmer';
 import api from '../../api';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 
@@ -358,23 +359,26 @@ export default function SalesConsignee() {
         </div>
       </div>
 
-      {/* Table card — project-standard TableContainer (sortable headers,
-          built-in pagination, vz-token chrome) wrapped in the
-          emerald-themed `.smcg-table-wrap` so page-level styling
-          (tinted header, hover wash) still applies. */}
+      {/* Table card — shimmer block while the initial fetch is in
+          flight (light + dark mode compatible via shared .shimmer
+          tokens), then the project-standard TableContainer. */}
       <div className="smcg-table-card">
         <div className="smcg-table-wrap">
-          <TableContainer
-            columns={columns}
-            data={filtered}
-            isGlobalFilter={false}
-            customPageSize={ROWS_PER_PAGE}
-            tableClass="table align-middle table-nowrap mb-0"
-            theadClass="table-light"
-            divClass="table-responsive table-card border rounded"
-            SearchPlaceholder="Search consignees..."
-          />
-          {filtered.length === 0 && (
+          {loading && rows.length === 0 ? (
+            <ConsigneeListShimmer rows={ROWS_PER_PAGE} />
+          ) : (
+            <TableContainer
+              columns={columns}
+              data={filtered}
+              isGlobalFilter={false}
+              customPageSize={ROWS_PER_PAGE}
+              tableClass="table align-middle table-nowrap mb-0"
+              theadClass="table-light"
+              divClass="table-responsive table-card border rounded"
+              SearchPlaceholder="Search consignees..."
+            />
+          )}
+          {!loading && filtered.length === 0 && (
             <div className="smcg-empty py-4">No consignees found</div>
           )}
         </div>
@@ -456,6 +460,35 @@ const IconVault = () => (
     <path d="M5 8v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8" />
   </svg>
 );
+
+/* ─── List-page shimmer ─────
+ * Drop-in replacement for the empty TableContainer while the initial
+ * /consignees fetch is in flight. Mirrors the live column count + the
+ * lavender/emerald header strip so the layout doesn't reflow when the
+ * real data lands. Light + dark mode both inherit from app.css's
+ * `.shimmer` token. */
+function ConsigneeListShimmer({ rows = 10 }: { rows?: number }) {
+  // 12 columns to match the live table: Sr No, Consignee ID, Customer
+  // ID, Company, Segment, Risk Level, Contact, Email, Phone, Country,
+  // (city/state — countryDetail), Actions.
+  const cols = 12;
+  return (
+    <div className="smcg-shimmer-wrap">
+      <div className="smcg-shimmer-head">
+        {Array.from({ length: cols }).map((_, i) => (
+          <Shimmer key={i} height={10} width="65%" radius={4} />
+        ))}
+      </div>
+      {Array.from({ length: rows }).map((_, r) => (
+        <div key={r} className="smcg-shimmer-row">
+          {Array.from({ length: cols }).map((_, c) => (
+            <Shimmer key={c} height={14} radius={6} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /* ─── Scoped page CSS (all rules under .smcg-root) ─── */
 const SCOPED_CSS = `
@@ -794,6 +827,36 @@ const SCOPED_CSS = `
 .smcg-table tbody tr:hover td { background: linear-gradient(90deg, rgba(110,231,183,.25), rgba(52,211,153,.20), rgba(110,231,183,.25)) !important; }
 .smcg-table tbody tr:last-child td { border-bottom: none; }
 .smcg-empty { text-align: center; padding: 32px !important; color: #10b981; font-size: 12px; font-style: italic; }
+
+/* List-page shimmer wrapper. Uses a CSS grid for the row layout so
+ * each shimmer cell auto-fits to its column. Matches the live table's
+ * 12-column count + emerald-tinted header strip. */
+.smcg-shimmer-wrap {
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid var(--vz-border-color, #e9ecef);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.smcg-shimmer-head {
+  display: grid;
+  grid-template-columns: 60px 110px 100px minmax(160px, 1.5fr) 120px 110px 130px 1.5fr 120px 100px 100px 90px;
+  gap: 16px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
+  border-bottom: 1px solid rgba(16,185,129,.25);
+}
+.smcg-shimmer-row {
+  display: grid;
+  grid-template-columns: 60px 110px 100px minmax(160px, 1.5fr) 120px 110px 130px 1.5fr 120px 100px 100px 90px;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--vz-border-color, #f3f4f6);
+  align-items: center;
+}
+.smcg-shimmer-row:last-child { border-bottom: none; }
+[data-bs-theme="dark"] .smcg-shimmer-wrap { background: var(--vz-card-bg, #1e2837); border-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .smcg-shimmer-head { background: linear-gradient(180deg, rgba(16,185,129,.18) 0%, rgba(16,185,129,.10) 100%); border-bottom-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .smcg-shimmer-row  { border-bottom-color: rgba(255,255,255,.06); }
 
 /* Sr No — plain dark text (no bubble), matching SalesCustomers. */
 .smcg-srno { color: #495057; font-weight: 600; font-size: 13px; }

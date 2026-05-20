@@ -4,6 +4,7 @@ import api from '../../api';
 import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { Shimmer } from '../../components/ui/Shimmer';
 
 /* Each row in the Address & Contact Details table — mirrors the
  * shape used by AddCustomerModal so the JSX patterns line up. */
@@ -156,6 +157,12 @@ interface Props {
    *  (the user is already on a specific customer — they shouldn't have
    *  to pick again, and they should NOT be able to switch). */
   preselectedCustomerId?: string;
+  /** Live count of existing same-as-customer consignees for the
+   *  preselected customer, passed in by CustomerConsigneesModal which
+   *  has just-fetched the list. Source of truth for the "max 1
+   *  mirror per customer" guard — beats the /customers withCount
+   *  which can lag behind during a session. */
+  existingMirrorCount?: number;
 }
 
 type Phase = 'pick-customer' | 'wizard';
@@ -163,7 +170,7 @@ type Stage = 1 | 2 | 3;
 type IdentityTab = 'identification' | 'address-contact';
 type VaultTab = 'kyc' | 'trade';
 
-export default function AddConsigneeModal({ open, consignee, onClose, onSaved, preselectedCustomerId }: Props) {
+export default function AddConsigneeModal({ open, consignee, onClose, onSaved, preselectedCustomerId, existingMirrorCount }: Props) {
   const toast = useToast();
 
   const [phase, setPhase]   = useState<Phase>('pick-customer');
@@ -216,6 +223,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * for new records, or pre-filled from the edit-mode prop). Drives all
    * Stage 2 KYC POSTs to /consignees/{id}/documents and /owners. */
   const [savedDbId, setSavedDbId] = useState<number | null>(null);
+
+  /* True while the edit-mode hydration fetch is in flight. Renders a
+   * shimmer skeleton over Stage 1 so the user sees the form shape
+   * resolving in rather than empty inputs flashing into populated. */
+  const [hydrating, setHydrating] = useState(false);
   const [form1, setForm1] = useState({
     /* Basic company */
     companyName: '', legalName: '', website: '', segment: '', classification: '', risk: '',
@@ -256,11 +268,16 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       // Edit mode — skip the customer picker. The matching customer
       // is populated by the fetch effect below once it lands; until
       // then we keep `customer` null but jump straight to the wizard.
+      setCustomer(null);
       setPhase('wizard');
     } else if (preselectedCustomerId) {
       // Map-Consignee flow — caller already knows which customer this
       // consignee belongs to. Skip the picker. `customer` is resolved
       // by the customer-list fetch effect below as soon as it lands.
+      // Reset to null first so a stale `sameAsCustomerConsigneeCount`
+      // from a previous open of this same modal doesn't briefly
+      // flash an enabled toggle before the fresh fetch lands.
+      setCustomer(null);
       setPhase('wizard');
     } else {
       setCustomer(null);
@@ -288,6 +305,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     /* Edit mode arrives with db_id; create mode starts null and gets
      * filled by the Stage 1→2 auto-save POST. */
     setSavedDbId(consignee?.db_id ?? null);
+    /* Shimmer only when there's actually something to fetch (edit
+     * mode). Create mode lands on an empty form instantly. */
+    setHydrating(!!consignee?.db_id);
   }, [open, consignee]);
 
   /* Fetch the live customer list when the modal opens. Maps the API
@@ -413,6 +433,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     if (!open) return;
     if (!consignee?.db_id) return;
     let cancelled = false;
+    setHydrating(true);
     api.get(`/consignees/${consignee.db_id}`)
       .then(r => {
         if (cancelled) return;
@@ -460,7 +481,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           cpWhatsapp:    (a.cp_whatsapp ?? '').toLowerCase() === 'yes' ? 'yes' : (a.cp_whatsapp ?? '').toLowerCase() === 'no' ? 'no' : '',
         })));
       })
-      .catch(() => { /* silent — toast was added on the save path; on hydration just keep the empty form */ });
+      .catch(() => { /* silent — toast was added on the save path; on hydration just keep the empty form */ })
+      .finally(() => { if (!cancelled) setHydrating(false); });
     // Stage 2 hydration — pull existing docs + owners so the user
     // sees what's already been captured before they edit.
     refetchKyc(consignee.db_id);
@@ -1004,7 +1026,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           </div>
 
           {/* Stage panes */}
-          {stage === 1 && (
+          {stage === 1 && hydrating && <Stage1FormShimmer />}
+          {stage === 1 && !hydrating && (
             <Stage1
               tab={idTab}
               setTab={setIdTab}
@@ -1020,10 +1043,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                  * ourselves), surface the constraint *immediately* via
                  * toast instead of letting them fill the form and then
                  * hit a 422 at Save & Next. Toggle stays unticked
-                 * because we return before setSameAsCustomer fires. */
+                 * because we return before setSameAsCustomer fires.
+                 *
+                 * `existingMirrorCount` from the parent popup is the
+                 * source of truth when provided — it's computed from a
+                 * just-refreshed consignee list. Falls back to the
+                 * customer-list count for standalone usage. */
+                const mirrorCount = existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0;
                 const alreadyMirrored =
-                  (customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
-                  !(consignee?.same_as_customer === true);
+                  mirrorCount > 0 && !(consignee?.same_as_customer === true);
                 if (v && alreadyMirrored) {
                   toast.error(
                     'Same-as-Customer not allowed',
@@ -1061,9 +1089,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               /* Block ticking when this customer already has another
                * same-as-customer consignee. Editing the mirror itself
                * stays allowed (the row being edited IS the mirror, so
-               * keeping the tick is just preservation). */
+               * keeping the tick is just preservation).
+               *
+               * Prefer `existingMirrorCount` (live count from the
+               * parent popup) when provided; otherwise fall back to
+               * the customer-list withCount. */
               mirrorAlreadyTakenByOther={
-                (customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
+                (existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
                 !(consignee?.same_as_customer === true)
               }
               locations={locations}
@@ -1296,6 +1328,75 @@ const Field = ({ label, required, error, fieldKey, children }: { label: string; 
     {error && <span className="acm-err-text">{error}</span>}
   </div>
 );
+
+/* ─── Stage 1 skeleton ─────
+ * Rendered while the edit-mode hydration fetch is in flight so the
+ * user sees the section + field shape resolve in instead of empty
+ * inputs flashing into populated state. Layout mirrors the actual
+ * Stage 1 form: the Same-as-Customer banner row, Basic Company
+ * Details (6 fields in a 2-col grid), and Primary Address & Contact
+ * (Address Type+Address row, then 4-col Country/State/City/Pin, then
+ * 4-col contact, then the WhatsApp radio row). Light + dark mode
+ * inherit from the shared `.shimmer` styles in app.css. */
+function Stage1FormShimmer() {
+  const FieldShim = () => (
+    <div className="acm-field">
+      <Shimmer height={10} width="40%" radius={4} style={{ marginBottom: 7 }} />
+      <Shimmer height={36} radius={9} />
+    </div>
+  );
+  const Section = ({ rows, accent = '#10b981' }: { rows: { cols: number }[]; accent?: string }) => (
+    <div style={{
+      background: 'var(--shim-card-bg, #fff)',
+      border: '1px solid var(--shim-border, #e5e7eb)',
+      borderTop: `2px solid ${accent}`,
+      borderRadius: 12,
+      overflow: 'hidden',
+      marginBottom: 16,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'var(--shim-secondary-bg, #f9fafb)', borderBottom: '1px solid var(--shim-border, #e5e7eb)' }}>
+        <Shimmer width={28} height={28} radius={8} />
+        <Shimmer height={12} width="32%" radius={4} />
+      </div>
+      <div style={{ padding: 14 }}>
+        {rows.map((r, i) => (
+          <div
+            key={i}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${r.cols}, minmax(0, 1fr))`,
+              gap: 14,
+              marginBottom: i < rows.length - 1 ? 14 : 0,
+            }}
+          >
+            {Array.from({ length: r.cols }).map((_, j) => <FieldShim key={j} />)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  return (
+    <div>
+      {/* Same-as-Customer banner placeholder */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: 14, borderRadius: 12, marginBottom: 14,
+        background: 'var(--shim-secondary-bg, #f9fafb)',
+        border: '1px solid var(--shim-border, #e5e7eb)',
+      }}>
+        <Shimmer width={22} height={22} radius={6} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <Shimmer height={12} width="22%" radius={4} />
+          <Shimmer height={10} width="65%" radius={4} />
+        </div>
+      </div>
+      {/* Basic Company Details — 3 rows of 2 cols = 6 fields */}
+      <Section rows={[{ cols: 2 }, { cols: 2 }, { cols: 2 }]} accent="#10b981" />
+      {/* Primary Address & Contact — 1+2 / 4 / 4 / 1 */}
+      <Section rows={[{ cols: 2 }, { cols: 4 }, { cols: 4 }, { cols: 1 }]} accent="#3b82f6" />
+    </div>
+  );
+}
 
 /* ─── Stage 1 — Consignee Legal Identity ─── */
 type Stage1Masters = {

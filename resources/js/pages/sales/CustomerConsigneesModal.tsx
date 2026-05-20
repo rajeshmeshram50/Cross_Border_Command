@@ -64,6 +64,12 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
         phone:          d.phone ?? '',
         country:        d.country ?? '',
         countryDetail:  d.city ?? '',
+        // Pull the mirror flag so we can compute the live "already-
+        // mirrored" count and pass it to AddConsigneeModal as the
+        // source of truth. The popup's data is always fresh (we
+        // refetch on every save), so this beats relying on the
+        // /customers withCount which may lag behind during a session.
+        same_as_customer: !!d.same_as_customer,
       })));
     } catch (e: any) {
       toast.error('Failed to load consignees', e?.response?.data?.message ?? 'Please try again.');
@@ -253,11 +259,16 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
         </div>
       </div>
 
-      {/* Embedded Add/Edit Consignee — pre-locked to this customer */}
+      {/* Embedded Add/Edit Consignee — pre-locked to this customer.
+          existingMirrorCount is the source of truth for the "max 1
+          same-as-customer per customer" guard because we just
+          refreshed the consignee list here — no stale-data race
+          window like the /customers withCount can have. */}
       <AddConsigneeModal
         open={addOpen}
         consignee={editing}
         preselectedCustomerId={customer.id}
+        existingMirrorCount={rows.filter(r => r.same_as_customer).length}
         onClose={() => { setAddOpen(false); setEditing(null); }}
         onSaved={() => fetchRows()}
       />
