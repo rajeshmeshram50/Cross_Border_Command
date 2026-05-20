@@ -147,11 +147,15 @@ class ProductController extends Controller
             //   secondary_images[]     existing paths to keep
             //   secondary_image_files[] new files to append
             'primary_image'         => 'nullable|string|max:500',
-            'primary_image_file'    => 'nullable|file|image|mimes:jpg,jpeg,png,webp|max:2048',
+            // Product image attachments are limited to PNG / JPG / PDF
+            // only. Dropped `webp` and `image:` flag (the flag rejects
+            // PDFs since they're not images) so a PDF spec sheet can be
+            // attached as a product reference.
+            'primary_image_file'    => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
             'secondary_images'      => 'nullable|array',
             'secondary_images.*'    => 'nullable|string|max:500',
             'secondary_image_files'   => 'nullable|array|max:10',
-            'secondary_image_files.*' => 'file|image|mimes:jpg,jpeg,png,webp|max:2048',
+            'secondary_image_files.*' => 'file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);
 
         $product = isset($data['id'])
