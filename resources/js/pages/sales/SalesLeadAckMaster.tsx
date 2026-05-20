@@ -922,10 +922,17 @@ const SCOPED_CSS = `
   padding: 16px 18px; border-radius: 12px;
   cursor: pointer; text-align: left; width: 100%;
   font-family: inherit;
+  box-shadow: 0 2px 6px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
   transition: transform .18s ease, background .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
-.lam-opp:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(124,58,237,.18); }
+.lam-opp:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(124,58,237,.22), 0 2px 4px rgba(15,23,42,.06); }
 .lam-opp:active { transform: translateY(0); }
+[data-bs-theme="dark"] .lam-opp {
+  box-shadow: 0 3px 10px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.30);
+}
+[data-bs-theme="dark"] .lam-opp:hover {
+  box-shadow: 0 10px 24px rgba(0,0,0,.55), 0 0 0 1px rgba(167,139,250,.20);
+}
 .lam-opp-icon {
   width: 40px; height: 40px; border-radius: 11px;
   display: flex; align-items: center; justify-content: center;
@@ -1115,7 +1122,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lam-pag-btn { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.25); color: #c4b5fd; }
 
 [data-bs-theme="dark"] .lam-modal           { background: #1a1530; }
-[data-bs-theme="dark"] .lam-modal-body      { background: #14101d; }
+[data-bs-theme="dark"] .lam-modal-body      { background: #221a3a; }
 [data-bs-theme="dark"] .lam-modal-helper    { color: #9aa0b4; }
 [data-bs-theme="dark"] .lam-textarea,
 [data-bs-theme="dark"] .lam-select {
@@ -1126,7 +1133,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lam-char-max     { color: #4a4663; }
 [data-bs-theme="dark"] .lam-modal-footer { background: #1a1530; border-top-color: rgba(167,139,250,.20); }
 [data-bs-theme="dark"] .lam-footer-hint  { color: #7a6b9a; }
-[data-bs-theme="dark"] .lam-btn-light    { background: #1a1530; color: #c4b5fd; border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .lam-btn-light    { background: rgba(255,255,255,.05); color: #e9d5ff; border-width: 1.5px; border-color: rgba(167,139,250,.55); }
 [data-bs-theme="dark"] .lam-btn-light:hover:not(:disabled) {
   background: rgba(167,139,250,.12);
   border-color: rgba(167,139,250,.60);
