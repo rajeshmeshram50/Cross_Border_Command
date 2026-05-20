@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import {
   validateEmail, validatePhoneGeneric, validatePincode, validateWebsite,
   validateGstin, validateIfsc, validateAccountNumber,
@@ -73,6 +74,11 @@ export type VendorPayload = {
  * Each Step-2 tab maintains a list of rows the user adds via its
  * "+ Add …" modal. `file` carries the actual File for upload once a
  * backend lands; `fileName` is what we render in the table today. */
+/* `existingPath` is set when the row came back from /vendors/{id} on
+ * edit-mode prefill — it carries the server-side storage path so the
+ * KYC re-save can ship `existing_path` to the controller and skip the
+ * file upload when the user didn't replace it. Picking a new file
+ * clears it via the FileChooser's onPick handler. */
 export type DueDiligenceRow = {
   id: string;
   code: string;              // DD-001, DD-002, …
@@ -82,6 +88,7 @@ export type DueDiligenceRow = {
   mandatory: boolean;
   file: File | null;
   fileName: string;
+  existingPath?: string;
 };
 
 export type OwnerKycRow = {
@@ -95,6 +102,7 @@ export type OwnerKycRow = {
   status: 'Active' | 'Inactive';
   file: File | null;
   fileName: string;
+  existingPath?: string;
 };
 
 export type TradeLicenseRow = {
@@ -107,6 +115,7 @@ export type TradeLicenseRow = {
   expiryDate: string;
   file: File | null;
   fileName: string;
+  existingPath?: string;
 };
 
 export type BankRow = {
@@ -118,6 +127,7 @@ export type BankRow = {
   branchAddress: string;
   chequeFile: File | null;
   chequeFileName: string;
+  existingPath?: string;
 };
 
 export type GstScrutinyRow = {
@@ -157,6 +167,17 @@ export type ProductMappingRow = {
 type StepKey = 1 | 2 | 3 | 4;
 type IdTab = 'identification' | 'address';
 type KycTab = 'company' | 'owner' | 'license' | 'bank' | 'gst';
+
+/* Forward order of the Step 2 sub-tabs — drives "Save & Next" pagination
+ * so the user walks Company DD → Owner KYC → Trade License → Bank → GST
+ * before advancing to Step 3. Clicking any pill in the header still
+ * jumps freely; this only controls what the footer button does. */
+const KYC_TAB_ORDER: KycTab[] = ['company', 'owner', 'license', 'bank', 'gst'];
+
+/* Forward order of the Step 3 → KYC sub-pills. Save & Next walks
+ * Owner KYC → Company Due Diligence → Trade License, then flips the
+ * Step 3 top tab to "Trade Documents", then advances to Step 4. */
+const KYC_SUB_ORDER: KycSubTab[] = ['owner', 'company', 'license'];
 type TradeTab = 'kyc' | 'trade';
 type KycSubTab = 'owner' | 'company' | 'license';
 
@@ -193,9 +214,15 @@ const SEED_TRADE_DOCS: TradeDocRow[] = [
 /* ──────────────────────────────────────────────────────────────────────────
  * Component
  * ────────────────────────────────────────────────────────────────────── */
-export default function AddVendorModal(props: { onClose: () => void; onSubmit: (payload: VendorPayload) => void }) {
-  const { onClose, onSubmit } = props;
+export default function AddVendorModal(props: {
+  /** Existing vendor id to edit; omit or pass null to create a new one. */
+  vendorId?: number | null;
+  onClose: () => void;
+  onSubmit: (payload: VendorPayload) => void;
+}) {
+  const { onClose, onSubmit, vendorId: initialVendorId } = props;
   const toast = useToast();
+  const isEdit = !!initialVendorId;
 
   /* ─── Wizard navigation ─── */
   const [step, setStep] = useState<StepKey>(1);
@@ -246,9 +273,12 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
 
   /* Persisted vendor id — null until the first step (Identity) is saved.
      Every subsequent step PUT/POST targets /vendors/{vendorId}/step/… so
-     the wizard treats this as required after Step 1 advances. */
-  const [vendorId, setVendorId] = useState<number | null>(null);
+     the wizard treats this as required after Step 1 advances. When the
+     caller passes a vendorId prop (edit mode), it's pre-set here and a
+     load-effect fetches the existing data to prefill the form. */
+  const [vendorId, setVendorId] = useState<number | null>(initialVendorId ?? null);
   const [saving,   setSaving]   = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(isEdit);
 
   /* ─── Step 1: Identification ─── */
   const [companyName, setCompanyName] = useState('');
@@ -341,6 +371,11 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     name: string;
     hsn: string;
     segment: string;
+    /* Auto-seed values pulled from the product itself — picking a
+       product in the mapping modal pre-fills Purchase Price and GST %
+       so the user only confirms or overrides. */
+    basePrice: string;
+    gstPercentage: string;
   };
   const [productOpts,    setProductOpts]    = useState<ProductOpt[]>([]);
   const [gstPctOpts,     setGstPctOpts]     = useState<Opt[]>([]);
@@ -434,6 +469,181 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
       setStateCodeRows(sc);
     })();
   }, []);
+
+  /* ──────────────────────────────────────────────────────────────────
+   * Edit-mode prefill — fires once on mount when the parent passed an
+   * existing vendor id. Hits GET /vendors/{id} (whose response is the
+   * controller's `shape()`) and pours every field back into the form
+   * state. File rows come back with their server path; we surface the
+   * basename so the user sees what's already attached and keep the
+   * full path on `existingPath` so the next save can reuse it.
+   * ────────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!initialVendorId) return;
+    type ApiAddress = {
+      address_line?: string | null; country_id?: number | null; state_id?: number | null;
+      state_code?: string | null; city?: string | null; pincode?: string | null;
+      contact_name?: string | null; designation?: string | null; contact_no?: string | null;
+      email?: string | null; whatsapp_enabled?: boolean;
+    };
+    type ApiExtra = {
+      id: number; contact_name?: string | null; designation?: string | null;
+      contact_no?: string | null; email?: string | null; whatsapp_enabled?: boolean;
+      attachment_path?: string | null;
+    };
+    type ApiDd = { id: number; code?: string | null; document_name?: string | null; issuing_authority?: string | null; expiry?: string | null; mandatory?: boolean; attachment_path?: string | null };
+    type ApiOwner = { id: number; code?: string | null; document_name?: string | null; issuing_authority?: string | null; document_number?: string | null; issue_date?: string | null; expiry?: string | null; status?: string | null; attachment_path?: string | null };
+    type ApiTl = { id: number; code?: string | null; license_type_id?: number | null; license_type_name?: string | null; license_number?: string | null; issuing_authority?: string | null; issue_date?: string | null; expiry_date?: string | null; attachment_path?: string | null };
+    type ApiBank = { id: number; bank_name?: string | null; branch_name?: string | null; account_number?: string | null; ifsc?: string | null; branch_address?: string | null; cheque_path?: string | null };
+    type ApiGst = { id: number; gst_number?: string | null; status?: string | null; last_filing_date?: string | null; prev_non_gst_2a_invoice?: string | null; red_flags?: string | null };
+    type ApiMapping = { id: number; product_id?: number | null; product_code?: string | null; product_name?: string | null; batch_serial_lot?: string | null; purchase_price?: number | string | null; gst_percentage?: number | string | null; gst_amount?: number | string | null; total_amount?: number | string | null };
+    type ApiVendor = {
+      id: number;
+      company_name?: string | null; legal_name?: string | null; website?: string | null;
+      vendor_type_id?: number | null; risk_level_id?: number | null;
+      vendor_behaviour_id?: number | null; segment_id?: number | null;
+      compliance_behaviour_id?: number | null;
+      primary_address?: ApiAddress | null;
+      extra_contacts?: ApiExtra[];
+      due_diligence?: ApiDd[];
+      owner_kyc?: ApiOwner[];
+      trade_licenses?: ApiTl[];
+      bank_accounts?: ApiBank[];
+      gst_scrutiny?: ApiGst[];
+      product_mappings?: ApiMapping[];
+    };
+
+    const basename = (p?: string | null): string => {
+      if (!p) return '';
+      const slashed = String(p).split('/');
+      return slashed[slashed.length - 1] ?? '';
+    };
+    const numStr = (n?: number | null): string => (n ?? '') === '' || n == null ? '' : String(n);
+
+    (async () => {
+      try {
+        const res = await api.get<{ data: ApiVendor }>(`/vendors/${initialVendorId}`);
+        const v = res.data?.data;
+        if (!v) return;
+
+        // Step 1 — identity
+        setCompanyName(v.company_name ?? '');
+        setLegalName(v.legal_name ?? '');
+        setWebsite(v.website ?? '');
+        setVendorType(numStr(v.vendor_type_id));
+        setRiskLevel(numStr(v.risk_level_id));
+        setVendorBehaviour(numStr(v.vendor_behaviour_id));
+        setSegment(numStr(v.segment_id));
+        setComplianceBehaviour(numStr(v.compliance_behaviour_id));
+
+        // Step 1 — primary address + extra contacts
+        const pa = v.primary_address;
+        if (pa) {
+          setRegisteredOffice(pa.address_line ?? '');
+          setCountry(numStr(pa.country_id));
+          setState(numStr(pa.state_id));
+          setStateCode(pa.state_code ?? '');
+          setCity(pa.city ?? '');
+          setPincode(pa.pincode ?? '');
+          setContactName(pa.contact_name ?? '');
+          setDesignation(pa.designation ?? '');
+          setContactNo(pa.contact_no ?? '');
+          setEmail(pa.email ?? '');
+          setWhatsappEnabled(pa.whatsapp_enabled ?? true);
+        }
+        setExtraContacts((v.extra_contacts ?? []).map(c => ({
+          id: c.id,
+          name: c.contact_name ?? '',
+          designation: c.designation ?? '',
+          phone: c.contact_no ?? '',
+          email: c.email ?? '',
+          whatsapp: c.whatsapp_enabled ?? true,
+          attachmentName: basename(c.attachment_path),
+        })));
+
+        // Step 2 — KYC sub-collections (file fields restored via existingPath)
+        setDdRows((v.due_diligence ?? []).map(r => ({
+          id: String(r.id),
+          code: r.code ?? '',
+          documentName: r.document_name ?? '',
+          issuingAuthority: r.issuing_authority ?? '',
+          expiry: r.expiry ?? '',
+          mandatory: !!r.mandatory,
+          file: null,
+          fileName: basename(r.attachment_path),
+          existingPath: r.attachment_path ?? undefined,
+        })));
+        setOwnerRows((v.owner_kyc ?? []).map(r => ({
+          id: String(r.id),
+          code: r.code ?? '',
+          documentName: r.document_name ?? '',
+          issuingAuthority: r.issuing_authority ?? '',
+          documentNumber: r.document_number ?? '',
+          issueDate: r.issue_date ?? '',
+          expiry: r.expiry ?? '',
+          status: (r.status === 'Inactive' ? 'Inactive' : 'Active'),
+          file: null,
+          fileName: basename(r.attachment_path),
+          existingPath: r.attachment_path ?? undefined,
+        })));
+        setLicenseRows((v.trade_licenses ?? []).map(r => ({
+          id: String(r.id),
+          code: r.code ?? '',
+          // licenseType in form state carries the master id (matches the
+          // ID-based License Type dropdown). Falls back to the joined
+          // name if the id is missing — keeps old rows readable.
+          licenseType: r.license_type_id != null ? String(r.license_type_id) : (r.license_type_name ?? ''),
+          licenseNumber: r.license_number ?? '',
+          issuingAuthority: r.issuing_authority ?? '',
+          issueDate: r.issue_date ?? '',
+          expiryDate: r.expiry_date ?? '',
+          file: null,
+          fileName: basename(r.attachment_path),
+          existingPath: r.attachment_path ?? undefined,
+        })));
+        setBankRows((v.bank_accounts ?? []).map(r => ({
+          id: String(r.id),
+          bankName: r.bank_name ?? '',
+          branchName: r.branch_name ?? '',
+          accountNumber: r.account_number ?? '',
+          ifsc: r.ifsc ?? '',
+          branchAddress: r.branch_address ?? '',
+          chequeFile: null,
+          chequeFileName: basename(r.cheque_path),
+          existingPath: r.cheque_path ?? undefined,
+        })));
+        setGstRows((v.gst_scrutiny ?? []).map(r => ({
+          id: String(r.id),
+          gstNumber: r.gst_number ?? '',
+          status: (r.status === 'Suspended' || r.status === 'Cancelled' ? r.status : 'Active'),
+          lastFilingDate: r.last_filing_date ?? '',
+          prevNonGst2aInvoice: r.prev_non_gst_2a_invoice ?? '',
+          redFlags: r.red_flags ?? '',
+        })));
+
+        // Step 4 — product mappings
+        setProductMappings((v.product_mappings ?? []).map(m => ({
+          id: String(m.id),
+          productId: m.product_id ?? null,
+          productCode: m.product_code ?? '',
+          productName: m.product_name ?? '',
+          hsnSacCode: '',  // not echoed in the index/show shape; refetched if user re-edits
+          segment: '',
+          batchSerialLot: m.batch_serial_lot ?? '',
+          purchasePrice: Number(m.purchase_price ?? 0),
+          gstPercentage: Number(m.gst_percentage ?? 0),
+          gstAmount: Number(m.gst_amount ?? 0),
+          totalAmount: Number(m.total_amount ?? 0),
+        })));
+      } catch {
+        toast.error('Load failed', 'Could not load the vendor — closing the form.');
+        onClose();
+      } finally {
+        setLoadingEdit(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialVendorId]);
 
   /* Look up a master label by its FK id — used by the "previous stages"
      summary that needs the display name even though form state carries
@@ -567,6 +777,7 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
       fd.append(`due_diligence[${i}][expiry]`, r.expiry || '');
       fd.append(`due_diligence[${i}][mandatory]`, r.mandatory ? '1' : '0');
       if (r.file) fd.append(`dd_files[${i}]`, r.file);
+      else if (r.existingPath) fd.append(`due_diligence[${i}][existing_path]`, r.existingPath);
     });
     ownerRows.forEach((r, i) => {
       fd.append(`owner_kyc[${i}][code]`, r.code);
@@ -577,6 +788,7 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
       fd.append(`owner_kyc[${i}][expiry]`, r.expiry || '');
       fd.append(`owner_kyc[${i}][status]`, r.status);
       if (r.file) fd.append(`owner_files[${i}]`, r.file);
+      else if (r.existingPath) fd.append(`owner_kyc[${i}][existing_path]`, r.existingPath);
     });
     licenseRows.forEach((r, i) => {
       fd.append(`trade_licenses[${i}][code]`, r.code);
@@ -592,6 +804,7 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
       if (r.issueDate)  fd.append(`trade_licenses[${i}][issue_date]`, r.issueDate);
       if (r.expiryDate) fd.append(`trade_licenses[${i}][expiry_date]`, r.expiryDate);
       if (r.file) fd.append(`tl_files[${i}]`, r.file);
+      else if (r.existingPath) fd.append(`trade_licenses[${i}][existing_path]`, r.existingPath);
     });
     bankRows.forEach((r, i) => {
       fd.append(`bank_accounts[${i}][bank_name]`, r.bankName);
@@ -600,6 +813,7 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
       fd.append(`bank_accounts[${i}][ifsc]`, r.ifsc);
       fd.append(`bank_accounts[${i}][branch_address]`, r.branchAddress || '');
       if (r.chequeFile) fd.append(`cheque_files[${i}]`, r.chequeFile);
+      else if (r.existingPath) fd.append(`bank_accounts[${i}][existing_path]`, r.existingPath);
     });
     gstRows.forEach((r, i) => {
       fd.append(`gst_scrutiny[${i}][gst_number]`, r.gstNumber);
@@ -664,12 +878,34 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
       const ok = await saveContacts();
       if (ok) setStep(2);
     } else if (step === 2) {
+      // Step 2 has 5 sub-tabs (Company DD → Owner KYC → Trade License →
+      // Bank → GST). Save & Next persists the full KYC payload AND
+      // walks one sub-tab forward. Only on the last sub-tab (gst) does
+      // the wizard advance to Step 3.
       const ok = await saveKyc();
-      if (ok) setStep(3);
+      if (!ok) return;
+      const idx = KYC_TAB_ORDER.indexOf(kycTab);
+      if (idx >= 0 && idx < KYC_TAB_ORDER.length - 1) {
+        setKycTab(KYC_TAB_ORDER[idx + 1]);
+      } else {
+        setStep(3);
+      }
     } else if (step === 3) {
-      // Stage 3 is a frontend-only repository view — no backend.
-      toast.success('Documents reviewed', 'Trade documents captured');
-      setStep(4);
+      // Stage 3 has 2 top tabs and (inside the KYC tab) 3 sub-pills:
+      //   KYC  → Owner KYC → Company Due Diligence → Trade License
+      //   Trade Documents
+      // Save & Next walks the pills, then the top tabs, then Step 4.
+      // Stage 3 is frontend-only — no API call between sub-tabs.
+      if (tradeTab === 'kyc') {
+        const idx = KYC_SUB_ORDER.indexOf(kycSub);
+        if (idx >= 0 && idx < KYC_SUB_ORDER.length - 1) {
+          setKycSub(KYC_SUB_ORDER[idx + 1]);
+        } else {
+          setTradeTab('trade');
+        }
+      } else {
+        setStep(4);
+      }
     }
   };
 
@@ -852,18 +1088,30 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     try {
       type ProductRow = {
         id: number; product_code?: string; name?: string;
+        status?: string; step_completed?: number;
+        base_price?: number | string | null;
         hsn?: { hsn_code?: string } | null;
         segment?: { title?: string } | null;
+        gst_percentage?: { percentage?: number | string } | null;
       };
-      const res = await api.get<{ data?: ProductRow[] } | ProductRow[]>('/products?status=active&per_page=200');
+      // Pull every product (no `status=` filter) so we get both the
+      // post-Quality "inactive" rows and the post-Vendor "active"
+      // rows. Drafts are dropped client-side — anything with
+      // step_completed < 3 hasn't gone through the Core → Sales →
+      // Quality sub-tabs and therefore lacks the HSN / segment data
+      // that the mapping modal auto-fills.
+      const res = await api.get<{ data?: ProductRow[] } | ProductRow[]>('/products?per_page=500');
       const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
-      setProductOpts(rows.map(r => ({
-        value:   String(r.id),
-        label:   `${r.product_code ?? ''} — ${r.name ?? ''}`.replace(/^ — /, ''),
-        code:    r.product_code ?? '',
-        name:    r.name ?? '',
-        hsn:     r.hsn?.hsn_code ?? '',
-        segment: r.segment?.title ?? '',
+      const eligible = rows.filter(r => Number(r.step_completed ?? 0) >= 3);
+      setProductOpts(eligible.map(r => ({
+        value:    String(r.id),
+        label:    `${r.product_code ?? ''} — ${r.name ?? ''}`.replace(/^ — /, ''),
+        code:     r.product_code ?? '',
+        name:     r.name ?? '',
+        hsn:      r.hsn?.hsn_code ?? '',
+        segment:  r.segment?.title ?? '',
+        basePrice:     r.base_price != null ? String(r.base_price) : '',
+        gstPercentage: r.gst_percentage?.percentage != null ? String(r.gst_percentage.percentage) : '',
       })));
     } catch { /* silent — modal falls back to manual entry */ }
   };
@@ -900,11 +1148,16 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     const picked = productOpts.find(p => p.value === productIdStr);
     setMapDraft(d => recomputeMapTotals({
       ...d,
-      productId:   productIdStr,
-      productCode: picked?.code ?? '',
-      productName: picked?.name ?? '',
-      hsnSacCode:  picked?.hsn  ?? '',
-      segment:     picked?.segment ?? '',
+      productId:     productIdStr,
+      productCode:   picked?.code ?? '',
+      productName:   picked?.name ?? '',
+      hsnSacCode:    picked?.hsn  ?? '',
+      segment:       picked?.segment ?? '',
+      // Seed purchase price + GST from the product's own data if it
+      // has them; user can still override. recomputeMapTotals runs
+      // off the same draft so amount totals update in one pass.
+      purchasePrice: picked?.basePrice ?? d.purchasePrice,
+      gstPercentage: picked?.gstPercentage ?? d.gstPercentage,
     }));
   };
 
@@ -964,7 +1217,11 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
 
 
   return createPortal((
-    <div className="avm-backdrop" onClick={onClose}>
+    // Backdrop click intentionally does NOT close the wizard — the
+    // user has stepped through multiple tabs of form data and an
+    // accidental click outside would lose all of it. The Cancel button
+    // and the top-right X are the only dismissal paths.
+    <div className="avm-backdrop">
       <style>{SCOPED_CSS}</style>
       <div className="avm-modal" onClick={(e) => e.stopPropagation()}>
         {/* ─── Header ─── */}
@@ -977,15 +1234,14 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
               </svg>
             </div>
             <div className="min-w-0">
-              <div className="avm-title">Add Vendor</div>
-              <div className="avm-sub">Capture, verify, and onboard vendors with complete compliance and sourcing readiness.</div>
+              <div className="avm-title">{isEdit ? 'Edit Vendor' : 'Add Vendor'}</div>
+              <div className="avm-sub">{isEdit ? 'Update vendor details, KYC, or product mappings — saved per step.' : 'Capture, verify, and onboard vendors with complete compliance and sourcing readiness.'}</div>
             </div>
           </div>
           <div className="avm-head-right">
-            <button className="avm-map-btn">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="2" y="4" width="20" height="16" rx="2" /><line x1="2" y1="9" x2="22" y2="9" /></svg>
-              Map Products
-            </button>
+            {/* "Map Products" header CTA removed — Step 4 of the wizard
+                already covers product mapping; a duplicate shortcut in
+                the header was confusing because it had no handler. */}
             <button className="avm-close" onClick={onClose} aria-label="Close">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
@@ -1007,28 +1263,95 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
 
         {/* ─── Body ─── */}
         <div className="avm-body">
-          {step > 1 && (
-            <div className="avm-prev">
-              <div className="avm-prev-head">
-                <div className="avm-prev-title">
-                  <span className="avm-prev-check"><i className="ri-check-line" /></span>
-                  What you did in the previous stage
-                  <span className="avm-prev-chip">Step 1{step > 2 ? `–${step - 1}` : ''} Complete</span>
+          {step > 1 && (() => {
+            /* Step-grouped summary of everything captured in earlier
+               steps — mirrors the Add Product wizard's PreviousStages
+               block. Each completed step gets its own section so the
+               user can scan exactly what's already done before moving
+               forward; the Hide toggle collapses everything. */
+            type PrevStage = {
+              name: string;
+              tone: 'violet' | 'teal' | 'purple';
+              fields: { label: string; value: string }[];
+            };
+            const prevStages: PrevStage[] = [];
+            if (step > 1) {
+              prevStages.push({
+                name: 'Vendor Legal Identity',
+                tone: 'violet',
+                fields: [
+                  { label: 'Company Name',        value: companyName || '—' },
+                  { label: 'Legal Name',          value: legalName || '—' },
+                  { label: 'Vendor Type',         value: labelFor(vendorType, vendorTypeOpts) || '—' },
+                  { label: 'Risk Level',          value: labelFor(riskLevel, riskLevelOpts) || '—' },
+                  { label: 'Vendor Behaviour',    value: labelFor(vendorBehaviour, behaviourOpts) || '—' },
+                  { label: 'Segment',             value: labelFor(segment, segmentOpts) || '—' },
+                  { label: 'Compliance Behaviour',value: labelFor(complianceBehaviour, complianceOpts) || '—' },
+                  { label: 'Country / State',     value: `${labelFor(country, countryOpts) || '—'} / ${labelFor(state, stateOpts) || '—'}` },
+                  { label: 'City / Pincode',      value: `${city || '—'} / ${pincode || '—'}` },
+                  { label: 'Primary Contact',     value: contactName ? `${contactName} (${designation || '—'})` : '—' },
+                  { label: 'Phone',               value: contactNo || '—' },
+                  { label: 'Email',               value: email || '—' },
+                  { label: 'Extra Contacts',      value: String(extraContacts.length) },
+                ],
+              });
+            }
+            if (step > 2) {
+              prevStages.push({
+                name: 'Vendor KYC / Due Diligence',
+                tone: 'teal',
+                fields: [
+                  { label: 'Due Diligence Docs', value: String(ddRows.length) },
+                  { label: 'Owner KYC Docs',     value: String(ownerRows.length) },
+                  { label: 'Trade Licenses',     value: String(licenseRows.length) },
+                  { label: 'Bank Accounts',      value: String(bankRows.length) },
+                  { label: 'GST Scrutiny',       value: String(gstRows.length) },
+                ],
+              });
+            }
+            if (step > 3) {
+              const sent = tradeDocRows.filter(r => r.status !== 'N/A').length;
+              prevStages.push({
+                name: 'Trade Document Management',
+                tone: 'purple',
+                fields: [
+                  { label: 'Trade Documents',     value: `${sent} of ${tradeDocRows.length} sent` },
+                ],
+              });
+            }
+
+            return (
+              <div className="avm-prev">
+                <div className="avm-prev-head">
+                  <div className="avm-prev-title">
+                    <span className="avm-prev-check"><i className="ri-check-line" /></span>
+                    What you did in previous stages
+                    <span className="avm-prev-chip">Stage {step - 1} of 4 Complete</span>
+                  </div>
+                  <button className="avm-prev-toggle" onClick={() => setPrevOpen(o => !o)}>{prevOpen ? 'Hide' : 'Show'}</button>
                 </div>
-                <button className="avm-prev-toggle" onClick={() => setPrevOpen(o => !o)}>{prevOpen ? 'Hide' : 'Show'}</button>
+                {prevOpen && (
+                  <div className="avm-prev-body">
+                    {prevStages.map(s => (
+                      <div key={s.name} className={`avm-prev-stage tone-${s.tone}`}>
+                        <div className="avm-prev-stage-label">⊕ {s.name}</div>
+                        <div className="avm-prev-grid">
+                          {s.fields.map(f => (
+                            <div key={f.label} className="avm-prev-field-cell">
+                              <div className="avm-prev-field-label">{f.label}</div>
+                              {/* `title` exposes the full value as a native tooltip
+                                  when the cell truncates. */}
+                              <div className="avm-prev-field-value" title={f.value}>{f.value}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              {prevOpen && (
-                <div className="avm-prev-body">
-                  <PrevField k="Company Name" v={companyName || '—'} />
-                  <PrevField k="Vendor Type"  v={labelFor(vendorType, vendorTypeOpts) || '—'} />
-                  <PrevField k="Segment"      v={labelFor(segment, segmentOpts) || '—'} />
-                  <PrevField k="State / City" v={`${labelFor(state, stateOpts) || '—'} / ${city || '—'}`} />
-                  <PrevField k="Contact"      v={contactName ? `${contactName} (${designation})` : '—'} />
-                  <PrevField k="Email"        v={email || '—'} />
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
 
           {/* ─── STEP 1 ─── */}
           {step === 1 && (
@@ -1158,58 +1481,116 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
 
               {idTab === 'address' && (
                 <>
-                  {/* ── Additional Contact Persons ── */}
+                  {/* ── Additional Contact Persons ──
+                      The primary KYC contact (captured on the Vendor
+                      Identification sub-tab) is also surfaced here as
+                      the first row so the table reads as "all contacts
+                      we know about". Marked with a "Primary" pill and
+                      not deletable — the user has to go back to the
+                      first sub-tab to change it. */}
                   <SectionCard tone="violet" icon={<i className="ri-contacts-book-line" />} title="Additional Contact Persons" subtitle="Secondary contacts beyond the primary KYC contact" headerAction={
                     <button className="avm-section-add-btn" onClick={openContactPopup}>+ Add More Contact Person</button>
                   }>
-                    {extraContacts.length === 0 ? (
-                      <div className="avm-empty">No contact persons added yet.</div>
-                    ) : (
-                      <div className="table-responsive table-card border rounded">
-                        <table className="table align-middle table-nowrap mb-0">
-                          <thead className="table-light">
-                            <tr>
-                              <th>Sr No</th>
-                              <th>Name</th>
-                              <th>Designation</th>
-                              <th>Phone</th>
-                              <th>Email</th>
-                              <th>WhatsApp</th>
-                              <th>Attachment</th>
-                              <th>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {extraContacts.map((c, idx) => (
-                              <tr key={c.id}>
-                                <td>{idx + 1}</td>
-                                <td><strong>{c.name}</strong></td>
-                                <td>{c.designation}</td>
-                                <td><span className="font-monospace fs-13">{c.phone}</span></td>
-                                <td>{c.email}</td>
-                                <td>
-                                  <span className={`badge ${c.whatsapp ? 'bg-success-subtle text-success' : 'bg-light text-muted'}`} style={{ padding: '4px 10px' }}>
-                                    {c.whatsapp ? '✓ Yes' : '— No'}
-                                  </span>
-                                </td>
-                                <td>
-                                  {c.attachmentName
-                                    ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{c.attachmentName}</span>
-                                    : <span className="text-muted fs-13">—</span>}
-                                </td>
-                                <td>
-                                  <div className="hstack gap-1">
-                                    <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => removeExtraContact(c.id)} title="Remove">
-                                      <i className="ri-delete-bin-line" />
-                                    </button>
-                                  </div>
-                                </td>
+                    {(() => {
+                      // Merge view: primary first (when populated), then extras.
+                      const primaryHasData = !!(contactName.trim() || email.trim() || contactNo.trim());
+                      type Row = {
+                        key: string;
+                        isPrimary: boolean;
+                        contactId?: number;
+                        name: string;
+                        designation: string;
+                        phone: string;
+                        email: string;
+                        whatsapp: boolean;
+                        attachmentName: string;
+                      };
+                      const rows: Row[] = [];
+                      if (primaryHasData) {
+                        rows.push({
+                          key: 'primary',
+                          isPrimary: true,
+                          name: contactName,
+                          designation,
+                          phone: contactNo,
+                          email,
+                          whatsapp: whatsappEnabled,
+                          attachmentName: attachment?.name ?? '',
+                        });
+                      }
+                      extraContacts.forEach(c => rows.push({
+                        key: String(c.id),
+                        isPrimary: false,
+                        contactId: c.id,
+                        name: c.name,
+                        designation: c.designation,
+                        phone: c.phone,
+                        email: c.email,
+                        whatsapp: c.whatsapp,
+                        attachmentName: c.attachmentName,
+                      }));
+
+                      if (rows.length === 0) {
+                        return <div className="avm-empty">Fill in the primary KYC contact on the Vendor Identification tab to see it here, then add more if needed.</div>;
+                      }
+                      return (
+                        <div className="table-responsive table-card border rounded">
+                          <table className="table align-middle table-nowrap mb-0">
+                            <thead className="table-light">
+                              <tr>
+                                <th>Sr No</th>
+                                <th>Name</th>
+                                <th>Designation</th>
+                                <th>Phone</th>
+                                <th>Email</th>
+                                <th>WhatsApp</th>
+                                <th>Attachment</th>
+                                <th>Actions</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                            </thead>
+                            <tbody>
+                              {rows.map((r, idx) => (
+                                <tr key={r.key}>
+                                  <td>{idx + 1}</td>
+                                  <td>
+                                    <strong>{r.name || '—'}</strong>
+                                    {r.isPrimary && (
+                                      <span className="badge bg-primary-subtle text-primary ms-2" style={{ padding: '3px 8px', fontSize: 10 }}>
+                                        Primary
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td>{r.designation || '—'}</td>
+                                  <td><span className="font-monospace fs-13">{r.phone || '—'}</span></td>
+                                  <td>{r.email || '—'}</td>
+                                  <td>
+                                    <span className={`badge ${r.whatsapp ? 'bg-success-subtle text-success' : 'bg-light text-muted'}`} style={{ padding: '4px 10px' }}>
+                                      {r.whatsapp ? '✓ Yes' : '— No'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    {r.attachmentName
+                                      ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.attachmentName}</span>
+                                      : <span className="text-muted fs-13">—</span>}
+                                  </td>
+                                  <td>
+                                    <div className="hstack gap-1">
+                                      {r.isPrimary ? (
+                                        <span className="text-muted fs-13" title="Edit on the Vendor Identification tab">—</span>
+                                      ) : (
+                                        <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} title="Remove">
+                                          <i className="ri-delete-bin-line" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
                   </SectionCard>
                 </>
               )}
@@ -1734,15 +2115,6 @@ function FileChooser(props: { file: File | null; onPick: (f: File | null) => voi
       <input id={`fc-${Math.random()}`} type="file" className="avm-filechooser-input" onChange={onChange} />
       <span className="avm-filechooser-icon"><i className="ri-attachment-line" /></span>
       <span className="avm-filechooser-text">{props.file ? props.file.name : (props.placeholder ?? 'Choose file')}</span>
-    </div>
-  );
-}
-
-function PrevField(props: { k: string; v: string }) {
-  return (
-    <div className="avm-prev-field">
-      <div className="avm-prev-field-key">{props.k}</div>
-      <div className="avm-prev-field-val">{props.v}</div>
     </div>
   );
 }
@@ -2350,7 +2722,7 @@ function OwnerKycAddPopup(props: {
       </div>
       <div className="avm-grid-3">
         <Field label="Issue Date">
-          <input className="avm-input" type="date" value={draft.issueDate} onChange={e => set('issueDate', e.target.value)} />
+          <MasterDatePicker value={draft.issueDate} onChange={(v) => set('issueDate', v)} placeholder="dd/mm/yyyy" />
         </Field>
         <Field label="Expiry">
           <input className="avm-input" placeholder="MM/YYYY or N/A" value={draft.expiry} onChange={e => set('expiry', e.target.value)} />
@@ -2393,10 +2765,10 @@ function TradeLicenseAddPopup(props: {
           <input className="avm-input" placeholder="e.g. FSSAI, Govt. of India" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
         </Field>
         <Field label="Issue Date" required>
-          <input className="avm-input" type="date" value={draft.issueDate} onChange={e => set('issueDate', e.target.value)} />
+          <MasterDatePicker value={draft.issueDate} onChange={(v) => set('issueDate', v)} placeholder="dd/mm/yyyy" />
         </Field>
         <Field label="Expiry Date" required>
-          <input className="avm-input" type="date" value={draft.expiryDate} onChange={e => set('expiryDate', e.target.value)} />
+          <MasterDatePicker value={draft.expiryDate} onChange={(v) => set('expiryDate', v)} placeholder="dd/mm/yyyy" />
         </Field>
       </div>
       <Field label="License Document" required>
@@ -2462,7 +2834,7 @@ function GstScrutinyAddPopup(props: {
           <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Suspended' | 'Cancelled')} placeholder="Select GST status" options={['Active', 'Suspended', 'Cancelled']} />
         </Field>
         <Field label="GST Last Filing Date" required>
-          <input className="avm-input" type="date" value={draft.lastFilingDate} onChange={e => set('lastFilingDate', e.target.value)} />
+          <MasterDatePicker value={draft.lastFilingDate} onChange={(v) => set('lastFilingDate', v)} placeholder="dd/mm/yyyy" />
         </Field>
       </div>
       <div className="avm-grid-2">
@@ -2654,9 +3026,37 @@ const SCOPED_CSS = `
 .avm-prev-chip { padding: 3px 10px; border-radius: 99px; background: #fff; color: #166534; font-size: 11px; font-weight: 700; border: 1px solid #bbf7d0; }
 .avm-prev-toggle { height: 28px; padding: 0 12px; background: #fff; border: 1px solid #bbf7d0; color: #166534; border-radius: 7px; font-family: inherit; font-size: 11.5px; font-weight: 800; cursor: pointer; }
 .avm-prev-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; padding: 12px 14px; }
-.avm-prev-field { padding: 8px 12px; background: #fff; border: 1px solid #bbf7d0; border-radius: 8px; }
-.avm-prev-field-key { font-size: 9.5px; font-weight: 800; letter-spacing: .06em; color: #94a3b8; text-transform: uppercase; }
-.avm-prev-field-val { font-size: 12.5px; font-weight: 700; color: #1e1b4b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Step-grouped summary — each stage gets a tone-coloured label
+   followed by a flat grid of label/value pairs. No per-cell box;
+   stage labels do the visual grouping. Mirrors the Add Product
+   wizard's PreviousStages styling. */
+.avm-prev-stage { display: flex; flex-direction: column; gap: 6px; }
+.avm-prev-stage + .avm-prev-stage { margin-top: 10px; }
+.avm-prev-stage-label {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
+  display: inline-flex; align-items: center;
+}
+.avm-prev-stage.tone-violet .avm-prev-stage-label { color: #5b21b6; }
+.avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #0f766e; }
+.avm-prev-stage.tone-purple .avm-prev-stage-label { color: #6b21a8; }
+
+.avm-prev-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  column-gap: 18px;
+  row-gap: 10px;
+}
+.avm-prev-field-cell { min-width: 0; padding: 0; }
+.avm-prev-field-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .08em;
+  color: #94a3b8; text-transform: uppercase;
+}
+.avm-prev-field-value {
+  font-size: 13px; font-weight: 600; color: #1e1b4b;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 2px;
+  cursor: default;
+}
 
 /* Tabs */
 .avm-tabs {
@@ -2995,8 +3395,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-prev-title { color: #bbf7d0; }
 [data-bs-theme="dark"] .avm-prev-toggle { background: #14241a; color: #bbf7d0; border-color: #166534; }
 [data-bs-theme="dark"] .avm-prev-chip { background: #14241a; border-color: #166534; color: #bbf7d0; }
-[data-bs-theme="dark"] .avm-prev-field { background: #110c25; border-color: #14532d; }
-[data-bs-theme="dark"] .avm-prev-field-val { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-prev-field-label { color: #6d6391; }
+[data-bs-theme="dark"] .avm-prev-field-value { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-prev-stage.tone-violet .avm-prev-stage-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #5eead4; }
+[data-bs-theme="dark"] .avm-prev-stage.tone-purple .avm-prev-stage-label { color: #d8b4fe; }
 
 /* ─── Master Quick-Add popup ─── */
 .avm-qa-backdrop {

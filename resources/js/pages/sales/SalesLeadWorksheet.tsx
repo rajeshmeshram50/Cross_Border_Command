@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
@@ -84,6 +85,7 @@ const initials = (name: string): string => {
 
 export default function SalesLeadWorksheet() {
   const toast = useToast();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perm = user?.permissions?.['sales.lead_worksheet'];
@@ -177,10 +179,30 @@ export default function SalesLeadWorksheet() {
   const onAssignLeads   = () => stubToast('Assign Leads — opens the Assign Leads modal');
   const onLeadDistr     = () => stubToast('Lead Distribution page — coming next');
   const onFilter        = () => stubToast('Filter modal — coming next');
-  const onViewLead      = (l: Lead) => stubToast(`View Lead: ${l.oppId}`);
+  // Opens the Sales Matrix detail page (Stage 1) for this opportunity.
+  // The clicked row travels in router state so the detail page can render
+  // the customer header without a second fetch.
+  const openMatrixDetail = (l: Lead) => {
+    navigate(`/sales/matrix/${l.oppId}/stage/1`, {
+      state: {
+        row: {
+          oppId:        l.oppId,
+          customer:     l.customer,
+          customerCode: `C-${l.oppId.replace(/^OPP-/, '')}`,
+          date:         l.date,
+          country:      l.country,
+        },
+      },
+    });
+  };
+
+  const onViewLead      = (l: Lead) => openMatrixDetail(l);
   const onAssignOne     = (l: Lead) => stubToast(`Assign lead ${l.oppId} to a salesperson`);
-  const onOpenLead      = (l: Lead) => stubToast(`Open lead inside view for ${l.oppId}`);
-  const onOpenOpp       = (oppId: string) => stubToast(`Opportunity: ${oppId}`);
+  const onOpenLead      = (l: Lead) => openMatrixDetail(l);
+  const onOpenOpp       = (oppId: string) => {
+    const lead = SAMPLE_LEADS.find(l => l.oppId === oppId);
+    if (lead) openMatrixDetail(lead);
+  };
   const onBulkAssign    = () => stubToast(`Bulk-assign ${selected.size} leads`);
   const onBulkCTQ       = () => stubToast(`Bulk-convert ${selected.size} leads to Qualified`);
 

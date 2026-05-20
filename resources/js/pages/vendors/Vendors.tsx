@@ -5,6 +5,9 @@ import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
 import AddVendorModal from './AddVendorModal';
+import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
+import { ShimmerTable } from '../../components/ui/Shimmer';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Vendors — front-end only master list
@@ -79,6 +82,15 @@ export default function Vendors() {
   const [search, setSearch] = useState('');
   const [statusTab, setStatusTab] = useState<'Active' | 'Inactive'>('Active');
   const [addOpen, setAddOpen] = useState(false);
+  /* Edit vs Add — same modal, just seeded with an existing vendor id.
+     Reset to null on close so the next "+ Add Vendor" click opens a
+     blank form. */
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  /* Two-stage delete — opens DeleteConfirmModal first, then hits the
+     API on confirm. Matches the Clients / Products patterns. */
+  const [deleteTarget, setDeleteTarget] = useState<Vendor | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   /* Map a paginated API row to the local list-page shape. Anything the
      backend doesn't populate yet falls back to '—' so the table never
@@ -101,12 +113,15 @@ export default function Vendors() {
   });
 
   const refresh = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await api.get<{ data: ApiVendor[] }>('/vendors?per_page=200');
       const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
       setVendors(rows.map(apiToVendor));
     } catch {
       toast.error('Load failed', 'Could not load vendors');
+    } finally {
+      setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -171,24 +186,194 @@ export default function Vendors() {
         || v.state.toLowerCase().includes(lo));
   }, [vendors, search, statusTab]);
 
+  /* TanStack column definitions — mirrors the Clients master list so
+     the two pages read with the same chrome (Sr No, avatar+name,
+     type pill, contact / phone / email links, status pill, action
+     buttons). Each column carries its own renderer; TableContainer
+     handles paging + sorting. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const columns: any[] = useMemo(() => [
+    {
+      header: 'Sr No',
+      accessorKey: 'index',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
+    },
+    {
+      header: 'Vendor Code',
+      accessorKey: 'code',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (info: any) => (
+        <span className="badge bg-light text-primary border" style={{ fontFamily: 'monospace', padding: '5px 10px', fontSize: 12 }}>
+          {info.row.original.code}
+        </span>
+      ),
+    },
+    {
+      header: 'Company Name',
+      accessorKey: 'companyName',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (info: any) => {
+        const v: Vendor = info.row.original;
+        const initials = (v.companyName.split(/\s+/).slice(0, 2).map(s => s.charAt(0)).join('') || 'V').toUpperCase();
+        const color = AVATAR_COLORS[info.row.index % AVATAR_COLORS.length];
+        return (
+          <div className="d-flex align-items-center gap-2" style={{ minWidth: 0, maxWidth: 260 }}>
+            <div
+              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{
+                width: 34, height: 34, fontSize: 12,
+                background: `linear-gradient(135deg, ${color}, ${color}cc)`,
+                boxShadow: `0 2px 6px ${color}40`,
+              }}
+            >
+              {initials}
+            </div>
+            <Tooltip label={v.companyName}>
+              <div className="min-w-0">
+                <div className="fw-semibold fs-13 text-truncate" style={{ maxWidth: 200 }}>{v.companyName}</div>
+                <div className="text-muted text-truncate" style={{ fontSize: 11, maxWidth: 200 }}>{v.country || 'India'}</div>
+              </div>
+            </Tooltip>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Type',
+      accessorKey: 'type',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (info: any) => {
+        const v: Vendor = info.row.original;
+        const typeColor = TYPE_COLORS[v.type] || '#475569';
+        return (
+          <span
+            className="badge rounded-pill fw-semibold px-3 py-2 fs-13"
+            style={{ background: `${typeColor}15`, color: typeColor, border: `1px solid ${typeColor}40` }}
+          >
+            {v.type}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'State',
+      accessorKey: 'state',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (info: any) => <span className="fs-13">{info.row.original.state}</span>,
+    },
+    {
+      header: 'City',
+      accessorKey: 'city',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (info: any) => (
+        <span className="d-inline-flex align-items-center gap-1 fs-13">
+          <i className="ri-map-pin-line text-muted" />
+          {info.row.original.city}
+        </span>
+      ),
+    },
+    {
+      header: 'Contact',
+      accessorKey: 'contactName',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (info: any) => (
+        <div className="min-w-0">
+          <div className="fw-semibold fs-13">{info.row.original.contactName}</div>
+          <div className="text-muted" style={{ fontSize: 11 }}>{info.row.original.designation}</div>
+        </div>
+      ),
+    },
+    {
+      header: 'Phone',
+      accessorKey: 'phone',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (info: any) => (
+        <a href={`tel:${info.row.original.phone}`} className="text-body text-decoration-none d-inline-flex align-items-center gap-1">
+          <i className="ri-phone-line text-muted fs-13" />
+          <span className="fs-13 font-monospace">{info.row.original.phone}</span>
+        </a>
+      ),
+    },
+    {
+      header: 'Email',
+      accessorKey: 'email',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (info: any) => (
+        <a href={`mailto:${info.row.original.email}`} className="text-decoration-none d-inline-flex align-items-center gap-1" style={{ color: '#405189' }}>
+          <i className="ri-mail-line text-muted fs-13" />
+          <span className="fs-13">{info.row.original.email}</span>
+        </a>
+      ),
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (info: any) => {
+        const isActive = info.row.original.status === 'Active';
+        const color = isActive ? 'success' : 'danger';
+        return (
+          <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2 fs-13`}>
+            {info.row.original.status}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: 'actions',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cell: (info: any) => {
+        const v: Vendor = info.row.original;
+        return (
+          <div className="d-flex gap-1 justify-content-center">
+            <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => toast.info('View', `Viewing ${v.companyName}`)} />
+            <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => { setEditingId(v.id); setAddOpen(true); }} />
+            <ActionBtn
+              title={v.status === 'Active' ? 'Deactivate' : 'Activate'}
+              icon={v.status === 'Active' ? 'ri-pause-circle-line' : 'ri-play-circle-line'}
+              color={v.status === 'Active' ? 'warning' : 'success'}
+              onClick={() => toggleStatus(v)}
+            />
+            <ActionBtn title="Vault"  icon="ri-folder-3-line"   color="secondary" onClick={() => toast.info('Vault', 'Vendor vault coming soon')} />
+            <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger"  disabled={deleting && deleteTarget?.id === v.id} onClick={() => removeVendor(v)} />
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [deleting, deleteTarget]);
+
   /* The wizard now persists each step to /api/vendors/* directly, so
      this handler only re-fetches and closes the modal. The payload is
      ignored — its fields are already in the database by the time
      onSubmit fires from the final Save Vendor click. */
   const handleSave = () => {
     setAddOpen(false);
+    setEditingId(null);
     void refresh();
   };
 
-  const removeVendor = async (v: Vendor) => {
-    if (!confirm(`Delete ${v.companyName}?`)) return;
+  /* Delete is two-stage via the shared DeleteConfirmModal — the action
+     button just stages the row; the modal's confirm handler hits the
+     API and refreshes the list. */
+  const removeVendor = (v: Vendor) => {
+    setDeleteTarget(v);
+  };
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await api.delete(`/vendors/${v.id}`);
-      toast.success('Deleted', `${v.companyName} removed`);
+      await api.delete(`/vendors/${deleteTarget.id}`);
+      toast.success('Deleted', `${deleteTarget.companyName} removed`);
+      setDeleteTarget(null);
       await refresh();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not delete vendor';
       toast.error('Delete failed', msg);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -370,146 +555,58 @@ export default function Vendors() {
               </div>
             </div>
 
-            {/* Table */}
-            <div className="table-responsive table-card border rounded">
-              <table className="table align-middle table-nowrap mb-0">
-                <thead className="table-light">
-                  <tr>
-                    <th scope="col">SR</th>
-                    <th scope="col">Vendor Code</th>
-                    <th scope="col">Company Name</th>
-                    <th scope="col">Type</th>
-                    <th scope="col">State</th>
-                    <th scope="col">City</th>
-                    <th scope="col">Contact</th>
-                    <th scope="col">Phone</th>
-                    <th scope="col">Email</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.length === 0 ? (
-                    <tr>
-                      <td colSpan={11} className="text-center text-muted py-5">
+            {/* Table — TanStack-based TableContainer with built-in
+                 pagination, mirrors the Clients master list. The
+                 shimmer placeholder renders while the initial /vendors
+                 fetch is in flight. */}
+            <Card className="border-0 shadow-none mb-0">
+              <CardBody className="p-0">
+                {loading ? (
+                  <ShimmerTable rows={6} cols={9} />
+                ) : (
+                  <>
+                    <TableContainer
+                      columns={columns}
+                      data={filtered}
+                      isGlobalFilter={false}
+                      customPageSize={10}
+                      tableClass="align-middle table-nowrap mb-0"
+                      theadClass="table-light"
+                      divClass="table-responsive table-card border rounded"
+                      SearchPlaceholder="Search vendors..."
+                    />
+                    {filtered.length === 0 && (
+                      <div className="text-center text-muted py-5">
                         <i className="ri-store-2-line d-block" style={{ fontSize: 36, color: '#cbd5e1' }} />
                         <div className="mt-2 fw-semibold">No vendors found</div>
                         <div style={{ fontSize: 12 }}>Try clearing the search, or click "Add Vendor" to create one.</div>
-                      </td>
-                    </tr>
-                  ) : filtered.map((v, i) => {
-                    const initials = (v.companyName.split(/\s+/).slice(0, 2).map(s => s.charAt(0)).join('') || 'V').toUpperCase();
-                    const color = AVATAR_COLORS[i % AVATAR_COLORS.length];
-                    const typeColor = TYPE_COLORS[v.type] || '#475569';
-                    return (
-                      <tr key={v.id}>
-                        <td><span className="text-muted fs-13">{i + 1}</span></td>
-                        <td>
-                          <span className="badge bg-light text-primary border" style={{ fontFamily: 'monospace', padding: '5px 10px', fontSize: 12 }}>
-                            {v.code}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="d-flex align-items-center gap-2" style={{ minWidth: 0, maxWidth: 260 }}>
-                            <div
-                              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                              style={{
-                                width: 34, height: 34, fontSize: 12,
-                                background: `linear-gradient(135deg, ${color}, ${color}cc)`,
-                                boxShadow: `0 2px 6px ${color}40`,
-                              }}
-                            >
-                              {initials}
-                            </div>
-                            <Tooltip label={v.companyName}>
-                              <div className="min-w-0">
-                                <div className="fw-semibold fs-13 text-truncate" style={{ maxWidth: 200 }}>{v.companyName}</div>
-                                <div className="text-muted text-truncate" style={{ fontSize: 11, maxWidth: 200 }}>{v.country || 'India'}</div>
-                              </div>
-                            </Tooltip>
-                          </div>
-                        </td>
-                        <td>
-                          <span
-                            className="badge rounded-pill fw-semibold px-3 py-2 fs-13"
-                            style={{
-                              background: `${typeColor}15`,
-                              color: typeColor,
-                              border: `1px solid ${typeColor}40`,
-                            }}
-                          >
-                            {v.type}
-                          </span>
-                        </td>
-                        <td><span className="fs-13">{v.state}</span></td>
-                        <td>
-                          <span className="d-inline-flex align-items-center gap-1 fs-13">
-                            <i className="ri-map-pin-line text-muted" />
-                            {v.city}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="min-w-0">
-                            <div className="fw-semibold fs-13">{v.contactName}</div>
-                            <div className="text-muted" style={{ fontSize: 11 }}>{v.designation}</div>
-                          </div>
-                        </td>
-                        <td>
-                          <a href={`tel:${v.phone}`} className="text-body text-decoration-none d-inline-flex align-items-center gap-1">
-                            <i className="ri-phone-line text-muted fs-13" />
-                            <span className="fs-13 font-monospace">{v.phone}</span>
-                          </a>
-                        </td>
-                        <td>
-                          <a href={`mailto:${v.email}`} className="text-decoration-none d-inline-flex align-items-center gap-1" style={{ color: '#405189' }}>
-                            <i className="ri-mail-line text-muted fs-13" />
-                            <span className="fs-13">{v.email}</span>
-                          </a>
-                        </td>
-                        <td>
-                          {(() => {
-                            const isActive = v.status === 'Active';
-                            const color = isActive ? 'success' : 'danger';
-                            return (
-                              <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2 fs-13`}>
-                                {v.status}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td>
-                          <div className="d-flex gap-1 justify-content-center">
-                            <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => toast.info('View', `Viewing ${v.companyName}`)} />
-                            <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => toast.info('Edit', `Editing ${v.companyName}`)} />
-                            <ActionBtn
-                              title={v.status === 'Active' ? 'Deactivate' : 'Activate'}
-                              icon={v.status === 'Active' ? 'ri-pause-circle-line' : 'ri-play-circle-line'}
-                              color={v.status === 'Active' ? 'warning' : 'success'}
-                              onClick={() => toggleStatus(v)}
-                            />
-                            <ActionBtn title="Vault"  icon="ri-folder-3-line"   color="secondary" onClick={() => toast.info('Vault', 'Vendor vault coming soon')} />
-                            <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger"  onClick={() => removeVendor(v)} />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="text-muted mt-2" style={{ fontSize: 12 }}>
-              {filtered.length} {filtered.length === 1 ? 'vendor' : 'vendors'} · {statusTab.toLowerCase()}
-            </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardBody>
+            </Card>
           </div>
         </Col>
       </Row>
 
       {addOpen && (
         <AddVendorModal
-          onClose={() => setAddOpen(false)}
+          vendorId={editingId}
+          onClose={() => { setAddOpen(false); setEditingId(null); }}
           onSubmit={handleSave}
         />
       )}
+
+      <DeleteConfirmModal
+        open={deleteTarget !== null}
+        itemName={deleteTarget?.companyName}
+        title="Delete Vendor"
+        subMessage="This vendor is soft-deleted and removed from the list. KYC documents and product mappings are kept and can be restored if the vendor is recovered."
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={confirmDelete}
+        loading={deleting}
+      />
     </>
   );
 }

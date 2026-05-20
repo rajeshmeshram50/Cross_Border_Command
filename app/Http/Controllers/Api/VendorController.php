@@ -493,18 +493,28 @@ class VendorController extends Controller
      * Helpers
      * ────────────────────────────────────────────────────────────── */
 
-    /** Compute the next vendor_code (V-01, V-02 …) scoped to one client. */
+    /** Compute the next vendor_code (V-01, V-02 …) scoped to one client.
+     *
+     *  Earlier this used `orderByDesc('id')->value('vendor_code')` which
+     *  returns the most-recently-inserted code, not the numerically
+     *  highest one — so a draft V-01 created after V-02 already
+     *  existed would make this hand out V-02 again and trip the
+     *  vendor_code unique index. We now scan every code (including
+     *  soft-deleted) and pick the true max so the sequence is
+     *  monotonic regardless of insert order. */
     private function nextVendorCode(?int $clientId): string
     {
-        $last = Vendor::withTrashed()
+        $codes = Vendor::withTrashed()
             ->where('client_id', $clientId)
-            ->orderByDesc('id')
-            ->value('vendor_code');
-        $n = 0;
-        if ($last && preg_match('/(\d+)$/', $last, $m)) {
-            $n = (int) $m[1];
+            ->pluck('vendor_code');
+
+        $max = 0;
+        foreach ($codes as $code) {
+            if ($code && preg_match('/(\d+)$/', (string) $code, $m)) {
+                $max = max($max, (int) $m[1]);
+            }
         }
-        return 'V-' . str_pad((string) ($n + 1), 2, '0', STR_PAD_LEFT);
+        return 'V-' . str_pad((string) ($max + 1), 2, '0', STR_PAD_LEFT);
     }
 
     /**
