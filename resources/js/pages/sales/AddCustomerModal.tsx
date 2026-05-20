@@ -581,8 +581,17 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 
   const goNext = () => {
     if (stage === 1) {
+      /* Always validate Stage 1 before leaving it, no matter which
+       * sub-tab is active. Previously the gate only fired from the
+       * Identification tab — a user could click straight to the
+       * Address & Contact tab, hit Save & Next, and slip past with an
+       * empty form. Snapping back to Identification on failure
+       * surfaces every red field at once. */
+      if (!validateStage1()) {
+        setTab('identification');
+        return;
+      }
       if (tab === 'identification') {
-        if (!validateStage1()) return;
         setTab('address-contact');
       } else {
         setStage(2); setMaxStage(m => Math.max(m, 2) as Stage);
