@@ -38,17 +38,27 @@ class ProductController extends Controller
 
     private function nextProductCode(?int $clientId): string
     {
-        $last = Product::where('client_id', $clientId)
-            ->orderByDesc('id')
-            ->value('product_code');
+        // Scan every code this client owns and pick the true numeric
+        // max. Previously this used orderByDesc('id')->value which
+        // returns the MOST-RECENTLY-INSERTED code, not the highest one
+        // — a draft created at P-01 after P-02 already existed would
+        // make this hand out P-02 again and trip the unique index.
+        // We also pull from withTrashed so soft-deleted rows don't
+        // release their code back into the pool, matching how vendors
+        // and customers handle theirs.
+        $codes = Product::withTrashed()
+            ->where('client_id', $clientId)
+            ->pluck('product_code');
 
-        $n = 0;
-        if ($last && preg_match('/(\d+)$/', $last, $m)) {
-            $n = (int) $m[1];
+        $max = 0;
+        foreach ($codes as $code) {
+            if ($code && preg_match('/(\d+)$/', (string) $code, $m)) {
+                $max = max($max, (int) $m[1]);
+            }
         }
         // 2-digit padding: P-01, P-02, …, P-99. Codes beyond 99 fall back
         // to natural width (P-100, P-101) — str_pad won't truncate.
-        return 'P-' . str_pad((string)($n + 1), 2, '0', STR_PAD_LEFT);
+        return 'P-' . str_pad((string) ($max + 1), 2, '0', STR_PAD_LEFT);
     }
 
     /* ──────────────────────────────────────────────────────────────────

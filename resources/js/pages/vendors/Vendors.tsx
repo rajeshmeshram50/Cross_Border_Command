@@ -79,6 +79,10 @@ export default function Vendors() {
   const [search, setSearch] = useState('');
   const [statusTab, setStatusTab] = useState<'Active' | 'Inactive'>('Active');
   const [addOpen, setAddOpen] = useState(false);
+  /* Edit vs Add — same modal, just seeded with an existing vendor id.
+     Reset to null on close so the next "+ Add Vendor" click opens a
+     blank form. */
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   /* Map a paginated API row to the local list-page shape. Anything the
      backend doesn't populate yet falls back to '—' so the table never
@@ -177,6 +181,7 @@ export default function Vendors() {
      onSubmit fires from the final Save Vendor click. */
   const handleSave = () => {
     setAddOpen(false);
+    setEditingId(null);
     void refresh();
   };
 
@@ -480,7 +485,7 @@ export default function Vendors() {
                         <td>
                           <div className="d-flex gap-1 justify-content-center">
                             <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => toast.info('View', `Viewing ${v.companyName}`)} />
-                            <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => toast.info('Edit', `Editing ${v.companyName}`)} />
+                            <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => { setEditingId(v.id); setAddOpen(true); }} />
                             <ActionBtn
                               title={v.status === 'Active' ? 'Deactivate' : 'Activate'}
                               icon={v.status === 'Active' ? 'ri-pause-circle-line' : 'ri-play-circle-line'}
@@ -506,7 +511,8 @@ export default function Vendors() {
 
       {addOpen && (
         <AddVendorModal
-          onClose={() => setAddOpen(false)}
+          vendorId={editingId}
+          onClose={() => { setAddOpen(false); setEditingId(null); }}
           onSubmit={handleSave}
         />
       )}
