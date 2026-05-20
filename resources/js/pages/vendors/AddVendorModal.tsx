@@ -160,15 +160,11 @@ type KycTab = 'company' | 'owner' | 'license' | 'bank' | 'gst';
 type TradeTab = 'kyc' | 'trade';
 type KycSubTab = 'owner' | 'company' | 'license';
 
-/* ─── Static option lists ─── */
-// Vendor Behaviour stays frontend-only (4 fixed rating buckets). All other
-// classification dropdowns are loaded from their masters via the API loader
-// effect inside the component.
-// Fallback when the vendor_behaviour master returns empty — keeps the
-// dropdown usable while the master is being populated.
-const BEHAVIOURS = ['Excellent', 'Good', 'Medium', 'Poor'];
-// Countries / States / State Codes are loaded from masters at runtime
-// (see the loader effect inside the component).
+/* Classification dropdowns (Vendor Type, Risk Level, Vendor Behaviour,
+ * Segment, Compliance Behaviour, Country, State) are all loaded from
+ * their masters via the API loader effect inside the component.
+ * Each dropdown's value is the master row's id — see the schema on
+ * vendors.vendor_type_id / risk_level_id / segment_id etc. */
 
 /* ─── Step 2 seed rows ─────────────────────────────────────────────
  * One mandatory default per applicable tab so the table isn't empty
@@ -225,8 +221,12 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     state_code: string;
     state_name: string;
   }>>([]);
+  /* State dropdown is ID-based — `value` is state_id, `label` is the
+     state's name. The state-code field auto-fills off the same lookup
+     so the wizard always submits a consistent state_id + state_code
+     pair. */
   const stateOpts = useMemo<Opt[]>(
-    () => stateCodeRows.map(r => ({ value: r.state_name, label: r.state_name })),
+    () => stateCodeRows.map(r => ({ value: r.state_id, label: r.state_name })),
     [stateCodeRows]
   );
 
@@ -244,19 +244,25 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
   /* ─── Master Quick-Add state (matches the Add Product wizard pattern) ─── */
   const [quickAdd, setQuickAdd] = useState<VendorMasterSlug | null>(null);
 
+  /* Persisted vendor id — null until the first step (Identity) is saved.
+     Every subsequent step PUT/POST targets /vendors/{vendorId}/step/… so
+     the wizard treats this as required after Step 1 advances. */
+  const [vendorId, setVendorId] = useState<number | null>(null);
+  const [saving,   setSaving]   = useState(false);
+
   /* ─── Step 1: Identification ─── */
   const [companyName, setCompanyName] = useState('');
   const [legalName,   setLegalName]   = useState('');
   const [vendorType,  setVendorType]  = useState('');
   const [website,     setWebsite]     = useState('');
   const [riskLevel,   setRiskLevel]   = useState('');
-  const [vendorBehaviour, setVendorBehaviour] = useState('Medium');
+  const [vendorBehaviour, setVendorBehaviour] = useState('');
   const [segment,     setSegment]     = useState('');
   const [complianceBehaviour, setComplianceBehaviour] = useState('');
 
   /* ─── Step 1: Address + primary contact ─── */
   const [registeredOffice, setRegisteredOffice] = useState('');
-  const [country,   setCountry]   = useState('India');
+  const [country,   setCountry]   = useState('');
   const [state,     setState]     = useState('');
   const [stateCode, setStateCode] = useState('');
   const [city,      setCity]      = useState('');
@@ -377,13 +383,17 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
    * ──────────────────────────────────────────────────────────── */
   useEffect(() => {
     type Row = Record<string, unknown> & { id: number | string; status?: string };
+    /* Master rows ship to the dropdown as { value: id, label: name } so
+       the form state carries FK ids the backend can persist directly
+       (vendor_type_id, risk_level_id, segment_id, …). The PrevField
+       summary still wants the label, so we resolve via labelFor(...). */
     const fetchMaster = async (slug: string, labelKey: string): Promise<Opt[]> => {
       try {
         const res = await api.get<Row[]>(`/master/${slug}`);
         return (res.data || [])
           .filter(r => String(r.status ?? '').toLowerCase() !== 'inactive')
-          .map(r => ({ value: String(r[labelKey] ?? ''), label: String(r[labelKey] ?? '') }))
-          .filter(o => o.value !== '');
+          .map(r => ({ value: String(r.id), label: String(r[labelKey] ?? '') }))
+          .filter(o => o.value !== '' && o.label !== '');
       } catch {
         return [];
       }
@@ -407,7 +417,7 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     };
     (async () => {
       const [vt, rl, bh, sg, cb, co, sc] = await Promise.all([
-        fetchMaster('customer_types',        'name'),
+        fetchMaster('vendor_types',          'name'),
         fetchMaster('risk_levels',           'name'),
         fetchMaster('vendor_behaviour',      'name'),
         fetchMaster('segments',              'title'),
@@ -425,64 +435,240 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     })();
   }, []);
 
+  /* Look up a master label by its FK id — used by the "previous stages"
+     summary that needs the display name even though form state carries
+     the id. Returns '' when nothing matches so callers can `||` to a
+     placeholder. */
+  const labelFor = (id: string, opts: Opt[]): string =>
+    opts.find(o => o.value === id)?.label ?? '';
+
   /* ──────────────────────────────────────────────────────────────────
-   * Navigation
+   * Step-wise persistence
+   *
+   *   Step 1 / identification  → POST /vendors/step/identity      sets vendorId
+   *   Step 1 / address         → PUT  /vendors/{id}/step/contacts
+   *   Step 2 (all 5 tabs)      → POST /vendors/{id}/step/kyc      multipart
+   *   Step 3 (Trade Documents) → no backend, just advance
+   *   Step 4 / map products    → POST /vendors/{id}/step/products + onSubmit
+   *
+   * Each handler validates client-side first, then hits the API and
+   * advances only on success. The `saving` flag disables the footer
+   * button so the user can't double-fire mid-request.
    * ────────────────────────────────────────────────────────────── */
-  const validateStep1 = (): Record<string, string> => {
+
+  const saveIdentity = async (): Promise<boolean> => {
+    if (!companyName.trim()) { setFieldErrors(e => ({ ...e, companyName: 'Company Name is required' })); toast.error('Missing required fields', 'Company Name is required'); return false; }
     const errs: Record<string, string> = {};
-    // Required-field checks fire first so the "X is required" message
-    // wins over a "format wrong" message for blank inputs.
-    if (!companyName.trim())         errs.companyName         = 'Company Name is required';
-    if (!vendorType)                 errs.vendorType          = 'Vendor Type is required';
-    if (!riskLevel)                  errs.riskLevel           = 'Risk Level is required';
-    if (!vendorBehaviour)            errs.vendorBehaviour     = 'Vendor Behaviour is required';
-    if (!segment)                    errs.segment             = 'Vendor Segment is required';
-    if (!complianceBehaviour)        errs.complianceBehaviour = 'Compliance Behaviour is required';
-    if (!registeredOffice.trim())    errs.registeredOffice    = 'Registered Office Address is required';
-    if (!country)                    errs.country             = 'Country is required';
-    if (!state)                      errs.state               = 'State is required';
-    if (!stateCode)                  errs.stateCode           = 'State Code is required (pick a State to auto-fill)';
-    if (!city.trim())                errs.city                = 'City is required';
-    if (!contactName.trim())         errs.contactName         = 'Contact Person Name is required';
-    if (!designation.trim())         errs.designation         = 'Designation is required';
-    if (!contactNo.trim())           errs.contactNo           = 'Contact No is required';
-    if (!email.trim())               errs.email               = 'Email is required';
+    if (!vendorType)         errs.vendorType          = 'Vendor Type is required';
+    if (!riskLevel)          errs.riskLevel           = 'Risk Level is required';
+    if (!vendorBehaviour)    errs.vendorBehaviour     = 'Vendor Behaviour is required';
+    if (!segment)            errs.segment             = 'Vendor Segment is required';
+    if (!complianceBehaviour) errs.complianceBehaviour = 'Compliance Behaviour is required';
+    if (website)             { const e = validateWebsite(website); if (e) errs.website = e; }
+    if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); toast.error('Missing required fields', 'Please fix the highlighted fields'); return false; }
 
-    // Format checks — only run when the field is non-empty so we don't
-    // double-report "required" + "invalid".
-    if (!errs.email      && email)        { const e = validateEmail(email);              if (e) errs.email      = e; }
-    if (!errs.contactNo  && contactNo)    { const e = validatePhoneGeneric(contactNo, 'Contact No'); if (e) errs.contactNo  = e; }
-    if (pincode)                          { const e = validatePincode(pincode);          if (e) errs.pincode     = e; }
-    if (website)                          { const e = validateWebsite(website);          if (e) errs.website     = e; }
-    return errs;
-  };
-
-  const goNext = () => {
-    if (step === 1) {
-      const errs = validateStep1();
-      if (Object.keys(errs).length) {
-        setFieldErrors(errs);
-        toast.error('Missing required fields', 'Please fix the highlighted fields');
-        return;
-      }
+    setSaving(true);
+    try {
+      const res = await api.post<{ data: { id: number } }>('/vendors/step/identity', {
+        id: vendorId,
+        company_name: companyName,
+        legal_name: legalName || null,
+        website: website || null,
+        vendor_type_id: vendorType ? Number(vendorType) : null,
+        risk_level_id: riskLevel ? Number(riskLevel) : null,
+        vendor_behaviour_id: vendorBehaviour ? Number(vendorBehaviour) : null,
+        segment_id: segment ? Number(segment) : null,
+        compliance_behaviour_id: complianceBehaviour ? Number(complianceBehaviour) : null,
+      });
+      setVendorId(res.data?.data?.id ?? vendorId);
       setFieldErrors({});
       toast.success('Identity saved', 'Vendor identity details captured');
-      setStep(2);
-    } else if (step === 2) {
-      // Mandatory rows must have a file uploaded before the user can
-      // leave Step 2 — keeps the wizard from advancing with empty
-      // compliance attachments. Custom rows users added are treated
-      // as optional once saved.
-      const missingDd = ddRows.filter(r => r.mandatory && !r.fileName);
-      if (missingDd.length) {
-        toast.error('Upload required documents', `Missing file on: ${missingDd.map(r => r.code).join(', ')}`);
-        return;
+      return true;
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save vendor identity';
+      toast.error('Save failed', msg);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveContacts = async (): Promise<boolean> => {
+    if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
+    const errs: Record<string, string> = {};
+    if (!registeredOffice.trim())  errs.registeredOffice = 'Registered Office Address is required';
+    if (!country)                  errs.country          = 'Country is required';
+    if (!state)                    errs.state            = 'State is required';
+    if (!stateCode)                errs.stateCode        = 'State Code is required (pick a State to auto-fill)';
+    if (!city.trim())              errs.city             = 'City is required';
+    if (!contactName.trim())       errs.contactName      = 'Contact Person Name is required';
+    if (!designation.trim())       errs.designation      = 'Designation is required';
+    if (!contactNo.trim())         errs.contactNo        = 'Contact No is required';
+    if (!email.trim())             errs.email            = 'Email is required';
+    if (!errs.email && email)      { const e = validateEmail(email);              if (e) errs.email     = e; }
+    if (!errs.contactNo && contactNo) { const e = validatePhoneGeneric(contactNo, 'Contact No'); if (e) errs.contactNo = e; }
+    if (pincode)                   { const e = validatePincode(pincode);          if (e) errs.pincode   = e; }
+    if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); toast.error('Missing required fields', 'Please fix the highlighted fields'); return false; }
+
+    setSaving(true);
+    try {
+      await api.put(`/vendors/${vendorId}/step/contacts`, {
+        primary_address: {
+          address_line: registeredOffice,
+          country_id: country ? Number(country) : null,
+          state_id:   state   ? Number(state)   : null,
+          state_code: stateCode,
+          city,
+          pincode: pincode || null,
+          contact_name: contactName,
+          designation,
+          contact_no: contactNo,
+          email,
+          whatsapp_enabled: whatsappEnabled,
+        },
+        extra_contacts: extraContacts.map(c => ({
+          contact_name: c.name,
+          designation: c.designation,
+          contact_no: c.phone,
+          email: c.email,
+          whatsapp_enabled: c.whatsapp,
+        })),
+      });
+      setFieldErrors({});
+      toast.success('Contacts saved', 'Address & contact persons captured');
+      return true;
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save contacts';
+      toast.error('Save failed', msg);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveKyc = async (): Promise<boolean> => {
+    if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
+    const missingDd = ddRows.filter(r => r.mandatory && !r.fileName);
+    if (missingDd.length) {
+      toast.error('Upload required documents', `Missing file on: ${missingDd.map(r => r.code).join(', ')}`);
+      return false;
+    }
+
+    /* Build multipart payload. Indexed array notation
+       (`due_diligence[0][document_name]`) lets PHP/Laravel parse the
+       rows into the validation rules cleanly, and `dd_files[N]` ships
+       the new file for row N (or nothing if the row already has an
+       existing_path on the backend). */
+    const fd = new FormData();
+    ddRows.forEach((r, i) => {
+      fd.append(`due_diligence[${i}][code]`, r.code);
+      fd.append(`due_diligence[${i}][document_name]`, r.documentName);
+      fd.append(`due_diligence[${i}][issuing_authority]`, r.issuingAuthority || '');
+      fd.append(`due_diligence[${i}][expiry]`, r.expiry || '');
+      fd.append(`due_diligence[${i}][mandatory]`, r.mandatory ? '1' : '0');
+      if (r.file) fd.append(`dd_files[${i}]`, r.file);
+    });
+    ownerRows.forEach((r, i) => {
+      fd.append(`owner_kyc[${i}][code]`, r.code);
+      fd.append(`owner_kyc[${i}][document_name]`, r.documentName);
+      fd.append(`owner_kyc[${i}][issuing_authority]`, r.issuingAuthority || '');
+      fd.append(`owner_kyc[${i}][document_number]`, r.documentNumber || '');
+      if (r.issueDate) fd.append(`owner_kyc[${i}][issue_date]`, r.issueDate);
+      fd.append(`owner_kyc[${i}][expiry]`, r.expiry || '');
+      fd.append(`owner_kyc[${i}][status]`, r.status);
+      if (r.file) fd.append(`owner_files[${i}]`, r.file);
+    });
+    licenseRows.forEach((r, i) => {
+      fd.append(`trade_licenses[${i}][code]`, r.code);
+      // licenseType in modal stores the master label (Trade License modal
+      // shows a free-text fallback) — send as license_type_id only when
+      // the value parses as a number, else send null.
+      const ltId = Number(r.licenseType);
+      if (Number.isInteger(ltId) && ltId > 0) {
+        fd.append(`trade_licenses[${i}][license_type_id]`, String(ltId));
       }
+      fd.append(`trade_licenses[${i}][license_number]`, r.licenseNumber || '');
+      fd.append(`trade_licenses[${i}][issuing_authority]`, r.issuingAuthority || '');
+      if (r.issueDate)  fd.append(`trade_licenses[${i}][issue_date]`, r.issueDate);
+      if (r.expiryDate) fd.append(`trade_licenses[${i}][expiry_date]`, r.expiryDate);
+      if (r.file) fd.append(`tl_files[${i}]`, r.file);
+    });
+    bankRows.forEach((r, i) => {
+      fd.append(`bank_accounts[${i}][bank_name]`, r.bankName);
+      fd.append(`bank_accounts[${i}][branch_name]`, r.branchName);
+      fd.append(`bank_accounts[${i}][account_number]`, r.accountNumber);
+      fd.append(`bank_accounts[${i}][ifsc]`, r.ifsc);
+      fd.append(`bank_accounts[${i}][branch_address]`, r.branchAddress || '');
+      if (r.chequeFile) fd.append(`cheque_files[${i}]`, r.chequeFile);
+    });
+    gstRows.forEach((r, i) => {
+      fd.append(`gst_scrutiny[${i}][gst_number]`, r.gstNumber);
+      fd.append(`gst_scrutiny[${i}][status]`, r.status);
+      if (r.lastFilingDate) fd.append(`gst_scrutiny[${i}][last_filing_date]`, r.lastFilingDate);
+      fd.append(`gst_scrutiny[${i}][prev_non_gst_2a_invoice]`, r.prevNonGst2aInvoice || '');
+      fd.append(`gst_scrutiny[${i}][red_flags]`, r.redFlags || '');
+    });
+
+    setSaving(true);
+    try {
+      await api.post(`/vendors/${vendorId}/step/kyc`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       setFieldErrors({});
       toast.success('KYC saved', 'Due-diligence details captured');
-      setStep(3);
+      return true;
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save KYC';
+      toast.error('Save failed', msg);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveProducts = async (): Promise<boolean> => {
+    if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
+    if (productMappings.length === 0) {
+      toast.error('No products mapped', 'Map at least one product before saving the vendor.');
+      return false;
+    }
+    setSaving(true);
+    try {
+      await api.post(`/vendors/${vendorId}/step/products`, {
+        mappings: productMappings.map(m => ({
+          product_id: m.productId,
+          batch_serial_lot: m.batchSerialLot || null,
+          purchase_price: m.purchasePrice,
+          gst_percentage: m.gstPercentage,
+          gst_amount: m.gstAmount,
+          total_amount: m.totalAmount,
+        })),
+      });
+      toast.success('Vendor saved', 'Products mapped — vendor is now Active');
+      return true;
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save product mappings';
+      toast.error('Save failed', msg);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const goNext = async () => {
+    if (saving) return;
+    if (step === 1 && idTab === 'identification') {
+      const ok = await saveIdentity();
+      if (ok) setIdTab('address');
+    } else if (step === 1 && idTab === 'address') {
+      const ok = await saveContacts();
+      if (ok) setStep(2);
+    } else if (step === 2) {
+      const ok = await saveKyc();
+      if (ok) setStep(3);
     } else if (step === 3) {
-      toast.success('Documents saved', 'Trade documents captured');
+      // Stage 3 is a frontend-only repository view — no backend.
+      toast.success('Documents reviewed', 'Trade documents captured');
       setStep(4);
     }
   };
@@ -491,7 +677,10 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     if (step > 1) setStep((step - 1) as StepKey);
   };
 
-  const submitAll = () => {
+  const submitAll = async () => {
+    if (saving) return;
+    const ok = await saveProducts();
+    if (!ok) return;
     onSubmit({
       companyName, legalName, vendorType, website, riskLevel,
       vendorBehaviour, segment, complianceBehaviour,
@@ -831,9 +1020,9 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
               {prevOpen && (
                 <div className="avm-prev-body">
                   <PrevField k="Company Name" v={companyName || '—'} />
-                  <PrevField k="Vendor Type"  v={vendorType || '—'} />
-                  <PrevField k="Segment"      v={segment || '—'} />
-                  <PrevField k="State / City" v={`${state || '—'} / ${city || '—'}`} />
+                  <PrevField k="Vendor Type"  v={labelFor(vendorType, vendorTypeOpts) || '—'} />
+                  <PrevField k="Segment"      v={labelFor(segment, segmentOpts) || '—'} />
+                  <PrevField k="State / City" v={`${labelFor(state, stateOpts) || '—'} / ${city || '—'}`} />
                   <PrevField k="Contact"      v={contactName ? `${contactName} (${designation})` : '—'} />
                   <PrevField k="Email"        v={email || '—'} />
                 </div>
@@ -860,7 +1049,7 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
                     </Field>
                   </div>
                   <div className="avm-grid-3">
-                    <Field label="Vendor Type" required addNew onAdd={() => setQuickAdd('customer_types')} error={fieldErrors.vendorType}>
+                    <Field label="Vendor Type" required addNew onAdd={() => setQuickAdd('vendor_types')} error={fieldErrors.vendorType}>
                       <SelectInput value={vendorType} onChange={(v) => { setVendorType(v); clearFieldError('vendorType'); }} placeholder="Select" options={vendorTypeOpts} />
                     </Field>
                     <Field label="Company Website">
@@ -872,7 +1061,7 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
                   </div>
                   <div className="avm-grid-3">
                     <Field label="Vendor Behaviour" required addNew onAdd={() => setQuickAdd('vendor_behaviour')} error={fieldErrors.vendorBehaviour}>
-                      <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts.length ? behaviourOpts : BEHAVIOURS.map(b => ({ value: b, label: b }))} />
+                      <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts} />
                     </Field>
                     <Field label="Vendor Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
                       <SelectInput value={segment} onChange={(v) => { setSegment(v); clearFieldError('segment'); }} placeholder="Select Segment" options={segmentOpts} />
@@ -904,8 +1093,10 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
                         onChange={(v) => {
                           setState(v);
                           // Auto-fill State Code from the master_state_codes row
-                          // whose state.name matches the chosen state.
-                          const sc = stateCodeRows.find(r => r.state_name === v)?.state_code ?? '';
+                          // whose state_id matches the chosen state. The
+                          // dropdown's `value` is the state's id since the
+                          // switch to ID-based master FK references.
+                          const sc = stateCodeRows.find(r => r.state_id === v)?.state_code ?? '';
                           setStateCode(sc);
                           clearFieldError('state');
                           clearFieldError('stateCode');
@@ -1113,10 +1304,12 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
           <div className="avm-foot-right">
             {step > 1 && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
             {step < 4 ? (
-              <button className="avm-btn-primary" onClick={goNext}>Save &amp; Next →</button>
+              <button className="avm-btn-primary" onClick={goNext} disabled={saving}>
+                {saving ? 'Saving…' : <>Save &amp; Next →</>}
+              </button>
             ) : (
-              <button className="avm-btn-primary" onClick={submitAll}>
-                <i className="ri-check-line" /> Save Vendor
+              <button className="avm-btn-primary" onClick={submitAll} disabled={saving}>
+                <i className="ri-check-line" /> {saving ? 'Saving…' : 'Save Vendor'}
               </button>
             )}
           </div>
@@ -1193,41 +1386,46 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
           slug={quickAdd}
           onClose={() => setQuickAdd(null)}
           onSaved={(row) => {
+            // The new master row's id becomes the dropdown's value
+            // (the wizard stores FK ids and resolves labels through
+            // the Opts array on render). Without this, picking the
+            // just-added row would post a stale label to the API
+            // and fail the integer FK validation.
             const id = String(row.id ?? '');
+            if (!id) { setQuickAdd(null); return; }
             switch (quickAdd) {
-              case 'customer_types': {
+              case 'vendor_types': {
                 const label = String(row.name ?? '');
-                if (label) { setVendorTypeOpts(prev => [...prev, { value: label, label }]); setVendorType(label); clearFieldError('vendorType'); }
+                if (label) { setVendorTypeOpts(prev => [...prev, { value: id, label }]); setVendorType(id); clearFieldError('vendorType'); }
                 break;
               }
               case 'risk_levels': {
                 const label = String(row.name ?? '');
-                if (label) { setRiskLevelOpts(prev => [...prev, { value: label, label }]); setRiskLevel(label); clearFieldError('riskLevel'); }
+                if (label) { setRiskLevelOpts(prev => [...prev, { value: id, label }]); setRiskLevel(id); clearFieldError('riskLevel'); }
                 break;
               }
               case 'vendor_behaviour': {
                 const label = String(row.name ?? '');
-                if (label) { setBehaviourOpts(prev => [...prev, { value: label, label }]); setVendorBehaviour(label); clearFieldError('vendorBehaviour'); }
+                if (label) { setBehaviourOpts(prev => [...prev, { value: id, label }]); setVendorBehaviour(id); clearFieldError('vendorBehaviour'); }
                 break;
               }
               case 'segments': {
                 const label = String(row.title ?? '');
-                if (label) { setSegmentOpts(prev => [...prev, { value: label, label }]); setSegment(label); clearFieldError('segment'); }
+                if (label) { setSegmentOpts(prev => [...prev, { value: id, label }]); setSegment(id); clearFieldError('segment'); }
                 break;
               }
               case 'compliance_behaviours': {
                 const label = String(row.name ?? '');
-                if (label) { setComplianceOpts(prev => [...prev, { value: label, label }]); setComplianceBehaviour(label); clearFieldError('complianceBehaviour'); }
+                if (label) { setComplianceOpts(prev => [...prev, { value: id, label }]); setComplianceBehaviour(id); clearFieldError('complianceBehaviour'); }
                 break;
               }
               case 'countries': {
                 const label = String(row.name ?? '');
-                if (label) { setCountryOpts(prev => [...prev, { value: label, label }]); setCountry(label); clearFieldError('country'); }
+                if (label) { setCountryOpts(prev => [...prev, { value: id, label }]); setCountry(id); clearFieldError('country'); }
                 break;
               }
             }
             setQuickAdd(null);
-            void id; // id consumed only for parity with product popup
           }}
         />
       )}
@@ -1245,12 +1443,12 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
  * arguments. A forward reference here trips the dev transformer with a
  * 500 even though tsc itself is happy.
  * ────────────────────────────────────────────────────────────────────── */
-type VendorMasterSlug = 'customer_types' | 'risk_levels' | 'vendor_behaviour' | 'segments' | 'compliance_behaviours' | 'countries';
+type VendorMasterSlug = 'vendor_types' | 'risk_levels' | 'vendor_behaviour' | 'segments' | 'compliance_behaviours' | 'countries';
 
 type QaField = { name: string; label: string; type?: 'text' | 'number'; required?: boolean; placeholder?: string };
 
 const QUICK_ADD_SCHEMAS: Record<VendorMasterSlug, { title: string; fields: QaField[] }> = {
-  customer_types:        { title: 'Add Vendor Type',         fields: [{ name: 'name',  label: 'Vendor Type',         required: true, placeholder: 'e.g. Genuine / Verified' }] },
+  vendor_types:          { title: 'Add Vendor Type',         fields: [{ name: 'name',  label: 'Vendor Type',         required: true, placeholder: 'e.g. Genuine / Verified' }] },
   risk_levels:           { title: 'Add Risk Level',          fields: [{ name: 'name',  label: 'Risk Level',          required: true, placeholder: 'e.g. Low, Medium, High' }] },
   vendor_behaviour:      { title: 'Add Vendor Behaviour',    fields: [{ name: 'name',  label: 'Vendor Behaviour',    required: true, placeholder: 'e.g. Excellent / Good' }] },
   segments:              { title: 'Add Segment',             fields: [{ name: 'title', label: 'Segment Name',        required: true, placeholder: 'e.g. Dry Fruits' }] },
