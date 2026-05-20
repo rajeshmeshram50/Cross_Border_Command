@@ -82,6 +82,13 @@ export type QcRecord = {
    *  accessor when available, else built via resolveFileUrl).
    *  Empty when the row has no attachment yet. */
   attachmentUrl?: string;
+  /** Newly picked File object (set by the QC modal's file input)
+   *  — kept in memory until Save uploads it via multipart and the
+   *  server returns the stored attachment_path. */
+  attachmentFile?: File | null;
+  /** Existing server-side path. Preserved on edit so the row keeps
+   *  its uploaded file when the user doesn't replace the attachment. */
+  attachmentPath?: string;
 };
 
 /* ─── Static option lists ─── */
@@ -1884,7 +1891,9 @@ function QcAddPopup(props: {
 
   const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) set('attachmentName', f.name);
+    if (f) {
+      setDraft({ ...draft, attachmentName: f.name, attachmentFile: f });
+    }
   };
 
   return createPortal((
