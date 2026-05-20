@@ -33,6 +33,19 @@ class ConsigneeDocument extends Model
         'expiry_date' => 'date:Y-m-d',
     ];
 
+    /**
+     * Auto-append the resolved URL alongside the raw path. Mirrors the
+     * Client (logo_url) and Product (primary_image_url) accessor pattern
+     * — guarantees the View link works in every response shape without
+     * per-controller URL building.
+     */
+    protected $appends = ['attachment_url'];
+
+    public function getAttachmentUrlAttribute(): ?string
+    {
+        return file_url($this->attachment_path);
+    }
+
     public function consignee(): BelongsTo
     {
         return $this->belongsTo(Consignee::class);

@@ -4120,8 +4120,17 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-pick-body { padding: 14px; }
   .acm-pick-header { padding: 14px 14px 10px; }
   .acm-pick-title { font-size: 17px; }
-  .acm-pick-footer { padding: 12px 14px; flex-direction: column; gap: 8px; }
-  .acm-pick-footer .acm-btn { width: 100%; }
+  /* Phase A picker footer: Cancel on top, primary action on bottom
+     (thumb-reach). Reset align-items so the column children fill
+     full width — the base rule uses align-items: center which would
+     otherwise shrink them to content width. */
+  .acm-pick-footer {
+    padding: 12px 14px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .acm-pick-footer .acm-btn { width: 100%; flex: 0 0 auto; }
   /* Wizard header */
   .acm-wiz-header { padding: 14px 16px; flex-direction: column; align-items: flex-start; gap: 8px; }
   .acm-wiz-hicon { width: 38px; height: 38px; }
@@ -4152,10 +4161,21 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-linked { padding: 12px; }
   .acm-linked-grid { grid-template-columns: 1fr 1fr; padding: 8px; gap: 8px; }
   .acm-linked-hide { font-size: 11px; padding: 4px 10px; }
-  /* Footer: stacked actions, full-width buttons */
-  .acm-wiz-footer { padding: 10px 12px; flex-direction: column; gap: 8px; }
+  /* Wizard footer: Cancel on top, primary action group on bottom
+     (Previous + Save & Next sit as a 2-up row inside .acm-footer-right).
+     Reset align-items so column children fill width — base rule has
+     align-items: center which otherwise shrinks Cancel to content
+     width and centres it (that's what looked broken in mobile). */
+  .acm-wiz-footer {
+    padding: 10px 12px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .acm-wiz-footer > .acm-btn { width: 100%; flex: 0 0 auto; }
   .acm-footer-right { width: 100%; display: flex; gap: 8px; }
-  .acm-btn { flex: 1 1 50%; padding: 10px 12px; font-size: 13px; justify-content: center; }
+  .acm-footer-right .acm-btn { flex: 1 1 0; min-width: 0; }
+  .acm-btn { padding: 10px 12px; font-size: 13px; justify-content: center; }
   /* Address & Contact table card */
   .acm-loc-head-row { flex-wrap: wrap; gap: 8px; }
   .acm-loc-head-text { flex: 1 1 100%; }
@@ -4165,8 +4185,15 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-loc-sub-card { border-radius: 0; max-height: 100vh; height: 100vh; width: 100vw; }
   .acm-loc-sub-header { padding: 14px 16px; }
   .acm-loc-sub-body   { padding: 14px; }
-  .acm-loc-sub-footer { padding: 12px 14px; flex-direction: column; gap: 8px; }
-  .acm-loc-sub-footer .acm-btn { width: 100%; }
+  /* Sub-modal footer: Cancel on top, primary save on bottom.
+     align-items: stretch so column children fill width. */
+  .acm-loc-sub-footer {
+    padding: 12px 14px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .acm-loc-sub-footer .acm-btn { width: 100%; flex: 0 0 auto; }
   /* Stage 2 KYC sub-tabs */
   .acm-kyc-subtabs { flex-wrap: wrap; gap: 6px; }
   .acm-kyc-subtab { flex: 1 1 45%; font-size: 12px; padding: 8px 10px; }

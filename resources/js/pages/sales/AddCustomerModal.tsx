@@ -3222,17 +3222,44 @@ const SCOPED_CSS = `
   .acm-section-title { font-size: 12.5px; }
   .acm-section-sub { display: none; }
   .acm-section-body, .acm-sec-pad { padding: 10px; }
-  /* Footer: stack actions, full-width buttons */
-  .acm-footer { padding: 10px 12px; flex-direction: column; gap: 8px; }
-  .acm-footer-right { width: 100%; display: flex; gap: 8px; }
-  .acm-btn-prev, .acm-btn-next { flex: 1 1 50%; padding: 10px 14px; font-size: 13px; }
+  /* Footer: stack actions, full-width buttons. Hide the "fields with *"
+     hint on phones to free up vertical space. Reset align-items so the
+     column-direction children actually stretch to full width (the base
+     rule uses align-items: center which would otherwise shrink the
+     buttons to content width and centre them — bad mobile look). */
+  .acm-footer {
+    padding: 10px 12px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .acm-req-note { display: none; }
+  .acm-footer-actions {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .acm-btn-prev, .acm-btn-next {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 11px 14px;
+    font-size: 13px;
+    justify-content: center;
+  }
   /* Sub-modal */
   .acm-sub-modal { padding: 0; align-items: stretch; }
   .acm-sub-card { border-radius: 0; max-height: 100vh; height: 100vh; width: 100vw; }
   .acm-sub-header { padding: 14px 16px; }
   .acm-sub-body { padding: 14px; }
-  .acm-sub-footer { padding: 12px 14px; flex-direction: column; gap: 8px; }
-  .acm-btn-mini-cancel, .acm-btn-save, .acm-doc-save { width: 100%; }
+  .acm-sub-footer {
+    padding: 12px 14px 14px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .acm-btn-mini-cancel, .acm-btn-save, .acm-doc-save { width: 100%; flex: 0 0 auto; }
   /* Map-Consignee popup (if present), Stage 2 toolbar */
   .acm-doc-toolbar { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
   .acm-doc-search { max-width: 100%; }
