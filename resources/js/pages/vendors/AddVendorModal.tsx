@@ -365,6 +365,11 @@ export default function AddVendorModal(props: {
     name: string;
     hsn: string;
     segment: string;
+    /* Auto-seed values pulled from the product itself — picking a
+       product in the mapping modal pre-fills Purchase Price and GST %
+       so the user only confirms or overrides. */
+    basePrice: string;
+    gstPercentage: string;
   };
   const [productOpts,    setProductOpts]    = useState<ProductOpt[]>([]);
   const [gstPctOpts,     setGstPctOpts]     = useState<Opt[]>([]);
@@ -1065,18 +1070,30 @@ export default function AddVendorModal(props: {
     try {
       type ProductRow = {
         id: number; product_code?: string; name?: string;
+        status?: string; step_completed?: number;
+        base_price?: number | string | null;
         hsn?: { hsn_code?: string } | null;
         segment?: { title?: string } | null;
+        gst_percentage?: { percentage?: number | string } | null;
       };
-      const res = await api.get<{ data?: ProductRow[] } | ProductRow[]>('/products?status=active&per_page=200');
+      // Pull every product (no `status=` filter) so we get both the
+      // post-Quality "inactive" rows and the post-Vendor "active"
+      // rows. Drafts are dropped client-side — anything with
+      // step_completed < 3 hasn't gone through the Core → Sales →
+      // Quality sub-tabs and therefore lacks the HSN / segment data
+      // that the mapping modal auto-fills.
+      const res = await api.get<{ data?: ProductRow[] } | ProductRow[]>('/products?per_page=500');
       const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
-      setProductOpts(rows.map(r => ({
-        value:   String(r.id),
-        label:   `${r.product_code ?? ''} — ${r.name ?? ''}`.replace(/^ — /, ''),
-        code:    r.product_code ?? '',
-        name:    r.name ?? '',
-        hsn:     r.hsn?.hsn_code ?? '',
-        segment: r.segment?.title ?? '',
+      const eligible = rows.filter(r => Number(r.step_completed ?? 0) >= 3);
+      setProductOpts(eligible.map(r => ({
+        value:    String(r.id),
+        label:    `${r.product_code ?? ''} — ${r.name ?? ''}`.replace(/^ — /, ''),
+        code:     r.product_code ?? '',
+        name:     r.name ?? '',
+        hsn:      r.hsn?.hsn_code ?? '',
+        segment:  r.segment?.title ?? '',
+        basePrice:     r.base_price != null ? String(r.base_price) : '',
+        gstPercentage: r.gst_percentage?.percentage != null ? String(r.gst_percentage.percentage) : '',
       })));
     } catch { /* silent — modal falls back to manual entry */ }
   };
@@ -1113,11 +1130,16 @@ export default function AddVendorModal(props: {
     const picked = productOpts.find(p => p.value === productIdStr);
     setMapDraft(d => recomputeMapTotals({
       ...d,
-      productId:   productIdStr,
-      productCode: picked?.code ?? '',
-      productName: picked?.name ?? '',
-      hsnSacCode:  picked?.hsn  ?? '',
-      segment:     picked?.segment ?? '',
+      productId:     productIdStr,
+      productCode:   picked?.code ?? '',
+      productName:   picked?.name ?? '',
+      hsnSacCode:    picked?.hsn  ?? '',
+      segment:       picked?.segment ?? '',
+      // Seed purchase price + GST from the product's own data if it
+      // has them; user can still override. recomputeMapTotals runs
+      // off the same draft so amount totals update in one pass.
+      purchasePrice: picked?.basePrice ?? d.purchasePrice,
+      gstPercentage: picked?.gstPercentage ?? d.gstPercentage,
     }));
   };
 
@@ -1199,10 +1221,9 @@ export default function AddVendorModal(props: {
             </div>
           </div>
           <div className="avm-head-right">
-            <button className="avm-map-btn">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="2" y="4" width="20" height="16" rx="2" /><line x1="2" y1="9" x2="22" y2="9" /></svg>
-              Map Products
-            </button>
+            {/* "Map Products" header CTA removed — Step 4 of the wizard
+                already covers product mapping; a duplicate shortcut in
+                the header was confusing because it had no handler. */}
             <button className="avm-close" onClick={onClose} aria-label="Close">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
