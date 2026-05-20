@@ -7,6 +7,7 @@ import api from '../../api';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import AddProductModal from './AddProductModal';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Products
@@ -296,14 +297,32 @@ export default function Products() {
     setAddOpen(true);
   };
 
-  const handleDelete = async (p: Product) => {
-    if (!confirm(`Delete ${p.name}? This cannot be undone.`)) return;
+  /* Delete confirmation — mirrors the modal used on Clients and HR
+     Employees. Two-stage flow: click "Delete" in the row action ->
+     opens DeleteConfirmModal -> Confirm -> hits the API. Server-side
+     this is a soft delete (Product uses SoftDeletes), so the row only
+     disappears from the active list and can be restored from the
+     trashed rows later if a recovery flow ever ships. */
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = (p: Product) => {
+    setDeleteTarget(p);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await api.delete(`/products/${p.apiId}`);
-      toast.success('Deleted', `${p.name} removed`);
+      await api.delete(`/products/${deleteTarget.apiId}`);
+      toast.success('Deleted', `${deleteTarget.name} moved to deleted state`);
+      setDeleteTarget(null);
       refresh();
-    } catch {
-      toast.error('Delete failed', 'Please try again');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Please try again';
+      toast.error('Delete failed', msg);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -480,6 +499,16 @@ export default function Products() {
           }}
         />
       )}
+
+      <DeleteConfirmModal
+        open={deleteTarget !== null}
+        itemName={deleteTarget?.name}
+        title="Delete Product"
+        subMessage="This action moves the product to the deleted state. Its vendor mappings and QC records remain linked and can be restored if you bring the product back."
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={confirmDelete}
+        loading={deleting}
+      />
 
       {/* Filter sidebar — slides in from the left.
           Portalled to <body> so the fixed positioning escapes the
