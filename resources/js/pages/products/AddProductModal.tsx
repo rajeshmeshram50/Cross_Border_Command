@@ -1009,9 +1009,25 @@ export default function AddProductModal(props: {
                         <SelectInput value={packagingMaterialId} onChange={(v) => { setPackagingMaterialId(v); clearFieldError('packagingMaterialId'); }} placeholder="Select" options={optPackaging} />
                       </Field>
                     </div>
-                    <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
-                      <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Confidential information" value={confidential} onChange={e => setConfidential(e.target.value)} rows={2} />
-                    </Field>
+                    <div className="apm-grid-2 apm-inv-conf-row">
+                      <div className="apm-inv-grid">
+                        <Field label="Batch No" icon={<i className="ri-hashtag" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={batchNo} onChange={e => setBatchNo(e.target.value)} />
+                        </Field>
+                        <Field label="Serial No" icon={<i className="ri-barcode-line" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={serialNo} onChange={e => setSerialNo(e.target.value)} />
+                        </Field>
+                        <Field label="Cat No" icon={<i className="ri-price-tag-3-line" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={catNo} onChange={e => setCatNo(e.target.value)} />
+                        </Field>
+                        <Field label="Lot No" icon={<i className="ri-list-check-2" />}>
+                          <input className="apm-input apm-input-mf" placeholder="Optional" value={lotNo} onChange={e => setLotNo(e.target.value)} />
+                        </Field>
+                      </div>
+                      <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
+                        <textarea className="apm-input apm-input-mf apm-textarea apm-conf-textarea" placeholder="Confidential information" value={confidential} onChange={e => setConfidential(e.target.value)} rows={6} />
+                      </Field>
+                    </div>
                   </div>
                 </SectionCard>
               )}
@@ -1082,25 +1098,6 @@ export default function AddProductModal(props: {
                       <Field label="Height (Cm)" icon={<i className="ri-arrow-up-down-line" />} error={fieldErrors.height}>
                         <input className="apm-input apm-input-mf apm-input-amber" placeholder="Height" type="number" value={height} onChange={e => { setHeight(e.target.value); clearFieldError('height'); }} />
                       </Field>
-                    </div>
-
-                    {/* Inventory Details — optional batch / serial / cat / lot */}
-                    <div className="apm-inner-section">
-                      <div className="apm-inner-title">INVENTORY DETAILS</div>
-                      <div className="apm-grid-4">
-                        <Field label="Batch No" icon={<i className="ri-hashtag" />}>
-                          <input className="apm-input apm-input-mf" placeholder="Optional" value={batchNo} onChange={e => setBatchNo(e.target.value)} />
-                        </Field>
-                        <Field label="Serial No" icon={<i className="ri-barcode-line" />}>
-                          <input className="apm-input apm-input-mf" placeholder="Optional" value={serialNo} onChange={e => setSerialNo(e.target.value)} />
-                        </Field>
-                        <Field label="Cat No" icon={<i className="ri-price-tag-3-line" />}>
-                          <input className="apm-input apm-input-mf" placeholder="Optional" value={catNo} onChange={e => setCatNo(e.target.value)} />
-                        </Field>
-                        <Field label="Lot No" icon={<i className="ri-list-check-2" />}>
-                          <input className="apm-input apm-input-mf" placeholder="Optional" value={lotNo} onChange={e => setLotNo(e.target.value)} />
-                        </Field>
-                      </div>
                     </div>
                   </SectionCard>
 
@@ -2179,6 +2176,12 @@ const SCOPED_CSS = `
 .apm-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr;   gap: 12px; }
 .apm-grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
 .apm-grid-5 { display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; }
+
+/* Inventory (2x2) + Confidential Info side-by-side row */
+.apm-inv-conf-row { align-items: stretch; }
+.apm-inv-conf-row > .apm-field { display: flex; }
+.apm-inv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.apm-conf-textarea { flex: 1; min-height: 100%; resize: vertical; }
 
 /* ─── Field ─── */
 .apm-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
