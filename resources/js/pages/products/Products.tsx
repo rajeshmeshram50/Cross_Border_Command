@@ -4,6 +4,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import AddProductModal from './AddProductModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -297,28 +298,19 @@ export default function Products() {
     <div className="prd-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* Hero header */}
+      {/* Header — white surface card matching the HR Employees page style */}
       <div className="prd-header">
-        <span className="prd-accent" />
-        <span className="prd-glow" />
         <div className="prd-header-left">
-          <div className="prd-avatar-wrap">
-            <div className="prd-header-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-                <line x1="12" y1="22.08" x2="12" y2="12" />
-              </svg>
-            </div>
-            <span className="prd-online-dot" />
-          </div>
+          <span className="prd-header-icon">
+            <i className="ri-box-3-line" />
+          </span>
           <div>
-            <div className="prd-header-title">Products</div>
+            <h5 className="prd-header-title">Products</h5>
             <div className="prd-header-sub">Manage your product catalog — pricing, compliance, vendors and documents in one place</div>
           </div>
         </div>
         <button className="prd-add-btn" onClick={() => { setEditingId(null); setAddOpen(true); }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+          <i className="ri-add-line" />
           Add Product
         </button>
       </div>
@@ -580,19 +572,25 @@ export default function Products() {
             <div className="prd-filter-date-grid">
               <label className="prd-filter-date-field">
                 <span>From</span>
-                <input
-                  type="date"
-                  value={filters.createdFrom}
-                  onChange={e => setFilters(prev => ({ ...prev, createdFrom: e.target.value }))}
-                />
+                <div className="prd-filter-date-picker">
+                  <MasterDatePicker
+                    value={filters.createdFrom}
+                    onChange={(v) => setFilters(prev => ({ ...prev, createdFrom: v }))}
+                    placeholder="Select date"
+                    maxDate={filters.createdTo || undefined}
+                  />
+                </div>
               </label>
               <label className="prd-filter-date-field">
                 <span>To</span>
-                <input
-                  type="date"
-                  value={filters.createdTo}
-                  onChange={e => setFilters(prev => ({ ...prev, createdTo: e.target.value }))}
-                />
+                <div className="prd-filter-date-picker">
+                  <MasterDatePicker
+                    value={filters.createdTo}
+                    onChange={(v) => setFilters(prev => ({ ...prev, createdTo: v }))}
+                    placeholder="Select date"
+                    minDate={filters.createdFrom || undefined}
+                  />
+                </div>
               </label>
             </div>
           </FilterPanel>
@@ -695,6 +693,10 @@ function ProductCard(props: {
       onClick={() => onAction('View')}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAction('View'); } }}
     >
+      {/* Active / Inactive / Draft pill in the top-right corner of the image */}
+      <span className={`prd-card-status-pill status-${product.status.replace(/\s+/g, '').toLowerCase()}`}>
+        <span className="prd-card-status-dot" /> {product.status}
+      </span>
       {product.badge && <span className={`prd-card-badge prd-badge-${product.badge.replace(/\s+/g, '').toLowerCase()}`}>{product.badge}</span>}
       <div className="prd-card-thumb" style={{ background: hasImage ? '#f5f3ff' : product.thumb }}>
         {hasImage ? (
@@ -757,8 +759,21 @@ function ProductCard(props: {
           </span>
         </div>
 
-        {/* Haz pill — plus the class name when hazardous */}
-        <div className="prd-card-haz-row">
+        {/* Haz status as text — green for safe, red for hazardous (with class) */}
+        <div className={`prd-card-haz-text ${product.hazClass === 'HAZ' ? 'is-haz' : 'is-nonhaz'}`}>
+          {product.hazClass === 'HAZ'
+            ? (product.hazClassName ? `Hazardous: ${product.hazClassName}` : 'Hazardous')
+            : 'Non-Hazardous'}
+        </div>
+
+        {/* Segment — small grey "Segment: Rice" line */}
+        <div className="prd-card-segment">
+          <span className="prd-card-info-key">Segment:</span>
+          <span className="prd-card-info-val">{product.segment}</span>
+        </div>
+
+        {/* (kept for hazClassName chip slot, hidden) */}
+        <div className="prd-card-haz-row" style={{ display: 'none' }}>
           <span className={`prd-card-haz-pill ${product.hazClass === 'HAZ' ? 'is-haz' : 'is-nonhaz'}`}>
             {product.hazClass === 'HAZ' ? 'HAZ' : 'Non-Haz'}
           </span>
@@ -908,39 +923,39 @@ const SCOPED_CSS = `
 .prd-root *, .prd-root *::before, .prd-root *::after { box-sizing: border-box; }
 
 /* Hero header */
+/* Header — white surface card with a blue Velzon-primary gradient icon
+   tile, matching the HR Employees / Clients master shell exactly. */
 .prd-header {
-  position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  padding: 12px 18px; min-height: 66px;
-  background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 40%, #ddd6fe 100%);
-  border: 1px solid #c4b5fd; border-radius: 16px;
-  box-shadow: 0 2px 0 rgba(255,255,255,.85) inset, 0 8px 28px rgba(139,92,246,.2);
+  padding: 18px 20px;
+  background: #fff;
+  border: 1px solid var(--vz-border-color, #e9ebec);
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.05);
 }
-.prd-accent { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6); border-radius: 16px 0 0 16px; }
-.prd-glow { position: absolute; right: -20px; top: -20px; width: 130px; height: 130px; border-radius: 50%; background: rgba(167,139,250,.15); pointer-events: none; }
-.prd-header-left { display: flex; align-items: center; gap: 13px; z-index: 1; padding-left: 6px; }
-.prd-avatar-wrap { position: relative; flex-shrink: 0; }
+.prd-header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .prd-header-icon {
-  width: 44px; height: 44px; border-radius: 13px;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #5b21b6 100%);
-  display: flex; align-items: center; justify-content: center; color: #fff;
-  box-shadow: 0 4px 14px rgba(124,58,237,.4), 0 0 0 3px rgba(139,92,246,.18);
+  width: 46px; height: 46px; border-radius: 12px;
+  background: linear-gradient(135deg, #405189 0%, #6691e7 100%);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 21px;
+  box-shadow: 0 4px 10px rgba(64,81,137,.25);
+  flex-shrink: 0;
 }
-.prd-online-dot { position: absolute; bottom: -1px; right: -1px; width: 11px; height: 11px; border-radius: 50%; background: linear-gradient(135deg,#4ade80,#22c55e); border: 2px solid #f3e8ff; }
-.prd-header-title { font-size: 16px; font-weight: 800; color: #3b0764; letter-spacing: -.3px; }
-.prd-header-sub { font-size: 11.5px; color: #7c3aed; margin-top: 2px; font-weight: 500; }
+.prd-header-title { font-size: 17px; font-weight: 700; color: #1e293b; margin: 0; letter-spacing: -.01em; }
+.prd-header-sub   { font-size: 12.5px; color: #6b7280; margin-top: 2px; font-weight: 500; }
 
 .prd-add-btn {
-  position: relative;
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 11px 22px; border-radius: 12px; border: none;
-  background: #7c3aed; color: #fff;
-  font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer;
-  box-shadow: 0 6px 20px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.18) inset;
-  transition: transform .15s, background .15s, box-shadow .15s;
-  z-index: 1;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 18px; border-radius: 99px; border: none;
+  background: linear-gradient(120deg, #405189 0%, #6691e7 100%);
+  color: #fff;
+  font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 4px 12px rgba(64,81,137,.3);
+  transition: transform .15s, box-shadow .15s;
 }
-.prd-add-btn:hover { background: #6d28d9; transform: translateY(-2px); box-shadow: 0 10px 28px rgba(124,58,237,.6); }
+.prd-add-btn i { font-size: 16px; }
+.prd-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(64,81,137,.4); }
 .prd-add-btn:active { transform: translateY(0); }
 
 /* Status tabs */
@@ -1217,6 +1232,40 @@ const SCOPED_CSS = `
 .prd-card-haz-class-key { color: #b91c1c; font-weight: 800; letter-spacing: .02em; flex-shrink: 0; }
 .prd-card-haz-class-val { color: #1e1b4b; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* Haz status as text under the info row — green for non-haz, red for haz */
+.prd-card-haz-text {
+  font-size: 12px; font-weight: 700;
+  margin-top: 2px;
+}
+.prd-card-haz-text.is-nonhaz { color: #16a34a; }
+.prd-card-haz-text.is-haz    { color: #dc2626; }
+
+/* Small "Segment: Rice" line */
+.prd-card-segment {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px;
+  margin-top: 2px;
+}
+.prd-card-segment .prd-card-info-key { color: #6b7280; font-weight: 700; }
+.prd-card-segment .prd-card-info-val { color: #1e1b4b; font-weight: 700; }
+
+/* Active / Inactive / Draft pill that sits on top of the image */
+.prd-card-status-pill {
+  position: absolute; top: 10px; right: 10px;
+  z-index: 3;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 99px;
+  font-size: 10.5px; font-weight: 800;
+  box-shadow: 0 2px 8px rgba(15,23,42,.08);
+}
+.prd-card-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor;
+}
+.prd-card-status-pill.status-active   { background: #fff; color: #16a34a; border: 1px solid #bbf7d0; }
+.prd-card-status-pill.status-inactive { background: #fff; color: #b45309; border: 1px solid #fde68a; }
+.prd-card-status-pill.status-draft    { background: #fff; color: #475569; border: 1px solid #e2e8f0; }
+
 /* Buy row */
 .prd-card-buyrow {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -1479,13 +1528,26 @@ const SCOPED_CSS = `
 
 .prd-filter-date-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 6px 4px 4px; }
 .prd-filter-date-field { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; font-weight: 700; color: #6d28d9; letter-spacing: .04em; text-transform: uppercase; }
-.prd-filter-date-field input {
-  height: 34px; padding: 0 10px;
-  border: 1.5px solid #ddd6fe; border-radius: 8px;
-  background: #faf5ff; color: #1e1b4b;
-  font-family: inherit; font-size: 12px; outline: none;
+
+/* MasterDatePicker wrapper — sized to fit the compact filter row and
+   tinted with the page's violet accent (same chrome the other filter
+   controls use). */
+.prd-filter-date-picker { width: 100%; }
+.prd-filter-date-picker .master-date-input,
+.prd-filter-date-picker input.form-control {
+  height: 34px !important;
+  padding: 0 32px 0 10px !important;
+  border: 1.5px solid #ddd6fe !important;
+  border-radius: 8px !important;
+  background: #faf5ff !important;
+  color: #1e1b4b !important;
+  font-size: 12px !important;
+  font-family: inherit !important;
 }
-.prd-filter-date-field input:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
+.prd-filter-date-picker .master-date-input:focus {
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.12) !important;
+}
 
 .prd-filter-footer {
   display: flex; gap: 8px;
@@ -1524,15 +1586,14 @@ const SCOPED_CSS = `
   color: #e9e5ff;
 }
 
-/* Header */
+/* Header — dark */
 [data-bs-theme="dark"] .prd-header {
-  background: linear-gradient(110deg, #1c1438 0%, #261852 40%, #2e1d6b 100%);
-  border-color: #4c1d95;
-  box-shadow: 0 2px 0 rgba(167,139,250,.08) inset, 0 8px 28px rgba(0,0,0,.55);
+  background: #1c2531;
+  border-color: rgba(255,255,255,.08);
+  box-shadow: 0 2px 12px rgba(0,0,0,.4);
 }
 [data-bs-theme="dark"] .prd-header-title { color: #ede9fe; }
-[data-bs-theme="dark"] .prd-header-sub   { color: #c4b5fd; }
-[data-bs-theme="dark"] .prd-online-dot   { border-color: #1d1442; }
+[data-bs-theme="dark"] .prd-header-sub   { color: #a8a8a8; }
 
 /* Status tabs — dark */
 [data-bs-theme="dark"] .prd-status-tabs { background: #1a1430; border-color: #3b2a6b; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
@@ -1623,6 +1684,14 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .prd-card-haz-class-key { color: #fca5a5; }
 [data-bs-theme="dark"] .prd-card-haz-class-val { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-card-haz-text.is-nonhaz { color: #4ade80; }
+[data-bs-theme="dark"] .prd-card-haz-text.is-haz    { color: #fca5a5; }
+[data-bs-theme="dark"] .prd-card-segment .prd-card-info-key { color: #a89fc7; }
+[data-bs-theme="dark"] .prd-card-segment .prd-card-info-val { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-card-status-pill { box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .prd-card-status-pill.status-active   { background: #14241a; color: #4ade80; border-color: #14532d; }
+[data-bs-theme="dark"] .prd-card-status-pill.status-inactive { background: #3f2c0a; color: #fde68a; border-color: #78350f; }
+[data-bs-theme="dark"] .prd-card-status-pill.status-draft    { background: #1a1430; color: #c4b5fd; border-color: #3b2a6b; }
 [data-bs-theme="dark"] .prd-card-buyrow { border-top-color: #3b2a6b; }
 [data-bs-theme="dark"] .prd-card-price-label { color: #a89fc7; }
 
@@ -1732,6 +1801,16 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .prd-filter-clear-mini:hover { background: #4f1d1d; }
 
 [data-bs-theme="dark"] .prd-filter-date-field { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-filter-date-picker .master-date-input,
+[data-bs-theme="dark"] .prd-filter-date-picker input.form-control {
+  background: #110c25 !important;
+  border-color: #3b2a6b !important;
+  color: #ede9fe !important;
+}
+[data-bs-theme="dark"] .prd-filter-date-picker .master-date-input:focus {
+  border-color: #a78bfa !important;
+  box-shadow: 0 0 0 3px rgba(167,139,250,.18) !important;
+}
 [data-bs-theme="dark"] .prd-filter-date-field input {
   background: #110c25;
   border-color: #3b2a6b;
