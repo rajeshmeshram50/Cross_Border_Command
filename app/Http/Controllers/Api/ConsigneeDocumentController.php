@@ -3,43 +3,43 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Customer;
-use App\Models\CustomerDocument;
+use App\Models\Consignee;
+use App\Models\ConsigneeDocument;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Customer Stage 2 — Documents API (Company DD + Trade Licence).
+ * Consignee Stage 2 — Documents API (Company DD + Trade Licence).
  *
- * Endpoints are nested under the customer:
- *   GET    /api/customers/{customer}/documents?kind=dd|tl
- *   POST   /api/customers/{customer}/documents
- *   GET    /api/customers/{customer}/documents/{document}
- *   PUT    /api/customers/{customer}/documents/{document}
- *   DELETE /api/customers/{customer}/documents/{document}
+ * Mirrors CustomerDocumentController. Nested under the consignee:
+ *   GET    /api/consignees/{consignee}/documents?kind=dd|tl
+ *   POST   /api/consignees/{consignee}/documents
+ *   GET    /api/consignees/{consignee}/documents/{document}
+ *   POST   /api/consignees/{consignee}/documents/{document}   (file replace)
+ *   PUT    /api/consignees/{consignee}/documents/{document}   (json-only)
+ *   DELETE /api/consignees/{consignee}/documents/{document}
  *
- * Tenant scope is enforced at the parent customer level: we resolve
- * the customer through the same applyScope() rules used in
- * CustomerController and let cascadeOnDelete handle row teardown.
+ * Tenant scope is enforced at the parent consignee level, the same
+ * way CustomerDocumentController does it.
  *
- * File uploads land on the `public` disk under
- *   customer_documents/{customer_id}/{slug}-{rand}.{ext}
+ * Files land on the public disk under
+ *   consignee_documents/{consignee_id}/{slug}-{rand}.{ext}
  */
-class CustomerDocumentController extends Controller
+class ConsigneeDocumentController extends Controller
 {
-    public function index(Request $request, $customerId): JsonResponse
+    public function index(Request $request, $consigneeId): JsonResponse
     {
-        $customer = $this->resolveCustomer($request, $customerId);
+        $consignee = $this->resolveConsignee($request, $consigneeId);
 
-        $q = $customer->documents();
+        $q = $consignee->documents();
         if ($kind = $request->query('kind')) {
             $q->where('kind', $kind);
         }
         if ($search = trim((string) $request->query('q', ''))) {
             $q->where(function ($w) use ($search) {
-                $w->where('name',             'ilike', "%{$search}%")
-                  ->orWhere('license_number', 'ilike', "%{$search}%")
+                $w->where('name',              'ilike', "%{$search}%")
+                  ->orWhere('license_number',  'ilike', "%{$search}%")
                   ->orWhere('issuing_authority','ilike', "%{$search}%");
             });
         }
@@ -48,43 +48,40 @@ class CustomerDocumentController extends Controller
         return response()->json(['data' => $rows, 'count' => count($rows)]);
     }
 
-    public function show(Request $request, $customerId, $id): JsonResponse
+    public function show(Request $request, $consigneeId, $id): JsonResponse
     {
-        $customer = $this->resolveCustomer($request, $customerId);
-        $doc = $customer->documents()->findOrFail($id);
+        $consignee = $this->resolveConsignee($request, $consigneeId);
+        $doc = $consignee->documents()->findOrFail($id);
         return response()->json(['data' => $this->shape($doc)]);
     }
 
-    public function store(Request $request, $customerId): JsonResponse
+    public function store(Request $request, $consigneeId): JsonResponse
     {
-        $customer = $this->resolveCustomer($request, $customerId);
+        $consignee = $this->resolveConsignee($request, $consigneeId);
         $data = $this->validatePayload($request);
 
-        $data['customer_id'] = $customer->id;
-        $data['created_by']  = optional($request->user())->id;
-        // The validator can't see the file directly because Laravel's
-        // FileBag is separate from input — pull the upload and stash
-        // its path on the row.
+        $data['consignee_id'] = $consignee->id;
+        $data['created_by']   = optional($request->user())->id;
         if ($request->hasFile('attachment')) {
-            $data['attachment_path'] = $this->storeUpload($request->file('attachment'), $customer->id, 'doc');
+            $data['attachment_path'] = $this->storeUpload($request->file('attachment'), $consignee->id, 'doc');
         }
 
-        $doc = CustomerDocument::create($data);
+        $doc = ConsigneeDocument::create($data);
         return response()->json(['data' => $this->shape($doc)], 201);
     }
 
-    public function update(Request $request, $customerId, $id): JsonResponse
+    public function update(Request $request, $consigneeId, $id): JsonResponse
     {
-        $customer = $this->resolveCustomer($request, $customerId);
-        $doc = $customer->documents()->findOrFail($id);
+        $consignee = $this->resolveConsignee($request, $consigneeId);
+        $doc = $consignee->documents()->findOrFail($id);
         $data = $this->validatePayload($request, $doc->id);
 
         if ($request->hasFile('attachment')) {
-            // Drop the previous file (best-effort) before replacing.
+            // Drop previous file (best-effort) before replacing.
             if ($doc->attachment_path) {
                 Storage::disk('public')->delete($doc->attachment_path);
             }
-            $data['attachment_path'] = $this->storeUpload($request->file('attachment'), $customer->id, 'doc');
+            $data['attachment_path'] = $this->storeUpload($request->file('attachment'), $consignee->id, 'doc');
         } elseif ($request->boolean('remove_attachment')) {
             if ($doc->attachment_path) {
                 Storage::disk('public')->delete($doc->attachment_path);
@@ -96,10 +93,10 @@ class CustomerDocumentController extends Controller
         return response()->json(['data' => $this->shape($doc->fresh())]);
     }
 
-    public function destroy(Request $request, $customerId, $id): JsonResponse
+    public function destroy(Request $request, $consigneeId, $id): JsonResponse
     {
-        $customer = $this->resolveCustomer($request, $customerId);
-        $doc = $customer->documents()->findOrFail($id);
+        $consignee = $this->resolveConsignee($request, $consigneeId);
+        $doc = $consignee->documents()->findOrFail($id);
         if ($doc->attachment_path) {
             Storage::disk('public')->delete($doc->attachment_path);
         }
@@ -109,7 +106,7 @@ class CustomerDocumentController extends Controller
 
     /* ── Helpers ──────────────────────────────────────────────────── */
 
-    private function shape(CustomerDocument $d): array
+    private function shape(ConsigneeDocument $d): array
     {
         return [
             'id'                => $d->id,
@@ -139,27 +136,26 @@ class CustomerDocumentController extends Controller
             'expiry_date'       => 'nullable|date|after_or_equal:issue_date',
             'description'       => 'nullable|string|max:1000',
             'status'            => 'nullable|in:Active,Inactive',
-            // attachment is validated separately when present
             'attachment'        => 'sometimes|file|max:10240', // 10MB cap
         ]);
     }
 
-    private function storeUpload($file, int $customerId, string $slug): string
+    private function storeUpload($file, int $consigneeId, string $slug): string
     {
         $ext  = $file->getClientOriginalExtension() ?: 'bin';
         $name = $slug . '-' . bin2hex(random_bytes(6)) . '.' . $ext;
-        return $file->storeAs("customer_documents/{$customerId}", $name, 'public');
+        return $file->storeAs("consignee_documents/{$consigneeId}", $name, 'public');
     }
 
     /**
-     * Resolve the parent customer with the same tenant rules used by
-     * CustomerController. Failing this aborts with 404 before any
-     * document touches happen.
+     * Resolve the parent consignee with the same tenant rules used by
+     * ConsigneeController. Aborts with 404 before any document touch
+     * if the caller isn't entitled to see this consignee.
      */
-    private function resolveCustomer(Request $request, $customerId): Customer
+    private function resolveConsignee(Request $request, $consigneeId): Consignee
     {
-        return Customer::query()
+        return Consignee::query()
             ->forUser($request->user())
-            ->findOrFail($customerId);
+            ->findOrFail($consigneeId);
     }
 }

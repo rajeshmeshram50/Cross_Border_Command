@@ -38,10 +38,12 @@ class CustomerController extends Controller
         $user = $request->user();
 
         $q = Customer::query()
+            ->forUser($user)
             ->with(['primaryAddress', 'addresses'])
+            ->withCount(['consignees', 'consignees as same_as_customer_consignees_count' => function ($q) {
+                $q->where('same_as_customer', true);
+            }])
             ->orderByDesc('id');
-
-        $this->applyScope($q, $user);
 
         if ($search = trim((string) $request->query('q', ''))) {
             $q->where(function ($w) use ($search) {
@@ -70,9 +72,10 @@ class CustomerController extends Controller
     public function show(Request $request, $id): JsonResponse
     {
         $user = $request->user();
-        $q = Customer::query()->with(['primaryAddress', 'addresses']);
-        $this->applyScope($q, $user);
-        $row = $q->findOrFail($id);
+        $row = Customer::query()
+            ->forUser($user)
+            ->with(['primaryAddress', 'addresses'])
+            ->findOrFail($id);
         return response()->json(['data' => $this->shape($row)]);
     }
 
@@ -130,9 +133,7 @@ class CustomerController extends Controller
     public function update(Request $request, $id): JsonResponse
     {
         $user = $request->user();
-        $q = Customer::query();
-        $this->applyScope($q, $user);
-        $customer = $q->findOrFail($id);
+        $customer = Customer::query()->forUser($user)->findOrFail($id);
 
         $data = $this->validatePayload($request, (int) $customer->id, $customer->client_id);
 
@@ -178,9 +179,7 @@ class CustomerController extends Controller
     public function destroy(Request $request, $id): JsonResponse
     {
         $user = $request->user();
-        $q = Customer::query();
-        $this->applyScope($q, $user);
-        $customer = $q->findOrFail($id);
+        $customer = Customer::query()->forUser($user)->findOrFail($id);
         $customer->delete();
         return response()->json(['id' => $customer->id, 'deleted' => true]);
     }
@@ -216,7 +215,16 @@ class CustomerController extends Controller
             'phone'           => $primary?->cp_contact,
             'email'           => $primary?->cp_email,
             'whatsapp'        => $primary?->cp_whatsapp === 'yes' ? 'Yes' : ($primary?->cp_whatsapp === 'no' ? 'No' : null),
-            'consignees'      => 0, // wired up when consignee model lands
+            // Eager-counted via `withCount('consignees')` on the index
+            // query so the list page doesn't N+1. Falls back to 0 for
+            // show() / store() / update() responses that don't load the count.
+            'consignees'      => (int) ($c->consignees_count ?? 0),
+            // True when at least one consignee linked to this customer was
+            // created with the "Same as Customer" toggle on — editing the
+            // customer's Stage 1 fields would semantically affect those
+            // mirrored consignees, so the UI prompts before opening edit.
+            'hasSameAsCustomerConsignees' => ((int) ($c->same_as_customer_consignees_count ?? 0)) > 0,
+            'sameAsCustomerConsigneeCount' => (int) ($c->same_as_customer_consignees_count ?? 0),
             'locations'       => $c->addresses
                 ->where('is_primary', false)
                 ->values()
@@ -300,6 +308,11 @@ class CustomerController extends Controller
         ]);
     }
 
+    /**
+     * Resolve `[client_id, branch_id]` for the row being inserted.
+     * Only used by store() — tenant *visibility* is handled by the
+     * Customer::scopeForUser() Eloquent scope.
+     */
     private function resolveOwnership($user): array
     {
         if (!$user) return [null, null];
@@ -307,28 +320,5 @@ class CustomerController extends Controller
         $clientId = $user->client_id ?? ($user->branch?->client_id);
         $branchId = $user->branch_id;
         return [$clientId, $branchId];
-    }
-
-    /**
-     * Tenant scope — mirrors MasterController::applyScope. super_admin
-     * sees everything; client_admin/client_user see their client's
-     * rows; branch_user/employee see their client's rows too (so the
-     * shared customer list works across branches under one client).
-     */
-    private function applyScope($q, $user): void
-    {
-        if (!$user) return;
-        if ($user->user_type === 'super_admin') return;
-
-        if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
-            $q->where('client_id', $user->client_id);
-            return;
-        }
-
-        if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-            $clientId = $user->client_id ?? ($user->branch?->client_id);
-            $q->where('client_id', $clientId);
-            return;
-        }
     }
 }

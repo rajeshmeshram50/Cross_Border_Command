@@ -1,8 +1,11 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import AddConsigneeModal, { type ConsigneeRow } from './AddConsigneeModal';
+import api from '../../api';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -18,42 +21,10 @@ import TableContainer from '../../velzon/Components/Common/TableContainerReactTa
  * api.get('/consignees') once the table migration lands.
  * ──────────────────────────────────────────────────────────────────────── */
 
-type RiskLevel = 'Low' | 'Medium' | 'High';
-type Consignee = {
-  id: string;          // CGN-001
-  customerId: string;  // C-001
-  company: string;
-  segment: string;
-  risk: RiskLevel;
-  contact: string;
-  email: string;
-  phone: string;
-  country: string;
-  countryDetail: string; // (Dubai), (London) — bracketed sub-text
-};
-
-const ROWS: Consignee[] = [
-  { id:'CGN-001', customerId:'C-001', company:'Shree Gulf Trading LLC',     segment:'Dry Fruits',   risk:'Low',    contact:'Yash Mote',      email:'yash.gulf@shree.ae',         phone:'+971-501234567',  country:'UAE',         countryDetail:'Dubai' },
-  { id:'CGN-002', customerId:'C-001', company:'Shree UK Imports',           segment:'Dry Fruits',   risk:'Medium', contact:'Priya Nair',     email:'priya@shreeuk.co.uk',        phone:'+44-7911123456',  country:'UK',          countryDetail:'London' },
-  { id:'CGN-003', customerId:'C-002', company:'GreenHarvest Rotterdam BV',  segment:'Agro',         risk:'Low',    contact:'Jan Verbeke',    email:'jan@greenharvestrdam.nl',    phone:'+31-612345678',   country:'Netherlands', countryDetail:'Rotterdam' },
-  { id:'CGN-004', customerId:'C-002', company:'GreenHarvest Canada Inc.',   segment:'Agro',         risk:'Low',    contact:'Sarah Oakes',    email:'sarah@ghcanada.ca',          phone:'+1-6135550199',   country:'Canada',      countryDetail:'Ontario' },
-  { id:'CGN-005', customerId:'C-002', company:'GreenHarvest Singapore Pte', segment:'Agro',         risk:'Medium', contact:'Tan Wei Lin',    email:'wei@ghsg.com.sg',            phone:'+65-81234567',    country:'Singapore',   countryDetail:'Central' },
-  { id:'CGN-006', customerId:'C-003', company:'Agri Export GmbH',           segment:'Rice & Grains',risk:'High',   contact:'Klaus Weber',    email:'klaus@agriexport.de',        phone:'+49-1712345678',  country:'Germany',     countryDetail:'Bavaria' },
-  { id:'CGN-007', customerId:'C-003', company:'Grain Partners Poland',      segment:'Rice & Grains',risk:'Medium', contact:'Andrzej Nowak',  email:'andrzej@grainpl.eu',         phone:'+48-501234567',   country:'Poland',      countryDetail:'Masovia' },
-  { id:'CGN-008', customerId:'C-004', company:'Int. Buyer Dubai Hub',       segment:'Spices',       risk:'Low',    contact:'Ahmed Al-Farsi', email:'ahmed.hub@intlbuyer.ae',     phone:'+971-502345678',  country:'UAE',         countryDetail:'Abu Dhabi' },
-  { id:'CGN-009', customerId:'C-004', company:'Int. Buyer USA Corp.',       segment:'Spices',       risk:'Low',    contact:'Mike Thompson',  email:'mike@intlbuyerusa.com',      phone:'+1-2125551234',   country:'USA',         countryDetail:'New York' },
-  { id:'CGN-010', customerId:'C-004', company:'Int. Buyer KSA LLC',         segment:'Spices',       risk:'High',   contact:'Khalid Al-Rashid', email:'khalid@intlksa.com',        phone:'+966-501234567',  country:'Saudi Arabia',countryDetail:'Riyadh' },
-  { id:'CGN-011', customerId:'C-005', company:'QuickTrade Egypt',           segment:'Pulses',       risk:'Medium', contact:'Mahmoud Fahmy',  email:'mahmoud@quicktrade.eg',      phone:'+20-1001234567',  country:'Egypt',       countryDetail:'Cairo' },
-  { id:'CGN-012', customerId:'C-006', company:'Fit Nation Singapore',       segment:'Dry Fruits',   risk:'Low',    contact:'Lim Yong',       email:'lim@fitnation.sg',           phone:'+65-90123456',    country:'Singapore',   countryDetail:'East' },
-  { id:'CGN-013', customerId:'C-007', company:'MJ Coconut Spain',           segment:'Coconut Oil',  risk:'Medium', contact:'Carla Ruiz',     email:'carla@mjspain.es',           phone:'+34-911234567',   country:'Spain',       countryDetail:'Valencia' },
-  { id:'CGN-014', customerId:'C-008', company:'FreshMart UAE Hub',          segment:'Basmati Rice', risk:'Low',    contact:'Sana Khan',      email:'sana@freshmart.ae',          phone:'+971-561234567',  country:'UAE',         countryDetail:'Sharjah' },
-  { id:'CGN-015', customerId:'C-009', company:'Bharat Agro Kenya',          segment:'Millets',      risk:'High',   contact:'Wanjiru Kimani', email:'wanjiru@bharatagrokenya.co', phone:'+254-712345678',  country:'Kenya',       countryDetail:'Nairobi' },
-  { id:'CGN-016', customerId:'C-010', company:'Eastern Harvest Japan',      segment:'Coffee Beans', risk:'Low',    contact:'Hiro Tanaka',    email:'hiro@easternjp.co.jp',       phone:'+81-9012345678',  country:'Japan',       countryDetail:'Osaka' },
-  { id:'CGN-017', customerId:'C-011', company:'Sun Agri Morocco',           segment:'Turmeric',     risk:'Medium', contact:'Yousef Idrissi', email:'yousef@sunagri.ma',          phone:'+212-661234567',  country:'Morocco',     countryDetail:'Casablanca' },
-  { id:'CGN-018', customerId:'C-012', company:'Prime Foods Qatar',          segment:'Spices',       risk:'Low',    contact:'Hamad Al-Thani', email:'hamad@primefoods.qa',        phone:'+974-33123456',   country:'Qatar',       countryDetail:'Doha' },
-];
-
-const RISK_COLORS: Record<RiskLevel, { bg: string; color: string; dot: string }> = {
+/* Risk pill palette. Master-defined risk levels usually come back as
+ * Low / Medium / High but other tiers (Tier-1, Critical, …) can land
+ * too — anything not in the lookup falls back to the Low style. */
+const RISK_COLORS: Record<string, { bg: string; color: string; dot: string }> = {
   'Low':    { bg:'#ecfdf5', color:'#047857', dot:'#10b981' },
   'Medium': { bg:'#fffbeb', color:'#b45309', dot:'#f59e0b' },
   'High':   { bg:'#fef2f2', color:'#b91c1c', dot:'#ef4444' },
@@ -64,6 +35,7 @@ const ROWS_PER_PAGE = 10;
 export default function SalesConsignee() {
   const toast = useToast();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isSuperAdmin = user?.user_type === 'super_admin';
   // Permission row for sales.consignee. Backend-authoritative; we just gate
   // the UI affordances. Super_admin bypasses.
@@ -76,6 +48,59 @@ export default function SalesConsignee() {
   const [wdhOpen, setWdhOpen] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ConsigneeRow | null>(null);
+
+  /* Live data from /consignees. Replaces the ROWS mock — kept around
+   * (un-referenced) so a designer can still eyeball the empty state
+   * without the API; tests/seeders will populate the real list. */
+  const [rows, setRows] = useState<ConsigneeRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [delTarget, setDelTarget] = useState<ConsigneeRow | null>(null);
+
+  const fetchRows = useCallback(async () => {
+    if (!canView) return;
+    setLoading(true);
+    try {
+      const r = await api.get('/consignees');
+      const data: any[] = Array.isArray(r.data?.data) ? r.data.data : [];
+      setRows(data.map((d: any): ConsigneeRow => ({
+        id:             String(d.id ?? ''),
+        db_id:          typeof d.db_id === 'number' ? d.db_id : undefined,
+        customerId:     String(d.customer_code ?? d.customer_id ?? ''),
+        customer_db_id: typeof d.customer_id === 'number' ? d.customer_id : undefined,
+        company:        d.company ?? '',
+        segment:        d.segment ?? '',
+        risk:           d.riskLevel ?? '',
+        contact:        d.contact ?? '',
+        email:          d.email ?? '',
+        phone:          d.phone ?? '',
+        country:        d.country ?? '',
+        // Server returns the prepared "city, state, country" string.
+        // Use it directly — keeps the list page in sync with whatever
+        // shape ConsigneeController::shape() decides to expose.
+        countryDetail:  d.countryDetail ?? d.city ?? '',
+      })));
+    } catch (e: any) {
+      toast.error('Failed to load consignees', e?.response?.data?.message ?? 'Please try again.');
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canView]);
+
+  useEffect(() => { fetchRows(); }, [fetchRows]);
+
+  const handleDelete = async () => {
+    if (!delTarget?.db_id) { setDelTarget(null); return; }
+    try {
+      await api.delete(`/consignees/${delTarget.db_id}`);
+      toast.success('Consignee deleted', delTarget.company);
+      setDelTarget(null);
+      fetchRows();
+    } catch (e: any) {
+      toast.error('Delete failed', e?.response?.data?.message ?? 'Please try again.');
+    }
+  };
 
   // Inject Google Fonts (DM Sans, Inter) once on mount — same pattern as
   // SalesCustomers so the page renders with its intended typography.
@@ -90,9 +115,9 @@ export default function SalesConsignee() {
   }, []);
 
   const filtered = useMemo(() => {
-    if (!q) return ROWS;
+    if (!q) return rows;
     const lo = q.toLowerCase();
-    return ROWS.filter(c =>
+    return rows.filter(c =>
       c.company.toLowerCase().includes(lo) ||
       c.id.toLowerCase().includes(lo) ||
       c.customerId.toLowerCase().includes(lo) ||
@@ -100,9 +125,9 @@ export default function SalesConsignee() {
       c.email.toLowerCase().includes(lo) ||
       c.segment.toLowerCase().includes(lo) ||
       c.country.toLowerCase().includes(lo) ||
-      c.risk.toLowerCase().includes(lo),
+      String(c.risk).toLowerCase().includes(lo),
     );
-  }, [q]);
+  }, [q, rows]);
 
   // TableContainer manages its own pagination — the page-local
   // slice variables used by the old custom table are gone now.
@@ -179,7 +204,7 @@ export default function SalesConsignee() {
       header: 'Risk Level',
       accessorKey: 'risk',
       cell: (info: any) => {
-        const v = info.getValue() as RiskLevel;
+        const v = String(info.getValue() ?? '');
         const r = RISK_COLORS[v] || RISK_COLORS['Low'];
         return (
           <span className="smcg-risk-pill" style={{ background: r.bg, color: r.color }}>
@@ -209,11 +234,12 @@ export default function SalesConsignee() {
       meta: { align: 'center' },
       enableSorting: false,
       cell: (info: any) => {
-        const c = info.row.original as Consignee;
+        const c = info.row.original as ConsigneeRow;
         return (
           <div className="d-inline-flex align-items-center gap-1">
-            {canEdit && <ActionBtn title="Edit Consignee"          icon="ri-pencil-line"      color="primary" onClick={() => { setEditing(c as any); setAddOpen(true); }} />}
+            {canEdit && <ActionBtn title="Edit Consignee"          icon="ri-pencil-line"      color="primary" onClick={() => { setEditing(c); setAddOpen(true); }} />}
                        <ActionBtn title="Evidence Vault"           icon="ri-file-shield-line" color="info"    onClick={() => soon('Evidence Vault')} />
+            {canEdit && <ActionBtn title="Delete Consignee"        icon="ri-delete-bin-line"  color="danger"  onClick={() => setDelTarget(c)} />}
           </div>
         );
       },
@@ -249,6 +275,19 @@ export default function SalesConsignee() {
         <span className="smcg-glow" />
         <span className="smcg-sheen" />
         <div className="smcg-cstrip-left">
+          {/* Back button — uses browser history so it returns to
+              whichever page led here (Sales Matrix sidebar, dashboard,
+              etc.) instead of hard-coding a target route. */}
+          <button
+            type="button"
+            className="smcg-back-btn"
+            aria-label="Back"
+            onClick={() => navigate(-1)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
           <div className="smcg-avatar-wrap">
             <div className="smcg-avatar"><IconTruck /></div>
           </div>
@@ -345,6 +384,16 @@ export default function SalesConsignee() {
         open={addOpen}
         consignee={editing}
         onClose={() => { setAddOpen(false); setEditing(null); }}
+        onSaved={() => { fetchRows(); }}
+      />
+
+      <DeleteConfirmModal
+        open={!!delTarget}
+        title="Delete Consignee"
+        itemName={delTarget?.company}
+        subMessage="This will permanently delete the consignee and all linked addresses. The action cannot be undone."
+        onClose={() => setDelTarget(null)}
+        onConfirm={handleDelete}
       />
     </div>
   );
@@ -452,6 +501,20 @@ const SCOPED_CSS = `
   border-radius: 16px 16px 0 0;
 }
 .smcg-cstrip-left  { display:flex; align-items:center; gap:14px; z-index:1; padding-left:4px; }
+.smcg-back-btn {
+  flex-shrink: 0;
+  width: 34px; height: 34px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.75);
+  border: 1px solid rgba(16,185,129,.20);
+  color: #047857; cursor: pointer;
+  transition: all .18s ease;
+  box-shadow: 0 1px 2px rgba(15,42,35,.04);
+}
+.smcg-back-btn:hover  { background: #fff; border-color: #10b981; transform: translateX(-1px); box-shadow: 0 4px 12px rgba(16,185,129,.18); }
+.smcg-back-btn:active { transform: translateX(-1px) scale(.97); }
+[data-bs-theme="dark"] .smcg-back-btn         { background: rgba(255,255,255,.06); border-color: rgba(110,231,183,.30); color: #6ee7b7; }
+[data-bs-theme="dark"] .smcg-back-btn:hover   { background: rgba(16,185,129,.18); border-color: #10b981; color: #d1fae5; }
 .smcg-avatar-wrap  { position: relative; flex-shrink: 0; }
 .smcg-avatar {
   width: 44px; height: 44px; border-radius: 12px;

@@ -111,6 +111,33 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/customers/{customer}/documents/{document}',[\App\Http\Controllers\Api\CustomerDocumentController::class, 'update']);  // PUT for json-only
     Route::delete('/customers/{customer}/documents/{document}',[\App\Http\Controllers\Api\CustomerDocumentController::class, 'destroy']);
 
+    // Sales Matrix → Consignees. Backed by consignees + consignee_addresses
+    // tables; tenant-scoped server-side; each consignee belongs to a customer.
+    Route::apiResource('consignees', \App\Http\Controllers\Api\ConsigneeController::class)
+        ->only(['index', 'show', 'store', 'update', 'destroy']);
+
+    // "Same as Customer" deep-clone — copies the linked customer's
+    // Stage 2 KYC docs + owners (including file attachments) onto this
+    // consignee. Idempotent (409 if consignee already has KYC).
+    Route::post('/consignees/{consignee}/clone-from-customer',
+        [\App\Http\Controllers\Api\ConsigneeController::class, 'cloneFromCustomer']);
+
+    // Stage 2 → Company DD + Trade Licence documents nested under the consignee.
+    Route::get   ('/consignees/{consignee}/documents',           [\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'index']);
+    Route::post  ('/consignees/{consignee}/documents',           [\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'store']);
+    Route::get   ('/consignees/{consignee}/documents/{document}',[\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'show']);
+    Route::post  ('/consignees/{consignee}/documents/{document}',[\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'update']);  // POST for file uploads
+    Route::put   ('/consignees/{consignee}/documents/{document}',[\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'update']);  // PUT for json-only
+    Route::delete('/consignees/{consignee}/documents/{document}',[\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'destroy']);
+
+    // Stage 2 → Owner KYC rows nested under the consignee.
+    Route::get   ('/consignees/{consignee}/owners',          [\App\Http\Controllers\Api\ConsigneeOwnerController::class, 'index']);
+    Route::post  ('/consignees/{consignee}/owners',          [\App\Http\Controllers\Api\ConsigneeOwnerController::class, 'store']);
+    Route::get   ('/consignees/{consignee}/owners/{owner}',  [\App\Http\Controllers\Api\ConsigneeOwnerController::class, 'show']);
+    Route::post  ('/consignees/{consignee}/owners/{owner}',  [\App\Http\Controllers\Api\ConsigneeOwnerController::class, 'update']);  // POST for file uploads
+    Route::put   ('/consignees/{consignee}/owners/{owner}',  [\App\Http\Controllers\Api\ConsigneeOwnerController::class, 'update']);  // PUT for json-only
+    Route::delete('/consignees/{consignee}/owners/{owner}',  [\App\Http\Controllers\Api\ConsigneeOwnerController::class, 'destroy']);
+
     // Stage 2 → Owner KYC rows nested under the customer.
     Route::get   ('/customers/{customer}/owners',          [\App\Http\Controllers\Api\CustomerOwnerController::class, 'index']);
     Route::post  ('/customers/{customer}/owners',          [\App\Http\Controllers\Api\CustomerOwnerController::class, 'store']);
