@@ -810,6 +810,19 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     ? (isEdit ? 'Update Customer' : 'Submit Customer')
     : 'Save & Next';
 
+  /* Stage 2 → 3 hard gate. The button stays visibly disabled until the
+   * user has captured at least one Company DD document AND at least
+   * one Owner KYC entry — tab switching still works, but Save & Next
+   * is locked so the user can't slip past with a half-filled stage. */
+  const stage2HasDD    = kycDocs.some(d => d.kind === 'dd');
+  const stage2HasOwner = kycOwners.length > 0;
+  const stage2Missing =
+    !stage2HasDD && !stage2HasOwner ? 'Add at least one Company DD document and one Owner KYC entry to continue.'
+    : !stage2HasDD                  ? 'Add at least one Company Due Diligence document to continue.'
+    : !stage2HasOwner               ? 'Add at least one Owner KYC entry to continue.'
+    : '';
+  const nextLocked = stage === 2 && !!stage2Missing;
+
   return (
     /* No backdrop-click-to-close — users were losing partially filled
        forms by misclicking the overlay. Close only via the X / Cancel
@@ -840,7 +853,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         </div>
 
         {/* STEPPER */}
-        <Stepper stage={stage} onGoto={gotoStage} />
+        <Stepper stage={stage} maxStage={maxStage} onGoto={gotoStage} />
 
         {/* HISTORY PANEL */}
         {stage > 1 && (
@@ -980,14 +993,26 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
                 Previous
               </button>
             )}
-            <button type="button" className="acm-btn-next" onClick={goNext} disabled={saving} style={saving ? { opacity:.7, cursor:'wait' } : undefined}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" />
-                <polyline points="17 21 17 13 7 13 7 21" />
-                <polyline points="7 3 7 8 15 8" />
-              </svg>
-              <span>{saving ? 'Saving…' : nextLabel}</span>
-            </button>
+            <Tooltip label={nextLocked ? stage2Missing : ''} disabled={!nextLocked}>
+              <button
+                type="button"
+                className="acm-btn-next"
+                onClick={goNext}
+                disabled={saving || nextLocked}
+                style={
+                  saving      ? { opacity:.7, cursor:'wait' } :
+                  nextLocked  ? { opacity:.55, cursor:'not-allowed' } :
+                  undefined
+                }
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                  <polyline points="7 3 7 8 15 8" />
+                </svg>
+                <span>{saving ? 'Saving…' : nextLabel}</span>
+              </button>
+            </Tooltip>
           </div>
         </div>
 
@@ -1104,7 +1129,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 }
 
 /* ───── Stepper ───── */
-function Stepper({ stage, onGoto }: { stage: Stage; onGoto: (s: Stage) => void }) {
+function Stepper({ stage, maxStage, onGoto }: { stage: Stage; maxStage: Stage; onGoto: (s: Stage) => void }) {
   const steps = [
     { n:1 as Stage, title:'Customer Legal Identity', sub:'Company, GST, PAN & contact',
       icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
@@ -1119,13 +1144,22 @@ function Stepper({ stage, onGoto }: { stage: Stage; onGoto: (s: Stage) => void }
   return (
     <div className="acm-stepper">
       {steps.map((s, i) => {
-        const cls = s.n < stage ? 'acm-step-done' : s.n === stage ? 'acm-step-active' : 'acm-step-pending';
+        /* Reachability is driven by `maxStage` so a user who reached
+         * Stage 2 (or 3) and then navigated back to Stage 1 still sees
+         * the later stage as visited+clickable, not as a locked
+         * pending step. Three visual states:
+         *   active     — current stage (purple)
+         *   done       — visited (s.n <= maxStage) but not current (green ✓)
+         *   pending    — not yet reached (s.n > maxStage, locked) */
+        const visited = s.n <= maxStage;
+        const cls = s.n === stage ? 'acm-step-active' : visited ? 'acm-step-done' : 'acm-step-pending';
+        const showCheck = visited && s.n !== stage;
         return (
           <Fragment key={s.n}>
             <div className={`acm-step ${cls}`} onClick={() => onGoto(s.n)}>
               <div className="acm-step-badge-wrap">
-                <div className="acm-step-badge">{s.n < stage ? CHECK_BADGE : s.icon}</div>
-                <div className="acm-step-num">{s.n < stage ? CHECK_NUM : s.n}</div>
+                <div className="acm-step-badge">{showCheck ? CHECK_BADGE : s.icon}</div>
+                <div className="acm-step-num">{showCheck ? CHECK_NUM : s.n}</div>
               </div>
               <div className="acm-step-text">
                 <div className="acm-step-title">{s.title}</div>
@@ -1133,7 +1167,10 @@ function Stepper({ stage, onGoto }: { stage: Stage; onGoto: (s: Stage) => void }
               </div>
             </div>
             {i < steps.length - 1 && (
-              <div className="acm-step-connector"><div className="acm-connector-line" data-done={s.n < stage ? '1' : '0'} /></div>
+              /* Connector lights up if the next step has been reached
+               * (regardless of current position), so going back to
+               * Stage 1 doesn't visually undo the 1↔2 connection. */
+              <div className="acm-step-connector"><div className="acm-connector-line" data-done={s.n < maxStage ? '1' : '0'} /></div>
             )}
           </Fragment>
         );
