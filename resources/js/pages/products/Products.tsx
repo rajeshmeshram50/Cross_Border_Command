@@ -37,6 +37,8 @@ export type Product = {
   hazClass: 'HAZ' | 'NON HAZ';
   hazClassName: string;                        // master haz_class.name when product is HAZ
   gstRate: number;
+  condition: string;
+  vendors: string[];                           // company_name of every mapped vendor
   vendorCount: number;
   stepCompleted: number;                       // 0..4 — wizard re-entry hint
   badge?: 'Best Seller' | 'New' | 'Trending' | 'Top Rated';
@@ -65,6 +67,9 @@ function apiToCard(row: Record<string, unknown>): Product {
   const hsnObj = row.hsn as { hsn_code?: string } | null;
   const gstObj = row.gst_percentage as { percentage?: number | string } | null;
   const hazClassObj = row.haz_class as { name?: string } | null;
+  const condObj = row.condition as { title?: string } | null;
+  const vendorMaps = Array.isArray(row.vendor_maps) ? (row.vendor_maps as { vendor_name?: string }[]) : [];
+  const vendorNames = vendorMaps.map(v => v?.vendor_name ?? '').filter(Boolean);
   const apiStatus = String(row.status ?? 'draft').toLowerCase();
   const displayStatus: Product['status'] =
     apiStatus === 'active' ? 'Active' : apiStatus === 'inactive' ? 'Inactive' : 'Draft';
@@ -94,7 +99,9 @@ function apiToCard(row: Record<string, unknown>): Product {
     hazClass: String(row.haz_type ?? '').toLowerCase().startsWith('haz') && !String(row.haz_type ?? '').toLowerCase().includes('non') ? 'HAZ' : 'NON HAZ',
     hazClassName: hazClassObj?.name ?? '',
     gstRate: Number(gstObj?.percentage ?? 0),
-    vendorCount: Array.isArray(row.vendor_maps) ? (row.vendor_maps as unknown[]).length : 0,
+    condition: condObj?.title ?? '',
+    vendors: vendorNames,
+    vendorCount: vendorMaps.length,
     stepCompleted: Number(row.step_completed ?? 0),
     thumb: THUMB_GRADIENTS[idNum % THUMB_GRADIENTS.length],
     images,
@@ -181,7 +188,7 @@ export default function Products() {
   const [gstRateOpts, setGstRateOpts]   = useState<string[]>(GST_RATES);
 
   useEffect(() => {
-    type MasterRow = { id: number | string; status?: string; name?: string; title?: string; hsn_code?: string; percentage?: number | string };
+    type MasterRow = { id: number | string; status?: string; name?: string; title?: string; short_code?: string; hsn_code?: string; percentage?: number | string };
     const active = (r: MasterRow) => String(r.status ?? 'Active').toLowerCase() !== 'inactive';
     const fetchMaster = async <T,>(slug: string, map: (r: MasterRow) => T | null): Promise<T[]> => {
       try {
@@ -208,7 +215,11 @@ export default function Products() {
       const [seg, hsn, uom, cond, gst] = await Promise.all([
         fetchMaster<string>('segments',       r => r.title ?? null),
         fetchMaster<string>('hsn_codes',      r => r.hsn_code ?? null),
-        fetchMaster<string>('uom',            r => r.title ?? null),
+        // UOM options must mirror what the product card actually shows.
+        // apiToCard maps p.uom = short_code ?? title (e.g. "kg" for the
+        // "Kilogram" master row), so the filter has to do the same — fetching
+        // by `title` alone made "Kilogram" never match the "kg" on the card.
+        fetchMaster<string>('uom',            r => r.short_code ?? r.title ?? null),
         fetchMaster<string>('conditions',     r => r.title ?? null),
         fetchMaster<string>('gst_percentage', r => (r.percentage != null ? `${r.percentage}%` : null)),
       ]);
@@ -334,7 +345,21 @@ export default function Products() {
     if (filters.hsn.length)      src = src.filter(p => filters.hsn.includes(p.hsn));
     if (filters.hazType.length)  src = src.filter(p => filters.hazType.includes(p.hazClass));
     if (filters.uom.length)      src = src.filter(p => filters.uom.includes(p.uom));
-    if (filters.vendor.length)   src = src.filter(p => filters.vendor.includes(p.brand));
+    /* GST filter values arrive as strings ("5%", "18%"); the product's
+       gstRate is a number. Normalize both sides so comparison is
+       strictly on the numeric percent. */
+    if (filters.gstRate.length) {
+      const allowedPcts = new Set(filters.gstRate.map(s => Number(s.replace(/[^\d.]/g, ''))));
+      src = src.filter(p => allowedPcts.has(p.gstRate));
+    }
+    if (filters.condition.length) src = src.filter(p => filters.condition.includes(p.condition));
+    /* Vendor filter checks the list of mapped vendor company names on
+       the product (vendor_maps.vendor_name). Previously this matched
+       against p.brand, which is a free-text brand field unrelated to
+       the mapped-vendor directory — so nothing ever matched. */
+    if (filters.vendor.length) {
+      src = src.filter(p => p.vendors.some(v => filters.vendor.includes(v)));
+    }
     if (filters.scoreRange.length) {
       src = src.filter(p => filters.scoreRange.some(r => {
         const [lo, hi] = r.split('–').map(s => parseFloat(s.trim()));
@@ -1810,13 +1835,17 @@ const SCOPED_CSS = `
 }
 .prd-filter-clear-mini:hover { background: #fee2e2; }
 
-.prd-filter-date-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 6px 4px 4px; }
-.prd-filter-date-field { display: flex; flex-direction: column; gap: 4px; font-size: 10.5px; font-weight: 700; color: #6d28d9; letter-spacing: .04em; text-transform: uppercase; }
+/* minmax(0, 1fr) instead of plain 1fr — without it, a grid track's
+ * floor is min-content, so the date toggle (calendar icon + clear "×"
+ * + the value text on a nowrap line) forces the TO column wider than
+ * its share and bleeds past the right edge of the filter panel. */
+.prd-filter-date-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 6px 4px 4px; min-width: 0; }
+.prd-filter-date-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 10.5px; font-weight: 700; color: #6d28d9; letter-spacing: .04em; text-transform: uppercase; }
 
 /* MasterDatePicker wrapper — sized to fit the compact filter row and
    tinted with the page's violet accent (same chrome the other filter
    controls use). */
-.prd-filter-date-picker { width: 100%; }
+.prd-filter-date-picker { width: 100%; min-width: 0; }
 .prd-filter-date-picker .master-date-input,
 .prd-filter-date-picker input.form-control {
   height: 34px !important;

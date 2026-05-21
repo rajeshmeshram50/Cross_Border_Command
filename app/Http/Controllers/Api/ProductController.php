@@ -71,7 +71,7 @@ class ProductController extends Controller
             ->with([
                 'segment', 'hazClass', 'uom', 'hsn', 'condition',
                 'packagingMaterial', 'gstPercentage',
-                'vendorMaps:id,product_id',
+                'vendorMaps:id,product_id,vendor_name',
                 'qcRecords:id,product_id',
             ]);
 

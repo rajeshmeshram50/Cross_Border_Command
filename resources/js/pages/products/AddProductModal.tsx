@@ -1981,12 +1981,18 @@ function UploadDropzone(props: {
   onPick: (e: ChangeEvent<HTMLInputElement>) => void;
   onRemove: (index: number) => void;
 }) {
+  /* Outer is a <div>, NOT a <label>. The previous label wrapped the
+     title, the dashed dropzone AND the preview chips — so clicking the
+     "Primary Image" / "Secondary Image" title text or any blank area
+     beside the previews would pop the OS file picker. Mirrors the same
+     fix used on the Field component above. The `<label>` is now scoped
+     to just the dashed dropzone so only that region triggers picking. */
   return (
-    <label className="apm-field apm-upload-field">
+    <div className="apm-field apm-upload-field">
       <span className="apm-field-label">
         {props.label} {props.required && <span className="apm-req">*</span>}
       </span>
-      <div className="apm-dropzone">
+      <label className="apm-dropzone">
         <input
           type="file"
           accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf"
@@ -2000,7 +2006,7 @@ function UploadDropzone(props: {
           <line x1="12" y1="3" x2="12" y2="15" />
         </svg>
         <span>{props.hint}</span>
-      </div>
+      </label>
       {props.preview.length > 0 && (
         <div className="apm-upload-preview">
           {props.preview.map((src, i) => (
@@ -2013,7 +2019,7 @@ function UploadDropzone(props: {
           ))}
         </div>
       )}
-    </label>
+    </div>
   );
 }
 
@@ -3111,9 +3117,16 @@ const SCOPED_CSS = `
   border-radius: 12px;
   padding: 12px;
 }
+/* Reserves dedicated vertical space + a divider rule so the title pill
+ * (icon + "Mapped Vendors" + count) no longer sits flush against the
+ * inner table's top border. The 16px icon's bottom edge visually merged
+ * with the table-light header row directly below it, especially in dark
+ * mode where the two backgrounds contrast sharply. */
 .apm-vendor-table-head {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #ede9fe;
 }
 .apm-vendor-table-title {
   display: inline-flex; align-items: center; gap: 8px;
