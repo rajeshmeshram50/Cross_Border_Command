@@ -376,6 +376,19 @@ export default function Payments() {
       gradient: 'linear-gradient(135deg,#405189,#6691e7)',
     },
     {
+      /* Success KPI — counts payments whose status === 'success'. The
+       * value already lives on the /payments/stats response as
+       * `stats.successful` (the same number the Total Revenue card uses
+       * as its sub-hint), but it deserves its own card so an admin can
+       * see the success-vs-failed split at a glance instead of having
+       * to skim the Total Revenue sub-line. */
+      label: 'Success',
+      value: (stats?.successful || 0).toLocaleString(),
+      hint: 'paid in full',
+      icon: 'ri-checkbox-circle-fill',
+      gradient: 'linear-gradient(135deg,#22c55e,#16a34a)',
+    },
+    {
       label: 'Failed',
       value: (stats?.failed || 0).toLocaleString(),
       hint: 'need attention',
@@ -401,7 +414,7 @@ export default function Payments() {
             <h4 className="mb-sm-0">Revenue & Payments</h4>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">IGC</a></li>
+                <li className="breadcrumb-item"><a href="#">Admin</a></li>
                 <li className="breadcrumb-item active">Payments</li>
               </ol>
             </div>
@@ -412,10 +425,15 @@ export default function Payments() {
       <Row>
         <Col xs={12}>
           <div className="payments-surface pmt-page-card">
-            {/* ── KPI cards (admin-dashboard style) ── */}
-            <Row className="g-3 mb-3 align-items-stretch">
+            {/* ── KPI cards (admin-dashboard style) ──
+                row-cols-md-5 forces all five cards onto a single row on
+                tablet/desktop (Bootstrap's 12-column grid can't divide
+                cleanly by 5 with a fixed md={n}, so the layout
+                previously wrapped 4 + 1). Smaller breakpoints stay
+                responsive — 2 per row on sm, stacked on xs. */}
+            <Row className="g-3 mb-3 align-items-stretch row-cols-1 row-cols-sm-2 row-cols-md-5">
               {KPI_CARDS.map(k => (
-                <Col key={k.label} md={3} sm={6} xs={12}>
+                <Col key={k.label}>
                   <div className="payments-surface pmt-kpi-card">
                     <div className="pmt-kpi-top-bar" style={{ background: k.gradient }} />
                     <div className="pmt-kpi-row">

@@ -206,6 +206,21 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/sales/leads/{id}/acknowledgements',
         [SalesLeadController::class, 'storeAcknowledgements'])->whereNumber('id');
 
+    // Matrix action toolbar → WhatsApp status. Multipart so an optional
+    // proof screenshot can ride along.
+    Route::match(['post', 'put'], '/sales/leads/{id}/whatsapp',
+        [SalesLeadController::class, 'updateWhatsApp'])->whereNumber('id');
+
+    // Matrix action toolbar → Product Directory (lead ⇄ product mapping).
+    Route::get   ('/sales/leads/{id}/products',
+        [SalesLeadController::class, 'listLeadProducts'])->whereNumber('id');
+    Route::post  ('/sales/leads/{id}/products',
+        [SalesLeadController::class, 'storeLeadProduct'])->whereNumber('id');
+    Route::put   ('/sales/leads/{id}/products/{mapping}',
+        [SalesLeadController::class, 'updateLeadProduct'])->whereNumber('id')->whereNumber('mapping');
+    Route::delete('/sales/leads/{id}/products/{mapping}',
+        [SalesLeadController::class, 'destroyLeadProduct'])->whereNumber('id')->whereNumber('mapping');
+
     // Sales Matrix → Productivity Tracker (/sales/todo). Two parallel
     // sub-resources behind one controller — reminders + meetings — with
     // shared scope rules (default = caller's own rows; ?scope=all is the

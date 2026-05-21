@@ -103,4 +103,13 @@ class Lead extends Model
     {
         return $this->hasMany(LeadAcknowledgement::class)->latest('id');
     }
+
+    /**
+     * Lead ↔ Product mapping rows — drives the Product Directory pill
+     * on the matrix toolbar plus the Stage 3+ pricing flows.
+     */
+    public function leadProducts()
+    {
+        return $this->hasMany(LeadProduct::class);
+    }
 }

@@ -130,7 +130,12 @@ const today = () => {
 
 const formatDate = (iso: string) => {
   if (!iso) return '';
-  const [y, m, d] = iso.split('-');
+  // Accept both bare ISO dates ("2026-05-21") and full timestamps
+  // ("2026-05-21T00:00:00.000000Z") — strip the time portion first so
+  // the day segment doesn't end up "21T00:00:00.000000Z" and produce
+  // the "21T00:00:00.000000Z/05/2026" display glitch.
+  const datePart = iso.split('T')[0];
+  const [y, m, d] = datePart.split('-');
   if (!y || !m || !d) return iso;
   return `${d}/${m}/${y}`;
 };
@@ -320,6 +325,10 @@ export default function AddProductModal(props: {
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
   const [vendorGstPct, setVendorGstPct] = useState<string>('');
   const [vendorRemarks, setVendorRemarks] = useState('');
+  /* When set, the Map Vendor draft is in EDIT mode for this row.id —
+   * saveVendorDraft updates that row instead of appending a new one,
+   * and the draft form's heading + button labels flip accordingly. */
+  const [vendorEditingId, setVendorEditingId] = useState<string | null>(null);
 
   const vendorSelected = useMemo(
     () => vendorOpts.find(v => v.code === vendorSelectedCode) || null,
@@ -512,6 +521,40 @@ export default function AddProductModal(props: {
       return;
     }
     if (!vendorSelected) return; // type-guard after the check
+
+    /* Edit mode — overlay the editable fields onto the existing row
+     * and keep its id so the change is in-place rather than producing
+     * a duplicate "added" row. Map date is preserved from the original
+     * row in edit mode (the row was already mapped at that date). */
+    if (vendorEditingId) {
+      setVendors(prev => prev.map(row =>
+        row.id !== vendorEditingId ? row : {
+          ...row,
+          vendorId:      vendorSelected.id,
+          vendorCode:    vendorSelected.code,
+          vendorName:    vendorSelected.name,
+          website:       vendorSelected.website,
+          contactPerson: vendorSelected.contact,
+          contactNo:     vendorSelected.phone,
+          email:         vendorSelected.email,
+          designation:   vendorSelected.designation,
+          purchasePrice: vendorPp,
+          gstPct:        vendorGp,
+          gstAmt:        vendorGsta,
+          totalAmt:      vendorTota,
+          remarks:       vendorRemarks,
+        }
+      ));
+      setVendorDraftOpen(false);
+      setVendorEditingId(null);
+      setVendorSelectedCode('');
+      setVendorPurchasePrice('');
+      setVendorGstPct('');
+      setVendorRemarks('');
+      toast.success('Vendor updated', `${vendorSelected.name} mapping updated`);
+      return;
+    }
+
     const entry: VendorEntry = {
       id: String(Date.now()),
       vendorId: vendorSelected.id,
@@ -540,6 +583,29 @@ export default function AddProductModal(props: {
     setVendorGstPct('');
     setVendorRemarks('');
     toast.success('Vendor mapped', `${entry.vendorName} added to this product`);
+  };
+
+  /* Open the Map Vendor draft in EDIT mode — preselect the vendor in
+   * the dropdown and prefill purchase price, GST %, and remarks from
+   * the row. saveVendorDraft sees vendorEditingId and updates in place. */
+  const openVendorEdit = (v: VendorEntry) => {
+    setVendorEditingId(v.id);
+    setVendorSelectedCode(v.vendorCode);
+    setVendorPurchasePrice(v.purchasePrice ? String(v.purchasePrice) : '');
+    setVendorGstPct(v.gstPct ? String(v.gstPct) : '');
+    setVendorRemarks(v.remarks ?? '');
+    setVendorDraftOpen(true);
+  };
+
+  /* Close the draft without saving — wipes any in-flight edits so the
+   * next "+ Map New Vendor" click opens a clean form. */
+  const closeVendorDraft = () => {
+    setVendorDraftOpen(false);
+    setVendorEditingId(null);
+    setVendorSelectedCode('');
+    setVendorPurchasePrice('');
+    setVendorGstPct('');
+    setVendorRemarks('');
   };
 
   const removeVendor = (id: string) =>
@@ -989,10 +1055,21 @@ export default function AddProductModal(props: {
         issued_by: q.issuedBy,
         qa_testing_parameter: q.testingParameter,
         min_acceptance_criteria: q.minAcceptance,
-        // Keep the existing server-side path when the user didn't
-        // replace the attachment on this open of the modal. The
-        // backend overrides with the multipart upload path below.
-        attachment_path: q.attachmentPath || (q.attachmentFile ? null : (q.attachmentName || null)),
+        /* attachment_path rules:
+         *   • A real server path (saved on a previous round-trip, e.g.
+         *     "products/qc/<hash>__file.jpg") → send it so the backend
+         *     preserves the existing upload after the delete-and-recreate.
+         *   • A pending File pick → null. The multipart branch below
+         *     uploads the file and the backend fills the path itself.
+         *   • Otherwise → null. The previous version fell back to the
+         *     bare attachmentName (the display label, like "Bhuvan.jpg"),
+         *     which the backend then stored as the path — producing
+         *     /storage/Bhuvan.jpg on local and .../cbc-saas/Bhuvan.jpg
+         *     on Azure, neither of which exists. Never trust the
+         *     basename as a storage path. */
+        attachment_path: (q.attachmentPath && q.attachmentPath.includes('/'))
+          ? q.attachmentPath
+          : null,
       }));
 
       const qualityFields = {
@@ -1007,6 +1084,17 @@ export default function AddProductModal(props: {
         height_cm: parseFloat(height) || null,
       };
 
+      /* Both PUT branches return the refreshed product with its
+       * regenerated qc_records (the server replaces them every save).
+       * We capture that response so we can sync our in-memory rows to
+       * the new server-side attachment_path / attachment_url — without
+       * this, a freshly-uploaded row keeps attachmentPath='' locally,
+       * and the NEXT save would fall through to a bare-filename
+       * attachment_path and corrupt the row's storage pointer. */
+      type QualitySaveResponse = {
+        qc_records?: Array<{ id: number; attachment_path?: string | null; attachment_url?: string | null }>;
+      };
+      let saveRes: { data: QualitySaveResponse };
       if (hasNewFiles) {
         const fd = new FormData();
         // Laravel needs a method override since the route is PUT.
@@ -1025,20 +1113,32 @@ export default function AddProductModal(props: {
             fd.append(`qc_records[${idx}][attachment_file]`, file);
           }
         });
-        await api.post(`/products/${productId}/step/quality`, fd, {
+        saveRes = await api.post<QualitySaveResponse>(`/products/${productId}/step/quality`, fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
       } else {
-        await api.put(`/products/${productId}/step/quality`, {
+        saveRes = await api.put<QualitySaveResponse>(`/products/${productId}/step/quality`, {
           ...qualityFields,
           qc_records: qcRows,
         });
       }
 
-      // Clear the in-memory File objects — on the next save the row
-      // should be treated as having no fresh file picked, so we don't
-      // re-upload the same blob.
-      setQcRecords(prev => prev.map(q => ({ ...q, attachmentFile: null })));
+      /* Map the response's qc_records back over our local rows by row
+       * index — the backend re-creates them in the same order we sent,
+       * so the index alignment is stable. Clears the in-memory File
+       * and pulls the canonical attachment_path / attachment_url from
+       * the server. */
+      const serverQc = saveRes.data.qc_records ?? [];
+      setQcRecords(prev => prev.map((q, idx) => {
+        const sv = serverQc[idx];
+        if (!sv) return { ...q, attachmentFile: null };
+        return {
+          ...q,
+          attachmentFile: null,
+          attachmentPath: sv.attachment_path ?? '',
+          attachmentUrl:  sv.attachment_url  ?? q.attachmentUrl ?? '',
+        };
+      }));
 
       // Step 1 fully complete — product is now Inactive on the server.
       onSaved(productId, false);
@@ -1591,11 +1691,11 @@ export default function AddProductModal(props: {
                       <div className="apm-mv-popup-title">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                         <div>
-                          <div className="apm-mv-popup-title-main">Map Product Vendor</div>
-                          <div className="apm-mv-popup-title-sub">Select a vendor and enter purchase pricing</div>
+                          <div className="apm-mv-popup-title-main">{vendorEditingId ? 'Edit Mapped Vendor' : 'Map Product Vendor'}</div>
+                          <div className="apm-mv-popup-title-sub">{vendorEditingId ? 'Update vendor selection and pricing' : 'Select a vendor and enter purchase pricing'}</div>
                         </div>
                       </div>
-                      <button className="apm-close apm-mv-close" onClick={() => setVendorDraftOpen(false)} aria-label="Close">
+                      <button className="apm-close apm-mv-close" onClick={closeVendorDraft} aria-label="Close">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                       </button>
                     </div>
@@ -1666,9 +1766,9 @@ export default function AddProductModal(props: {
                     </div>
 
                     <div className="apm-mv-popup-foot">
-                      <button className="apm-btn-ghost" onClick={() => setVendorDraftOpen(false)}>Cancel</button>
+                      <button className="apm-btn-ghost" onClick={closeVendorDraft}>Cancel</button>
                       <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={!vendorSelected || !vendorPp}>
-                        Save Vendor
+                        {vendorEditingId ? 'Save Changes' : 'Save Vendor'}
                       </button>
                     </div>
                   </div>
@@ -1728,7 +1828,7 @@ export default function AddProductModal(props: {
                                   title="Edit"
                                   icon="ri-pencil-line"
                                   color="info"
-                                  onClick={() => { /* edit flow lands later */ }}
+                                  onClick={() => openVendorEdit(v)}
                                 />
                                 <QcActionBtn
                                   title="Delete"
@@ -2268,10 +2368,11 @@ const QUICK_ADD_SCHEMAS: Record<QuickAddSlug, { title: string; fields: QaField[]
                           { name: 'unit_type',  label: 'Unit Type', placeholder: 'e.g. Weight / Volume / Count' },
                         ] },
   hsn_codes:          { title: 'Add HSN / SAC Code',     fields: [
-                          /* SAC codes for services are alphanumeric (e.g. 9986AB),
-                             so the placeholder shows both forms. Backend validates
-                             ^[A-Za-z0-9]{4,10}$; matched by submit() below. */
-                          { name: 'hsn_code',    label: 'HSN / SAC Code', required: true, placeholder: 'e.g. 08013100 or 9986AB' },
+                          /* HSN / SAC are numeric per Indian GST notification
+                             (4, 6, 8 or 10 digit codes). Backend validates
+                             ^[0-9]{4,10}$; matched by submit() below, and the
+                             input strips non-digits as the user types. */
+                          { name: 'hsn_code',    label: 'HSN / SAC Code', required: true, placeholder: 'e.g. 08013100' },
                           { name: 'description', label: 'Description', placeholder: 'Brief description' },
                         ] },
   conditions:         { title: 'Add Condition',          fields: [{ name: 'title', label: 'Condition Name', required: true, placeholder: 'e.g. New, Refurbished' }] },
@@ -2307,12 +2408,12 @@ function MasterQuickAddPopup(props: {
         errs[f.name] = `${f.label} is required`;
         return;
       }
-      /* HSN/SAC code — mirrors the backend's ^[A-Za-z0-9]{4,10}$ pattern
-         so the user gets instant feedback if they typed a hyphen, a
-         space, or fewer than 4 chars, instead of hitting the server
-         roundtrip with a 422. */
-      if (raw && f.name === 'hsn_code' && !/^[A-Za-z0-9]{4,10}$/.test(raw)) {
-        errs[f.name] = 'HSN / SAC must be 4 to 10 alphanumeric characters';
+      /* HSN/SAC code — mirrors the backend's ^[0-9]{4,10}$ pattern so
+         the user gets instant feedback if they typed a letter, a hyphen,
+         a space, or fewer than 4 digits, instead of hitting the server
+         with a 422 round-trip. */
+      if (raw && f.name === 'hsn_code' && !/^[0-9]{4,10}$/.test(raw)) {
+        errs[f.name] = 'HSN / SAC must be 4 to 10 digits';
       }
     });
     if (Object.keys(errs).length) {
@@ -2362,17 +2463,28 @@ function MasterQuickAddPopup(props: {
           </button>
         </div>
         <div className="apm-qa-body">
-          {schema.fields.map(f => (
-            <Field key={f.name} label={f.label} required={f.required} error={errors[f.name]}>
-              <input
-                className="apm-input"
-                type={f.type === 'number' ? 'number' : 'text'}
-                placeholder={f.placeholder ?? ''}
-                value={values[f.name] ?? ''}
-                onChange={(e) => set(f.name, e.target.value)}
-              />
-            </Field>
-          ))}
+          {schema.fields.map(f => {
+            /* HSN/SAC inputs accept only digits — strip everything else
+               on the fly so a paste of "0802-1200" becomes "08021200"
+               and the backend's ^[0-9]{4,10}$ validator never trips. */
+            const isHsn = f.name === 'hsn_code';
+            return (
+              <Field key={f.name} label={f.label} required={f.required} error={errors[f.name]}>
+                <input
+                  className="apm-input"
+                  type={f.type === 'number' ? 'number' : 'text'}
+                  placeholder={f.placeholder ?? ''}
+                  value={values[f.name] ?? ''}
+                  inputMode={isHsn ? 'numeric' : undefined}
+                  maxLength={isHsn ? 10 : undefined}
+                  onChange={(e) => set(
+                    f.name,
+                    isHsn ? e.target.value.replace(/\D/g, '') : e.target.value,
+                  )}
+                />
+              </Field>
+            );
+          })}
         </div>
         <div className="apm-qa-foot">
           <button className="apm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
@@ -3170,6 +3282,18 @@ const SCOPED_CSS = `
   color: #475569;
 }
 .apm-vendor-table-card .table tbody td { vertical-align: middle; }
+
+/* Velzon's .table-card rule applies a negative margin equal to the
+ * Bootstrap card spacer (roughly -1rem on each side) so the table sits
+ * flush to a parent .card's edges — see velzon/components/_table.scss.
+ * We reuse the .table-card class for the Map-Vendor and QC tables in
+ * this wizard, but those wrappers AREN'T Bootstrap cards. The negative
+ * margin then leaks out and the table bleeds past its container by
+ * about 1rem on each side (the "glitch" on the Map Vendor form).
+ * Neutralise it for any .table-card living inside the wizard modal. */
+.apm-modal .table-card,
+.apm-vendor-table-card .table-card,
+.apm-qc-table-wrap .table-card { margin: 0 !important; }
 
 /* ─── Footer ─── */
 .apm-foot {

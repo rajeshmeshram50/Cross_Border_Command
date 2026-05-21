@@ -395,6 +395,20 @@ class ProductController extends Controller
             $product->qcRecords()->delete();
             foreach ($data['qc_records'] ?? [] as $idx => $qc) {
                 $row = collect($qc)->except(['attachment_file'])->toArray();
+
+                /* Only trust an `attachment_path` value that actually
+                 * looks like a path under our storage tree. If the
+                 * client (legacy or otherwise) sent a bare basename
+                 * like "Bhuvan.jpg", drop it before persisting —
+                 * otherwise file_url() resolves to /storage/Bhuvan.jpg
+                 * locally or .../cbc-saas/Bhuvan.jpg on Azure, both of
+                 * which point at non-existent blobs. The path must
+                 * either be empty/null or live under products/qc/. */
+                $clientPath = $row['attachment_path'] ?? null;
+                if ($clientPath !== null && $clientPath !== '' && !str_starts_with((string) $clientPath, 'products/qc/')) {
+                    $row['attachment_path'] = null;
+                }
+
                 $uploaded = $request->file("qc_records.{$idx}.attachment_file");
                 if ($uploaded) {
                     $row['attachment_path'] = $this->storeFileWithName($uploaded, 'products/qc');
