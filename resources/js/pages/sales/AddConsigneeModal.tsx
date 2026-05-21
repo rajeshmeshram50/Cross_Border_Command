@@ -233,27 +233,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * drives the red border + helper text under each affected Field. */
   const [errors1, setErrors1] = useState<Record<string, string>>({});
 
-  /* Real-time duplicate detection for the primary contact phone & email.
-   * Fires the inline error the moment the user types a value already
-   * used by an additional location row, so they don't get bounced back
-   * after clicking Save & Next. Mirrors AddCustomerModal. */
-  useEffect(() => {
-    const phone = (form1.contactNo || '').trim();
-    const email = (form1.email     || '').trim().toLowerCase();
-    const dupPhoneMsg = 'This phone number is already used by another address on this consignee';
-    const dupEmailMsg = 'This email is already used by another address on this consignee';
-    setErrors1(prev => {
-      const next = { ...prev };
-      const phoneDup = phone && locations.some(l => (l.cpContact || '').trim() === phone);
-      const emailDup = email && locations.some(l => (l.cpEmail   || '').trim().toLowerCase() === email);
-      if (phoneDup) next.contactNo = dupPhoneMsg;
-      else if (next.contactNo === dupPhoneMsg) delete next.contactNo;
-      if (emailDup) next.email = dupEmailMsg;
-      else if (next.email === dupEmailMsg) delete next.email;
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form1.contactNo, form1.email, locations]);
   /* Saving state — disables the Save button while api.post/put is in
    * flight so a double-click can't fire two creates. */
   const [saving, setSaving] = useState(false);
@@ -288,6 +267,28 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [locModal, setLocModal]   = useState<{ open: boolean; editing: string | null }>({ open: false, editing: null });
   const [delModal, setDelModal]   = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
+
+  /* Real-time duplicate detection for the primary contact phone & email.
+   * Fires the inline error the moment the user types a value already
+   * used by an additional location row, so they don't get bounced back
+   * after clicking Save & Next. Mirrors AddCustomerModal. */
+  useEffect(() => {
+    const phone = (form1.contactNo || '').trim();
+    const email = (form1.email     || '').trim().toLowerCase();
+    const dupPhoneMsg = 'This phone number is already used by another address on this consignee';
+    const dupEmailMsg = 'This email is already used by another address on this consignee';
+    setErrors1(prev => {
+      const next = { ...prev };
+      const phoneDup = phone && locations.some(l => (l.cpContact || '').trim() === phone);
+      const emailDup = email && locations.some(l => (l.cpEmail   || '').trim().toLowerCase() === email);
+      if (phoneDup) next.contactNo = dupPhoneMsg;
+      else if (next.contactNo === dupPhoneMsg) delete next.contactNo;
+      if (emailDup) next.email = dupEmailMsg;
+      else if (next.email === dupEmailMsg) delete next.email;
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form1.contactNo, form1.email, locations]);
 
   /* Stage 2 — KYC / Due Diligence
    * Table-driven now (matches AddCustomerModal): docs covers both
