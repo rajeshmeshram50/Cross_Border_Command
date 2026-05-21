@@ -292,7 +292,30 @@ class CustomerController extends Controller
             'primary_address.pin'            => ['nullable', 'string', 'regex:/^\d{6}$/'],
             'primary_address.cp_name'        => 'required|string|max:255',
             'primary_address.cp_designation' => 'nullable|string|max:128',
-            'primary_address.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
+            /* Primary phone must be unique within the tenant. Closure
+             * rule because the column lives on `customer_addresses`
+             * (not the customers table) and we only want to block
+             * duplicates among the *primary* address row per customer.
+             * Mirrors the email check below but without a dedicated
+             * denormalised column. */
+            'primary_address.cp_contact'     => [
+                'required', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/',
+                function ($attribute, $value, $fail) use ($clientId, $customerId) {
+                    if (!trim((string) $value)) return;
+                    $exists = \App\Models\CustomerAddress::query()
+                        ->where('cp_contact', $value)
+                        ->where('is_primary', true)
+                        ->whereHas('customer', function ($q) use ($clientId, $customerId) {
+                            $q->whereNull('deleted_at');
+                            $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                            if ($customerId) $q->where('id', '!=', $customerId);
+                        })
+                        ->exists();
+                    if ($exists) {
+                        $fail('This phone number is already used by another customer.');
+                    }
+                },
+            ],
             'primary_address.cp_email'       => [
                 'required', 'email', 'max:255',
                 Rule::unique('customers', 'primary_email')
