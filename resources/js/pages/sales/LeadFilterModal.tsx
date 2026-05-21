@@ -23,6 +23,7 @@ export type LeadFilters = {
   query_type?: string;
   sender_country_iso?: string;
   customer_id?: string;
+  salesperson_id?: string;   // applied by "View Leads" in the Assigned Leads modal
   start_date?: string;
   end_date?: string;
 };
@@ -329,4 +330,43 @@ const LFM_CSS = `
 [data-bs-theme="dark"] .lfm-radio { color: #e2e8f0; }
 [data-bs-theme="dark"] .lfm-radio:hover { background: #1e293b; }
 [data-bs-theme="dark"] .lfm-btn-ghost { background: #0f172a; border-color: #334155; color: #cbd5e1; }
+
+/* Tablet — narrower left menu, tighter padding */
+@media (max-width: 720px) {
+  .lfm-modal { height: auto; max-height: 92vh; }
+  .lfm-body  { flex-direction: column; }
+  .lfm-left {
+    width: 100%;
+    flex-direction: row; flex-wrap: wrap;
+    border-right: none; border-bottom: 1px solid #e2e8f0;
+    padding: 6px;
+  }
+  [data-bs-theme="dark"] .lfm-left { border-bottom-color: #334155; }
+  .lfm-menu-item {
+    flex: 1 0 auto; border-left: none;
+    border-radius: 8px; padding: 8px 12px;
+    text-align: center; font-size: 11.5px;
+  }
+  .lfm-menu-item.on {
+    background: linear-gradient(135deg, #ecfeff, #cffafe);
+    border-left: none;
+  }
+  .lfm-left-foot {
+    flex: 1 0 100%; flex-direction: row; gap: 8px; padding: 8px 6px 4px;
+    border-top: 1px solid #e2e8f0; margin-top: 6px;
+  }
+  [data-bs-theme="dark"] .lfm-left-foot { border-top-color: #334155; }
+  .lfm-left-foot .lfm-btn { flex: 1; }
+  .lfm-right { padding: 12px 14px; }
+  .lfm-options { max-height: 280px; }
+}
+
+/* Phone — single-column date picker, slightly smaller modal padding */
+@media (max-width: 480px) {
+  .lfm-backdrop { padding: 0; }
+  .lfm-modal { width: 100%; height: 100vh; max-height: 100vh; border-radius: 0; }
+  .lfm-date-grid { grid-template-columns: 1fr; }
+  .lfm-head { padding: 12px 16px; }
+  .lfm-head-title { font-size: 14px; }
+}
 `;

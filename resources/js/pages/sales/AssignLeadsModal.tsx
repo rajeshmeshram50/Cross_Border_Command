@@ -537,4 +537,16 @@ const ALM_CSS = `
 [data-bs-theme="dark"] .alm-ss-item:hover { background: #1e293b; }
 [data-bs-theme="dark"] .alm-ss-item.on { background: rgba(8,145,178,.20); }
 [data-bs-theme="dark"] .alm-ss-item-label { color: #e2e8f0; }
+
+/* Phone — single-column date range, fewer side paddings, full-width buttons */
+@media (max-width: 520px) {
+  .alm-backdrop { padding: 12px; }
+  .alm-modal { width: 100%; }
+  .alm-head { padding: 14px 16px; }
+  .alm-head-title { font-size: 15px; }
+  .alm-body { padding: 16px; gap: 12px; }
+  .alm-grid-2 { grid-template-columns: 1fr; }
+  .alm-foot { padding: 12px 16px; flex-direction: column-reverse; }
+  .alm-foot .alm-btn { width: 100%; }
+}
 `;

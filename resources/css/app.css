@@ -104,6 +104,22 @@ body { overflow-x: hidden; }
 .main-content { overflow-x: hidden; min-width: 0; }
 .page-content > .container-fluid { min-width: 0; }
 
+/* Branch/Client name pill inside the topbar.
+ * The pill uses the app's `bg-surface` / `text-text` tokens which only track
+ * the GLOBAL light/dark theme. The topbar however has its own independent
+ * `data-topbar="dark"` mode (Velzon customizer) — when that is on with global
+ * theme still light, the pill rendered white-on-white. Pull it onto Velzon's
+ * header CSS vars when the dark topbar is active so it follows the topbar. */
+[data-topbar="dark"] .branch-switcher-pill {
+  background-color: var(--vz-header-item-bg, rgba(255, 255, 255, 0.08));
+  color: var(--vz-header-item-color, rgba(255, 255, 255, 0.9));
+  border-color: var(--vz-header-border, rgba(255, 255, 255, 0.12));
+}
+[data-topbar="dark"] .branch-switcher-pill:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 body {
   font-family: var(--font-sans);
   background: var(--color-bg);
