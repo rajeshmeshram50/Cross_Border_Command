@@ -162,8 +162,14 @@ class MasterController extends Controller
      */
     private const OWNERSHIP_WITH = [
         'client:id,org_name',
-        'branch:id,name',
-        'creator:id,name,user_type',
+        'branch:id,name,is_main',
+        /* eager-load the creator's branch too so the frontend can tell
+         * Main Branch creators apart from Sub Branch creators without
+         * a second round-trip. Without `is_main` the UI was treating
+         * every branch_user as the same tier and leaving Edit/Delete
+         * enabled for sub-branch users staring at main-branch rows. */
+        'creator:id,name,user_type,branch_id',
+        'creator.branch:id,name,is_main',
     ];
 
     /**
@@ -570,8 +576,17 @@ class MasterController extends Controller
         $arr = $row->toArray();
         $arr['client_name']       = $row->client?->org_name;
         $arr['branch_name']       = $row->branch?->name;
+        /* Row's own branch tier — true when the row was stamped under
+         * the client's Main Branch. Lets the frontend hide Edit/Delete
+         * from sub-branch users without a separate fetch. */
+        $arr['branch_is_main']    = (bool) ($row->branch?->is_main);
         $arr['creator_name']      = $row->creator?->name;
         $arr['creator_user_type'] = $row->creator?->user_type;
+        /* Creator's branch tier — distinguishes Main Branch creators
+         * from Sub Branch creators. Without this, both look identical
+         * to the UI and the frontend rank check fails to block sub-
+         * branch users from editing main-branch-created rows. */
+        $arr['creator_branch_is_main'] = (bool) ($row->creator?->branch?->is_main);
 
         // Inline sublists — return embedded child rows alongside the parent so the
         // edit form can pre-fill them without a second roundtrip. Currently only

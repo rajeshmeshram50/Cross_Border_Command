@@ -2298,8 +2298,14 @@ function Field(props: {
   error?: string;
   children: ReactNode;
 }) {
+  /* Renders as a <div>, NOT a <label>. A <label> proxies clicks anywhere
+     within it to the first form control inside — when `addNew` is set,
+     that first control is the "+" button, so clicking the field area or
+     even the label text was firing the quick-add popup. Using a plain
+     <div> keeps the visual layout but breaks the click-association
+     entirely. */
   return (
-    <label className={`avm-field${props.error ? ' has-error' : ''}`}>
+    <div className={`avm-field${props.error ? ' has-error' : ''}`}>
       <span className="avm-field-label">
         {props.label}{props.required && <span className="avm-req">*</span>}
         {props.addNew && (
@@ -2318,7 +2324,7 @@ function Field(props: {
           <i className="ri-error-warning-line" /> {props.error}
         </span>
       )}
-    </label>
+    </div>
   );
 }
 
@@ -2931,7 +2937,7 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td>{r.segment || '—'}</td>
               <td>{r.batchSerialLot || '—'}</td>
               <td className="text-end font-monospace fs-13">{r.purchasePrice.toFixed(2)}</td>
-              <td className="text-end font-monospace fs-13">{r.gstPercentage ? `${r.gstPercentage}%` : '—'}</td>
+              <td className="text-end font-monospace fs-13">{r.gstPercentage ? `${r.gstPercentage.toFixed(2)}%` : '—'}</td>
               <td className="text-end font-monospace fs-13">{r.gstAmount.toFixed(2)}</td>
               <td className="text-end font-monospace fs-13"><strong>{r.totalAmount.toFixed(2)}</strong></td>
               <td>
