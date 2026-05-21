@@ -2781,65 +2781,32 @@ function HistoryStage1({ form, locations, customerId }: { form: any; locations: 
   const wa = form.cpWa === 'yes' ? 'Yes' : form.cpWa === 'no' ? 'No' : '';
   return (
     <div className="acm-hs-mirror">
-      {/* ── Address & Contact Details first ──────────────────────── */}
-      <div className="acm-hs-section-label">Address &amp; Contact Details</div>
       <div className="acm-hs-grid">
-        <ReadInline label="Address Type"              value={form.addrType || 'Registered Office'} />
-        <ReadInline label="Registered Office Address" value={form.addr} span={3} />
+        <ReadInline label="Customer ID"               value={customerId} />
+        <ReadInline label="Company Name"              value={form.coName} />
+        <ReadInline label="Company Legal Name"        value={form.coLegal} />
+        <ReadInline label="Customer Type"             value={form.coType} />
+
+        <ReadInline label="Company Website"           value={form.coWeb} />
+        <ReadInline label="Customer Segment"          value={form.coSeg} />
+        <ReadInline label="Classification"            value={form.coClass} />
+        <ReadInline label="Risk Level"                value={form.coRisk} />
+
+        <ReadInline label="Registered Office Address" value={form.addr} span={2} />
         <ReadInline label="Country"                   value={form.country} />
         <ReadInline label="State"                     value={form.state} />
+
         <ReadInline label="City"                      value={form.city} />
         <ReadInline label="PIN / Postal Code"         value={form.pin} />
         <ReadInline label="Contact Person Name"       value={form.cpName} />
         <ReadInline label="Designation"               value={form.cpDesig} />
+
         <ReadInline label="Contact No"                value={form.cpTel} />
         <ReadInline label="Email"                     value={form.cpEmail} />
         <ReadInline label="WhatsApp Enable"           value={wa} />
-      </div>
-
-      {locations.length > 0 && (
-        <div className="acm-hs-extras">
-          <div className="acm-hs-extras-head">
-            <span className="acm-hs-extras-title">Additional Address &amp; Contact Details</span>
-            <span className="acm-hs-extras-badge">{locations.length} captured</span>
-          </div>
-          {locations.map((l, i) => {
-            const place = [l.city, l.state, l.country].filter(Boolean).join(' • ');
-            const lwa = l.cpWhatsapp === 'yes' ? 'Yes' : l.cpWhatsapp === 'no' ? 'No' : '';
-            return (
-              <div key={l.id} className="acm-hs-extras-item">
-                <div className="acm-hs-extras-row">
-                  <span className="acm-hs-extras-num">#{i + 1}</span>
-                  <span className="acm-hs-extras-type">{l.type || '—'}</span>
-                </div>
-                <div className="acm-hs-grid acm-hs-extras-grid">
-                  <ReadInline label="Address"                value={l.line} span={2} />
-                  <ReadInline label="City / State / Country" value={place} span={2} />
-                  <ReadInline label="PIN / Postal Code"      value={l.pin} />
-                  <ReadInline label="Contact Person"         value={l.cpName} />
-                  <ReadInline label="Designation"            value={l.cpDesignation} />
-                  <ReadInline label="Phone"                  value={l.cpContact} />
-                  <ReadInline label="Email"                  value={l.cpEmail} span={2} />
-                  <ReadInline label="WhatsApp Enable"        value={lwa} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Customer Identification fields second ─────────────────── */}
-      <div className="acm-hs-section-label">Customer Identification</div>
-      <div className="acm-hs-grid">
-        <ReadInline label="Customer ID"        value={customerId} />
-        <ReadInline label="Company Name"       value={form.coName} />
-        <ReadInline label="Company Legal Name" value={form.coLegal} />
-        <ReadInline label="Customer Type"      value={form.coType} />
-
-        <ReadInline label="Company Website"    value={form.coWeb} />
-        <ReadInline label="Customer Segment"   value={form.coSeg} />
-        <ReadInline label="Classification"     value={form.coClass} />
-        <ReadInline label="Risk Level"         value={form.coRisk} />
+        {locations.length > 0 && (
+          <ReadInline label="Additional Locations" value={`${locations.length} captured`} />
+        )}
       </div>
     </div>
   );
@@ -3643,13 +3610,10 @@ const SCOPED_CSS = `
 
 /* History panel */
 .acm-history { margin: 10px 22px 0; border-radius: 12px; border: 1.5px solid #c4b5fd; background: #fff; overflow: hidden; box-shadow: 0 2px 12px rgba(109,40,217,.09); flex-shrink: 0; max-height: 46px; transition: max-height .38s cubic-bezier(.4,0,.2,1); }
-/* Expanded panel needs room for three sections (Address & Contact
-   Details + any Additional Locations + Customer Identification). The
-   body still scrolls if the content grows past this cap, but 600px
-   is enough to show the full primary address block plus the first
-   couple of additional locations without any scroll for the common
-   case. */
-.acm-history.acm-hist-open { max-height: 600px; }
+/* Expanded panel needs room for the 5-row inline grid + breathing
+   padding; below 900px the grid collapses to 2 cols (9-10 rows) so
+   the body keeps scrolling for narrow viewports. */
+.acm-history.acm-hist-open { max-height: 340px; }
 .acm-history-header { height: 46px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; cursor: pointer; background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 100%); border-left: 4px solid #7c3aed; user-select: none; }
 .acm-history-header:hover { background: linear-gradient(110deg, #ede9fe, #ddd6fe); }
 .acm-history-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -3660,7 +3624,7 @@ const SCOPED_CSS = `
 .acm-history-badge { padding: 3px 11px; border-radius: 20px; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-size: 9.5px; font-weight: 800; white-space: nowrap; }
 .acm-history-chevron { width: 22px; height: 22px; border-radius: 50%; background: rgba(124,58,237,.12); display: flex; align-items: center; justify-content: center; color: #7c3aed; transition: transform .3s; }
 .acm-history-chevron.acm-open { transform: rotate(180deg); }
-.acm-history-body { overflow-y: auto; max-height: calc(600px - 46px); border-top: 1px solid #ede9fe; }
+.acm-history-body { overflow-y: auto; max-height: calc(340px - 46px); border-top: 1px solid #ede9fe; }
 .acm-hs-block { padding: 12px 16px 10px; border-bottom: 1px solid #f3f0fb; }
 .acm-hs-block:last-child { border-bottom: none; }
 .acm-hs-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
