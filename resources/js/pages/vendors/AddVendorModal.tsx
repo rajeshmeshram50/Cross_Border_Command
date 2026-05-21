@@ -2078,8 +2078,12 @@ function MasterQuickAddPopup(props: {
   };
 
   return createPortal((
-    <div className="avm-qa-backdrop" onClick={onClose}>
-      <div className="avm-qa-popup" onClick={(e) => e.stopPropagation()}>
+    /* Backdrop click intentionally does NOT close the popup — the
+       user is mid-edit on a master record and an accidental outside
+       click would wipe their input. The only dismissal paths are the
+       header ✕ button and the footer Cancel. */
+    <div className="avm-qa-backdrop">
+      <div className="avm-qa-popup">
         <div className="avm-qa-head">
           <div className="avm-qa-title">
             <i className="ri-add-circle-line" /> {schema.title}
@@ -2138,8 +2142,11 @@ function ContactAddPopup(props: {
     if (f) set('attachmentName', f.name);
   };
   return createPortal((
-    <div className="avm-cp-backdrop" onClick={onClose}>
-      <div className="avm-cp-popup" onClick={(e) => e.stopPropagation()}>
+    /* Backdrop click is intentionally NOT wired to onClose so an
+       accidental outside click doesn't wipe an in-flight contact entry.
+       Header ✕ and footer Cancel are the only dismissal paths. */
+    <div className="avm-cp-backdrop">
+      <div className="avm-cp-popup">
         <div className="avm-cp-head">
           <div className="avm-cp-title">
             <i className="ri-user-add-line" /> Add Contact Person
@@ -2979,8 +2986,11 @@ function PopupShell(props: {
   children: ReactNode;
 }) {
   return createPortal((
-    <div className="avm-cp-backdrop" onClick={props.onClose}>
-      <div className="avm-cp-popup" onClick={e => e.stopPropagation()}>
+    /* Backdrop click does NOT dismiss — these popups (DD / Owner
+       KYC / Trade License / Bank / GST / Product Mapping) all
+       collect form input that's easy to lose on a stray click. */
+    <div className="avm-cp-backdrop">
+      <div className="avm-cp-popup">
         <div className="avm-cp-head">
           <div className="avm-cp-title">
             <i className={props.icon} /> {props.title}
