@@ -1,0 +1,77 @@
+📋 LIVE DEPLOYMENT — SHORT SHEET
+Which file to edit?
+Only .env on your live server. Nothing else. No code, no migration changes — just the env file. (Migrations need running once with php artisan migrate --force, but that's not "editing a file".)
+
+Your 3 scenarios — .env values
+Scenario 1 — ONE branch, ONE set of APIs
+
+LEAD_SYNC_BRANCH_ID=2
+
+INDIAMART_AGROTECH_KEY=<key from IndiaMart portal>
+INDIAMART_PURVEE_KEY=
+INDIAMART_VORTEX_KEY=
+Only branch 2 sees the Sync button. Pulls from Agrotech account.
+
+Scenario 2 — ANOTHER branch with ITS OWN APIs
+⚠️ Current design supports ONE set of keys per deployment — all enabled branches share them.
+
+If you literally need branch 1 → Agrotech account and branch 2 → some different IndiaMart account, the keys can't be split today. Tell me and I'll add per-branch overrides (10-line change). Until then, treat all branches as sharing the same 3 IndiaMart accounts (which is your real-world setup — Inorbvict has 3 accounts, not 3 branches × different accounts).
+
+Scenario 3 — 3-4 branches sharing the SAME APIs ✅ (current design)
+
+LEAD_SYNC_BRANCH_ID=1,2,3,4
+
+INDIAMART_AGROTECH_KEY=<key>
+INDIAMART_PURVEE_KEY=<key>
+INDIAMART_VORTEX_KEY=<key>
+Any user in branch 1, 2, 3, or 4 sees Sync. All four branches pull from the same 3 IndiaMart accounts. Leads land in each user's own tenant scope.
+
+Commands after editing .env
+
+php artisan migrate --force      # first deploy only — creates leads table
+php artisan config:clear
+npm run build                    # only if frontend changed
+That's it.
+
+How the real API actually works (short)
+
+[User clicks Sync from IndiaMart]
+   │
+   ▼  POST /sales/leads/sync
+[Cross_Border_Command server]
+   │  Checks: is your branch_id in LEAD_SYNC_BRANCH_ID?
+   │  If NO → 403, nothing happens.
+   │  If YES → for each INDIAMART_*_KEY in .env:
+   │
+   ▼  GET https://mapi.indiamart.com/wservce/crm/crmListing/v2/
+       ?glusr_crm_key=<KEY>
+       &start_time=<7 days ago>
+       &end_time=<today>
+   │
+[IndiaMart server]
+   │  Returns JSON: { CODE: 200, RESPONSE: [...leads...] }
+   │  OR: { CODE: 401, MESSAGE: "key expired" }
+   │  OR: { CODE: 429, MESSAGE: "wait 5 min" }
+   │
+   ▼
+[Cross_Border_Command server]
+   │  For each lead in RESPONSE:
+   │  - if country NOT in 190-country export list → mark disqualified
+   │  - upsert into `leads` table by (client_id, platform, unique_query_id)
+   │
+   ▼  JSON back to browser
+   │  { fetched: 12, created: 8, updated: 4, disqualified: 2, errors: [] }
+   │
+[Toast in UI]   "8 new · 4 updated · 2 disqualified"
+[Table refreshes — new rows visible]
+Real-world constraints
+1 IndiaMart call per 5 minutes per key. Don't spam Sync.
+7-day default window. Each sync grabs leads from the last 7 days.
+Same lead synced twice = updated, not duplicated. Safe to re-run.
+India sender = auto-disqualified (export-only CRM).
+Expired keys return CODE 401 in the body — error surfaces as a toast.
+Bottom line
+Live deployment = edit 4 lines in .env + run 3 commands.
+Nothing else changes. No code edits, no per-branch keys (unless you ask), no DB seeders.
+
+Tell me if you want per-branch different keys (Scenario 2 done properly) — I'll add it.
