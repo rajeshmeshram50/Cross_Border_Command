@@ -262,7 +262,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   // Form: company + primary address + primary contact
   const [form, setForm] = useState({
     coName:'', coLegal:'', coType:'', coWeb:'', coSeg:'', coClass:'', coRisk:'',
-    addrType:'', addr:'', country:'', state:'', city:'', pin:'',
+    /* Primary address type is locked to "Registered Office" in the UI
+       — other types live on the Address & Contact Details tab. */
+    addrType: DEFAULT_ADDRESS_TYPE, addr:'', country:'', state:'', city:'', pin:'',
     cpName:'', cpDesig:'', cpTel:'', cpEmail:'', cpWa:'yes' as 'yes'|'no'|'',
   });
   const setF = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(prev => ({ ...prev, [k]: v }));
@@ -455,7 +457,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           coSeg:    d.segment       ?? '',
           coClass:  d.classification ?? '',
           coRisk:   d.riskLevel     ?? '',
-          addrType: pa.type         ?? d.addrType ?? DEFAULT_ADDRESS_TYPE,
+          // Primary address type is locked to "Registered Office" — even
+          // if older data stored a different label, normalise here so
+          // the disabled dropdown stays in sync with the saved record.
+          addrType: DEFAULT_ADDRESS_TYPE,
           addr:     pa.address_line ?? d.addr    ?? '',
           country:  pa.country      ?? d.country ?? '',
           state:    pa.state        ?? d.state   ?? '',
@@ -805,6 +810,19 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     ? (isEdit ? 'Update Customer' : 'Submit Customer')
     : 'Save & Next';
 
+  /* Stage 2 → 3 hard gate. The button stays visibly disabled until the
+   * user has captured at least one Company DD document AND at least
+   * one Owner KYC entry — tab switching still works, but Save & Next
+   * is locked so the user can't slip past with a half-filled stage. */
+  const stage2HasDD    = kycDocs.some(d => d.kind === 'dd');
+  const stage2HasOwner = kycOwners.length > 0;
+  const stage2Missing =
+    !stage2HasDD && !stage2HasOwner ? 'Add at least one Company DD document and one Owner KYC entry to continue.'
+    : !stage2HasDD                  ? 'Add at least one Company Due Diligence document to continue.'
+    : !stage2HasOwner               ? 'Add at least one Owner KYC entry to continue.'
+    : '';
+  const nextLocked = stage === 2 && !!stage2Missing;
+
   return (
     /* No backdrop-click-to-close — users were losing partially filled
        forms by misclicking the overlay. Close only via the X / Cancel
@@ -835,7 +853,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         </div>
 
         {/* STEPPER */}
-        <Stepper stage={stage} onGoto={gotoStage} />
+        <Stepper stage={stage} maxStage={maxStage} onGoto={gotoStage} />
 
         {/* HISTORY PANEL */}
         {stage > 1 && (
@@ -965,9 +983,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 
         {/* FOOTER */}
         <div className="acm-footer">
-          <div className="acm-req-note">
-            <span className="acm-req-dot" />
-            Fields marked with <span className="acm-req">*</span> are required
+          <div className="acm-req-note">           
+         
           </div>
           <div className="acm-footer-actions">
             {!atStart && (
@@ -976,14 +993,26 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
                 Previous
               </button>
             )}
-            <button type="button" className="acm-btn-next" onClick={goNext} disabled={saving} style={saving ? { opacity:.7, cursor:'wait' } : undefined}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" />
-                <polyline points="17 21 17 13 7 13 7 21" />
-                <polyline points="7 3 7 8 15 8" />
-              </svg>
-              <span>{saving ? 'Saving…' : nextLabel}</span>
-            </button>
+            <Tooltip label={nextLocked ? stage2Missing : ''} disabled={!nextLocked}>
+              <button
+                type="button"
+                className="acm-btn-next"
+                onClick={goNext}
+                disabled={saving || nextLocked}
+                style={
+                  saving      ? { opacity:.7, cursor:'wait' } :
+                  nextLocked  ? { opacity:.55, cursor:'not-allowed' } :
+                  undefined
+                }
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                  <polyline points="7 3 7 8 15 8" />
+                </svg>
+                <span>{saving ? 'Saving…' : nextLabel}</span>
+              </button>
+            </Tooltip>
           </div>
         </div>
 
@@ -1100,7 +1129,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 }
 
 /* ───── Stepper ───── */
-function Stepper({ stage, onGoto }: { stage: Stage; onGoto: (s: Stage) => void }) {
+function Stepper({ stage, maxStage, onGoto }: { stage: Stage; maxStage: Stage; onGoto: (s: Stage) => void }) {
   const steps = [
     { n:1 as Stage, title:'Customer Legal Identity', sub:'Company, GST, PAN & contact',
       icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
@@ -1115,13 +1144,22 @@ function Stepper({ stage, onGoto }: { stage: Stage; onGoto: (s: Stage) => void }
   return (
     <div className="acm-stepper">
       {steps.map((s, i) => {
-        const cls = s.n < stage ? 'acm-step-done' : s.n === stage ? 'acm-step-active' : 'acm-step-pending';
+        /* Reachability is driven by `maxStage` so a user who reached
+         * Stage 2 (or 3) and then navigated back to Stage 1 still sees
+         * the later stage as visited+clickable, not as a locked
+         * pending step. Three visual states:
+         *   active     — current stage (purple)
+         *   done       — visited (s.n <= maxStage) but not current (green ✓)
+         *   pending    — not yet reached (s.n > maxStage, locked) */
+        const visited = s.n <= maxStage;
+        const cls = s.n === stage ? 'acm-step-active' : visited ? 'acm-step-done' : 'acm-step-pending';
+        const showCheck = visited && s.n !== stage;
         return (
           <Fragment key={s.n}>
             <div className={`acm-step ${cls}`} onClick={() => onGoto(s.n)}>
               <div className="acm-step-badge-wrap">
-                <div className="acm-step-badge">{s.n < stage ? CHECK_BADGE : s.icon}</div>
-                <div className="acm-step-num">{s.n < stage ? CHECK_NUM : s.n}</div>
+                <div className="acm-step-badge">{showCheck ? CHECK_BADGE : s.icon}</div>
+                <div className="acm-step-num">{showCheck ? CHECK_NUM : s.n}</div>
               </div>
               <div className="acm-step-text">
                 <div className="acm-step-title">{s.title}</div>
@@ -1129,7 +1167,10 @@ function Stepper({ stage, onGoto }: { stage: Stage; onGoto: (s: Stage) => void }
               </div>
             </div>
             {i < steps.length - 1 && (
-              <div className="acm-step-connector"><div className="acm-connector-line" data-done={s.n < stage ? '1' : '0'} /></div>
+              /* Connector lights up if the next step has been reached
+               * (regardless of current position), so going back to
+               * Stage 1 doesn't visually undo the 1↔2 connection. */
+              <div className="acm-step-connector"><div className="acm-connector-line" data-done={s.n < maxStage ? '1' : '0'} /></div>
             )}
           </Fragment>
         );
@@ -1231,7 +1272,17 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
         <div className="acm-section-body">
           <div className="acm-row acm-row-2">
             <Field label="Address Type" required error={errors.addrType} fieldKey="addrType">
-              <MasterSelect value={form.addrType} options={optsWith(masters.addressTypes, form.addrType)} placeholder="Select address type" invalid={!!errors.addrType} onChange={v => set('addrType', v)} />
+              {/* The primary address is, by definition, the registered
+                 office — locked here so a user can't pick anything else
+                 for the primary slot. Other types (Warehouse, Billing,
+                 etc.) belong on the "Address & Contact Details" tab. */}
+              <MasterSelect
+                value={DEFAULT_ADDRESS_TYPE}
+                options={[{ value: DEFAULT_ADDRESS_TYPE, label: DEFAULT_ADDRESS_TYPE }]}
+                placeholder="Select address type"
+                disabled
+                onChange={() => { /* locked */ }}
+              />
             </Field>
             <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" /></Field>
           </div>
@@ -2056,8 +2107,15 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
     const next: Record<string, string> = {};
     if (!d.name.trim())      next.name      = 'Document name is required';
     if (!d.license.trim())   next.license   = 'License number is required';
+    else if (d.license.trim().length > 25) next.license = 'License number must be 25 characters or fewer';
     if (!d.authority.trim()) next.authority = 'Issuing authority is required';
     if (!d.issueDate)        next.issueDate = 'Issue date is required';
+    else {
+      // Backstop in case a stale picker / paste lets a future issue
+      // date through — a document can't be issued in the future.
+      const today = new Date().toISOString().slice(0, 10);
+      if (d.issueDate > today) next.issueDate = 'Issue date cannot be in the future';
+    }
     if (!d.expiryDate)       next.expiryDate = 'Expiry date is required';
     // Cross-field check: expiry must not be earlier than issue date.
     // Dates come from MasterDatePicker as YYYY-MM-DD strings, which
@@ -2170,7 +2228,7 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
               </div>
             </Field>
             <Field label="License Number" required error={errs.license}>
-              <input className={errs.license ? 'acm-input-error' : ''} value={d.license} onChange={e => set('license', e.target.value)} placeholder="Enter license number" />
+              <input className={errs.license ? 'acm-input-error' : ''} value={d.license} maxLength={25} onChange={e => set('license', e.target.value.slice(0, 25))} placeholder="Enter license number (max 25)" />
             </Field>
           </div>
           <div className="acm-row acm-row-4">
@@ -2178,11 +2236,16 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
               <input className={errs.authority ? 'acm-input-error' : ''} value={d.authority} onChange={e => set('authority', e.target.value)} placeholder="Enter issuing authority" />
             </Field>
             <Field label="Issuing Date" required error={errs.issueDate}>
-              {/* maxDate constrains the picker to dates at or before the
-                  chosen expiry, so the two fields can never disagree. */}
+              {/* maxDate caps the picker at the earlier of today and
+                  the chosen expiry — a document can never be issued in
+                  the future, and the two date fields can never
+                  disagree with each other. */}
               <MasterDatePicker
                 value={d.issueDate}
-                maxDate={d.expiryDate || undefined}
+                maxDate={(() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  return d.expiryDate && d.expiryDate < today ? d.expiryDate : today;
+                })()}
                 invalid={!!errs.issueDate}
                 onChange={(v: string) => {
                   set('issueDate', v);
@@ -3068,11 +3131,87 @@ const SCOPED_CSS = `
 }
 .acm-hs-inline-val.is-empty { color: #cbd5e1; font-weight: 500; }
 
+/* Additional Address & Contact entries inside the history panel —
+   each row from the Stage 1 second tab gets its own outlined block
+   so the user can review every captured warehouse/billing address
+   without leaving the Stage 2/3 view. */
+.acm-hs-extras {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #ddd6fe;
+}
+.acm-hs-extras-head {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 8px;
+}
+.acm-hs-extras-title {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: #5b21b6;
+}
+.acm-hs-extras-badge {
+  font-size: 10px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px;
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  color: #5b21b6; border: 1px solid #c4b5fd;
+}
+.acm-hs-extras-item {
+  background: rgba(124,58,237,0.04);
+  border: 1px solid rgba(124,58,237,0.18);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.acm-hs-extras-item:last-child { margin-bottom: 0; }
+.acm-hs-extras-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px;
+}
+.acm-hs-extras-num {
+  font-size: 10px; font-weight: 800; color: #5b21b6;
+  background: #ede9fe; border: 1px solid #c4b5fd;
+  padding: 2px 7px; border-radius: 999px;
+}
+.acm-hs-extras-type {
+  font-size: 12px; font-weight: 700; color: #3b0764;
+  letter-spacing: .02em;
+}
+.acm-hs-extras-grid { row-gap: 8px; }
+
+/* Tiny section heading above each history block — visually separates
+   the Customer Identification grid from the Address & Contact list. */
+.acm-hs-section-label {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: #5b21b6;
+  margin-bottom: 10px;
+}
+.acm-hs-section-label:not(:first-child) { margin-top: 14px; }
+
+/* "Primary" tag inline next to the address-type label on the first
+   row of the address list. Distinguishes the form-sourced primary
+   entry from the user-added additionals. */
+.acm-hs-extras-primary {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 999px;
+  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  color: #065f46; border: 1px solid #6ee7b7;
+  font-size: 9.5px; font-weight: 800;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+
+[data-bs-theme="dark"] .acm-hs-section-label { color: #ddd6fe; }
+[data-bs-theme="dark"] .acm-hs-extras-primary { background: rgba(16,185,129,0.22); color: #a7f3d0; border-color: rgba(110,231,183,0.40); }
+
 /* Dark-mode variant. */
 [data-bs-theme="dark"] .acm-hs-inline:hover { background: rgba(167,139,250,0.10); }
 [data-bs-theme="dark"] .acm-hs-inline-lbl { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-hs-inline-val { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-hs-inline-val.is-empty { color: #475569; }
+[data-bs-theme="dark"] .acm-hs-extras { border-top-color: rgba(167,139,250,0.25); }
+[data-bs-theme="dark"] .acm-hs-extras-title { color: #ddd6fe; }
+[data-bs-theme="dark"] .acm-hs-extras-badge { background: rgba(124,58,237,0.30); color: #ede9fe; border-color: rgba(167,139,250,0.45); }
+[data-bs-theme="dark"] .acm-hs-extras-item { background: rgba(124,58,237,0.10); border-color: rgba(167,139,250,0.25); }
+[data-bs-theme="dark"] .acm-hs-extras-num { background: rgba(167,139,250,0.22); color: #ddd6fe; border-color: rgba(167,139,250,0.45); }
+[data-bs-theme="dark"] .acm-hs-extras-type { color: #f5f3ff; }
 
 /* Narrower viewports — collapse the dense 4-col layout to 2 cols so
    labels still fit beside their values on a 3:2 ratio. */
@@ -3762,10 +3901,20 @@ const SCOPED_CSS = `
 
 /* Stage 2 doc toolbar + search */
 [data-bs-theme="dark"] .acm-doc-toolbar { background: rgba(28,37,49,0.4); border-color: rgba(255,255,255,0.06); }
-[data-bs-theme="dark"] .acm-doc-search { background: #1c2531; border-color: rgba(167,139,250,0.20); }
-[data-bs-theme="dark"] .acm-doc-search input { background: transparent; color: #f1f5f9; }
-[data-bs-theme="dark"] .acm-doc-search input::placeholder { color: #475569; }
-[data-bs-theme="dark"] .acm-doc-search-icon { color: #94a3b8; }
+/* Light-mode .acm-doc-search input uses !important on background +
+   border so the dark override must match that specificity or the
+   white pill leaks into dark mode. */
+[data-bs-theme="dark"] .acm-doc-search input {
+  background: #131c33 !important;
+  border-color: rgba(167,139,250,0.40) !important;
+  color: #ffffff;
+}
+[data-bs-theme="dark"] .acm-doc-search input::placeholder { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-doc-search input:focus {
+  border-color: #a78bfa !important;
+  box-shadow: 0 0 0 3px rgba(167,139,250,0.22) !important;
+}
+[data-bs-theme="dark"] .acm-doc-search-icon { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-doc-count { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-doc-pag-wrap { background: rgba(28,37,49,0.40); border-color: rgba(255,255,255,0.06); }
 [data-bs-theme="dark"] .acm-doc-pag-info { color: #94a3b8; }

@@ -133,19 +133,22 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
                   <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                 </svg>
               </div>
-              <div>
+              <div className="ccm-header-text">
                 <div className="ccm-title">Consignees</div>
-                <div className="ccm-sub">
-                  Every consignee linked to this customer — shipment delivery ownership, compliance readiness &amp; destination mapping.
-                </div>
+                <div className="ccm-sub">Every consignee linked to this customer — destination &amp; delivery mapping.</div>
               </div>
             </div>
             <div className="ccm-header-right">
+              {/* Customer chip — slimmer two-row layout (label on top,
+                 code + name below) so the long company names don't push
+                 the close button off-screen on tablets. */}
               <div className="ccm-link-chip">
-                <span className="ccm-link-chip-lbl">CONSIGNEES FOR</span>
-                <span className="ccm-link-chip-code">{customer.id}</span>
-                <span className="ccm-link-chip-name">{customer.company}</span>
-                {customer.country && <span className="ccm-link-chip-country">{customer.country}</span>}
+                <span className="ccm-link-chip-lbl">Consignees for</span>
+                <div className="ccm-link-chip-row">
+                  <span className="ccm-link-chip-code">{customer.id}</span>
+                  <span className="ccm-link-chip-name" title={customer.company}>{customer.company}</span>
+                  {customer.country && <span className="ccm-link-chip-country">{customer.country}</span>}
+                </div>
               </div>
               <button type="button" className="ccm-close" onClick={onClose} aria-label="Close">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -185,24 +188,27 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
                   <tr>
                     <th>SR NO</th>
                     <th>CONSIGNEE ID</th>
-                    <th>CUSTOMER ID</th>
                     <th>COMPANY NAME</th>
                     <th>SEGMENT</th>
                     <th>RISK LEVEL</th>
                     <th>CONTACT PERSON</th>
                     <th>EMAIL</th>
                     <th>CONTACT NO</th>
-                    <th>COUNTRY</th>
-                    <th>STATE</th>
+                    <th>LOCATION</th>
                     <th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr className="ccm-empty"><td colSpan={12}>Loading consignees…</td></tr>
+                    <tr className="ccm-empty"><td colSpan={10}>
+                      <div className="ccm-empty-state">
+                        <span className="ccm-empty-spinner" />
+                        <span>Loading consignees…</span>
+                      </div>
+                    </td></tr>
                   ) : filtered.length === 0 ? (
                     <tr className="ccm-empty">
-                      <td colSpan={12}>
+                      <td colSpan={10}>
                         {q ? 'No consignees match your search.' : <>No consignees mapped to <strong>{customer.id}</strong> yet. Click <strong>+ Add Consignee</strong> to create the first one.</>}
                       </td>
                     </tr>
@@ -212,19 +218,18 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
                       : String(c.risk).toLowerCase() === 'medium'
                         ? 'ccm-pill-med'
                         : 'ccm-pill-low';
+                    const location = [c.countryDetail, c.country].filter(Boolean).join(', ') || '—';
                     return (
                       <tr key={c.id}>
                         <td>{i + 1}</td>
                         <td><span className="ccm-id-chip">{c.id}</span></td>
-                        <td><span className="ccm-cust-chip">{c.customerId}</span></td>
                         <td className="ccm-company">{c.company || '—'}</td>
                         <td>{c.segment || '—'}</td>
                         <td><span className={`ccm-pill ${riskColor}`}>{c.risk || '—'}</span></td>
                         <td>{c.contact || '—'}</td>
                         <td className="ccm-email">{c.email || '—'}</td>
                         <td className="ccm-mono">{c.phone || '—'}</td>
-                        <td>{c.country || '—'}</td>
-                        <td>{c.countryDetail || '—'}</td>
+                        <td>{location}</td>
                         <td>
                           <div className="ccm-row-actions">
                             <Tooltip label="Edit Consignee">
@@ -313,41 +318,62 @@ const SCOPED_CSS = `
   box-shadow: 0 24px 60px rgba(46, 16, 101, .30);
 }
 .ccm-header {
-  display: flex; align-items: flex-start; justify-content: space-between;
+  position: relative;
+  display: flex; align-items: center; justify-content: space-between;
   gap: 16px;
   padding: 18px 22px;
-  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 50%, #7c3aed 100%);
   color: #fff;
+  overflow: hidden;
 }
-.ccm-header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+/* Subtle radial highlights — same flavour as the AddCustomerModal
+   header so the two popups feel like one design family. */
+.ccm-header::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    radial-gradient(ellipse at 15% 50%, rgba(167,139,250,0.28) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 50%, rgba(139,92,246,0.18) 0%, transparent 55%);
+}
+.ccm-header-left { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1 1 auto; position: relative; z-index: 1; }
 .ccm-header-icon {
-  width: 40px; height: 40px; border-radius: 10px;
+  width: 42px; height: 42px; border-radius: 12px;
   display: inline-flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,.18); color: #fff;
+  border: 1.5px solid rgba(255,255,255,.30);
   flex-shrink: 0;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
 }
-.ccm-title { font-size: 18px; font-weight: 800; letter-spacing: .01em; }
-.ccm-sub   { font-size: 12.5px; color: rgba(255,255,255,.85); margin-top: 2px; max-width: 640px; line-height: 1.4; }
-.ccm-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.ccm-header-text { min-width: 0; }
+.ccm-title { font-size: 17px; font-weight: 800; letter-spacing: -.2px; line-height: 1.2; }
+.ccm-sub   { font-size: 12px; color: rgba(255,255,255,.80); margin-top: 3px; max-width: 520px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ccm-header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; position: relative; z-index: 1; }
+/* Stacked chip: small label on top, then a single row with the
+   customer code, company name and country. Cleaner than the previous
+   single-line layout where the long company name was crowding the
+   close button. */
 .ccm-link-chip {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 6px 10px;
-  background: rgba(255,255,255,.18);
-  border: 1px solid rgba(255,255,255,.24);
-  border-radius: 999px;
-  font-size: 12px; color: #fff;
+  display: inline-flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  padding: 7px 12px;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.28);
+  border-radius: 12px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  color: #fff;
 }
-.ccm-link-chip-lbl  { font-weight: 700; letter-spacing: .06em; font-size: 10px; opacity: .8; }
-.ccm-link-chip-code { font-family: ui-monospace, 'JetBrains Mono', monospace; font-weight: 700; background: rgba(255,255,255,.22); padding: 2px 8px; border-radius: 6px; }
-.ccm-link-chip-name { font-weight: 700; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ccm-link-chip-country { padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,.22); font-weight: 600; }
+.ccm-link-chip-lbl  { font-weight: 700; letter-spacing: .08em; font-size: 9.5px; opacity: .80; text-transform: uppercase; }
+.ccm-link-chip-row  { display: inline-flex; align-items: center; gap: 6px; }
+.ccm-link-chip-code { font-family: ui-monospace, 'JetBrains Mono', monospace; font-weight: 800; background: rgba(255,255,255,.20); padding: 2px 8px; border-radius: 6px; font-size: 11px; }
+.ccm-link-chip-name { font-weight: 700; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+.ccm-link-chip-country { padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,.20); font-weight: 600; font-size: 11px; }
 .ccm-close {
-  width: 32px; height: 32px; border-radius: 50%;
+  width: 34px; height: 34px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,.18); color: #fff; border: none;
-  cursor: pointer; transition: background .15s ease;
+  background: rgba(255,255,255,.12); color: #fff;
+  border: 1.5px solid rgba(255,255,255,.30);
+  cursor: pointer; transition: all .25s;
 }
-.ccm-close:hover { background: rgba(255,255,255,.30); }
+.ccm-close:hover { background: rgba(255,255,255,.28); transform: rotate(90deg); }
 
 .ccm-toolbar {
   display: flex; align-items: center; justify-content: space-between;
@@ -387,37 +413,53 @@ const SCOPED_CSS = `
 }
 .ccm-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(124,58,237,.40); }
 
-.ccm-body { flex: 1; overflow: auto; padding: 0; }
-.ccm-table-wrap { overflow-x: auto; }
+.ccm-body { flex: 1; overflow: auto; padding: 0; background: #fafafd; }
+.ccm-table-wrap { overflow-x: auto; padding: 12px 18px 18px; }
 .ccm-table {
-  width: 100%; border-collapse: collapse;
+  width: 100%; border-collapse: separate; border-spacing: 0;
   font-size: 12.5px; color: #1f2937;
+  background: #fff;
+  border: 1px solid #ede9fe;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(109,40,217,.06);
 }
 .ccm-table thead tr {
-  background: linear-gradient(180deg, #f5f0ff 0%, #ede9fe 100%);
-  border-bottom: 2px solid rgba(167,139,250,.40);
+  background: linear-gradient(180deg, #faf7ff 0%, #f5efff 100%);
 }
 .ccm-table thead th {
-  padding: 12px;
+  padding: 12px 14px;
   text-align: left;
-  font-weight: 700; font-size: 11px; letter-spacing: .06em;
-  color: #4338ca; text-transform: uppercase;
+  font-weight: 800; font-size: 10px; letter-spacing: .08em;
+  color: #5b21b6; text-transform: uppercase;
   white-space: nowrap;
+  border-bottom: 1px solid #ede9fe;
 }
 .ccm-table tbody td {
-  padding: 12px;
-  border-bottom: 1px solid #f3f4f6;
+  padding: 13px 14px;
+  border-bottom: 1px solid #f5f3ff;
   vertical-align: middle;
   white-space: nowrap;
+  color: #3b0764;
 }
-.ccm-table tbody tr:hover { background: #faf7ff; }
+.ccm-table tbody tr:last-child td { border-bottom: none; }
+.ccm-table tbody tr:hover td { background: #faf7ff; }
 .ccm-empty td {
   text-align: center;
-  padding: 40px 16px !important;
+  padding: 48px 16px !important;
   color: #6b7280; font-size: 13px;
   white-space: normal;
+  background: #fff;
 }
 .ccm-empty td strong { color: #6d28d9; }
+.ccm-empty-state { display: inline-flex; align-items: center; gap: 10px; color: #6d28d9; font-weight: 600; }
+.ccm-empty-spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2.5px solid rgba(124,58,237,0.22);
+  border-top-color: #7c3aed;
+  animation: ccm-spin .8s linear infinite;
+}
+@keyframes ccm-spin { to { transform: rotate(360deg); } }
 .ccm-id-chip {
   display: inline-block; padding: 3px 10px; border-radius: 6px;
   background: #ecfdf5; color: #047857;
@@ -454,26 +496,32 @@ const SCOPED_CSS = `
 
 /* Dark mode */
 [data-bs-theme="dark"] .ccm-overlay { background: rgba(0,0,0,.65); }
-[data-bs-theme="dark"] .ccm-card { background: #1e1b4b; }
-[data-bs-theme="dark"] .ccm-toolbar { background: #2e1065; border-bottom-color: rgba(167,139,250,.20); }
-[data-bs-theme="dark"] .ccm-search input { background: #1e1b4b; border-color: rgba(167,139,250,.25); color: #ede9fe; }
-[data-bs-theme="dark"] .ccm-count { background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.30); color: #c4b5fd; }
-[data-bs-theme="dark"] .ccm-table thead tr { background: linear-gradient(180deg, rgba(124,58,237,.20) 0%, rgba(124,58,237,.10) 100%); border-bottom-color: rgba(167,139,250,.30); }
-[data-bs-theme="dark"] .ccm-table thead th { color: #c4b5fd; }
-[data-bs-theme="dark"] .ccm-table tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.15); }
-[data-bs-theme="dark"] .ccm-table tbody tr:hover { background: rgba(124,58,237,.10); }
-[data-bs-theme="dark"] .ccm-empty td { color: #94a3b8; }
+[data-bs-theme="dark"] .ccm-card { background: linear-gradient(165deg, #0b1220 0%, #11182a 45%, #131c30 100%); border: 1px solid rgba(167,139,250,0.20); }
+[data-bs-theme="dark"] .ccm-body { background: #0c1322; }
+[data-bs-theme="dark"] .ccm-toolbar { background: #11182a; border-bottom-color: rgba(167,139,250,.20); }
+[data-bs-theme="dark"] .ccm-search input { background: #131c33; border-color: rgba(167,139,250,.40); color: #ede9fe; }
+[data-bs-theme="dark"] .ccm-search input::placeholder { color: #94a3b8; }
+[data-bs-theme="dark"] .ccm-search svg { color: #c4b5fd; }
+[data-bs-theme="dark"] .ccm-count { background: rgba(124,58,237,.20); border-color: rgba(167,139,250,.35); color: #ddd6fe; }
+[data-bs-theme="dark"] .ccm-table { background: #1a2236; border-color: rgba(167,139,250,0.22); box-shadow: 0 4px 18px rgba(0,0,0,0.45); }
+[data-bs-theme="dark"] .ccm-table thead tr { background: linear-gradient(180deg, rgba(124,58,237,.28) 0%, rgba(124,58,237,.16) 100%); }
+[data-bs-theme="dark"] .ccm-table thead th { color: #ddd6fe; border-bottom-color: rgba(167,139,250,.25); }
+[data-bs-theme="dark"] .ccm-table tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.12); }
+[data-bs-theme="dark"] .ccm-table tbody tr:hover td { background: rgba(124,58,237,.12); }
+[data-bs-theme="dark"] .ccm-empty td { color: #94a3b8; background: #1a2236; }
 [data-bs-theme="dark"] .ccm-empty td strong { color: #c4b5fd; }
+[data-bs-theme="dark"] .ccm-empty-state { color: #c4b5fd; }
+[data-bs-theme="dark"] .ccm-empty-spinner { border-color: rgba(167,139,250,0.30); border-top-color: #a78bfa; }
 [data-bs-theme="dark"] .ccm-id-chip { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .ccm-cust-chip { background: rgba(167,139,250,.20); color: #c4b5fd; border-color: rgba(167,139,250,.40); }
-[data-bs-theme="dark"] .ccm-company { color: #ede9fe; }
+[data-bs-theme="dark"] .ccm-company { color: #ffffff; }
 [data-bs-theme="dark"] .ccm-email { color: #93c5fd; }
 [data-bs-theme="dark"] .ccm-pill-low  { background: rgba(16,185,129,.18); color: #6ee7b7; }
 [data-bs-theme="dark"] .ccm-pill-med  { background: rgba(245,158,11,.18); color: #fcd34d; }
 [data-bs-theme="dark"] .ccm-pill-high { background: rgba(239,68,68,.18); color: #fca5a5; }
-[data-bs-theme="dark"] .ccm-row-btn { background: #2e1065; border-color: rgba(167,139,250,.25); color: #94a3b8; }
-[data-bs-theme="dark"] .ccm-row-btn:hover { background: rgba(124,58,237,.18); border-color: #7c3aed; color: #c4b5fd; }
-[data-bs-theme="dark"] .ccm-row-btn-del:hover { background: rgba(239,68,68,.18); border-color: #ef4444; color: #fca5a5; }
+[data-bs-theme="dark"] .ccm-row-btn { background: rgba(255,255,255,0.04); border-color: rgba(167,139,250,.25); color: #c4b5fd; }
+[data-bs-theme="dark"] .ccm-row-btn:hover { background: rgba(124,58,237,.22); border-color: #a78bfa; color: #fff; }
+[data-bs-theme="dark"] .ccm-row-btn-del:hover { background: rgba(239,68,68,.20); border-color: #fca5a5; color: #fca5a5; }
 
 /* ============================================================
  *  RESPONSIVE — tablet & mobile

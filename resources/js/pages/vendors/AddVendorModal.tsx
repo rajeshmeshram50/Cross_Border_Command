@@ -342,6 +342,11 @@ export default function AddVendorModal(props: {
   const [email,       setEmail]       = useState('');
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
   const [attachment, setAttachment] = useState<File | null>(null);
+  /* Server-side path for the primary contact's previously uploaded
+     business card. Hydrated from primary_address.attachment_path on
+     edit-mode load so the table cell can render a working View link
+     without a fresh upload. */
+  const [primaryAttachmentPath, setPrimaryAttachmentPath] = useState<string>('');
 
   type ContactRow = {
     id: number;
@@ -351,6 +356,10 @@ export default function AddVendorModal(props: {
     email: string;
     whatsapp: boolean;
     attachmentName: string;
+    /* Server-stored path — present when the row was hydrated from
+       /vendors/{id}. Empty for freshly-added rows that haven't been
+       saved yet. */
+    attachmentPath?: string;
   };
   const [extraContacts, setExtraContacts] = useState<ContactRow[]>([]);
 
@@ -598,6 +607,7 @@ export default function AddVendorModal(props: {
           setContactNo(pa.contact_no ?? '');
           setEmail(pa.email ?? '');
           setWhatsappEnabled(pa.whatsapp_enabled ?? true);
+          setPrimaryAttachmentPath(pa.attachment_path ?? '');
         }
         setExtraContacts((v.extra_contacts ?? []).map(c => ({
           id: c.id,
@@ -607,6 +617,7 @@ export default function AddVendorModal(props: {
           email: c.email ?? '',
           whatsapp: c.whatsapp_enabled ?? true,
           attachmentName: basename(c.attachment_path),
+          attachmentPath: c.attachment_path ?? undefined,
         })));
 
         // Step 2 — KYC sub-collections (file fields restored via existingPath)
@@ -1615,6 +1626,40 @@ export default function AddVendorModal(props: {
 
               {idTab === 'address' && (
                 <>
+                  {/* Step-1 readonly summary — surfaces everything the
+                      user captured on the Vendor Identification sub-tab
+                      so they can verify they're entering address /
+                      additional contacts under the correct vendor
+                      without flipping tabs. */}
+                  <div className="avm-id-summary">
+                    <div className="avm-id-summary-row">
+                      <span className="avm-id-pair"><span className="avm-id-k">VENDOR CODE :</span> <span className="avm-id-v">{vendorCode || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">COMPANY NAME :</span> <span className="avm-id-v">{companyName || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">COMPANY LEGAL NAME :</span> <span className="avm-id-v">{legalName || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">VENDOR TYPE :</span> <span className="avm-id-v">{labelFor(vendorType, vendorTypeOpts) || '—'}</span></span>
+                    </div>
+                    <div className="avm-id-summary-row">
+                      <span className="avm-id-pair"><span className="avm-id-k">RISK LEVEL :</span> <span className="avm-id-v">{labelFor(riskLevel, riskLevelOpts) || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">VENDOR BEHAVIOUR :</span> <span className="avm-id-v">{labelFor(vendorBehaviour, behaviourOpts) || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">SEGMENT :</span> <span className="avm-id-v">{labelFor(segment, segmentOpts) || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">COMPLIANCE BEHAVIOUR :</span> <span className="avm-id-v">{labelFor(complianceBehaviour, complianceOpts) || '—'}</span></span>
+                    </div>
+                    <div className="avm-id-summary-row">
+                      <span className="avm-id-pair"><span className="avm-id-k">COUNTRY :</span> <span className="avm-id-v">{labelFor(country, countryOpts) || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">STATE :</span> <span className="avm-id-v">{labelFor(state, stateOpts) || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">STATE CODE :</span> <span className="avm-id-v">{stateCode || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">CITY :</span> <span className="avm-id-v">{city || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">PINCODE :</span> <span className="avm-id-v">{pincode || '—'}</span></span>
+                    </div>
+                    <div className="avm-id-summary-row">
+                      <span className="avm-id-pair"><span className="avm-id-k">PRIMARY CONTACT :</span> <span className="avm-id-v">{contactName || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">DESIGNATION :</span> <span className="avm-id-v">{designation || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">CONTACT NO :</span> <span className="avm-id-v">{contactNo || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">EMAIL :</span> <span className="avm-id-v">{email || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">WHATSAPP :</span> <span className="avm-id-v">{whatsappEnabled ? 'Yes' : 'No'}</span></span>
+                    </div>
+                  </div>
+
                   {/* ── Additional Contact Persons ──
                       The primary KYC contact (captured on the Vendor
                       Identification sub-tab) is also surfaced here as
@@ -1638,9 +1683,12 @@ export default function AddVendorModal(props: {
                         email: string;
                         whatsapp: boolean;
                         attachmentName: string;
+                        attachmentHref: string;
                       };
                       const rows: Row[] = [];
                       if (primaryHasData) {
+                        const freshHref = attachment ? URL.createObjectURL(attachment) : '';
+                        const savedHref = primaryAttachmentPath ? resolveFileUrl(primaryAttachmentPath) : '';
                         rows.push({
                           key: 'primary',
                           isPrimary: true,
@@ -1649,7 +1697,8 @@ export default function AddVendorModal(props: {
                           phone: contactNo,
                           email,
                           whatsapp: whatsappEnabled,
-                          attachmentName: attachment?.name ?? '',
+                          attachmentName: attachment?.name ?? (primaryAttachmentPath ? (primaryAttachmentPath.split('/').pop() ?? '') : ''),
+                          attachmentHref: freshHref || savedHref,
                         });
                       }
                       extraContacts.forEach(c => rows.push({
@@ -1662,6 +1711,7 @@ export default function AddVendorModal(props: {
                         email: c.email,
                         whatsapp: c.whatsapp,
                         attachmentName: c.attachmentName,
+                        attachmentHref: c.attachmentPath ? resolveFileUrl(c.attachmentPath) : '',
                       }));
 
                       if (rows.length === 0) {
@@ -1703,9 +1753,25 @@ export default function AddVendorModal(props: {
                                     </span>
                                   </td>
                                   <td>
-                                    {r.attachmentName
-                                      ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.attachmentName}</span>
-                                      : <span className="text-muted fs-13">—</span>}
+                                    {r.attachmentName ? (
+                                      r.attachmentHref ? (
+                                        <a
+                                          href={r.attachmentHref}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="fs-13 d-inline-flex align-items-center text-truncate"
+                                          style={{ maxWidth: 200, color: '#4338ca', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                                          title={`Open ${r.attachmentName}`}
+                                        >
+                                          <i className="ri-attachment-line me-1" />
+                                          {r.attachmentName}
+                                        </a>
+                                      ) : (
+                                        <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.attachmentName}</span>
+                                      )
+                                    ) : (
+                                      <span className="text-muted fs-13">—</span>
+                                    )}
                                   </td>
                                   <td>
                                     <div className="hstack gap-1">
@@ -1855,29 +1921,6 @@ export default function AddVendorModal(props: {
           setDraft={setContactDraft}
           onClose={() => setContactPopupOpen(false)}
           onSave={saveContactDraft}
-          /* Step-1 snapshot rendered as a readonly strip at the top
-             so the user can verify they're adding a contact under the
-             correct vendor without scrolling back to Step 1. */
-          vendor={{
-            vendorCode,
-            companyName,
-            legalName,
-            vendorType:          labelFor(vendorType, vendorTypeOpts),
-            riskLevel:           labelFor(riskLevel, riskLevelOpts),
-            vendorBehaviour:     labelFor(vendorBehaviour, behaviourOpts),
-            segment:             labelFor(segment, segmentOpts),
-            complianceBehaviour: labelFor(complianceBehaviour, complianceOpts),
-            country:             labelFor(country, countryOpts),
-            state:               labelFor(state, stateOpts),
-            stateCode,
-            city,
-            pincode,
-            primaryContactName:  contactName,
-            primaryDesignation:  designation,
-            primaryContactNo:    contactNo,
-            primaryEmail:        email,
-            whatsappEnabled,
-          }}
         />
       )}
 
@@ -2067,8 +2110,12 @@ function MasterQuickAddPopup(props: {
   };
 
   return createPortal((
-    <div className="avm-qa-backdrop" onClick={onClose}>
-      <div className="avm-qa-popup" onClick={(e) => e.stopPropagation()}>
+    /* Backdrop click intentionally does NOT close the popup — the
+       user is mid-edit on a master record and an accidental outside
+       click would wipe their input. The only dismissal paths are the
+       header ✕ button and the footer Cancel. */
+    <div className="avm-qa-backdrop">
+      <div className="avm-qa-popup">
         <div className="avm-qa-head">
           <div className="avm-qa-title">
             <i className="ri-add-circle-line" /> {schema.title}
@@ -2114,51 +2161,24 @@ type ContactDraft = {
   whatsapp: boolean;
   attachmentName: string;
 };
-type VendorSnapshot = {
-  vendorCode: string;
-  companyName: string;
-  legalName: string;
-  vendorType: string;
-  riskLevel: string;
-  vendorBehaviour: string;
-  segment: string;
-  complianceBehaviour: string;
-  country: string;
-  state: string;
-  stateCode: string;
-  city: string;
-  pincode: string;
-  primaryContactName: string;
-  primaryDesignation: string;
-  primaryContactNo: string;
-  primaryEmail: string;
-  whatsappEnabled: boolean;
-};
-
 function ContactAddPopup(props: {
   draft: ContactDraft;
   setDraft: (next: ContactDraft) => void;
   onClose: () => void;
   onSave: () => void;
-  vendor: VendorSnapshot;
 }) {
-  const { draft, setDraft, onClose, onSave, vendor } = props;
+  const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof ContactDraft>(k: K, v: ContactDraft[K]) => setDraft({ ...draft, [k]: v });
   const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (f) set('attachmentName', f.name);
   };
-  /* Inline "Label : value" pair — same compact tone as the
-     "What you did in previous stages" strip elsewhere in the wizard. */
-  const Pair = ({ k, v }: { k: string; v: string }) => (
-    <span className="avm-cp-pair">
-      <span className="avm-cp-pair-k">{k} :</span>
-      <span className="avm-cp-pair-v" title={v || '—'}>{v || '—'}</span>
-    </span>
-  );
   return createPortal((
-    <div className="avm-cp-backdrop" onClick={onClose}>
-      <div className="avm-cp-popup" onClick={(e) => e.stopPropagation()}>
+    /* Backdrop click is intentionally NOT wired to onClose so an
+       accidental outside click doesn't wipe an in-flight contact entry.
+       Header ✕ and footer Cancel are the only dismissal paths. */
+    <div className="avm-cp-backdrop">
+      <div className="avm-cp-popup">
         <div className="avm-cp-head">
           <div className="avm-cp-title">
             <i className="ri-user-add-line" /> Add Contact Person
@@ -2166,39 +2186,6 @@ function ContactAddPopup(props: {
           <button className="avm-close avm-cp-close" onClick={onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
-        </div>
-
-        {/* Step-1 readonly summary — so the user has the vendor's
-            identity + primary contact on hand while filling out an
-            additional contact entry. Mirrors the read-only strip on
-            the Edit Vendor wizard's later steps. */}
-        <div className="avm-cp-summary">
-          <div className="avm-cp-summary-row">
-            <Pair k="Vendor Code"          v={vendor.vendorCode} />
-            <Pair k="Company Name"         v={vendor.companyName} />
-            <Pair k="Company Legal Name"   v={vendor.legalName} />
-            <Pair k="Vendor Type"          v={vendor.vendorType} />
-          </div>
-          <div className="avm-cp-summary-row">
-            <Pair k="Risk Level"           v={vendor.riskLevel} />
-            <Pair k="Vendor Behaviour"     v={vendor.vendorBehaviour} />
-            <Pair k="Segment"              v={vendor.segment} />
-            <Pair k="Compliance Behaviour" v={vendor.complianceBehaviour} />
-          </div>
-          <div className="avm-cp-summary-row">
-            <Pair k="Country"     v={vendor.country} />
-            <Pair k="State"       v={vendor.state} />
-            <Pair k="State Code"  v={vendor.stateCode} />
-            <Pair k="City"        v={vendor.city} />
-            <Pair k="Pincode"     v={vendor.pincode} />
-          </div>
-          <div className="avm-cp-summary-row">
-            <Pair k="Primary Contact" v={vendor.primaryContactName} />
-            <Pair k="Designation"     v={vendor.primaryDesignation} />
-            <Pair k="Contact No"      v={vendor.primaryContactNo} />
-            <Pair k="Email"           v={vendor.primaryEmail} />
-            <Pair k="WhatsApp"        v={vendor.whatsappEnabled ? 'Yes' : 'No'} />
-          </div>
         </div>
 
         <div className="avm-cp-body">
@@ -2354,13 +2341,119 @@ function SelectInput(props: {
   );
 }
 
-function FileChooser(props: { file: File | null; onPick: (f: File | null) => void; placeholder?: string }) {
-  const onChange = (e: ChangeEvent<HTMLInputElement>) => props.onPick(e.target.files?.[0] ?? null);
+/* Shared file picker for every attachment field in the vendor wizard.
+ *
+ *  • Accepts JPG / PNG / PDF only — both the native picker's MIME
+ *    filter AND a runtime guard on pick (since users can bypass the
+ *    picker's filter by selecting "All Files").
+ *  • Caps file size at 2 MB.
+ *  • After a file is picked (or when an existing server path is
+ *    passed in), the empty "Choose file" affordance is replaced with
+ *    a compact row: filename + View button (opens in a new tab) +
+ *    Delete button (clears the file).
+ *
+ *  `existingPath` is set on rows hydrated from /vendors/{id} so the
+ *  View link works on previously-uploaded files without re-uploading.
+ */
+const FILE_ACCEPT     = '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf';
+const FILE_MAX_BYTES  = 2 * 1024 * 1024; // 2 MB
+const FILE_TYPE_LABEL = 'JPG / PNG / PDF';
+
+function FileChooser(props: {
+  file: File | null;
+  onPick: (f: File | null) => void;
+  placeholder?: string;
+  existingPath?: string;
+}) {
+  const { file, onPick, placeholder, existingPath } = props;
+  const toast = useToast();
+
+  const onChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.files?.[0] ?? null;
+    if (!picked) { onPick(null); return; }
+    // Validate format — picker MIME filter is advisory, native dialog
+    // lets the user override it.
+    const ok =
+      /^(image\/(jpeg|png)|application\/pdf)$/i.test(picked.type) ||
+      /\.(jpe?g|png|pdf)$/i.test(picked.name);
+    if (!ok) {
+      toast.error('Unsupported file', `Only ${FILE_TYPE_LABEL} files are allowed`);
+      e.target.value = '';
+      return;
+    }
+    if (picked.size > FILE_MAX_BYTES) {
+      toast.error('File too large', `${picked.name} exceeds the 2 MB limit`);
+      e.target.value = '';
+      return;
+    }
+    onPick(picked);
+  };
+
+  const hasFile = !!file || !!existingPath;
+  const fileName = file?.name ?? (existingPath ? existingPath.split('/').pop() ?? 'Attachment' : '');
+  const viewHref = file ? URL.createObjectURL(file) : (existingPath ? resolveFileUrl(existingPath) : '');
+
+  if (!hasFile) {
+    // Empty state — clickable drop affordance.
+    return (
+      <div className="avm-filechooser">
+        <input
+          type="file"
+          className="avm-filechooser-input"
+          accept={FILE_ACCEPT}
+          onChange={onChange}
+        />
+        <span className="avm-filechooser-icon"><i className="ri-attachment-line" /></span>
+        <span className="avm-filechooser-text">{placeholder ?? `Choose file (${FILE_TYPE_LABEL}, max 2 MB)`}</span>
+      </div>
+    );
+  }
+
+  // Populated state — filename + View / Delete actions. The whole
+  // strip stays visually consistent with the empty affordance. The
+  // filename itself is also clickable when a view URL is available,
+  // so the user doesn't have to aim at the small 👁 button.
   return (
-    <div className="avm-filechooser">
-      <input id={`fc-${Math.random()}`} type="file" className="avm-filechooser-input" onChange={onChange} />
+    <div className="avm-filechooser avm-filechooser-has-file">
       <span className="avm-filechooser-icon"><i className="ri-attachment-line" /></span>
-      <span className="avm-filechooser-text">{props.file ? props.file.name : (props.placeholder ?? 'Choose file')}</span>
+      {viewHref ? (
+        <a
+          href={viewHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="avm-filechooser-text avm-filechooser-link"
+          title={`Open ${fileName}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {fileName}
+        </a>
+      ) : (
+        <span className="avm-filechooser-text" title={fileName}>{fileName}</span>
+      )}
+      <div className="avm-filechooser-actions">
+        {viewHref && (
+          <a
+            href={viewHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="avm-fc-action avm-fc-view"
+            title="View attachment"
+            aria-label="View attachment"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <i className="ri-eye-line" />
+          </a>
+        )}
+        <button
+          type="button"
+          className="avm-fc-action avm-fc-delete"
+          title="Delete attachment"
+          aria-label="Delete attachment"
+          onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPick(null); }}
+        >
+          <i className="ri-delete-bin-line" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -2392,10 +2485,24 @@ function AttachmentCell(props: {
   const href = file ? URL.createObjectURL(file) : (existingPath ? resolveFileUrl(existingPath) : '');
   return (
     <div className="d-inline-flex align-items-center gap-2">
-      <span className="fs-13 text-truncate" style={{ maxWidth: 180 }} title={fileName}>
-        <i className="ri-attachment-line text-muted me-1" />
-        {fileName || 'Attachment'}
-      </span>
+      {href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="fs-13 text-truncate d-inline-flex align-items-center"
+          style={{ maxWidth: 180, color: '#4338ca', textDecoration: 'underline', textUnderlineOffset: 2 }}
+          title={`Open ${fileName}`}
+        >
+          <i className="ri-attachment-line me-1" />
+          {fileName || 'Attachment'}
+        </a>
+      ) : (
+        <span className="fs-13 text-truncate" style={{ maxWidth: 180 }} title={fileName}>
+          <i className="ri-attachment-line text-muted me-1" />
+          {fileName || 'Attachment'}
+        </span>
+      )}
       {href ? (
         <a
           href={href}
@@ -2940,8 +3047,11 @@ function PopupShell(props: {
   children: ReactNode;
 }) {
   return createPortal((
-    <div className="avm-cp-backdrop" onClick={props.onClose}>
-      <div className="avm-cp-popup" onClick={e => e.stopPropagation()}>
+    /* Backdrop click does NOT dismiss — these popups (DD / Owner
+       KYC / Trade License / Bank / GST / Product Mapping) all
+       collect form input that's easy to lose on a stray click. */
+    <div className="avm-cp-backdrop">
+      <div className="avm-cp-popup">
         <div className="avm-cp-head">
           <div className="avm-cp-title">
             <i className={props.icon} /> {props.title}
@@ -2996,7 +3106,12 @@ function DdAddPopup(props: {
           <SelectInput value={draft.mandatory ? 'Mandatory' : 'Optional'} onChange={v => set('mandatory', v === 'Mandatory')} options={['Mandatory', 'Optional']} />
         </Field>
         <Field label="Upload Document">
-          <FileChooser file={draft.file} onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '' })} placeholder="Upload DD document (PDF / Image)" />
+          <FileChooser
+            file={draft.file}
+            existingPath={draft.existingPath}
+            onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath })}
+            placeholder="Upload DD document (JPG / PNG / PDF, max 2 MB)"
+          />
         </Field>
       </div>
     </PopupShell>
@@ -3043,7 +3158,12 @@ function OwnerKycAddPopup(props: {
         </Field>
       </div>
       <Field label="Upload Document" required>
-        <FileChooser file={draft.file} onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '' })} placeholder="Upload KYC Document (PDF / Image)" />
+        <FileChooser
+          file={draft.file}
+          existingPath={draft.existingPath}
+          onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath })}
+          placeholder="Upload KYC document (JPG / PNG / PDF, max 2 MB)"
+        />
       </Field>
     </PopupShell>
   );
@@ -3083,7 +3203,12 @@ function TradeLicenseAddPopup(props: {
         </Field>
       </div>
       <Field label="License Document" required>
-        <FileChooser file={draft.file} onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '' })} placeholder="Upload License Document (PDF / Image)" />
+        <FileChooser
+          file={draft.file}
+          existingPath={draft.existingPath}
+          onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath })}
+          placeholder="Upload License document (JPG / PNG / PDF, max 2 MB)"
+        />
       </Field>
     </PopupShell>
   );
@@ -3119,7 +3244,12 @@ function BankAddPopup(props: {
           <input className="avm-input" placeholder="Enter branch address" value={draft.branchAddress} onChange={e => set('branchAddress', e.target.value)} />
         </Field>
         <Field label="Cancelled Cheque" required>
-          <FileChooser file={draft.chequeFile} onPick={f => setDraft({ ...draft, chequeFile: f, chequeFileName: f?.name ?? '' })} placeholder="Upload Cancelled Cheque" />
+          <FileChooser
+            file={draft.chequeFile}
+            existingPath={draft.existingPath}
+            onPick={f => setDraft({ ...draft, chequeFile: f, chequeFileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath })}
+            placeholder="Upload Cancelled Cheque (JPG / PNG / PDF, max 2 MB)"
+          />
         </Field>
       </div>
     </PopupShell>
@@ -3373,13 +3503,17 @@ const SCOPED_CSS = `
   font-size: 12.5px; line-height: 1.45;
   min-width: 0;
 }
+/* Carried-over summary header (Steps 2 / 3 / 4) — same visual tone
+   as the .avm-id-summary strip on the Address & Contact sub-tab so
+   every read-only header in the wizard reads as one component
+   family. Label weight lowered from 700 → 500 per design feedback. */
 .avm-prev-k {
-  font-size: 11px; font-weight: 700; letter-spacing: .03em;
-  color: #94a3b8; text-transform: uppercase;
+  font-size: 10px; font-weight: 500; letter-spacing: .04em;
+  color: #7c3aed; text-transform: uppercase;
   white-space: nowrap;
 }
 .avm-prev-v {
-  font-weight: 600; color: #1e1b4b;
+  font-weight: 500; color: #1e1b4b;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 320px;
 }
@@ -3588,8 +3722,8 @@ const SCOPED_CSS = `
 /* File chooser — same chrome as the inputs, dashed border to signal upload */
 .avm-filechooser {
   position: relative;
-  height: 38px; padding: 0 12px;
-  border: 1px dashed var(--vz-border-color, #e9ebec); border-radius: 6px;
+  height: 38px; padding: 0 8px 0 12px;
+  border: 1px dashed var(--vz-border-color, #e9ebec); border-radius: 8px;
   background: var(--vz-card-bg, #fff); color: #6b7280;
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 12.5px; font-weight: 500; cursor: pointer;
@@ -3598,7 +3732,82 @@ const SCOPED_CSS = `
 .avm-filechooser:hover { border-color: #405189; }
 .avm-filechooser-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .avm-filechooser-icon { color: #405189; font-size: 15px; flex-shrink: 0; }
-.avm-filechooser-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avm-filechooser-text {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #1e1b4b;
+}
+/* Filename as a link — applies the indigo affordance only when a
+   view URL exists (fresh blob or hydrated server path). Clicking
+   the name opens the file in a new tab, same as the 👁 button. */
+.avm-filechooser-link {
+  color: #4338ca;
+  text-decoration: underline;
+  text-decoration-color: rgba(99, 102, 241, .35);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.avm-filechooser-link:hover {
+  color: #312e81;
+  text-decoration-color: #4338ca;
+}
+[data-bs-theme="dark"] .avm-filechooser-link {
+  color: #c4b5fd;
+  text-decoration-color: rgba(196, 181, 253, .35);
+}
+[data-bs-theme="dark"] .avm-filechooser-link:hover { color: #e9d5ff; }
+
+/* Populated state — the hidden <input> is gone, so the strip is no
+   longer a "click anywhere to choose" affordance. Border switches to
+   solid + a subtle indigo tint, and the View / Delete buttons sit on
+   the right as proper pill-style action chips. */
+.avm-filechooser.avm-filechooser-has-file {
+  cursor: default;
+  border: 1px solid #c7d2fe;
+  background: #f5f7ff;
+}
+.avm-filechooser.avm-filechooser-has-file:hover { border-color: #818cf8; }
+.avm-filechooser-actions {
+  display: inline-flex; align-items: center; gap: 4px;
+  flex-shrink: 0;
+}
+.avm-fc-action {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  color: #6b7280;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+  padding: 0;
+  text-decoration: none;
+}
+.avm-fc-action i { font-size: 14px; line-height: 1; }
+.avm-fc-view:hover {
+  background: rgba(64, 81, 137, .10);
+  border-color: #405189;
+  color: #405189;
+}
+.avm-fc-delete:hover {
+  background: rgba(240, 101, 72, .10);
+  border-color: #f06548;
+  color: #f06548;
+}
+
+[data-bs-theme="dark"] .avm-filechooser.avm-filechooser-has-file {
+  background: #1a1538; border-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .avm-filechooser-text { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-fc-action {
+  background: #2a2150; border-color: #3b2a6b; color: #cbd5e1;
+}
+[data-bs-theme="dark"] .avm-fc-view:hover {
+  background: rgba(99, 102, 241, .18); border-color: #818cf8; color: #c7d2fe;
+}
+[data-bs-theme="dark"] .avm-fc-delete:hover {
+  background: rgba(248, 113, 113, .18); border-color: #f87171; color: #fecaca;
+}
 
 /* Extra contact rows */
 .avm-extra-contacts { display: flex; flex-direction: column; gap: 12px; }
@@ -3858,6 +4067,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-prev-chip { background: #14241a; border-color: #166534; color: #bbf7d0; }
 [data-bs-theme="dark"] .avm-prev-field-label { color: #6d6391; }
 [data-bs-theme="dark"] .avm-prev-field-value { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-prev-k { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-v { color: #ede9fe; }
 [data-bs-theme="dark"] .avm-prev-stage.tone-violet .avm-prev-stage-label { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #5eead4; }
 [data-bs-theme="dark"] .avm-prev-stage.tone-purple .avm-prev-stage-label { color: #d8b4fe; }
@@ -3943,40 +4154,46 @@ const SCOPED_CSS = `
   border-top: 1px solid #ede9fe;
 }
 
-/* Readonly Step-1 summary strip at the top of the popup. Compact
-   "LABEL : value" pairs flowed across multiple rows; lavender-tinted
-   background so the strip reads as context, not editable input. */
-.avm-cp-summary {
-  padding: 12px 18px;
+/* Readonly Step-1 summary strip — now rendered ON the Address &
+   Contact Person sub-tab itself (not inside the contact popup). It
+   surfaces every field captured on the Vendor Identification sub-tab
+   so the user can verify they're entering the right vendor's address
+   / extra contacts without tab-flipping. */
+.avm-id-summary {
+  padding: 12px 16px;
+  margin-bottom: 14px;
   background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
-  border-bottom: 1px solid #e9d5ff;
+  border: 1px solid #e9d5ff;
+  border-radius: 12px;
   display: flex; flex-direction: column; gap: 6px;
 }
-.avm-cp-summary-row {
+.avm-id-summary-row {
   display: flex; flex-wrap: wrap;
   gap: 4px 22px;
   align-items: baseline;
 }
-.avm-cp-pair {
+.avm-id-pair {
   display: inline-flex; align-items: baseline; gap: 5px;
   font-size: 12px; line-height: 1.4;
   min-width: 0;
 }
-.avm-cp-pair-k {
-  font-size: 10px; font-weight: 700; letter-spacing: .04em;
+.avm-id-k {
+  font-size: 10px; font-weight: 500; letter-spacing: .04em;
   color: #7c3aed; text-transform: uppercase;
   white-space: nowrap;
 }
-.avm-cp-pair-v {
+.avm-id-v {
   font-weight: 500; color: #1e1b4b;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 280px;
 }
+[data-bs-theme="dark"] .avm-id-summary { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-id-k { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-id-v { color: #ede9fe; }
 
 [data-bs-theme="dark"] .avm-cp-popup { background: #14102a; color: #ede9fe; }
 [data-bs-theme="dark"] .avm-cp-head  { background: linear-gradient(135deg, #2b3a85, #6691e7); }
 [data-bs-theme="dark"] .avm-cp-foot  { border-top-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-cp-summary { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-bottom-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-cp-pair-k { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-cp-pair-v { color: #ede9fe; }
+/* .avm-cp-summary moved to .avm-id-summary on the Address tab — see
+   the rule block above. The dark-mode overrides used to live here. */
 `;

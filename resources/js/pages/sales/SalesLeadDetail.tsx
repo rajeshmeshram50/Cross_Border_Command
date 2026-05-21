@@ -1,6 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import EntityPickerModal, { type PickerOption } from './EntityPickerModal';
+import AddCustomerModal, { type EditCustomer } from './AddCustomerModal';
+import AddConsigneeModal from './AddConsigneeModal';
+import AddProductModal from '../products/AddProductModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Lead Detail (Lead Inside View)
@@ -43,6 +48,36 @@ export default function SalesLeadDetail() {
   const { oppId } = useParams();
   const [stage, setStage] = useState<StageKey>('inquiry');
 
+  /* ────── Customer picker + edit/create modal state ──────
+     The "Customer" pill on the action row opens the picker (dropdown
+     of existing customers + "+" button). Picking a row opens the
+     Edit Customer wizard pre-filled with that record; clicking "+"
+     opens the Add Customer wizard in create mode. */
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const [customerOpts, setCustomerOpts] = useState<PickerOption[]>([]);
+  const [customerLoading, setCustomerLoading] = useState(false);
+  /* Live row cache keyed by public id so picker → editor handoff has
+     the full EditCustomer shape ready without a second fetch. */
+  const [customerRows, setCustomerRows] = useState<Record<string, EditCustomer>>({});
+  const [customerEditing, setCustomerEditing] = useState<EditCustomer | null>(null);
+  const [customerAddOpen, setCustomerAddOpen] = useState(false);
+
+  /* ────── Consignee picker + edit/create modal state ──────
+     Consignees are listed per the *currently-selected lead customer*
+     so the dropdown is scoped — the user shouldn't see consignees
+     from other customers when working a specific lead. */
+  const [consigneePickerOpen, setConsigneePickerOpen] = useState(false);
+  const [consigneeOpts, setConsigneeOpts] = useState<PickerOption[]>([]);
+  const [consigneeLoading, setConsigneeLoading] = useState(false);
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  const [consigneeRows, setConsigneeRows] = useState<Record<string, any>>({});
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  const [consigneeEditing, setConsigneeEditing] = useState<any | null>(null);
+  const [consigneeAddOpen, setConsigneeAddOpen] = useState(false);
+
+  /* ────── Add Product modal (direct open from action row) ────── */
+  const [productAddOpen, setProductAddOpen] = useState(false);
+
   useEffect(() => {
     const id = 'sm-ld-fonts';
     if (document.getElementById(id)) return;
@@ -51,6 +86,62 @@ export default function SalesLeadDetail() {
     link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap';
     document.head.appendChild(link);
   }, []);
+
+  /* Fetch the customer list lazily — only when the picker opens for
+     the first time. Cached for the rest of the session. */
+  const fetchCustomers = async () => {
+    if (customerOpts.length > 0) return;
+    setCustomerLoading(true);
+    try {
+      type Row = EditCustomer & { db_id?: number };
+      const res = await api.get<{ data?: Row[] } | Row[]>('/customers');
+      const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+      const cache: Record<string, EditCustomer> = {};
+      const opts: PickerOption[] = [];
+      rows.forEach(r => {
+        if (!r.id) return;
+        cache[r.id] = r;
+        opts.push({ value: r.id, label: `${r.id} — ${r.company}` });
+      });
+      setCustomerRows(cache);
+      setCustomerOpts(opts);
+    } catch {
+      toast.error('Failed to load customers', 'Could not reach the Customer API');
+    } finally {
+      setCustomerLoading(false);
+    }
+  };
+
+  /* Fetch consignees for the lead's current customer. The Sales
+     Customer's `db_id` would be the ideal scope, but we only know
+     the customer's display name here — pull every consignee and let
+     the user pick. (Same constraint as the prototype.) */
+  const fetchConsignees = async () => {
+    if (consigneeOpts.length > 0) return;
+    setConsigneeLoading(true);
+    try {
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const res = await api.get<{ data?: any[] } | any[]>('/consignees');
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const rows: any[] = Array.isArray(res.data) ? res.data : ((res.data as { data?: any[] })?.data ?? []);
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const cache: Record<string, any> = {};
+      const opts: PickerOption[] = [];
+      rows.forEach(r => {
+        const pid = String(r.id ?? r.public_id ?? '');
+        if (!pid) return;
+        cache[pid] = r;
+        const label = `${pid} — ${r.consignee ?? r.company ?? r.name ?? '—'}`;
+        opts.push({ value: pid, label });
+      });
+      setConsigneeRows(cache);
+      setConsigneeOpts(opts);
+    } catch {
+      toast.error('Failed to load consignees', 'Could not reach the Consignee API');
+    } finally {
+      setConsigneeLoading(false);
+    }
+  };
 
   const lead = { ...SAMPLE_LEAD, oppId: oppId || SAMPLE_LEAD.oppId };
   const currentIdx = STAGES.findIndex(s => s.key === stage);
@@ -103,9 +194,9 @@ export default function SalesLeadDetail() {
         {/* Action button row — inside the same container */}
         <div className="ld-actions-row">
           {[
-            { key: 'customer',   label: 'Customer',          icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,                                          toast: 'Customer details modal' },
-            { key: 'consignee',  label: 'Consignee',         icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>, toast: 'Consignee details modal' },
-            { key: 'add-prod',   label: 'Add Product',       icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>,                  toast: 'Add Product modal' },
+            { key: 'customer',   label: 'Customer',          icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,                                          onClick: () => { void fetchCustomers(); setCustomerPickerOpen(true); } },
+            { key: 'consignee',  label: 'Consignee',         icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>, onClick: () => { void fetchConsignees(); setConsigneePickerOpen(true); } },
+            { key: 'add-prod',   label: 'Add Product',       icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>,                  onClick: () => setProductAddOpen(true) },
             { key: 'prod-dir',   label: 'Product Directory', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h6v6H4z"/><path d="M14 4h6v6h-6z"/><path d="M4 14h6v6H4z"/><path d="M14 14h6v6h-6z"/></svg>,                                       toast: 'Product Directory modal' },
             { key: 'owner',      label: 'Change Owner',      icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>,                       toast: 'Change Owner modal' },
             { key: 'remark',     label: 'Remark',            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,                                                              toast: 'Remark modal' },
@@ -119,7 +210,11 @@ export default function SalesLeadDetail() {
               key={b.key}
               type="button"
               className={`ld-action-pill ${b.accent ?? ''}`}
-              onClick={() => toast.info('Coming next', b.toast)}
+              onClick={
+                'onClick' in b && typeof b.onClick === 'function'
+                  ? b.onClick
+                  : () => toast.info('Coming next', (b as { toast?: string }).toast ?? `${b.label} modal`)
+              }
             >
               <span className="ld-action-icon">{b.icon}</span>
               <span>{b.label}</span>
@@ -158,6 +253,103 @@ export default function SalesLeadDetail() {
           {stage === 'victory' && <PlaceholderPane label="Victory Stage — deal won, contract upload, BT (booking thread) generation." />}
         </div>
       </div>
+
+      {/* ── Customer picker (dropdown + "+" button) ── */}
+      <EntityPickerModal
+        open={customerPickerOpen}
+        title="Customer"
+        subtitle="Pick an existing customer to edit, or click + to register a new one"
+        fieldLabel="Select Customer"
+        placeholder="Choose a customer"
+        emptyHint="No customers yet — click + to add the first"
+        addLabel="Add new customer"
+        options={customerOpts}
+        loading={customerLoading}
+        onClose={() => setCustomerPickerOpen(false)}
+        onAdd={() => {
+          setCustomerPickerOpen(false);
+          setCustomerEditing(null);   // null → AddCustomerModal opens in create mode
+          setCustomerAddOpen(true);
+        }}
+        onEdit={(opt) => {
+          setCustomerPickerOpen(false);
+          const row = customerRows[opt.value];
+          if (row) {
+            setCustomerEditing(row);
+            setCustomerAddOpen(true);
+          } else {
+            toast.error('Customer missing', 'Could not load the picked customer');
+          }
+        }}
+      />
+
+      {/* ── Customer Add / Edit modal ── */}
+      <AddCustomerModal
+        open={customerAddOpen}
+        customer={customerEditing}
+        onClose={() => { setCustomerAddOpen(false); setCustomerEditing(null); }}
+        onSaved={() => {
+          /* Bust the cache so the next picker open re-fetches with the
+             new / edited customer included. */
+          setCustomerOpts([]);
+          setCustomerRows({});
+          setCustomerAddOpen(false);
+          setCustomerEditing(null);
+        }}
+      />
+
+      {/* ── Consignee picker (dropdown + "+" button) ── */}
+      <EntityPickerModal
+        open={consigneePickerOpen}
+        title="Consignee"
+        subtitle="Pick an existing consignee to edit, or click + to register a new one"
+        fieldLabel="Select Consignee"
+        placeholder="Choose a consignee"
+        emptyHint="No consignees yet — click + to add the first"
+        addLabel="Add new consignee"
+        options={consigneeOpts}
+        loading={consigneeLoading}
+        onClose={() => setConsigneePickerOpen(false)}
+        onAdd={() => {
+          setConsigneePickerOpen(false);
+          setConsigneeEditing(null);   // null → AddConsigneeModal opens in create mode
+          setConsigneeAddOpen(true);
+        }}
+        onEdit={(opt) => {
+          setConsigneePickerOpen(false);
+          const row = consigneeRows[opt.value];
+          if (row) {
+            setConsigneeEditing(row);
+            setConsigneeAddOpen(true);
+          } else {
+            toast.error('Consignee missing', 'Could not load the picked consignee');
+          }
+        }}
+      />
+
+      {/* ── Consignee Add / Edit modal ── */}
+      <AddConsigneeModal
+        open={consigneeAddOpen}
+        consignee={consigneeEditing}
+        onClose={() => { setConsigneeAddOpen(false); setConsigneeEditing(null); }}
+        onSaved={() => {
+          setConsigneeOpts([]);
+          setConsigneeRows({});
+          setConsigneeAddOpen(false);
+          setConsigneeEditing(null);
+        }}
+      />
+
+      {/* ── Add Product modal (direct from action row) ── */}
+      {productAddOpen && (
+        <AddProductModal
+          productId={null}
+          onClose={() => setProductAddOpen(false)}
+          onSaved={(_pid, finalised) => {
+            if (finalised) setProductAddOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -493,4 +685,114 @@ const SCOPED_CSS = `
   display: flex; flex-direction: column; align-items: center; gap: 12px;
 }
 .ld-placeholder p { font-size: 13px; max-width: 480px; line-height: 1.6; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Dark-mode adaptation — every panel re-tints against the dark slate
+   surface so the page reads as part of the dark theme. The page
+   doesn't use Bootstrap utility classes, so all overrides target
+   the .ld-* selectors directly.
+   ═══════════════════════════════════════════════════════════════════ */
+[data-bs-theme="dark"] .ld-root,
+[data-layout-mode="dark"] .ld-root {
+  background: linear-gradient(160deg, #0b0a1a 0%, #14102a 45%, #0b0a1a 100%);
+  color: #ede9fe;
+}
+
+/* Stepper card */
+[data-bs-theme="dark"] .ld-stepper-card,
+[data-layout-mode="dark"] .ld-stepper-card {
+  background: #14102a;
+  border-color: rgba(124, 58, 237, .35);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+
+/* STEP cards — active card keeps its purple gradient (looks great
+   on dark), DONE card is purple, upcoming becomes a translucent dark
+   tile so it reads as muted rather than nearly invisible. */
+[data-bs-theme="dark"] .ld-stage.upcoming {
+  background: linear-gradient(150deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border-color: rgba(255,255,255,.10);
+}
+[data-bs-theme="dark"] .ld-stage.upcoming .ld-stage-step  { color: rgba(255,255,255,.35); }
+[data-bs-theme="dark"] .ld-stage.upcoming .ld-stage-num   { color: rgba(255,255,255,.45); }
+[data-bs-theme="dark"] .ld-stage.upcoming .ld-stage-title { color: rgba(255,255,255,.70); }
+[data-bs-theme="dark"] .ld-stage.upcoming .ld-stage-desc  { color: rgba(255,255,255,.45); }
+[data-bs-theme="dark"] .ld-stage.upcoming .ld-stage-ghost { color: rgba(255,255,255,.03); }
+[data-bs-theme="dark"] .ld-stage-arrow.upcoming svg polygon { fill: rgba(255,255,255,.15); }
+
+/* Action pill row */
+[data-bs-theme="dark"] .ld-actions-row {
+  border-top-color: rgba(124, 58, 237, .25);
+}
+[data-bs-theme="dark"] .ld-action-pill {
+  background: #1f1845;
+  border-color: rgba(167, 139, 250, .35);
+  color: #d8b4fe;
+}
+[data-bs-theme="dark"] .ld-action-pill .ld-action-icon { color: #a78bfa; }
+[data-bs-theme="dark"] .ld-action-pill:hover {
+  background: #2a2150;
+  border-color: #a78bfa;
+  color: #ede9fe;
+  box-shadow: 0 3px 10px rgba(124, 58, 237, .28);
+}
+[data-bs-theme="dark"] .ld-action-pill.whatsapp {
+  background: linear-gradient(135deg, rgba(16,185,129,.18), rgba(16,185,129,.10));
+  border-color: rgba(110, 231, 183, .45);
+  color: #6ee7b7;
+}
+[data-bs-theme="dark"] .ld-action-pill.whatsapp .ld-action-icon { color: #34d399; }
+[data-bs-theme="dark"] .ld-action-pill.whatsapp:hover {
+  background: linear-gradient(135deg, rgba(16,185,129,.28), rgba(16,185,129,.16));
+  border-color: #34d399;
+}
+
+/* Sublinks */
+[data-bs-theme="dark"] .ld-sublink {
+  background: rgba(124, 58, 237, .12);
+  border-color: rgba(167, 139, 250, .35);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .ld-sublink:hover {
+  background: rgba(124, 58, 237, .22);
+  box-shadow: 0 2px 6px rgba(124, 58, 237, .25);
+}
+
+/* Opp bar — the top white pill with Opp ID / Date / Customer + Back btn */
+[data-bs-theme="dark"] .ld-opp-bar {
+  background: #14102a;
+  border-color: rgba(124, 58, 237, .30);
+  color: #cbd5e1;
+}
+[data-bs-theme="dark"] .ld-opp-bar strong { color: #ede9fe; }
+[data-bs-theme="dark"] .ld-sep            { color: rgba(255,255,255,.18); }
+[data-bs-theme="dark"] .ld-back-btn {
+  background: linear-gradient(135deg, #0369a1, #0284c7);
+  box-shadow: 0 2px 6px rgba(14, 165, 233, .35);
+}
+[data-bs-theme="dark"] .ld-back-btn:hover {
+  background: linear-gradient(135deg, #075985, #0369a1);
+  box-shadow: 0 4px 12px rgba(14, 165, 233, .45);
+}
+
+/* Stage content card (the middle "Stage 1: Inquiry Received" panel) */
+[data-bs-theme="dark"] .ld-stage-card {
+  background: #14102a;
+  border-color: rgba(124, 58, 237, .35);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+}
+[data-bs-theme="dark"] .ld-stage-card-header {
+  background: linear-gradient(90deg, #6d28d9, #5b21b6);
+}
+
+/* Stage body content — Opportunity Details / Purchase Decision Maker grids */
+[data-bs-theme="dark"] .ld-kv {
+  background: #1a1538;
+  border-color: rgba(124, 58, 237, .25);
+}
+[data-bs-theme="dark"] .ld-kv-label    { color: #c4b5fd; }
+[data-bs-theme="dark"] .ld-kv-value    { color: #ede9fe; }
+[data-bs-theme="dark"] .ld-kv-value.mono { color: #c4b5fd; }
+[data-bs-theme="dark"] .ld-placeholder { color: #94a3b8; }
+[data-bs-theme="dark"] .ld-placeholder p { color: #94a3b8; }
 `;

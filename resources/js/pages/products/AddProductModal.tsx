@@ -1523,8 +1523,11 @@ export default function AddProductModal(props: {
               )}
 
               {vendorDraftOpen && createPortal((
-                <div className="apm-mv-backdrop" onClick={() => setVendorDraftOpen(false)}>
-                  <div className="apm-mv-popup" onClick={(e) => e.stopPropagation()}>
+                /* Backdrop click does NOT close — the Map Vendor form
+                   collects pricing input that's easy to lose on a stray
+                   outside click. Header ✕ and footer Cancel only. */
+                <div className="apm-mv-backdrop">
+                  <div className="apm-mv-popup">
                     <div className="apm-mv-popup-head">
                       <div className="apm-mv-popup-title">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
@@ -2083,8 +2086,11 @@ function QcAddPopup(props: {
   };
 
   return createPortal((
-    <div className="apm-qc-backdrop" onClick={onClose}>
-      <div className="apm-qc-popup" onClick={(e) => e.stopPropagation()}>
+    /* Backdrop click does NOT close — the QC form holds in-flight
+       record + attachment input that an accidental outside click
+       would discard. Header ✕ and footer Cancel only. */
+    <div className="apm-qc-backdrop">
+      <div className="apm-qc-popup">
         <div className="apm-qc-popup-head">
           <div className="apm-qc-popup-title">
             <i className="ri-shield-check-line" />
@@ -2258,8 +2264,12 @@ function MasterQuickAddPopup(props: {
   };
 
   return createPortal((
-    <div className="apm-qa-backdrop" onClick={onClose}>
-      <div className="apm-qa-popup" onClick={(e) => e.stopPropagation()}>
+    /* Backdrop click intentionally does NOT close the popup — the
+       user is mid-edit on a master record and an accidental outside
+       click would wipe their input. The only dismissal paths are the
+       header ✕ button and the footer Cancel. */
+    <div className="apm-qa-backdrop">
+      <div className="apm-qa-popup">
         <div className="apm-qa-head">
           <div className="apm-qa-title">
             <i className="ri-add-circle-line" /> {schema.title}
