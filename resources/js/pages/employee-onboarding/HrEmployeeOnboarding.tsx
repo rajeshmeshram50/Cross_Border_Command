@@ -3330,14 +3330,69 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
     } catch { /* keep modal open; user can retry */ }
   };
 
+  /** True when the current active stage has passed its required-field
+   *  validation. Drives BOTH the Next button and the sidebar
+   *  `goToStage` so forward navigation is impossible until the
+   *  mandatory fields on the active stage are filled. Backward jumps
+   *  ignore this — already-visited stages can be revisited freely. */
+  const canAdvanceFromActiveStage = (): { ok: boolean; reason?: string } => {
+    if (activeStage === 1) {
+      return validateStage1()
+        ? { ok: true }
+        : { ok: false, reason: 'Fill in every required field on Onboarding Setup before continuing.' };
+    }
+    if (activeStage === 2) {
+      // Stage 2's ref-exposed validate() returns false when Yes/No on
+      // previous employment hasn't been picked yet (and other doc-
+      // mandatory checks fail).
+      const stage2Ok = stage2Ref.current?.validate?.() ?? true;
+      return stage2Ok
+        ? { ok: true }
+        : { ok: false, reason: 'Pick Yes / No on Previous Employment and complete the mandatory documents.' };
+    }
+    if (activeStage === 3) {
+      const emailErr = validateOfficialEmail(s1.official_email);
+      return !emailErr
+        ? { ok: true }
+        : { ok: false, reason: emailErr };
+    }
+    if (activeStage === 4) {
+      // Mirrors the readiness checks rendered inside Stage4Payroll —
+      // bank block valid for the chosen payment mode + PAN + UAN
+      // format + agreed CTC + PF deduction.
+      return (stage4Pass === stage4Total4 && stage4UanOk)
+        ? { ok: true }
+        : { ok: false, reason: 'Bank details, PAN, CTC and PF deduction must all be valid before moving on.' };
+    }
+    if (activeStage === 5) {
+      return stage5IsDone
+        ? { ok: true }
+        : { ok: false, reason: 'Acknowledge every policy before moving to verification.' };
+    }
+    return { ok: true };
+  };
+
   /** Navigate to a different stage without losing in-flight edits.
    *  Stages 1, 3, 4 have bound state — flush them to the backend first
-   *  (skipValidate so a partially-filled stage doesn't block the jump),
-   *  then switch. Used by both the Previous button and the sidebar
-   *  stage cards so clicking around the wizard never silently drops
-   *  user input. */
+   *  (skipValidate so a partially-filled stage doesn't block the save
+   *  call), then switch. Used by both the Previous button and the
+   *  sidebar stage cards so clicking around the wizard never silently
+   *  drops user input.
+   *
+   *  Forward jumps (target > activeStage) are gated on
+   *  canAdvanceFromActiveStage() — previously the sidebar let users
+   *  click any stage card regardless of validation, so they hopped
+   *  past required fields and only hit errors at final submission.
+   *  Backward jumps stay free. */
   const goToStage = async (target: number) => {
     if (target === activeStage) return;
+    if (target > activeStage) {
+      const gate = canAdvanceFromActiveStage();
+      if (!gate.ok) {
+        toast.error('Complete this stage first', gate.reason || 'Mandatory fields are still empty.');
+        return;
+      }
+    }
     if (activeStage === 1) {
       await saveStage1(false, true);
     } else if (activeStage === 2) {
@@ -4323,10 +4378,21 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
         if (!ok) return;
       }
 
-      // Stage 4: validate and save before advancing
+      // Stage 4: validate and save before advancing. Previously this
+      // saved regardless of validity and then unconditionally moved
+      // to Stage 5, so users could skip past missing bank / PAN / PF
+      // entries and only hit errors at final submission. Now block
+      // the advance unless every readiness check is green.
       if (activeStage === 4) {
+        if (stage4Pass !== stage4Total4 || !stage4UanOk) {
+          toast.error(
+            'Compensation — complete required fields',
+            'Bank details, PAN, CTC and PF deduction must all be filled before moving to policies.',
+          );
+          return;
+        }
         setNextLoading(true);
-        const ok = await saveStage4(stage4Pass === stage4Total4);
+        const ok = await saveStage4(true);
         setNextLoading(false);
         if (!ok) return;
       }
@@ -4380,6 +4446,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
           toast.error(
             'Previous employment — required',
             'Select Yes or No before moving to the next stage.',
+          );
+          return;
+        }
+        // Stage 5 — every policy must be acknowledged. Block the
+        // advance to verification otherwise; the user would just hit
+        // the same blocker at final submission.
+        if (activeStage === 5 && !stage5IsDone) {
+          toast.error(
+            'Policies — acknowledge to continue',
+            'Tick every policy checkbox before moving to verification.',
           );
           return;
         }

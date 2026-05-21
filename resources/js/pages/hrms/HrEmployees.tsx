@@ -737,6 +737,11 @@ export default function HrEmployees() {
   // typing in First/Last Name auto-fills it as "First Last".
   const [eDisplayNameTouched, setEDisplayNameTouched] = useState(false);
   const [eActualName, setEActualName]     = useState('');
+  /* True once the user has typed in Actual Name directly OR triggered
+   * "Copy from Display Name". While false, Actual Name stays blank as
+   * First / Middle / Last are typed — the previous auto-mirror caused
+   * admins to submit names they never reviewed. */
+  const [eActualNameTouched, setEActualNameTouched] = useState(false);
   // True once the form has been hydrated from an existing employee row.
   // While locked, the legal "Actual Name" stays pinned to the saved value
   // — typing into first/middle/last only moves the Display Name preview.
@@ -1058,7 +1063,7 @@ export default function HrEmployees() {
     setEmpMaxStep(1);
     setEWorkCountry('');
     setEFirstName(''); setEMiddleName(''); setELastName('');
-    setEDisplayName(''); setEDisplayNameTouched(false); setEActualName(''); setEActualNameLocked(false);
+    setEDisplayName(''); setEDisplayNameTouched(false); setEActualName(''); setEActualNameLocked(false); setEActualNameTouched(false);
     setEGender(''); setEDob(''); setENationality('');
     setEWorkEmail(''); setEMobile('');
     setEEmpId(''); setEStatus('Active');
@@ -1313,6 +1318,9 @@ export default function HrEmployees() {
         .filter(Boolean).join(' ').trim() || raw.display_name || row.name;
       setEActualName(savedActual);
       setEActualNameLocked(true);
+      // Server-hydrated value counts as "touched" so the field doesn't
+      // get treated as blank-but-mirrored on subsequent name edits.
+      setEActualNameTouched(true);
       setEWorkEmail(raw.email || '');
       setEMobile(raw.mobile || '');
       setEEmpId(raw.emp_code || '');
@@ -4072,7 +4080,8 @@ export default function HrEmployees() {
                         setEMiddleName(v);
                         const composed = `${eFirstName} ${v} ${eLastName}`.replace(/\s+/g,' ').trim();
                         if (!eDisplayNameTouched) setEDisplayName(composed);
-                        if (!eActualNameLocked) setEActualName(composed);
+                        // Actual Name no longer auto-mirrors while
+                        // typing — the user fills it explicitly below.
                       }} />
                     </Col>
                     <Col md={4}>
@@ -4111,17 +4120,41 @@ export default function HrEmployees() {
                       {eErrors.display_name && <small className="emp-err">{eErrors.display_name}</small>}
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">
-                        Employee Actual Name<span className="req">*</span>
-                        <span className="hint">{eActualNameLocked ? '(locked)' : '(auto-generated)'}</span>
+                      <label className="emp-label d-flex align-items-center gap-2 flex-wrap">
+                        <span>Employee Actual Name<span className="req">*</span></span>
+                        {/* "Copy from name" — fills Actual Name from
+                            the current First/Middle/Last composition so
+                            the admin can opt-in to the old auto-mirror
+                            behaviour with one click. Hidden when the
+                            row was hydrated from server (eActualNameLocked)
+                            because that's an existing employee's real
+                            legal name, not something to overwrite. */}
+                        {!eActualNameLocked && (
+                          <button
+                            type="button"
+                            className="btn btn-link btn-sm p-0"
+                            style={{ fontSize: 11 }}
+                            onClick={() => {
+                              const composed = `${eFirstName} ${eMiddleName} ${eLastName}`.replace(/\s+/g, ' ').trim();
+                              setEActualName(composed);
+                              setEActualNameTouched(true);
+                              clearEErr('actual_name');
+                            }}
+                          >
+                            Copy from name
+                          </button>
+                        )}
                       </label>
                       <input
-                        className={`emp-input is-readonly${eErrors.actual_name ? ' is-invalid' : ''}`}
+                        className={`emp-input${eErrors.actual_name ? ' is-invalid' : ''}`}
                         type="text"
-                        placeholder="Auto-filled from First / Middle / Last name"
+                        placeholder="As per Aadhaar / PAN"
                         value={eActualName}
-                        readOnly
-                        tabIndex={-1}
+                        onChange={(e) => {
+                          setEActualName(e.target.value);
+                          setEActualNameTouched(true);
+                          clearEErr('actual_name');
+                        }}
                       />
                       {eErrors.actual_name && <small className="emp-err">{eErrors.actual_name}</small>}
                     </Col>

@@ -995,9 +995,19 @@ interface RaiseHiringRequestModalProps {
   // Returns the saved row (already converted to UI shape) so the list modal
   // can prepend it without a refetch. asDraft signals which toast to show.
   onSubmit: (savedRow: HiringRequestRow, asDraft: boolean) => void;
+  /* When supplied, the modal opens in EDIT mode: every field is
+   * prefilled from this row and Save sends a PUT instead of POST.
+   * Drafts are the typical use-case (admin saves a draft, comes back
+   * later to finish it), but the same flow works for re-opening any
+   * existing request. */
+  editing?: HiringRequestRow | null;
+  /* Override the default Modal zIndex (2100). Used when this modal
+   * is mounted as a SUB-modal of HiringRequestsListModal (also at
+   * 2100) so the edit form stacks above its parent's backdrop. */
+  zIndex?: number;
 }
 
-export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringRequestModalProps) {
+export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zIndex = 2100 }: RaiseHiringRequestModalProps) {
   const toast = useToast();
 
   // Department options pulled from the Departments master so the dropdown
@@ -1068,14 +1078,34 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiri
   >>;
   const [errors, setErrors] = useState<RaiseErrors>({});
 
-  // Reset when reopened
+  // Reset / prefill when reopened. When `editing` is supplied (e.g.
+  // user clicked Edit on a Draft row), every field is hydrated from
+  // the row's _raw payload so the user resumes exactly where they
+  // left off. Otherwise we wipe back to defaults for a fresh entry.
   useEffect(() => {
     if (!isOpen) return;
-    setTitle(''); setJobRole(''); setDepartmentId(''); setTargetDate('');
-    setOpenings('1'); setEmployType('Full-time'); setWorkMode('Onsite'); setUrgency('Medium');
-    setJobDesc(''); setDailyResp(''); setRequiredSkills(''); setRequiredExp(''); setRequiredQual('');
+    if (editing) {
+      const raw: any = editing._raw || {};
+      setTitle(String(raw.title || ''));
+      setJobRole(String(raw.job_role || editing.position || ''));
+      setDepartmentId(raw.department_id != null ? String(raw.department_id) : '');
+      setTargetDate(raw.target_join_date ? String(raw.target_join_date).slice(0, 10) : '');
+      setOpenings(String(raw.openings ?? editing.openings ?? '1'));
+      setEmployType(String(raw.employment_type || editing.positionType || 'Full-time'));
+      setWorkMode((raw.work_mode || editing.positionMode || 'Onsite') as any);
+      setUrgency((raw.urgency || editing.urgency || 'Medium') as RequestUrgency);
+      setJobDesc(String(raw.job_description || ''));
+      setDailyResp(String(raw.daily_responsibilities || ''));
+      setRequiredSkills(String(raw.required_skills || ''));
+      setRequiredExp(String(raw.required_experience || ''));
+      setRequiredQual(String(raw.required_qualification || ''));
+    } else {
+      setTitle(''); setJobRole(''); setDepartmentId(''); setTargetDate('');
+      setOpenings('1'); setEmployType('Full-time'); setWorkMode('Onsite'); setUrgency('Medium');
+      setJobDesc(''); setDailyResp(''); setRequiredSkills(''); setRequiredExp(''); setRequiredQual('');
+    }
     setErrors({}); setSaving(false);
-  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, editing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clear = (k: keyof RaiseErrors) =>
     setErrors(prev => { if (!prev[k]) return prev; const n = { ...prev }; delete n[k]; return n; });
@@ -1151,7 +1181,12 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiri
 
     setSaving(true);
     try {
-      const { data } = await api.post('/hiring-requests', payload);
+      /* Edit mode → PUT to the existing row, create mode → POST.
+       * The same payload shape works for both since the backend
+       * accepts a full replacement on PUT. */
+      const { data } = editing?.id
+        ? await api.put(`/hiring-requests/${editing.id}`, payload)
+        : await api.post('/hiring-requests', payload);
       onSubmit(apiToHiringRequestRow(data), asDraft);
     } catch (err: any) {
       // Surface server-side validation errors back into the form so the user
@@ -1205,7 +1240,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiri
   };
 
   return (
-    <Modal isOpen={isOpen} toggle={onClose} centered modalClassName="rec-form-modal rec-form-modal-navy" backdropClassName="rec-modal-backdrop" contentClassName="rec-form-content border-0" backdrop="static" keyboard={false} zIndex={2100}>
+    <Modal isOpen={isOpen} toggle={onClose} centered modalClassName="rec-form-modal rec-form-modal-navy" backdropClassName="rec-modal-backdrop" contentClassName="rec-form-content border-0" backdrop="static" keyboard={false} zIndex={zIndex}>
       <ModalBody className="p-0">
         {/* Header — dark navy gradient (matches the Assign Assets reference) */}
         <div className="rec-form-header">
@@ -1522,8 +1557,13 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
 
   // Detail-view sub-modal (when "View" is clicked on a row).
   const [viewing, setViewing] = useState<HiringRequestRow | null>(null);
+  /* Draft being edited from the row's pencil-icon button. When set,
+   * the RaiseHiringRequestModal opens in edit mode prefilled from
+   * this row; a successful save replaces the matching entry in
+   * `requests` so the list reflects the new content without a refetch. */
+  const [editingDraft, setEditingDraft] = useState<HiringRequestRow | null>(null);
 
-  useEffect(() => { if (!isOpen) { setStatusFilter('All'); setUrgencyFilter('All'); setQ(''); setViewing(null); setPage(1); setTab('pending'); } }, [isOpen]);
+  useEffect(() => { if (!isOpen) { setStatusFilter('All'); setUrgencyFilter('All'); setQ(''); setViewing(null); setEditingDraft(null); setPage(1); setTab('pending'); } }, [isOpen]);
   // Reset to page 1 whenever filters, search or the active tab change
   // so the user never ends up on an empty page after narrowing.
   useEffect(() => { setPage(1); }, [statusFilter, urgencyFilter, q, tab]);
@@ -1808,6 +1848,21 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
                         >
                           <i className="ri-eye-line" />
                         </button>
+                        {/* Edit — Draft rows only. Once a request is
+                            Submitted it's committed for HR review and
+                            shouldn't be editable in place; the admin
+                            would create a new request instead. */}
+                        {r.status === 'Draft' && (
+                          <button
+                            type="button"
+                            className="rec-act rec-act-edit rec-act--icon"
+                            onClick={() => setEditingDraft(r)}
+                            title="Edit Draft"
+                            aria-label="Edit Draft"
+                          >
+                            <i className="ri-pencil-line" />
+                          </button>
+                        )}
                         {/* Create-Recruitment is only meaningful for
                             rows in the Pending tab. Rows in the
                             "Recruitment Created" tab already have one,
@@ -1880,6 +1935,22 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
 
       {/* View detail sub-modal — shows full request details when "View" clicked */}
       <ViewHiringRequestModal request={viewing} onClose={() => setViewing(null)} />
+
+      {/* Edit Draft sub-modal — opens when the pencil-icon button on a
+          Draft row is clicked. Reuses RaiseHiringRequestModal in edit
+          mode (PUT instead of POST). On save we splice the updated row
+          back into `requests` so the list reflects the change without
+          a full refetch round-trip. */}
+      <RaiseHiringRequestModal
+        isOpen={!!editingDraft}
+        onClose={() => setEditingDraft(null)}
+        editing={editingDraft}
+        zIndex={2200}
+        onSubmit={(saved) => {
+          setRequests(prev => prev.map(r => r.id === saved.id ? saved : r));
+          setEditingDraft(null);
+        }}
+      />
     </Modal>
   );
 }
@@ -1924,7 +1995,11 @@ function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRo
     );
   };
   return (
-    <Modal isOpen={!!request} toggle={onClose} centered size="lg" backdrop="static" contentClassName="rec-view-content border-0">
+    /* zIndex must clear the parent HiringRequestsListModal's 2100.
+     * Without this the View sub-modal opened but rendered behind the
+     * parent modal's backdrop — clicking the eye icon appeared to "do
+     * nothing" because the user never saw the new layer. */
+    <Modal isOpen={!!request} toggle={onClose} centered size="lg" backdrop="static" contentClassName="rec-view-content border-0" zIndex={2200}>
       <ModalBody className="p-0">
         <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
