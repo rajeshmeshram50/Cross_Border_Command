@@ -10,6 +10,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import MasterPlaceholder from '../MasterPlaceholder';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { ShimmerTable, ShimmerStatCards } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import {
@@ -1244,31 +1245,49 @@ function MasterPageInner({
         // If none are allowed, render an em-dash so the column still aligns.
         const showAny = caps.view || caps.edit || caps.delete;
         const row = info.row.original;
-        // ── Hierarchical delete rule (mirrors backend MasterController::destroy) ──
-        // super_admin (rank 3) > client_admin/client_user (rank 2) > branch_user (1).
-        // A user can only delete records created by users at the SAME or LOWER rank.
-        const rank = (t?: string): number => {
+        // ── Hierarchical edit/delete rule (mirrors backend MasterVisibility) ──
+        // super_admin (4) > client_admin/client_user (3) > main_branch (2) > sub_branch (1).
+        // Main Branch and Sub Branch users share user_type='branch_user' on
+        // the backend — the `is_main` flag on their branch is what
+        // distinguishes them. Both the current user (via auth context's
+        // `is_main_branch`) and the row's creator (via the new
+        // `creator_branch_is_main` field returned by the API) carry that
+        // flag, so the frontend now correctly blocks a sub-branch user
+        // from editing/deleting main-branch-created rows.
+        const rankFor = (t?: string, isMain?: boolean): number => {
           switch (t) {
-            case 'super_admin':  return 3;
+            case 'super_admin':                return 4;
             case 'client_admin':
-            case 'client_user':  return 2;
-            case 'branch_user':  return 1;
-            default:             return 0;
+            case 'client_user':                return 3;
+            case 'branch_user': case 'employee': return isMain ? 2 : 1;
+            default:                           return 0;
           }
         };
-        const myRank = rank(user?.user_type);
-        const creatorRank = rank(row?.creator_user_type);
-        // Block delete only when the creator is strictly higher-ranked AND
-        // it's not the user's own record. Super admin always passes.
+        const myRank = rankFor(user?.user_type, user?.is_main_branch === true);
+        const creatorRank = rankFor(row?.creator_user_type, !!row?.creator_branch_is_main);
+        // Fallback: when the row carries no creator user (NULL or stale
+        // created_by) the API still ships `branch_is_main` for the row
+        // itself, so we can still rank it by its own ownership stamp.
+        // Treat a row stamped under main branch (or a client-level row
+        // with no branch) as TIER >= MAIN.
+        const fallbackCreatorRank = !row?.created_by
+          ? (row?.client_id == null ? 4
+              : row?.branch_id == null ? 3
+              : row?.branch_is_main ? 2
+              : 1)
+          : creatorRank;
+        // Block edit/delete only when the creator is strictly higher-
+        // ranked AND it's not the user's own record. Super admin always
+        // passes.
         const blockedByRank =
           user?.user_type !== 'super_admin'
-          && row?.created_by
           && row?.created_by !== user?.id
-          && creatorRank > myRank;
-        const whoLabel = row?.creator_user_type === 'super_admin'   ? 'Super Admin'
-                       : row?.creator_user_type === 'client_admin'  ? 'Client Admin'
-                       : row?.creator_user_type === 'client_user'   ? 'Client user'
-                       : row?.creator_user_type === 'branch_user'   ? 'Branch user'
+          && fallbackCreatorRank > myRank;
+        const whoLabel = row?.creator_user_type === 'super_admin'                            ? 'Super Admin'
+                       : row?.creator_user_type === 'client_admin'                           ? 'Client Admin'
+                       : row?.creator_user_type === 'client_user'                            ? 'Client user'
+                       : (row?.creator_user_type === 'branch_user' || row?.creator_user_type === 'employee')
+                         ? (row?.creator_branch_is_main ? 'the Main Branch' : 'another Branch')
                        : 'a higher-privileged user';
         // System-seeded rows ("Office" address type, "Laptop" / "Mobile"
         // asset categories) come back from the API with is_system=true.
@@ -1863,22 +1882,32 @@ function MasterPageInner({
                 </Col>
               </Row>
 
-              <TableContainer
-                columns={columns}
-                data={filteredRecords}
-                isGlobalFilter={false}
-                customPageSize={7}
-                tableClass="align-middle table-nowrap mb-0"
-                theadClass="table-light"
-                divClass="table-responsive border rounded master-scroll-wrap"
-                SearchPlaceholder={`Search ${cfg.title.toLowerCase()}...`}
-              />
-              {loading && <div className="text-center py-5"><Spinner /></div>}
-              {!loading && records.length === 0 && (
-                <div className="text-center py-5">
-                  <i className="ri-inbox-line display-5 text-muted"></i>
-                  <p className="text-muted mt-2">No records found</p>
-                </div>
+              {loading ? (
+                /* Skeleton placeholder while the master rows + reference
+                   data are in flight. Same shape as the real table
+                   (header strip + 7 rows) so the layout doesn't jump
+                   when the data lands. `cols` mirrors the visible
+                   column count (config cols + sr-no + actions). */
+                <ShimmerTable rows={7} cols={Math.max(4, (columns?.length ?? 6))} />
+              ) : (
+                <>
+                  <TableContainer
+                    columns={columns}
+                    data={filteredRecords}
+                    isGlobalFilter={false}
+                    customPageSize={7}
+                    tableClass="align-middle table-nowrap mb-0"
+                    theadClass="table-light"
+                    divClass="table-responsive border rounded master-scroll-wrap"
+                    SearchPlaceholder={`Search ${cfg.title.toLowerCase()}...`}
+                  />
+                  {records.length === 0 && (
+                    <div className="text-center py-5">
+                      <i className="ri-inbox-line display-5 text-muted"></i>
+                      <p className="text-muted mt-2">No records found</p>
+                    </div>
+                  )}
+                </>
               )}
             </CardBody>
           </Card>
@@ -2027,19 +2056,15 @@ function MasterPageInner({
                 {viewOnly ? 'Close' : 'Cancel'}
               </button>
               {!viewOnly && (
+                /* Hover/active states live on the shared `.master-modal-save`
+                   class (masterFormKit.tsx) so every master form gets the
+                   same lift-on-hover behaviour — inline styles can't carry
+                   :hover so the class is required. */
                 <Button
                   type="submit"
                   disabled={saving}
-                  className="rounded-pill d-inline-flex align-items-center justify-content-center gap-2 border-0 waves-effect waves-light"
-                  style={{
-                    padding: '8px 20px',
-                    background: 'linear-gradient(120deg, #405189 0%, #6691e7 100%)',
-                    color: '#fff',
-                    fontWeight: 600,
-                    fontSize: 14,
-                    whiteSpace: 'nowrap',
-                    boxShadow: '0 4px 12px rgba(64,81,137,0.3)',
-                  }}
+                  className="master-modal-save waves-effect waves-light"
+                  style={{ fontSize: 14 }}
                 >
                   {saving ? (
                     <>

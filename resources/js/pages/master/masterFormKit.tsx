@@ -458,9 +458,56 @@ export const MASTER_MODAL_CSS = `
     transition: all .2s ease;
   }
   .master-modal-cancel:hover {
-    background: var(--vz-light);
-    border-color: transparent;
-    color: var(--vz-heading-color, var(--vz-body-color));
+    background: #fef2f2;
+    border-color: #f87171;
+    color: #b91c1c;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(239,68,68,0.15);
+  }
+  [data-bs-theme="dark"] .master-modal-cancel:hover {
+    background: rgba(239,68,68,0.14);
+    border-color: rgba(252,165,165,0.55);
+    color: #fca5a5;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.40);
+  }
+
+  /* Save / Update primary button — gradient pill that lifts on hover.
+     Used inside every master form modal so all masters get the same
+     interaction. Replaces the previous inline-style approach so a
+     :hover state can actually be defined. */
+  .master-modal-save {
+    background: linear-gradient(120deg, #405189 0%, #6691e7 100%) !important;
+    color: #fff !important;
+    border: none !important;
+    font-weight: 600;
+    padding: 8px 22px !important;
+    border-radius: 999px !important;
+    box-shadow: 0 4px 12px rgba(64,81,137,0.30);
+    transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .master-modal-save:hover:not(:disabled) {
+    transform: translateY(-1.5px);
+    box-shadow: 0 8px 20px rgba(64,81,137,0.45);
+    filter: brightness(1.08);
+    color: #fff !important;
+  }
+  .master-modal-save:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 3px 8px rgba(64,81,137,0.30);
+  }
+  .master-modal-save:disabled {
+    opacity: 0.75;
+    cursor: wait;
+    transform: none;
+  }
+  [data-bs-theme="dark"] .master-modal-save {
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+  }
+  [data-bs-theme="dark"] .master-modal-save:hover:not(:disabled) {
+    box-shadow: 0 8px 22px rgba(0,0,0,0.55);
   }
 
 `;
