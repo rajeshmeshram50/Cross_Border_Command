@@ -8,7 +8,9 @@ use App\Models\Employee;
 use App\Models\Lead;
 use App\Models\LeadAckReason;
 use App\Models\LeadAcknowledgement;
+use App\Models\LeadProduct;
 use App\Models\LeadTaskManager;
+use App\Models\Product;
 use App\Models\User;
 use App\Services\IndiaMartLeadSyncService;
 use Illuminate\Http\Request;
@@ -228,6 +230,9 @@ class SalesLeadController extends Controller
 
         $q = Lead::with([
             'salesperson:id,name',
+            // Full customer + consignee rows — the matrix-detail toolbar
+            // reads these to decide whether to open the Edit form or the
+            // Picker for each button.
             'customer', 'consignee', 'ackReason',
             // Stage 1 form pre-populates from this. One-to-one row created
             // / updated by POST /sales/leads/{lead}/task-manager.
@@ -271,6 +276,11 @@ class SalesLeadController extends Controller
             'lead_ack_reason_id' => 'nullable|integer|exists:lead_ack_reasons,id',
             'customer_id'        => 'nullable|integer|exists:customers,id',
             'consignee_id'       => 'nullable|integer|exists:consignees,id',
+            // WhatsApp text-only updates ride along on the same endpoint;
+            // attach-screenshot uploads use the dedicated multipart route.
+            'has_whatsapp'       => 'nullable|boolean',
+            'whatsapp_status'    => 'nullable|string|in:connected,pending,not_connected,opted_out',
+            'whatsapp_reason'    => 'nullable|string|max:1000',
         ]);
 
         $lead->update($data);
@@ -512,6 +522,193 @@ class SalesLeadController extends Controller
             'message' => $existing ? 'Task manager updated' : 'Task manager saved',
             'data'    => $row->fresh(),
         ], $existing ? 200 : 201);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  WHATSAPP STATUS — POST /sales/leads/{lead}/whatsapp
+     *
+     *  Multipart endpoint. Body: { whatsapp_status, whatsapp_reason?,
+     *  screenshot? (file) }. Updates the lead row in place. When a new
+     *  screenshot comes in, the prior file is unlinked from disk before
+     *  the new path is written so we never leave orphans.
+     *
+     *  has_whatsapp is auto-derived: true iff status is "connected".
+     * ───────────────────────────────────────────────────────────────── */
+    public function updateWhatsApp(Request $request, int $leadId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
+        }
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $data = $request->validate([
+            'whatsapp_status' => 'required|string|in:connected,pending,not_connected,opted_out',
+            'whatsapp_reason' => 'nullable|string|max:1000',
+            'screenshot'      => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
+        ]);
+
+        $screenshotPath = $lead->whatsapp_screenshot;
+        if ($request->hasFile('screenshot')) {
+            if ($lead->whatsapp_screenshot && Storage::disk('public')->exists($lead->whatsapp_screenshot)) {
+                Storage::disk('public')->delete($lead->whatsapp_screenshot);
+            }
+            $screenshotPath = $request->file('screenshot')->store(
+                "leads/whatsapp/{$user->client_id}",
+                'public',
+            );
+        }
+
+        $lead->update([
+            'whatsapp_status'     => $data['whatsapp_status'],
+            'whatsapp_reason'     => $data['whatsapp_reason'] ?? null,
+            'whatsapp_screenshot' => $screenshotPath,
+            'has_whatsapp'        => $data['whatsapp_status'] === 'connected',
+        ]);
+
+        return response()->json([
+            'status' => true,
+            'data'   => $lead->fresh()->only([
+                'id', 'has_whatsapp', 'whatsapp_status', 'whatsapp_reason', 'whatsapp_screenshot',
+            ]),
+        ]);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  LEAD PRODUCTS — GET /sales/leads/{lead}/products
+     *
+     *  Returns rows from lead_products joined with the product master
+     *  for display. Shape kept lean so the modal can render directly.
+     * ───────────────────────────────────────────────────────────────── */
+    public function listLeadProducts(Request $request, int $leadId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $rows = LeadProduct::with(['product:id,product_code,name,status'])
+            ->where('lead_id', $lead->id)
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn ($r) => [
+                'id'             => $r->id,
+                'product_id'     => $r->product_id,
+                'product_code'   => $r->product?->product_code,
+                'product_name'   => $r->product?->name,
+                'product_status' => $r->product?->status,
+                'currency'       => $r->currency,
+                'quantity'       => $r->quantity,
+                'target_price'   => $r->target_price,
+                'notes'          => $r->notes,
+                'created_at'     => $r->created_at,
+            ]);
+
+        return response()->json(['status' => true, 'data' => $rows]);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  LEAD PRODUCTS — POST /sales/leads/{lead}/products
+     *
+     *  Map a product master to this lead. The composite unique on
+     *  (lead_id, product_id) prevents duplicates; the controller pre-
+     *  checks so the user gets a friendly 422 rather than a 500.
+     * ───────────────────────────────────────────────────────────────── */
+    public function storeLeadProduct(Request $request, int $leadId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
+        }
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $data = $request->validate([
+            'product_id'   => 'required|integer|exists:products,id',
+            'currency'     => 'nullable|string|max:8',
+            'quantity'     => 'nullable|numeric|min:0',
+            'target_price' => 'nullable|numeric|min:0',
+            'notes'        => 'nullable|string|max:1000',
+        ]);
+
+        $dupe = LeadProduct::where('lead_id', $lead->id)
+            ->where('product_id', $data['product_id'])
+            ->exists();
+        if ($dupe) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This product is already mapped to the lead — edit the existing row instead',
+            ], 422);
+        }
+
+        $row = LeadProduct::create([
+            'client_id'    => $user->client_id,
+            'lead_id'      => $lead->id,
+            'product_id'   => $data['product_id'],
+            'currency'     => $data['currency']     ?? 'USD',
+            'quantity'     => $data['quantity']     ?? null,
+            'target_price' => $data['target_price'] ?? null,
+            'notes'        => $data['notes']        ?? null,
+            'created_by'   => $user->id,
+        ]);
+
+        return response()->json(['status' => true, 'data' => $row->fresh(['product:id,product_code,name'])], 201);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  LEAD PRODUCTS — PUT /sales/leads/{lead}/products/{mapping}
+     *
+     *  Update the quantity / target price / currency / notes for a
+     *  mapping. The product itself is immutable — to swap products
+     *  the user removes this row and adds a new one.
+     * ───────────────────────────────────────────────────────────────── */
+    public function updateLeadProduct(Request $request, int $leadId, int $mappingId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
+
+        $data = $request->validate([
+            'currency'     => 'nullable|string|max:8',
+            'quantity'     => 'nullable|numeric|min:0',
+            'target_price' => 'nullable|numeric|min:0',
+            'notes'        => 'nullable|string|max:1000',
+        ]);
+
+        $row->update($data);
+        return response()->json(['status' => true, 'data' => $row->fresh(['product:id,product_code,name'])]);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  LEAD PRODUCTS — DELETE /sales/leads/{lead}/products/{mapping}
+     * ───────────────────────────────────────────────────────────────── */
+    public function destroyLeadProduct(Request $request, int $leadId, int $mappingId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
+        $row->delete();
+
+        return response()->json(['status' => true, 'message' => 'Product unmapped']);
     }
 
     /* ─────────────────────────────────────────────────────────────────

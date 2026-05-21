@@ -19,6 +19,9 @@ import Stage4PriceShared         from './stages/Stage4PriceShared';
 import Stage5QuotationVsPI       from './stages/Stage5QuotationVsPI';
 import Stage6VictoryStage        from './stages/Stage6VictoryStage';
 import TaskManagerPanel, { type TaskManagerRow } from './TaskManagerPanel';
+import WhatsAppStatusModal from './WhatsAppStatusModal';
+import RemindersForLeadModal from './RemindersForLeadModal';
+import MeetingsForLeadModal from './MeetingsForLeadModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Opportunity Detail
@@ -86,6 +89,20 @@ export type OppHeaderData = {
   /* Stage 2 activity log — latest first. Cached by the parent so the
    * stage component can render immediately without an extra fetch. */
   acknowledgements?: StageAcknowledgement[];
+  /* Mapped customer / consignee — read by the toolbar to decide
+   * whether the Customer / Consignee buttons open Edit or Picker. */
+  customerId?:        number | null;
+  customerRow?:       Record<string, unknown> | null;
+  consigneeId?:       number | null;
+  consigneeRow?:      Record<string, unknown> | null;
+  /* Owner + ad-hoc notes — drive the Change Owner / Remark modals. */
+  salespersonId?:     number | null;
+  salespersonName?:   string;
+  remark?:            string | null;
+  /* WhatsApp panel state. */
+  whatsappStatus?:     'connected' | 'pending' | 'not_connected' | 'opted_out' | null;
+  whatsappReason?:     string | null;
+  whatsappScreenshot?: string | null;
 };
 
 const DEFAULT_HEADER: OppHeaderData = {
@@ -124,6 +141,25 @@ export default function SalesMatrixDetail() {
   const [changeOwnerOpen, setChangeOwnerOpen] = useState(false);
   const [remarksOpen, setRemarksOpen] = useState(false);
   const [keyOppOpen, setKeyOppOpen] = useState(false);
+  const [whatsappOpen, setWhatsappOpen] = useState(false);
+  const [remindersOpen, setRemindersOpen] = useState(false);
+  const [meetingsOpen, setMeetingsOpen] = useState(false);
+  const [ownerOpts, setOwnerOpts] = useState<Array<{ value: string; label: string }>>([]);
+
+  useEffect(() => {
+    if (!changeOwnerOpen || ownerOpts.length > 0) return;
+    api.get<{ status: boolean; data: Array<{ id: number; name: string; code: string; subtitle: string }> }>(
+      '/sales/leads/salespeople',
+    )
+      .then(({ data }) => {
+        setOwnerOpts((data.data ?? []).map(sp => ({
+          value: String(sp.id),
+          label: `${sp.code} · ${sp.name}${sp.subtitle ? ` — ${sp.subtitle}` : ''}`,
+        })));
+      })
+      .catch(() => toast.error('Load failed', 'Could not load salespeople'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [changeOwnerOpen]);
   /* Persists the "marked as key" flag for the session. Once the
      backend ships a `leads.is_key_opportunity` column, hydrate this
      from the header payload and PATCH on confirm. */
@@ -204,12 +240,21 @@ export default function SalesMatrixDetail() {
    * a task-manager save so the read-only display stays in sync without a
    * full refetch. */
   const [serverHeader, setServerHeader] = useState<{
-    qualified?:        boolean;
-    disqualified?:     boolean;
-    taskManager?:      StageTaskManager | null;
-    acknowledgements?: StageAcknowledgement[];
-    salespersonName?:  string;
-    leadStageId?:      number;
+    qualified?:           boolean;
+    disqualified?:        boolean;
+    taskManager?:         StageTaskManager | null;
+    acknowledgements?:    StageAcknowledgement[];
+    salespersonId?:       number | null;
+    salespersonName?:     string;
+    leadStageId?:         number;
+    customerId?:          number | null;
+    customerRow?:         Record<string, unknown> | null;
+    consigneeId?:         number | null;
+    consigneeRow?:        Record<string, unknown> | null;
+    remark?:              string | null;
+    whatsappStatus?:      'connected' | 'pending' | 'not_connected' | 'opted_out' | null;
+    whatsappReason?:      string | null;
+    whatsappScreenshot?:  string | null;
   }>({});
 
   /* Resolved leadId — initially the one passed via router state. If that's
@@ -244,18 +289,38 @@ export default function SalesMatrixDetail() {
       qualified: boolean;
       disqualified: boolean;
       lead_stage_id: number;
+      salesperson_id: number | null;
       salesperson: { id: number; name: string } | null;
+      customer_id: number | null;
+      customer: Record<string, unknown> | null;
+      consignee_id: number | null;
+      consignee: Record<string, unknown> | null;
+      remark: string | null;
+      has_whatsapp: boolean;
+      whatsapp_status: 'connected' | 'pending' | 'not_connected' | 'opted_out' | null;
+      whatsapp_reason: string | null;
+      whatsapp_screenshot: string | null;
       task_manager: StageTaskManager | null;
       acknowledgements: StageAcknowledgement[];
     }}>(`/sales/leads/${resolvedLeadId}`)
       .then(({ data }) => {
+        const d = data.data;
         setServerHeader({
-          qualified:        data.data.qualified,
-          disqualified:     data.data.disqualified,
-          taskManager:      data.data.task_manager,
-          acknowledgements: data.data.acknowledgements ?? [],
-          salespersonName:  data.data.salesperson?.name ?? '',
-          leadStageId:      data.data.lead_stage_id,
+          qualified:           d.qualified,
+          disqualified:        d.disqualified,
+          taskManager:         d.task_manager,
+          acknowledgements:    d.acknowledgements ?? [],
+          salespersonId:       d.salesperson_id,
+          salespersonName:     d.salesperson?.name ?? '',
+          leadStageId:         d.lead_stage_id,
+          customerId:          d.customer_id,
+          customerRow:         d.customer,
+          consigneeId:         d.consignee_id,
+          consigneeRow:        d.consignee,
+          remark:              d.remark,
+          whatsappStatus:      d.whatsapp_status,
+          whatsappReason:      d.whatsapp_reason,
+          whatsappScreenshot:  d.whatsapp_screenshot,
         });
       })
       .catch(() => toast.error('Load failed', 'Could not load this lead'));
@@ -265,11 +330,21 @@ export default function SalesMatrixDetail() {
 
   const header: OppHeaderData = {
     ...seedHeader,
-    leadId:           resolvedLeadId,
-    qualified:        serverHeader.qualified,
-    disqualified:     serverHeader.disqualified,
-    taskManager:      serverHeader.taskManager,
-    acknowledgements: serverHeader.acknowledgements,
+    leadId:             resolvedLeadId,
+    qualified:          serverHeader.qualified,
+    disqualified:       serverHeader.disqualified,
+    taskManager:        serverHeader.taskManager,
+    acknowledgements:   serverHeader.acknowledgements,
+    customerId:         serverHeader.customerId,
+    customerRow:        serverHeader.customerRow,
+    consigneeId:        serverHeader.consigneeId,
+    consigneeRow:       serverHeader.consigneeRow,
+    salespersonId:      serverHeader.salespersonId,
+    salespersonName:    serverHeader.salespersonName,
+    remark:             serverHeader.remark,
+    whatsappStatus:     serverHeader.whatsappStatus,
+    whatsappReason:     serverHeader.whatsappReason,
+    whatsappScreenshot: serverHeader.whatsappScreenshot,
   };
 
   // Inject Google Fonts once (matches the other sales pages).
@@ -291,6 +366,39 @@ export default function SalesMatrixDetail() {
   const goNext = () => stage < 6 && goToStage((stage + 1) as StageNum);
 
   const goBack = () => navigate('sales.lead_worksheet');
+
+  /* Toolbar handlers — Customer / Consignee route smart based on
+   * what's already mapped on the lead. Picker = unmapped, Edit form
+   * = already mapped. */
+  const onCustomerClick = async () => {
+    if (serverHeader.customerId && serverHeader.customerRow) {
+      // Eager-loaded server row has `id` (the DB pk) but no `db_id`
+      // (the public-API field name). Shim it here so AddCustomerModal,
+      // which reads `db_id` for its detail fetch, finds it.
+      const row = serverHeader.customerRow as unknown as Record<string, unknown>;
+      setCustomerEditing({
+        ...row,
+        db_id: typeof row.id === 'number' ? (row.id as number) : serverHeader.customerId,
+      } as unknown as EditCustomer);
+      setCustomerAddOpen(true);
+      return;
+    }
+    await fetchCustomers();
+    setCustomerPickerOpen(true);
+  };
+  const onConsigneeClick = async () => {
+    if (!serverHeader.customerId) {
+      toast.warning('Customer required first', 'Pick or add a customer before mapping a consignee');
+      return;
+    }
+    if (serverHeader.consigneeId && serverHeader.consigneeRow) {
+      setConsigneeEditing(serverHeader.consigneeRow);
+      setConsigneeAddOpen(true);
+      return;
+    }
+    await fetchConsignees();
+    setConsigneePickerOpen(true);
+  };
 
   // Render the active stage in the middle column.
   const StageComponent = (
@@ -367,10 +475,18 @@ export default function SalesMatrixDetail() {
 
       {/* ─── Action Toolbar (separate white card) ─── */}
       <div className="smd-toolbar">
-        <ActionBtn icon={<IconUser />}     label="Customer"       trailing="edit"
-          onClick={() => { void fetchCustomers(); setCustomerPickerOpen(true); }} />
-        <ActionBtn icon={<IconTruck />}    label="Consignee"      trailing="edit"
-          onClick={() => { void fetchConsignees(); setConsigneePickerOpen(true); }} />
+        {/* Customer — if a customer is already mapped on the lead we
+            open the Edit form directly with that row; otherwise we
+            surface the Picker so the user can pick one or add a new
+            customer. Matches the legacy IDIMS "is_main_customer_map" gate. */}
+        <ActionBtn icon={<IconUser />}     label="Customer" trailing="edit"
+          onClick={onCustomerClick} />
+        {/* Consignee — gated on a mapped customer. When unmapped we
+            disable to mirror the legacy flow (you can't consign for a
+            lead without first pinning the buyer). */}
+        <ActionBtn icon={<IconTruck />}    label="Consignee" trailing="edit"
+          className={!serverHeader.customerId ? 'smd-act-disabled' : ''}
+          onClick={onConsigneeClick} />
         <ActionBtn icon={<IconPlusSq />}   label="Add Product"
           onClick={() => setProductAddOpen(true)} />
         <ActionBtn icon={<IconBook />}     label="Product Directory"
@@ -382,10 +498,14 @@ export default function SalesMatrixDetail() {
         <ActionBtn icon={<IconStar />}     label="Key Opportunity"
           className={isKeyOpportunity ? 'smd-act-key' : ''}
           onClick={() => setKeyOppOpen(true)} />
-        <ActionBtn icon={<IconBell />}     label="Reminder" />
-        <ActionBtn icon={<IconCalSmall />} label="Meetings" />
+        <ActionBtn icon={<IconBell />}     label="Reminder"
+          onClick={() => setRemindersOpen(true)} />
+        <ActionBtn icon={<IconCalSmall />} label="Meetings"
+          onClick={() => setMeetingsOpen(true)} />
         <ActionBtn icon={<IconDollar />}   label="Share Prices" />
-        <ActionBtn icon={<IconWhats />}    label="WhatsApp Status" className="smd-act-wa" />
+        <ActionBtn icon={<IconWhats />}    label="WhatsApp Status"
+          className={`smd-act-wa ${serverHeader.whatsappStatus === 'connected' ? 'smd-act-wa-on' : ''}`}
+          onClick={() => setWhatsappOpen(true)} />
       </div>
 
       {/* ─── Three-column body ─── */}
@@ -537,11 +657,28 @@ export default function SalesMatrixDetail() {
           setCustomerEditing(null);
           setCustomerAddOpen(true);
         }}
-        onEdit={(opt) => {
+        onEdit={async (opt) => {
           setCustomerPickerOpen(false);
           const row = customerRows[opt.value];
-          if (row) { setCustomerEditing(row); setCustomerAddOpen(true); }
-          else toast.error('Customer missing', 'Could not load the picked customer');
+          if (!row) {
+            toast.error('Customer missing', 'Could not load the picked customer');
+            return;
+          }
+          // Pick → bind the customer to this lead so subsequent visits
+          // open the Edit form directly. db_id is the row's primary key
+          // (set in fetchCustomers); the public_id stays for display.
+          const dbId = (row as EditCustomer & { db_id?: number }).db_id;
+          if (resolvedLeadId && dbId) {
+            try {
+              await api.put(`/sales/leads/${resolvedLeadId}`, { customer_id: dbId });
+              toast.success('Customer mapped', `Linked to this opportunity`);
+              await reloadLead();
+            } catch {
+              toast.error('Mapping failed', 'Could not link this customer to the lead');
+            }
+          }
+          setCustomerEditing(row);
+          setCustomerAddOpen(true);
         }}
       />
       <AddCustomerModal
@@ -551,6 +688,7 @@ export default function SalesMatrixDetail() {
         onSaved={() => {
           setCustomerOpts([]); setCustomerRows({});
           setCustomerAddOpen(false); setCustomerEditing(null);
+          void reloadLead();
         }}
       />
 
@@ -571,11 +709,24 @@ export default function SalesMatrixDetail() {
           setConsigneeEditing(null);
           setConsigneeAddOpen(true);
         }}
-        onEdit={(opt) => {
+        onEdit={async (opt) => {
           setConsigneePickerOpen(false);
           const row = consigneeRows[opt.value];
-          if (row) { setConsigneeEditing(row); setConsigneeAddOpen(true); }
-          else toast.error('Consignee missing', 'Could not load the picked consignee');
+          if (!row) {
+            toast.error('Consignee missing', 'Could not load the picked consignee');
+            return;
+          }
+          const dbId = (row as { db_id?: number; id?: number }).db_id ?? (row as { id?: number }).id;
+          if (resolvedLeadId && dbId) {
+            try {
+              await api.put(`/sales/leads/${resolvedLeadId}`, { consignee_id: dbId });
+              toast.success('Consignee mapped', 'Linked to this opportunity');
+              await reloadLead();
+            } catch {
+              toast.error('Mapping failed', 'Could not link this consignee to the lead');
+            }
+          }
+          setConsigneeEditing(row); setConsigneeAddOpen(true);
         }}
       />
       <AddConsigneeModal
@@ -585,25 +736,45 @@ export default function SalesMatrixDetail() {
         onSaved={() => {
           setConsigneeOpts([]); setConsigneeRows({});
           setConsigneeAddOpen(false); setConsigneeEditing(null);
+          void reloadLead();
         }}
       />
 
-      {/* ── Add Product modal ── */}
+      {/* ── Add Product modal ──
+          When a brand-new product master is finalised we auto-map it
+          to this lead so the user doesn't have to repeat the pick step
+          inside the Product Directory. Errors are silent — if the auto-
+          map fails (e.g. duplicate), the user can still map manually. */}
       {productAddOpen && (
         <AddProductModal
           productId={null}
           onClose={() => setProductAddOpen(false)}
-          onSaved={(_pid, finalised) => { if (finalised) setProductAddOpen(false); }}
+          onSaved={async (pid, finalised) => {
+            if (!finalised) return;
+            setProductAddOpen(false);
+            if (resolvedLeadId && pid) {
+              try {
+                await api.post(`/sales/leads/${resolvedLeadId}/products`, { product_id: pid });
+                toast.success('Mapped', 'New product mapped to this opportunity');
+                setProductDirectoryOpen(true);
+              } catch {
+                /* silent — the user can map manually from the Directory */
+              }
+            }
+          }}
         />
       )}
 
       {/* ── Product Directory popup (mapped-products table) ── */}
       <ProductDirectoryModal
         open={productDirectoryOpen}
+        leadId={resolvedLeadId ?? null}
         onClose={() => setProductDirectoryOpen(false)}
-        onMapProduct={() => {
-          /* "Map Product" inside the directory chains into the
-             same Add Product wizard the toolbar pill opens. */
+        onAddProduct={() => {
+          /* "+ New Master" inside the directory chains into the same
+             Add Product wizard the toolbar pill opens; once the new
+             master is saved, return to the directory so the user can
+             map it. */
           setProductDirectoryOpen(false);
           setProductAddOpen(true);
         }}
@@ -612,13 +783,68 @@ export default function SalesMatrixDetail() {
       {/* ── Change Lead Owner popup ── */}
       <ChangeOwnerModal
         open={changeOwnerOpen}
+        currentOwner={serverHeader.salespersonName || 'Unassigned'}
+        owners={ownerOpts}
         onClose={() => setChangeOwnerOpen(false)}
+        onUpdate={async (opt) => {
+          if (!resolvedLeadId) return;
+          try {
+            await api.put(`/sales/leads/${resolvedLeadId}`, { salesperson_id: Number(opt.value) });
+            toast.success('Owner updated', `Reassigned to ${opt.label}`);
+            await reloadLead();
+          } catch {
+            toast.error('Update failed', 'Could not reassign the lead');
+          }
+        }}
       />
 
       {/* ── Remarks popup ── */}
       <RemarksModal
         open={remarksOpen}
         onClose={() => setRemarksOpen(false)}
+        onSave={async (text) => {
+          if (!resolvedLeadId) return;
+          try {
+            await api.put(`/sales/leads/${resolvedLeadId}`, { remark: text });
+            toast.success('Remark saved', 'Note attached to this opportunity');
+            await reloadLead();
+          } catch {
+            toast.error('Save failed', 'Could not save the remark');
+          }
+        }}
+      />
+
+      {/* ── WhatsApp Status popup ── */}
+      <WhatsAppStatusModal
+        open={whatsappOpen}
+        leadId={resolvedLeadId ?? null}
+        currentStatus={serverHeader.whatsappStatus ?? null}
+        currentReason={serverHeader.whatsappReason ?? null}
+        currentScreenshot={serverHeader.whatsappScreenshot ?? null}
+        onClose={() => setWhatsappOpen(false)}
+        onSaved={() => { setWhatsappOpen(false); void reloadLead(); }}
+      />
+
+      {/* ── Reminders for this lead ── */}
+      <RemindersForLeadModal
+        open={remindersOpen}
+        oppId={header.oppId}
+        oppDate={header.oppDate}
+        onClose={() => setRemindersOpen(false)}
+      />
+
+      {/* ── Meetings for this lead ── */}
+      <MeetingsForLeadModal
+        open={meetingsOpen}
+        oppId={header.oppId}
+        onClose={() => setMeetingsOpen(false)}
+        onAddNew={() => {
+          // Deep-link to the existing Sales To-Do page; the page handles
+          // the rich form (timezones, link/venue, contact, agenda)
+          // far better than embedding it here.
+          setMeetingsOpen(false);
+          navigate('sales.todo');
+        }}
       />
 
       {/* ── Key Opportunity confirm popup ── */}
