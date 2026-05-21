@@ -342,6 +342,11 @@ export default function AddVendorModal(props: {
   const [email,       setEmail]       = useState('');
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
   const [attachment, setAttachment] = useState<File | null>(null);
+  /* Server-side path for the primary contact's previously uploaded
+     business card. Hydrated from primary_address.attachment_path on
+     edit-mode load so the table cell can render a working View link
+     without a fresh upload. */
+  const [primaryAttachmentPath, setPrimaryAttachmentPath] = useState<string>('');
 
   type ContactRow = {
     id: number;
@@ -351,6 +356,10 @@ export default function AddVendorModal(props: {
     email: string;
     whatsapp: boolean;
     attachmentName: string;
+    /* Server-stored path — present when the row was hydrated from
+       /vendors/{id}. Empty for freshly-added rows that haven't been
+       saved yet. */
+    attachmentPath?: string;
   };
   const [extraContacts, setExtraContacts] = useState<ContactRow[]>([]);
 
@@ -598,6 +607,7 @@ export default function AddVendorModal(props: {
           setContactNo(pa.contact_no ?? '');
           setEmail(pa.email ?? '');
           setWhatsappEnabled(pa.whatsapp_enabled ?? true);
+          setPrimaryAttachmentPath(pa.attachment_path ?? '');
         }
         setExtraContacts((v.extra_contacts ?? []).map(c => ({
           id: c.id,
@@ -607,6 +617,7 @@ export default function AddVendorModal(props: {
           email: c.email ?? '',
           whatsapp: c.whatsapp_enabled ?? true,
           attachmentName: basename(c.attachment_path),
+          attachmentPath: c.attachment_path ?? undefined,
         })));
 
         // Step 2 — KYC sub-collections (file fields restored via existingPath)
@@ -1672,9 +1683,12 @@ export default function AddVendorModal(props: {
                         email: string;
                         whatsapp: boolean;
                         attachmentName: string;
+                        attachmentHref: string;
                       };
                       const rows: Row[] = [];
                       if (primaryHasData) {
+                        const freshHref = attachment ? URL.createObjectURL(attachment) : '';
+                        const savedHref = primaryAttachmentPath ? resolveFileUrl(primaryAttachmentPath) : '';
                         rows.push({
                           key: 'primary',
                           isPrimary: true,
@@ -1683,7 +1697,8 @@ export default function AddVendorModal(props: {
                           phone: contactNo,
                           email,
                           whatsapp: whatsappEnabled,
-                          attachmentName: attachment?.name ?? '',
+                          attachmentName: attachment?.name ?? (primaryAttachmentPath ? (primaryAttachmentPath.split('/').pop() ?? '') : ''),
+                          attachmentHref: freshHref || savedHref,
                         });
                       }
                       extraContacts.forEach(c => rows.push({
@@ -1696,6 +1711,7 @@ export default function AddVendorModal(props: {
                         email: c.email,
                         whatsapp: c.whatsapp,
                         attachmentName: c.attachmentName,
+                        attachmentHref: c.attachmentPath ? resolveFileUrl(c.attachmentPath) : '',
                       }));
 
                       if (rows.length === 0) {
@@ -1737,9 +1753,25 @@ export default function AddVendorModal(props: {
                                     </span>
                                   </td>
                                   <td>
-                                    {r.attachmentName
-                                      ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.attachmentName}</span>
-                                      : <span className="text-muted fs-13">—</span>}
+                                    {r.attachmentName ? (
+                                      r.attachmentHref ? (
+                                        <a
+                                          href={r.attachmentHref}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="fs-13 d-inline-flex align-items-center text-truncate"
+                                          style={{ maxWidth: 200, color: '#4338ca', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                                          title={`Open ${r.attachmentName}`}
+                                        >
+                                          <i className="ri-attachment-line me-1" />
+                                          {r.attachmentName}
+                                        </a>
+                                      ) : (
+                                        <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.attachmentName}</span>
+                                      )
+                                    ) : (
+                                      <span className="text-muted fs-13">—</span>
+                                    )}
                                   </td>
                                   <td>
                                     <div className="hstack gap-1">
@@ -2378,11 +2410,26 @@ function FileChooser(props: {
   }
 
   // Populated state — filename + View / Delete actions. The whole
-  // strip stays visually consistent with the empty affordance.
+  // strip stays visually consistent with the empty affordance. The
+  // filename itself is also clickable when a view URL is available,
+  // so the user doesn't have to aim at the small 👁 button.
   return (
     <div className="avm-filechooser avm-filechooser-has-file">
       <span className="avm-filechooser-icon"><i className="ri-attachment-line" /></span>
-      <span className="avm-filechooser-text" title={fileName}>{fileName}</span>
+      {viewHref ? (
+        <a
+          href={viewHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="avm-filechooser-text avm-filechooser-link"
+          title={`Open ${fileName}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {fileName}
+        </a>
+      ) : (
+        <span className="avm-filechooser-text" title={fileName}>{fileName}</span>
+      )}
       <div className="avm-filechooser-actions">
         {viewHref && (
           <a
@@ -2438,10 +2485,24 @@ function AttachmentCell(props: {
   const href = file ? URL.createObjectURL(file) : (existingPath ? resolveFileUrl(existingPath) : '');
   return (
     <div className="d-inline-flex align-items-center gap-2">
-      <span className="fs-13 text-truncate" style={{ maxWidth: 180 }} title={fileName}>
-        <i className="ri-attachment-line text-muted me-1" />
-        {fileName || 'Attachment'}
-      </span>
+      {href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="fs-13 text-truncate d-inline-flex align-items-center"
+          style={{ maxWidth: 180, color: '#4338ca', textDecoration: 'underline', textUnderlineOffset: 2 }}
+          title={`Open ${fileName}`}
+        >
+          <i className="ri-attachment-line me-1" />
+          {fileName || 'Attachment'}
+        </a>
+      ) : (
+        <span className="fs-13 text-truncate" style={{ maxWidth: 180 }} title={fileName}>
+          <i className="ri-attachment-line text-muted me-1" />
+          {fileName || 'Attachment'}
+        </span>
+      )}
       {href ? (
         <a
           href={href}
@@ -3442,13 +3503,17 @@ const SCOPED_CSS = `
   font-size: 12.5px; line-height: 1.45;
   min-width: 0;
 }
+/* Carried-over summary header (Steps 2 / 3 / 4) — same visual tone
+   as the .avm-id-summary strip on the Address & Contact sub-tab so
+   every read-only header in the wizard reads as one component
+   family. Label weight lowered from 700 → 500 per design feedback. */
 .avm-prev-k {
-  font-size: 11px; font-weight: 700; letter-spacing: .03em;
-  color: #94a3b8; text-transform: uppercase;
+  font-size: 10px; font-weight: 500; letter-spacing: .04em;
+  color: #7c3aed; text-transform: uppercase;
   white-space: nowrap;
 }
 .avm-prev-v {
-  font-weight: 600; color: #1e1b4b;
+  font-weight: 500; color: #1e1b4b;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   max-width: 320px;
 }
@@ -3657,8 +3722,8 @@ const SCOPED_CSS = `
 /* File chooser — same chrome as the inputs, dashed border to signal upload */
 .avm-filechooser {
   position: relative;
-  height: 38px; padding: 0 12px;
-  border: 1px dashed var(--vz-border-color, #e9ebec); border-radius: 6px;
+  height: 38px; padding: 0 8px 0 12px;
+  border: 1px dashed var(--vz-border-color, #e9ebec); border-radius: 8px;
   background: var(--vz-card-bg, #fff); color: #6b7280;
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 12.5px; font-weight: 500; cursor: pointer;
@@ -3667,7 +3732,82 @@ const SCOPED_CSS = `
 .avm-filechooser:hover { border-color: #405189; }
 .avm-filechooser-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 .avm-filechooser-icon { color: #405189; font-size: 15px; flex-shrink: 0; }
-.avm-filechooser-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avm-filechooser-text {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #1e1b4b;
+}
+/* Filename as a link — applies the indigo affordance only when a
+   view URL exists (fresh blob or hydrated server path). Clicking
+   the name opens the file in a new tab, same as the 👁 button. */
+.avm-filechooser-link {
+  color: #4338ca;
+  text-decoration: underline;
+  text-decoration-color: rgba(99, 102, 241, .35);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.avm-filechooser-link:hover {
+  color: #312e81;
+  text-decoration-color: #4338ca;
+}
+[data-bs-theme="dark"] .avm-filechooser-link {
+  color: #c4b5fd;
+  text-decoration-color: rgba(196, 181, 253, .35);
+}
+[data-bs-theme="dark"] .avm-filechooser-link:hover { color: #e9d5ff; }
+
+/* Populated state — the hidden <input> is gone, so the strip is no
+   longer a "click anywhere to choose" affordance. Border switches to
+   solid + a subtle indigo tint, and the View / Delete buttons sit on
+   the right as proper pill-style action chips. */
+.avm-filechooser.avm-filechooser-has-file {
+  cursor: default;
+  border: 1px solid #c7d2fe;
+  background: #f5f7ff;
+}
+.avm-filechooser.avm-filechooser-has-file:hover { border-color: #818cf8; }
+.avm-filechooser-actions {
+  display: inline-flex; align-items: center; gap: 4px;
+  flex-shrink: 0;
+}
+.avm-fc-action {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  color: #6b7280;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+  padding: 0;
+  text-decoration: none;
+}
+.avm-fc-action i { font-size: 14px; line-height: 1; }
+.avm-fc-view:hover {
+  background: rgba(64, 81, 137, .10);
+  border-color: #405189;
+  color: #405189;
+}
+.avm-fc-delete:hover {
+  background: rgba(240, 101, 72, .10);
+  border-color: #f06548;
+  color: #f06548;
+}
+
+[data-bs-theme="dark"] .avm-filechooser.avm-filechooser-has-file {
+  background: #1a1538; border-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .avm-filechooser-text { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-fc-action {
+  background: #2a2150; border-color: #3b2a6b; color: #cbd5e1;
+}
+[data-bs-theme="dark"] .avm-fc-view:hover {
+  background: rgba(99, 102, 241, .18); border-color: #818cf8; color: #c7d2fe;
+}
+[data-bs-theme="dark"] .avm-fc-delete:hover {
+  background: rgba(248, 113, 113, .18); border-color: #f87171; color: #fecaca;
+}
 
 /* Extra contact rows */
 .avm-extra-contacts { display: flex; flex-direction: column; gap: 12px; }
@@ -3927,6 +4067,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-prev-chip { background: #14241a; border-color: #166534; color: #bbf7d0; }
 [data-bs-theme="dark"] .avm-prev-field-label { color: #6d6391; }
 [data-bs-theme="dark"] .avm-prev-field-value { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-prev-k { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-v { color: #ede9fe; }
 [data-bs-theme="dark"] .avm-prev-stage.tone-violet .avm-prev-stage-label { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #5eead4; }
 [data-bs-theme="dark"] .avm-prev-stage.tone-purple .avm-prev-stage-label { color: #d8b4fe; }
@@ -4036,7 +4178,7 @@ const SCOPED_CSS = `
   min-width: 0;
 }
 .avm-id-k {
-  font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  font-size: 10px; font-weight: 500; letter-spacing: .04em;
   color: #7c3aed; text-transform: uppercase;
   white-space: nowrap;
 }
