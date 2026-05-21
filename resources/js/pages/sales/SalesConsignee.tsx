@@ -1259,15 +1259,23 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .smcg-step[data-n="0"] { border-color: rgba(16,185,129,0.40); border-left-color: #10b981; }
 [data-bs-theme="dark"] .smcg-step[data-n="1"] { border-color: rgba(102,145,231,0.40); border-left-color: #6691e7; }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] { border-color: rgba(255,212,122,0.40); border-left-color: #ffd47a; }
+/* Tile 3 (Compliance & Risk) — the light-mode amber/yellow read as
+   harsh and out-of-place against the dark emerald wash. Swapped to
+   a muted coral-orange so it still reads as a warm "warning" tone
+   without the bright lemon yellow that clashed with the theme. */
+[data-bs-theme="dark"] .smcg-step[data-n="2"] { border-color: rgba(251,146,60,0.45); border-left-color: #fb923c; }
 [data-bs-theme="dark"] .smcg-step[data-n="3"] { border-color: rgba(167,139,250,0.40); border-left-color: #a78bfa; }
 [data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-name { color: #6ee7b7; }
 [data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-name { color: #93b4f0; }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-name { color: #fcd34d; }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-name { color: #fdba74; }
 [data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-name { color: #c4b5fd; }
 [data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-tag     { color: #6ee7b7; }
 [data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-tag     { color: #93b4f0; }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag     { color: #fcd34d; }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag     { color: #fdba74; }
+/* Badge "3" number tile + tag dot — also coral-orange so the whole
+   tile reads as one cohesive warm accent in dark mode. */
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-num    { background: linear-gradient(135deg, #fb923c, #fdba74); box-shadow: 0 3px 8px rgba(251,146,60,0.40); }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag-dot { background: #fb923c; }
 [data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-tag     { color: #c4b5fd; }
 [data-bs-theme="dark"] .smcg-step-desc { color: #cbd5e1; }
 [data-bs-theme="dark"] .smcg-step-arrow { color: #ccfbf1; }

@@ -5216,7 +5216,8 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-input      { background: #0a1f1a; border-color: rgba(16,185,129,.25); color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-input::placeholder { color: #6b8a7e; }
 [data-bs-theme="dark"] .acm-input:disabled { background: #14241f; color: #6b8a7e; }
-[data-bs-theme="dark"] .acm-radio span { border-color: rgba(255,255,255,.30); }
+[data-bs-theme="dark"] .acm-radio       { color: #ecfdf5; }
+[data-bs-theme="dark"] .acm-radio span  { border-color: rgba(255,255,255,.30); }
 
 [data-bs-theme="dark"] .acm-recap      { background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.25); }
 [data-bs-theme="dark"] .acm-recap-card { background: #103129; border-color: rgba(16,185,129,.20); }
@@ -5304,6 +5305,22 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-kyc-exp        { background: rgba(255,255,255,.06); color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-kyc-exp.na     { color: #6b7280; }
 [data-bs-theme="dark"] .acm-kyc-attach     { color: #6ee7b7; }
+/* "View" attachment chip in dark mode — the light-mode #ecfdf5 wash
+   blended into the dark green modal so the badge looked washed out
+   and the dark-emerald text faded against it. Deep emerald fill with
+   bright mint text gives the chip the same prominence it has in
+   light mode. */
+[data-bs-theme="dark"] .acm-kyc-attach-link {
+  background: rgba(16,185,129,.18);
+  border-color: rgba(16,185,129,.45);
+  color: #6ee7b7;
+}
+[data-bs-theme="dark"] .acm-kyc-attach-link:hover {
+  background: #10b981;
+  border-color: #10b981;
+  color: #022c22;
+  box-shadow: 0 2px 8px rgba(16,185,129,.50);
+}
 
 /* ============================================================
  *  RESPONSIVE — tablet & mobile
@@ -5376,18 +5393,31 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 
 /* ── Mobile (≤ 640px) ───────────────────────────────────────── */
 @media (max-width: 640px) {
-  .acm-overlay { padding: 0; align-items: stretch; }
-  .acm-wiz, .acm-pick {
+  .acm-overlay { padding: 8px; align-items: center; }
+  /* The wizard stays fullscreen on real phones — multi-stage form
+     needs every inch of space — but the picker keeps its compact
+     card shape so it doesn't look sparse at high zoom levels where
+     the layout viewport drops into this breakpoint. */
+  .acm-wiz {
     border-radius: 0;
     max-height: 100vh;
     height: 100vh;
     width: 100vw;
     max-width: 100vw;
   }
+  .acm-pick {
+    width: 100%;
+    max-width: 420px;
+    height: auto;
+    max-height: calc(100vh - 16px);
+    border-radius: 16px;
+  }
   /* Phase A picker fits the viewport */
   .acm-pick-body { padding: 14px; }
-  .acm-pick-header { padding: 14px 14px 10px; }
-  .acm-pick-title { font-size: 17px; }
+  .acm-pick-header { padding: 16px 14px 14px; }
+  .acm-pick-icon { width: 42px; height: 42px; margin-bottom: 8px; }
+  .acm-pick-title { font-size: 16px; }
+  .acm-pick-sub   { font-size: 11px; padding: 0 8px; }
   /* Phase A picker footer: Cancel on top, primary action on bottom
      (thumb-reach). Reset align-items so the column children fill
      full width — the base rule uses align-items: center which would
