@@ -5,6 +5,10 @@ export type StageProps = {
   stage:  StageNum;
   onPrev: () => void;
   onNext: () => void;
+  /* Tells the parent to re-fetch the lead. Stage 2 calls this after
+   * saving acknowledgements so the Activity Report reflects the
+   * append-only history (and the lead's qualified flag flips). */
+  reloadLead?: () => void;
 };
 
 /* Shared stage shell styles — each stage imports SHARED_STAGE_CSS once. */

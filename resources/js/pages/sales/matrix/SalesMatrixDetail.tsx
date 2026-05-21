@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
 import { useNavigateContext } from '../../../components/App';
 import api from '../../../api';
@@ -18,6 +18,7 @@ import Stage3ProductSourcing     from './stages/Stage3ProductSourcing';
 import Stage4PriceShared         from './stages/Stage4PriceShared';
 import Stage5QuotationVsPI       from './stages/Stage5QuotationVsPI';
 import Stage6VictoryStage        from './stages/Stage6VictoryStage';
+import TaskManagerPanel, { type TaskManagerRow } from './TaskManagerPanel';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Opportunity Detail
@@ -40,12 +41,51 @@ const STAGES: { n: StageNum; title: string; sub: string }[] = [
   { n: 6, title: 'Victory Stage',        sub: 'Deal successfully won' },
 ];
 
+/* Task-manager row shape mirrored from the server response. Kept here
+ * (rather than imported from TaskManagerPanel) so the stage components
+ * don't depend on the panel module. */
+export type StageTaskManager = {
+  id?:                 number;
+  order_value?:        string | number | null;
+  buying_plan?:        string | null;
+  name?:               string | null;
+  mobile_no?:          string | null;
+  email?:              string | null;
+  attachment?:         string | null;
+  attachment_original?: string | null;
+};
+
+export type StageAcknowledgement = {
+  id:                 number;
+  lead_ack_reason_id: number;
+  opportunity_type:   'qualified' | 'disqualified' | 'clarity_pending';
+  dq_status:          'positive' | 'negative' | null;
+  reason_snapshot:    string;
+  created_at:         string;
+};
+
 export type OppHeaderData = {
+  /* DB primary key of the lead row. Optional because the page can be
+   * deep-linked by oppCode alone — when missing the stage components
+   * gracefully degrade to read-only (no backend calls fire). */
+  leadId?: number;
   oppId: string;
   customer: string;
   customerCode: string;
   oppDate: string;
   country: string;
+  /* Lead pipeline state — drives the QUALIFIED/DISQUALIFIED/PENDING
+   * badge in Stage 1's header. */
+  qualified?:    boolean;
+  disqualified?: boolean;
+  /* Latest persisted Task Manager row, hydrated by the parent on
+   * fetch + after every save. Stage 1 reads this for its read-only
+   * display; the right-side TaskManagerPanel reads the same value
+   * to seed its form. */
+  taskManager?: StageTaskManager | null;
+  /* Stage 2 activity log — latest first. Cached by the parent so the
+   * stage component can render immediately without an extra fetch. */
+  acknowledgements?: StageAcknowledgement[];
 };
 
 const DEFAULT_HEADER: OppHeaderData = {
@@ -141,11 +181,13 @@ export default function SalesMatrixDetail() {
   const oppId = params.oppId || DEFAULT_HEADER.oppId;
   const stage = Math.min(6, Math.max(1, parseInt(params.stage || '1', 10))) as StageNum;
 
-  // Header data — pulled from row state if present, falls back to default sample.
-  const header: OppHeaderData = useMemo(() => {
+  /* Header from router state — seed; the server fetch below hydrates the
+   * lead-pipeline fields (qualified/disqualified/taskManager). */
+  const seedHeader: OppHeaderData = useMemo(() => {
     const fromState = (location.state as any)?.row;
     if (fromState) {
       return {
+        leadId:       typeof fromState.id === 'number' ? fromState.id : undefined,
         oppId:        fromState.oppId        || oppId,
         customer:     fromState.customer     || DEFAULT_HEADER.customer,
         customerCode: fromState.customerCode || `C-${oppId.replace(/^OPP-/, '')}`,
@@ -155,6 +197,80 @@ export default function SalesMatrixDetail() {
     }
     return { ...DEFAULT_HEADER, oppId };
   }, [location.state, oppId]);
+
+  /* Server-side lead extras — qualified flag, salesperson, and the
+   * task-manager row that both Stage 1 (display) and TaskManagerPanel
+   * (form) read from. Fetched once per leadId; refreshed in-place after
+   * a task-manager save so the read-only display stays in sync without a
+   * full refetch. */
+  const [serverHeader, setServerHeader] = useState<{
+    qualified?:        boolean;
+    disqualified?:     boolean;
+    taskManager?:      StageTaskManager | null;
+    acknowledgements?: StageAcknowledgement[];
+    salespersonName?:  string;
+    leadStageId?:      number;
+  }>({});
+
+  /* Resolved leadId — initially the one passed via router state. If that's
+   * missing (e.g. the user reached this page via the stage tracker rather
+   * than from the worksheet, so `location.state` is empty), we resolve it
+   * by searching `/sales/leads` for the opp code. Once known we cache it
+   * here so all downstream calls (reload + Stage 1/2 saves) work. */
+  const [resolvedLeadId, setResolvedLeadId] = useState<number | undefined>(seedHeader.leadId);
+
+  useEffect(() => {
+    setResolvedLeadId(seedHeader.leadId);
+  }, [seedHeader.leadId]);
+
+  useEffect(() => {
+    if (resolvedLeadId || !oppId) return;
+    // Best-effort lookup by opp_code (the existing /sales/leads search
+    // hits opp_code via LIKE). We pass status=all + with_counts=0 so the
+    // lookup is fast and bucket-agnostic.
+    api.get<{ data: Array<{ id: number; opp_code: string }> }>('/sales/leads', {
+      params: { search: oppId, status: 'all', per_page: 5, page: 1, with_counts: 0 },
+    })
+      .then(({ data }) => {
+        const exact = (data.data ?? []).find(r => r.opp_code === oppId);
+        if (exact) setResolvedLeadId(exact.id);
+      })
+      .catch(() => { /* silent — Stage components show their own degraded state */ });
+  }, [resolvedLeadId, oppId]);
+
+  const reloadLead = useCallback(() => {
+    if (!resolvedLeadId) return;
+    return api.get<{ status: boolean; data: {
+      qualified: boolean;
+      disqualified: boolean;
+      lead_stage_id: number;
+      salesperson: { id: number; name: string } | null;
+      task_manager: StageTaskManager | null;
+      acknowledgements: StageAcknowledgement[];
+    }}>(`/sales/leads/${resolvedLeadId}`)
+      .then(({ data }) => {
+        setServerHeader({
+          qualified:        data.data.qualified,
+          disqualified:     data.data.disqualified,
+          taskManager:      data.data.task_manager,
+          acknowledgements: data.data.acknowledgements ?? [],
+          salespersonName:  data.data.salesperson?.name ?? '',
+          leadStageId:      data.data.lead_stage_id,
+        });
+      })
+      .catch(() => toast.error('Load failed', 'Could not load this lead'));
+  }, [resolvedLeadId, toast]);
+
+  useEffect(() => { reloadLead(); }, [reloadLead]);
+
+  const header: OppHeaderData = {
+    ...seedHeader,
+    leadId:           resolvedLeadId,
+    qualified:        serverHeader.qualified,
+    disqualified:     serverHeader.disqualified,
+    taskManager:      serverHeader.taskManager,
+    acknowledgements: serverHeader.acknowledgements,
+  };
 
   // Inject Google Fonts once (matches the other sales pages).
   useEffect(() => {
@@ -365,6 +481,7 @@ export default function SalesMatrixDetail() {
             stage={stage}
             onPrev={goPrev}
             onNext={goNext}
+            reloadLead={reloadLead}
           />
         </section>
 
@@ -389,62 +506,17 @@ export default function SalesMatrixDetail() {
             </button>
           </div>
 
-          {/* Tabs */}
-          <div className="smd-deal-tabs">
-            <button className="smd-deal-tab smd-deal-tab-active">✓ Task Manager</button>
-            <button className="smd-deal-tab" disabled>
-              ⚡ Chanakya
-              <span className="smd-deal-tab-soon">SOON</span>
-            </button>
-            <button className="smd-deal-tab" disabled>
-              ◎ Sarthi
-              <span className="smd-deal-tab-soon">SOON</span>
-            </button>
-            <button className="smd-deal-tab" disabled>
-              ◆ Chat View
-              <span className="smd-deal-tab-soon">SOON</span>
-            </button>
-          </div>
-
-          {/* Task Manager form */}
-          <div className="smd-deal-form">
-            <div className="smd-deal-row">
-              <Field label="SALES PERSON NAME">
-                <input className="smd-input" defaultValue="Shreeyash Rajaram Mote" />
-              </Field>
-              <Field label="CHOOSE FILE">
-                <button type="button" className="smd-input smd-input-file">📎 Attach File</button>
-              </Field>
-            </div>
-            <div className="smd-deal-row">
-              <Field label="BUYING PLAN">
-                <input className="smd-input" type="date" />
-              </Field>
-              <Field label="ORDER VALUE">
-                <input className="smd-input" placeholder="Enter order value" />
-              </Field>
-            </div>
-
-            <div className="smd-deal-section-label">PURCHASE DECISION MAKER</div>
-
-            <div className="smd-deal-row">
-              <Field label={<>NAME <span className="smd-req">*</span></>}>
-                <input className="smd-input" placeholder="Enter name" />
-              </Field>
-              <Field label={<>MOBILE NUMBER <span className="smd-req">*</span></>}>
-                <input className="smd-input" placeholder="Enter mobile" />
-              </Field>
-            </div>
-            <div className="smd-deal-row">
-              <Field label={<>EMAIL <span className="smd-req">*</span></>}>
-                <input className="smd-input" placeholder="Enter email address" />
-              </Field>
-            </div>
-
-            <div className="smd-deal-save-wrap">
-              <button className="smd-deal-save-btn">Save</button>
-            </div>
-          </div>
+          <TaskManagerPanel
+            leadId={resolvedLeadId}
+            salespersonName={serverHeader.salespersonName || ''}
+            initial={serverHeader.taskManager ?? null}
+            onSaved={(row: TaskManagerRow) => {
+              // Refresh in-place — Stage 1's read-only display reads from
+              // serverHeader.taskManager so this is all it takes to push
+              // the freshly saved row to the left card.
+              setServerHeader(prev => ({ ...prev, taskManager: row }));
+            }}
+          />
         </aside>
       </div>
 
@@ -615,15 +687,6 @@ function ClmRow({ icon, tone, title, sub, progress }: {
         <div className={`smd-clm-progress-fill smd-clm-progress-fill-${tone}`} style={{ width: `${progress}%` }} />
       </div>
       <div className="smd-clm-progress-label">{progress}%</div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div className="smd-field">
-      <label className="smd-field-label">{label}</label>
-      {children}
     </div>
   );
 }

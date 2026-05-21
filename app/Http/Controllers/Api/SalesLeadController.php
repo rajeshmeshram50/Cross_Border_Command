@@ -6,10 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Employee;
 use App\Models\Lead;
+use App\Models\LeadAckReason;
+use App\Models\LeadAcknowledgement;
+use App\Models\LeadTaskManager;
 use App\Models\User;
 use App\Services\IndiaMartLeadSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
@@ -222,7 +226,16 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $q = Lead::with(['salesperson:id,name', 'customer', 'consignee', 'ackReason']);
+        $q = Lead::with([
+            'salesperson:id,name',
+            'customer', 'consignee', 'ackReason',
+            // Stage 1 form pre-populates from this. One-to-one row created
+            // / updated by POST /sales/leads/{lead}/task-manager.
+            'taskManager',
+            // Stage 2 activity log — already ordered latest-first via the
+            // hasMany scope on the relation.
+            'acknowledgements',
+        ]);
         $this->applyScope($q, $user);
         $lead = $q->findOrFail($id);
 
@@ -413,6 +426,202 @@ class SalesLeadController extends Controller
             'message'   => "$touched lead(s) converted to Qualified",
             'converted' => $touched,
         ]);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  TASK MANAGER UPSERT — POST /sales/leads/{lead}/task-manager
+     *
+     *  Stage 1 (Inquiry Received) save target. Accepts multipart so the
+     *  optional supporting document rides along on the same request.
+     *  Idempotent: one row per (client, lead) — re-saves overwrite the
+     *  prior file on disk to avoid orphaned blobs.
+     *
+     *  Body shape (FormData):
+     *    name             string  required, max 255
+     *    mobile_no        string  required, 6–15 digits
+     *    email            string  required, valid email
+     *    order_value      number  optional, ≥ 0
+     *    buying_plan      Y-m-d   optional date
+     *    attachment       File    optional (jpg/png/pdf, ≤ 5 MB)
+     * ───────────────────────────────────────────────────────────────── */
+    public function storeTaskManager(Request $request, int $leadId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
+        }
+
+        // Tenant-scoped lookup — a hostile id from another tenant 404s
+        // instead of leaking the record's existence.
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $data = $request->validate([
+            'name'        => 'required|string|max:255',
+            'mobile_no'   => ['required', 'string', 'regex:/^\d{6,15}$/'],
+            'email'       => 'required|email|max:255',
+            'order_value' => 'nullable|numeric|min:0',
+            'buying_plan' => 'nullable|date_format:Y-m-d',
+            'attachment'  => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
+        ], [
+            'mobile_no.regex' => 'Mobile number must be 6–15 digits',
+        ]);
+
+        $existing = LeadTaskManager::where('client_id', $user->client_id)
+            ->where('lead_id', $lead->id)
+            ->first();
+
+        // Replace prior attachment on disk if a new file came in. We
+        // unlink before write so a half-written upload never leaves two
+        // files lingering for the same task-manager row.
+        $attachmentPath = $existing?->attachment;
+        $attachmentName = $existing?->attachment_original;
+        if ($request->hasFile('attachment')) {
+            if ($existing?->attachment && Storage::disk('public')->exists($existing->attachment)) {
+                Storage::disk('public')->delete($existing->attachment);
+            }
+            $file           = $request->file('attachment');
+            $attachmentName = $file->getClientOriginalName();
+            $attachmentPath = $file->store(
+                "leads/task-manager/{$user->client_id}",
+                'public',
+            );
+        }
+
+        $payload = [
+            'client_id'           => $user->client_id,
+            'lead_id'             => $lead->id,
+            'name'                => $data['name'],
+            'mobile_no'           => $data['mobile_no'],
+            'email'               => $data['email'],
+            'order_value'         => $data['order_value'] ?? null,
+            'buying_plan'         => $data['buying_plan'] ?? null,
+            'attachment'          => $attachmentPath,
+            'attachment_original' => $attachmentName,
+            'updated_by'          => $user->id,
+        ];
+
+        $row = $existing
+            ? tap($existing)->update($payload)
+            : LeadTaskManager::create($payload);
+
+        return response()->json([
+            'status'  => true,
+            'message' => $existing ? 'Task manager updated' : 'Task manager saved',
+            'data'    => $row->fresh(),
+        ], $existing ? 200 : 201);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  ACKNOWLEDGEMENTS — GET /sales/leads/{lead}/acknowledgements
+     *
+     *  Activity log feed for the Stage 2 Activity Report card. Rows
+     *  come back newest-first thanks to the hasMany scope on the Lead
+     *  model. Tenant-scoped via applyScope().
+     * ───────────────────────────────────────────────────────────────── */
+    public function listAcknowledgements(Request $request, int $leadId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $rows = LeadAcknowledgement::where('lead_id', $lead->id)
+            ->orderByDesc('id')
+            ->get();
+
+        return response()->json(['status' => true, 'data' => $rows]);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  ACKNOWLEDGEMENTS — POST /sales/leads/{lead}/acknowledgements
+     *
+     *  Bulk-creates Stage 2 activity rows for the picked master reasons.
+     *  Body: { reason_ids: int[] }. All ids must share the same
+     *  opportunity_type (qualified / disqualified / clarity_pending) —
+     *  the Stage 2 modal opens one type at a time so this matches the UX.
+     *
+     *  Side effect: the lead's `qualified` / `disqualified` flags are
+     *  flipped to mirror the submitted bucket so the worksheet's
+     *  Qualified / Disqualified tabs stay in sync without a separate
+     *  call. lead_stage_id is left alone — advancing to Stage 3 is the
+     *  caller's job via PUT /sales/leads/{id}.
+     * ───────────────────────────────────────────────────────────────── */
+    public function storeAcknowledgements(Request $request, int $leadId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
+        }
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $data = $request->validate([
+            'reason_ids'   => 'required|array|min:1',
+            'reason_ids.*' => 'integer',
+        ]);
+
+        $reasons = LeadAckReason::where('client_id', $user->client_id)
+            ->whereIn('id', $data['reason_ids'])
+            ->get();
+
+        if ($reasons->count() !== count($data['reason_ids'])) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'One or more reasons are unavailable for this tenant',
+            ], 422);
+        }
+
+        // All picked reasons must belong to the same opportunity bucket.
+        // The frontend modal enforces this; the backend gates it again.
+        $types = $reasons->pluck('opportunity_type')->unique();
+        if ($types->count() !== 1) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'All picked reasons must belong to the same opportunity bucket',
+            ], 422);
+        }
+        $type = $types->first();
+
+        $created = DB::transaction(function () use ($lead, $reasons, $type, $user) {
+            $rows = [];
+            foreach ($reasons as $r) {
+                $rows[] = LeadAcknowledgement::create([
+                    'client_id'         => $user->client_id,
+                    'lead_id'           => $lead->id,
+                    'lead_ack_reason_id'=> $r->id,
+                    'opportunity_type'  => $r->opportunity_type,
+                    'dq_status'         => $r->dq_status,
+                    'reason_snapshot'   => $r->reason,
+                    'created_by'        => $user->id,
+                ]);
+            }
+
+            // Mirror the latest bucket onto the lead so the worksheet
+            // tabs and counts reflect the new state immediately.
+            $lead->update([
+                'qualified'          => $type === LeadAckReason::TYPE_QUALIFIED,
+                'disqualified'       => $type === LeadAckReason::TYPE_DISQUALIFIED,
+                'lead_ack_reason_id' => $reasons->first()->id,
+            ]);
+
+            return $rows;
+        });
+
+        return response()->json([
+            'status'        => true,
+            'message'       => 'Acknowledgement(s) recorded',
+            'created_count' => count($created),
+            'data'          => array_map(fn ($r) => $r->fresh(), $created),
+            'lead'          => $lead->fresh()->only(['id', 'qualified', 'disqualified', 'lead_stage_id', 'lead_ack_reason_id']),
+        ], 201);
     }
 
     /* ─────────────────────────────────────────────────────────────────

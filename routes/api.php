@@ -194,6 +194,17 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/sales/leads/{id}',          [SalesLeadController::class, 'show'])->whereNumber('id');
     Route::put   ('/sales/leads/{id}',          [SalesLeadController::class, 'update'])->whereNumber('id');
     Route::delete('/sales/leads/{id}',          [SalesLeadController::class, 'destroy'])->whereNumber('id');
+    // Stage 1 → Task Manager save (multipart for the optional attachment).
+    // POST + _method=PUT-friendly: accepts both POST and PUT since file
+    // uploads under PUT can't be parsed by PHP without enableHttpMethodParameterOverride.
+    Route::match(['post', 'put'], '/sales/leads/{id}/task-manager',
+        [SalesLeadController::class, 'storeTaskManager'])->whereNumber('id');
+
+    // Stage 2 → Lead Acknowledgement activity log (append-only).
+    Route::get   ('/sales/leads/{id}/acknowledgements',
+        [SalesLeadController::class, 'listAcknowledgements'])->whereNumber('id');
+    Route::post  ('/sales/leads/{id}/acknowledgements',
+        [SalesLeadController::class, 'storeAcknowledgements'])->whereNumber('id');
 
     // Sales Matrix → Productivity Tracker (/sales/todo). Two parallel
     // sub-resources behind one controller — reminders + meetings — with
