@@ -712,10 +712,26 @@ const SCOPED_CSS = `
    per-vendor cards). Header gets the navy/indigo strip used on the
    list pages for visual continuity. */
 .pv2-vendor-table-wrap {
-  border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;
+  border: 1px solid #e2e8f0; border-radius: 10px;
+  /* The Product Vendors table carries 10 columns (Sr · Code · Name ·
+     Contact Person · Contact No · Purchase Price · GST % · GST Amount ·
+     Total · Map Date) — on narrow card widths that overflows. Switch
+     the wrapper to a horizontal scroller and pin a min table width
+     so columns never crush into a single character each. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #c7d2fe transparent;
 }
+.pv2-vendor-table-wrap::-webkit-scrollbar { height: 8px; }
+.pv2-vendor-table-wrap::-webkit-scrollbar-track { background: transparent; }
+.pv2-vendor-table-wrap::-webkit-scrollbar-thumb {
+  background: #c7d2fe; border-radius: 99px;
+}
+.pv2-vendor-table-wrap::-webkit-scrollbar-thumb:hover { background: #818cf8; }
 .pv2-vendor-table {
-  width: 100%; border-collapse: separate; border-spacing: 0;
+  width: 100%; min-width: 980px;
+  border-collapse: separate; border-spacing: 0;
   font-size: 12px;
 }
 .pv2-vendor-table thead th {
@@ -724,6 +740,7 @@ const SCOPED_CSS = `
   padding: 8px 10px; text-align: left; white-space: nowrap;
   border-bottom: 1px solid #1e2a5f;
 }
+.pv2-vendor-table tbody td { white-space: nowrap; }
 .pv2-vendor-table tbody td {
   padding: 8px 10px; color: #1e293b; border-top: 1px solid #eef2ff;
   background: #fff;
