@@ -178,6 +178,14 @@ type Stage = 1 | 2 | 3;
 type IdentityTab = 'identification' | 'address-contact';
 type VaultTab = 'kyc' | 'trade';
 
+/* ── Stage memory ──────────────────────────────────────────────────
+ * Module-level map keyed by consignee.db_id (edit mode) that survives
+ * close/reopen. A user who accidentally dismisses the modal on Stage 2
+ * or Stage 3 lands back on the same stage when they reopen — not on
+ * Stage 1. Cleared after a successful final submit. */
+type ConsigneeStageMemoryEntry = { stage: Stage; idTab: IdentityTab; kycSub: KycSubTab; vaultTab: VaultTab };
+const consigneeStageMemory = new Map<number, ConsigneeStageMemoryEntry>();
+
 export default function AddConsigneeModal({ open, consignee, onClose, onSaved, preselectedCustomerId, existingMirrorCount }: Props) {
   const toast = useToast();
 
@@ -298,19 +306,24 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setCustomer(null);
       setPhase('pick-customer');
     }
-    setStage(1);
+    // Restore the stage / sub-tab the user was on when they last
+    // closed this consignee's modal (edit mode only). Create mode
+    // always starts at Stage 1 — there's no anchor to remember it by.
+    const memKey = consignee?.db_id ?? null;
+    const remembered = memKey ? consigneeStageMemory.get(memKey) : null;
+    setStage   (remembered?.stage    ?? 1);
+    setIdTab   (remembered?.idTab    ?? 'identification');
+    setKycSub  (remembered?.kycSub   ?? 'company-dd');
+    setVaultTab(remembered?.vaultTab ?? 'kyc');
     setSearch('');
     setSearchOpen(false);
     setLinkedHidden(false);
-    setIdTab('identification');
     setErrors1({});
     setSameAsCustomer(false);
-    setVaultTab('kyc');
     setEvSub('dd');
     setLocations([]);
     setLocModal({ open: false, editing: null });
     setDelModal({ open: false, id: null });
-    setKycSub('company-dd');
     setKycSearch('');
     setKycDocs([]);
     setKycOwners([]);
@@ -324,6 +337,17 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * mode). Create mode lands on an empty form instantly. */
     setHydrating(!!consignee?.db_id);
   }, [open, consignee]);
+
+  /* Persist stage/tab into module-level memory whenever they change.
+   * Closing the modal leaves the last-known stage in the map ready
+   * for the next open. Edit mode only — create mode has no anchor
+   * key to remember it by. */
+  useEffect(() => {
+    if (!open) return;
+    const memKey = consignee?.db_id ?? null;
+    if (memKey == null) return;
+    consigneeStageMemory.set(memKey, { stage, idTab, kycSub, vaultTab });
+  }, [open, consignee?.db_id, stage, idTab, kycSub, vaultTab]);
 
   /* Fetch the live customer list when the modal opens. Maps the API
    * response (the same shape SalesCustomers consumes) into the
@@ -432,7 +456,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             cpDesignation: a.cp_designation ?? '',
             cpContact:     a.cp_contact ?? '',
             cpEmail:       a.cp_email ?? '',
-            cpWhatsapp:    (a.cp_whatsapp === 'yes' || a.cp_whatsapp === 'no') ? a.cp_whatsapp : '',
+            cpWhatsapp:    a.cp_whatsapp === 'no' ? 'no' : 'yes',
           })));
         })
         .catch(() => { /* silent — the rest of the mirror still works */ });
@@ -493,7 +517,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           cpDesignation: a.cp_designation ?? '',
           cpContact:     a.cp_contact ?? '',
           cpEmail:       a.cp_email ?? '',
-          cpWhatsapp:    (a.cp_whatsapp ?? '').toLowerCase() === 'yes' ? 'yes' : (a.cp_whatsapp ?? '').toLowerCase() === 'no' ? 'no' : '',
+          cpWhatsapp:    (a.cp_whatsapp ?? '').toLowerCase() === 'no' ? 'no' : 'yes',
         })));
       })
       .catch(() => { /* silent — toast was added on the save path; on hydration just keep the empty form */ })
@@ -872,6 +896,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         const newId = r.data?.data?.db_id ?? null;
         if (newId) setSavedDbId(newId);
       }
+      // Final submit succeeded → drop the remembered stage so a future
+      // re-open of this consignee starts fresh on Stage 1 instead of
+      // bouncing back to Stage 3 (where this submit fired from).
+      if (persistedDbId) consigneeStageMemory.delete(persistedDbId);
       toast.success('Consignee saved', `${form1.companyName} linked to ${customer?.name ?? 'customer'}`);
       onSaved?.();
       onClose();
@@ -920,7 +948,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   /* ─── Render: phase A — customer picker ─── */
   if (phase === 'pick-customer') {
     return (
-      <div className="acm-overlay" onMouseDown={onClose}>
+      <div className="acm-overlay">
         <style>{SCOPED_CSS}</style>
         <div className="acm-pick" onMouseDown={e => e.stopPropagation()}>
           <div className="acm-pick-header">
@@ -1013,9 +1041,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const subOpen = locModal.open || delModal.open || docModal.open || ownerModal.open || kycDelModal.open;
   return (
     <>
-    <div className="acm-overlay" onMouseDown={onClose}>
+    <div className="acm-overlay">
       <style>{SCOPED_CSS}</style>
-      <div className={`acm-wiz ${subOpen ? 'acm-wiz-blurred' : ''}`} onMouseDown={e => e.stopPropagation()}>
+      <div className={`acm-wiz ${subOpen ? 'acm-wiz-blurred' : ''}`}>
         {/* Header */}
         <div className="acm-wiz-header">
           <div className="acm-wiz-hicon"><IconTruck size={20} /></div>
@@ -1283,6 +1311,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           states: mStates,
           designations: mDesignations,
         }}
+        /* Block "Registered Office" in additional locations when the
+         * primary address already claims it — a consignee can only
+         * have one registered office. */
+        disallowedTypes={form1.addressType === 'Registered Office' ? ['Registered Office'] : []}
         onClose={() => setLocModal({ open: false, editing: null })}
         onSave={(rec) => {
           if (locModal.editing) {
@@ -1423,8 +1455,22 @@ const SectionHeader = ({ icon, title, sub, accent }: { icon: React.ReactNode; ti
 const AttachmentLink = ({ url, path, label = 'View' }: { url?: string | null; path?: string; label?: string }) => {
   const href = url || (path ? resolveFileUrl(path) : '');
   if (!href) return <span style={{ color: '#9ca3af' }}>—</span>;
+  // Cache-bust on click so a freshly-uploaded replacement opens the
+  // new file instead of the browser's cached copy. Done in onClick (not
+  // in href) so the link doesn't churn every re-render — and so the
+  // user can still middle-click / copy a stable URL if they want.
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="acm-kyc-attach acm-kyc-attach-link">
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="acm-kyc-attach acm-kyc-attach-link"
+      onClick={(e) => {
+        e.preventDefault();
+        const sep = href.includes('?') ? '&' : '?';
+        window.open(`${href}${sep}t=${Date.now()}`, '_blank', 'noopener,noreferrer');
+      }}
+    >
       {label}
     </a>
   );
@@ -1769,23 +1815,53 @@ const Stage1 = ({
 
       {tab === 'address-contact' && (
         <LocationsTable
+          primary={{
+            type:          form.addressType,
+            line:          form.address,
+            country:       form.country,
+            state:         form.state,
+            city:          form.city,
+            pin:           form.pin,
+            cpName:        form.contactName,
+            cpDesignation: form.designation,
+            cpContact:     form.contactNo,
+            cpEmail:       form.email,
+            cpWhatsapp:    form.whatsapp === 'Yes' ? 'yes' : form.whatsapp === 'No' ? 'no' : '',
+          }}
           locations={locations}
           onAdd={onAddLocation}
           onEdit={onEditLocation}
           onDel={onDeleteLocation}
+          onEditPrimary={() => setTab('identification')}
         />
       )}
     </>
   );
 };
 
-/* ─── Stage 1 — Address & Contact table ─── */
-const LocationsTable = ({ locations, onAdd, onEdit, onDel }: {
+/* ─── Stage 1 — Address & Contact table ─────
+ * Renders the primary address (captured on the Consignee Identification
+ * tab) as the first row, followed by any additional locations. The
+ * primary row is read-only here — edit jumps back to the Identification
+ * tab and delete is disabled, since the primary address is required. */
+type PrimaryRowData = {
+  type: string; line: string; country: string; state: string; city: string; pin: string;
+  cpName: string; cpDesignation: string; cpContact: string; cpEmail: string; cpWhatsapp: string;
+};
+const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimary }: {
+  primary: PrimaryRowData;
   locations: LocationRow[];
   onAdd: () => void;
   onEdit: (id: string) => void;
   onDel: (id: string) => void;
-}) => (
+  onEditPrimary: () => void;
+}) => {
+  type DisplayRow = PrimaryRowData & { id: string; isPrimary: boolean };
+  const allRows: DisplayRow[] = [
+    { id: '__primary__', isPrimary: true, ...primary },
+    ...locations.map(l => ({ ...l, isPrimary: false })),
+  ];
+  return (
   <div className="acm-loc-card">
     <div className="acm-loc-head">
       <div className="acm-loc-head-row">
@@ -1809,38 +1885,44 @@ const LocationsTable = ({ locations, onAdd, onEdit, onDel }: {
             </tr>
           </thead>
           <tbody>
-            {locations.length === 0 ? (
-              <tr className="acm-loc-empty">
-                <td colSpan={9}>
-                  No additional locations yet. Click <strong>+ Add More Address &amp; Contact</strong> to capture a
-                  warehouse, billing, or shipping address with its contact person.
-                </td>
-              </tr>
-            ) : locations.map((l, i) => {
+            {allRows.map((l, i) => {
               const place = [l.city, l.state, l.country].filter(Boolean).join(' • ');
               const contact = l.cpName + (l.cpDesignation ? ` (${l.cpDesignation})` : '');
               return (
-                <tr key={l.id}>
+                <tr key={l.id} className={l.isPrimary ? 'acm-loc-primary-row' : undefined}>
                   <td>{i + 1}</td>
-                  <td>{l.type}</td>
+                  <td>
+                    <div className="acm-loc-type-cell">
+                      <span>{l.type || '—'}</span>
+                      {l.isPrimary && <span className="acm-loc-primary-tag">Primary</span>}
+                    </div>
+                  </td>
                   <td><TruncatedCell text={l.line} max={36} /></td>
                   <td><TruncatedCell text={place} max={32} /></td>
                   <td><TruncatedCell text={contact} max={26} /></td>
                   <td><TruncatedCell text={l.cpContact} max={18} mono /></td>
                   <td><TruncatedCell text={l.cpEmail} max={28} /></td>
-                  <td>{l.cpWhatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : <span className="acm-pill-no">✕ No</span>}</td>
+                  <td>{l.cpWhatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : l.cpWhatsapp === 'no' ? <span className="acm-pill-no">✕ No</span> : <span style={{ color: '#9ca3af' }}>—</span>}</td>
                   <td>
                     <div className="acm-loc-actions">
-                      <Tooltip label="Edit">
-                        <button type="button" className="acm-loc-btn" aria-label="Edit" onClick={() => onEdit(l.id)}>
+                      <Tooltip label={l.isPrimary ? 'Edit in Consignee Identification tab' : 'Edit'}>
+                        <button type="button" className="acm-loc-btn" aria-label="Edit" onClick={() => l.isPrimary ? onEditPrimary() : onEdit(l.id)}>
                           <IconPencil />
                         </button>
                       </Tooltip>
-                      <Tooltip label="Delete">
-                        <button type="button" className="acm-loc-btn acm-loc-btn-del" aria-label="Delete" onClick={() => onDel(l.id)}>
-                          <IconTrash />
-                        </button>
-                      </Tooltip>
+                      {l.isPrimary ? (
+                        <Tooltip label="The primary address cannot be deleted">
+                          <button type="button" className="acm-loc-btn acm-loc-btn-del" aria-label="Delete (disabled)" disabled style={{ opacity: 0.4, cursor: 'not-allowed' }}>
+                            <IconTrash />
+                          </button>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip label="Delete">
+                          <button type="button" className="acm-loc-btn acm-loc-btn-del" aria-label="Delete" onClick={() => onDel(l.id)}>
+                            <IconTrash />
+                          </button>
+                        </Tooltip>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1851,7 +1933,8 @@ const LocationsTable = ({ locations, onAdd, onEdit, onDel }: {
       </div>
     </div>
   </div>
-);
+  );
+};
 
 /* ─── Stage 2 — KYC / Due Diligence ─── */
 /* ─── Stage 2 — KYC / Due Diligence (table-driven) ─── */
@@ -2270,7 +2353,7 @@ function ConsigneeHistoryPanel({ stagesCompleted, children }: { stagesCompleted:
  *   the same list (mimes:jpg,jpeg,png,pdf,doc,docx) so a manipulated
  *   request can't slip through either. */
 const DEFAULT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.doc,.docx';
-const MAX_MB = 10;
+const MAX_MB = 2;
 function parseAcceptExts(accept?: string): string[] {
   if (!accept) return [];
   return accept.split(',')
@@ -2294,21 +2377,42 @@ function isAcceptedFile(file: File, accept?: string): { ok: true } | { ok: false
   return { ok: true };
 }
 
-function FileUploadField({ value, displayName, onPick, accept, hint }: {
+function FileUploadField({ value, displayName, existingUrl, onPick, onRemoveExisting, accept, hint }: {
   value: File | null;
   displayName?: string;
+  /** Direct URL to the existing server-side file, used by Preview when
+   *  no new file has been picked. Falsy ⇒ Preview is hidden. */
+  existingUrl?: string | null;
+  /** Fires when the user clicks the X on a server-side (existing) file
+   *  — distinct from `onPick(null)` which clears a newly-picked file.
+   *  Parent uses this to flag `remove_<field>=1` for the save call. */
+  onRemoveExisting?: () => void;
   onPick: (file: File | null) => void;
   accept?: string;
   hint?: string;
 }) {
+  const toast = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // Blob URL for the newly-picked file so Preview opens it without
+  // a round trip. Revoke on unmount / file-change to avoid leaks.
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!value) { setBlobUrl(null); return; }
+    const url = URL.createObjectURL(value);
+    setBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [value]);
   const labelText = value ? value.name : (displayName || '');
   const hasFile = !!labelText;
+  // Preview source: blob URL for a fresh pick, server URL for an
+  // existing file. Falls back to null when neither is available
+  // (e.g. file picked offline or backend isn't returning the URL yet).
+  const previewUrl = value ? blobUrl : (existingUrl || null);
   const effectiveAccept = accept || DEFAULT_ACCEPT;
   const hintText = hint || (effectiveAccept.includes('image/')
-    ? 'JPG, JPEG, PNG — max 10 MB'
-    : 'PDF, DOC, DOCX, JPG, PNG — max 10 MB');
+    ? `JPG, JPEG, PNG — max ${MAX_MB} MB`
+    : `PDF, DOC, DOCX, JPG, PNG — max ${MAX_MB} MB`);
   return (
     <div className="acm-file-zone">
       {hasFile ? (
@@ -2317,11 +2421,42 @@ function FileUploadField({ value, displayName, onPick, accept, hint }: {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           </div>
           <span className="acm-file-chip-name" title={labelText}>{labelText}</span>
+          {previewUrl && (
+            <Tooltip label="Preview">
+              <button
+                type="button"
+                className="acm-file-chip-preview"
+                aria-label="Preview"
+                onClick={() => {
+                  // Cache-bust server URLs (not blob URLs) so a fresh
+                  // upload renders instead of the browser's cached copy.
+                  // Evaluated on click so the URL doesn't churn each render.
+                  let url = previewUrl;
+                  if (!value) {
+                    const sep = url.includes('?') ? '&' : '?';
+                    url = `${url}${sep}t=${Date.now()}`;
+                  }
+                  window.open(url, '_blank', 'noopener,noreferrer');
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </Tooltip>
+          )}
           <button
             type="button"
             className="acm-file-chip-x"
             aria-label="Remove file"
-            onClick={() => { onPick(null); setErr(null); if (inputRef.current) inputRef.current.value = ''; }}
+            onClick={() => {
+              setErr(null);
+              if (inputRef.current) inputRef.current.value = '';
+              // New pick → clear the in-memory file. Existing only →
+              // tell the parent to flag the saved file for backend
+              // deletion via remove_<field>=1.
+              if (value) onPick(null);
+              else if (onRemoveExisting) onRemoveExisting();
+              else onPick(null);
+            }}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -2356,6 +2491,7 @@ function FileUploadField({ value, displayName, onPick, accept, hint }: {
           const check = isAcceptedFile(f, effectiveAccept);
           if (!check.ok) {
             setErr(check.reason);
+            toast.error('File rejected', check.reason);
             if (inputRef.current) inputRef.current.value = '';
             return;
           }
@@ -2473,6 +2609,11 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
    * attachment even though no File is in memory yet). */
   const [file, setFile] = useState<File | null>(null);
   const existingAttachmentName = editing?.attachment_name ?? '';
+  const existingAttachmentUrl  = editing?.attachment_url ?? '';
+  // Flag: user clicked the X on the existing server-side attachment.
+  // Submit forwards this as remove_attachment=1 so the backend nulls
+  // the column + deletes the disk file.
+  const [removeAttachment, setRemoveAttachment] = useState(false);
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   useEscapeKey(() => { if (!saving) onClose(); });
@@ -2541,7 +2682,13 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
     if (d.issue_date)        fd.append('issue_date', d.issue_date);
     if (d.expiry_date)       fd.append('expiry_date', d.expiry_date);
     if (d.status)            fd.append('status', d.status);
-    if (file)                fd.append('attachment', file);
+    if (file) {
+      fd.append('attachment', file);
+    } else if (removeAttachment && existingAttachmentUrl) {
+      // No new pick + user clicked the X on the existing file → tell
+      // the backend to wipe it (column null + disk delete).
+      fd.append('remove_attachment', '1');
+    }
 
     setSaving(true);
     try {
@@ -2570,7 +2717,7 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
     }
   };
   return (
-    <div className="acm-loc-sub-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="acm-loc-sub-overlay">
       <div className="acm-loc-sub-card" onMouseDown={e => e.stopPropagation()}>
         <div className="acm-loc-sub-header">
           <div className="acm-loc-sub-title">{editing ? 'Edit' : 'Add'} {titleLabel}</div>
@@ -2653,8 +2800,13 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
               <label className="acm-field-label">ATTACHMENT</label>
               <FileUploadField
                 value={file}
-                displayName={file ? '' : existingAttachmentName}
-                onPick={(f) => setFile(f)}
+                displayName={file ? '' : (removeAttachment ? '' : existingAttachmentName)}
+                existingUrl={removeAttachment ? null : existingAttachmentUrl}
+                onPick={(f) => {
+                  setFile(f);
+                  if (f) setRemoveAttachment(false);   // new pick supersedes any prior "remove"
+                }}
+                onRemoveExisting={() => setRemoveAttachment(true)}
                 accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
               />
             </div>
@@ -2700,6 +2852,15 @@ function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
   const existingIdProofName      = editing?.id_proof_name ?? '';
   const existingAddressProofName = editing?.address_proof_name ?? '';
   const existingPhotographName   = editing?.photograph_name ?? '';
+  const existingIdProofUrl       = editing?.id_proof_url ?? '';
+  const existingAddressProofUrl  = editing?.address_proof_url ?? '';
+  const existingPhotographUrl    = editing?.photograph_url ?? '';
+  // Per-slot "remove existing" flags — forwarded as remove_<field>=1
+  // on submit when no new file has been picked, so the backend nulls
+  // the column and deletes the disk file.
+  const [removeIdProof,      setRemoveIdProof]      = useState(false);
+  const [removeAddressProof, setRemoveAddressProof] = useState(false);
+  const [removePhotograph,   setRemovePhotograph]   = useState(false);
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   useEscapeKey(() => { if (!saving) onClose(); });
@@ -2727,8 +2888,11 @@ function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
     if (d.phone_number)   fd.append('phone_number', d.phone_number);
     if (d.status)         fd.append('status', d.status);
     if (idProof)      fd.append('id_proof', idProof);
+    else if (removeIdProof && existingIdProofUrl) fd.append('remove_id_proof', '1');
     if (addressProof) fd.append('address_proof', addressProof);
+    else if (removeAddressProof && existingAddressProofUrl) fd.append('remove_address_proof', '1');
     if (photograph)   fd.append('photograph', photograph);
+    else if (removePhotograph && existingPhotographUrl) fd.append('remove_photograph', '1');
 
     setSaving(true);
     try {
@@ -2755,7 +2919,7 @@ function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
     }
   };
   return (
-    <div className="acm-loc-sub-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="acm-loc-sub-overlay">
       <div className="acm-loc-sub-card" onMouseDown={e => e.stopPropagation()}>
         <div className="acm-loc-sub-header">
           <div className="acm-loc-sub-title">{editing ? 'Edit' : 'Add'} Owner KYC</div>
@@ -2812,8 +2976,10 @@ function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
               <label className="acm-field-label">ID PROOF</label>
               <FileUploadField
                 value={idProof}
-                displayName={idProof ? '' : existingIdProofName}
-                onPick={setIdProof}
+                displayName={idProof ? '' : (removeIdProof ? '' : existingIdProofName)}
+                existingUrl={removeIdProof ? null : existingIdProofUrl}
+                onPick={(f) => { setIdProof(f); if (f) setRemoveIdProof(false); }}
+                onRemoveExisting={() => setRemoveIdProof(true)}
                 accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
               />
             </div>
@@ -2821,8 +2987,10 @@ function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
               <label className="acm-field-label">ADDRESS PROOF</label>
               <FileUploadField
                 value={addressProof}
-                displayName={addressProof ? '' : existingAddressProofName}
-                onPick={setAddressProof}
+                displayName={addressProof ? '' : (removeAddressProof ? '' : existingAddressProofName)}
+                existingUrl={removeAddressProof ? null : existingAddressProofUrl}
+                onPick={(f) => { setAddressProof(f); if (f) setRemoveAddressProof(false); }}
+                onRemoveExisting={() => setRemoveAddressProof(true)}
                 accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
               />
             </div>
@@ -2832,8 +3000,10 @@ function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
               <label className="acm-field-label">PHOTOGRAPH</label>
               <FileUploadField
                 value={photograph}
-                displayName={photograph ? '' : existingPhotographName}
-                onPick={setPhotograph}
+                displayName={photograph ? '' : (removePhotograph ? '' : existingPhotographName)}
+                existingUrl={removePhotograph ? null : existingPhotographUrl}
+                onPick={(f) => { setPhotograph(f); if (f) setRemovePhotograph(false); }}
+                onRemoveExisting={() => setRemovePhotograph(true)}
                 accept=".jpg,.jpeg,.png"
               />
             </div>
@@ -2873,15 +3043,26 @@ type LocSubModalMasters = {
   designations: { value: string; label: string }[];
 };
 
-function LocationSubModal({ editing, masters, onClose, onSave }: {
+function LocationSubModal({ editing, masters, disallowedTypes, onClose, onSave }: {
   editing: LocationRow | null;
   masters: LocSubModalMasters;
+  /** Address types already claimed elsewhere (e.g. Registered Office on
+   *  the primary address). Filtered out of the dropdown so a customer
+   *  doesn't end up with two registered offices. The currently-editing
+   *  row's own type is still shown to avoid hiding existing data. */
+  disallowedTypes?: string[];
   onClose: () => void;
   onSave: (rec: Omit<LocationRow, 'id'>) => void;
 }) {
+  const toast = useToast();
+  // Skip the default "Registered Office" prefill when that type is
+  // disallowed — otherwise the user lands on a value they can't save.
+  const initialType = editing
+    ? editing.type
+    : (disallowedTypes?.includes(DEFAULT_ADDRESS_TYPE) ? '' : DEFAULT_ADDRESS_TYPE);
   const [d, setD] = useState<Omit<LocationRow, 'id'>>(() => editing ? { ...editing } : {
-    type: DEFAULT_ADDRESS_TYPE, line: '', country: '', state: '', city: '', pin: '',
-    cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: '' as 'yes' | 'no' | '',
+    type: initialType, line: '', country: '', state: '', city: '', pin: '',
+    cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: 'yes' as 'yes' | 'no' | '',
   });
   const [errs, setErrs] = useState<Record<string, string>>({});
   useEscapeKey(onClose);
@@ -2925,10 +3106,15 @@ function LocationSubModal({ editing, masters, onClose, onSave }: {
 
   /* Effective lists — prefer whichever side actually has data so the
    * dropdown is populated as soon as either fetch resolves. */
-  const addressTypes = masters.addressTypes.length ? masters.addressTypes : local.addressTypes;
+  const addressTypesAll = masters.addressTypes.length ? masters.addressTypes : local.addressTypes;
   const countries    = masters.countries.length    ? masters.countries    : local.countries;
   const states       = masters.states.length       ? masters.states       : local.states;
   const designations = masters.designations.length ? masters.designations : local.designations;
+  // Strip disallowed types but always keep the row's own value so an
+  // existing selection never silently disappears mid-edit.
+  const addressTypes = (!disallowedTypes || disallowedTypes.length === 0)
+    ? addressTypesAll
+    : addressTypesAll.filter(t => !disallowedTypes.includes(t.value) || t.value === d.type);
 
   const selectedCountry = countries.find(c => c.value === d.country);
   const filteredStates = selectedCountry ? states.filter(s => s.countryId === selectedCountry.id) : [];
@@ -2950,11 +3136,13 @@ function LocationSubModal({ editing, masters, onClose, onSave }: {
     else if (!/^\S+@\S+\.\S+$/.test(d.cpEmail))        next.cpEmail       = 'Enter a valid email';
     if (!d.cpWhatsapp)                                 next.cpWhatsapp    = 'Select WhatsApp preference';
     setErrs(next);
-    if (Object.keys(next).length === 0) onSave(d);
+    if (Object.keys(next).length === 0) { onSave(d); return; }
+    const firstKey = Object.keys(next)[0];
+    toast.error('Please complete required fields', next[firstKey]);
   };
 
   return (
-    <div className="acm-loc-sub-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="acm-loc-sub-overlay">
       <div className="acm-loc-sub-card" onMouseDown={e => e.stopPropagation()}>
         <div className="acm-loc-sub-header">
           <div className="acm-loc-sub-title">{editing ? 'Edit' : 'Add New'} Location &amp; Contact</div>
@@ -4183,6 +4371,18 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   cursor: pointer; transition: all .15s ease;
 }
 .acm-file-chip-x:hover { background: #fee2e2; border-color: #ef4444; }
+.acm-file-chip-preview {
+  flex-shrink: 0;
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff; color: #047857;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  cursor: pointer; transition: all .15s ease;
+}
+.acm-file-chip-preview:hover { background: #10b981; border-color: #10b981; color: #fff; }
+[data-bs-theme="dark"] .acm-file-chip-preview { background: #103129; color: #6ee7b7; border-color: rgba(16,185,129,.40); }
+[data-bs-theme="dark"] .acm-file-chip-preview:hover { background: rgba(16,185,129,.20); color: #d1fae5; }
 
 /* ─── "Same as Customer" banner (Stage 1) ─── */
 .acm-same-banner {
@@ -4421,6 +4621,18 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   text-align: center; padding: 32px 16px !important;
   color: #6b7280; font-size: 13px;
 }
+/* Primary-address row marker — same row as additional locations but
+   sourced from the Consignee Identification tab. Subtle green wash +
+   pill so users can tell it apart from added locations. */
+.acm-loc-primary-row td { background: linear-gradient(180deg, #f0fdf4, #dcfce7); }
+.acm-loc-primary-row:hover td { background: #d1fae5; }
+.acm-loc-type-cell { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.acm-loc-primary-tag {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  color: #065f46; border: 1px solid #6ee7b7;
+}
 .acm-pill-yes {
   display: inline-flex; align-items: center;
   padding: 3px 10px; border-radius: 999px;
@@ -4605,6 +4817,9 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-loc-btn      { background: #103129; border-color: rgba(16,185,129,.25); color: #94a3b8; }
 [data-bs-theme="dark"] .acm-loc-btn:hover { background: rgba(16,185,129,.18); border-color: #10b981; color: #6ee7b7; }
 [data-bs-theme="dark"] .acm-loc-btn-del:hover { background: rgba(239,68,68,.18); border-color: #ef4444; color: #fca5a5; }
+[data-bs-theme="dark"] .acm-loc-primary-row td { background: rgba(16,185,129,0.12); }
+[data-bs-theme="dark"] .acm-loc-primary-row:hover td { background: rgba(16,185,129,0.18); }
+[data-bs-theme="dark"] .acm-loc-primary-tag { background: rgba(16,185,129,0.22); color: #a7f3d0; border-color: rgba(110,231,183,0.40); }
 
 /* Location sub-modal — dark */
 [data-bs-theme="dark"] .acm-loc-sub-overlay { background: rgba(0,0,0,.65); }

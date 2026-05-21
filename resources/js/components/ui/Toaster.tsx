@@ -79,7 +79,12 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
           position: fixed;
           top: 16px;
           right: 16px;
-          z-index: 9999;
+          /* Above every modal in the app. Customer / Consignee / Vendor
+             modals sit at 10000-10002, sub-modals at 10500, confirm
+             dialogs at 10050-11050, dropdown portals at 11000-11200.
+             100000 keeps the toaster above all of them so users see
+             validation feedback even when a stacked modal is open. */
+          z-index: 100000;
           display: flex;
           flex-direction: column;
           gap: 12px;
@@ -91,9 +96,13 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
           pointer-events: auto;
           position: relative;
           display: flex;
-          align-items: stretch;
+          /* center vertically so a single-line title is not pinned to
+             the top with empty space below. The rail is absolutely
+             positioned (see below) so it can still stretch the full
+             toast height. */
+          align-items: center;
           gap: 12px;
-          padding: 14px 12px 14px 0;
+          padding: 14px 12px 14px 16px;
           border-radius: 16px;
           background: #ffffff;
           border: 1px solid #e5e7eb;
@@ -111,7 +120,12 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
             inset 0 1px 0 0 rgba(255,255,255,0.04);
         }
         .cbc-toast-rail {
-          flex-shrink: 0;
+          /* absolute so the rail hugs the full toast height even when
+             the parent is center-aligned. The 16px left padding on
+             .cbc-toast reserves the visual space for the rail plus a
+             small gap. */
+          position: absolute;
+          top: 0; bottom: 0; left: 0;
           width: 6px;
           border-radius: 16px 0 0 16px;
           background: linear-gradient(180deg, var(--cbc-toast-rail-top) 0%, var(--cbc-toast-rail-bottom) 100%);
@@ -121,8 +135,6 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
         }
         .cbc-toast-icon {
           flex-shrink: 0;
-          margin-top: 2px;
-          margin-left: 4px;
           width: 36px;
           height: 36px;
           border-radius: 12px;
@@ -138,7 +150,6 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
         .cbc-toast-body {
           flex: 1;
           min-width: 0;
-          padding-top: 2px;
           padding-right: 4px;
         }
         .cbc-toast-title {
@@ -161,8 +172,6 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
         }
         .cbc-toast-close {
           flex-shrink: 0;
-          margin-top: 2px;
-          align-self: flex-start;
           width: 28px;
           height: 28px;
           border-radius: 8px;
