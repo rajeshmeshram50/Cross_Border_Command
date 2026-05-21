@@ -989,10 +989,21 @@ export default function AddProductModal(props: {
         issued_by: q.issuedBy,
         qa_testing_parameter: q.testingParameter,
         min_acceptance_criteria: q.minAcceptance,
-        // Keep the existing server-side path when the user didn't
-        // replace the attachment on this open of the modal. The
-        // backend overrides with the multipart upload path below.
-        attachment_path: q.attachmentPath || (q.attachmentFile ? null : (q.attachmentName || null)),
+        /* attachment_path rules:
+         *   • A real server path (saved on a previous round-trip, e.g.
+         *     "products/qc/<hash>__file.jpg") → send it so the backend
+         *     preserves the existing upload after the delete-and-recreate.
+         *   • A pending File pick → null. The multipart branch below
+         *     uploads the file and the backend fills the path itself.
+         *   • Otherwise → null. The previous version fell back to the
+         *     bare attachmentName (the display label, like "Bhuvan.jpg"),
+         *     which the backend then stored as the path — producing
+         *     /storage/Bhuvan.jpg on local and .../cbc-saas/Bhuvan.jpg
+         *     on Azure, neither of which exists. Never trust the
+         *     basename as a storage path. */
+        attachment_path: (q.attachmentPath && q.attachmentPath.includes('/'))
+          ? q.attachmentPath
+          : null,
       }));
 
       const qualityFields = {
@@ -1007,6 +1018,17 @@ export default function AddProductModal(props: {
         height_cm: parseFloat(height) || null,
       };
 
+      /* Both PUT branches return the refreshed product with its
+       * regenerated qc_records (the server replaces them every save).
+       * We capture that response so we can sync our in-memory rows to
+       * the new server-side attachment_path / attachment_url — without
+       * this, a freshly-uploaded row keeps attachmentPath='' locally,
+       * and the NEXT save would fall through to a bare-filename
+       * attachment_path and corrupt the row's storage pointer. */
+      type QualitySaveResponse = {
+        qc_records?: Array<{ id: number; attachment_path?: string | null; attachment_url?: string | null }>;
+      };
+      let saveRes: { data: QualitySaveResponse };
       if (hasNewFiles) {
         const fd = new FormData();
         // Laravel needs a method override since the route is PUT.
@@ -1025,20 +1047,32 @@ export default function AddProductModal(props: {
             fd.append(`qc_records[${idx}][attachment_file]`, file);
           }
         });
-        await api.post(`/products/${productId}/step/quality`, fd, {
+        saveRes = await api.post<QualitySaveResponse>(`/products/${productId}/step/quality`, fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
       } else {
-        await api.put(`/products/${productId}/step/quality`, {
+        saveRes = await api.put<QualitySaveResponse>(`/products/${productId}/step/quality`, {
           ...qualityFields,
           qc_records: qcRows,
         });
       }
 
-      // Clear the in-memory File objects — on the next save the row
-      // should be treated as having no fresh file picked, so we don't
-      // re-upload the same blob.
-      setQcRecords(prev => prev.map(q => ({ ...q, attachmentFile: null })));
+      /* Map the response's qc_records back over our local rows by row
+       * index — the backend re-creates them in the same order we sent,
+       * so the index alignment is stable. Clears the in-memory File
+       * and pulls the canonical attachment_path / attachment_url from
+       * the server. */
+      const serverQc = saveRes.data.qc_records ?? [];
+      setQcRecords(prev => prev.map((q, idx) => {
+        const sv = serverQc[idx];
+        if (!sv) return { ...q, attachmentFile: null };
+        return {
+          ...q,
+          attachmentFile: null,
+          attachmentPath: sv.attachment_path ?? '',
+          attachmentUrl:  sv.attachment_url  ?? q.attachmentUrl ?? '',
+        };
+      }));
 
       // Step 1 fully complete — product is now Inactive on the server.
       onSaved(productId, false);
@@ -3182,6 +3216,18 @@ const SCOPED_CSS = `
   color: #475569;
 }
 .apm-vendor-table-card .table tbody td { vertical-align: middle; }
+
+/* Velzon's .table-card rule applies a negative margin equal to the
+ * Bootstrap card spacer (roughly -1rem on each side) so the table sits
+ * flush to a parent .card's edges — see velzon/components/_table.scss.
+ * We reuse the .table-card class for the Map-Vendor and QC tables in
+ * this wizard, but those wrappers AREN'T Bootstrap cards. The negative
+ * margin then leaks out and the table bleeds past its container by
+ * about 1rem on each side (the "glitch" on the Map Vendor form).
+ * Neutralise it for any .table-card living inside the wizard modal. */
+.apm-modal .table-card,
+.apm-vendor-table-card .table-card,
+.apm-qc-table-wrap .table-card { margin: 0 !important; }
 
 /* ─── Footer ─── */
 .apm-foot {
