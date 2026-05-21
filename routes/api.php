@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrGeneratedDocumentController;
 use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\LeadAckReasonController;
+use App\Http\Controllers\Api\SalesLeadController;
 use App\Http\Controllers\Api\SalesPdfController;
 use App\Http\Controllers\Api\SalesTodoController;
 use App\Http\Controllers\Api\LeavePlanController;
@@ -171,6 +172,22 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // flag that picks between the two More-Options variants. Returns the PDF
     // inline so the page can preview it in a new tab via blob URL.
     Route::post  ('/sales/pi/preview-pdf',         [SalesPdfController::class, 'previewPi']);
+
+    // Sales Matrix → Leads (My Workplace). Three feeders write here:
+    //   - POST /sales/leads        manual capture (Add New Lead modal)
+    //   - POST /sales/leads/sync   pull from IndiaMart CRM keys
+    //   - GET  /sales/leads        list / paginate / filter for the table
+    // All tenant-scoped by client_id; sub-branch users see only their branch.
+    Route::get   ('/sales/leads',              [SalesLeadController::class, 'index']);
+    Route::post  ('/sales/leads',              [SalesLeadController::class, 'store']);
+    // sync/config must come BEFORE /sales/leads/{id} so Laravel doesn't try
+    // to match 'sync' as a numeric id. whereNumber on the {id} route also
+    // protects this but registration order keeps intent obvious.
+    Route::get   ('/sales/leads/sync/config',  [SalesLeadController::class, 'syncConfig']);
+    Route::post  ('/sales/leads/sync',         [SalesLeadController::class, 'syncFromCrm']);
+    Route::get   ('/sales/leads/{id}',         [SalesLeadController::class, 'show'])->whereNumber('id');
+    Route::put   ('/sales/leads/{id}',         [SalesLeadController::class, 'update'])->whereNumber('id');
+    Route::delete('/sales/leads/{id}',         [SalesLeadController::class, 'destroy'])->whereNumber('id');
 
     // Sales Matrix → Productivity Tracker (/sales/todo). Two parallel
     // sub-resources behind one controller — reminders + meetings — with

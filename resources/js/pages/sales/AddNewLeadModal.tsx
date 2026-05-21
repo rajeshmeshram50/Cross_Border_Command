@@ -72,7 +72,11 @@ const digitsOnly = (raw: string): string => (raw ?? '').replace(/\D/g, '').slice
 export default function AddNewLeadModal(props: {
   open: boolean;
   onClose: () => void;
-  onSave: (lead: LeadFormValues) => void;
+  /* `pickedCustomerDbId` is forwarded so the page can attach the lead to
+   * an existing customer record (`leads.customer_id`) when the user came
+   * in via the "use existing customer" path. Null when the user typed a
+   * fresh lead by hand. The page is responsible for the actual POST. */
+  onSave: (lead: LeadFormValues, pickedCustomerDbId?: number | null) => void | Promise<void>;
 }) {
   const { open, onClose, onSave } = props;
   const toast = useToast();
@@ -210,8 +214,15 @@ export default function AddNewLeadModal(props: {
       toast.error('Missing details', 'Please complete the highlighted fields');
       return;
     }
-    onSave(values);
-    toast.success('Lead added', `${values.customerName} captured`);
+    // Pass the picked customer's primary key so the parent can set
+    // leads.customer_id on the POST. Resolves the public id via the
+    // cached options list — undefined if the user typed by hand.
+    const pickedDbId = useExisting && pickedCustomerId
+      ? customerOpts.find(c => c.id === pickedCustomerId)?.dbId ?? null
+      : null;
+    onSave(values, pickedDbId);
+    // The parent shows its own toast on save success; the modal stays
+    // quiet here so we don't double-toast.
   };
 
   if (!open) return null;

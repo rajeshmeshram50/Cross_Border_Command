@@ -1,9 +1,32 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import AddNewLeadModal, { type LeadFormValues } from './AddNewLeadModal';
+
+/* Shape returned by GET /sales/leads — Laravel paginator items. Mapped to
+ * the table's Lead type below via mapServerToLead(). */
+type ServerLead = {
+  id:                number;
+  opp_code:          string;
+  unique_query_id?:  string | null;
+  platform:          string;
+  query_type:        string;
+  query_time:        string | null;
+  created_at:        string;
+  sender_name:       string | null;
+  sender_mobile:     string | null;
+  sender_email:      string | null;
+  sender_company:    string | null;
+  sender_country_iso:string | null;
+  query_product_name:string | null;
+  qualified:         boolean;
+  disqualified:      boolean;
+  whatsapp_status:   string | null;
+  salesperson?:      { id: number; name: string } | null;
+};
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Lead Worksheet (My Workplace)
@@ -45,38 +68,6 @@ const TAB_LABELS: Record<TabKey, string> = {
   all:          'All Leads',
 };
 
-const SAMPLE_LEADS: Lead[] = [
-  // QUALIFIED
-  { type:'Manual',          date:'10/04/2026', source:'Offline',  assigned:'Shreeyash Rajaram Mote', oppId:'OPP-001', customer:'GreenHarvest Global',  phone:'+91 91234 56789', email:'r.vardhan@gmail.com',         product:'—',                       company:'GreenHarvest Global', country:'IN', status:'qualified' },
-  { type:'Manual',          date:'07/04/2026', source:'Offline',  assigned:'Unassigned',             oppId:'OPP-002', customer:'Shree Exports',         phone:'9011033444',      email:'shreeyashmote@gmail.com',     product:'—',                       company:'Shree',               country:'IN', status:'qualified' },
-  { type:'PNS Calls',       date:'07/04/2026', source:'Agrotech', assigned:'Unassigned',             oppId:'OPP-003', customer:'Aadi Trading',          phone:'+91-9315093788',  email:'N/A',                         product:'1 Kg Jasmine Rice',       company:'—',                   country:'IN', status:'qualified' },
-  { type:'Direct Enquiries',date:'06/04/2026', source:'Agrotech', assigned:'Durgesh Urkude',         oppId:'OPP-004', customer:'Abdelrahman Mujahed',   phone:'+962-786919870',  email:'aboodmujahed6@gmail.com',     product:'Natural Turkish Dry Fig', company:'—',                   country:'JO', status:'qualified' },
-  { type:'Direct Enquiries',date:'06/04/2026', source:'Agrotech', assigned:'Unassigned',             oppId:'OPP-005', customer:'Dharminder Singh',      phone:'+61-422930900',   email:'dsarpanch55@gmail.com',       product:'Mushroom',                company:'—',                   country:'AU', status:'qualified' },
-  { type:'Direct Enquiries',date:'06/04/2026', source:'Agrotech', assigned:'Bhavika',                oppId:'OPP-006', customer:'UDAY PATEL',            phone:'+44-7984011050',  email:'N/A',                         product:'Suvin Cotton',            company:'—',                   country:'UK', status:'qualified' },
-  { type:'Direct Enquiries',date:'06/04/2026', source:'Agrotech', assigned:'Unassigned',             oppId:'OPP-007', customer:'Bittu Kumar Chaudhari', phone:'N/A',             email:'bittu89035@gmail.com',        product:'Mushroom',                company:'—',                   country:'US', status:'qualified' },
-  { type:'Direct Enquiries',date:'05/04/2026', source:'Agrotech', assigned:'Rahul Sharma',           oppId:'OPP-008', customer:'Zhang Wei',             phone:'+86-13812345678', email:'zhangwei@example.com',        product:'Basmati Rice',            company:'Wei Imports',         country:'CN', status:'qualified' },
-  { type:'PNS Calls',       date:'05/04/2026', source:'Offline',  assigned:'Unassigned',             oppId:'OPP-009', customer:'James Okoye',           phone:'+234-8012345678', email:'james.okoye@mail.com',        product:'Cashew',                  company:'—',                   country:'NG', status:'qualified' },
-  { type:'Manual',          date:'04/04/2026', source:'Agrotech', assigned:'Priya Mehta',            oppId:'OPP-010', customer:'Ayesha Raza',           phone:'+92-3012345678',  email:'ayesha.raza@pk.com',          product:'Mango Pulp',              company:'Raza Exports',        country:'PK', status:'qualified' },
-  { type:'PNS Calls',       date:'03/04/2026', source:'Agrotech', assigned:'Ankit Verma',            oppId:'OPP-011', customer:'Fatima Al-Hassan',      phone:'+966-512345678',  email:'fatima.hassan@sa.com',        product:'Brown Rice',              company:'Al-Hassan Foods',     country:'SA', status:'qualified' },
-  { type:'Direct Enquiries',date:'02/04/2026', source:'Offline',  assigned:'Sneha Patil',            oppId:'OPP-012', customer:'Luca Bianchi',          phone:'+39-3456789012',  email:'luca.bianchi@it.com',         product:'Organic Turmeric',        company:'Bianchi Imports',     country:'IT', status:'qualified' },
-  { type:'Manual',          date:'01/04/2026', source:'Agrotech', assigned:'Vikram Desai',           oppId:'OPP-013', customer:'Ahmed Al-Farsi',        phone:'+971-501234567',  email:'ahmed.farsi@ae.com',          product:'Saffron Grade A',         company:'Al-Farsi Trading',    country:'AE', status:'qualified' },
-  { type:'PNS Calls',       date:'31/03/2026', source:'Offline',  assigned:'Unassigned',             oppId:'OPP-014', customer:'Park Ji-Young',         phone:'+82-1012345678',  email:'jiyoung.park@kr.com',         product:'Black Sesame Seeds',      company:'—',                   country:'KR', status:'qualified' },
-  // DISQUALIFIED
-  { type:'Direct Enquiries',date:'04/04/2026', source:'Offline',  assigned:'Unassigned',             oppId:'OPP-015', customer:'Karl Hofmann',          phone:'+49-17612345678', email:'karl.hofmann@de.com',         product:'Spices Mix',              company:'—',                   country:'DE', status:'disqualified' },
-  { type:'PNS Calls',       date:'03/04/2026', source:'Agrotech', assigned:'Durgesh Urkude',         oppId:'OPP-016', customer:'Sarah Patel',           phone:'+1-4155551234',   email:'sarah.patel@us.com',          product:'Turmeric Powder',         company:'Patel Foods',         country:'US', status:'disqualified' },
-  { type:'Manual',          date:'03/04/2026', source:'Offline',  assigned:'Unassigned',             oppId:'OPP-017', customer:'Mohamed Aziz',          phone:'+20-1012345678',  email:'m.aziz@eg.net',               product:'Cotton Yarn',             company:'—',                   country:'EG', status:'disqualified' },
-  { type:'Direct Enquiries',date:'02/04/2026', source:'Agrotech', assigned:'Unassigned',             oppId:'OPP-018', customer:'Ivan Petrov',           phone:'+7-9123456789',   email:'ivan.petrov@ru.com',          product:'Wheat Flour',             company:'—',                   country:'RU', status:'disqualified' },
-  { type:'Manual',          date:'01/04/2026', source:'Offline',  assigned:'Rahul Sharma',           oppId:'OPP-019', customer:'Amara Nwosu',           phone:'+234-9087654321', email:'amara.nwosu@ng.com',          product:'Palm Oil',                company:'Nwosu Agro',          country:'NG', status:'disqualified' },
-  { type:'PNS Calls',       date:'31/03/2026', source:'Agrotech', assigned:'Unassigned',             oppId:'OPP-020', customer:'Mei Ling',              phone:'+86-13998765432', email:'mei.ling@cn.com',             product:'Green Tea',               company:'—',                   country:'CN', status:'disqualified' },
-  { type:'Direct Enquiries',date:'30/03/2026', source:'Offline',  assigned:'Priya Mehta',            oppId:'OPP-021', customer:'Jose Martinez',         phone:'+52-5512345678',  email:'jose.martinez@mx.com',        product:'Coffee Beans',            company:'Martinez Trading',    country:'MX', status:'disqualified' },
-  { type:'Manual',          date:'29/03/2026', source:'Agrotech', assigned:'Unassigned',             oppId:'OPP-022', customer:'Olga Kowalski',         phone:'+48-501234567',   email:'olga.kowalski@pl.com',        product:'Rye Flour',               company:'—',                   country:'PL', status:'disqualified' },
-  { type:'PNS Calls',       date:'28/03/2026', source:'Offline',  assigned:'Unassigned',             oppId:'OPP-023', customer:'Hassan El-Amin',        phone:'+216-20123456',   email:'hassan.elamin@tn.com',        product:'Olive Oil',               company:'El-Amin Exports',     country:'TN', status:'disqualified' },
-  { type:'Direct Enquiries',date:'27/03/2026', source:'Agrotech', assigned:'Bhavika',                oppId:'OPP-024', customer:'Nadia Bouchard',        phone:'+33-612345678',   email:'nadia.bouchard@fr.com',       product:'Lavender Oil',            company:'—',                   country:'FR', status:'disqualified' },
-  { type:'Manual',          date:'26/03/2026', source:'Offline',  assigned:'Unassigned',             oppId:'OPP-025', customer:'Tariq Al-Rashid',       phone:'+965-51234567',   email:'tariq.rashid@kw.com',         product:'Dates Premium',           company:'Al-Rashid Group',     country:'KW', status:'disqualified' },
-  { type:'PNS Calls',       date:'25/03/2026', source:'Agrotech', assigned:'Ankit Verma',            oppId:'OPP-026', customer:'Sofia Andersen',        phone:'+45-20123456',    email:'sofia.andersen@dk.com',       product:'Barley Malt',             company:'—',                   country:'DK', status:'disqualified' },
-  { type:'Direct Enquiries',date:'24/03/2026', source:'Offline',  assigned:'Unassigned',             oppId:'OPP-027', customer:'Ravi Krishnamurthy',    phone:'+91-9987654321',  email:'ravi.km@in.com',              product:'Coconut Oil',             company:'KM Naturals',         country:'IN', status:'disqualified' },
-];
-
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50];
 
 const initials = (name: string): string => {
@@ -84,23 +75,52 @@ const initials = (name: string): string => {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 };
 
+/* Convert a server lead row to the table's display shape. The columns
+ * use placeholder dashes for absent values to match the existing styling
+ * (the in-page '—' tests check string equality). */
+const mapServerToLead = (r: ServerLead): Lead => {
+  const dateSrc = r.query_time ?? r.created_at;
+  const date = dateSrc
+    ? new Date(dateSrc).toLocaleDateString('en-GB') // DD/MM/YYYY
+    : '—';
+  return {
+    type:     r.query_type || 'Manual',
+    date,
+    source:   r.platform || '—',
+    assigned: r.salesperson?.name ?? 'Unassigned',
+    oppId:    r.opp_code,
+    customer: r.sender_name || '—',
+    phone:    r.sender_mobile || '—',
+    email:    r.sender_email || '—',
+    product:  r.query_product_name || '—',
+    company:  r.sender_company || '—',
+    country:  r.sender_country_iso || '—',
+    status:   r.disqualified ? 'disqualified' : 'qualified',
+  };
+};
+
 export default function SalesLeadWorksheet() {
   const toast = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'super_admin';
-  const perm = user?.permissions?.['sales.lead_worksheet'];
-  // Until the permission is seeded, any authenticated user can preview the
-  // new design. Once `sales.lead_worksheet` lands in the seeder, swap the
-  // fallback for `false` to enforce the gate.
-  const canView   = isSuperAdmin || perm?.can_view !== false;
+  // Permission slug matches what ModuleSeeder.php seeds ('sales.workplace').
+  // Older preview code looked for 'sales.lead_worksheet' which was never
+  // seeded — that fallback is no longer needed now that the backend is live.
+  const perm = user?.permissions?.['sales.workplace'];
+  const canView   = isSuperAdmin || !!perm?.can_view;
   // Add-action permission no longer gates the header buttons — the
   // modal opens for any user, and the server enforces who can save.
   const canAssign = isSuperAdmin || !!perm?.can_edit;
 
-  const [leads]         = useState<Lead[]>(SAMPLE_LEADS);
+  const [leads, setLeads]       = useState<Lead[]>([]);
+  const [loading, setLoading]   = useState(false);
+  const [total, setTotal]       = useState(0);
+  const [lastPage, setLastPage] = useState(1);
+  const [counts, setCounts]     = useState<Record<TabKey, number>>({ qualified: 0, disqualified: 0, all: 0 });
   const [tab, setTab]   = useState<TabKey>('qualified');
   const [q, setQ]       = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
   const [rpp, setRpp]   = useState(10);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -112,6 +132,21 @@ export default function SalesLeadWorksheet() {
   // Frontend-only for now; the modal owns the form state. On save
   // we just toast and could append the new lead to a local list.
   const [addLeadOpen, setAddLeadOpen] = useState(false);
+
+  // Sync-config state. The Sync button only renders when:
+  //   - LEAD_SYNC_BRANCH_ID matches the user's branch (or =all), AND
+  //   - at least one INDIAMART_*_KEY is configured.
+  // super_admin always sees it; the server lets them fire sync anyway.
+  const [syncCfg, setSyncCfg] = useState<{ enabled: boolean; labels: string[] }>({
+    enabled: false,
+    labels: [],
+  });
+
+  useEffect(() => {
+    api.get<{ enabled: boolean; labels: string[] }>('/sales/leads/sync/config')
+      .then(r => setSyncCfg(r.data))
+      .catch(() => { /* silent — button just stays hidden */ });
+  }, []);
 
   // Inject Google Fonts (DM Sans + Inter) once on mount — matches the
   // pattern used by the other ported Sales pages.
@@ -125,28 +160,59 @@ export default function SalesLeadWorksheet() {
     document.head.appendChild(link);
   }, []);
 
-  // Filter + paginate
-  const filtered = useMemo(() => {
-    let rows = leads;
-    if (tab !== 'all') rows = rows.filter(l => l.status === tab);
-    if (q) {
-      const lo = q.toLowerCase();
-      rows = rows.filter(l =>
-        l.customer.toLowerCase().includes(lo) ||
-        l.oppId.toLowerCase().includes(lo) ||
-        l.assigned.toLowerCase().includes(lo) ||
-        l.product.toLowerCase().includes(lo) ||
-        l.email.toLowerCase().includes(lo)
-      );
-    }
-    return rows;
-  }, [leads, tab, q]);
+  // Debounce the search box so we only refetch ~250ms after the user stops typing.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q), 250);
+    return () => clearTimeout(t);
+  }, [q]);
 
-  const total = filtered.length;
-  const pages = Math.max(1, Math.ceil(total / rpp));
+  // Skip the counts query on pure pagination changes — on a million-row
+  // table the conditional-aggregation count is the slowest part of the
+  // response, so we only re-run it when the bucket boundary could have
+  // moved (tab / search / per-page).
+  const countSigRef = useRef<string>('');
+
+  // Fetch leads from the API whenever tab / search / pagination changes.
+  const fetchLeads = useCallback(async () => {
+    const countSig = `${tab}|${debouncedQ}|${rpp}`;
+    const withCounts = countSigRef.current !== countSig ? 1 : 0;
+    countSigRef.current = countSig;
+
+    setLoading(true);
+    try {
+      const { data } = await api.get<{
+        status: boolean;
+        data: ServerLead[];
+        pagination: { current_page: number; last_page: number; per_page: number; total: number };
+        counts?: Record<TabKey, number>;
+      }>('/sales/leads', {
+        params: {
+          status: tab,
+          search: debouncedQ || undefined,
+          page,
+          per_page: rpp,
+          with_counts: withCounts,
+        },
+      });
+      setLeads((data.data ?? []).map(mapServerToLead));
+      setTotal(data.pagination?.total ?? 0);
+      setLastPage(data.pagination?.last_page ?? 1);
+      if (data.counts) setCounts(data.counts);
+    } catch (e: any) {
+      toast.error('Load failed', e?.response?.data?.message ?? 'Could not load leads');
+      setLeads([]); setTotal(0); setLastPage(1);
+    } finally {
+      setLoading(false);
+    }
+  }, [tab, debouncedQ, page, rpp, toast]);
+
+  useEffect(() => { fetchLeads(); }, [fetchLeads]);
+
+  // The server already paginated for us — rows we got back are the visible page.
+  const rows = leads;
+  const pages = Math.max(1, lastPage);
   const safePage = Math.min(page, pages);
   const startIdx = (safePage - 1) * rpp;
-  const rows = filtered.slice(startIdx, startIdx + rpp);
 
   // Page-level select-all checkbox state
   const pageIds = rows.map(r => r.oppId);
@@ -183,10 +249,61 @@ export default function SalesLeadWorksheet() {
   const stubToast = (msg: string) => toast.info('Coming next', msg);
 
   const onAddLead       = () => setAddLeadOpen(true);
-  const onSaveNewLead   = (_lead: LeadFormValues) => {
-    // Frontend-only — once the backend ships, POST /sales/leads here
-    // and re-fetch the list. Closing the modal is enough for now.
-    setAddLeadOpen(false);
+  const onSaveNewLead   = async (lead: LeadFormValues, pickedCustomerDbId?: number | null) => {
+    try {
+      await api.post('/sales/leads', {
+        sender_name:         lead.customerName,
+        sender_mobile:       lead.mobileNumber || null,
+        sender_email:        lead.customerEmail || null,
+        sender_company:      lead.companyName || null,
+        sender_address:      lead.customerAddress || null,
+        sender_city:         lead.customerCity || null,
+        sender_state:        lead.state || null,
+        sender_country_name: lead.country || null,
+        sender_pincode:      lead.pincode || null,
+        customer_id:         pickedCustomerDbId ?? null,
+      });
+      toast.success('Saved', 'Lead created');
+      setAddLeadOpen(false);
+      // Jump to the Qualified tab on page 1 so the newly created lead is visible.
+      setTab('qualified'); setPage(1);
+      fetchLeads();
+    } catch (e: any) {
+      // Laravel validation errors arrive as { errors: { field: ["msg"] } }.
+      // Pull the first message we can find, otherwise fall back to the
+      // generic top-level message.
+      const errs = (e?.response?.data?.errors as Record<string, string[]> | undefined) ?? {};
+      const firstFieldMsg = Object.values(errs)[0]?.[0];
+      const msg = e?.response?.data?.message ?? firstFieldMsg ?? 'Could not save lead';
+      toast.error('Save failed', msg);
+    }
+  };
+  // Manual sync — pull leads from each IndiaMart CRM key configured for
+  // this tenant. Triggered by the "Sync from IndiaMart" banner button.
+  const [syncing, setSyncing] = useState(false);
+  const onSyncLeads = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const { data } = await api.post<{
+        status: boolean;
+        fetched: number; created: number; updated: number; disqualified: number;
+        errors: string[];
+      }>('/sales/leads/sync');
+      const summary = `${data.created} new · ${data.updated} updated · ${data.disqualified} disqualified`;
+      if (data.errors?.length) {
+        toast.warning?.('Sync finished with warnings', `${summary} · ${data.errors.length} error(s)`);
+        // eslint-disable-next-line no-console
+        console.warn('IndiaMart sync errors:', data.errors);
+      } else {
+        toast.success('Synced', summary);
+      }
+      fetchLeads();
+    } catch (e: any) {
+      toast.error('Sync failed', e?.response?.data?.message ?? 'IndiaMart sync request failed');
+    } finally {
+      setSyncing(false);
+    }
   };
   const onAssignLeads   = () => stubToast('Assign Leads — opens the Assign Leads modal');
   const onLeadDistr     = () => stubToast('Lead Distribution page — coming next');
@@ -212,8 +329,12 @@ export default function SalesLeadWorksheet() {
   const onAssignOne     = (l: Lead) => stubToast(`Assign lead ${l.oppId} to a salesperson`);
   const onOpenLead      = (l: Lead) => openMatrixDetail(l);
   const onOpenOpp       = (oppId: string) => {
-    const lead = SAMPLE_LEADS.find(l => l.oppId === oppId);
+    // Find the lead in the current page; the table is server-paginated so
+    // anything outside the current page won't be in `leads`. The matrix
+    // detail page falls back to a server fetch when state is missing.
+    const lead = leads.find(l => l.oppId === oppId);
     if (lead) openMatrixDetail(lead);
+    else navigate(`/sales/matrix/${oppId}/stage/1`);
   };
   const onBulkAssign    = () => stubToast(`Bulk-assign ${selected.size} leads`);
   const onBulkCTQ       = () => stubToast(`Bulk-convert ${selected.size} leads to Qualified`);
@@ -287,6 +408,19 @@ export default function SalesLeadWorksheet() {
             <IconUserCheck />
             Lead Distribution
           </button>
+          {/* Pulls leads from every IndiaMart CRM key configured in .env.
+              LEAD_SYNC_BRANCH_ID in .env decides which branch sees this
+              button. Same flow as IDIMS_6.0's POST /lead_store. */}
+          {syncCfg.enabled && (
+            <button
+              className="lwp-bact lwp-bact-sync"
+              onClick={onSyncLeads}
+              disabled={syncing}
+              title={`Pull new leads from IndiaMart (${syncCfg.labels.join(', ') || 'configured keys'})`}
+            >
+              {syncing ? 'Syncing…' : 'Sync'}
+            </button>
+          )}
           <span className="lwp-banner-divider" />
           <button className="lwp-bact lwp-bact-filter" title="Filter Leads" onClick={onFilter}>
             <IconFilter />
@@ -304,7 +438,7 @@ export default function SalesLeadWorksheet() {
               className={`lwp-pill ${tab === t ? 'active' : ''}`}
               onClick={() => switchTab(t)}
             >
-              {TAB_LABELS[t]}
+              {TAB_LABELS[t]} ({counts[t] ?? 0})
             </div>
           ))}
         </div>
@@ -352,10 +486,32 @@ export default function SalesLeadWorksheet() {
                 <th>Product Name</th><th>Company</th><th>Country</th><th>Action</th>
               </tr>
             </thead>
-            <tbody>
-              {rows.length === 0 && (
+            <tbody className={loading && rows.length > 0 ? 'lwp-tbody-refetching' : undefined}>
+              {loading && rows.length === 0 && (
+                Array.from({ length: Math.min(rpp, 10) }).map((_, i) => (
+                  <tr key={`sk-${i}`} className="lwp-skel-row">
+                    <td><span className="lwp-skel lwp-skel-chk" /></td>
+                    <td><span className="lwp-skel lwp-skel-md" /></td>
+                    <td><span className="lwp-skel lwp-skel-sm" /></td>
+                    <td><span className="lwp-skel lwp-skel-sm" /></td>
+                    <td><span className="lwp-skel lwp-skel-md" /></td>
+                    <td><span className="lwp-skel lwp-skel-md" /></td>
+                    <td><span className="lwp-skel lwp-skel-sm" /></td>
+                    <td><span className="lwp-skel lwp-skel-lg" /></td>
+                    <td><span className="lwp-skel lwp-skel-md" /></td>
+                    <td><span className="lwp-skel lwp-skel-lg" /></td>
+                    <td><span className="lwp-skel lwp-skel-md" /></td>
+                    <td><span className="lwp-skel lwp-skel-md" /></td>
+                    <td><span className="lwp-skel lwp-skel-xs" /></td>
+                    <td><span className="lwp-skel lwp-skel-md" /></td>
+                  </tr>
+                ))
+              )}
+              {!loading && rows.length === 0 && (
                 <tr>
-                  <td colSpan={14} className="lwp-empty">No leads found</td>
+                  <td colSpan={14} className="lwp-empty">
+                    No leads found
+                  </td>
                 </tr>
               )}
               {rows.map(l => {
@@ -758,6 +914,22 @@ const SCOPED_CSS = `
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(14,116,144,.5), 0 3px 8px rgba(21,94,117,.28), 0 1px 0 rgba(255,255,255,.15) inset;
 }
+.lwp-root .lwp-bact-sync {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 55%, #166534 100%);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(22,163,74,.40), 0 2px 6px rgba(21,128,61,.22), 0 1px 0 rgba(255,255,255,.18) inset;
+  text-shadow: 0 1px 2px rgba(0,0,0,.15);
+}
+.lwp-root .lwp-bact-sync:hover {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 55%, #15803d 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(22,163,74,.50), 0 3px 8px rgba(21,128,61,.28), 0 1px 0 rgba(255,255,255,.18) inset;
+}
+.lwp-root .lwp-bact-sync:disabled {
+  background: linear-gradient(135deg, #86efac 0%, #6ee7b7 100%);
+  color: #f0fdf4; cursor: not-allowed; transform: none;
+  box-shadow: 0 2px 6px rgba(34,197,94,.18);
+}
 .lwp-root .lwp-bact-filter {
   background: linear-gradient(135deg, #0e7490 0%, #0891b2 40%, #06b6d4 100%);
   color: #fff;
@@ -888,6 +1060,36 @@ const SCOPED_CSS = `
 .lwp-root .lwp-empty {
   text-align: center !important; padding: 40px 12px !important;
   color: #94a3b8 !important; font-style: italic;
+}
+
+/* ─── Skeleton / shimmer loader ─── */
+.lwp-root .lwp-skel-row { cursor: default !important; background: transparent !important; }
+.lwp-root .lwp-skel-row:hover td { background: transparent !important; }
+.lwp-root .lwp-skel {
+  display: inline-block; height: 10px; border-radius: 4px; vertical-align: middle;
+  background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+  background-size: 200% 100%;
+  animation: lwp-shimmer 1.1s ease-in-out infinite;
+}
+.lwp-root .lwp-skel-xs  { width: 28px; }
+.lwp-root .lwp-skel-sm  { width: 55px; }
+.lwp-root .lwp-skel-md  { width: 80px; }
+.lwp-root .lwp-skel-lg  { width: 120px; }
+.lwp-root .lwp-skel-chk { width: 14px; height: 14px; border-radius: 3px; }
+@keyframes lwp-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+/* Dim existing rows during a background refetch (page change, etc.)
+   so the user sees "fresh data is on the way" without a jarring blank. */
+.lwp-root .lwp-tbody-refetching {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity .15s ease;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-skel {
+  background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+  background-size: 200% 100%;
 }
 
 .lwp-root .lwp-chk {

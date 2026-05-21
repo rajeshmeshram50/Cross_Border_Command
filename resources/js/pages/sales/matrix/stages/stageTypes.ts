@@ -80,4 +80,87 @@ export const SHARED_STAGE_CSS = `
 .smd-sect-label { font-size: 9.5px; font-weight: 800; letter-spacing: .08em; color: #94a3b8; text-transform: uppercase; }
 .smd-sect-value { font-size: 13px; font-weight: 700; color: #1e293b; }
 .smd-sect-value-muted { font-size: 13px; color: #cbd5e1; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Dark mode — every stage component (Stage1..Stage6) renders these
+   .smd-stg-* / .smd-sect-* classes inside the middle "stage-card"
+   surface of SalesMatrixDetail. Tints flip against the deep-slate
+   page surface so the content isn't a bright white box on dark.
+   ═══════════════════════════════════════════════════════════════════ */
+[data-bs-theme="dark"] .smd-stg-head,
+[data-layout-mode="dark"] .smd-stg-head {
+  background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
+  color: #fff;
+}
+[data-bs-theme="dark"] .smd-stg-head-icon,
+[data-layout-mode="dark"] .smd-stg-head-icon { background: rgba(255,255,255,.18); }
+[data-bs-theme="dark"] .smd-stg-head-badge,
+[data-layout-mode="dark"] .smd-stg-head-badge {
+  background: rgba(74, 222, 128, .22);
+  color: #bbf7d0;
+  border: 1px solid rgba(74, 222, 128, .35);
+}
+
+[data-bs-theme="dark"] .smd-stg-body,
+[data-layout-mode="dark"] .smd-stg-body {
+  background: #14102a;
+  color: #cbd5e1;
+}
+[data-bs-theme="dark"] .smd-stg-note,
+[data-layout-mode="dark"] .smd-stg-note {
+  background: rgba(245, 158, 11, .12);
+  border-color: rgba(245, 158, 11, .35);
+  color: #fbbf24;
+}
+[data-bs-theme="dark"] .smd-stg-foot,
+[data-layout-mode="dark"] .smd-stg-foot {
+  background: #1a1538;
+  border-top: 1px solid rgba(167, 139, 250, .22);
+}
+[data-bs-theme="dark"] .smd-stg-foot-note,
+[data-layout-mode="dark"] .smd-stg-foot-note {
+  background: rgba(245, 158, 11, .12);
+  border: 1px solid rgba(245, 158, 11, .35);
+  color: #fbbf24;
+}
+[data-bs-theme="dark"] .smd-stg-btn,
+[data-layout-mode="dark"] .smd-stg-btn {
+  background: #1f1845;
+  border-color: rgba(167, 139, 250, .35);
+  color: #d8b4fe;
+}
+[data-bs-theme="dark"] .smd-stg-btn:hover,
+[data-layout-mode="dark"] .smd-stg-btn:hover {
+  background: #2a2150;
+  border-color: #a78bfa;
+}
+[data-bs-theme="dark"] .smd-stg-btn-primary,
+[data-layout-mode="dark"] .smd-stg-btn-primary {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
+  border-color: transparent;
+}
+[data-bs-theme="dark"] .smd-stg-btn-primary:hover,
+[data-layout-mode="dark"] .smd-stg-btn-primary:hover {
+  background: linear-gradient(135deg, #6d28d9, #5b21b6);
+}
+
+/* Section cards (Opportunity Details, Purchase Decision Maker, ...) */
+[data-bs-theme="dark"] .smd-sect,
+[data-layout-mode="dark"] .smd-sect {
+  background: #1a1538;
+  border-color: rgba(167, 139, 250, .22);
+}
+[data-bs-theme="dark"] .smd-sect-icon,
+[data-layout-mode="dark"] .smd-sect-icon {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+}
+[data-bs-theme="dark"] .smd-sect-title,
+[data-layout-mode="dark"] .smd-sect-title { color: #ede9fe; }
+[data-bs-theme="dark"] .smd-sect-label,
+[data-layout-mode="dark"] .smd-sect-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .smd-sect-value,
+[data-layout-mode="dark"] .smd-sect-value { color: #ede9fe; }
+[data-bs-theme="dark"] .smd-sect-value-muted,
+[data-layout-mode="dark"] .smd-sect-value-muted { color: #94a3b8; }
 `;
