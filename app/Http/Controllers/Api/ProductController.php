@@ -207,7 +207,7 @@ class ProductController extends Controller
             if ($product->primary_image && !str_starts_with((string) $product->primary_image, 'blob:')) {
                 Storage::disk('public')->delete($this->relativePath($product->primary_image));
             }
-            $product->primary_image = $request->file('primary_image_file')->store('products/images', 'public');
+            $product->primary_image = $this->storeFileWithName($request->file('primary_image_file'), 'products/images');
         } elseif ($request->has('primary_image')) {
             $newPath = $data['primary_image'] ?: null;
             // Reject any `blob:` value an older client might still be sending —
@@ -256,7 +256,7 @@ class ProductController extends Controller
             $appended = [];
             foreach ((array) $request->file('secondary_image_files', []) as $file) {
                 if ($file) {
-                    $appended[] = $file->store('products/images', 'public');
+                    $appended[] = $this->storeFileWithName($file, 'products/images');
                 }
             }
 
@@ -287,6 +287,27 @@ class ProductController extends Controller
             $stored = substr($stored, strlen('storage/'));
         }
         return $stored;
+    }
+
+    /**
+     * Store an uploaded file with a collision-safe prefix that still
+     * encodes the original filename, so the SPA can show "PAN Card.pdf"
+     * instead of a hex string after edit-load. Format:
+     *   {dir}/{rand}__{sanitized-original}.{ext}
+     * The frontend strips everything up to and including the "__" when
+     * surfacing the display name. Mirrors VendorController::absorbFile.
+     */
+    private function storeFileWithName($file, string $dir): string
+    {
+        $ext = $file->getClientOriginalExtension() ?: 'bin';
+        $original = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+        $safe = preg_replace('/[^A-Za-z0-9 ._-]/', '_', (string) $original);
+        $safe = trim((string) $safe);
+        if ($safe === '') {
+            $safe = 'file';
+        }
+        $name = bin2hex(random_bytes(4)) . '__' . $safe . '.' . $ext;
+        return $file->storeAs($dir, $name, 'public');
     }
 
     /* ──────────────────────────────────────────────────────────────────
@@ -369,7 +390,7 @@ class ProductController extends Controller
                 $row = collect($qc)->except(['attachment_file'])->toArray();
                 $uploaded = $request->file("qc_records.{$idx}.attachment_file");
                 if ($uploaded) {
-                    $row['attachment_path'] = $uploaded->store('products/qc', 'public');
+                    $row['attachment_path'] = $this->storeFileWithName($uploaded, 'products/qc');
                 }
                 $product->qcRecords()->create($row);
             }
