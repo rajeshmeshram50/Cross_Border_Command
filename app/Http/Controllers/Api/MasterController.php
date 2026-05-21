@@ -805,7 +805,13 @@ class MasterController extends Controller
                 $r[] = 'integer';
             } else {
                 $r[] = 'string';
-                $r[] = 'max:255';
+                /* Default cap on text fields lowered from 255 → 50 to
+                 * match the frontend's maxLength. Stops users pasting
+                 * paragraphs into a name. Per-field override via
+                 * `maxLen` in SCHEMAS lets specific fields like
+                 * legal_name / address lines opt back into longer
+                 * limits when needed. */
+                $r[] = 'max:' . ($f['maxLen'] ?? 50);
             }
             // Enforce enum options server-side when present and no ref override
             if (!empty($f['opts']) && empty($f['ref'])) {

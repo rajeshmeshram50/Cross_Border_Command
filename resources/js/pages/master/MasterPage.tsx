@@ -607,6 +607,16 @@ function MasterPageInner({
         continue;
       }
       if (!raw) continue;
+      /* Length cap on text fields — backstop for cases where the
+       * input's maxLength was bypassed (paste, browser quirks, …).
+       * Default 50, overridable per field via `maxLen`. */
+      if (f.t === 'text') {
+        const cap = typeof (f as any).maxLen === 'number' ? (f as any).maxLen : 50;
+        if (raw.length > cap) {
+          errs[f.n] = `${f.l} must be ${cap} characters or fewer`;
+          continue;
+        }
+      }
       // Future-only date guard — kicks in for fields like Warranty
       // Expiry where a backdated value doesn't make sense. Lexical
       // YYYY-MM-DD compare is fine because that's what the picker
@@ -1137,10 +1147,22 @@ function MasterPageInner({
           const row = info.row.original;
           // First-column bold rule — but skip for "code" (it has its own pill
           // renderer in formatCell) and "status" (its own status badge).
+          // Long values are truncated to ~20 chars and hover-tooltipped via
+          // the project-wide Tooltip so the column width stays predictable
+          // even when someone enters a 50-char master name.
           if (idx === 0 && colName !== 'status' && colName !== 'code') {
             const f = cfg.fields.find(ff => ff.n === colName);
-            const val = f?.ref ? resolveRefLabel(f.ref, f.refL, row[colName]) || '—' : row[colName] ?? '—';
-            return <b>{val}</b>;
+            const raw = f?.ref ? resolveRefLabel(f.ref, f.refL, row[colName]) || '—' : row[colName] ?? '—';
+            const txt = String(raw);
+            const MAX = 20;
+            if (txt.length <= MAX || txt === '—') return <b>{txt}</b>;
+            return (
+              <Tooltip label={txt} maxWidth={320}>
+                <b style={{ display: 'inline-block', maxWidth: '100%' }}>
+                  {txt.slice(0, MAX - 1)}…
+                </b>
+              </Tooltip>
+            );
           }
           return formatCell(colName, row);
         },
@@ -3945,11 +3967,22 @@ function renderField(
       onFieldChange();
     };
 
+    /* Default 50-char cap on text inputs — names, titles, labels and
+     * other free-text master fields are way short of 50 chars in
+     * practice, so this stops anyone pasting paragraphs into a name.
+     * Number / email inputs and explicit `maxLen` overrides bypass it. */
+    const TEXT_MAX = 50;
+    const maxLength =
+      f.t === 'text' && !isAutogen
+        ? (typeof (f as any).maxLen === 'number' ? (f as any).maxLen : TEXT_MAX)
+        : undefined;
+
     input = (
       <Input
         type={f.t === 'email' ? 'email' : f.t === 'number' ? 'number' : 'text'}
         name={f.n}
         placeholder={f.p}
+        maxLength={maxLength}
         // `key` forces a remount when the auto-generated value changes between
         // opens of the Add modal so React picks up the new defaultValue.
         key={isAutogen ? autogenVal : undefined}
