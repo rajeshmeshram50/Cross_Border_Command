@@ -160,11 +160,31 @@ export default function HrExitManagement() {
   const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
 
-  // Distinct department list for the filter
-  const departments = useMemo(
-    () => Array.from(new Set(employees.map(e => e.department))).sort(),
-    [employees]
-  );
+  /* Department filter options — sourced from the master so the
+   * dropdown shows every department the org has set up, not just the
+   * ones with at least one employee currently in the loaded list.
+   * Fallback to the distinct set derived from `employees` if the
+   * master fetch fails, so the filter still works on an unreachable
+   * backend. */
+  const [masterDepartments, setMasterDepartments] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api.get<Array<{ name?: string | null; status?: string | null }>>('/master/departments')
+      .then(({ data }) => {
+        if (cancelled) return;
+        const names = (Array.isArray(data) ? data : [])
+          .filter(r => String(r?.status ?? 'Active').toLowerCase() !== 'inactive')
+          .map(r => String(r?.name ?? '').trim())
+          .filter(Boolean);
+        setMasterDepartments(Array.from(new Set(names)).sort());
+      })
+      .catch(() => { /* keep fallback */ });
+    return () => { cancelled = true; };
+  }, []);
+  const departments = useMemo(() => {
+    if (masterDepartments.length > 0) return masterDepartments;
+    return Array.from(new Set(employees.map(e => e.department).filter(d => d && d !== '—'))).sort();
+  }, [masterDepartments, employees]);
 
   // ── KPI tile config ─────────────────────────────────────────────────────
   const KPI_CARDS = [

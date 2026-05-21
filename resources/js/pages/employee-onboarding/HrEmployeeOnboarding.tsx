@@ -3222,6 +3222,36 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
 // };
   const saveStage4 = async (markComplete: boolean): Promise<boolean> => {
     if (!emp?.dbId || s4Saving) return false;
+
+    /* Hard validation — when salary mode is "bank" the full bank
+     * details block is required before the row can be persisted at
+     * all (not just before marking the stage complete). Previously
+     * Save Draft + Next happily wrote the row with blank bank fields
+     * because the gate only ran at the "mark complete" level; users
+     * walked away thinking Stage 4 was "saved" but the bank block was
+     * still empty, breaking the payroll handoff downstream. Block the
+     * save and toast the field-level reason so the user knows exactly
+     * what to fix. */
+    if (s4.salary_payment_mode === 'bank') {
+      const acc  = s4.bank_account_number.trim();
+      const ifsc = s4.ifsc_code.trim();
+      const missing: string[] = [];
+      if (!s4.bank_name.trim())            missing.push('Bank Name');
+      if (!acc)                            missing.push('Account Number');
+      else if (!/^\d{9,18}$/.test(acc))    missing.push('Account Number (9–18 digits)');
+      if (!ifsc)                           missing.push('IFSC Code');
+      else if (!IFSC_RE.test(ifsc))        missing.push('IFSC Code (e.g. HDFC0000350)');
+      if (!s4.account_holder_name.trim())  missing.push('Account Holder Name');
+      if (!s4.bank_branch.trim())          missing.push('Bank Branch');
+      if (missing.length > 0) {
+        toast.error(
+          'Bank details required',
+          `Fill in: ${missing.join(', ')}. Pick a non-bank payment mode if no bank account applies.`
+        );
+        return false;
+      }
+    }
+
     setS4Saving(true);
     // Client-side PAN uniqueness check (best-effort). If backend supports filtering
     // by PAN this avoids a slow round-trip on Save. If not supported we fall back
