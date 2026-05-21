@@ -175,7 +175,6 @@ export default function Products() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<{ active: number; inactive: number }>({ active: 0, inactive: 0 });
   const [statusTab, setStatusTab] = useState<'active' | 'inactive'>('active');
   const [q, setQ] = useState('');
   const [segment, setSegment] = useState('All Segments');
@@ -331,43 +330,39 @@ export default function Products() {
     document.head.appendChild(link);
   }, []);
 
-  /* ─── Load list (re-runs when the status tab flips) ─── */
+  /* ─── Load list ───
+   * We deliberately fetch BOTH active + inactive products in one call
+   * (no `status` query param) so the Active / Inactive tab counts can
+   * be derived live from the filter-applied set. The previous version
+   * filtered server-side by the selected tab and the stats endpoint
+   * returned org-wide totals, so applying any sidebar filter never
+   * moved the badge numbers. */
   const refresh = useCallback(async () => {
     if (!allowed) return;
     setLoading(true);
     try {
-      const params: Record<string, string | number> = { per_page: 100 };
-      // When a vendor filter is active, drop the status tab so the
-      // user sees every mapped product (inactive drafts included) —
-      // otherwise an Active-only filter could mask the very rows
-      // they came here to see.
-      if (vendorFilterId) {
-        params.vendor_id = vendorFilterId;
-      } else {
-        params.status = statusTab;
-      }
-      // Stats endpoint mirrors the vendor filter so the
-      // Active / Inactive tab badges show counts scoped to the
-      // vendor's mapped products instead of the org-wide totals.
-      const statsParams: Record<string, string> = {};
-      if (vendorFilterId) statsParams.vendor_id = vendorFilterId;
+      const params: Record<string, string | number> = { per_page: 200 };
+      // Vendor deep-link narrows the universe but still loads every
+      // status under that vendor.
+      if (vendorFilterId) params.vendor_id = vendorFilterId;
 
-      const [list, st] = await Promise.all([
-        api.get<{ data: Record<string, unknown>[] }>('/products', { params }),
-        api.get<{ active: number; inactive: number }>('/products/stats', { params: statsParams }),
-      ]);
+      const list = await api.get<{ data: Record<string, unknown>[] }>('/products', { params });
       setProducts(list.data.data.map(apiToCard));
-      setStats({ active: st.data.active, inactive: st.data.inactive });
     } catch {
       setProducts([]);
     } finally {
       setLoading(false);
     }
-  }, [allowed, statusTab, vendorFilterId]);
+  }, [allowed, vendorFilterId]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const filtered = useMemo(() => {
+  /* Everything-except-status filter. Drives both the visible grid
+   * (after we further narrow by the Active/Inactive tab) and the
+   * counts on those two tabs — so applying any sidebar filter (Vendor,
+   * GST, Created Date, etc.) updates both tab numbers, not just the
+   * currently-shown rows. */
+  const filteredAllStatus = useMemo(() => {
     let src = products;
     const lo = q.trim().toLowerCase();
     if (lo) {
@@ -431,6 +426,21 @@ export default function Products() {
         return Number.isFinite(t) && t <= to;
       });
     }
+    return src;
+  }, [products, q, segment, statusFilter, filters]);
+
+  /* Tab counts derived from the filter-applied set. Inactive bucket
+   * mirrors the backend's old `/products/stats` rule: Inactive + Draft
+   * both roll up under the "Inactive" tab. */
+  const stats = useMemo(() => ({
+    active:   filteredAllStatus.filter(p => p.status === 'Active').length,
+    inactive: filteredAllStatus.filter(p => p.status !== 'Active').length,
+  }), [filteredAllStatus]);
+
+  const filtered = useMemo(() => {
+    let src = statusTab === 'active'
+      ? filteredAllStatus.filter(p => p.status === 'Active')
+      : filteredAllStatus.filter(p => p.status !== 'Active');
 
     const sorted = [...src];
     if (sort === 'price-asc')  sorted.sort((a, b) => a.price - b.price);
@@ -443,7 +453,7 @@ export default function Products() {
     }
 
     return sorted;
-  }, [products, q, segment, statusFilter, sort, filters]);
+  }, [filteredAllStatus, statusTab, sort, filters.topProducts]);
 
   if (!allowed) {
     return (
