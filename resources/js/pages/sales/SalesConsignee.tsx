@@ -56,6 +56,10 @@ export default function SalesConsignee() {
   const [rows, setRows] = useState<ConsigneeRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [delTarget, setDelTarget] = useState<ConsigneeRow | null>(null);
+  /* In-flight flag for the delete confirm — drives the spinner +
+   * disabled state on the confirm dialog so the user has a visual
+   * cue that the DELETE request is still going. */
+  const [deleting, setDeleting] = useState(false);
 
   const fetchRows = useCallback(async () => {
     if (!canView) return;
@@ -93,6 +97,7 @@ export default function SalesConsignee() {
 
   const handleDelete = async () => {
     if (!delTarget?.db_id) { setDelTarget(null); return; }
+    setDeleting(true);
     try {
       await api.delete(`/consignees/${delTarget.db_id}`);
       toast.success('Consignee deleted', delTarget.company);
@@ -100,6 +105,8 @@ export default function SalesConsignee() {
       fetchRows();
     } catch (e: any) {
       toast.error('Delete failed', e?.response?.data?.message ?? 'Please try again.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -236,19 +243,16 @@ export default function SalesConsignee() {
       cell: (info: any) => {
         const c = info.row.original as Consignee;
         const country = (c.country ?? '').trim();
-        const detail = (c.countryDetail ?? '').trim();
-        const full = detail ? `${country} (${detail})` : country;
         if (!country) return <span className="text-muted">—</span>;
-        // Show the country name in full + the parenthesised detail truncated.
-        const maxDetail = 22;
-        const showShort = detail.length > maxDetail;
-        const detailDisplay = showShort ? detail.slice(0, maxDetail) + '…' : detail;
-        const inner = (
-          <span className="smcg-country" style={{ maxWidth: 240, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-            {country}{detail && <span className="smcg-country-sub"> ({detailDisplay})</span>}
+        /* Country-only display per the cleaner-list UX. City/state are
+         * still on the row (countryDetail) but stay surfaced inside the
+         * Edit modal — the list column was getting noisy with all three
+         * stacked horizontally. */
+        return (
+          <span className="smcg-country" style={{ whiteSpace: 'nowrap' }}>
+            {country}
           </span>
         );
-        return showShort ? <Tooltip label={full}>{inner}</Tooltip> : inner;
       },
     },
     {
@@ -431,8 +435,9 @@ export default function SalesConsignee() {
         title="Delete Consignee"
         itemName={delTarget?.company}
         subMessage="This will permanently delete the consignee and all linked addresses. The action cannot be undone."
-        onClose={() => setDelTarget(null)}
+        onClose={() => { if (!deleting) setDelTarget(null); }}
         onConfirm={handleDelete}
+        loading={deleting}
       />
     </div>
   );

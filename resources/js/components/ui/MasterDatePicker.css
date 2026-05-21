@@ -120,8 +120,17 @@
   [data-layout-mode="dark"] .master-datepicker-popup,
   [data-bs-theme="dark"] div.master-datepicker-popup,
   [data-layout-mode="dark"] div.master-datepicker-popup {
-    background-color: #2a2f34 !important;
-    border-color: rgba(255,255,255,0.08);
+    /* Solid near-black surface + a bright indigo-tinted border + deeper
+     * drop shadow so the popup reads as a *floating* layer above the
+     * filter sidebar panels. Previously the popup used #2a2f34 with a
+     * faint 8% white border and a light shadow — visually it bled into
+     * the sidebar's own dark panel surface and the user perceived it
+     * as overlapping with the filter rows beneath. */
+    background-color: #161a1f !important;
+    border-color: rgba(124, 92, 252, 0.45);
+    box-shadow:
+      0 0 0 1px rgba(124, 92, 252, 0.18),
+      0 18px 40px rgba(0, 0, 0, 0.55);
   }
   .master-datepicker-nav {
     width: 24px;

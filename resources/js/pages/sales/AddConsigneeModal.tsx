@@ -194,7 +194,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
   const [search, setSearch]     = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
-  const [linkedHidden, setLinkedHidden] = useState(false);
+  /* Linked-customer panel starts COLLAPSED — when the user picks a
+   * customer they only see the bar with the customer's id + name,
+   * not the full address/contact details. Detail block expands when
+   * the user ticks "Same as Customer" (handled in the setter wired
+   * to Stage1's setSameAsCustomer) OR when they click the chevron. */
+  const [linkedHidden, setLinkedHidden] = useState(true);
   /* Live customer list pulled from /api/customers when the modal
    * opens. This is the same endpoint SalesCustomers populates via
    * its Add Customer flow, so a freshly-created customer shows up
@@ -301,6 +306,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const [docModal, setDocModal]   = useState<{ open: boolean; sub: KycSubTab; editingId: string | null }>({ open: false, sub: 'company-dd', editingId: null });
   const [ownerModal, setOwnerModal] = useState<{ open: boolean; editingId: string | null }>({ open: false, editingId: null });
   const [kycDelModal, setKycDelModal] = useState<{ open: boolean; kind: 'doc' | 'owner' | null; id: string | null; label?: string }>({ open: false, kind: null, id: null });
+  /* In-flight flag for the Stage 2 delete confirm — drives spinner +
+   * disabled state on the confirm dialog while the DELETE request
+   * is going. */
+  const [kycDeleting, setKycDeleting] = useState(false);
 
   /* Stage 3 — Evidence Vault. Outer tab = KYC vs Trade. Inner sub-tab
    * (when on KYC) = which KYC kind to view. */
@@ -340,11 +349,28 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setVaultTab(remembered?.vaultTab ?? 'kyc');
     setSearch('');
     setSearchOpen(false);
-    setLinkedHidden(false);
+    /* Panel collapsed by default — picking a customer alone shows
+     * only the id+name bar. Ticking "Same as Customer" (or clicking
+     * the chevron) expands it. Hydration below re-opens it for an
+     * existing same-as-customer consignee. */
+    setLinkedHidden(true);
     setErrors1({});
     setSameAsCustomer(false);
     setEvSub('dd');
     setLocations([]);
+    /* Reset Stage 1 form to empty defaults — CREATE mode only. In edit
+     * mode the hydration effect below replays the consignee's saved
+     * payload, so wiping here would just cause an empty flash before
+     * the GET resolves. Create mode lands on a clean form so picking
+     * a customer never reveals stale residue from a prior session;
+     * mirror copy only happens after the user ticks Same-as-Customer. */
+    if (!consignee?.db_id) {
+      setForm1({
+        companyName: '', legalName: '', website: '', segment: '', classification: '', risk: '',
+        addressType: 'Registered Office', address: '', country: '', state: '', city: '', pin: '',
+        contactName: '', designation: '', contactNo: '', email: '', whatsapp: 'Yes',
+      });
+    }
     setLocModal({ open: false, editing: null });
     setDelModal({ open: false, id: null });
     setKycSearch('');
@@ -531,6 +557,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         // the consignee flagged as same-as-customer on update.
         if (typeof d.same_as_customer === 'boolean') {
           setSameAsCustomer(d.same_as_customer);
+          // Auto-expand the linked-customer panel when editing a mirror
+          // so the user sees the cloned customer details immediately.
+          if (d.same_as_customer) setLinkedHidden(false);
         }
         const extra: any[] = Array.isArray(d.locations) ? d.locations : [];
         setLocations(extra.map((a: any) => ({
@@ -852,6 +881,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * shape declared in ConsigneeController::validatePayload(). The
    * additional `locations` table is included; Stage 2 KYC docs + Owner
    * KYC rows stay in-memory until the KYC backend lands. */
+  /* Normalize the pin code before sending so the backend's strict
+   * `regex:/^\d{6}$/` rule doesn't trip on legacy / partial values.
+   * Anything that isn't exactly 6 digits arrives as null — the
+   * `nullable` rule then lets it through, and the user can correct
+   * the row on the next edit. */
+  const cleanPin = (v: any): string | null => {
+    const s = String(v ?? '').trim();
+    return /^\d{6}$/.test(s) ? s : null;
+  };
   const buildPayload = () => ({
     customer_id:      customer?.db_id ?? (Number(customer?.id?.replace(/[^0-9]/g, '')) || null),
     company_name:     form1.companyName,
@@ -872,7 +910,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       country:        form1.country,
       state:          form1.state,
       city:           form1.city,
-      pin:            form1.pin,
+      pin:            cleanPin(form1.pin),
       cp_name:        form1.contactName,
       cp_designation: form1.designation,
       cp_contact:     form1.contactNo,
@@ -885,7 +923,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       country:        l.country,
       state:          l.state,
       city:           l.city,
-      pin:            l.pin,
+      pin:            cleanPin(l.pin),
       cp_name:        l.cpName,
       cp_designation: l.cpDesignation,
       cp_contact:     l.cpContact,
@@ -1211,6 +1249,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 }
 
                 setSameAsCustomer(v);
+                /* Auto-toggle the linked-customer detail panel with the
+                 * checkbox so the rule "customer details visible iff
+                 * Same-as-Customer is ticked" actually holds. Picking a
+                 * customer from the dropdown alone leaves the panel
+                 * collapsed (just the id + name bar). */
+                setLinkedHidden(!v);
                 /* Tick  = useEffect mirrors customer's Stage 1 fields +
                  *         additional addresses onto form1 + locations[].
                  *         After Stage 1 save, persistStage1 then fires the
@@ -1415,6 +1459,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       <KycOwnerSubModal
         editing={ownerModal.editingId ? kycOwners.find(o => o.id === ownerModal.editingId) ?? null : null}
         consigneeId={savedDbId}
+        designations={mDesignations}
         onClose={() => setOwnerModal({ open: false, editingId: null })}
         onSaved={async () => {
           await refetchKyc(savedDbId);
@@ -1430,12 +1475,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       subMessage={kycDelModal.kind === 'owner'
         ? 'This will remove the owner KYC record from this consignee. The action cannot be undone.'
         : 'This will remove the document from this consignee. The action cannot be undone.'}
-      onClose={() => setKycDelModal({ open: false, kind: null, id: null })}
+      onClose={() => { if (!kycDeleting) setKycDelModal({ open: false, kind: null, id: null }); }}
+      loading={kycDeleting}
       onConfirm={async () => {
         const id = kycDelModal.id;
         const kind = kycDelModal.kind;
-        setKycDelModal({ open: false, kind: null, id: null });
-        if (!id || !savedDbId) return;
+        if (!id || !savedDbId) {
+          setKycDelModal({ open: false, kind: null, id: null });
+          return;
+        }
         // Server rows are stored under id = 'db_<numeric>' so we can
         // map back to the persisted row. Bare in-memory rows (no db_
         // prefix) can only be dropped from the table since they were
@@ -1443,6 +1491,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         // Stage 1, but kept as a defensive branch).
         if (id.startsWith('db_')) {
           const numericId = Number(id.replace('db_', ''));
+          setKycDeleting(true);
           try {
             if (kind === 'owner') {
               await api.delete(`/consignees/${savedDbId}/owners/${numericId}`);
@@ -1452,11 +1501,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             await refetchKyc(savedDbId);
           } catch (err: any) {
             toast.error('Delete failed', err?.response?.data?.message ?? 'Please try again.');
+          } finally {
+            setKycDeleting(false);
+            setKycDelModal({ open: false, kind: null, id: null });
           }
         } else {
           // Optimistic local-only drop fallback.
           if (kind === 'owner') setKycOwners(prev => prev.filter(o => o.id !== id));
           else if (kind === 'doc') setKycDocs(prev => prev.filter(d => d.id !== id));
+          setKycDelModal({ open: false, kind: null, id: null });
         }
       }}
     />
@@ -2043,6 +2096,23 @@ const KYC_SUB_META: Record<KycSubTab, { title: string; sub: string; nameCol: str
   'trade-licence':{ title: 'TRADE LICENCE',         sub: '| Trade licence documents and regulatory approvals',     nameCol: 'Document Name',       placeholder: 'Search trade licence…',       addLabel: 'Add Trade Licence' },
 };
 
+/* Design-only Trade Licence placeholder list — shown in the Stage 2
+ * Trade Licence sub-tab and the Stage 3 Evidence Vault > Trade Licence
+ * sub-tab when the consignee has no real TL docs yet. Same data shape
+ * as the Customer modal so both wizards feel consistent. The actual
+ * docs are stored via the regular kycDocs table (kind='tl'). */
+type TradePlaceholderRow = { code: string; name: string; authority: string; expiry: string; status: 'mandatory' | 'optional' };
+const TL_PLACEHOLDER: TradePlaceholderRow[] = [
+  { code: 'TL-001', name: 'Import Export Code (IEC)',      authority: 'DGFT',                     expiry: '03/2026', status: 'mandatory' },
+  { code: 'TL-002', name: 'RCMC Certificate',              authority: 'Export Promotion Council', expiry: '05/2027', status: 'mandatory' },
+  { code: 'TL-003', name: 'Export Licence',                authority: 'DGFT',                     expiry: '12/2026', status: 'optional'  },
+  { code: 'TL-004', name: 'Drug Licence',                  authority: 'CDSCO',                    expiry: '08/2027', status: 'optional'  },
+  { code: 'TL-005', name: 'FSSAI Licence',                 authority: 'FSSAI',                    expiry: '06/2028', status: 'optional'  },
+  { code: 'TL-006', name: 'GST Registration',              authority: 'GST Department',           expiry: 'N/A',     status: 'mandatory' },
+  { code: 'TL-007', name: 'ISO Certification',             authority: 'Certification Body',       expiry: '11/2027', status: 'optional'  },
+  { code: 'TL-008', name: 'Pollution Control Certificate', authority: 'Pollution Control Board',  expiry: '07/2026', status: 'mandatory' },
+];
+
 const Stage2 = ({
   sub, setSub, search, setSearch, docs, owners,
   onAddDoc, onEditDoc, onDeleteDoc, onAddOwner, onEditOwner, onDeleteOwner,
@@ -2230,7 +2300,41 @@ const Stage2 = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredDocs.length === 0 ? (
+                  {/* Trade Licence sub-tab — show the design-only
+                      TL_PLACEHOLDER rows whenever the consignee has no
+                      real TL docs yet. Matches the Customer modal so
+                      both wizards show the same set of common export
+                      licences as a starting reference. Upload / actions
+                      are disabled on placeholder rows; the real "+ Add
+                      Trade Licence" button still works and pushes a
+                      saved row above the placeholders. */}
+                  {sub === 'trade-licence' && filteredDocs.length === 0 && !q && (
+                    TL_PLACEHOLDER.map((tl, i) => (
+                      <tr key={tl.code} className="acm-loc-placeholder-row">
+                        <td>{String(i + 1).padStart(2, '0')}</td>
+                        <td><span className="acm-kyc-code">{tl.code}</span></td>
+                        <td style={{ fontWeight: 700 }}>{tl.name}</td>
+                        <td>—</td>
+                        <td>{tl.authority}</td>
+                        <td><span className="acm-kyc-exp na">—</span></td>
+                        <td><span className={tl.expiry === 'N/A' ? 'acm-kyc-exp na' : 'acm-kyc-exp'}>{tl.expiry}</span></td>
+                        <td>
+                          {tl.status === 'mandatory'
+                            ? <span className="acm-pill-yes">Mandatory</span>
+                            : <span className="acm-pill-no" style={{ background: '#fef3c7', color: '#92400e' }}>Optional</span>}
+                        </td>
+                        <td><span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span></td>
+                        <td>
+                          <Tooltip label="Reference row — click + Add Trade Licence above to capture a real one.">
+                            <button type="button" className="acm-loc-btn" disabled style={{ opacity: 0.4, cursor: 'not-allowed' }}>
+                              <IconPencil />
+                            </button>
+                          </Tooltip>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                  {filteredDocs.length === 0 && (sub !== 'trade-licence' || q) ? (
                     <tr className="acm-loc-empty"><td colSpan={10}>{q ? 'No documents match your search.' : `No ${kind === 'dd' ? 'DD' : 'trade licence'} documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
                   ) : filteredDocs.map((d, i) => {
                     const sr = i + 1;
@@ -2357,10 +2461,46 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
       {vaultTab === 'trade' && (
         <>
           <SectionHeader icon={<IconVault />} title="Trade Documents" sub="Shipping bills, BL/AWB, packing lists & export evidence" accent="#10b981" />
-          <div className="acm-trade-empty">
-            <IconVault size={32} />
-            <div className="acm-trade-empty-title">No trade documents yet</div>
-            <div className="acm-trade-empty-sub">Trade documents will populate automatically as PI/Invoice/Shipping flows execute against this consignee.</div>
+          {/* Design-only Trade Documents reference table — same TL
+              placeholder set the Stage 2 Trade Licence sub-tab uses
+              so the user gets a consistent reference across the
+              wizard. Real trade documents will populate this table
+              once the PI / Invoice / Shipping flows execute against
+              this consignee. */}
+          <div className="acm-kyc-card" style={{ marginTop: 12 }}>
+            <div className="acm-loc-table-wrap">
+              <table className="acm-loc-table">
+                <thead>
+                  <tr>
+                    <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
+                    <th>ISSUING AUTHORITY</th><th>EXPIRY</th><th>STATUS</th><th>ATTACHMENT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {TL_PLACEHOLDER.map((tl, i) => (
+                    <tr key={tl.code} className="acm-loc-placeholder-row">
+                      <td>{String(i + 1).padStart(2, '0')}</td>
+                      <td><span className="acm-kyc-code">{tl.code}</span></td>
+                      <td style={{ fontWeight: 700 }}>{tl.name}</td>
+                      <td>{tl.authority}</td>
+                      <td><span className={tl.expiry === 'N/A' ? 'acm-kyc-exp na' : 'acm-kyc-exp'}>{tl.expiry}</span></td>
+                      <td>
+                        {tl.status === 'mandatory'
+                          ? <span className="acm-pill-yes">Mandatory</span>
+                          : <span className="acm-pill-no" style={{ background: '#fef3c7', color: '#92400e' }}>Optional</span>}
+                      </td>
+                      <td><span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Pending upload</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="acm-trade-empty" style={{ marginTop: 12, fontSize: 12 }}>
+            <IconVault size={20} />
+            <div className="acm-trade-empty-sub" style={{ marginLeft: 8 }}>
+              Above is the standard reference list. Real trade documents will populate automatically as PI / Invoice / Shipping flows execute against this consignee.
+            </div>
           </div>
         </>
       )}
@@ -2809,7 +2949,14 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
       if (d.issue_date > today) next.issue_date = 'Issue date cannot be in the future';
     }
     if (!d.expiry_date)                                   next.expiry_date       = 'Expiry date is required';
-    else if (d.issue_date && d.expiry_date < d.issue_date) next.expiry_date      = 'Expiry date must be on or after the issue date';
+    else {
+      // Expiry must not be earlier than today — an already-expired
+      // document isn't useful and shouldn't be captured against an
+      // active KYC record.
+      const today = new Date().toISOString().slice(0, 10);
+      if (d.expiry_date < today) next.expiry_date = 'Expiry date cannot be in the past';
+      else if (d.issue_date && d.expiry_date < d.issue_date) next.expiry_date = 'Expiry date must be on or after the issue date';
+    }
     setErrs(next);
     if (Object.keys(next).length > 0) {
       // Bring the first offending field into view so the user sees the red border.
@@ -2841,13 +2988,19 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
 
     setSaving(true);
     try {
+      /* Explicit multipart header — the project's default api
+       * instance defaults to application/json, which strips the file
+       * out of the FormData (Laravel then sees `attachment` as a
+       * string field and 422s with "must be a file"). The Customer
+       * modal sets this same header for the same reason. */
+      const cfg = { headers: { 'Content-Type': 'multipart/form-data' } };
       if (editing?.id && editing.id.startsWith('db_')) {
         // db_-prefixed id encodes the server PK so we can find the
         // row again across refetches without re-keying.
         const numericId = Number(editing.id.replace('db_', ''));
-        await api.post(`/consignees/${consigneeId}/documents/${numericId}`, fd);
+        await api.post(`/consignees/${consigneeId}/documents/${numericId}`, fd, cfg);
       } else {
-        await api.post(`/consignees/${consigneeId}/documents`, fd);
+        await api.post(`/consignees/${consigneeId}/documents`, fd, cfg);
       }
       onSaved();
     } catch (err: any) {
@@ -2941,9 +3094,17 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
             </div>
             <div className="acm-field" data-field="expiry_date">
               <label className="acm-field-label">EXPIRY DATE <span className="acm-req">*</span></label>
+              {/* minDate forces expiry ≥ the later of (today, issue
+                  date) — a document can't already be expired and
+                  can't be valid before it was even issued. The
+                  submit-time validator below is the backstop in case
+                  a stale picker / paste slips a past value through. */}
               <MasterDatePicker
                 value={d.expiry_date ?? ''}
-                minDate={d.issue_date || undefined}
+                minDate={(() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  return d.issue_date && d.issue_date > today ? d.issue_date : today;
+                })()}
                 placeholder="DD/MM/YYYY"
                 invalid={!!errs.expiry_date}
                 onChange={(v: string) => set('expiry_date', v)}
@@ -2986,9 +3147,13 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
 }
 
 /* ─── Stage 2 — Add/Edit Owner KYC sub-modal ─── */
-function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
+function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved }: {
   editing: KycOwnerRow | null;
   consigneeId: number | null;
+  /** Designations master rows — backs the Designation dropdown so the
+   *  owner KYC form pulls from the same source as the rest of the
+   *  app (was previously a free-text input that bypassed the master). */
+  designations: { value: string; label: string }[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -3052,11 +3217,16 @@ function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
 
     setSaving(true);
     try {
+      /* Explicit multipart header — the project's api default
+       * application/json strips File uploads from FormData. Without
+       * this the 3 identity-proof files arrive as empty strings and
+       * Laravel 422s with "must be a file". */
+      const cfg = { headers: { 'Content-Type': 'multipart/form-data' } };
       if (editing?.id && editing.id.startsWith('db_')) {
         const numericId = Number(editing.id.replace('db_', ''));
-        await api.post(`/consignees/${consigneeId}/owners/${numericId}`, fd);
+        await api.post(`/consignees/${consigneeId}/owners/${numericId}`, fd, cfg);
       } else {
-        await api.post(`/consignees/${consigneeId}/owners`, fd);
+        await api.post(`/consignees/${consigneeId}/owners`, fd, cfg);
       }
       onSaved();
     } catch (err: any) {
@@ -3095,11 +3265,16 @@ function KycOwnerSubModal({ editing, consigneeId, onClose, onSaved }: {
             </div>
             <div className="acm-field">
               <label className="acm-field-label">DESIGNATION</label>
-              <input
-                className="acm-input"
-                placeholder="Director / Partner / Proprietor"
+              {/* Designation is master-backed — pulls from
+                  /master/designations so the value matches what's
+                  available elsewhere in the app. Synthetic option for
+                  the row's existing value (handles legacy free-text
+                  values that pre-date this change). */}
+              <MasterSelect
                 value={d.designation ?? ''}
-                onChange={e => set('designation', e.target.value)}
+                options={optsWith(designations, d.designation ?? '')}
+                placeholder="Select Designation"
+                onChange={v => set('designation', v)}
               />
             </div>
           </div>
@@ -4575,18 +4750,23 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   display: flex; align-items: flex-start; gap: 12px;
   padding: 12px 16px;
   margin-bottom: 14px;
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-  border: 1px solid rgba(16,185,129,.30);
+  /* Saturated emerald gradient with a clear green undertone — the
+     previous #ecfdf5 mix read as cream/yellow on low-contrast displays
+     and certain sRGB profiles, which is why the banner looked yellow in
+     some browsers. Anchoring both stops in the green-100 → green-200
+     range keeps the hue unambiguous across all renderers. */
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  border: 1px solid rgba(16,185,129,.45);
   border-radius: 12px;
   cursor: pointer;
   transition: all .15s ease;
   user-select: none;
 }
-.acm-same-banner:hover { border-color: #10b981; box-shadow: 0 2px 8px rgba(16,185,129,.10); }
+.acm-same-banner:hover { border-color: #10b981; box-shadow: 0 2px 8px rgba(16,185,129,.18); }
 .acm-same-banner.is-on {
-  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  background: linear-gradient(135deg, #a7f3d0 0%, #6ee7b7 100%);
   border-color: #10b981;
-  box-shadow: 0 2px 10px rgba(16,185,129,.18);
+  box-shadow: 0 2px 10px rgba(16,185,129,.25);
 }
 .acm-same-banner.is-disabled { opacity: 0.55; cursor: not-allowed; }
 /* "Blocked" state — customer already has its one mirror. Amber accent
@@ -4783,11 +4963,49 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 }
 .acm-add-pill:hover { background: #10b981; color: #fff; border-color: #10b981; }
 .acm-loc-body { padding: 0; }
-.acm-loc-table-wrap { overflow-x: auto; }
+/* Horizontal scroll wrapper. -webkit-overflow-scrolling: touch smooths
+   the scroll on iPad/Android, and a thin scrollbar style keeps the rail
+   from dominating the table on narrow screens. */
+.acm-loc-table-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.acm-loc-table-wrap::-webkit-scrollbar { height: 8px; }
+.acm-loc-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(16,185,129,.35); border-radius: 999px;
+}
+.acm-loc-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
+/* Stage 2 KYC tables — cap the body height so a long list of
+   documents / owners scrolls inside the card instead of pushing the
+   modal footer off-screen. The header strip stays sticky so the user
+   can always see which column they're scrolling through. Both axes
+   scroll: vertical for many rows, horizontal for many columns on
+   narrow viewports. */
+.acm-kyc-body .acm-loc-table-wrap {
+  max-height: 360px;
+  overflow-y: auto;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.acm-kyc-body .acm-loc-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f9fafb;
+}
+[data-bs-theme="dark"] .acm-kyc-body .acm-loc-table thead th { background: #103129; }
 .acm-loc-table {
   width: 100%; border-collapse: collapse;
   font-size: 13px; color: #1f2937;
 }
+/* Stage 2 KYC tables carry more columns (ID Proof, Address Proof,
+   Photograph, Status, Actions …) than the Stage 1 location table.
+   Give them a minimum width so columns stay readable and the wrap
+   div picks up horizontal scroll on narrow viewports instead of
+   squashing every column into illegible strips. */
+.acm-kyc-body .acm-loc-table { min-width: 980px; }
 .acm-loc-table thead tr {
   background: #f9fafb;
   border-bottom: 1px solid #e5e7eb;
@@ -4812,6 +5030,13 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
    pill so users can tell it apart from added locations. */
 .acm-loc-primary-row td { background: linear-gradient(180deg, #f0fdf4, #dcfce7); }
 .acm-loc-primary-row:hover td { background: #d1fae5; }
+/* Placeholder rows in the Trade Licence sub-tab + Stage 3 Trade
+   Documents — softly tinted + slightly muted so the user knows these
+   are reference items, not real captured data. */
+.acm-loc-placeholder-row td { background: #f9fafb; color: #4b5563; }
+.acm-loc-placeholder-row:hover td { background: #f3f4f6; }
+[data-bs-theme="dark"] .acm-loc-placeholder-row td { background: rgba(255,255,255,0.02); color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-loc-placeholder-row:hover td { background: rgba(255,255,255,0.04); }
 .acm-loc-type-cell { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .acm-loc-primary-tag {
   display: inline-block; padding: 2px 8px; border-radius: 999px;
@@ -4946,6 +5171,16 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-steps-arrow { background: #103129; border-color: rgba(16,185,129,.30); color: #6ee7b7; }
 
 [data-bs-theme="dark"] .acm-id-tab     { background: #103129; border-color: rgba(16,185,129,.20); color: #ecfdf5; }
+/* Selected tab in dark mode — the light-mode emerald gradient blended
+   into the modal's dark-green wash, so the active tab was almost
+   invisible. Brighter mint gradient + emerald glow ring makes the
+   selection unmistakable against the dark backdrop. */
+[data-bs-theme="dark"] .acm-id-tab.on {
+  background: linear-gradient(135deg, #34d399, #10b981);
+  color: #022c22;
+  border-color: rgba(110,231,183,.55);
+  box-shadow: 0 0 0 1px rgba(110,231,183,.45), 0 4px 14px rgba(16,185,129,.45);
+}
 [data-bs-theme="dark"] .acm-sec-header { background: #103129; border-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-sec-pad    { background: #103129; border-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-sec-title  { color: #ecfdf5; }

@@ -36,7 +36,7 @@ export default function BranchSwitcher() {
   if (isEmployeeRole || isSubBranchUser) {
     return (
       <div
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-[12px] font-medium text-text"
+        className="branch-switcher-pill flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-[12px] font-medium text-text"
         title={isEmployeeRole ? 'Branch switching is not available for employees' : undefined}
       >
         <Building2 size={13} className="text-primary" />
@@ -52,7 +52,7 @@ export default function BranchSwitcher() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-[12px] font-medium text-text hover:border-primary/40 hover:bg-primary/5 transition-all duration-200 cursor-pointer"
+        className="branch-switcher-pill flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-[12px] font-medium text-text hover:border-primary/40 hover:bg-primary/5 transition-all duration-200 cursor-pointer"
       >
         <Building2 size={13} className="text-primary" />
         <span className="max-w-[160px] truncate hidden sm:inline">{displayName}</span>

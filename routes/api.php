@@ -89,6 +89,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     // Products — step-wise create/update (Core → Sales → Quality → Vendors)
     Route::get('/products/stats',                [ProductController::class, 'stats']);
+    Route::get('/products/owners',               [ProductController::class, 'owners']);
     Route::get('/products',                      [ProductController::class, 'index']);
     Route::get('/products/{id}',                 [ProductController::class, 'show'])->whereNumber('id');
     Route::post('/products/step/core',           [ProductController::class, 'storeCore']);
