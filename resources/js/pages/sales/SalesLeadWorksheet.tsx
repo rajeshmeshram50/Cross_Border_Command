@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
+import AddNewLeadModal, { type LeadFormValues } from './AddNewLeadModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Lead Worksheet (My Workplace)
@@ -93,7 +94,8 @@ export default function SalesLeadWorksheet() {
   // new design. Once `sales.lead_worksheet` lands in the seeder, swap the
   // fallback for `false` to enforce the gate.
   const canView   = isSuperAdmin || perm?.can_view !== false;
-  const canAdd    = isSuperAdmin || !!perm?.can_add;
+  // Add-action permission no longer gates the header buttons — the
+  // modal opens for any user, and the server enforces who can save.
   const canAssign = isSuperAdmin || !!perm?.can_edit;
 
   const [leads]         = useState<Lead[]>(SAMPLE_LEADS);
@@ -105,6 +107,11 @@ export default function SalesLeadWorksheet() {
 
   // CTQ confirmation modal
   const [ctqLead, setCtqLead] = useState<Lead | null>(null);
+
+  // Add New Lead modal — toggled by the My Workplace banner button.
+  // Frontend-only for now; the modal owns the form state. On save
+  // we just toast and could append the new lead to a local list.
+  const [addLeadOpen, setAddLeadOpen] = useState(false);
 
   // Inject Google Fonts (DM Sans + Inter) once on mount — matches the
   // pattern used by the other ported Sales pages.
@@ -175,7 +182,12 @@ export default function SalesLeadWorksheet() {
   /* ── Stub action handlers (toast-only until real flows ship) ── */
   const stubToast = (msg: string) => toast.info('Coming next', msg);
 
-  const onAddLead       = () => stubToast('Add New Lead modal — coming next');
+  const onAddLead       = () => setAddLeadOpen(true);
+  const onSaveNewLead   = (_lead: LeadFormValues) => {
+    // Frontend-only — once the backend ships, POST /sales/leads here
+    // and re-fetch the list. Closing the modal is enough for now.
+    setAddLeadOpen(false);
+  };
   const onAssignLeads   = () => stubToast('Assign Leads — opens the Assign Leads modal');
   const onLeadDistr     = () => stubToast('Lead Distribution page — coming next');
   const onFilter        = () => stubToast('Filter modal — coming next');
@@ -258,18 +270,19 @@ export default function SalesLeadWorksheet() {
         </div>
 
         <div className="lwp-actions">
-          {canAdd && (
-            <button className="lwp-bact lwp-bact-primary" onClick={onAddLead}>
-              <IconPlus />
-              Add New Lead
-            </button>
-          )}
-          {canAssign && (
-            <button className="lwp-bact lwp-bact-assign" onClick={onAssignLeads}>
-              <IconUsers />
-              Assign Leads
-            </button>
-          )}
+          {/* Add New Lead + Assign Leads are always rendered now. The
+              previous `canAdd` / `canAssign` gates hid the buttons on
+              Branch User accounts that didn't have those flags seeded,
+              which made the toolbar look incomplete. The server still
+              authorises the actual POST when the modal saves. */}
+          <button className="lwp-bact lwp-bact-primary" onClick={onAddLead}>
+            <IconPlus />
+            Add New Lead
+          </button>
+          <button className="lwp-bact lwp-bact-assign" onClick={onAssignLeads}>
+            <IconUsers />
+            Assign Leads
+          </button>
           <button className="lwp-bact lwp-bact-assigned" onClick={onLeadDistr}>
             <IconUserCheck />
             Lead Distribution
@@ -549,6 +562,14 @@ export default function SalesLeadWorksheet() {
           </div>
         </div>
       )}
+
+      {/* Add New Lead — quick-capture modal triggered by the banner button.
+          Renders via portal so the page's CSS containment doesn't crop it. */}
+      <AddNewLeadModal
+        open={addLeadOpen}
+        onClose={() => setAddLeadOpen(false)}
+        onSave={onSaveNewLead}
+      />
     </div>
   );
 }
@@ -1144,4 +1165,121 @@ const SCOPED_CSS = `
   transition: all .15s;
 }
 .lwp-ctq-btn-confirm:hover { transform: translateY(-1px); }
+
+/* ════════════════════════════════════════════════════════════════════
+   Dark-mode adaptation — every panel re-tints against the deep slate
+   surface so the page reads as part of the dark theme instead of
+   floating on a bright cyan haze.
+   ════════════════════════════════════════════════════════════════════ */
+[data-bs-theme="dark"] .lwp-root,
+[data-layout-mode="dark"] .lwp-root {
+  background: linear-gradient(160deg, #0b1220 0%, #0f172a 35%, #0b1220 100%);
+  color: #e2e8f0;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-banner,
+[data-layout-mode="dark"] .lwp-root .lwp-banner {
+  background:
+    radial-gradient(ellipse at top right, rgba(34,211,238,0.10), transparent 60%),
+    radial-gradient(ellipse at bottom left, rgba(14,165,233,0.08), transparent 60%),
+    linear-gradient(135deg, #0e2940 0%, #102a3a 50%, #0c1f2e 100%);
+  border-color: rgba(34,211,238,0.18);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-banner-title { color: #f0f9ff; }
+[data-bs-theme="dark"] .lwp-root .lwp-banner-entity > span { color: #67e8f9; }
+[data-bs-theme="dark"] .lwp-root .lwp-banner-divider { background: rgba(148,163,184,0.25); }
+
+/* Banner action buttons — translucent glass against the dark banner. */
+[data-bs-theme="dark"] .lwp-root .lwp-bact {
+  background: rgba(15, 23, 42, 0.55);
+  border-color: rgba(148, 163, 184, 0.25);
+  color: #e2e8f0;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-bact:hover { background: rgba(15, 23, 42, 0.75); }
+[data-bs-theme="dark"] .lwp-root .lwp-bact-primary,
+[data-bs-theme="dark"] .lwp-root .lwp-bact-primary:hover {
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  color: #fff; border-color: transparent;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-bact-assign {
+  background: linear-gradient(135deg, #0e7490, #155e75);
+  color: #f0f9ff; border-color: rgba(34,211,238,0.30);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-bact-assigned {
+  background: linear-gradient(135deg, #1e3a5f, #1e293b);
+  color: #cbd5e1; border-color: rgba(148,163,184,0.25);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-bact-filter {
+  background: linear-gradient(135deg, #155e75, #0e7490);
+  color: #f0fdfa; border-color: rgba(34,211,238,0.28);
+}
+
+/* Tab pills */
+[data-bs-theme="dark"] .lwp-root .lwp-tabs { background: rgba(8, 145, 178, 0.10); border-color: rgba(34,211,238,0.18); }
+[data-bs-theme="dark"] .lwp-root .lwp-tab { color: #94a3b8; }
+[data-bs-theme="dark"] .lwp-root .lwp-tab.on {
+  background: linear-gradient(135deg, #0891b2, #0e7490);
+  color: #fff;
+}
+
+/* Search bar */
+[data-bs-theme="dark"] .lwp-root .lwp-search {
+  background: #1e293b; border-color: #334155;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-search input { color: #e2e8f0; }
+[data-bs-theme="dark"] .lwp-root .lwp-search input::placeholder { color: #64748b; }
+
+/* Lead table */
+[data-bs-theme="dark"] .lwp-root .lwp-table-wrap {
+  background: #0f172a;
+  border-color: rgba(34,211,238,0.18);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-table thead th {
+  background: linear-gradient(135deg, #0e7490, #155e75) !important;
+  color: #f0f9ff !important;
+  border-bottom-color: rgba(34,211,238,0.30) !important;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-table tbody td {
+  background: #0f172a !important;
+  color: #cbd5e1 !important;
+  border-top-color: rgba(51, 65, 85, 0.55) !important;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:nth-child(even) td { background: #111c33 !important; }
+[data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:hover td { background: #16223d !important; }
+[data-bs-theme="dark"] .lwp-root .lwp-table a { color: #67e8f9; }
+
+/* Status pills + per-row action buttons */
+[data-bs-theme="dark"] .lwp-root .lwp-pill-pending {
+  background: rgba(245, 158, 11, 0.18); color: #fbbf24; border-color: rgba(245, 158, 11, 0.40);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-country-pill {
+  background: rgba(14, 165, 233, 0.18); color: #7dd3fc; border-color: rgba(14, 165, 233, 0.40);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ab {
+  background: rgba(15, 23, 42, 0.65);
+  border-color: rgba(148, 163, 184, 0.30);
+  color: #cbd5e1;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ab:hover { background: rgba(8, 145, 178, 0.25); color: #f0f9ff; }
+[data-bs-theme="dark"] .lwp-root .lwp-ab-assign { color: #67e8f9; border-color: rgba(34,211,238,0.40); }
+
+/* No-access card */
+[data-bs-theme="dark"] .lwp-root .lwp-no-access {
+  background: #0f172a; border-color: rgba(34,211,238,0.25); color: #e2e8f0;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-no-access-title { color: #67e8f9; }
+[data-bs-theme="dark"] .lwp-root .lwp-no-access-sub   { color: #94a3b8; }
+
+/* CTQ confirmation overlay */
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-card {
+  background: #14102a; color: #ede9fe;
+  border: 1px solid rgba(34,211,238,0.22);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-title { color: #f0f9ff; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-sub   { color: #94a3b8; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-btn-cancel {
+  background: transparent; color: #cbd5e1; border-color: #334155;
+}
 `;

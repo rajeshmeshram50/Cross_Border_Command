@@ -380,53 +380,44 @@ export default function ProductView() {
           {product.vendor_maps.length === 0 ? (
             <div className="pv2-vendors-empty">No vendors mapped to this product.</div>
           ) : (
-            <div className="pv2-vendor-cards">
-              {product.vendor_maps.map((v, i) => {
-                const att = (v.attachment_path as string | null) ?? null;
-                const attUrl = att ? resolveFileUrl(att) : '';
-                const website = (v.vendor_website as string | null) ?? '';
-                const mapDate = (v.map_date as string | null) ?? '';
-                return (
-                  <div className="pv2-vendor-card" key={String(v.id ?? i)}>
-                    <div className="pv2-vendor-card-head">
-                      <div className="pv2-vendor-card-title">
-                        <span className="pv2-vendor-sr">#{i + 1}</span>
-                        <span className="pv2-vendor-code">{String(v.vendor_code ?? '—')}</span>
-                        <span className="pv2-sep">|</span>
-                        <span className="pv2-vendor-name">{String(v.vendor_name ?? '—')}</span>
-                      </div>
-                      <div className="pv2-vendor-card-total">
-                        <span className="pv2-info-key">Total</span>
-                        <span className="pv2-total-strong">₹{Number(v.total_amount ?? 0).toLocaleString('en-IN')}</span>
-                      </div>
-                    </div>
-                    <div className="pv2-vendor-grid">
-                      <Row k="Contact Person" v={String(v.contact_person ?? '—')} />
-                      <Row k="Phone"          v={String(v.contact_no ?? '—')} />
-                      <Row k="Email"          v={String(v.email ?? '—')} />
-                      <Row k="Designation"    v={String(v.designation ?? '—')} />
-                      <Row k="Website"        v={website || '—'} />
-                      <Row k="Map Date"       v={mapDate ? new Date(mapDate).toLocaleDateString('en-IN') : '—'} />
-                      <Row k="Purchase Price" v={fmtMoney(v.purchase_price as string | number | null)} />
-                      <Row k="GST %"          v={`${Number(v.gst_percentage ?? 0)}%`} />
-                      <Row k="GST Amount"     v={fmtMoney(v.gst_amount as string | number | null)} />
-                    </div>
-                    {v.remarks ? (
-                      <div className="pv2-vendor-remarks">
-                        <span className="pv2-info-key">Remarks:</span>
-                        <span className="pv2-vendor-remarks-text">{String(v.remarks)}</span>
-                      </div>
-                    ) : null}
-                    {attUrl ? (
-                      <div className="pv2-vendor-attach">
-                        <a href={attUrl} target="_blank" rel="noopener noreferrer" className="pv2-attach-link">
-                          <i className="ri-attachment-2" /> View Attachment
-                        </a>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
+            <div className="pv2-vendor-table-wrap">
+              <table className="pv2-vendor-table">
+                <thead>
+                  <tr>
+                    <th className="pv2-vt-num">Sr No</th>
+                    <th>Vendor Code</th>
+                    <th>Vendor Company Name</th>
+                    <th>Contact Person Name</th>
+                    <th>Contact No</th>
+                    <th className="pv2-vt-num">Purchase Price</th>
+                    <th className="pv2-vt-num">GST %</th>
+                    <th className="pv2-vt-num">GST Amount</th>
+                    <th className="pv2-vt-num">Total Amount</th>
+                    <th>Map Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {product.vendor_maps.map((v, i) => {
+                    const mapDate = (v.map_date as string | null) ?? '';
+                    return (
+                      <tr key={String(v.id ?? i)}>
+                        <td className="pv2-vt-num">{i + 1}</td>
+                        <td><span className="pv2-vendor-code">{String(v.vendor_code ?? '—')}</span></td>
+                        <td className="pv2-vt-strong">{String(v.vendor_name ?? '—')}</td>
+                        <td>{String(v.contact_person ?? '—')}</td>
+                        <td>{String(v.contact_no ?? '—')}</td>
+                        <td className="pv2-vt-num">{fmtMoney(v.purchase_price as string | number | null)}</td>
+                        <td className="pv2-vt-num">{`${Number(v.gst_percentage ?? 0)}%`}</td>
+                        <td className="pv2-vt-num">{fmtMoney(v.gst_amount as string | number | null)}</td>
+                        <td className="pv2-vt-num pv2-vt-total">{fmtMoney(v.total_amount as string | number | null)}</td>
+                        <td>{mapDate
+                          ? new Date(mapDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                          : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -716,6 +707,43 @@ const SCOPED_CSS = `
   padding: 22px; text-align: center; color: #94a3b8; font-size: 12.5px;
   border: 1.5px dashed #e2e8f0; border-radius: 10px;
 }
+
+/* Vendor table — flat list of every mapped vendor (replaces the
+   per-vendor cards). Header gets the navy/indigo strip used on the
+   list pages for visual continuity. */
+.pv2-vendor-table-wrap {
+  border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;
+}
+.pv2-vendor-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: 12px;
+}
+.pv2-vendor-table thead th {
+  background: linear-gradient(180deg, #2b3a85 0%, #1e2a5f 100%);
+  color: #fff; font-weight: 700; letter-spacing: .02em;
+  padding: 8px 10px; text-align: left; white-space: nowrap;
+  border-bottom: 1px solid #1e2a5f;
+}
+.pv2-vendor-table tbody td {
+  padding: 8px 10px; color: #1e293b; border-top: 1px solid #eef2ff;
+  background: #fff;
+}
+.pv2-vendor-table tbody tr:nth-child(even) td { background: #faf9ff; }
+.pv2-vendor-table tbody tr:hover td { background: #f5f3ff; }
+.pv2-vendor-table .pv2-vt-num { text-align: center; white-space: nowrap; }
+.pv2-vendor-table .pv2-vt-strong { font-weight: 700; color: #4338ca; }
+.pv2-vendor-table .pv2-vt-total  { font-weight: 800; color: #5b21b6; }
+.pv2-vendor-table .pv2-vendor-code {
+  color: #5b21b6; font-family: ui-monospace, monospace; font-weight: 700;
+}
+
+[data-bs-theme="dark"] .pv2-vendor-table-wrap { border-color: #1f2937; }
+[data-bs-theme="dark"] .pv2-vendor-table tbody td { background: #0f172a; color: #e5e7eb; border-top-color: #1f2937; }
+[data-bs-theme="dark"] .pv2-vendor-table tbody tr:nth-child(even) td { background: #111827; }
+[data-bs-theme="dark"] .pv2-vendor-table tbody tr:hover td { background: #1e293b; }
+[data-bs-theme="dark"] .pv2-vendor-table .pv2-vt-strong { color: #a5b4fc; }
+[data-bs-theme="dark"] .pv2-vendor-table .pv2-vt-total  { color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-vendor-table .pv2-vendor-code { color: #c4b5fd; }
 
 /* Vendor cards — show every mapped-vendor field */
 .pv2-vendor-cards {

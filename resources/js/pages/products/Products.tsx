@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
@@ -142,6 +142,14 @@ export default function Products() {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  /* Vendor deep-link filter — populated when the Vendors page Map
+     Products action navigates to /products?vendor_id=…. While set,
+     the list only shows products mapped to that vendor and a chip
+     header surfaces the active filter so the user can clear it. */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const vendorFilterId   = searchParams.get('vendor_id');
+  const vendorFilterCode = searchParams.get('vendor_code') ?? '';
+  const vendorFilterName = searchParams.get('vendor_name') ?? '';
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -182,6 +190,20 @@ export default function Products() {
         return rows.filter(active).map(map).filter((v): v is T => v !== null && v !== '');
       } catch { return []; }
     };
+    /* Master endpoints are branch-scoped, so the same logical name
+       (e.g. "Handicrafts") can come back multiple times when the user
+       has visibility into more than one (client, branch) tuple. The
+       filter dropdowns key on the string itself, so duplicates blow up
+       with "Encountered two children with the same key" warnings.
+       dedupe collapses repeats while preserving the first-seen order. */
+    const dedupe = (arr: string[]): string[] => {
+      const seen = new Set<string>();
+      const out: string[] = [];
+      for (const v of arr) {
+        if (!seen.has(v)) { seen.add(v); out.push(v); }
+      }
+      return out;
+    };
     (async () => {
       const [seg, hsn, uom, cond, gst] = await Promise.all([
         fetchMaster<string>('segments',       r => r.title ?? null),
@@ -190,11 +212,11 @@ export default function Products() {
         fetchMaster<string>('conditions',     r => r.title ?? null),
         fetchMaster<string>('gst_percentage', r => (r.percentage != null ? `${r.percentage}%` : null)),
       ]);
-      if (seg.length)  setSegmentOpts(seg);
-      if (hsn.length)  setHsnOpts(hsn);
-      if (uom.length)  setUomOpts(uom);
-      if (cond.length) setConditionOpts(cond);
-      if (gst.length)  setGstRateOpts(gst);
+      if (seg.length)  setSegmentOpts(dedupe(seg));
+      if (hsn.length)  setHsnOpts(dedupe(hsn));
+      if (uom.length)  setUomOpts(dedupe(uom));
+      if (cond.length) setConditionOpts(dedupe(cond));
+      if (gst.length)  setGstRateOpts(dedupe(gst));
 
       // Vendor dropdown — sources from the vendor directory rather than
       // a master so the filter matches what the user can actually
@@ -204,7 +226,7 @@ export default function Products() {
         const res = await api.get<{ data?: VendorRow[] } | VendorRow[]>('/vendors?per_page=200');
         const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
         const names = rows.map(v => v.company_name ?? '').filter(Boolean);
-        if (names.length) setVendorOpts(names);
+        if (names.length) setVendorOpts(dedupe(names));
       } catch { /* fall back to hardcoded */ }
     })();
   }, []);
@@ -261,9 +283,25 @@ export default function Products() {
     if (!allowed) return;
     setLoading(true);
     try {
+      const params: Record<string, string | number> = { per_page: 100 };
+      // When a vendor filter is active, drop the status tab so the
+      // user sees every mapped product (inactive drafts included) —
+      // otherwise an Active-only filter could mask the very rows
+      // they came here to see.
+      if (vendorFilterId) {
+        params.vendor_id = vendorFilterId;
+      } else {
+        params.status = statusTab;
+      }
+      // Stats endpoint mirrors the vendor filter so the
+      // Active / Inactive tab badges show counts scoped to the
+      // vendor's mapped products instead of the org-wide totals.
+      const statsParams: Record<string, string> = {};
+      if (vendorFilterId) statsParams.vendor_id = vendorFilterId;
+
       const [list, st] = await Promise.all([
-        api.get<{ data: Record<string, unknown>[] }>('/products', { params: { status: statusTab, per_page: 100 } }),
-        api.get<{ active: number; inactive: number }>('/products/stats'),
+        api.get<{ data: Record<string, unknown>[] }>('/products', { params }),
+        api.get<{ active: number; inactive: number }>('/products/stats', { params: statsParams }),
       ]);
       setProducts(list.data.data.map(apiToCard));
       setStats({ active: st.data.active, inactive: st.data.inactive });
@@ -272,7 +310,7 @@ export default function Products() {
     } finally {
       setLoading(false);
     }
-  }, [allowed, statusTab]);
+  }, [allowed, statusTab, vendorFilterId]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -478,6 +516,29 @@ export default function Products() {
         </div>
       </div>
 
+      {/* Vendor deep-link banner — shown only when the page is
+          filtered to a specific vendor's mapped products. Clearing
+          it pops the query params off the URL and restores the
+          status-tab default list. */}
+      {vendorFilterId && (
+        <div className="prd-vendor-banner">
+          <i className="ri-links-line" />
+          <span className="prd-vendor-banner-text">
+            Showing products mapped to vendor
+            {' '}<strong>{vendorFilterCode || `#${vendorFilterId}`}</strong>
+            {vendorFilterName && <> — <strong>{vendorFilterName}</strong></>}
+          </span>
+          <button
+            type="button"
+            className="prd-vendor-banner-clear"
+            onClick={() => setSearchParams({})}
+          >
+            <i className="ri-close-line" />
+            Clear filter
+          </button>
+        </div>
+      )}
+
       {/* Result count */}
       <div className="prd-meta">
         <span className="prd-meta-count">{filtered.length} {filtered.length === 1 ? 'product' : 'products'}</span>
@@ -502,8 +563,23 @@ export default function Products() {
           <div className="prd-empty-icon">
             <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
           </div>
-          <div className="prd-empty-title">No products found</div>
-          <div className="prd-empty-desc">Try clearing filters, or click "Add Product" to create a new one.</div>
+          <div className="prd-empty-title">
+            {vendorFilterId ? 'No products mapped to this vendor yet' : 'No products found'}
+          </div>
+          <div className="prd-empty-desc">
+            {vendorFilterId
+              ? `Open any product and map ${vendorFilterCode || 'this vendor'} on Step 2 — or clear the filter to browse all products.`
+              : 'Try clearing filters, or click "Add Product" to create a new one.'}
+          </div>
+          {vendorFilterId && (
+            <button
+              type="button"
+              className="prd-empty-cta"
+              onClick={() => setSearchParams({})}
+            >
+              <i className="ri-close-line" /> Clear filter
+            </button>
+          )}
         </div>
       ) : view === 'grid' ? (
         <div className="prd-grid">
@@ -1179,24 +1255,121 @@ const SCOPED_CSS = `
 .prd-meta-chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 99px; background: #ede9fe; border: 1px solid #c4b5fd; color: #6d28d9; font-size: 11px; font-weight: 600; }
 .prd-meta-chip strong { font-weight: 800; margin-left: 4px; }
 
+/* Vendor deep-link filter banner */
+.prd-vendor-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; margin: 4px 0;
+  background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
+  border: 1px solid #a78bfa; border-radius: 12px;
+  color: #4c1d95; font-size: 13px; font-weight: 600;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, .12);
+}
+.prd-vendor-banner i { font-size: 18px; color: #7c3aed; flex-shrink: 0; }
+.prd-vendor-banner-text { flex: 1; line-height: 1.4; }
+.prd-vendor-banner-text strong { color: #5b21b6; font-weight: 800; }
+.prd-vendor-banner-clear {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 99px;
+  background: #fff; border: 1.5px solid #c4b5fd;
+  color: #7c3aed; font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: all .15s;
+}
+.prd-vendor-banner-clear i { font-size: 14px; color: inherit; }
+.prd-vendor-banner-clear:hover {
+  background: #7c3aed; border-color: #7c3aed; color: #fff;
+}
+
+.prd-empty-cta {
+  margin-top: 14px;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 18px; border-radius: 99px;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: #fff; border: none; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; transition: all .15s;
+  box-shadow: 0 3px 10px rgba(124, 58, 237, .35);
+}
+.prd-empty-cta:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(124, 58, 237, .45); }
+
 /* ─── Grid ─── */
 .prd-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 16px;
 }
+/* ─── Product card surface — ported from the Plans pricing card system
+   so the two grids feel like the same component family. Layers:
+   1. Soft white→violet gradient surface (light-mode) / deep accent
+      mesh (dark-mode).
+   2. Conic-gradient spinning border via ::before — same trick as
+      .plan-card-animated, paused on hover so users don't get motion
+      sickness while reading.
+   3. translateY lift + multi-stop shadow halo on hover, intensity
+      driven by --prd-accent (color-mix). */
+@property --prd-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes prd-border-spin { to { --prd-angle: 360deg; } }
+
 .prd-card {
+  --prd-accent: #7c3aed;
   position: relative;
-  background: #fff; border: 1.5px solid #e8e4f9;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.92) 0%, rgba(255,255,255,0) 22%),
+    linear-gradient(180deg, color-mix(in srgb, var(--prd-accent) 9%, #ffffff) 0%, #ffffff 50%);
+  border: 1px solid color-mix(in srgb, var(--prd-accent) 28%, transparent);
   border-radius: 14px; overflow: hidden;
   display: flex; flex-direction: column;
-  transition: transform .25s cubic-bezier(.34,1.56,.64,1), box-shadow .25s, border-color .15s;
+  transition: transform .28s cubic-bezier(.4,0,.2,1),
+              box-shadow .28s ease,
+              border-color .28s ease;
   cursor: pointer;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.95) inset,
+    0 1px 2px rgba(15,23,42,.04),
+    0 10px 22px -6px  color-mix(in srgb, var(--prd-accent) 22%, transparent),
+    0 22px 38px -14px color-mix(in srgb, var(--prd-accent) 16%, transparent);
+}
+.prd-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background:
+    conic-gradient(
+      from var(--prd-angle),
+      transparent 0deg,
+      var(--prd-accent) 40deg,
+      rgba(255,255,255,.95) 80deg,
+      var(--prd-accent) 120deg,
+      transparent 200deg,
+      transparent 360deg
+    );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: prd-border-spin 4s linear infinite;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0;
+  transition: opacity .25s ease;
 }
 .prd-card:hover {
-  transform: translateY(-6px) scale(1.01);
-  border-color: #c4b5fd;
-  box-shadow: 0 18px 36px rgba(124,58,237,.22);
+  transform: translateY(-6px);
+  border-color: color-mix(in srgb, var(--prd-accent) 58%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.95) inset,
+    0 2px 4px rgba(15,23,42,.06),
+    0 16px 32px -6px  color-mix(in srgb, var(--prd-accent) 38%, transparent),
+    0 28px 50px -12px color-mix(in srgb, var(--prd-accent) 28%, transparent);
+}
+.prd-card:hover::before {
+  opacity: .85;
+  animation-play-state: running;
 }
 .prd-card-thumb {
   position: relative;
@@ -1759,15 +1932,30 @@ const SCOPED_CSS = `
   color: #ddd6fe;
 }
 
-/* Grid cards */
+/* Grid cards — dark variant mirrors .plan-card-v2's deep accent mesh
+   so the spinning border still pops against a near-black surface. */
 [data-bs-theme="dark"] .prd-card {
-  background: #1a1430;
-  border-color: #3b2a6b;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.05) 0%, transparent 18%),
+    linear-gradient(180deg, color-mix(in srgb, var(--prd-accent) 16%, transparent) 0%, transparent 38%),
+    radial-gradient(ellipse at top, color-mix(in srgb, var(--prd-accent) 10%, transparent) 0%, transparent 50%),
+    #0f1216;
+  border-color: color-mix(in srgb, var(--prd-accent) 50%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.10) inset,
+    0 4px 10px rgba(0,0,0,.50),
+    0 14px 32px -10px color-mix(in srgb, var(--prd-accent) 55%, transparent),
+    0 26px 48px -16px color-mix(in srgb, var(--prd-accent) 38%, transparent);
 }
 [data-bs-theme="dark"] .prd-card:hover {
-  border-color: #7c3aed;
-  box-shadow: 0 18px 36px rgba(0,0,0,.6);
+  border-color: color-mix(in srgb, var(--prd-accent) 78%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.16) inset,
+    0 6px 14px rgba(0,0,0,.55),
+    0 22px 44px -8px  color-mix(in srgb, var(--prd-accent) 75%, transparent),
+    0 36px 60px -14px color-mix(in srgb, var(--prd-accent) 50%, transparent);
 }
+[data-bs-theme="dark"] .prd-card:hover::before { opacity: 1; }
 [data-bs-theme="dark"] .prd-card-name { color: #ede9fe; }
 [data-bs-theme="dark"] .prd-card-brand { color: #a89fc7; }
 [data-bs-theme="dark"] .prd-card-id { color: #8579b5; }

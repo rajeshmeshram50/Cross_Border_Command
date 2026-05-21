@@ -4,7 +4,6 @@ import api from '../../api';
 import { resolveFileUrl, viewFile } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
 
@@ -23,6 +22,9 @@ import Tooltip from '../../components/ui/Tooltip';
 
 export type VendorEntry = {
   id: string;
+  /** DB id of the vendor row. Carries through so storeVendors can
+   *  mirror the mapping into VendorProductMapping (vendor side). */
+  vendorId: string;
   productCode: string;
   vendorCode: string;
   vendorName: string;
@@ -82,6 +84,13 @@ export type QcRecord = {
    *  accessor when available, else built via resolveFileUrl).
    *  Empty when the row has no attachment yet. */
   attachmentUrl?: string;
+  /** Newly picked File object (set by the QC modal's file input)
+   *  — kept in memory until Save uploads it via multipart and the
+   *  server returns the stored attachment_path. */
+  attachmentFile?: File | null;
+  /** Existing server-side path. Preserved on edit so the row keeps
+   *  its uploaded file when the user doesn't replace the attachment. */
+  attachmentPath?: string;
 };
 
 /* ─── Static option lists ─── */
@@ -94,14 +103,21 @@ export type QcRecord = {
 const HAZ_TYPES = ['Non-Haz', 'Haz'];
 const BOTTOM_OPTIONS = ['Bottom', 'Non Bottom'];
 const QC_NAMES = ['COA', 'MSDS', 'FSSAI', 'AGMARK', 'ISO 9001', 'ISO 22000', 'HACCP', 'HALAL', 'KOSHER', 'FSSC 22000'];
-// Local vendor stub — there's no Vendor master yet. Once it ships, swap this
-// for a `GET /api/master/vendors` call in the loaders effect.
-const VENDOR_LIST = [
-  { code: 'V-001', name: 'Golden Grain Suppliers', website: 'www.goldengrain.in', contact: 'Rakesh Mehta',  phone: '+91 98765 43210', email: 'rakesh@goldengrain.in',  designation: 'Sales Head' },
-  { code: 'V-002', name: 'GreenHarvest',           website: 'www.greenharvest.co', contact: 'Anita Desai',  phone: '+91 99888 77665', email: 'anita@greenharvest.co',  designation: 'Procurement Mgr' },
-  { code: 'V-003', name: 'Shree Exports',          website: 'www.shreeexports.in', contact: 'Mohit Sharma', phone: '+91 95544 22119', email: 'mohit@shreeexports.in',  designation: 'Director' },
-  { code: 'V-004', name: 'Sun Agri',               website: 'www.sunagri.com',     contact: 'Pooja Iyer',   phone: '+91 91234 56789', email: 'pooja@sunagri.com',      designation: 'Account Mgr' },
-];
+/** Vendor option as it lives in the in-memory list backing the
+ *  Step-2 dropdown. Loaded from /api/vendors when the wizard reaches
+ *  the vendor step, includes both Active and Inactive vendors so the
+ *  user can map any vendor the org has on file. */
+export type VendorOpt = {
+  id: string;
+  code: string;
+  name: string;
+  website: string;
+  contact: string;
+  phone: string;
+  email: string;
+  designation: string;
+  status: string;
+};
 
 type Tab = 'core' | 'sales' | 'quality';
 
@@ -271,19 +287,6 @@ export default function AddProductModal(props: {
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
   const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
 
-  // Adapter list of percentage-string options for the vendor draft GST picker.
-  // The vendor sub-form stores the GST as a "18%" string (parsed via replace('%','')),
-  // so we project the master rows into that shape rather than passing IDs.
-  const vendorGstOptions = useMemo(
-    () => optGst
-      .map(o => {
-        const pct = parseFloat(String(o.extra?.percentage ?? '0')) || 0;
-        return { value: `${pct}%`, label: `${pct}%` };
-      })
-      .filter(o => o.value !== '0%'),
-    [optGst],
-  );
-
   /* ─── Step 1: Quality ─── */
   const [netWeight,   setNetWeight]   = useState<string>('');
   const [grossWeight, setGrossWeight] = useState<string>('');
@@ -305,18 +308,27 @@ export default function AddProductModal(props: {
   /* ─── Step 2: Vendor ─── */
   const [vendors, setVendors] = useState<VendorEntry[]>([]);
   const [vendorDraftOpen, setVendorDraftOpen] = useState(false);
+  /* Vendors loaded from /api/vendors. Both Active and Inactive show
+     up — the user may map either, since a draft vendor still needs
+     its products linked before the vendor itself can flip to Active. */
+  const [vendorOpts, setVendorOpts] = useState<VendorOpt[]>([]);
   const [vendorSelectedCode, setVendorSelectedCode] = useState('');
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
   const [vendorGstPct, setVendorGstPct] = useState<string>('');
   const [vendorRemarks, setVendorRemarks] = useState('');
-  const [vendorMapDate, setVendorMapDate] = useState<string>('');
 
   const vendorSelected = useMemo(
-    () => VENDOR_LIST.find(v => v.code === vendorSelectedCode) || null,
-    [vendorSelectedCode]
+    () => vendorOpts.find(v => v.code === vendorSelectedCode) || null,
+    [vendorOpts, vendorSelectedCode]
   );
   const vendorPp   = parseFloat(vendorPurchasePrice) || 0;
-  const vendorGp   = parseFloat(vendorGstPct.replace('%', '')) || 0;
+  // Vendor GST% is locked to the product's own GST% (set in the
+  // Sales Config step). Mapping a vendor must not introduce a
+  // different tax rate than the product itself, so the picker is
+  // gone and the calc just reads gstPctNum directly. The legacy
+  // `vendorGstPct` state still exists for backward compat with
+  // edit-mode prefill but no longer feeds the math.
+  const vendorGp   = gstPctNum;
   const vendorGsta = +(vendorPp * (vendorGp / 100)).toFixed(2);
   const vendorTota = +(vendorPp + vendorGsta).toFixed(2);
 
@@ -425,6 +437,10 @@ export default function AddProductModal(props: {
      confirmation; backdrop click and Esc respect `qcDeleting` so the
      user can't cancel mid-action. */
   const [qcDeleteTarget, setQcDeleteTarget] = useState<QcRecord | null>(null);
+  /* Two-stage delete for mapped vendors — clicking the row's
+     delete icon stages the entry; DeleteConfirmModal hits the
+     actual remove on confirm. Mirrors the QC delete flow. */
+  const [vendorDeleteTarget, setVendorDeleteTarget] = useState<VendorEntry | null>(null);
 
   /* Edit-mode for an existing QC row: opens the same QcAddPopup
      pre-filled with the row's data. On save we update the existing
@@ -494,6 +510,7 @@ export default function AddProductModal(props: {
     if (!vendorSelected) return; // type-guard after the check
     const entry: VendorEntry = {
       id: String(Date.now()),
+      vendorId: vendorSelected.id,
       productCode: productCode || 'P-NEW',
       vendorCode: vendorSelected.code,
       vendorName: vendorSelected.name,
@@ -507,7 +524,9 @@ export default function AddProductModal(props: {
       gstPct: vendorGp,
       gstAmt: vendorGsta,
       totalAmt: vendorTota,
-      mapDate: vendorMapDate ? formatDate(vendorMapDate) : today(),
+      // Map Date is auto-stamped at save time — server replaces this
+      // with the server's own clock anyway.
+      mapDate: today(),
       remarks: vendorRemarks,
     };
     setVendors(prev => [...prev, entry]);
@@ -516,7 +535,6 @@ export default function AddProductModal(props: {
     setVendorPurchasePrice('');
     setVendorGstPct('');
     setVendorRemarks('');
-    setVendorMapDate('');
     toast.success('Vendor mapped', `${entry.vendorName} added to this product`);
   };
 
@@ -553,8 +571,45 @@ export default function AddProductModal(props: {
       }
     };
 
+    /* Vendor master ships its own paginated endpoint, not /master/*.
+       We pull every vendor (no status filter) so both Active and
+       Inactive rows show up in the Step-2 dropdown — the user may
+       legitimately want to map a draft/inactive vendor, after which
+       the vendor flips to Active. */
+    const fetchVendors = async (): Promise<VendorOpt[]> => {
+      try {
+        type VRow = {
+          id: number | string;
+          vendor_code?: string | null;
+          company_name?: string | null;
+          website?: string | null;
+          primary_email?: string | null;
+          status?: string | null;
+          primary_address?: {
+            contact_name?: string | null;
+            contact_no?: string | null;
+            email?: string | null;
+            designation?: string | null;
+          } | null;
+        };
+        const res = await api.get<{ data?: VRow[] } | VRow[]>('/vendors?per_page=500');
+        const rows: VRow[] = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+        return rows.map(r => ({
+          id:          String(r.id),
+          code:        String(r.vendor_code ?? ''),
+          name:        String(r.company_name ?? ''),
+          website:     String(r.website ?? ''),
+          contact:     String(r.primary_address?.contact_name ?? ''),
+          phone:       String(r.primary_address?.contact_no ?? ''),
+          email:       String(r.primary_address?.email ?? r.primary_email ?? ''),
+          designation: String(r.primary_address?.designation ?? ''),
+          status:      String(r.status ?? '').toLowerCase(),
+        }));
+      } catch { return []; }
+    };
+
     (async () => {
-      const [seg, hz, uo, hs, co, pk, gst] = await Promise.all([
+      const [seg, hz, uo, hs, co, pk, gst, vd] = await Promise.all([
         fetchMaster('segments',           'title'),
         fetchMaster('haz_class',          'name'),
         fetchMaster('uom',                'title', { extraKeys: ['short_code', 'unit_type'] }),
@@ -562,6 +617,7 @@ export default function AddProductModal(props: {
         fetchMaster('conditions',         'title'),
         fetchMaster('packaging_material', 'title'),
         fetchMaster('gst_percentage',     'percentage', { extraKeys: ['percentage'] }),
+        fetchVendors(),
       ]);
       setOptSegments(seg);
       setOptHazClasses(hz);
@@ -570,6 +626,7 @@ export default function AddProductModal(props: {
       setOptConditions(co);
       setOptPackaging(pk);
       setOptGst(gst.map(o => ({ ...o, label: `${o.label}%` })));
+      setVendorOpts(vd);
     })();
   }, []);
 
@@ -691,9 +748,12 @@ export default function AddProductModal(props: {
           minAcceptance: q.min_acceptance_criteria ?? '',
           attachmentName: q.attachment_path ? q.attachment_path.split('/').pop() ?? '' : '',
           attachmentUrl: q.attachment_url ?? (q.attachment_path ? resolveFileUrl(q.attachment_path) : ''),
+          attachmentPath: q.attachment_path ?? '',
+          attachmentFile: null,
         })));
         setVendors((p.vendor_maps ?? []).map(v => ({
           id: String(v.id),
+          vendorId: (v as Record<string, unknown>).vendor_id ? String((v as Record<string, unknown>).vendor_id) : '',
           productCode: p.product_code ?? '',
           vendorCode: String(v.vendor_code ?? ''),
           vendorName: String(v.vendor_name ?? ''),
@@ -885,7 +945,25 @@ export default function AddProductModal(props: {
     setFieldErrors({});
     setSaving(true);
     try {
-      await api.put(`/products/${productId}/step/quality`, {
+      /* Switch the request to multipart only when a QC row carries a
+         newly-picked File. Pure-text saves stay on the JSON path so
+         existing call sites don't pay the multipart overhead.
+         Laravel reads array-indexed file inputs as
+         `qc_records.{idx}.attachment_file`. */
+      const hasNewFiles = qcRecords.some(q => q.attachmentFile instanceof File);
+      const qcRows = qcRecords.map(q => ({
+        qc_name: q.name,
+        qc_purpose: q.purpose,
+        issued_by: q.issuedBy,
+        qa_testing_parameter: q.testingParameter,
+        min_acceptance_criteria: q.minAcceptance,
+        // Keep the existing server-side path when the user didn't
+        // replace the attachment on this open of the modal. The
+        // backend overrides with the multipart upload path below.
+        attachment_path: q.attachmentPath || (q.attachmentFile ? null : (q.attachmentName || null)),
+      }));
+
+      const qualityFields = {
         batch_no: batchNo || null,
         serial_no: serialNo || null,
         cat_no: catNo || null,
@@ -895,15 +973,41 @@ export default function AddProductModal(props: {
         length_cm: parseFloat(length) || null,
         width_cm: parseFloat(width) || null,
         height_cm: parseFloat(height) || null,
-        qc_records: qcRecords.map(q => ({
-          qc_name: q.name,
-          qc_purpose: q.purpose,
-          issued_by: q.issuedBy,
-          qa_testing_parameter: q.testingParameter,
-          min_acceptance_criteria: q.minAcceptance,
-          attachment_path: q.attachmentName || null,
-        })),
-      });
+      };
+
+      if (hasNewFiles) {
+        const fd = new FormData();
+        // Laravel needs a method override since the route is PUT.
+        fd.append('_method', 'PUT');
+        Object.entries(qualityFields).forEach(([k, v]) => {
+          if (v === null || v === undefined) return;
+          fd.append(k, String(v));
+        });
+        qcRows.forEach((row, idx) => {
+          Object.entries(row).forEach(([k, v]) => {
+            if (v === null || v === undefined) return;
+            fd.append(`qc_records[${idx}][${k}]`, String(v));
+          });
+          const file = qcRecords[idx]?.attachmentFile;
+          if (file instanceof File) {
+            fd.append(`qc_records[${idx}][attachment_file]`, file);
+          }
+        });
+        await api.post(`/products/${productId}/step/quality`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        await api.put(`/products/${productId}/step/quality`, {
+          ...qualityFields,
+          qc_records: qcRows,
+        });
+      }
+
+      // Clear the in-memory File objects — on the next save the row
+      // should be treated as having no fresh file picked, so we don't
+      // re-upload the same blob.
+      setQcRecords(prev => prev.map(q => ({ ...q, attachmentFile: null })));
+
       // Step 1 fully complete — product is now Inactive on the server.
       onSaved(productId, false);
       toast.success('Quality saved', 'Product is now Inactive — map a vendor to activate');
@@ -929,6 +1033,7 @@ export default function AddProductModal(props: {
     try {
       await api.put(`/products/${productId}/step/vendors`, {
         vendors: vendors.map(v => ({
+          vendor_id: v.vendorId ? Number(v.vendorId) : null,
           vendor_code: v.vendorCode,
           vendor_name: v.vendorName,
           vendor_website: v.website,
@@ -1305,10 +1410,24 @@ export default function AddProductModal(props: {
                                 </td>
                                 <td>
                                   {q.attachmentName ? (
-                                    <span className="fs-13 d-inline-block text-truncate" style={{ maxWidth: 200 }} title={q.attachmentName}>
-                                      <i className="ri-attachment-line text-muted me-1" />
-                                      {q.attachmentName}
-                                    </span>
+                                    q.attachmentUrl ? (
+                                      <a
+                                        href={q.attachmentUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="fs-13 d-inline-block text-truncate"
+                                        style={{ maxWidth: 200, color: '#4338ca', textDecoration: 'underline', cursor: 'pointer' }}
+                                        title={`Open ${q.attachmentName}`}
+                                      >
+                                        <i className="ri-attachment-line me-1" />
+                                        {q.attachmentName}
+                                      </a>
+                                    ) : (
+                                      <span className="fs-13 d-inline-block text-truncate" style={{ maxWidth: 200 }} title={q.attachmentName}>
+                                        <i className="ri-attachment-line text-muted me-1" />
+                                        {q.attachmentName}
+                                      </span>
+                                    )
                                   ) : <span className="text-muted fs-13">—</span>}
                                 </td>
                                 <td>
@@ -1373,8 +1492,23 @@ export default function AddProductModal(props: {
                       { label: 'Length',       value: length ? `${length} cm` : '—' },
                       { label: 'Width',        value: width  ? `${width} cm`  : '—' },
                       { label: 'Height',       value: height ? `${height} cm` : '—' },
-                      { label: 'QC Records',   value: String(qcRecords.length) },
                     ],
+                    /* Per-QC detail rows replace the "QC Records : N"
+                       count so the user can scan what was actually
+                       captured (and open the attachment) without
+                       flipping back to the QC tab. */
+                    extras: qcRecords.map((q, i) => ({
+                      label: `QC ${String(i + 1).padStart(2, '0')}`,
+                      pairs: [
+                        { k: 'Name',       v: q.name || '—' },
+                        { k: 'Purpose',    v: q.purpose || '—' },
+                        { k: 'Issued By',  v: q.issuedBy || '—' },
+                        { k: 'Min Accept', v: q.minAcceptance || '—' },
+                      ],
+                      attachment: q.attachmentName
+                        ? { name: q.attachmentName, href: q.attachmentUrl || '' }
+                        : null,
+                    })),
                   },
                 ]}
               />
@@ -1388,87 +1522,96 @@ export default function AddProductModal(props: {
                 </div>
               )}
 
-              {vendorDraftOpen && (
-                <SectionCard
-                  tone="navy"
-                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
-                  title="Map Product Vendor"
-                  subtitle="Select a vendor and enter purchase pricing"
-                  headerAction={
-                    <button className="apm-btn-outline">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
-                      Add Vendor
-                    </button>
-                  }
-                >
-                  <div className="apm-grid-2">
-                    <Field label="Select Vendor" required>
-                      <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select vendor"
-                        options={VENDOR_LIST.map(v => ({ value: v.code, label: `${v.code} — ${v.name}` }))}
-                      />
-                    </Field>
-                    <span />
-                  </div>
-
-                  {/* Read-only vendor info grid */}
-                  <div className="apm-vendor-info">
-                    <InfoCell label="Vendor Code"          value={vendorSelected?.code   ?? 'NA'} />
-                    <InfoCell label="Vendor Company Name"  value={vendorSelected?.name   ?? 'NA'} />
-                    <InfoCell label="Company Website"      value={vendorSelected?.website ?? 'NA'} />
-                    <InfoCell label="Contact person name" value={vendorSelected?.contact ?? 'NA'} />
-                    <InfoCell label="Contact no"           value={vendorSelected?.phone  ?? 'NA'} />
-                    <InfoCell label="Email ID"             value={vendorSelected?.email  ?? 'NA'} />
-                    <InfoCell label="Designation"          value={vendorSelected?.designation ?? 'NA'} />
-                    <InfoCell label="Attachments"          value="—" />
-                  </div>
-
-                  <div className="apm-grid-4">
-                    <Field label="Purchase Price" required>
-                      <div className="apm-input-icon">
-                        <span className="apm-input-icon-prefix">₹</span>
-                        <input className="apm-input has-prefix" type="number" placeholder="0.00" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} />
+              {vendorDraftOpen && createPortal((
+                <div className="apm-mv-backdrop" onClick={() => setVendorDraftOpen(false)}>
+                  <div className="apm-mv-popup" onClick={(e) => e.stopPropagation()}>
+                    <div className="apm-mv-popup-head">
+                      <div className="apm-mv-popup-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                        <div>
+                          <div className="apm-mv-popup-title-main">Map Product Vendor</div>
+                          <div className="apm-mv-popup-title-sub">Select a vendor and enter purchase pricing</div>
+                        </div>
                       </div>
-                    </Field>
-                    <Field label="GST %">
-                      <SelectInput value={vendorGstPct} onChange={setVendorGstPct} placeholder="0%" options={vendorGstOptions} />
-                    </Field>
-                    <Field label="GST Amount">
-                      <div className="apm-input-icon">
-                        <span className="apm-input-icon-prefix">₹</span>
-                        <input className="apm-input has-prefix apm-readonly" value={vendorGsta.toFixed(2)} readOnly />
-                      </div>
-                    </Field>
-                    <Field label="Total Amount">
-                      <div className="apm-input-icon">
-                        <span className="apm-input-icon-prefix">₹</span>
-                        <input className="apm-input has-prefix apm-readonly apm-total" value={vendorTota.toFixed(2)} readOnly />
-                      </div>
-                    </Field>
-                  </div>
+                      <button className="apm-close apm-mv-close" onClick={() => setVendorDraftOpen(false)} aria-label="Close">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                      </button>
+                    </div>
 
-                  <div className="apm-grid-2">
-                    <Field label="Map Date" icon={<i className="ri-calendar-line" />}>
-                      <div className="apm-master-date">
-                        <MasterDatePicker
-                          value={vendorMapDate}
-                          onChange={setVendorMapDate}
-                          placeholder="Select date"
-                        />
+                    <div className="apm-mv-popup-body">
+                      <div className="apm-grid-2">
+                        <Field label="Select Vendor" required>
+                          <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select vendor"
+                            options={vendorOpts.map(v => ({
+                              value: v.code,
+                              label: `${v.code} — ${v.name}${v.status && v.status !== 'active' ? ` (${v.status.charAt(0).toUpperCase()}${v.status.slice(1)})` : ''}`,
+                            }))}
+                          />
+                        </Field>
+                        <span />
                       </div>
-                    </Field>
-                    <Field label="Remarks" icon={<i className="ri-chat-3-line" />}>
-                      <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Enter remarks" value={vendorRemarks} onChange={e => setVendorRemarks(e.target.value)} rows={2} />
-                    </Field>
-                  </div>
 
-                  <div className="apm-vendor-draft-foot">
-                    <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={!vendorSelected || !vendorPp}>
-                      Save Vendor
-                    </button>
-                    <button className="apm-btn-ghost" onClick={() => setVendorDraftOpen(false)}>Cancel</button>
+                      {/* Read-only vendor info grid */}
+                      <div className="apm-vendor-info">
+                        <InfoCell label="Vendor Code"          value={vendorSelected?.code   ?? 'NA'} />
+                        <InfoCell label="Vendor Company Name"  value={vendorSelected?.name   ?? 'NA'} />
+                        <InfoCell label="Company Website"      value={vendorSelected?.website ?? 'NA'} />
+                        <InfoCell label="Contact person name" value={vendorSelected?.contact ?? 'NA'} />
+                        <InfoCell label="Contact no"           value={vendorSelected?.phone  ?? 'NA'} />
+                        <InfoCell label="Email ID"             value={vendorSelected?.email  ?? 'NA'} />
+                        <InfoCell label="Designation"          value={vendorSelected?.designation ?? 'NA'} />
+                        <InfoCell label="Attachments"          value="—" />
+                      </div>
+
+                      <div className="apm-grid-4">
+                        <Field label="Purchase Price" required>
+                          <div className="apm-input-icon">
+                            <span className="apm-input-icon-prefix">₹</span>
+                            <input className="apm-input has-prefix" type="number" placeholder="0.00" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} />
+                          </div>
+                        </Field>
+                        {/* GST% is inherited from the product's Sales Config
+                            step — locked here so a vendor mapping can never
+                            carry a different rate than the parent product. */}
+                        <Field label="GST %">
+                          <input
+                            className="apm-input apm-readonly"
+                            value={gstPctStr || '—'}
+                            readOnly
+                            title="GST % comes from the product's Sales Config (Step 2)"
+                          />
+                        </Field>
+                        <Field label="GST Amount">
+                          <div className="apm-input-icon">
+                            <span className="apm-input-icon-prefix">₹</span>
+                            <input className="apm-input has-prefix apm-readonly" value={vendorGsta.toFixed(2)} readOnly />
+                          </div>
+                        </Field>
+                        <Field label="Total Amount">
+                          <div className="apm-input-icon">
+                            <span className="apm-input-icon-prefix">₹</span>
+                            <input className="apm-input has-prefix apm-readonly apm-total" value={vendorTota.toFixed(2)} readOnly />
+                          </div>
+                        </Field>
+                      </div>
+
+                      {/* Map date is auto-stamped server-side (and locally
+                          defaults to today()), so the user no longer picks
+                          it. Remarks gets the full row. */}
+                      <Field label="Remarks" icon={<i className="ri-chat-3-line" />}>
+                        <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Enter remarks" value={vendorRemarks} onChange={e => setVendorRemarks(e.target.value)} rows={2} />
+                      </Field>
+                    </div>
+
+                    <div className="apm-mv-popup-foot">
+                      <button className="apm-btn-ghost" onClick={() => setVendorDraftOpen(false)}>Cancel</button>
+                      <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={!vendorSelected || !vendorPp}>
+                        Save Vendor
+                      </button>
+                    </div>
                   </div>
-                </SectionCard>
-              )}
+                </div>
+              ), document.body)}
 
               {/* Mapped vendor table — same shell as the Clients master table */}
               {vendors.length > 0 && (
@@ -1515,32 +1658,22 @@ export default function AddProductModal(props: {
                             <td><span className="fs-13">{v.gstPct.toFixed(2)}%</span></td>
                             <td><span className="fs-13">₹{v.gstAmt.toFixed(2)}</span></td>
                             <td><span className="text-success fw-semibold fs-13">₹{v.totalAmt.toLocaleString()}</span></td>
-                            <td>
-                              <span className="d-inline-flex align-items-center gap-1 fs-13">
-                                <i className="ri-calendar-line text-muted" />
-                                <span>{v.mapDate}</span>
-                              </span>
-                            </td>
+                            <td><span className="fs-13">{v.mapDate || <span className="text-muted">—</span>}</span></td>
                             <td><span className="fs-13">{v.remarks || <span className="text-muted">—</span>}</span></td>
                             <td>
-                              <div className="hstack gap-1">
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-soft-primary"
+                              <div className="d-flex gap-1">
+                                <QcActionBtn
                                   title="Edit"
-                                  aria-label="Edit"
-                                >
-                                  <i className="ri-pencil-line" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-soft-danger"
-                                  onClick={() => removeVendor(v.id)}
+                                  icon="ri-pencil-line"
+                                  color="info"
+                                  onClick={() => { /* edit flow lands later */ }}
+                                />
+                                <QcActionBtn
                                   title="Delete"
-                                  aria-label="Delete"
-                                >
-                                  <i className="ri-delete-bin-line" />
-                                </button>
+                                  icon="ri-delete-bin-line"
+                                  color="danger"
+                                  onClick={() => setVendorDeleteTarget(v)}
+                                />
                               </div>
                             </td>
                           </tr>
@@ -1555,10 +1688,10 @@ export default function AddProductModal(props: {
         </div>
 
         {/* ─── Footer ─── */}
-        <div className="apm-foot">
-          <div className="apm-foot-left">
-            <button className="apm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-          </div>
+        {/* Footer Cancel removed — the header ✕ already dismisses the
+            modal, and shipping two Cancel paths confused users. The
+            action cluster (Previous + Save) now sits flush right. */}
+        <div className="apm-foot apm-foot-actions-only">
           <div className="apm-foot-right">
             {(step === 2 || (step === 1 && tab !== 'core')) && (
               <button
@@ -1629,6 +1762,18 @@ export default function AddProductModal(props: {
         onConfirm={() => {
           if (qcDeleteTarget) removeQc(qcDeleteTarget.id);
           setQcDeleteTarget(null);
+        }}
+      />
+
+      <DeleteConfirmModal
+        open={vendorDeleteTarget !== null}
+        itemName={vendorDeleteTarget?.vendorName}
+        title="Remove Mapped Vendor"
+        subMessage="This unmaps the vendor from the product on this form. The product must be saved (Save Product) for the change to persist on the server."
+        onClose={() => setVendorDeleteTarget(null)}
+        onConfirm={() => {
+          if (vendorDeleteTarget) removeVendor(vendorDeleteTarget.id);
+          setVendorDeleteTarget(null);
         }}
       />
 
@@ -1820,6 +1965,18 @@ type PrevStage = {
   name: string;
   tone: 'violet' | 'amber' | 'green';
   fields: { label: string; value: string }[];
+  /** Optional extra rows that render BELOW the field grid for the
+   *  stage. Used by QUALITY & COMPLIANCE to show per-QC details +
+   *  the (clickable) attachment link instead of just a row count. */
+  extras?: PrevStageExtra[];
+};
+type PrevStageExtra = {
+  /** Row label (e.g. "QC Record 1" or the QC's name). */
+  label: string;
+  /** Inline `key : value` pairs flowed in a row. */
+  pairs: { k: string; v: string }[];
+  /** Optional clickable attachment link rendered at the row end. */
+  attachment?: { name: string; href: string } | null;
 };
 
 function PreviousStages(props: {
@@ -1856,6 +2013,32 @@ function PreviousStages(props: {
                   </div>
                 ))}
               </div>
+              {s.extras && s.extras.length > 0 && (
+                <div className="apm-prev-extras">
+                  {s.extras.map((ex, i) => (
+                    <div key={i} className="apm-prev-extra-row">
+                      <span className="apm-prev-extra-label">{ex.label}</span>
+                      {ex.pairs.map((p, j) => (
+                        <span key={j} className="apm-prev-extra-pair">
+                          <span className="apm-prev-extra-k">{p.k} :</span>{' '}
+                          <span className="apm-prev-extra-v" title={p.v}>{p.v}</span>
+                        </span>
+                      ))}
+                      {ex.attachment?.href && (
+                        <a
+                          href={ex.attachment.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="apm-prev-extra-attach"
+                          title={`Open ${ex.attachment.name}`}
+                        >
+                          <i className="ri-attachment-line" /> {ex.attachment.name}
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1884,7 +2067,19 @@ function QcAddPopup(props: {
 
   const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) set('attachmentName', f.name);
+    if (f) {
+      /* Build an in-memory blob URL right away so the freshly-added
+         row's "View Attachment" link works before the file is saved
+         to the server. The server URL replaces this on the next
+         /products/{id} prefill once Save Quality finishes uploading. */
+      const previewUrl = URL.createObjectURL(f);
+      setDraft({
+        ...draft,
+        attachmentName: f.name,
+        attachmentFile: f,
+        attachmentUrl: previewUrl,
+      });
+    }
   };
 
   return createPortal((
@@ -2534,6 +2729,64 @@ const SCOPED_CSS = `
 /* ─── QC empty state ─── */
 .apm-empty { padding: 24px; text-align: center; color: #94a3b8; font-size: 12.5px; }
 
+/* ─── Map Vendor popup (Step 2) ─── */
+.apm-mv-backdrop {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(15, 23, 42, .55);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 24px 20px;
+  overflow-y: auto;
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+}
+.apm-mv-popup {
+  width: 100%; max-width: 980px;
+  margin: auto;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
+  color: #1e1b4b;
+  max-height: calc(100vh - 48px);
+}
+.apm-mv-popup-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #2b3a85 0%, #1e2a5f 100%);
+  color: #fff;
+}
+.apm-mv-popup-title {
+  display: inline-flex; align-items: center; gap: 10px;
+}
+.apm-mv-popup-title svg { flex-shrink: 0; }
+.apm-mv-popup-title-main { font-size: 15px; font-weight: 800; line-height: 1.2; }
+.apm-mv-popup-title-sub  { font-size: 11.5px; font-weight: 500; opacity: .8; margin-top: 2px; }
+.apm-mv-close {
+  width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.12);
+  color: #fff; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s, transform .12s;
+}
+.apm-mv-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+.apm-mv-popup-body {
+  padding: 18px 20px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.apm-mv-popup-foot {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid #e5e7eb;
+  background: #fafbff;
+}
+
+[data-bs-theme="dark"] .apm-mv-popup { background: #14102a; color: #ede9fe; box-shadow: 0 30px 80px rgba(0,0,0,.75); }
+[data-bs-theme="dark"] .apm-mv-popup-foot { background: #1a1538; border-top-color: #2a2150; }
+
 /* ─── QC Add popup ─── */
 .apm-qc-backdrop {
   position: fixed; inset: 0; z-index: 1100;
@@ -2718,6 +2971,42 @@ const SCOPED_CSS = `
   cursor: default;
 }
 
+/* Extras row — sits BELOW the field grid for stages that ship
+   richer per-item data (QC records carry name/purpose/issuer +
+   an attachment link). Renders inline so multiple key:value
+   pairs sit on one line and wrap on narrow viewports. */
+.apm-prev-extras {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px dashed #d1fae5;
+}
+.apm-prev-extra-row {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 4px 18px;
+  font-size: 12.5px;
+}
+.apm-prev-extra-label {
+  font-weight: 800; color: #15803d;
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  margin-right: 4px;
+}
+.apm-prev-extra-pair { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; }
+.apm-prev-extra-k {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
+  color: #94a3b8; text-transform: uppercase; white-space: nowrap;
+}
+.apm-prev-extra-v {
+  font-weight: 600; color: #1e1b4b;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 220px;
+}
+.apm-prev-extra-attach {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-weight: 700; color: #4338ca; text-decoration: underline;
+  font-size: 12px;
+}
+.apm-prev-extra-attach:hover { color: #312e81; }
+
 /* ─── Vendor toolbar ─── */
 .apm-vendor-toolbar {
   display: flex; align-items: center; justify-content: space-between;
@@ -2781,6 +3070,9 @@ const SCOPED_CSS = `
   padding: 14px 22px;
   background: #fff; border-top: 1px solid #ede9fe;
 }
+/* When Cancel is gone the action cluster sits flush right so the
+   right column doesn't visually drift toward center. */
+.apm-foot.apm-foot-actions-only { justify-content: flex-end; }
 .apm-foot-left  { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .apm-foot-right { display: flex; align-items: center; gap: 8px; }
 .apm-foot-error {

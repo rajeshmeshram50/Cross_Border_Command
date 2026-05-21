@@ -97,6 +97,18 @@ class ProductController extends Controller
             });
         }
 
+        // Optional vendor filter — narrows the result to products
+        // mapped to one specific vendor. Used by the Vendors page
+        // "Map Products" deep-link, which navigates to
+        // /products?vendor_id=<id> so the user sees only that
+        // vendor's existing mappings (or an empty state offering to
+        // add the first one).
+        if ($vendorId = $request->query('vendor_id')) {
+            $query->whereHas('vendorMaps', function ($w) use ($vendorId) {
+                $w->where('vendor_id', $vendorId);
+            });
+        }
+
         $products = $query->orderByDesc('id')
             ->paginate((int) $request->query('per_page', 24));
 
@@ -332,9 +344,10 @@ class ProductController extends Controller
             'qc_records.*.qa_testing_parameter' => 'nullable|string',
             'qc_records.*.min_acceptance_criteria' => 'nullable|string',
             'qc_records.*.attachment_path' => 'nullable|string|max:500',
+            'qc_records.*.attachment_file' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:10240',
         ]);
 
-        DB::transaction(function () use ($product, $data) {
+        DB::transaction(function () use ($product, $data, $request) {
             $product->fill(collect($data)->except('qc_records')->toArray());
 
             // Step 1 fully complete when Quality is saved — flip status to inactive
@@ -345,10 +358,20 @@ class ProductController extends Controller
             }
             $product->save();
 
-            // Replace QC list
+            // Replace QC list — persist each row, swapping `attachment_file`
+            // (a real uploaded file when the user picked one) for the
+            // public-disk storage path so the frontend can render a working
+            // link via resolveFileUrl(). Without this, `attachment_path` was
+            // just the original filename, which 404'd and the SPA fallback
+            // routed the user to the products overview instead of the file.
             $product->qcRecords()->delete();
-            foreach ($data['qc_records'] ?? [] as $qc) {
-                $product->qcRecords()->create($qc);
+            foreach ($data['qc_records'] ?? [] as $idx => $qc) {
+                $row = collect($qc)->except(['attachment_file'])->toArray();
+                $uploaded = $request->file("qc_records.{$idx}.attachment_file");
+                if ($uploaded) {
+                    $row['attachment_path'] = $uploaded->store('products/qc', 'public');
+                }
+                $product->qcRecords()->create($row);
             }
         });
 
@@ -368,6 +391,7 @@ class ProductController extends Controller
 
         $data = $request->validate([
             'vendors'                    => 'required|array|min:1',
+            'vendors.*.vendor_id'        => 'nullable|integer|exists:vendors,id',
             'vendors.*.vendor_code'      => 'nullable|string|max:50',
             'vendors.*.vendor_name'      => 'required|string|max:255',
             'vendors.*.vendor_website'   => 'nullable|string|max:255',
@@ -384,11 +408,61 @@ class ProductController extends Controller
             'vendors.*.remarks'          => 'nullable|string',
         ]);
 
-        DB::transaction(function () use ($product, $data) {
+        DB::transaction(function () use ($product, $data, $request) {
+            $userId = $request->user()?->id;
+
+            // Replace the product's vendor list.
             $product->vendorMaps()->delete();
+
+            // Track which vendors this product is now mapped to so we
+            // can mirror the link onto vendor_product_mappings (the
+            // vendor side's source of truth). Any vendor that the
+            // product used to be linked to but is no longer listed
+            // gets its corresponding row dropped, keeping the two
+            // tables in sync.
+            $nowMappedVendorIds = [];
+
             foreach ($data['vendors'] as $v) {
                 $product->vendorMaps()->create($v);
+
+                $vendorId = $v['vendor_id'] ?? null;
+                if (!$vendorId) continue;
+                $nowMappedVendorIds[] = (int) $vendorId;
+
+                // Mirror onto the vendor side. updateOrCreate so a
+                // second save doesn't duplicate the row when the same
+                // (vendor, product) pair is re-saved on this product.
+                \App\Models\VendorProductMapping::updateOrCreate(
+                    ['vendor_id' => $vendorId, 'product_id' => $product->id],
+                    [
+                        'purchase_price' => $v['purchase_price'] ?? 0,
+                        'gst_percentage' => $v['gst_percentage'] ?? 0,
+                        'gst_amount'     => $v['gst_amount']     ?? 0,
+                        'total_amount'   => $v['total_amount']   ?? ($v['purchase_price'] ?? 0),
+                        'created_by'     => $userId,
+                    ]
+                );
+
+                // Auto-activate the vendor as soon as it has at least
+                // one product linked to it — same end-state the
+                // vendor wizard reaches after Step 4. Use existing
+                // step_completed if the vendor was further along.
+                $vendor = \App\Models\Vendor::find($vendorId);
+                if ($vendor) {
+                    $vendor->step_completed = max((int) $vendor->step_completed, 4);
+                    if ($vendor->status !== 'active') {
+                        $vendor->status = 'active';
+                    }
+                    $vendor->save();
+                }
             }
+
+            // Drop stale mirror rows on the vendor side — any vendor
+            // that USED to be mapped to this product but isn't in the
+            // current submit.
+            \App\Models\VendorProductMapping::where('product_id', $product->id)
+                ->when(!empty($nowMappedVendorIds), fn ($q) => $q->whereNotIn('vendor_id', $nowMappedVendorIds))
+                ->delete();
 
             $product->step_completed = 4;
             $product->status = 'active';
@@ -418,6 +492,18 @@ class ProductController extends Controller
     public function stats(Request $request)
     {
         $query = $this->applyScope(Product::query(), $request);
+
+        // Mirror the index endpoint's vendor filter so the
+        // Active / Inactive tab counts stay in sync with the rows
+        // the user is actually seeing. Without this, the deep-link
+        // (/products?vendor_id=…) showed e.g. "Active 24 / Inactive 9"
+        // — the org-wide numbers — even though only 2 products were
+        // listed below them.
+        if ($vendorId = $request->query('vendor_id')) {
+            $query->whereHas('vendorMaps', function ($w) use ($vendorId) {
+                $w->where('vendor_id', $vendorId);
+            });
+        }
 
         $active   = (clone $query)->where('status', 'active')->count();
         $inactive = (clone $query)->whereIn('status', ['inactive', 'draft'])->count();

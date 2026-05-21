@@ -654,7 +654,7 @@ const C: Record<string, MasterConfig> = {
     desc: '8-digit commodity codes for GST & customs filings',
     cat: 'Trade & Commercial',
     fields: [
-      { n: 'hsn_code', l: 'HSN Code', t: 'text', r: true, p: 'e.g. 08021200' },
+      { n: 'hsn_code', l: 'HSN Code', t: 'text', r: true, p: 'e.g. 08021200 or 9986AB' },
       { n: 'description', l: 'Description', t: 'textarea', r: true, p: 'Product/commodity description', full: true },
       // GST Rate is sourced from the GST Percentage master so the dropdown
       // reflects whatever slabs (0/5/12/18/28% — or tenant-specific custom

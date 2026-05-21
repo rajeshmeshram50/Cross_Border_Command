@@ -104,11 +104,11 @@ class MasterController extends Controller
         'port_of_loading' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'address', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code']],
         'port_of_discharge' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'city', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code']],
         'segments' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['title']],
-        'hsn_codes' => ['fields' => [['n' => 'hsn_code', 't' => 'text', 'r' => true, 'pattern' => '/^\d{6,8}$/', 'patternMessage' => 'HSN/SAC code must be a 6 to 8 digit number.'], ['n' => 'description', 't' => 'textarea', 'r' => true], ['n' => 'gst_rate_id', 't' => 'select', 'ref' => 'gst_percentage'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['hsn_code']],
+        'hsn_codes' => ['fields' => [['n' => 'hsn_code', 't' => 'text', 'r' => true, 'pattern' => '/^[A-Za-z0-9]{4,10}$/', 'patternMessage' => 'HSN/SAC code must be 4 to 10 alphanumeric characters.'], ['n' => 'description', 't' => 'textarea', 'r' => true], ['n' => 'gst_rate_id', 't' => 'select', 'ref' => 'gst_percentage'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['hsn_code']],
         'gst_percentage' => ['fields' => [['n' => 'percentage', 't' => 'number', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['percentage']],
         'currencies' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'symbol', 't' => 'text', 'r' => true], ['n' => 'exchange_rate', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code']],
         'uom' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'short_code', 't' => 'text', 'r' => true], ['n' => 'unit_type', 't' => 'select', 'opts' => ['Weight', 'Volume', 'Length', 'Area', 'Count', 'Other']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['short_code']],
-        'packaging_material' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'material_type', 't' => 'select', 'opts' => ['Bag', 'Box', 'Crate', 'Drum', 'Pallet', 'Wrap', 'Other']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['title']],
+        'packaging_material' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'material_type', 't' => 'select', 'opts' => ['Bag', 'Box', 'Crate', 'Drum', 'Pallet', 'Wrap', 'Other']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['title']],
         'conditions' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['title']],
         'incoterms' => ['fields' => [['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'full_name', 't' => 'text', 'r' => true], ['n' => 'transport_mode', 't' => 'select', 'opts' => ['Sea/Inland Waterway', 'Any Mode', 'Air', 'Road', 'Rail']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code']],
         // Case-insensitive name + system-seed collision check —
@@ -245,7 +245,10 @@ class MasterController extends Controller
         // of subdivisions — downloading the whole table just to translate an
         // id on the frontend was prohibitively slow).
         if ($slug === 'state_codes') {
-            $q->with('state:id,name');
+            // Country id rides along so the frontend can cascade State
+            // off the chosen Country (e.g. vendor address form filters
+            // states to India once the user picks India).
+            $q->with('state:id,name,country_id');
         }
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
@@ -885,6 +888,8 @@ class MasterController extends Controller
                     'code' => 'Code',
                     'account_number' => 'Account number',
                     'ifsc_code' => 'IFSC code',
+                    'hsn_code' => 'HSN/SAC code',
+                    'title' => 'Title',
                 ];
                 $label = $labels[$colName] ?? ucfirst(str_replace('_', ' ', $colName));
                 throw ValidationException::withMessages([

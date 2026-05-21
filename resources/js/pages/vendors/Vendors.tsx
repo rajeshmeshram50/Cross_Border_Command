@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Button } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
@@ -7,7 +8,6 @@ import api from '../../api';
 import AddVendorModal from './AddVendorModal';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import { ShimmerTable } from '../../components/ui/Shimmer';
-import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Vendors — front-end only master list
@@ -77,6 +77,7 @@ const AVATAR_COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#
 export default function Vendors() {
   const { user } = useAuth();
   const toast = useToast();
+  const navigate = useNavigate();
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [search, setSearch] = useState('');
@@ -86,11 +87,11 @@ export default function Vendors() {
      Reset to null on close so the next "+ Add Vendor" click opens a
      blank form. */
   const [editingId, setEditingId] = useState<number | null>(null);
+  /* When set, the wizard opens directly on that step — used by
+     "Map Products" so the user doesn't have to re-walk Steps 1-3
+     just to add a product mapping. */
+  const [editingStep, setEditingStep] = useState<1 | 2 | 3 | 4 | null>(null);
   const [loading, setLoading] = useState(true);
-  /* Two-stage delete — opens DeleteConfirmModal first, then hits the
-     API on confirm. Matches the Clients / Products patterns. */
-  const [deleteTarget, setDeleteTarget] = useState<Vendor | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   /* Map a paginated API row to the local list-page shape. Anything the
      backend doesn't populate yet falls back to '—' so the table never
@@ -140,7 +141,7 @@ export default function Vendors() {
         type="button"
         aria-label={title}
         disabled={disabled}
-        className="btn p-0 d-inline-flex align-items-center justify-content-center"
+        className="btn p- d-inline-flex align-items-center justify-content-center"
         style={{
           width: 30, height: 30, borderRadius: 8,
           background: 'var(--vz-secondary-bg)',
@@ -328,22 +329,16 @@ export default function Vendors() {
         const v: Vendor = info.row.original;
         return (
           <div className="d-flex gap-1 justify-content-center">
-            <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => toast.info('View', `Viewing ${v.companyName}`)} />
-            <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => { setEditingId(v.id); setAddOpen(true); }} />
-            <ActionBtn
-              title={v.status === 'Active' ? 'Deactivate' : 'Activate'}
-              icon={v.status === 'Active' ? 'ri-pause-circle-line' : 'ri-play-circle-line'}
-              color={v.status === 'Active' ? 'warning' : 'success'}
-              onClick={() => toggleStatus(v)}
-            />
-            <ActionBtn title="Vault"  icon="ri-folder-3-line"   color="secondary" onClick={() => toast.info('Vault', 'Vendor vault coming soon')} />
-            <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger"  disabled={deleting && deleteTarget?.id === v.id} onClick={() => removeVendor(v)} />
+            <ActionBtn title="View"         icon="ri-eye-line"            color="primary"   onClick={() => toast.info('View', `Viewing ${v.companyName}`)} />
+            <ActionBtn title="Edit"         icon="ri-pencil-line"         color="info"      onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }} />
+            <ActionBtn title="Map Products" icon="ri-links-line"          color="success"   onClick={() => navigate(`/products?vendor_id=${v.id}&vendor_code=${encodeURIComponent(v.code || '')}&vendor_name=${encodeURIComponent(v.companyName || '')}`)} />
+            <ActionBtn title="Vault"        icon="ri-folder-3-line"       color="secondary" onClick={() => toast.info('Vault', 'Vendor vault coming soon')} />
           </div>
         );
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [deleting, deleteTarget]);
+  ], []);
 
   /* The wizard now persists each step to /api/vendors/* directly, so
      this handler only re-fetches and closes the modal. The payload is
@@ -352,38 +347,8 @@ export default function Vendors() {
   const handleSave = () => {
     setAddOpen(false);
     setEditingId(null);
+    setEditingStep(null);
     void refresh();
-  };
-
-  /* Delete is two-stage via the shared DeleteConfirmModal — the action
-     button just stages the row; the modal's confirm handler hits the
-     API and refreshes the list. */
-  const removeVendor = (v: Vendor) => {
-    setDeleteTarget(v);
-  };
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      await api.delete(`/vendors/${deleteTarget.id}`);
-      toast.success('Deleted', `${deleteTarget.companyName} removed`);
-      setDeleteTarget(null);
-      await refresh();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not delete vendor';
-      toast.error('Delete failed', msg);
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  /* Status toggle stays local-only for now — there's no PATCH endpoint
-     for vendor status. The Active/Inactive flag flips when Step 4 (map
-     products) saves; flipping it outside the wizard would skip the
-     creator-hierarchy mutate guard anyway. Tooltip + toast make the
-     "coming soon" affordance obvious. */
-  const toggleStatus = (v: Vendor) => {
-    toast.info('Coming soon', `Toggle status for ${v.companyName} from the wizard`);
   };
 
   if (!allowed) {
@@ -560,7 +525,7 @@ export default function Vendors() {
                  shimmer placeholder renders while the initial /vendors
                  fetch is in flight. */}
             <Card className="border-0 shadow-none mb-0">
-              <CardBody className="p-0">
+              <CardBody className="p-3">
                 {loading ? (
                   <ShimmerTable rows={6} cols={9} />
                 ) : (
@@ -593,20 +558,11 @@ export default function Vendors() {
       {addOpen && (
         <AddVendorModal
           vendorId={editingId}
-          onClose={() => { setAddOpen(false); setEditingId(null); }}
+          initialStep={editingStep ?? undefined}
+          onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); }}
           onSubmit={handleSave}
         />
       )}
-
-      <DeleteConfirmModal
-        open={deleteTarget !== null}
-        itemName={deleteTarget?.companyName}
-        title="Delete Vendor"
-        subMessage="This vendor is soft-deleted and removed from the list. KYC documents and product mappings are kept and can be restored if the vendor is recovered."
-        onClose={() => { if (!deleting) setDeleteTarget(null); }}
-        onConfirm={confirmDelete}
-        loading={deleting}
-      />
     </>
   );
 }

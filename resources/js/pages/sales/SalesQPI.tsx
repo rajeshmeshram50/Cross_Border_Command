@@ -523,7 +523,7 @@ function QuotationTable(props: {
             <td>
               <div className="qpi-actions">
                 <button className="qpi-convert-btn" onClick={() => onConvert(r)}>
-                  <IconRepeatSm /> Convert to PI
+                  <IconRepeatSm /> <span className="qpi-convert-btn-label">Convert to PI</span>
                 </button>
                 <Tooltip label="Email Quotation">
                   <button className="qpi-act qpi-act-mail" onClick={onMail} aria-label="Email Quotation"><IconMail /></button>
@@ -1288,7 +1288,7 @@ const SCOPED_CSS = `
 /* ─── Header strip ─── */
 .qpi-header {
   position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
   padding: 12px 18px; min-height: 64px;
   background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 40%, #ddd6fe 100%);
   border: 1px solid #c4b5fd; border-radius: 16px;
@@ -1319,6 +1319,7 @@ const SCOPED_CSS = `
   padding: 8px 14px; border-radius: 7px; border: none;
   background: transparent; color: #7c3aed;
   font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  white-space: nowrap;
   transition: all .15s;
 }
 .qpi-tab:hover { background: rgba(124,58,237,.08); }
@@ -1385,7 +1386,7 @@ const SCOPED_CSS = `
   box-shadow: 0 2px 8px rgba(124,58,237,.08);
 }
 .qpi-tablebar {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 12px 14px;
   background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 100%);
   border-bottom: 1px solid #ddd6fe;
@@ -1395,6 +1396,7 @@ const SCOPED_CSS = `
   padding: 9px 14px; border-radius: 10px;
   background: #fff; border: 1.5px solid #ddd6fe;
   color: #5b21b6; font-size: 12.5px; font-weight: 800;
+  white-space: nowrap;
   flex-shrink: 0;
 }
 .qpi-listpill-icon {
@@ -1409,6 +1411,7 @@ const SCOPED_CSS = `
   padding: 9px 14px; border-radius: 10px;
   background: #fff; border: 1.5px solid #ddd6fe;
   color: #5b21b6; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  white-space: nowrap;
   transition: all .15s;
 }
 .qpi-pi-subtab:hover { background: #f5f3ff; }
@@ -1436,6 +1439,7 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
   font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
   box-shadow: 0 4px 12px rgba(124,58,237,.4);
+  white-space: nowrap;
   flex-shrink: 0;
   transition: transform .15s, box-shadow .15s;
 }
@@ -1563,7 +1567,7 @@ const SCOPED_CSS = `
 
 /* ─── Pagination ─── */
 .qpi-pagination {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
   padding: 12px 16px;
   background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 100%);
   border-top: 1px solid #ddd6fe;
@@ -1574,7 +1578,7 @@ const SCOPED_CSS = `
   background: #fff; border: 1.5px solid #ddd6fe;
   color: #5b21b6; font-size: 11.5px; font-weight: 700;
 }
-.qpi-pag-right { display: flex; align-items: center; gap: 8px; }
+.qpi-pag-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .qpi-pag-rpp { font-size: 12px; color: #475569; font-weight: 600; }
 .qpi-pag-select {
   padding: 5px 10px; border-radius: 7px;
@@ -1619,9 +1623,10 @@ const SCOPED_CSS = `
 }
 .qpi-modal-head {
   padding: 18px 22px;
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
   color: #fff;
 }
+.qpi-modal-head-right { flex-wrap: wrap; }
 .qpi-modal-head-teal   { background: linear-gradient(110deg, #0f4c5c 0%, #0d3b48 60%, #042f36 100%); }
 .qpi-modal-head-purple { background: linear-gradient(110deg, #6d28d9 0%, #5b21b6 60%, #4c1d95 100%); }
 .qpi-modal-head-left { display: flex; align-items: center; gap: 14px; }
@@ -1876,7 +1881,263 @@ const SCOPED_CSS = `
 .qpi-btn-next:hover, .qpi-btn-submit:hover { transform: translateY(-1px); }
 .qpi-btn-submit:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 
-/* Responsive tweaks */
+/* ════════════════════════════════════════════════════════════════════════════
+ * Dark mode — mirrors the SalesLeadAckMaster palette so the two Sales-Matrix
+ * pages feel consistent. Page bg #14101d, cards #1a1530, body bg #221a3a,
+ * inputs #0f0c19, text #e9d5ff / #c4b5fd, borders rgba(167,139,250,.25–.45).
+ * ════════════════════════════════════════════════════════════════════════ */
+[data-bs-theme="dark"] .qpi-root {
+  background: linear-gradient(160deg, #14101d 0%, #1a1530 60%, #1c1432 100%);
+  color: #e9d5ff;
+}
+
+/* Header strip */
+[data-bs-theme="dark"] .qpi-header {
+  background: linear-gradient(110deg, #1c1432 0%, #221839 50%, #2a1d49 100%);
+  border-color: rgba(167,139,250,.30);
+  box-shadow: 0 2px 0 rgba(255,255,255,.04) inset, 0 8px 28px rgba(0,0,0,.55);
+}
+[data-bs-theme="dark"] .qpi-header-title { color: #e9d5ff; }
+[data-bs-theme="dark"] .qpi-header-sub   { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-online-dot   { border-color: #1a1530; }
+[data-bs-theme="dark"] .qpi-tab-switch {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(167,139,250,.25);
+}
+[data-bs-theme="dark"] .qpi-tab        { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-tab:hover  { background: rgba(167,139,250,.12); }
+
+/* What We Are Doing Here */
+[data-bs-theme="dark"] .qpi-wdh {
+  background: linear-gradient(110deg, #1c1432 0%, #221839 50%, #2a1d49 100%);
+  border-color: rgba(167,139,250,.30);
+  box-shadow: 0 2px 8px rgba(0,0,0,.45);
+}
+[data-bs-theme="dark"] .qpi-wdh-title  { color: #e9d5ff; }
+[data-bs-theme="dark"] .qpi-wdh-toggle {
+  background: rgba(255,255,255,.06);
+  border-color: rgba(167,139,250,.35);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .qpi-wdh-step {
+  background: #1a1530;
+  border-color: rgba(167,139,250,.25);
+}
+[data-bs-theme="dark"] .qpi-wdh-step-title { color: #e9d5ff; }
+[data-bs-theme="dark"] .qpi-wdh-step-desc  { color: #9aa0b4; }
+[data-bs-theme="dark"] .qpi-wdh-step-tag   { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-wdh-arrow-dot  {
+  background: rgba(255,255,255,.06);
+  border-color: rgba(167,139,250,.30);
+  color: #c4b5fd;
+}
+
+/* Table card */
+[data-bs-theme="dark"] .qpi-card {
+  background: #1a1530;
+  border-color: rgba(167,139,250,.25);
+  box-shadow: 0 8px 32px rgba(0,0,0,.45);
+}
+[data-bs-theme="dark"] .qpi-tablebar {
+  background: linear-gradient(110deg, #1c1432 0%, #221839 100%);
+  border-bottom-color: rgba(167,139,250,.25);
+}
+[data-bs-theme="dark"] .qpi-listpill {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(167,139,250,.30);
+  color: #e9d5ff;
+}
+[data-bs-theme="dark"] .qpi-pi-subtab {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(167,139,250,.30);
+  color: #e9d5ff;
+}
+[data-bs-theme="dark"] .qpi-pi-subtab:hover { background: rgba(167,139,250,.12); }
+[data-bs-theme="dark"] .qpi-search {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(167,139,250,.30);
+}
+[data-bs-theme="dark"] .qpi-search input { color: #e9d5ff; }
+[data-bs-theme="dark"] .qpi-search input::placeholder { color: #7a6b9a; }
+
+/* Table */
+[data-bs-theme="dark"] .qpi-table thead tr {
+  background: linear-gradient(90deg, #4c2d8a, #6d28d9);
+}
+[data-bs-theme="dark"] .qpi-table tbody tr {
+  background: #1a1530;
+  border-bottom-color: rgba(167,139,250,.15);
+}
+[data-bs-theme="dark"] .qpi-table tbody tr:hover { background: rgba(76,45,138,.30); }
+[data-bs-theme="dark"] .qpi-table tbody td       { color: #d4d1de; }
+[data-bs-theme="dark"] .qpi-strong               { color: #e9d5ff; }
+[data-bs-theme="dark"] .qpi-currency             { color: #f1f5f9; }
+[data-bs-theme="dark"] .qpi-link                 { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-sm                   { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-date                 { color: #d4d1de; }
+[data-bs-theme="dark"] .qpi-em,
+[data-bs-theme="dark"] .qpi-em-center            { color: #6b6481; }
+[data-bs-theme="dark"] .qpi-empty                { color: #7a6b9a; }
+[data-bs-theme="dark"] .qpi-srno {
+  background: linear-gradient(135deg, rgba(76,45,138,.45), rgba(45,27,86,.55));
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .qpi-bt-badge {
+  background: rgba(13,148,136,.20); color: #5eead4; border-color: rgba(13,148,136,.40);
+}
+[data-bs-theme="dark"] .qpi-qt-badge {
+  background: rgba(124,58,237,.22); color: #c4b5fd; border-color: rgba(167,139,250,.40);
+}
+
+/* Action buttons */
+[data-bs-theme="dark"] .qpi-act-mail {
+  background: rgba(37,99,235,.18); color: #93c5fd; border-color: rgba(59,130,246,.40);
+}
+[data-bs-theme="dark"] .qpi-act-edit {
+  background: rgba(34,197,94,.18); color: #86efac; border-color: rgba(34,197,94,.40);
+}
+[data-bs-theme="dark"] .qpi-act-menu {
+  background: rgba(255,255,255,.06); color: #c4b5fd; border-color: rgba(167,139,250,.30);
+}
+[data-bs-theme="dark"] .qpi-act-del {
+  background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(239,68,68,.40);
+}
+
+/* Pagination */
+[data-bs-theme="dark"] .qpi-pagination {
+  background: linear-gradient(110deg, #14101d, #1a1530);
+  border-top-color: rgba(167,139,250,.25);
+}
+[data-bs-theme="dark"] .qpi-pag-info,
+[data-bs-theme="dark"] .qpi-pag-range,
+[data-bs-theme="dark"] .qpi-pag-select,
+[data-bs-theme="dark"] .qpi-pag-btn {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(167,139,250,.30);
+  color: #e9d5ff;
+}
+[data-bs-theme="dark"] .qpi-pag-rpp { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-pag-select option { background: #1a1530; color: #e9d5ff; }
+[data-bs-theme="dark"] .qpi-pag-btn:hover:not(:disabled) {
+  background: rgba(167,139,250,.18); color: #fff;
+}
+
+/* Modals — backdrop is already dark enough; we just need to dark-mode
+   the modal shell, stepper, body, inputs, totals card, and footer. */
+[data-bs-theme="dark"] .qpi-modal {
+  background: #1a1530;
+  box-shadow: 0 25px 60px rgba(0,0,0,.65);
+}
+[data-bs-theme="dark"] .qpi-modal-stepper {
+  background: #14101d;
+  border-bottom-color: rgba(167,139,250,.20);
+}
+[data-bs-theme="dark"] .qpi-step-idle {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(167,139,250,.20);
+}
+[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-num { background: #2a2342; color: #7a6b9a; }
+[data-bs-theme="dark"] .qpi-step-idle .qpi-step-badge-title { color: #9aa0b4; }
+[data-bs-theme="dark"] .qpi-step-active.qpi-step-teal,
+[data-bs-theme="dark"] .qpi-step-done.qpi-step-teal {
+  background: rgba(14,165,233,.12); border-color: rgba(14,165,233,.45);
+}
+[data-bs-theme="dark"] .qpi-step-active.qpi-step-purple,
+[data-bs-theme="dark"] .qpi-step-done.qpi-step-purple {
+  background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.45);
+}
+[data-bs-theme="dark"] .qpi-step-active.qpi-step-teal .qpi-step-badge-title   { color: #67e8f9; }
+[data-bs-theme="dark"] .qpi-step-active.qpi-step-purple .qpi-step-badge-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-step-done .qpi-step-badge-title                   { color: #86efac; }
+[data-bs-theme="dark"] .qpi-step-badge-sub { color: #7a6b9a; }
+[data-bs-theme="dark"] .qpi-modal-step-divider { background: rgba(167,139,250,.20); }
+
+[data-bs-theme="dark"] .qpi-modal-body { background: #221a3a; color: #e9d5ff; }
+[data-bs-theme="dark"] .qpi-field-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-input,
+[data-bs-theme="dark"] .qpi-textarea {
+  background: #0f0c19;
+  border-color: rgba(167,139,250,.25);
+  color: #e9d5ff;
+}
+[data-bs-theme="dark"] .qpi-input::placeholder,
+[data-bs-theme="dark"] .qpi-textarea::placeholder { color: #7a6b9a; }
+[data-bs-theme="dark"] .qpi-input:focus,
+[data-bs-theme="dark"] .qpi-textarea:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(167,139,250,.20);
+}
+[data-bs-theme="dark"] .qpi-input-readonly {
+  background: rgba(255,255,255,.04); color: #9aa0b4;
+}
+[data-bs-theme="dark"] .qpi-form-heading-teal   { color: #67e8f9; border-color: #0891b2; }
+[data-bs-theme="dark"] .qpi-form-heading-purple { color: #c4b5fd; border-color: #a78bfa; }
+
+/* Note panel — keep amber theme but darken */
+[data-bs-theme="dark"] .qpi-note {
+  background: rgba(180,83,9,.18); border-color: rgba(217,119,6,.45);
+}
+[data-bs-theme="dark"] .qpi-note-line   { color: #fde68a; }
+[data-bs-theme="dark"] .qpi-note-line strong { color: #fcd34d; }
+
+/* Order summary + product table + totals + summary card */
+[data-bs-theme="dark"] .qpi-order-summary-purple { background: rgba(124,58,237,.15); border-color: rgba(167,139,250,.35); }
+[data-bs-theme="dark"] .qpi-order-summary-teal   { background: rgba(14,165,233,.12); border-color: rgba(14,165,233,.35); }
+[data-bs-theme="dark"] .qpi-summary-item-label   { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-order-summary-teal .qpi-summary-item-label { color: #67e8f9; }
+[data-bs-theme="dark"] .qpi-summary-item-value   { color: #e9d5ff; }
+
+[data-bs-theme="dark"] .qpi-product-warn {
+  background: rgba(220,38,38,.15); border-color: rgba(239,68,68,.40); color: #fca5a5;
+}
+[data-bs-theme="dark"] .qpi-products-table tbody td {
+  border-bottom-color: rgba(167,139,250,.15); color: #d4d1de;
+}
+[data-bs-theme="dark"] .qpi-products-input-row td { background: rgba(124,58,237,.12); }
+[data-bs-theme="dark"] .qpi-amt { color: #f1f5f9; }
+[data-bs-theme="dark"] .qpi-prod-remove {
+  background: rgba(220,38,38,.18); border-color: rgba(239,68,68,.40); color: #fca5a5;
+}
+
+[data-bs-theme="dark"] .qpi-summary-teal   { background: rgba(14,165,233,.12); border-color: rgba(14,165,233,.35); }
+[data-bs-theme="dark"] .qpi-summary-purple { background: rgba(124,58,237,.15); border-color: rgba(167,139,250,.35); }
+[data-bs-theme="dark"] .qpi-summary-heading { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-summary-teal .qpi-summary-heading { color: #67e8f9; }
+[data-bs-theme="dark"] .qpi-summary-line { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-summary-val  { color: #e9d5ff; }
+[data-bs-theme="dark"] .qpi-summary-grand { color: #e9d5ff; }
+[data-bs-theme="dark"] .qpi-summary-teal   .qpi-summary-grand { border-top-color: rgba(14,165,233,.45); color: #67e8f9; }
+[data-bs-theme="dark"] .qpi-summary-purple .qpi-summary-grand { border-top-color: rgba(167,139,250,.45); color: #c4b5fd; }
+
+/* Modal footer + secondary buttons */
+[data-bs-theme="dark"] .qpi-modal-foot {
+  background: #1a1530;
+  border-top-color: rgba(167,139,250,.20);
+}
+[data-bs-theme="dark"] .qpi-modal-req { color: #fca5a5; }
+[data-bs-theme="dark"] .qpi-btn-cancel {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(167,139,250,.40);
+  color: #e9d5ff;
+}
+[data-bs-theme="dark"] .qpi-btn-cancel:hover { background: rgba(167,139,250,.15); }
+[data-bs-theme="dark"] .qpi-btn-back {
+  background: rgba(167,139,250,.10);
+  border-color: rgba(167,139,250,.45);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .qpi-btn-back:hover { background: rgba(167,139,250,.20); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Responsive ladder
+ *  ≤1100px  — drop wizard stepper / order-summary / form grid to 2 cols, WDH stacks
+ *  ≤ 900px  — header tabs wrap below title, WDH cards lose min-height
+ *  ≤ 680px  — tablebar stacks (search full-width, list pill + Create on row 2),
+ *             form grids drop to 1 col, modal stepper + head collapse
+ *  ≤ 520px  — pagination rows split, action chips & row text shrink, page padding tightens
+ *  ≤ 400px  — modal backdrop padding minimised, modal pills reduce, Convert-to-PI button
+ *             shrinks so 4-button action group fits on one row
+ * ═══════════════════════════════════════════════════════════════════════ */
 @media (max-width: 1100px) {
   .qpi-wdh-body { grid-template-columns: 1fr; }
   .qpi-wdh-arrow { display: none; }
@@ -1884,11 +2145,86 @@ const SCOPED_CSS = `
   .qpi-order-summary { grid-template-columns: repeat(2, 1fr); }
   .qpi-totals-row { grid-template-columns: 1fr; }
 }
+
+@media (max-width: 900px) {
+  .qpi-header { padding: 12px 14px; }
+  .qpi-tab-switch { width: 100%; justify-content: flex-start; }
+  .qpi-tab { flex: 1; justify-content: center; }
+  .qpi-wdh-step { min-height: 0; }
+  .qpi-wdh-body { padding: 6px 12px 10px; gap: 10px; }
+}
+
 @media (max-width: 680px) {
+  .qpi-root { padding: 12px 10px 18px; }
+  .qpi-header-title { font-size: 13.5px; }
+  .qpi-header-sub   { font-size: 10.5px; }
+
+  /* Tablebar stacks: search full-width on its own row */
+  .qpi-tablebar { padding: 10px 12px; gap: 10px; }
+  .qpi-search { order: -1; flex: 1 1 100%; min-width: 0; }
+  .qpi-listpill, .qpi-pi-subtabs { flex: 1 1 auto; }
+  .qpi-pi-subtabs { display: flex; }
+  .qpi-pi-subtab { flex: 1; justify-content: center; }
+  .qpi-create-btn { flex: 1 1 auto; justify-content: center; }
+
+  /* Form / order-summary / wizard stepper / modal head all collapse */
   .qpi-form-grid { grid-template-columns: 1fr; }
   .qpi-order-summary { grid-template-columns: 1fr; }
-  .qpi-modal-stepper { flex-direction: column; gap: 8px; }
+  .qpi-modal-stepper { flex-direction: column; gap: 8px; padding: 14px 16px 10px; }
   .qpi-modal-step-divider { display: none; }
-  .qpi-modal-head { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .qpi-modal-head { flex-direction: column; align-items: flex-start; gap: 12px; padding: 14px 16px; }
+  .qpi-modal-head-right { width: 100%; justify-content: space-between; }
+  .qpi-modal-body { padding: 14px 16px; }
+  .qpi-modal-foot { padding: 12px 16px; flex-wrap: wrap; gap: 10px; }
+  .qpi-modal-foot-actions { flex: 1 1 100%; justify-content: flex-end; }
+}
+
+@media (max-width: 520px) {
+  .qpi-root { padding: 10px 8px 16px; gap: 10px; }
+  .qpi-header { padding: 10px 12px; gap: 10px; }
+  .qpi-header-icon { width: 36px; height: 36px; }
+  .qpi-header-title { font-size: 13px; }
+
+  /* "What we are doing here" — tighter padding so it doesn't dominate */
+  .qpi-wdh-header { padding: 8px 10px; }
+  .qpi-wdh-body   { padding: 4px 10px 10px; }
+  .qpi-wdh-step   { padding: 9px 10px; }
+
+  /* Pagination split: info on row 1, rpp/range/arrows on row 2 */
+  .qpi-pagination { padding: 10px 12px; gap: 8px; }
+  .qpi-pag-info   { width: 100%; justify-content: center; }
+  .qpi-pag-right  { width: 100%; justify-content: space-between; }
+  .qpi-pag-rpp    { display: none; }
+
+  /* Action buttons compress — Convert label hides, icon stays */
+  .qpi-convert-btn-label { display: none; }
+  .qpi-convert-btn { padding: 7px 9px; }
+
+  /* Modal backdrop hugs the edge — give the modal more breathing room */
+  .qpi-modal-backdrop { padding: 8px; }
+  .qpi-modal { max-height: calc(100vh - 16px); border-radius: 12px; }
+  .qpi-modal-head { padding: 12px 14px; gap: 10px; }
+  .qpi-modal-pill { padding: 4px 10px; }
+  .qpi-modal-pill-value { font-size: 11px; }
+  .qpi-modal-body { padding: 12px 14px; }
+  .qpi-modal-foot { padding: 10px 14px; }
+  .qpi-btn-cancel, .qpi-btn-back, .qpi-btn-next, .qpi-btn-submit {
+    padding: 9px 14px; font-size: 12px;
+  }
+
+  /* More-options portal'd menu fits within viewport */
+  .qpi-moremenu { min-width: 180px; }
+}
+
+@media (max-width: 400px) {
+  .qpi-root { font-size: 12px; }
+  .qpi-modal-pill { padding: 3px 8px; }
+  .qpi-modal-pill-label { font-size: 9px; }
+  .qpi-modal-pill-value { font-size: 10.5px; }
+  .qpi-actions { gap: 4px; }
+  .qpi-act { width: 28px; height: 28px; }
+  .qpi-convert-btn { padding: 6px 8px; }
+  .qpi-listpill { padding: 8px 12px; font-size: 12px; }
+  .qpi-products-table { min-width: 700px; }
 }
 `;
