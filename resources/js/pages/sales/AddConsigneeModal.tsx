@@ -1842,6 +1842,9 @@ const Stage1 = ({
           onEdit={onEditLocation}
           onDel={onDeleteLocation}
           onEditPrimary={() => setTab('identification')}
+          /* lock = Same-as-Customer is on → table is read-only mirror;
+             user must untick the toggle to edit addresses & contacts. */
+          locked={lock}
         />
       )}
     </>
@@ -1857,19 +1860,26 @@ type PrimaryRowData = {
   type: string; line: string; country: string; state: string; city: string; pin: string;
   cpName: string; cpDesignation: string; cpContact: string; cpEmail: string; cpWhatsapp: string;
 };
-const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimary }: {
+const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimary, locked = false }: {
   primary: PrimaryRowData;
   locations: LocationRow[];
   onAdd: () => void;
   onEdit: (id: string) => void;
   onDel: (id: string) => void;
   onEditPrimary: () => void;
+  /** When the consignee is mirroring its customer ("Same as Customer"
+   *  enabled), the user can't add/edit/delete addresses here — they
+   *  must untick the toggle first so a manual entry no longer overrides
+   *  the mirrored data. Disables the Add button + per-row actions and
+   *  surfaces a tooltip explaining the lock. */
+  locked?: boolean;
 }) => {
   type DisplayRow = PrimaryRowData & { id: string; isPrimary: boolean };
   const allRows: DisplayRow[] = [
     { id: '__primary__', isPrimary: true, ...primary },
     ...locations.map(l => ({ ...l, isPrimary: false })),
   ];
+  const lockedTip = 'Same as Customer is on — untick it to edit addresses & contacts.';
   return (
   <div className="acm-loc-card">
     <div className="acm-loc-head">
@@ -1879,9 +1889,17 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
           <span className="acm-loc-head-title">ADDRESS &amp; CONTACT DETAILS</span>
           <span className="acm-loc-head-sub">| All addresses with their authorized contact person</span>
         </div>
-        <button type="button" className="acm-add-pill" onClick={onAdd}>
-          <IconPlus /> Add More Address &amp; Contact
-        </button>
+        <Tooltip label={lockedTip} disabled={!locked}>
+          <button
+            type="button"
+            className="acm-add-pill"
+            onClick={() => { if (!locked) onAdd(); }}
+            disabled={locked}
+            style={locked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+          >
+            <IconPlus /> Add More Address &amp; Contact
+          </button>
+        </Tooltip>
       </div>
     </div>
     <div className="acm-loc-body">
@@ -1914,13 +1932,20 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
                   <td>{l.cpWhatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : l.cpWhatsapp === 'no' ? <span className="acm-pill-no">✕ No</span> : <span style={{ color: '#9ca3af' }}>—</span>}</td>
                   <td>
                     <div className="acm-loc-actions">
-                      <Tooltip label={l.isPrimary ? 'Edit in Consignee Identification tab' : 'Edit'}>
-                        <button type="button" className="acm-loc-btn" aria-label="Edit" onClick={() => l.isPrimary ? onEditPrimary() : onEdit(l.id)}>
+                      <Tooltip label={locked ? lockedTip : (l.isPrimary ? 'Edit in Consignee Identification tab' : 'Edit')}>
+                        <button
+                          type="button"
+                          className="acm-loc-btn"
+                          aria-label="Edit"
+                          onClick={() => { if (locked) return; l.isPrimary ? onEditPrimary() : onEdit(l.id); }}
+                          disabled={locked}
+                          style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                        >
                           <IconPencil />
                         </button>
                       </Tooltip>
-                      {l.isPrimary ? (
-                        <Tooltip label="The primary address cannot be deleted">
+                      {l.isPrimary || locked ? (
+                        <Tooltip label={locked ? lockedTip : 'The primary address cannot be deleted'}>
                           <button type="button" className="acm-loc-btn acm-loc-btn-del" aria-label="Delete (disabled)" disabled style={{ opacity: 0.4, cursor: 'not-allowed' }}>
                             <IconTrash />
                           </button>
@@ -2043,13 +2068,20 @@ const Stage2 = ({
               <span className="acm-kyc-head-title">{meta.title}</span>
               <span className="acm-kyc-head-sub">{meta.sub}</span>
             </div>
-            <button
-              type="button"
-              className="acm-add-pill"
-              onClick={() => (isOwners ? onAddOwner() : onAddDoc(sub))}
-            >
-              <IconPlus /> {meta.addLabel}
-            </button>
+            {/* When Same as Customer is on, KYC mirrors the customer
+                exactly — no manual additions allowed. The user must
+                untick the toggle on Stage 1 first. */}
+            <Tooltip label="Same as Customer is on — untick it to add KYC entries." disabled={!sameAsCustomer}>
+              <button
+                type="button"
+                className="acm-add-pill"
+                onClick={() => { if (sameAsCustomer) return; isOwners ? onAddOwner() : onAddDoc(sub); }}
+                disabled={sameAsCustomer}
+                style={sameAsCustomer ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              >
+                <IconPlus /> {meta.addLabel}
+              </button>
+            </Tooltip>
           </div>
         </div>
 
@@ -2094,11 +2126,29 @@ const Stage2 = ({
                       <td>{o.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
                       <td>
                         <div className="acm-loc-actions">
-                          <Tooltip label="Edit">
-                            <button type="button" className="acm-loc-btn" aria-label="Edit" onClick={() => onEditOwner(o.id)}><IconPencil /></button>
+                          <Tooltip label={sameAsCustomer ? 'Same as Customer is on — untick it to edit KYC entries.' : 'Edit'}>
+                            <button
+                              type="button"
+                              className="acm-loc-btn"
+                              aria-label="Edit"
+                              onClick={() => { if (sameAsCustomer) return; onEditOwner(o.id); }}
+                              disabled={sameAsCustomer}
+                              style={sameAsCustomer ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                            >
+                              <IconPencil />
+                            </button>
                           </Tooltip>
-                          <Tooltip label="Delete">
-                            <button type="button" className="acm-loc-btn acm-loc-btn-del" aria-label="Delete" onClick={() => onDeleteOwner(o.id)}><IconTrash /></button>
+                          <Tooltip label={sameAsCustomer ? 'Same as Customer is on — untick it to delete KYC entries.' : 'Delete'}>
+                            <button
+                              type="button"
+                              className="acm-loc-btn acm-loc-btn-del"
+                              aria-label="Delete"
+                              onClick={() => { if (sameAsCustomer) return; onDeleteOwner(o.id); }}
+                              disabled={sameAsCustomer}
+                              style={sameAsCustomer ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                            >
+                              <IconTrash />
+                            </button>
                           </Tooltip>
                         </div>
                       </td>
@@ -2132,11 +2182,29 @@ const Stage2 = ({
                         <td><AttachmentLink url={d.attachment_url} path={d.attachment_path} /></td>
                         <td>
                           <div className="acm-loc-actions">
-                            <Tooltip label="Edit">
-                              <button type="button" className="acm-loc-btn" aria-label="Edit" onClick={() => onEditDoc(d.id)}><IconPencil /></button>
+                            <Tooltip label={sameAsCustomer ? 'Same as Customer is on — untick it to edit KYC entries.' : 'Edit'}>
+                              <button
+                                type="button"
+                                className="acm-loc-btn"
+                                aria-label="Edit"
+                                onClick={() => { if (sameAsCustomer) return; onEditDoc(d.id); }}
+                                disabled={sameAsCustomer}
+                                style={sameAsCustomer ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                              >
+                                <IconPencil />
+                              </button>
                             </Tooltip>
-                            <Tooltip label="Delete">
-                              <button type="button" className="acm-loc-btn acm-loc-btn-del" aria-label="Delete" onClick={() => onDeleteDoc(d.id)}><IconTrash /></button>
+                            <Tooltip label={sameAsCustomer ? 'Same as Customer is on — untick it to delete KYC entries.' : 'Delete'}>
+                              <button
+                                type="button"
+                                className="acm-loc-btn acm-loc-btn-del"
+                                aria-label="Delete"
+                                onClick={() => { if (sameAsCustomer) return; onDeleteDoc(d.id); }}
+                                disabled={sameAsCustomer}
+                                style={sameAsCustomer ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                              >
+                                <IconTrash />
+                              </button>
                             </Tooltip>
                           </div>
                         </td>
