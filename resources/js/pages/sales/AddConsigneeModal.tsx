@@ -1136,7 +1136,14 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           <button className="acm-close" onClick={onClose} aria-label="Close"><IconClose /></button>
         </div>
 
-        <div className="acm-wiz-body">
+        {/* Pinned top — stepper + Linked Customer summary stay
+            visible while the rest of the body scrolls below them.
+            Both elements appear in all three stages so keeping them
+            anchored saves the user from scrolling back up to check
+            which stage they're on or which customer they're linked
+            to. Sits OUTSIDE .acm-wiz-body so the body's overflow
+            scroll only affects the form / table content below. */}
+        <div className="acm-wiz-pinned-top">
           {/* 3-step indicator — moved above the Linked Customer summary
               so the wizard progression is the first thing the user
               sees. Linked Customer context is still right below. */}
@@ -1221,7 +1228,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               )}
             </div>
           )}
+        </div>
 
+        {/* Scrolling body — only the stage-specific form / tables /
+            banners scroll. The pinned section above stays put. */}
+        <div className="acm-wiz-body">
           {/* Stage panes */}
           {stage === 1 && hydrating && <Stage1FormShimmer />}
           {stage === 1 && !hydrating && (
@@ -2189,15 +2200,14 @@ const Stage2 = ({
           (collapsed by default) showing Stage 1 entries in a dense
           4-column Label : Value grid. Mirrors AddCustomerModal.
           When "Same as Customer" is on, the Linked Customer panel
-          above already shows the exact same data — render a slim
-          info note instead of a duplicate full panel. */}
+          above already shows the exact same data + each KYC table
+          carries its own "Locked — mirroring customer" pill, so we
+          collapse the previously-large banner to a single-line note
+          that costs almost no vertical real estate. */}
       {sameAsCustomer ? (
-        <div className="acg-mirror-note">
-          <span className="acg-mirror-note-icon"><IconUser /></span>
-          <div>
-            <div className="acg-mirror-note-title">Stage 1 mirrors the linked customer</div>
-            <div className="acg-mirror-note-sub">Company, address, and contact details are pulled from the customer above. Untick <b>Same as Customer</b> on Stage 1 to capture different details.</div>
-          </div>
+        <div className="acg-mirror-inline">
+          <span className="acg-mirror-inline-icon"><IconUser /></span>
+          <span><b>Stage 1 mirrors the linked customer.</b> Untick <b>Same as Customer</b> on Stage 1 to capture different details.</span>
         </div>
       ) : (
         <ConsigneeHistoryPanel stagesCompleted={1}>
@@ -4110,9 +4120,22 @@ const SCOPED_CSS = `
 .acm-wiz-htitle { position: relative; z-index: 1; font-size: 18px; font-weight: 800; letter-spacing: -0.3px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.10); }
 .acm-wiz-hsub   { position: relative; z-index: 1; font-size: 11.5px; color: rgba(255,255,255,0.92); margin-top: 2px; line-height: 1.4; max-width: 860px; }
 
+/* Pinned top — stepper + Linked Customer summary. Sits between the
+   wizard header (gradient bar) and the scrolling body. Compact,
+   non-scrolling, present on every stage so the user always sees
+   which step they're on + which customer this consignee belongs to.
+   Background matches the body's mint wash so it reads as one piece
+   with the form below. */
+.acm-wiz-pinned-top {
+  flex-shrink: 0;
+  padding: 14px 20px 10px;
+  display: flex; flex-direction: column; gap: 12px;
+  background: #f0fdf4;
+  border-bottom: 1px solid rgba(16,185,129,0.12);
+}
 .acm-wiz-body {
   flex: 1; min-height: 0; overflow-y: auto;
-  padding: 16px 20px;
+  padding: 14px 20px 16px;
   display: flex; flex-direction: column; gap: 14px;
 }
 
@@ -4879,7 +4902,11 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 /* ─── Stage 2 — KYC sub-tabs + card ─── */
 .acm-kyc-subtabs {
   display: flex; gap: 8px; flex-wrap: wrap;
-  margin-bottom: 12px;
+  /* Margin removed — the parent .acm-wiz-body already provides a
+     14px flex gap between Stage 2 children, so an extra 12px margin
+     stacked on top made the tab row feel disconnected from the
+     table card below. Now they sit a single flex-gap apart. */
+  margin-bottom: 0;
 }
 .acm-kyc-subtab {
   display: inline-flex; align-items: center; gap: 6px;
@@ -5222,6 +5249,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 
 [data-bs-theme="dark"] .acm-wiz        { background: #0f2a23; }
 [data-bs-theme="dark"] .acm-wiz-body   { background: #0a1f1a; }
+[data-bs-theme="dark"] .acm-wiz-pinned-top { background: #0a1f1a; border-bottom-color: rgba(16,185,129,0.20); }
 [data-bs-theme="dark"] .acm-linked     { background: linear-gradient(110deg, #0f2a23, #103129, #134e3a); border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .acm-linked-label { color: #6ee7b7; }
 [data-bs-theme="dark"] .acm-linked-id  { background: rgba(255,255,255,.06); border-color: rgba(16,185,129,.30); color: #6ee7b7; }
@@ -5390,6 +5418,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   }
   .acm-wiz-header { padding: 12px 18px; }
   .acm-steps { padding: 12px 16px 10px; }
+  .acm-wiz-pinned-top { padding: 12px 18px 8px; }
   .acm-wiz-body { padding: 14px 18px 16px; }
   .acm-wiz-footer { padding: 10px 18px; }
   .acm-sec-pad { padding: 14px; }
@@ -5410,6 +5439,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-step-sub   { font-size: 9px; }
   /* Wizard body padding shrinks slightly so the form has more
      horizontal room on 1366-wide screens. */
+  .acm-wiz-pinned-top { padding: 10px 14px 8px; gap: 10px; }
   .acm-wiz-body { padding: 12px 14px 14px; }
   .acm-sec-pad { padding: 12px; }
 }
@@ -5459,6 +5489,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-wiz-header { padding: 12px 16px; }
   .acm-wiz-htitle { font-size: 17px; }
   .acm-wiz-hsub   { font-size: 11px; }
+  .acm-wiz-pinned-top { padding: 10px 14px 8px; gap: 8px; }
   .acm-wiz-body { padding: 12px 14px 14px; }
   .acm-sec-pad { padding: 12px; }
   /* Sub-modal stays a centered card on portrait tablet — only goes
@@ -5518,6 +5549,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-id-tabs { flex-wrap: wrap; gap: 6px; padding: 0 12px; }
   .acm-id-tab { flex: 1 1 45%; min-width: 0; font-size: 12px; padding: 8px 10px; }
   /* Body padding */
+  .acm-wiz-pinned-top { padding: 10px 12px 8px; gap: 8px; }
   .acm-wiz-body { padding: 12px; }
   /* ALL grids → single col on phone */
   .acm-grid-4, .acm-grid-3, .acm-grid-2 { grid-template-columns: 1fr; }
