@@ -180,14 +180,19 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // All tenant-scoped by client_id; sub-branch users see only their branch.
     Route::get   ('/sales/leads',              [SalesLeadController::class, 'index']);
     Route::post  ('/sales/leads',              [SalesLeadController::class, 'store']);
-    // sync/config must come BEFORE /sales/leads/{id} so Laravel doesn't try
-    // to match 'sync' as a numeric id. whereNumber on the {id} route also
-    // protects this but registration order keeps intent obvious.
-    Route::get   ('/sales/leads/sync/config',  [SalesLeadController::class, 'syncConfig']);
-    Route::post  ('/sales/leads/sync',         [SalesLeadController::class, 'syncFromCrm']);
-    Route::get   ('/sales/leads/{id}',         [SalesLeadController::class, 'show'])->whereNumber('id');
-    Route::put   ('/sales/leads/{id}',         [SalesLeadController::class, 'update'])->whereNumber('id');
-    Route::delete('/sales/leads/{id}',         [SalesLeadController::class, 'destroy'])->whereNumber('id');
+    // Literal-segment routes — all declared BEFORE /sales/leads/{id} so
+    // Laravel doesn't try to capture words like 'sync' / 'assign' as the
+    // numeric {id}. The whereNumber on {id} is the second defense.
+    Route::get   ('/sales/leads/sync/config',     [SalesLeadController::class, 'syncConfig']);
+    Route::post  ('/sales/leads/sync',            [SalesLeadController::class, 'syncFromCrm']);
+    Route::post  ('/sales/leads/assign',          [SalesLeadController::class, 'assign']);
+    Route::post  ('/sales/leads/convert-to-qualified', [SalesLeadController::class, 'convertToQualified']);
+    Route::post  ('/sales/leads/distribute',      [SalesLeadController::class, 'distribute']);
+    Route::get   ('/sales/leads/salespeople',     [SalesLeadController::class, 'salespeople']);
+    Route::get   ('/sales/leads/filter-options',  [SalesLeadController::class, 'filterOptions']);
+    Route::get   ('/sales/leads/{id}',          [SalesLeadController::class, 'show'])->whereNumber('id');
+    Route::put   ('/sales/leads/{id}',          [SalesLeadController::class, 'update'])->whereNumber('id');
+    Route::delete('/sales/leads/{id}',          [SalesLeadController::class, 'destroy'])->whereNumber('id');
 
     // Sales Matrix → Productivity Tracker (/sales/todo). Two parallel
     // sub-resources behind one controller — reminders + meetings — with
