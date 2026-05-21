@@ -1,6 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
 import { useNavigateContext } from '../../../components/App';
+import api from '../../../api';
+import { useToast } from '../../../contexts/ToastContext';
+import EntityPickerModal, { type PickerOption } from '../EntityPickerModal';
+import AddCustomerModal, { type EditCustomer } from '../AddCustomerModal';
+import AddConsigneeModal from '../AddConsigneeModal';
+import AddProductModal from '../../products/AddProductModal';
 import Stage1InquiryReceived     from './stages/Stage1InquiryReceived';
 import Stage2LeadAcknowledgement from './stages/Stage2LeadAcknowledgement';
 import Stage3ProductSourcing     from './stages/Stage3ProductSourcing';
@@ -49,6 +55,75 @@ export default function SalesMatrixDetail() {
   const params   = useParams();
   const location = useLocation();
   const { navigate } = useNavigateContext();
+  const toast = useToast();
+
+  /* ─── Customer / Consignee picker + add-edit modal state ─── */
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const [customerOpts, setCustomerOpts] = useState<PickerOption[]>([]);
+  const [customerLoading, setCustomerLoading] = useState(false);
+  const [customerRows, setCustomerRows] = useState<Record<string, EditCustomer>>({});
+  const [customerEditing, setCustomerEditing] = useState<EditCustomer | null>(null);
+  const [customerAddOpen, setCustomerAddOpen] = useState(false);
+
+  const [consigneePickerOpen, setConsigneePickerOpen] = useState(false);
+  const [consigneeOpts, setConsigneeOpts] = useState<PickerOption[]>([]);
+  const [consigneeLoading, setConsigneeLoading] = useState(false);
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  const [consigneeRows, setConsigneeRows] = useState<Record<string, any>>({});
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  const [consigneeEditing, setConsigneeEditing] = useState<any | null>(null);
+  const [consigneeAddOpen, setConsigneeAddOpen] = useState(false);
+
+  const [productAddOpen, setProductAddOpen] = useState(false);
+
+  const fetchCustomers = async () => {
+    if (customerOpts.length > 0) return;
+    setCustomerLoading(true);
+    try {
+      type Row = EditCustomer & { db_id?: number };
+      const res = await api.get<{ data?: Row[] } | Row[]>('/customers');
+      const rows = Array.isArray(res.data) ? res.data : ((res.data as { data?: Row[] })?.data ?? []);
+      const cache: Record<string, EditCustomer> = {};
+      const opts: PickerOption[] = [];
+      rows.forEach(r => {
+        if (!r.id) return;
+        cache[r.id] = r;
+        opts.push({ value: r.id, label: `${r.id} — ${r.company}` });
+      });
+      setCustomerRows(cache);
+      setCustomerOpts(opts);
+    } catch {
+      toast.error('Failed to load customers', 'Could not reach the Customer API');
+    } finally {
+      setCustomerLoading(false);
+    }
+  };
+
+  const fetchConsignees = async () => {
+    if (consigneeOpts.length > 0) return;
+    setConsigneeLoading(true);
+    try {
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const res = await api.get<{ data?: any[] } | any[]>('/consignees');
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const rows: any[] = Array.isArray(res.data) ? res.data : ((res.data as { data?: any[] })?.data ?? []);
+      /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      const cache: Record<string, any> = {};
+      const opts: PickerOption[] = [];
+      rows.forEach(r => {
+        const pid = String(r.id ?? r.public_id ?? '');
+        if (!pid) return;
+        cache[pid] = r;
+        opts.push({ value: pid, label: `${pid} — ${r.consignee ?? r.company ?? r.name ?? '—'}` });
+      });
+      setConsigneeRows(cache);
+      setConsigneeOpts(opts);
+    } catch {
+      toast.error('Failed to load consignees', 'Could not reach the Consignee API');
+    } finally {
+      setConsigneeLoading(false);
+    }
+  };
 
   const oppId = params.oppId || DEFAULT_HEADER.oppId;
   const stage = Math.min(6, Math.max(1, parseInt(params.stage || '1', 10))) as StageNum;
@@ -163,9 +238,12 @@ export default function SalesMatrixDetail() {
 
       {/* ─── Action Toolbar (separate white card) ─── */}
       <div className="smd-toolbar">
-        <ActionBtn icon={<IconUser />}     label="Customer"       trailing="edit" />
-        <ActionBtn icon={<IconTruck />}    label="Consignee"      trailing="edit" />
-        <ActionBtn icon={<IconPlusSq />}   label="Add Product" />
+        <ActionBtn icon={<IconUser />}     label="Customer"       trailing="edit"
+          onClick={() => { void fetchCustomers(); setCustomerPickerOpen(true); }} />
+        <ActionBtn icon={<IconTruck />}    label="Consignee"      trailing="edit"
+          onClick={() => { void fetchConsignees(); setConsigneePickerOpen(true); }} />
+        <ActionBtn icon={<IconPlusSq />}   label="Add Product"
+          onClick={() => setProductAddOpen(true)} />
         <ActionBtn icon={<IconBook />}     label="Product Directory" />
         <ActionBtn icon={<IconUserCog />}  label="Change Owner" />
         <ActionBtn icon={<IconMsg />}      label="Remark" />
@@ -351,6 +429,83 @@ export default function SalesMatrixDetail() {
           </div>
         </aside>
       </div>
+
+      {/* ── Customer picker + edit/create modal ── */}
+      <EntityPickerModal
+        open={customerPickerOpen}
+        title="Customer"
+        subtitle="Pick an existing customer to edit, or click + to register a new one"
+        fieldLabel="Select Customer"
+        placeholder="Choose a customer"
+        emptyHint="No customers yet — click + to add the first"
+        addLabel="Add new customer"
+        options={customerOpts}
+        loading={customerLoading}
+        onClose={() => setCustomerPickerOpen(false)}
+        onAdd={() => {
+          setCustomerPickerOpen(false);
+          setCustomerEditing(null);
+          setCustomerAddOpen(true);
+        }}
+        onEdit={(opt) => {
+          setCustomerPickerOpen(false);
+          const row = customerRows[opt.value];
+          if (row) { setCustomerEditing(row); setCustomerAddOpen(true); }
+          else toast.error('Customer missing', 'Could not load the picked customer');
+        }}
+      />
+      <AddCustomerModal
+        open={customerAddOpen}
+        customer={customerEditing}
+        onClose={() => { setCustomerAddOpen(false); setCustomerEditing(null); }}
+        onSaved={() => {
+          setCustomerOpts([]); setCustomerRows({});
+          setCustomerAddOpen(false); setCustomerEditing(null);
+        }}
+      />
+
+      {/* ── Consignee picker + edit/create modal ── */}
+      <EntityPickerModal
+        open={consigneePickerOpen}
+        title="Consignee"
+        subtitle="Pick an existing consignee to edit, or click + to register a new one"
+        fieldLabel="Select Consignee"
+        placeholder="Choose a consignee"
+        emptyHint="No consignees yet — click + to add the first"
+        addLabel="Add new consignee"
+        options={consigneeOpts}
+        loading={consigneeLoading}
+        onClose={() => setConsigneePickerOpen(false)}
+        onAdd={() => {
+          setConsigneePickerOpen(false);
+          setConsigneeEditing(null);
+          setConsigneeAddOpen(true);
+        }}
+        onEdit={(opt) => {
+          setConsigneePickerOpen(false);
+          const row = consigneeRows[opt.value];
+          if (row) { setConsigneeEditing(row); setConsigneeAddOpen(true); }
+          else toast.error('Consignee missing', 'Could not load the picked consignee');
+        }}
+      />
+      <AddConsigneeModal
+        open={consigneeAddOpen}
+        consignee={consigneeEditing}
+        onClose={() => { setConsigneeAddOpen(false); setConsigneeEditing(null); }}
+        onSaved={() => {
+          setConsigneeOpts([]); setConsigneeRows({});
+          setConsigneeAddOpen(false); setConsigneeEditing(null);
+        }}
+      />
+
+      {/* ── Add Product modal ── */}
+      {productAddOpen && (
+        <AddProductModal
+          productId={null}
+          onClose={() => setProductAddOpen(false)}
+          onSaved={(_pid, finalised) => { if (finalised) setProductAddOpen(false); }}
+        />
+      )}
     </div>
   );
 }
@@ -369,11 +524,11 @@ function Meta({ icon, label, value }: { icon: React.ReactNode; label: string; va
   );
 }
 
-function ActionBtn({ icon, label, trailing, className }: {
-  icon: React.ReactNode; label: string; trailing?: 'edit'; className?: string;
+function ActionBtn({ icon, label, trailing, className, onClick }: {
+  icon: React.ReactNode; label: string; trailing?: 'edit'; className?: string; onClick?: () => void;
 }) {
   return (
-    <button className={`smd-act ${className || ''}`}>
+    <button className={`smd-act ${className || ''}`} onClick={onClick} type="button">
       <span className="smd-act-icon">{icon}</span>
       <span className="smd-act-label">{label}</span>
       {trailing === 'edit' && (
@@ -775,5 +930,204 @@ const SCOPED_CSS = `
   .smd-step, .smd-step:first-child, .smd-step:last-child {
     clip-path: none; border-radius: 10px; border: 1px solid #e5e7eb; padding: 8px 12px;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Dark mode — every surface flips against the slate base so the page
+   reads as part of the dark theme instead of glowing white panels.
+   Selectors are scoped to .smd-root so they don't leak into other
+   pages that share generic class names.
+   ═══════════════════════════════════════════════════════════════════════ */
+[data-bs-theme="dark"] .smd-root,
+[data-layout-mode="dark"] .smd-root {
+  background: linear-gradient(160deg, #0b0a1a 0%, #14102a 45%, #0b0a1a 100%);
+  color: #cbd5e1;
+}
+
+/* ─── Customer banner ─── */
+[data-bs-theme="dark"] .smd-root .smd-cust-banner {
+  background: linear-gradient(110deg, #1a1538 0%, #20184a 60%, #2a1e5c 100%);
+  border-color: rgba(167, 139, 250, .25);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+}
+[data-bs-theme="dark"] .smd-root .smd-cust-name { color: #ede9fe; }
+[data-bs-theme="dark"] .smd-root .smd-cust-tag {
+  background: #14102a; border-color: rgba(167, 139, 250, .35); color: #c4b5fd;
+}
+[data-bs-theme="dark"] .smd-root .smd-cust-avatar-dot { border-color: #1a1538; }
+[data-bs-theme="dark"] .smd-root .smd-meta {
+  background: #14102a; border-color: rgba(167, 139, 250, .25); color: #cbd5e1;
+}
+[data-bs-theme="dark"] .smd-root .smd-meta-icon { background: #2a1e5c; }
+[data-bs-theme="dark"] .smd-root .smd-meta-label { color: #94a3b8; }
+[data-bs-theme="dark"] .smd-root .smd-meta-value { color: #ede9fe; }
+
+/* ─── Stepper card + STEP cards ─── */
+[data-bs-theme="dark"] .smd-root .smd-stepper-card {
+  background: #14102a;
+  border-color: rgba(167, 139, 250, .22);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
+}
+/* Active step keeps its purple gradient (already dark-friendly). */
+[data-bs-theme="dark"] .smd-root .smd-step-upcoming {
+  background: linear-gradient(150deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border-color: rgba(255,255,255,.10);
+}
+[data-bs-theme="dark"] .smd-root .smd-step-upcoming .smd-step-num,
+[data-bs-theme="dark"] .smd-root .smd-step-upcoming .smd-step-big {
+  color: rgba(255,255,255,.35);
+}
+[data-bs-theme="dark"] .smd-root .smd-step-upcoming .smd-step-title { color: rgba(255,255,255,.70); }
+[data-bs-theme="dark"] .smd-root .smd-step-upcoming .smd-step-sub   { color: rgba(255,255,255,.45); }
+[data-bs-theme="dark"] .smd-root .smd-step-upcoming .smd-step-ghost { color: rgba(255,255,255,.04); }
+[data-bs-theme="dark"] .smd-root .smd-step-done {
+  background: linear-gradient(150deg, rgba(16,185,129,.22), rgba(16,185,129,.10));
+  border-color: rgba(110, 231, 183, .35);
+}
+[data-bs-theme="dark"] .smd-root .smd-step-done .smd-step-num,
+[data-bs-theme="dark"] .smd-root .smd-step-done .smd-step-title,
+[data-bs-theme="dark"] .smd-root .smd-step-done .smd-step-big   { color: #d1fae5; }
+[data-bs-theme="dark"] .smd-root .smd-step-done .smd-step-sub   { color: #a7f3d0; }
+
+/* ─── Action toolbar (Customer / Consignee / Add Product / etc.) ─── */
+[data-bs-theme="dark"] .smd-root .smd-toolbar {
+  background: #14102a;
+  border-color: rgba(167, 139, 250, .22);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
+}
+[data-bs-theme="dark"] .smd-root .smd-act {
+  background: #1f1845;
+  border-color: rgba(167, 139, 250, .30);
+  color: #d8b4fe;
+}
+[data-bs-theme="dark"] .smd-root .smd-act-icon { color: #a78bfa; }
+[data-bs-theme="dark"] .smd-root .smd-act:hover {
+  background: #2a2150;
+  border-color: #a78bfa;
+  color: #ede9fe;
+  box-shadow: 0 3px 10px rgba(124, 58, 237, .30);
+}
+[data-bs-theme="dark"] .smd-root .smd-act-wa {
+  background: linear-gradient(135deg, rgba(16,185,129,.18), rgba(16,185,129,.10));
+  border-color: rgba(110, 231, 183, .45);
+  color: #6ee7b7;
+}
+[data-bs-theme="dark"] .smd-root .smd-act-wa .smd-act-icon { color: #34d399; }
+[data-bs-theme="dark"] .smd-root .smd-act-trail { color: rgba(255,255,255,.55); }
+
+/* ─── Left column: CLM Details panel ─── */
+[data-bs-theme="dark"] .smd-root .smd-clm-card {
+  background: #14102a;
+  border-color: rgba(167, 139, 250, .22);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
+}
+[data-bs-theme="dark"] .smd-root .smd-clm-header {
+  background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
+}
+[data-bs-theme="dark"] .smd-root .smd-clm-group {
+  background: linear-gradient(135deg, #1a1538, #20184a);
+  border-color: rgba(167, 139, 250, .22);
+}
+[data-bs-theme="dark"] .smd-root .smd-clm-group-title { color: #ede9fe; }
+[data-bs-theme="dark"] .smd-root .smd-clm-group-sub   { color: #94a3b8; }
+[data-bs-theme="dark"] .smd-root .smd-clm-row {
+  background: #1f1845; border-color: rgba(167, 139, 250, .25);
+}
+[data-bs-theme="dark"] .smd-root .smd-clm-row:hover { background: #2a2150; border-color: #a78bfa; }
+[data-bs-theme="dark"] .smd-root .smd-clm-row-title  { color: #ede9fe; }
+[data-bs-theme="dark"] .smd-root .smd-clm-row-meta   { color: #94a3b8; }
+[data-bs-theme="dark"] .smd-root .smd-clm-progress-track { background: rgba(255,255,255,.10); }
+
+/* ─── Middle column: Stage content card ─── */
+[data-bs-theme="dark"] .smd-root .smd-stage-card {
+  background: #14102a;
+  border-color: rgba(167, 139, 250, .22);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
+}
+[data-bs-theme="dark"] .smd-root .smd-stage-header,
+[data-bs-theme="dark"] .smd-root .smd-stage-banner {
+  background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
+  color: #fff;
+}
+[data-bs-theme="dark"] .smd-root .smd-opp-card,
+[data-bs-theme="dark"] .smd-root .smd-pdm-card {
+  background: #1a1538;
+  border-color: rgba(167, 139, 250, .22);
+}
+[data-bs-theme="dark"] .smd-root .smd-opp-title,
+[data-bs-theme="dark"] .smd-root .smd-pdm-title {
+  color: #ede9fe;
+}
+[data-bs-theme="dark"] .smd-root .smd-kv-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .smd-root .smd-kv-value { color: #ede9fe; }
+[data-bs-theme="dark"] .smd-root .smd-kv {
+  background: #1f1845;
+  border-color: rgba(167, 139, 250, .22);
+}
+
+/* ─── Right column: Deal Execution & Decision Engine panel ─── */
+[data-bs-theme="dark"] .smd-root .smd-deal-card {
+  background: #14102a;
+  border-color: rgba(167, 139, 250, .22);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
+}
+[data-bs-theme="dark"] .smd-root .smd-deal-header {
+  background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
+  color: #fff;
+}
+[data-bs-theme="dark"] .smd-root .smd-deal-tabs { border-bottom-color: rgba(167, 139, 250, .22); }
+[data-bs-theme="dark"] .smd-root .smd-deal-tab { color: #94a3b8; }
+[data-bs-theme="dark"] .smd-root .smd-deal-tab.on {
+  color: #ede9fe; border-bottom-color: #a78bfa;
+}
+[data-bs-theme="dark"] .smd-root .smd-deal-tab-soon {
+  background: rgba(245, 158, 11, .18); color: #fbbf24;
+}
+[data-bs-theme="dark"] .smd-root .smd-deal-section-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .smd-root .smd-deal-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .smd-root .smd-deal-input,
+[data-bs-theme="dark"] .smd-root .smd-deal-card input,
+[data-bs-theme="dark"] .smd-root .smd-deal-card select,
+[data-bs-theme="dark"] .smd-root .smd-deal-card textarea {
+  background: #2a2150 !important;
+  border-color: rgba(167, 139, 250, .30) !important;
+  color: #ede9fe !important;
+}
+[data-bs-theme="dark"] .smd-root .smd-deal-input::placeholder,
+[data-bs-theme="dark"] .smd-root .smd-deal-card input::placeholder,
+[data-bs-theme="dark"] .smd-root .smd-deal-card textarea::placeholder {
+  color: #6b7280 !important;
+}
+[data-bs-theme="dark"] .smd-root .smd-deal-input:focus,
+[data-bs-theme="dark"] .smd-root .smd-deal-card input:focus,
+[data-bs-theme="dark"] .smd-root .smd-deal-card select:focus,
+[data-bs-theme="dark"] .smd-root .smd-deal-card textarea:focus {
+  border-color: #a78bfa !important;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, .20) !important;
+}
+[data-bs-theme="dark"] .smd-root .smd-deal-attach {
+  background: #2a2150; border-color: rgba(167, 139, 250, .30); color: #c4b5fd;
+}
+[data-bs-theme="dark"] .smd-root .smd-deal-divider {
+  background: rgba(167, 139, 250, .20);
+  color: #c4b5fd;
+}
+
+/* ─── Generic helpers used inside the panels ─── */
+[data-bs-theme="dark"] .smd-root .smd-section-title,
+[data-bs-theme="dark"] .smd-root .smd-card-title {
+  color: #ede9fe;
+}
+[data-bs-theme="dark"] .smd-root .smd-divider {
+  background: rgba(167, 139, 250, .20);
+}
+
+/* Fallback — any card-style surface that uses #fff inline still gets
+   visually muted by a translucent overlay so it's not blinding. */
+[data-bs-theme="dark"] .smd-root .smd-card,
+[data-bs-theme="dark"] .smd-root .smd-card-light {
+  background: #14102a;
+  border-color: rgba(167, 139, 250, .22);
+  color: #ede9fe;
 }
 `;
