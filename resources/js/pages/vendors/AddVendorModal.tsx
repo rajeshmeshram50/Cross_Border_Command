@@ -3647,6 +3647,104 @@ const SCOPED_CSS = `
   font-size: 11.5px; letter-spacing: .04em; font-weight: 700;
 }
 
+/* ───── Global table chrome inside the Vendor modal ─────
+   Mirrors the Clients list table (resources/js/pages/client/Clients.tsx)
+   so every embedded table here — DD, Owner KYC, Trade License, Bank,
+   GST Scrutiny, Product Mappings — reads with the same tight header /
+   cell rhythm. The vendor modal was rendering Velzon's default 13.5px
+   bold uppercase headers, which dwarfed everything around them. */
+.avm-modal .table {
+  --bs-table-bg: transparent;
+  font-size: 13px;
+  margin-bottom: 0;
+}
+.avm-modal .table thead.table-light th,
+.avm-modal .table thead th {
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+  padding: 10px 12px;
+  background: #f8f9fc;
+  border-bottom: 1px solid #e9ebec;
+  white-space: nowrap;
+}
+.avm-modal .table tbody td {
+  font-size: 13px;
+  font-weight: 400;
+  color: #495057;
+  padding: 10px 12px;
+  vertical-align: middle;
+  border-top: 1px solid #f3f4f6;
+}
+.avm-modal .table tbody td strong {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+/* Action buttons inside vendor-modal tables — 30x30 outline pills,
+   identical to the Clients ActionBtn component
+   (resources/js/pages/client/Clients.tsx#L131). Replaces the larger
+   Velzon .btn-soft-* defaults that were oversized in this context. */
+.avm-modal .table .btn.btn-sm.btn-soft-primary,
+.avm-modal .table .btn.btn-sm.btn-soft-danger,
+.avm-modal .table .btn.btn-sm.btn-soft-info,
+.avm-modal .table .btn.btn-sm.btn-soft-success,
+.avm-modal .table .btn.btn-sm.btn-soft-warning {
+  width: 30px; height: 30px; padding: 0;
+  border-radius: 8px;
+  background: var(--vz-secondary-bg, #f3f4f6);
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  color: var(--vz-secondary-color, #6c757d);
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all .15s ease;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-primary i,
+.avm-modal .table .btn.btn-sm.btn-soft-danger i,
+.avm-modal .table .btn.btn-sm.btn-soft-info i,
+.avm-modal .table .btn.btn-sm.btn-soft-success i,
+.avm-modal .table .btn.btn-sm.btn-soft-warning i {
+  font-size: 14px;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-primary:hover {
+  background: rgba(64, 81, 137, 0.10); border-color: #405189; color: #405189;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-danger:hover {
+  background: rgba(240, 101, 72, 0.10); border-color: #f06548; color: #f06548;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-info:hover {
+  background: rgba(41, 156, 219, 0.10); border-color: #299cdb; color: #299cdb;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-success:hover {
+  background: rgba(10, 179, 156, 0.10); border-color: #0ab39c; color: #0ab39c;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-warning:hover {
+  background: rgba(247, 184, 75, 0.10); border-color: #f7b84b; color: #f7b84b;
+}
+
+/* Hover row tint — same subtle gray the Clients table uses. */
+.avm-modal .table tbody tr:hover td { background: #f8f9fc; }
+
+/* Auto-code monospace badge — keep it tight & lower-key. */
+.avm-modal .table .badge.bg-light {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  background: #f3f4f6 !important;
+  border-color: #e5e7eb !important;
+}
+
+[data-bs-theme="dark"] .avm-modal .table thead.table-light th,
+[data-bs-theme="dark"] .avm-modal .table thead th {
+  background: #2a2150; color: #94a3b8; border-bottom-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .avm-modal .table tbody td {
+  color: #cbd5e1; border-top-color: #2a2150;
+}
+[data-bs-theme="dark"] .avm-modal .table tbody td strong { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-modal .table tbody tr:hover td { background: #1a1538; }
+
 /* Bank grid */
 .avm-bank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 
