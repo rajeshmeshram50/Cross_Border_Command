@@ -327,37 +327,19 @@ class MasterController extends Controller
         $denial = $this->hierarchicalDenial($request->user(), $row, 'edit');
         if ($denial) return response()->json(['message' => $denial], 403);
 
-        $data = $this->validatePayload($request, $slug, $id);
+        /* System-seeded rows (is_system = true on the model) are
+         * fully locked — name, credit limit, status, the lot. The
+         * previous behaviour ("name pinned, other fields editable")
+         * still let users mutate seed data which downstream modules
+         * rely on as constants. Block the whole update instead so
+         * admins use a custom row when they want tunable behaviour. */
+        if (!empty($row->is_system)) {
+            return response()->json([
+                'message' => 'This record is system-managed and cannot be edited. Create a custom entry if you need different values.',
+            ], 403);
+        }
 
-        // System-seeded asset categories (Laptop, Mobile) keep their name
-        // locked — Stage 1 Step 3 reads them by name to populate the
-        // laptop / mobile dropdowns. Status + depreciation/useful_life
-        // are still editable.
-        if ($slug === 'asset_categories' && !empty($row->is_system)) {
-            unset($data['name']);
-        }
-        // System-seeded address type "Office" — name is pinned so the
-        // employee onboarding & profile pages can rely on it always
-        // existing under that exact label. Status flip still allowed.
-        if ($slug === 'address_types' && !empty($row->is_system)) {
-            unset($data['name']);
-        }
-        // System-seeded Customer Consignee Types (Retailer, Wholesaler) —
-        // same name-lock + status-still-editable rule.
-        if ($slug === 'customer_types' && !empty($row->is_system)) {
-            unset($data['name']);
-        }
-        // System-seeded Risk Levels (Low, High) — name pinned so
-        // downstream rules (KYC, compliance) can rely on the labels.
-        if ($slug === 'risk_levels' && !empty($row->is_system)) {
-            unset($data['name']);
-        }
-        // System-seeded Customer Classifications (Standard, VIP) —
-        // name pinned; credit_limit / payment_terms / status remain
-        // editable so admins can tune the financial defaults.
-        if ($slug === 'customer_classifications' && !empty($row->is_system)) {
-            unset($data['name']);
-        }
+        $data = $this->validatePayload($request, $slug, $id);
 
         // Same file-upload absorbtion as store(). For update, we also
         // clean up the previously-stored file when a new one is being

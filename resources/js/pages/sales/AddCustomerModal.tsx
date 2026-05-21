@@ -278,6 +278,30 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   // the message rendered under the input. Cleared on next keystroke.
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  /* Real-time duplicate detection for the primary contact phone & email.
+   * Fires inline error the moment the user finishes typing a value
+   * that's already used by an additional location row — much friendlier
+   * than letting them click Save & Next and bounce back. The check
+   * mirrors the click-time validator in validateStage1() so behaviour
+   * stays consistent. */
+  useEffect(() => {
+    const phone = (form.cpTel   || '').trim();
+    const email = (form.cpEmail || '').trim().toLowerCase();
+    const dupPhoneMsg = 'This phone number is already used by another address on this customer';
+    const dupEmailMsg = 'This email is already used by another address on this customer';
+    setErrors(prev => {
+      const next = { ...prev };
+      const phoneDup = phone && locations.some(l => (l.cpContact || '').trim() === phone);
+      const emailDup = email && locations.some(l => (l.cpEmail   || '').trim().toLowerCase() === email);
+      if (phoneDup) next.cpTel = dupPhoneMsg;
+      else if (next.cpTel === dupPhoneMsg) delete next.cpTel;
+      if (emailDup) next.cpEmail = dupEmailMsg;
+      else if (next.cpEmail === dupEmailMsg) delete next.cpEmail;
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.cpTel, form.cpEmail, locations]);
+
   /* Numeric PK of the saved customer. In edit mode it comes from the
    * `customer` prop (passed in from the list). In create mode it's set
    * by the Stage 1 → 2 auto-save POST so Stage 2 KYC upload calls have
@@ -569,8 +593,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     if (!form.cpDesig.trim())                           next.cpDesig  = 'Designation is required';
     if (!form.cpTel.trim())                             next.cpTel    = 'Contact number is required';
     else if (!/^\+?[0-9\s-]{7,15}$/.test(form.cpTel))   next.cpTel    = 'Phone must be 7–15 digits';
+    else if (locations.some(l => (l.cpContact || '').trim() === form.cpTel.trim())) {
+      next.cpTel = 'This phone number is already used by another address on this customer';
+    }
     if (!form.cpEmail.trim())                           next.cpEmail  = 'Email is required';
     else if (!/^\S+@\S+\.\S+$/.test(form.cpEmail))      next.cpEmail  = 'Enter a valid email address';
+    else if (locations.some(l => (l.cpEmail || '').trim().toLowerCase() === form.cpEmail.trim().toLowerCase())) {
+      next.cpEmail = 'This email is already used by another address on this customer';
+    }
     if (!form.cpWa)                                     next.cpWa     = 'Select WhatsApp preference';
     setErrors(next);
     if (Object.keys(next).length === 0) return true;
@@ -1023,19 +1053,44 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           `disallowedTypes` blocks "Registered Office" when the primary
           address is already the registered office — a customer can
           have only one. */}
-      {locModal.open && (
-        <LocationSubModal
-          editing={locModal.editing ? locations.find(l => l.id === locModal.editing) ?? null : null}
-          masters={masters}
-          disallowedTypes={form.addrType === 'Registered Office' ? ['Registered Office'] : []}
-          onClose={() => setLocModal({ open:false, editing:null })}
-          onSave={(rec) => {
-            if (locModal.editing) setLocations(prev => prev.map(l => l.id === locModal.editing ? { ...rec, id: l.id } : l));
-            else setLocations(prev => [...prev, { ...rec, id: newId('loc') }]);
-            setLocModal({ open:false, editing:null });
-          }}
-        />
-      )}
+      {locModal.open && (() => {
+        /* Collect every email + phone already used on this customer —
+         * primary contact (Stage 1) plus every additional location
+         * the user has already added — minus the row currently being
+         * edited (if any). The sub-modal blocks save when the user
+         * tries to enter a value that's already in this set, so the
+         * "same number across two addresses" trap is caught client-
+         * side before the API conflict. */
+        const editingId = locModal.editing;
+        const otherLocs = editingId
+          ? locations.filter(l => l.id !== editingId)
+          : locations;
+        const primaryEmail = (form.cpEmail || '').trim().toLowerCase();
+        const primaryPhone = (form.cpTel   || '').trim();
+        const existingEmails = [
+          primaryEmail,
+          ...otherLocs.map(l => (l.cpEmail || '').trim().toLowerCase()),
+        ].filter(Boolean);
+        const existingPhones = [
+          primaryPhone,
+          ...otherLocs.map(l => (l.cpContact || '').trim()),
+        ].filter(Boolean);
+        return (
+          <LocationSubModal
+            editing={editingId ? locations.find(l => l.id === editingId) ?? null : null}
+            masters={masters}
+            disallowedTypes={form.addrType === 'Registered Office' ? ['Registered Office'] : []}
+            existingEmails={existingEmails}
+            existingPhones={existingPhones}
+            onClose={() => setLocModal({ open:false, editing:null })}
+            onSave={(rec) => {
+              if (editingId) setLocations(prev => prev.map(l => l.id === editingId ? { ...rec, id: l.id } : l));
+              else setLocations(prev => [...prev, { ...rec, id: newId('loc') }]);
+              setLocModal({ open:false, editing:null });
+            }}
+          />
+        );
+      })()}
 
       {/* CONFIRM DELETE — project-wide DeleteConfirmModal. The label
           shown to the user is the address type of the row being
@@ -1387,15 +1442,25 @@ function Stage1AdditionalLocations({ primary, locations, onAdd, onEdit, onDel, o
                     <td>{i + 1}</td>
                     <td>
                       <div className="acm-type-cell">
-                        <span>{l.type || '—'}</span>
+                        {/* Long custom address types (e.g. "Warehouse —
+                            Mumbai Distribution Hub") get truncated to
+                            14 chars with hover tooltip — keeps the
+                            column narrow. */}
+                        {l.type
+                          ? <TruncatedCell text={l.type} max={14} />
+                          : <span>—</span>}
                         {l.isPrimary && <span className="acm-primary-tag">Primary</span>}
                       </div>
                     </td>
-                    <td><TruncatedCell text={l.line} max={36} /></td>
-                    <td><TruncatedCell text={place} max={32} /></td>
-                    <td><TruncatedCell text={contact} max={26} /></td>
-                    <td><TruncatedCell text={l.cpContact} max={18} mono /></td>
-                    <td><TruncatedCell text={l.cpEmail} max={28} /></td>
+                    {/* Tight per-column truncation — keep the table to
+                        a predictable width on tablets / smaller laptop
+                        screens. Long values overflow into the Tooltip
+                        on hover (full text always available there). */}
+                    <td><TruncatedCell text={l.line} max={16} /></td>
+                    <td><TruncatedCell text={place} max={18} /></td>
+                    <td><TruncatedCell text={contact} max={18} /></td>
+                    <td><TruncatedCell text={l.cpContact} max={15} mono /></td>
+                    <td><TruncatedCell text={l.cpEmail} max={18} /></td>
                     <td>{l.cpWhatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : l.cpWhatsapp === 'no' ? <span className="acm-pill-no">✕ No</span> : <span style={{ color: '#9ca3af' }}>—</span>}</td>
                     <td>
                       <div className="acm-row-actions">
@@ -2727,8 +2792,14 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
  * registered office — a customer can only have one). The currently
  * editing row's own type is still shown so existing data isn't hidden
  * from the user mid-edit. */
-function LocationSubModal({ editing, masters, disallowedTypes, onClose, onSave }:
-  { editing: LocationRow | null; masters: MasterLists; disallowedTypes?: string[]; onClose: () => void; onSave: (rec: Omit<LocationRow, 'id'>) => void }) {
+function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = [], existingPhones = [], onClose, onSave }:
+  { editing: LocationRow | null; masters: MasterLists; disallowedTypes?: string[];
+    /** Emails already used by other addresses (primary + other locations)
+     *  on this customer — used to block duplicates within the same form
+     *  before the user can save and run into a backend conflict. */
+    existingEmails?: string[];
+    existingPhones?: string[];
+    onClose: () => void; onSave: (rec: Omit<LocationRow, 'id'>) => void }) {
   const toast = useToast();
   // For new locations, skip the default "Registered Office" prefill if
   // that type is disallowed — otherwise the user lands on a value
@@ -2752,6 +2823,29 @@ function LocationSubModal({ editing, masters, disallowedTypes, onClose, onSave }
     setD(prev => ({ ...prev, [k]: v }));
     setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
   };
+  /* Real-time duplicate check — fires the inline error the moment the
+   * user finishes typing a phone or email that's already in use on
+   * this customer (primary contact or another location). Without this,
+   * the validation only fired on Save, which felt like "the form ate
+   * the value silently and then rejected it on submit". */
+  useEffect(() => {
+    const phone = (d.cpContact || '').trim();
+    const email = (d.cpEmail   || '').trim().toLowerCase();
+    setErrs(prev => {
+      const next = { ...prev };
+      if (phone && existingPhones.includes(phone)) {
+        next.cpContact = 'This phone number is already used by another address on this customer';
+      } else if (next.cpContact === 'This phone number is already used by another address on this customer') {
+        delete next.cpContact;
+      }
+      if (email && existingEmails.includes(email)) {
+        next.cpEmail = 'This email is already used by another address on this customer';
+      } else if (next.cpEmail === 'This email is already used by another address on this customer') {
+        delete next.cpEmail;
+      }
+      return next;
+    });
+  }, [d.cpContact, d.cpEmail, existingPhones, existingEmails]);
   const selectedCountry = masters.countries.find(c => c.name === d.country);
   const states = selectedCountry
     ? masters.states.filter(s => s.country_id === selectedCountry.id)
@@ -2769,8 +2863,14 @@ function LocationSubModal({ editing, masters, disallowedTypes, onClose, onSave }
     if (!d.cpDesignation.trim())                       next.cpDesignation = 'Designation required';
     if (!d.cpContact.trim())                           next.cpContact     = 'Phone required';
     else if (!/^\+?[0-9\s-]{7,15}$/.test(d.cpContact)) next.cpContact     = 'Phone must be 7–15 digits';
+    else if (existingPhones.includes(d.cpContact.trim())) {
+      next.cpContact = 'This phone number is already used by another address on this customer';
+    }
     if (!d.cpEmail.trim())                             next.cpEmail       = 'Email required';
     else if (!/^\S+@\S+\.\S+$/.test(d.cpEmail))        next.cpEmail       = 'Enter a valid email';
+    else if (existingEmails.includes(d.cpEmail.trim().toLowerCase())) {
+      next.cpEmail = 'This email is already used by another address on this customer';
+    }
     if (!d.cpWhatsapp)                                 next.cpWhatsapp    = 'Select WhatsApp preference';
     setErrs(next);
     if (Object.keys(next).length === 0) { onSave(d); return; }

@@ -1290,12 +1290,13 @@ function MasterPageInner({
                          ? (row?.creator_branch_is_main ? 'the Main Branch' : 'another Branch')
                        : 'a higher-privileged user';
         // System-seeded rows ("Office" address type, "Laptop" / "Mobile"
-        // asset categories) come back from the API with is_system=true.
-        // The backend already enforces protection (403 on delete, name
-        // unset on update) — block the buttons up front so the user
-        // gets a clear tooltip instead of a failed request toast.
+        // asset categories, "Standard" / "VIP" classifications, etc.)
+        // come back from the API with is_system=true. The backend
+        // returns 403 on both edit and delete now — block the buttons
+        // up front so the user gets a clear tooltip instead of a
+        // failed request toast.
         const isSystemRow = !!row?.is_system;
-        const editTooltip   = isSystemRow ? 'System-managed — name is locked, status still editable'
+        const editTooltip   = isSystemRow ? 'System-managed — cannot be edited'
                             : blockedByRank ? `Cannot edit — created by ${whoLabel}`
                             : 'Edit';
         const deleteTooltip = isSystemRow ? 'System-managed — cannot be deleted'
@@ -1308,10 +1309,10 @@ function MasterPageInner({
               title={editTooltip}
               icon="ri-pencil-line"
               color="info"
-              // Edit stays enabled for system rows — the user can still
-              // flip status to Inactive — but the name field is locked
-              // in the form (see openEdit gating below).
-              disabled={blockedByRank}
+              // System rows are fully locked — the backend 403s edit
+              // attempts, so block the button up front. Users can
+              // still hit View to inspect the system-managed values.
+              disabled={blockedByRank || isSystemRow}
               onClick={() => openEdit(info.row.original)}
             />}
             {caps.delete && <ActionBtn

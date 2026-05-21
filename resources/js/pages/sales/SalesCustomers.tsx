@@ -185,7 +185,7 @@ export default function SalesCustomers() {
     {
       header: 'Company Name',
       accessorKey: 'company',
-      cell: (info: any) => <TruncatedCell value={info.getValue()} className="smc-company" max={22} />,
+      cell: (info: any) => <TruncatedCell value={info.getValue()} className="smc-company" max={16} />,
     },
     {
       header: 'Customer Type',
@@ -206,10 +206,10 @@ export default function SalesCustomers() {
       accessorKey: 'segment',
       cell: (info: any) => info.getValue() ? <span className="smc-seg">{info.getValue()}</span> : <span className="text-muted">—</span>,
     },
-    { header: 'Country',        accessorKey: 'country', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-country" max={24} /> },
-    { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={22} /> },
+    { header: 'Country',        accessorKey: 'country', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-country" max={16} /> },
+    { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={16} /> },
     { header: 'Contact No',     accessorKey: 'phone',   cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
-    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" max={24} /> },
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" max={18} /> },
     {
       header: () => <div className="text-center">WhatsApp</div>,
       accessorKey: 'whatsapp',

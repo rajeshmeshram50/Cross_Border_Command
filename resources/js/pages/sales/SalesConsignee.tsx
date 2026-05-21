@@ -207,7 +207,7 @@ export default function SalesConsignee() {
     {
       header: 'Company Name',
       accessorKey: 'company',
-      cell: (info: any) => <TruncatedCell value={info.getValue()} className="smcg-company" max={22} />,
+      cell: (info: any) => <TruncatedCell value={info.getValue()} className="smcg-company" max={16} />,
     },
     {
       header: 'Segment',
@@ -227,8 +227,8 @@ export default function SalesConsignee() {
         );
       },
     },
-    { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-contact" max={22} /> },
-    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" max={24} /> },
+    { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-contact" max={16} /> },
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" max={18} /> },
     { header: 'Contact No',     accessorKey: 'phone',   cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
     {
       header: 'Country',
