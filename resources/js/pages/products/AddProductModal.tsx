@@ -4,7 +4,6 @@ import api from '../../api';
 import { resolveFileUrl, viewFile } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
 
@@ -317,7 +316,6 @@ export default function AddProductModal(props: {
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
   const [vendorGstPct, setVendorGstPct] = useState<string>('');
   const [vendorRemarks, setVendorRemarks] = useState('');
-  const [vendorMapDate, setVendorMapDate] = useState<string>('');
 
   const vendorSelected = useMemo(
     () => vendorOpts.find(v => v.code === vendorSelectedCode) || null,
@@ -522,7 +520,9 @@ export default function AddProductModal(props: {
       gstPct: vendorGp,
       gstAmt: vendorGsta,
       totalAmt: vendorTota,
-      mapDate: vendorMapDate ? formatDate(vendorMapDate) : today(),
+      // Map Date is auto-stamped at save time — server replaces this
+      // with the server's own clock anyway.
+      mapDate: today(),
       remarks: vendorRemarks,
     };
     setVendors(prev => [...prev, entry]);
@@ -531,7 +531,6 @@ export default function AddProductModal(props: {
     setVendorPurchasePrice('');
     setVendorGstPct('');
     setVendorRemarks('');
-    setVendorMapDate('');
     toast.success('Vendor mapped', `${entry.vendorName} added to this product`);
   };
 
@@ -1504,98 +1503,96 @@ export default function AddProductModal(props: {
                 </div>
               )}
 
-              {vendorDraftOpen && (
-                <SectionCard
-                  tone="navy"
-                  icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
-                  title="Map Product Vendor"
-                  subtitle="Select a vendor and enter purchase pricing"
-                  headerAction={
-                    <button className="apm-btn-outline">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
-                      Add Vendor
-                    </button>
-                  }
-                >
-                  <div className="apm-grid-2">
-                    <Field label="Select Vendor" required>
-                      <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select vendor"
-                        options={vendorOpts.map(v => ({
-                          value: v.code,
-                          label: `${v.code} — ${v.name}${v.status && v.status !== 'active' ? ` (${v.status.charAt(0).toUpperCase()}${v.status.slice(1)})` : ''}`,
-                        }))}
-                      />
-                    </Field>
-                    <span />
-                  </div>
-
-                  {/* Read-only vendor info grid */}
-                  <div className="apm-vendor-info">
-                    <InfoCell label="Vendor Code"          value={vendorSelected?.code   ?? 'NA'} />
-                    <InfoCell label="Vendor Company Name"  value={vendorSelected?.name   ?? 'NA'} />
-                    <InfoCell label="Company Website"      value={vendorSelected?.website ?? 'NA'} />
-                    <InfoCell label="Contact person name" value={vendorSelected?.contact ?? 'NA'} />
-                    <InfoCell label="Contact no"           value={vendorSelected?.phone  ?? 'NA'} />
-                    <InfoCell label="Email ID"             value={vendorSelected?.email  ?? 'NA'} />
-                    <InfoCell label="Designation"          value={vendorSelected?.designation ?? 'NA'} />
-                    <InfoCell label="Attachments"          value="—" />
-                  </div>
-
-                  <div className="apm-grid-4">
-                    <Field label="Purchase Price" required>
-                      <div className="apm-input-icon">
-                        <span className="apm-input-icon-prefix">₹</span>
-                        <input className="apm-input has-prefix" type="number" placeholder="0.00" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} />
+              {vendorDraftOpen && createPortal((
+                <div className="apm-mv-backdrop" onClick={() => setVendorDraftOpen(false)}>
+                  <div className="apm-mv-popup" onClick={(e) => e.stopPropagation()}>
+                    <div className="apm-mv-popup-head">
+                      <div className="apm-mv-popup-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                        <div>
+                          <div className="apm-mv-popup-title-main">Map Product Vendor</div>
+                          <div className="apm-mv-popup-title-sub">Select a vendor and enter purchase pricing</div>
+                        </div>
                       </div>
-                    </Field>
-                    {/* GST% is inherited from the product's Sales Config
-                        step — locked here so a vendor mapping can never
-                        carry a different rate than the parent product. */}
-                    <Field label="GST %">
-                      <input
-                        className="apm-input apm-readonly"
-                        value={gstPctStr || '—'}
-                        readOnly
-                        title="GST % comes from the product's Sales Config (Step 2)"
-                      />
-                    </Field>
-                    <Field label="GST Amount">
-                      <div className="apm-input-icon">
-                        <span className="apm-input-icon-prefix">₹</span>
-                        <input className="apm-input has-prefix apm-readonly" value={vendorGsta.toFixed(2)} readOnly />
-                      </div>
-                    </Field>
-                    <Field label="Total Amount">
-                      <div className="apm-input-icon">
-                        <span className="apm-input-icon-prefix">₹</span>
-                        <input className="apm-input has-prefix apm-readonly apm-total" value={vendorTota.toFixed(2)} readOnly />
-                      </div>
-                    </Field>
-                  </div>
+                      <button className="apm-close apm-mv-close" onClick={() => setVendorDraftOpen(false)} aria-label="Close">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                      </button>
+                    </div>
 
-                  <div className="apm-grid-2">
-                    <Field label="Map Date" icon={<i className="ri-calendar-line" />}>
-                      <div className="apm-master-date">
-                        <MasterDatePicker
-                          value={vendorMapDate}
-                          onChange={setVendorMapDate}
-                          placeholder="Select date"
-                        />
+                    <div className="apm-mv-popup-body">
+                      <div className="apm-grid-2">
+                        <Field label="Select Vendor" required>
+                          <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select vendor"
+                            options={vendorOpts.map(v => ({
+                              value: v.code,
+                              label: `${v.code} — ${v.name}${v.status && v.status !== 'active' ? ` (${v.status.charAt(0).toUpperCase()}${v.status.slice(1)})` : ''}`,
+                            }))}
+                          />
+                        </Field>
+                        <span />
                       </div>
-                    </Field>
-                    <Field label="Remarks" icon={<i className="ri-chat-3-line" />}>
-                      <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Enter remarks" value={vendorRemarks} onChange={e => setVendorRemarks(e.target.value)} rows={2} />
-                    </Field>
-                  </div>
 
-                  <div className="apm-vendor-draft-foot">
-                    <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={!vendorSelected || !vendorPp}>
-                      Save Vendor
-                    </button>
-                    <button className="apm-btn-ghost" onClick={() => setVendorDraftOpen(false)}>Cancel</button>
+                      {/* Read-only vendor info grid */}
+                      <div className="apm-vendor-info">
+                        <InfoCell label="Vendor Code"          value={vendorSelected?.code   ?? 'NA'} />
+                        <InfoCell label="Vendor Company Name"  value={vendorSelected?.name   ?? 'NA'} />
+                        <InfoCell label="Company Website"      value={vendorSelected?.website ?? 'NA'} />
+                        <InfoCell label="Contact person name" value={vendorSelected?.contact ?? 'NA'} />
+                        <InfoCell label="Contact no"           value={vendorSelected?.phone  ?? 'NA'} />
+                        <InfoCell label="Email ID"             value={vendorSelected?.email  ?? 'NA'} />
+                        <InfoCell label="Designation"          value={vendorSelected?.designation ?? 'NA'} />
+                        <InfoCell label="Attachments"          value="—" />
+                      </div>
+
+                      <div className="apm-grid-4">
+                        <Field label="Purchase Price" required>
+                          <div className="apm-input-icon">
+                            <span className="apm-input-icon-prefix">₹</span>
+                            <input className="apm-input has-prefix" type="number" placeholder="0.00" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} />
+                          </div>
+                        </Field>
+                        {/* GST% is inherited from the product's Sales Config
+                            step — locked here so a vendor mapping can never
+                            carry a different rate than the parent product. */}
+                        <Field label="GST %">
+                          <input
+                            className="apm-input apm-readonly"
+                            value={gstPctStr || '—'}
+                            readOnly
+                            title="GST % comes from the product's Sales Config (Step 2)"
+                          />
+                        </Field>
+                        <Field label="GST Amount">
+                          <div className="apm-input-icon">
+                            <span className="apm-input-icon-prefix">₹</span>
+                            <input className="apm-input has-prefix apm-readonly" value={vendorGsta.toFixed(2)} readOnly />
+                          </div>
+                        </Field>
+                        <Field label="Total Amount">
+                          <div className="apm-input-icon">
+                            <span className="apm-input-icon-prefix">₹</span>
+                            <input className="apm-input has-prefix apm-readonly apm-total" value={vendorTota.toFixed(2)} readOnly />
+                          </div>
+                        </Field>
+                      </div>
+
+                      {/* Map date is auto-stamped server-side (and locally
+                          defaults to today()), so the user no longer picks
+                          it. Remarks gets the full row. */}
+                      <Field label="Remarks" icon={<i className="ri-chat-3-line" />}>
+                        <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Enter remarks" value={vendorRemarks} onChange={e => setVendorRemarks(e.target.value)} rows={2} />
+                      </Field>
+                    </div>
+
+                    <div className="apm-mv-popup-foot">
+                      <button className="apm-btn-ghost" onClick={() => setVendorDraftOpen(false)}>Cancel</button>
+                      <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={!vendorSelected || !vendorPp}>
+                        Save Vendor
+                      </button>
+                    </div>
                   </div>
-                </SectionCard>
-              )}
+                </div>
+              ), document.body)}
 
               {/* Mapped vendor table — same shell as the Clients master table */}
               {vendors.length > 0 && (
@@ -2672,6 +2669,64 @@ const SCOPED_CSS = `
 
 /* ─── QC empty state ─── */
 .apm-empty { padding: 24px; text-align: center; color: #94a3b8; font-size: 12.5px; }
+
+/* ─── Map Vendor popup (Step 2) ─── */
+.apm-mv-backdrop {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(15, 23, 42, .55);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 24px 20px;
+  overflow-y: auto;
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+}
+.apm-mv-popup {
+  width: 100%; max-width: 980px;
+  margin: auto;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
+  color: #1e1b4b;
+  max-height: calc(100vh - 48px);
+}
+.apm-mv-popup-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #2b3a85 0%, #1e2a5f 100%);
+  color: #fff;
+}
+.apm-mv-popup-title {
+  display: inline-flex; align-items: center; gap: 10px;
+}
+.apm-mv-popup-title svg { flex-shrink: 0; }
+.apm-mv-popup-title-main { font-size: 15px; font-weight: 800; line-height: 1.2; }
+.apm-mv-popup-title-sub  { font-size: 11.5px; font-weight: 500; opacity: .8; margin-top: 2px; }
+.apm-mv-close {
+  width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.12);
+  color: #fff; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s, transform .12s;
+}
+.apm-mv-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+.apm-mv-popup-body {
+  padding: 18px 20px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.apm-mv-popup-foot {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid #e5e7eb;
+  background: #fafbff;
+}
+
+[data-bs-theme="dark"] .apm-mv-popup { background: #14102a; color: #ede9fe; box-shadow: 0 30px 80px rgba(0,0,0,.75); }
+[data-bs-theme="dark"] .apm-mv-popup-foot { background: #1a1538; border-top-color: #2a2150; }
 
 /* ─── QC Add popup ─── */
 .apm-qc-backdrop {
