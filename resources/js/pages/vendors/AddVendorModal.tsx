@@ -2931,7 +2931,7 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td>{r.segment || '—'}</td>
               <td>{r.batchSerialLot || '—'}</td>
               <td className="text-end font-monospace fs-13">{r.purchasePrice.toFixed(2)}</td>
-              <td className="text-end font-monospace fs-13">{r.gstPercentage ? `${r.gstPercentage}%` : '—'}</td>
+              <td className="text-end font-monospace fs-13">{r.gstPercentage ? `${r.gstPercentage.toFixed(2)}%` : '—'}</td>
               <td className="text-end font-monospace fs-13">{r.gstAmount.toFixed(2)}</td>
               <td className="text-end font-monospace fs-13"><strong>{r.totalAmount.toFixed(2)}</strong></td>
               <td>

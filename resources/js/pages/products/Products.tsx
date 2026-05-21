@@ -1863,10 +1863,12 @@ const SCOPED_CSS = `
 
 /* ════════════════════════════════════════════════════════════════════════════
  * Dark mode — flips backgrounds, borders, and text while keeping the violet
- * accent so the brand identity stays consistent.
+ * accent on the per-card chrome. The page background falls back to the
+ * Velzon body color (--vz-body-bg) so the Products page reads the same as
+ * the Vendors list — a plain dark slate, not a violet gradient panel.
  * ════════════════════════════════════════════════════════════════════════ */
 [data-bs-theme="dark"] .prd-root {
-  background: linear-gradient(160deg, #0f0d1f 0%, #161033 40%, #1d1442 100%);
+  background: transparent;
   color: #e9e5ff;
 }
 
