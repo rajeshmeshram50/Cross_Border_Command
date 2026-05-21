@@ -288,19 +288,6 @@ export default function AddProductModal(props: {
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
   const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
 
-  // Adapter list of percentage-string options for the vendor draft GST picker.
-  // The vendor sub-form stores the GST as a "18%" string (parsed via replace('%','')),
-  // so we project the master rows into that shape rather than passing IDs.
-  const vendorGstOptions = useMemo(
-    () => optGst
-      .map(o => {
-        const pct = parseFloat(String(o.extra?.percentage ?? '0')) || 0;
-        return { value: `${pct}%`, label: `${pct}%` };
-      })
-      .filter(o => o.value !== '0%'),
-    [optGst],
-  );
-
   /* ─── Step 1: Quality ─── */
   const [netWeight,   setNetWeight]   = useState<string>('');
   const [grossWeight, setGrossWeight] = useState<string>('');
@@ -337,7 +324,13 @@ export default function AddProductModal(props: {
     [vendorOpts, vendorSelectedCode]
   );
   const vendorPp   = parseFloat(vendorPurchasePrice) || 0;
-  const vendorGp   = parseFloat(vendorGstPct.replace('%', '')) || 0;
+  // Vendor GST% is locked to the product's own GST% (set in the
+  // Sales Config step). Mapping a vendor must not introduce a
+  // different tax rate than the product itself, so the picker is
+  // gone and the calc just reads gstPctNum directly. The legacy
+  // `vendorGstPct` state still exists for backward compat with
+  // edit-mode prefill but no longer feeds the math.
+  const vendorGp   = gstPctNum;
   const vendorGsta = +(vendorPp * (vendorGp / 100)).toFixed(2);
   const vendorTota = +(vendorPp + vendorGsta).toFixed(2);
 
@@ -1414,10 +1407,24 @@ export default function AddProductModal(props: {
                                 </td>
                                 <td>
                                   {q.attachmentName ? (
-                                    <span className="fs-13 d-inline-block text-truncate" style={{ maxWidth: 200 }} title={q.attachmentName}>
-                                      <i className="ri-attachment-line text-muted me-1" />
-                                      {q.attachmentName}
-                                    </span>
+                                    q.attachmentUrl ? (
+                                      <a
+                                        href={q.attachmentUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="fs-13 d-inline-block text-truncate"
+                                        style={{ maxWidth: 200, color: '#4338ca', textDecoration: 'underline', cursor: 'pointer' }}
+                                        title={`Open ${q.attachmentName}`}
+                                      >
+                                        <i className="ri-attachment-line me-1" />
+                                        {q.attachmentName}
+                                      </a>
+                                    ) : (
+                                      <span className="fs-13 d-inline-block text-truncate" style={{ maxWidth: 200 }} title={q.attachmentName}>
+                                        <i className="ri-attachment-line text-muted me-1" />
+                                        {q.attachmentName}
+                                      </span>
+                                    )
                                   ) : <span className="text-muted fs-13">—</span>}
                                 </td>
                                 <td>
@@ -1541,8 +1548,16 @@ export default function AddProductModal(props: {
                         <input className="apm-input has-prefix" type="number" placeholder="0.00" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} />
                       </div>
                     </Field>
+                    {/* GST% is inherited from the product's Sales Config
+                        step — locked here so a vendor mapping can never
+                        carry a different rate than the parent product. */}
                     <Field label="GST %">
-                      <SelectInput value={vendorGstPct} onChange={setVendorGstPct} placeholder="0%" options={vendorGstOptions} />
+                      <input
+                        className="apm-input apm-readonly"
+                        value={gstPctStr || '—'}
+                        readOnly
+                        title="GST % comes from the product's Sales Config (Step 2)"
+                      />
                     </Field>
                     <Field label="GST Amount">
                       <div className="apm-input-icon">
@@ -1997,7 +2012,17 @@ function QcAddPopup(props: {
   const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (f) {
-      setDraft({ ...draft, attachmentName: f.name, attachmentFile: f });
+      /* Build an in-memory blob URL right away so the freshly-added
+         row's "View Attachment" link works before the file is saved
+         to the server. The server URL replaces this on the next
+         /products/{id} prefill once Save Quality finishes uploading. */
+      const previewUrl = URL.createObjectURL(f);
+      setDraft({
+        ...draft,
+        attachmentName: f.name,
+        attachmentFile: f,
+        attachmentUrl: previewUrl,
+      });
     }
   };
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
@@ -282,6 +283,10 @@ export default function AddVendorModal(props: {
      caller passes a vendorId prop (edit mode), it's pre-set here and a
      load-effect fetches the existing data to prefill the form. */
   const [vendorId, setVendorId] = useState<number | null>(initialVendorId ?? null);
+  /* Vendor code surfaced in the carried-over header on later steps.
+     Populated from /vendors/{id} on edit-mode load; new vendors get
+     their code only after Step 1 saves, so it stays blank until then. */
+  const [vendorCode, setVendorCode] = useState<string>('');
   const [saving,   setSaving]   = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(isEdit);
 
@@ -504,6 +509,7 @@ export default function AddVendorModal(props: {
     type ApiMapping = { id: number; product_id?: number | null; product_code?: string | null; product_name?: string | null; batch_serial_lot?: string | null; purchase_price?: number | string | null; gst_percentage?: number | string | null; gst_amount?: number | string | null; total_amount?: number | string | null };
     type ApiVendor = {
       id: number;
+      vendor_code?: string | null;
       company_name?: string | null; legal_name?: string | null; website?: string | null;
       vendor_type_id?: number | null; risk_level_id?: number | null;
       vendor_behaviour_id?: number | null; segment_id?: number | null;
@@ -532,6 +538,7 @@ export default function AddVendorModal(props: {
         if (!v) return;
 
         // Step 1 — identity
+        setVendorCode(v.vendor_code ?? '');
         setCompanyName(v.company_name ?? '');
         setLegalName(v.legal_name ?? '');
         setWebsite(v.website ?? '');
@@ -696,6 +703,12 @@ export default function AddVendorModal(props: {
         compliance_behaviour_id: complianceBehaviour ? Number(complianceBehaviour) : null,
       });
       setVendorId(res.data?.data?.id ?? vendorId);
+      // Capture the server-assigned vendor_code so the header on
+      // later steps can render it without another roundtrip.
+      const returnedCode = (res.data?.data as Record<string, unknown> | undefined)?.vendor_code;
+      if (typeof returnedCode === 'string' && returnedCode) {
+        setVendorCode(returnedCode);
+      }
       setFieldErrors({});
       toast.success('Identity saved', 'Vendor identity details captured');
       return true;
@@ -1269,61 +1282,126 @@ export default function AddVendorModal(props: {
         {/* ─── Body ─── */}
         <div className="avm-body">
           {step > 1 && (() => {
-            /* Step-grouped summary of everything captured in earlier
-               steps — mirrors the Add Product wizard's PreviousStages
-               block. Each completed step gets its own section so the
-               user can scan exactly what's already done before moving
-               forward; the Hide toggle collapses everything. */
+            /* Carried-over summary of everything captured in earlier
+               steps. Each entry is a `Label : value` pair flowed
+               inline so the header reads like the field strip on
+               read-only detail screens — much denser than a card grid.
+               KYC carries the FIRST row of each sub-list (not the
+               count), and contact info shows only the PRIMARY contact.
+               Sub-tabs inside the same step share this header so
+               navigating between them never loses the upstream data. */
+            type PrevField = {
+              label: string;
+              value: string;
+              href?: string;        // renders the value as a link
+              suffix?: string;      // appended in muted style after value (e.g. validity)
+            };
             type PrevStage = {
               name: string;
               tone: 'violet' | 'teal' | 'purple';
-              fields: { label: string; value: string }[];
+              rows: PrevField[][];   // one inline row per sub-array
             };
             const prevStages: PrevStage[] = [];
+
             if (step > 1) {
+              const yesNo = (b: boolean) => (b ? 'Yes' : 'No');
               prevStages.push({
-                name: 'Vendor Legal Identity',
+                name: 'Vendor Legal Identity Details',
                 tone: 'violet',
-                fields: [
-                  { label: 'Company Name',        value: companyName || '—' },
-                  { label: 'Legal Name',          value: legalName || '—' },
-                  { label: 'Vendor Type',         value: labelFor(vendorType, vendorTypeOpts) || '—' },
-                  { label: 'Risk Level',          value: labelFor(riskLevel, riskLevelOpts) || '—' },
-                  { label: 'Vendor Behaviour',    value: labelFor(vendorBehaviour, behaviourOpts) || '—' },
-                  { label: 'Segment',             value: labelFor(segment, segmentOpts) || '—' },
-                  { label: 'Compliance Behaviour',value: labelFor(complianceBehaviour, complianceOpts) || '—' },
-                  { label: 'Country / State',     value: `${labelFor(country, countryOpts) || '—'} / ${labelFor(state, stateOpts) || '—'}` },
-                  { label: 'City / Pincode',      value: `${city || '—'} / ${pincode || '—'}` },
-                  { label: 'Primary Contact',     value: contactName ? `${contactName} (${designation || '—'})` : '—' },
-                  { label: 'Phone',               value: contactNo || '—' },
-                  { label: 'Email',               value: email || '—' },
-                  { label: 'Extra Contacts',      value: String(extraContacts.length) },
+                rows: [
+                  [
+                    { label: 'Vendor Code',         value: vendorCode || '—' },
+                    { label: 'Company Name',        value: companyName || '—' },
+                    { label: 'Company Legal Name',  value: legalName || '—' },
+                    { label: 'Vendor Type',         value: labelFor(vendorType, vendorTypeOpts) || '—' },
+                  ],
+                  [
+                    { label: 'Company Website',     value: website || 'NA' },
+                    { label: 'Risk Level',          value: labelFor(riskLevel, riskLevelOpts) || '—' },
+                    { label: 'Vendor Behaviour',    value: labelFor(vendorBehaviour, behaviourOpts) || '—' },
+                    { label: 'Compliance Behaviour',value: labelFor(complianceBehaviour, complianceOpts) || '—' },
+                  ],
+                  [
+                    { label: 'Registered Office Address', value: registeredOffice || '—' },
+                    { label: 'Country',             value: labelFor(country, countryOpts) || '—' },
+                    { label: 'State',               value: labelFor(state, stateOpts) || '—' },
+                    { label: 'City',                value: city || '—' },
+                    { label: 'State Code',          value: stateCode || '—' },
+                  ],
+                  // Primary contact only — extras are intentionally
+                  // hidden (the user said to surface only the
+                  // primary). Pincode + segment included so the row
+                  // still reads as a complete identity snapshot.
+                  [
+                    { label: 'Contact Person Name', value: contactName || '—' },
+                    { label: 'Designation',         value: designation || '—' },
+                    { label: 'Contact No',          value: contactNo || '—' },
+                    { label: 'WhatsApp Enable',     value: yesNo(whatsappEnabled) },
+                  ],
                 ],
               });
             }
+
             if (step > 2) {
-              prevStages.push({
-                name: 'Vendor KYC / Due Diligence',
-                tone: 'teal',
-                fields: [
-                  { label: 'Due Diligence Docs', value: String(ddRows.length) },
-                  { label: 'Owner KYC Docs',     value: String(ownerRows.length) },
-                  { label: 'Trade Licenses',     value: String(licenseRows.length) },
-                  { label: 'Bank Accounts',      value: String(bankRows.length) },
-                  { label: 'GST Scrutiny',       value: String(gstRows.length) },
-                ],
-              });
+              // First entry of each KYC sub-list — counts are gone.
+              const bank = bankRows[0];
+              const dd   = ddRows[0];
+              const own  = ownerRows[0];
+              const kycRows: PrevField[][] = [];
+
+              if (bank) {
+                kycRows.push([
+                  { label: 'Bank Name',      value: bank.bankName || '—' },
+                  { label: 'Branch',         value: bank.branchName || '—' },
+                  { label: 'Account Number', value: bank.accountNumber || '—' },
+                  { label: 'IFSC Code',      value: bank.ifsc || '—' },
+                ]);
+              }
+              if (dd) {
+                const fileLabel = dd.fileName || (dd.existingPath ? dd.existingPath.split('/').pop() ?? '' : '');
+                const href = dd.existingPath ? resolveFileUrl(dd.existingPath) : (dd.file ? URL.createObjectURL(dd.file) : '');
+                kycRows.push([
+                  {
+                    label: dd.documentName || 'Document',
+                    value: fileLabel || '—',
+                    href: href || undefined,
+                    suffix: dd.expiry && dd.expiry !== 'N/A' ? `(Validity: ${dd.expiry})` : undefined,
+                  },
+                ]);
+              }
+              if (own) {
+                kycRows.push([
+                  { label: 'Owner Name',     value: own.documentName || '—' },
+                  { label: 'Designation',    value: own.issuingAuthority || '—' },
+                  { label: 'Official Email', value: own.documentNumber || '—' },
+                  { label: 'Phone No',       value: own.issueDate || '—' },
+                ]);
+              }
+              if (kycRows.length) {
+                prevStages.push({
+                  name: 'Vendor KYC / Due Diligence Details',
+                  tone: 'teal',
+                  rows: kycRows,
+                });
+              }
             }
+
             if (step > 3) {
-              const sent = tradeDocRows.filter(r => r.status !== 'N/A').length;
-              prevStages.push({
-                name: 'Trade Document Management',
-                tone: 'purple',
-                fields: [
-                  { label: 'Trade Documents',     value: `${sent} of ${tradeDocRows.length} sent` },
-                ],
-              });
+              const td = tradeDocRows.find(r => r.status !== 'N/A');
+              if (td) {
+                prevStages.push({
+                  name: 'Trade Document Management',
+                  tone: 'purple',
+                  rows: [[
+                    { label: 'Document', value: td.name || '—' },
+                    { label: 'Status',   value: td.status },
+                    ...(td.attachmentName ? [{ label: 'Attachment', value: td.attachmentName }] : []),
+                  ]],
+                });
+              }
             }
+
+            if (prevStages.length === 0) return null;
 
             return (
               <div className="avm-prev">
@@ -1340,13 +1418,20 @@ export default function AddVendorModal(props: {
                     {prevStages.map(s => (
                       <div key={s.name} className={`avm-prev-stage tone-${s.tone}`}>
                         <div className="avm-prev-stage-label">⊕ {s.name}</div>
-                        <div className="avm-prev-grid">
-                          {s.fields.map(f => (
-                            <div key={f.label} className="avm-prev-field-cell">
-                              <div className="avm-prev-field-label">{f.label}</div>
-                              {/* `title` exposes the full value as a native tooltip
-                                  when the cell truncates. */}
-                              <div className="avm-prev-field-value" title={f.value}>{f.value}</div>
+                        <div className="avm-prev-rows">
+                          {s.rows.map((row, i) => (
+                            <div key={i} className="avm-prev-row">
+                              {row.map((f, j) => (
+                                <span key={`${f.label}-${j}`} className="avm-prev-pair">
+                                  <span className="avm-prev-k">{f.label} :</span>{' '}
+                                  {f.href ? (
+                                    <a href={f.href} target="_blank" rel="noopener noreferrer" className="avm-prev-link" title={f.value}>{f.value}</a>
+                                  ) : (
+                                    <span className="avm-prev-v" title={f.value}>{f.value}</span>
+                                  )}
+                                  {f.suffix ? <span className="avm-prev-suffix"> {f.suffix}</span> : null}
+                                </span>
+                              ))}
                             </div>
                           ))}
                         </div>
@@ -3045,22 +3130,39 @@ const SCOPED_CSS = `
 .avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #0f766e; }
 .avm-prev-stage.tone-purple .avm-prev-stage-label { color: #6b21a8; }
 
-.avm-prev-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  column-gap: 18px;
-  row-gap: 10px;
+/* Compact inline pair rows — each row is a flex-wrap container
+   that flows "Label : value" pairs side by side and breaks onto
+   the next visual line only when the viewport is too narrow. */
+.avm-prev-rows {
+  display: flex; flex-direction: column; gap: 6px;
 }
-.avm-prev-field-cell { min-width: 0; padding: 0; }
-.avm-prev-field-label {
-  font-size: 9.5px; font-weight: 700; letter-spacing: .08em;
+.avm-prev-row {
+  display: flex; flex-wrap: wrap; gap: 6px 26px;
+  align-items: baseline;
+}
+.avm-prev-pair {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  font-size: 12.5px; line-height: 1.45;
+  min-width: 0;
+}
+.avm-prev-k {
+  font-size: 11px; font-weight: 700; letter-spacing: .03em;
   color: #94a3b8; text-transform: uppercase;
+  white-space: nowrap;
 }
-.avm-prev-field-value {
-  font-size: 13px; font-weight: 600; color: #1e1b4b;
+.avm-prev-v {
+  font-weight: 600; color: #1e1b4b;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  margin-top: 2px;
-  cursor: default;
+  max-width: 320px;
+}
+.avm-prev-link {
+  font-weight: 600; color: #4338ca; text-decoration: underline;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 320px;
+}
+.avm-prev-link:hover { color: #312e81; }
+.avm-prev-suffix {
+  font-size: 11.5px; color: #64748b; font-weight: 500;
 }
 
 /* Tabs */

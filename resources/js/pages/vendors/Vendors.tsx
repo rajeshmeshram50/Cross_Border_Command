@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Button } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
@@ -76,6 +77,7 @@ const AVATAR_COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#
 export default function Vendors() {
   const { user } = useAuth();
   const toast = useToast();
+  const navigate = useNavigate();
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [search, setSearch] = useState('');
@@ -329,7 +331,7 @@ export default function Vendors() {
           <div className="d-flex gap-1 justify-content-center">
             <ActionBtn title="View"         icon="ri-eye-line"            color="primary"   onClick={() => toast.info('View', `Viewing ${v.companyName}`)} />
             <ActionBtn title="Edit"         icon="ri-pencil-line"         color="info"      onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }} />
-            <ActionBtn title="Map Products" icon="ri-links-line"          color="success"   onClick={() => { setEditingId(v.id); setEditingStep(4);    setAddOpen(true); }} />
+            <ActionBtn title="Map Products" icon="ri-links-line"          color="success"   onClick={() => navigate(`/products?vendor_id=${v.id}&vendor_code=${encodeURIComponent(v.code || '')}&vendor_name=${encodeURIComponent(v.companyName || '')}`)} />
             <ActionBtn title="Vault"        icon="ri-folder-3-line"       color="secondary" onClick={() => toast.info('Vault', 'Vendor vault coming soon')} />
           </div>
         );

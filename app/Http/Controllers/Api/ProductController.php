@@ -97,6 +97,18 @@ class ProductController extends Controller
             });
         }
 
+        // Optional vendor filter — narrows the result to products
+        // mapped to one specific vendor. Used by the Vendors page
+        // "Map Products" deep-link, which navigates to
+        // /products?vendor_id=<id> so the user sees only that
+        // vendor's existing mappings (or an empty state offering to
+        // add the first one).
+        if ($vendorId = $request->query('vendor_id')) {
+            $query->whereHas('vendorMaps', function ($w) use ($vendorId) {
+                $w->where('vendor_id', $vendorId);
+            });
+        }
+
         $products = $query->orderByDesc('id')
             ->paginate((int) $request->query('per_page', 24));
 

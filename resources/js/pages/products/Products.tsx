@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
@@ -142,6 +142,14 @@ export default function Products() {
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  /* Vendor deep-link filter — populated when the Vendors page Map
+     Products action navigates to /products?vendor_id=…. While set,
+     the list only shows products mapped to that vendor and a chip
+     header surfaces the active filter so the user can clear it. */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const vendorFilterId   = searchParams.get('vendor_id');
+  const vendorFilterCode = searchParams.get('vendor_code') ?? '';
+  const vendorFilterName = searchParams.get('vendor_name') ?? '';
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -261,8 +269,18 @@ export default function Products() {
     if (!allowed) return;
     setLoading(true);
     try {
+      const params: Record<string, string | number> = { per_page: 100 };
+      // When a vendor filter is active, drop the status tab so the
+      // user sees every mapped product (inactive drafts included) —
+      // otherwise an Active-only filter could mask the very rows
+      // they came here to see.
+      if (vendorFilterId) {
+        params.vendor_id = vendorFilterId;
+      } else {
+        params.status = statusTab;
+      }
       const [list, st] = await Promise.all([
-        api.get<{ data: Record<string, unknown>[] }>('/products', { params: { status: statusTab, per_page: 100 } }),
+        api.get<{ data: Record<string, unknown>[] }>('/products', { params }),
         api.get<{ active: number; inactive: number }>('/products/stats'),
       ]);
       setProducts(list.data.data.map(apiToCard));
@@ -272,7 +290,7 @@ export default function Products() {
     } finally {
       setLoading(false);
     }
-  }, [allowed, statusTab]);
+  }, [allowed, statusTab, vendorFilterId]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -478,6 +496,29 @@ export default function Products() {
         </div>
       </div>
 
+      {/* Vendor deep-link banner — shown only when the page is
+          filtered to a specific vendor's mapped products. Clearing
+          it pops the query params off the URL and restores the
+          status-tab default list. */}
+      {vendorFilterId && (
+        <div className="prd-vendor-banner">
+          <i className="ri-links-line" />
+          <span className="prd-vendor-banner-text">
+            Showing products mapped to vendor
+            {' '}<strong>{vendorFilterCode || `#${vendorFilterId}`}</strong>
+            {vendorFilterName && <> — <strong>{vendorFilterName}</strong></>}
+          </span>
+          <button
+            type="button"
+            className="prd-vendor-banner-clear"
+            onClick={() => setSearchParams({})}
+          >
+            <i className="ri-close-line" />
+            Clear filter
+          </button>
+        </div>
+      )}
+
       {/* Result count */}
       <div className="prd-meta">
         <span className="prd-meta-count">{filtered.length} {filtered.length === 1 ? 'product' : 'products'}</span>
@@ -502,8 +543,23 @@ export default function Products() {
           <div className="prd-empty-icon">
             <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
           </div>
-          <div className="prd-empty-title">No products found</div>
-          <div className="prd-empty-desc">Try clearing filters, or click "Add Product" to create a new one.</div>
+          <div className="prd-empty-title">
+            {vendorFilterId ? 'No products mapped to this vendor yet' : 'No products found'}
+          </div>
+          <div className="prd-empty-desc">
+            {vendorFilterId
+              ? `Open any product and map ${vendorFilterCode || 'this vendor'} on Step 2 — or clear the filter to browse all products.`
+              : 'Try clearing filters, or click "Add Product" to create a new one.'}
+          </div>
+          {vendorFilterId && (
+            <button
+              type="button"
+              className="prd-empty-cta"
+              onClick={() => setSearchParams({})}
+            >
+              <i className="ri-close-line" /> Clear filter
+            </button>
+          )}
         </div>
       ) : view === 'grid' ? (
         <div className="prd-grid">
@@ -1178,6 +1234,41 @@ const SCOPED_CSS = `
 .prd-meta-count { font-size: 13px; font-weight: 800; color: #5b21b6; }
 .prd-meta-chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 99px; background: #ede9fe; border: 1px solid #c4b5fd; color: #6d28d9; font-size: 11px; font-weight: 600; }
 .prd-meta-chip strong { font-weight: 800; margin-left: 4px; }
+
+/* Vendor deep-link filter banner */
+.prd-vendor-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; margin: 4px 0;
+  background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
+  border: 1px solid #a78bfa; border-radius: 12px;
+  color: #4c1d95; font-size: 13px; font-weight: 600;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, .12);
+}
+.prd-vendor-banner i { font-size: 18px; color: #7c3aed; flex-shrink: 0; }
+.prd-vendor-banner-text { flex: 1; line-height: 1.4; }
+.prd-vendor-banner-text strong { color: #5b21b6; font-weight: 800; }
+.prd-vendor-banner-clear {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 99px;
+  background: #fff; border: 1.5px solid #c4b5fd;
+  color: #7c3aed; font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: all .15s;
+}
+.prd-vendor-banner-clear i { font-size: 14px; color: inherit; }
+.prd-vendor-banner-clear:hover {
+  background: #7c3aed; border-color: #7c3aed; color: #fff;
+}
+
+.prd-empty-cta {
+  margin-top: 14px;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 18px; border-radius: 99px;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: #fff; border: none; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; transition: all .15s;
+  box-shadow: 0 3px 10px rgba(124, 58, 237, .35);
+}
+.prd-empty-cta:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(124, 58, 237, .45); }
 
 /* ─── Grid ─── */
 .prd-grid {
