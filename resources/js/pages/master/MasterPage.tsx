@@ -653,6 +653,12 @@ function MasterPageInner({
         errs[f.n] = 'Invalid CIN — must be 21 characters';
       } else if (f.n === 'ifsc_code' && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(raw.toUpperCase())) {
         errs[f.n] = 'Invalid IFSC — must be 11 characters (e.g. HDFC0000350)';
+      } else if (f.n === 'hsn_code' && !/^[A-Za-z0-9]{4,10}$/.test(raw)) {
+        /* Mirrors the backend rule (^[A-Za-z0-9]{4,10}$) so users see an
+         * inline error the moment they tab off the field, instead of
+         * hitting the server roundtrip with a 422. SAC codes can be
+         * alphanumeric (e.g. 9986AB), so we don't restrict to digits. */
+        errs[f.n] = 'Invalid HSN / SAC — 4 to 10 alphanumeric characters only';
       }
     }
     return errs;

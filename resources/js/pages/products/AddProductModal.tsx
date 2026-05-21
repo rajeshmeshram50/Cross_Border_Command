@@ -1305,40 +1305,43 @@ export default function AddProductModal(props: {
                     </div>
                     <div className="apm-grid-2 apm-inv-conf-row">
                       <div className="apm-inv-grid">
+                        {/* Batch / Serial / Cat / Lot numbers are alphanumeric in
+                            real use (e.g. "BATCH-2024-A1", "SN12345-Z"). The old
+                            handler stripped every non-digit, so anything the user
+                            typed with letters or hyphens was silently truncated —
+                            and pure-letter codes got saved as empty strings, which
+                            is why the Product View later showed "—" for all four
+                            fields. Accept the full string verbatim now. */}
                         <Field label="Batch No" icon={<i className="ri-hashtag" />}>
                           <input
                             className="apm-input apm-input-mf"
                             placeholder="Optional"
-                            inputMode="numeric"
                             value={batchNo}
-                            onChange={e => setBatchNo(e.target.value.replace(/\D/g, ''))}
+                            onChange={e => setBatchNo(e.target.value)}
                           />
                         </Field>
                         <Field label="Serial No" icon={<i className="ri-barcode-line" />}>
                           <input
                             className="apm-input apm-input-mf"
                             placeholder="Optional"
-                            inputMode="numeric"
                             value={serialNo}
-                            onChange={e => setSerialNo(e.target.value.replace(/\D/g, ''))}
+                            onChange={e => setSerialNo(e.target.value)}
                           />
                         </Field>
                         <Field label="Cat No" icon={<i className="ri-price-tag-3-line" />}>
                           <input
                             className="apm-input apm-input-mf"
                             placeholder="Optional"
-                            inputMode="numeric"
                             value={catNo}
-                            onChange={e => setCatNo(e.target.value.replace(/\D/g, ''))}
+                            onChange={e => setCatNo(e.target.value)}
                           />
                         </Field>
                         <Field label="Lot No" icon={<i className="ri-list-check-2" />}>
                           <input
                             className="apm-input apm-input-mf"
                             placeholder="Optional"
-                            inputMode="numeric"
                             value={lotNo}
-                            onChange={e => setLotNo(e.target.value.replace(/\D/g, ''))}
+                            onChange={e => setLotNo(e.target.value)}
                           />
                         </Field>
                       </div>
@@ -2265,7 +2268,10 @@ const QUICK_ADD_SCHEMAS: Record<QuickAddSlug, { title: string; fields: QaField[]
                           { name: 'unit_type',  label: 'Unit Type', placeholder: 'e.g. Weight / Volume / Count' },
                         ] },
   hsn_codes:          { title: 'Add HSN / SAC Code',     fields: [
-                          { name: 'hsn_code',    label: 'HSN / SAC Code', required: true, placeholder: 'e.g. 08013100' },
+                          /* SAC codes for services are alphanumeric (e.g. 9986AB),
+                             so the placeholder shows both forms. Backend validates
+                             ^[A-Za-z0-9]{4,10}$; matched by submit() below. */
+                          { name: 'hsn_code',    label: 'HSN / SAC Code', required: true, placeholder: 'e.g. 08013100 or 9986AB' },
                           { name: 'description', label: 'Description', placeholder: 'Brief description' },
                         ] },
   conditions:         { title: 'Add Condition',          fields: [{ name: 'title', label: 'Condition Name', required: true, placeholder: 'e.g. New, Refurbished' }] },
@@ -2296,8 +2302,17 @@ function MasterQuickAddPopup(props: {
   const submit = async () => {
     const errs: Record<string, string> = {};
     schema.fields.forEach(f => {
-      if (f.required && !(values[f.name] ?? '').toString().trim()) {
+      const raw = (values[f.name] ?? '').toString().trim();
+      if (f.required && !raw) {
         errs[f.name] = `${f.label} is required`;
+        return;
+      }
+      /* HSN/SAC code — mirrors the backend's ^[A-Za-z0-9]{4,10}$ pattern
+         so the user gets instant feedback if they typed a hyphen, a
+         space, or fewer than 4 chars, instead of hitting the server
+         roundtrip with a 422. */
+      if (raw && f.name === 'hsn_code' && !/^[A-Za-z0-9]{4,10}$/.test(raw)) {
+        errs[f.name] = 'HSN / SAC must be 4 to 10 alphanumeric characters';
       }
     });
     if (Object.keys(errs).length) {
@@ -3024,29 +3039,36 @@ const SCOPED_CSS = `
 .apm-prev-stage.tone-amber  .apm-prev-stage-label { color: #b45309; }
 .apm-prev-stage.tone-green  .apm-prev-stage-label { color: #166534; }
 
-/* Flat label/value grid — no per-cell box. The PRODUCT CORE / SALES
- * CONFIG / QUALITY headers already segment the data, so each cell is
- * just two lines of text. Tooltips on the value pick up the slack
- * when the cell still has to ellipsis-truncate. */
+/* Inline "Label : Value" grid — mirrors the customer / consignee /
+ * vendor read-only summary so the whole product suite reads the same.
+ * Was previously a two-line label-above-value layout; switching to
+ * the inline pair format keeps stages compact and visually consistent
+ * with the rest of the modals (.acm-hs-grid + .avm-id-summary-row). */
 .apm-prev-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  column-gap: 18px;
-  row-gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 28px;
+  row-gap: 13px;
 }
 .apm-prev-field {
-  min-width: 0;
-  padding: 0;
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 12px; min-width: 0;
+  cursor: default; padding: 1px 2px; border-radius: 4px;
+  transition: background .12s;
 }
+.apm-prev-field:hover { background: rgba(124,58,237,0.06); }
 .apm-prev-field-label {
-  font-size: 9.5px; font-weight: 700; letter-spacing: .08em;
-  color: #94a3b8; text-transform: uppercase;
+  color: #64748b; font-weight: 600;
+  letter-spacing: .01em; white-space: nowrap; flex-shrink: 0;
 }
+.apm-prev-field-label::after { content: ' :'; }
 .apm-prev-field-value {
-  font-size: 13px; font-weight: 600; color: #1e1b4b;
+  color: #6d28d9; font-weight: 600; line-height: 1.4;
+  min-width: 0; flex: 1 1 auto;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  margin-top: 2px;
-  cursor: default;
+}
+@media (max-width: 900px) {
+  .apm-prev-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* Extras row — sits BELOW the field grid for stages that ship
@@ -3343,8 +3365,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .apm-prev-chip { background: #14241a; color: #bbf7d0; border-color: #166534; }
 [data-bs-theme="dark"] .apm-prev-toggle { background: #14241a; color: #bbf7d0; border-color: #166534; }
 [data-bs-theme="dark"] .apm-prev-toggle:hover { background: #1a3225; border-color: #22c55e; }
-[data-bs-theme="dark"] .apm-prev-field-label { color: #6d6391; }
-[data-bs-theme="dark"] .apm-prev-field-value { color: #ede9fe; }
+[data-bs-theme="dark"] .apm-prev-field:hover { background: rgba(167,139,250,0.10); }
+[data-bs-theme="dark"] .apm-prev-field-label { color: #94a3b8; }
+[data-bs-theme="dark"] .apm-prev-field-value { color: #c4b5fd; }
 [data-bs-theme="dark"] .apm-prev-stage.tone-violet .apm-prev-stage-label { color: #c4b5fd; }
 [data-bs-theme="dark"] .apm-prev-stage.tone-amber  .apm-prev-stage-label { color: #fde68a; }
 [data-bs-theme="dark"] .apm-prev-stage.tone-green  .apm-prev-stage-label { color: #bbf7d0; }

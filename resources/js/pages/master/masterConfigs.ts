@@ -658,10 +658,15 @@ const C: Record<string, MasterConfig> = {
   hsn_codes: {
     key: 'hsn_codes', slug: 'hsn_codes', title: 'HSN Codes', titleSingular: 'HSN Code',
     icon: 'ri-file-code-line', iconColor: 'danger', iconBg: 'danger',
-    desc: '8-digit commodity codes for GST & customs filings',
+    desc: '4–10 char alphanumeric commodity codes for GST & customs filings',
     cat: 'Trade & Commercial',
     fields: [
-      { n: 'hsn_code', l: 'HSN Code', t: 'text', r: true, p: 'e.g. 08021200 or 9986AB' },
+      // SAC (Services Accounting Code) values are alphanumeric — e.g. "9986AB"
+      // for a tagged services row — so the field accepts letters too. Backend
+      // validates ^[A-Za-z0-9]{4,10}$; matched on the client by `maxLen` + the
+      // hsn_code validator in MasterPage so users get instant feedback instead
+      // of a server-side rejection.
+      { n: 'hsn_code', l: 'HSN / SAC Code', t: 'text', r: true, p: 'e.g. 08021200 or 9986AB', maxLen: 10 } as any,
       { n: 'description', l: 'Description', t: 'textarea', r: true, p: 'Product/commodity description', full: true },
       // GST Rate is sourced from the GST Percentage master so the dropdown
       // reflects whatever slabs (0/5/12/18/28% — or tenant-specific custom
@@ -679,7 +684,7 @@ const C: Record<string, MasterConfig> = {
       { id: 3, hsn_code: '12074000', description: 'Sesame Seeds', gst_rate_id: 2, status: 'Active' },
     ],
     wtd: [
-      { icon: 'ri-file-code-line', title: 'Enter 8-Digit HSN Code', desc: 'e.g. 08021200 for Almonds' },
+      { icon: 'ri-file-code-line', title: 'Enter HSN / SAC Code', desc: '4–10 alphanumeric chars (e.g. 08021200 or 9986AB)' },
       { icon: 'ri-money-rupee-circle-line', title: 'Set GST Rate', desc: '0% / 5% / 12% / 18% / 28%' },
       { icon: 'ri-file-list-3-line', title: 'Mandatory On B2B Invoices', desc: 'HSN needed for GST filing & customs' },
       { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Code available for products' },
