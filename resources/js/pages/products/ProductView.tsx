@@ -77,9 +77,15 @@ export default function ProductView() {
   const [activeImg, setActiveImg] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
 
-  const load = async () => {
+  const load = async (silent = false) => {
     if (!id) return;
-    setLoading(true);
+    // Silent reloads (triggered from inside the edit modal's Save & Next)
+    // must NOT flip the shimmer flag — doing so swaps the whole page out
+    // for the placeholder, unmounts the open <AddProductModal>, and then
+    // re-mounts it fresh after the fetch. That re-mount resets the
+    // wizard's local tab state back to 'core', which manifested as
+    // "Save & Next on Product Core re-renders the same step".
+    if (!silent) setLoading(true);
     try {
       const res = await api.get<ProductDto>(`/products/${id}`);
       setProduct(res.data);
@@ -88,7 +94,7 @@ export default function ProductView() {
       toast.error('Not Found', 'Product not available');
       navigate('/products');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -428,7 +434,11 @@ export default function ProductView() {
           productId={product.id}
           onClose={() => setEditOpen(false)}
           onSaved={(_pid, finalised) => {
-            load();
+            // Silent refresh — see load()'s note. We want the underlying
+            // ProductView card to reflect the new data once the user
+            // closes the modal, but we must NOT unmount the modal while
+            // it's still mid-wizard, or its local tab/step state resets.
+            void load(true);
             if (finalised) setEditOpen(false);
           }}
         />

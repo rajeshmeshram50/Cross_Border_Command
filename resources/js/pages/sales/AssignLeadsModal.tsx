@@ -42,13 +42,18 @@ type AssignProps = {
   mode: Mode;
   leadId?: number | null;        // single mode
   leadIds?: number[];            // selection mode
+  /* Pre-select the salesperson dropdown to this user when the modal
+   * opens. Used by the row-action assign button to show "this lead is
+   * already with X" and by the bulk flow when every selected lead shares
+   * the same owner. Null = leave the dropdown empty. */
+  initialSalespersonId?: number | null;
   /* Account options — the .env-configured IndiaMart key labels for the
    * caller's branch. Empty array hides the Account field entirely. */
   accountLabels?: string[];
 };
 
 export default function AssignLeadsModal({
-  open, onClose, onAssigned, mode, leadId, leadIds, accountLabels = [],
+  open, onClose, onAssigned, mode, leadId, leadIds, accountLabels = [], initialSalespersonId = null,
 }: AssignProps) {
   const toast = useToast();
 
@@ -70,12 +75,15 @@ export default function AssignLeadsModal({
       setErrors({});
       return;
     }
+    // Pre-select the current owner so the dropdown shows "Already with X"
+    // instead of an empty box when the user re-opens an assigned lead.
+    setSpId(initialSalespersonId ? String(initialSalespersonId) : '');
     setLoadingSp(true);
     api.get<{ status: boolean; data: Salesperson[] }>('/sales/leads/salespeople')
       .then(({ data }) => setSalespeople(data.data ?? []))
       .catch(() => toast.error('Load failed', 'Could not load salespeople'))
       .finally(() => setLoadingSp(false));
-  }, [open, toast]);
+  }, [open, toast, initialSalespersonId]);
 
   const accountOptions = useMemo(
     () => accountLabels.map(l => ({ value: l, label: l })),

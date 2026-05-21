@@ -760,7 +760,16 @@ export default function AddProductModal(props: {
           issuedBy: q.issued_by ?? '',
           testingParameter: q.qa_testing_parameter ?? '',
           minAcceptance: q.min_acceptance_criteria ?? '',
-          attachmentName: q.attachment_path ? q.attachment_path.split('/').pop() ?? '' : '',
+          attachmentName: q.attachment_path
+            ? (() => {
+                // Stored filenames are `{rand}__{original}.{ext}` so the
+                // display name strips the random prefix. Legacy uploads
+                // without the separator are surfaced verbatim.
+                const last = q.attachment_path.split('/').pop() ?? '';
+                const sep = last.indexOf('__');
+                return sep >= 0 ? last.slice(sep + 2) : last;
+              })()
+            : '',
           attachmentUrl: q.attachment_url ?? (q.attachment_path ? resolveFileUrl(q.attachment_path) : ''),
           attachmentPath: q.attachment_path ?? '',
           attachmentFile: null,
@@ -823,6 +832,15 @@ export default function AddProductModal(props: {
     if (!hsnId)                  errs.hsnId             = 'HSN / SAC Code is required';
     if (!conditionId)            errs.conditionId       = 'Condition is required';
     if (!packagingMaterialId)    errs.packagingMaterialId = 'Packaging Material is required';
+    // Primary image — required either via newly-picked file OR an already
+    // stored path (kept on edit-load). Secondary images — at least one
+    // file or kept path. Mirrors the backend validators that exist for
+    // the rest of the core fields and matches the user-facing copy that
+    // the image slot is mandatory at stage 1.
+    const hasPrimary = !!primaryImageFile || !!primaryImagePath;
+    const hasSecondary = secondaryImageFiles.length > 0 || secondaryImagePaths.length > 0;
+    if (!hasPrimary)   errs.primaryImage   = 'Primary image is required';
+    if (!hasSecondary) errs.secondaryImage = 'At least one secondary image is required';
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
       toast.error('Missing required fields', 'Please fix the highlighted fields');
@@ -1288,16 +1306,40 @@ export default function AddProductModal(props: {
                     <div className="apm-grid-2 apm-inv-conf-row">
                       <div className="apm-inv-grid">
                         <Field label="Batch No" icon={<i className="ri-hashtag" />}>
-                          <input className="apm-input apm-input-mf" placeholder="Optional" value={batchNo} onChange={e => setBatchNo(e.target.value)} />
+                          <input
+                            className="apm-input apm-input-mf"
+                            placeholder="Optional"
+                            inputMode="numeric"
+                            value={batchNo}
+                            onChange={e => setBatchNo(e.target.value.replace(/\D/g, ''))}
+                          />
                         </Field>
                         <Field label="Serial No" icon={<i className="ri-barcode-line" />}>
-                          <input className="apm-input apm-input-mf" placeholder="Optional" value={serialNo} onChange={e => setSerialNo(e.target.value)} />
+                          <input
+                            className="apm-input apm-input-mf"
+                            placeholder="Optional"
+                            inputMode="numeric"
+                            value={serialNo}
+                            onChange={e => setSerialNo(e.target.value.replace(/\D/g, ''))}
+                          />
                         </Field>
                         <Field label="Cat No" icon={<i className="ri-price-tag-3-line" />}>
-                          <input className="apm-input apm-input-mf" placeholder="Optional" value={catNo} onChange={e => setCatNo(e.target.value)} />
+                          <input
+                            className="apm-input apm-input-mf"
+                            placeholder="Optional"
+                            inputMode="numeric"
+                            value={catNo}
+                            onChange={e => setCatNo(e.target.value.replace(/\D/g, ''))}
+                          />
                         </Field>
                         <Field label="Lot No" icon={<i className="ri-list-check-2" />}>
-                          <input className="apm-input apm-input-mf" placeholder="Optional" value={lotNo} onChange={e => setLotNo(e.target.value)} />
+                          <input
+                            className="apm-input apm-input-mf"
+                            placeholder="Optional"
+                            inputMode="numeric"
+                            value={lotNo}
+                            onChange={e => setLotNo(e.target.value.replace(/\D/g, ''))}
+                          />
                         </Field>
                       </div>
                       <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
@@ -3293,6 +3335,15 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .apm-prev-stage.tone-violet .apm-prev-stage-label { color: #c4b5fd; }
 [data-bs-theme="dark"] .apm-prev-stage.tone-amber  .apm-prev-stage-label { color: #fde68a; }
 [data-bs-theme="dark"] .apm-prev-stage.tone-green  .apm-prev-stage-label { color: #bbf7d0; }
+/* QC summary rows in the read-only "previous stages" block — the
+   light-mode value text uses #1e1b4b which disappears on dark green.
+   Lift k/v/attach contrast so each QC row reads clearly in dark mode. */
+[data-bs-theme="dark"] .apm-prev-extras       { border-top-color: rgba(34, 197, 94, 0.30); }
+[data-bs-theme="dark"] .apm-prev-extra-label  { color: #86efac; }
+[data-bs-theme="dark"] .apm-prev-extra-k      { color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-prev-extra-v      { color: #ffffff; }
+[data-bs-theme="dark"] .apm-prev-extra-attach { color: #a5b4fc; }
+[data-bs-theme="dark"] .apm-prev-extra-attach:hover { color: #c7d2fe; }
 
 [data-bs-theme="dark"] .apm-vendor-info { background: #110c25; border-color: #3b2a6b; }
 [data-bs-theme="dark"] .apm-info-key { color: #a89fc7; }
