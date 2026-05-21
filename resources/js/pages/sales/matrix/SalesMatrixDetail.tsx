@@ -8,6 +8,9 @@ import AddCustomerModal, { type EditCustomer } from '../AddCustomerModal';
 import AddConsigneeModal from '../AddConsigneeModal';
 import AddProductModal from '../../products/AddProductModal';
 import ProductDirectoryModal from './ProductDirectoryModal';
+import ChangeOwnerModal from './ChangeOwnerModal';
+import RemarksModal from './RemarksModal';
+import KeyOpportunityModal from './KeyOpportunityModal';
 import { SALES_MATRIX_DETAIL_CSS } from './salesMatrixDetail.styles';
 import Stage1InquiryReceived     from './stages/Stage1InquiryReceived';
 import Stage2LeadAcknowledgement from './stages/Stage2LeadAcknowledgement';
@@ -78,6 +81,13 @@ export default function SalesMatrixDetail() {
 
   const [productAddOpen, setProductAddOpen] = useState(false);
   const [productDirectoryOpen, setProductDirectoryOpen] = useState(false);
+  const [changeOwnerOpen, setChangeOwnerOpen] = useState(false);
+  const [remarksOpen, setRemarksOpen] = useState(false);
+  const [keyOppOpen, setKeyOppOpen] = useState(false);
+  /* Persists the "marked as key" flag for the session. Once the
+     backend ships a `leads.is_key_opportunity` column, hydrate this
+     from the header payload and PATCH on confirm. */
+  const [isKeyOpportunity, setIsKeyOpportunity] = useState(false);
 
   const fetchCustomers = async () => {
     if (customerOpts.length > 0) return;
@@ -249,9 +259,13 @@ export default function SalesMatrixDetail() {
           onClick={() => setProductAddOpen(true)} />
         <ActionBtn icon={<IconBook />}     label="Product Directory"
           onClick={() => setProductDirectoryOpen(true)} />
-        <ActionBtn icon={<IconUserCog />}  label="Change Owner" />
-        <ActionBtn icon={<IconMsg />}      label="Remark" />
-        <ActionBtn icon={<IconStar />}     label="Key Opportunity" />
+        <ActionBtn icon={<IconUserCog />}  label="Change Owner"
+          onClick={() => setChangeOwnerOpen(true)} />
+        <ActionBtn icon={<IconMsg />}      label="Remark"
+          onClick={() => setRemarksOpen(true)} />
+        <ActionBtn icon={<IconStar />}     label="Key Opportunity"
+          className={isKeyOpportunity ? 'smd-act-key' : ''}
+          onClick={() => setKeyOppOpen(true)} />
         <ActionBtn icon={<IconBell />}     label="Reminder" />
         <ActionBtn icon={<IconCalSmall />} label="Meetings" />
         <ActionBtn icon={<IconDollar />}   label="Share Prices" />
@@ -521,6 +535,26 @@ export default function SalesMatrixDetail() {
           setProductDirectoryOpen(false);
           setProductAddOpen(true);
         }}
+      />
+
+      {/* ── Change Lead Owner popup ── */}
+      <ChangeOwnerModal
+        open={changeOwnerOpen}
+        onClose={() => setChangeOwnerOpen(false)}
+      />
+
+      {/* ── Remarks popup ── */}
+      <RemarksModal
+        open={remarksOpen}
+        onClose={() => setRemarksOpen(false)}
+      />
+
+      {/* ── Key Opportunity confirm popup ── */}
+      <KeyOpportunityModal
+        open={keyOppOpen}
+        isKey={isKeyOpportunity}
+        onClose={() => setKeyOppOpen(false)}
+        onConfirm={() => setIsKeyOpportunity(prev => !prev)}
       />
     </div>
   );
