@@ -163,8 +163,14 @@ interface Props {
   /** When set, the picker is bypassed and this customer is used as the
    *  pre-selected link. Used by SalesCustomers' "Map Consignee" flow
    *  (the user is already on a specific customer — they shouldn't have
-   *  to pick again, and they should NOT be able to switch). */
+   *  to pick again, and they should NOT be able to switch). The string
+   *  format is the customer's display code (e.g. "C-001"). */
   preselectedCustomerId?: string;
+  /** Alternative pre-select handle: numeric DB primary key. Used by
+   *  callers (like the lead-matrix toolbar) that only have the lead's
+   *  `customer_id` foreign key; the modal will resolve it against the
+   *  /customers list's `db_id` if `preselectedCustomerId` doesn't match. */
+  preselectedCustomerDbId?: number;
   /** Live count of existing same-as-customer consignees for the
    *  preselected customer, passed in by CustomerConsigneesModal which
    *  has just-fetched the list. Source of truth for the "max 1
@@ -186,7 +192,7 @@ type VaultTab = 'kyc' | 'trade';
 type ConsigneeStageMemoryEntry = { stage: Stage; idTab: IdentityTab; kycSub: KycSubTab; vaultTab: VaultTab };
 const consigneeStageMemory = new Map<number, ConsigneeStageMemoryEntry>();
 
-export default function AddConsigneeModal({ open, consignee, onClose, onSaved, preselectedCustomerId, existingMirrorCount }: Props) {
+export default function AddConsigneeModal({ open, consignee, onClose, onSaved, preselectedCustomerId, preselectedCustomerDbId, existingMirrorCount }: Props) {
   const toast = useToast();
 
   const [phase, setPhase]   = useState<Phase>('pick-customer');
@@ -325,7 +331,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       // then we keep `customer` null but jump straight to the wizard.
       setCustomer(null);
       setPhase('wizard');
-    } else if (preselectedCustomerId) {
+    } else if (preselectedCustomerId || preselectedCustomerDbId) {
       // Map-Consignee flow — caller already knows which customer this
       // consignee belongs to. Skip the picker. `customer` is resolved
       // by the customer-list fetch effect below as soon as it lands.
@@ -442,9 +448,20 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         if (consignee) {
           const found = opts.find(o => o.id === consignee.customerId) || null;
           setCustomer(found);
-        } else if (preselectedCustomerId) {
-          // Map-Consignee flow — find the customer the parent locked us to.
-          const found = opts.find(o => o.id === preselectedCustomerId) || null;
+        } else if (preselectedCustomerId || preselectedCustomerDbId) {
+          // Map-Consignee flow — find the customer the parent locked us
+          // to. Try the display code first (legacy callers), then fall
+          // back to the numeric db_id (lead-matrix toolbar). Resilient to
+          // legacy customer rows where customer_code may be missing or
+          // formatted differently from the picker's id.
+          const found =
+            (preselectedCustomerId
+              ? opts.find(o => o.id === preselectedCustomerId)
+              : undefined)
+            ?? (preselectedCustomerDbId
+              ? opts.find(o => o.db_id === preselectedCustomerDbId)
+              : undefined)
+            ?? null;
           setCustomer(found);
         }
       })

@@ -147,9 +147,15 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
     <>
       <style>{TM_CSS}</style>
 
-      {/* Tabs — Task Manager active, others SOON */}
+      {/* Tabs — Task Manager active, others SOON. The active tab pill
+          also shows a "Saved" badge when the lead already has a row
+          persisted (initial !== null) so the user gets immediate
+          feedback that their data was loaded from the server. */}
       <div className="smd-deal-tabs">
-        <button className="smd-deal-tab smd-deal-tab-active">✓ Task Manager</button>
+        <button className="smd-deal-tab smd-deal-tab-active">
+          ✓ Task Manager
+          {initial?.id != null && <span className="tm-saved-badge" title="Saved on server">●</span>}
+        </button>
         <button className="smd-deal-tab" disabled>
           ⚡ Chanakya<span className="smd-deal-tab-soon">SOON</span>
         </button>
@@ -289,6 +295,13 @@ function Field(props: { label: React.ReactNode; error?: string; children: React.
 }
 
 const TM_CSS = `
+.tm-saved-badge {
+  display: inline-block; width: 7px; height: 7px;
+  margin-left: 6px; vertical-align: middle;
+  border-radius: 50%; background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34,197,94,.22);
+  font-size: 0;
+}
 .tm-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .tm-field-label {
   font-size: 9.5px; font-weight: 800; letter-spacing: .06em;

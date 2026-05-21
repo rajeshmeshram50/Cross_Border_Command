@@ -16,6 +16,11 @@ import { useToast } from '../../../contexts/ToastContext';
  * matrix toolbar.
  * ───────────────────────────────────────────────────────────────────────── */
 
+/* Server status values are the exact constants on SalesReminder (capitalised
+ * strings with spaces). Keep them as-is here so PATCH /status doesn't
+ * 422 on validation. */
+type ReminderStatus = 'In Progress' | 'Done';
+
 type Reminder = {
   id:        number;
   subject:   string;
@@ -24,13 +29,12 @@ type Reminder = {
   remark?:   string | null;
   opp_id?:   string | null;
   opp_date?: string | null;
-  status:    'in_progress' | 'done' | 'cancelled';
+  status:    ReminderStatus;
 };
 
-const STATUS_META: Record<Reminder['status'], { label: string; pill: string }> = {
-  in_progress: { label: 'In Progress', pill: 'rfl-pill-prog' },
-  done:        { label: 'Done',        pill: 'rfl-pill-done' },
-  cancelled:   { label: 'Cancelled',   pill: 'rfl-pill-cncl' },
+const STATUS_META: Record<ReminderStatus, { label: string; pill: string }> = {
+  'In Progress': { label: 'In Progress', pill: 'rfl-pill-prog' },
+  'Done':        { label: 'Done',        pill: 'rfl-pill-done' },
 };
 
 type Props = {
@@ -98,12 +102,13 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
     }
   };
 
-  const setStatus = async (r: Reminder, next: Reminder['status']) => {
+  const setStatus = async (r: Reminder, next: ReminderStatus) => {
     try {
       await api.patch(`/sales/reminders/${r.id}/status`, { status: next });
       setRows(prev => prev.map(x => x.id === r.id ? { ...x, status: next } : x));
-    } catch {
-      toast.error('Update failed', 'Could not change status');
+      toast.success('Status updated', `Reminder marked ${next}`);
+    } catch (e: any) {
+      toast.error('Update failed', e?.response?.data?.message ?? 'Could not change status');
     }
   };
 
@@ -178,7 +183,7 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
               <div className="rfl-status">No reminders for this opportunity yet — click <strong>+ New</strong>.</div>
             )}
             {rows.map(r => (
-              <div key={r.id} className={`rfl-row rfl-row-${r.status}`}>
+              <div key={r.id} className={`rfl-row rfl-row-${r.status.toLowerCase().replace(/\s+/g, '-')}`}>
                 <div className="rfl-row-main">
                   <div className="rfl-row-title">{r.subject}</div>
                   <div className="rfl-row-meta">
@@ -188,12 +193,14 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
                   </div>
                 </div>
                 <div className="rfl-row-actions">
-                  <span className={`rfl-pill ${STATUS_META[r.status].pill}`}>{STATUS_META[r.status].label}</span>
-                  {r.status !== 'done' && (
-                    <button className="rfl-row-btn" onClick={() => void setStatus(r, 'done')}>Mark Done</button>
+                  <span className={`rfl-pill ${STATUS_META[r.status]?.pill ?? 'rfl-pill-prog'}`}>
+                    {STATUS_META[r.status]?.label ?? r.status}
+                  </span>
+                  {r.status !== 'Done' && (
+                    <button className="rfl-row-btn" onClick={() => void setStatus(r, 'Done')}>Mark Done</button>
                   )}
-                  {r.status === 'done' && (
-                    <button className="rfl-row-btn" onClick={() => void setStatus(r, 'in_progress')}>Reopen</button>
+                  {r.status === 'Done' && (
+                    <button className="rfl-row-btn" onClick={() => void setStatus(r, 'In Progress')}>Reopen</button>
                   )}
                 </div>
               </div>

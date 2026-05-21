@@ -3,70 +3,69 @@ import { createPortal } from 'react-dom';
 import { useToast } from '../../../contexts/ToastContext';
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Remarks — add or view remarks attached to an opportunity. Top half is
- * a textarea for a fresh remark, bottom half lists previously stored
- * remarks (newest first). Frontend-only mock for now; once the API
- * lands, replace the local `remarks` state with a fetch +
- * POST /sales/opportunities/{id}/remarks call.
+ * Remark — single editable note attached to the opportunity.
+ *
+ * `leads.remark` is a single text column, not a history table. So this
+ * modal is an Add-or-Edit form, not a thread. Open it once: if the lead
+ * has a remark, the textarea is pre-filled and the button reads
+ * "Update"; otherwise it reads "Add Remark". Saving overwrites the
+ * single column via the parent's PUT /sales/leads/{id} call.
+ *
+ * The parent owns the API call (it knows the lead id and refreshes the
+ * page state after save); this modal stays presentational.
  * ──────────────────────────────────────────────────────────────────────── */
-
-export type StoredRemark = {
-  id: string;
-  text: string;
-  author?: string;
-  at: string;          // ISO timestamp
-};
 
 export default function RemarksModal(props: {
   open: boolean;
-  /** Initial list of stored remarks — defaults to empty. */
-  initialRemarks?: StoredRemark[];
+  /** Current remark on the lead — drives the pre-fill + button label. */
+  currentRemark?: string | null;
   onClose: () => void;
-  onSave?: (text: string) => void;
+  /** Fired with the trimmed text after the user clicks Save. Parent PUTs. */
+  onSave?: (text: string) => void | Promise<void>;
 }) {
-  const { open, initialRemarks = [], onClose, onSave } = props;
+  const { open, currentRemark, onClose, onSave } = props;
   const toast = useToast();
 
   const [draft, setDraft] = useState('');
-  const [remarks, setRemarks] = useState<StoredRemark[]>(initialRemarks);
+  const [saving, setSaving] = useState(false);
 
-  // Reset on each open so the textarea is empty, but keep the stored
-  // list from the parent (or whatever the user added in this session).
+  // Re-seed on every open so pre-fill stays in sync after a save +
+  // reopen, and so dismiss-without-save discards an in-progress edit.
   useEffect(() => {
     if (open) {
-      setDraft('');
-      setRemarks(initialRemarks);
+      setDraft(currentRemark ?? '');
+      setSaving(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, currentRemark]);
 
   if (!open) return null;
 
-  const handleSave = () => {
-    const trimmed = draft.trim();
+  const hasExisting = !!(currentRemark && currentRemark.trim());
+  const trimmed     = draft.trim();
+  const isUnchanged = trimmed === (currentRemark ?? '').trim();
+
+  const handleSave = async () => {
     if (!trimmed) {
       toast.error('Empty remark', 'Type something before saving');
       return;
     }
-    const next: StoredRemark = {
-      id: String(Date.now()),
-      text: trimmed,
-      author: 'You',
-      at: new Date().toISOString(),
-    };
-    setRemarks(prev => [next, ...prev]);
-    setDraft('');
-    if (onSave) onSave(trimmed);
-    toast.success('Remark saved', 'Your note has been added');
+    if (isUnchanged) {
+      toast.info('No changes', 'The remark is already saved');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave?.(trimmed);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const fmtTime = (iso: string) => {
-    try {
-      const d = new Date(iso);
-      return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return iso;
-    }
+  const handleClear = () => {
+    if (!hasExisting) return;
+    if (!confirm('Clear the existing remark? This cannot be undone.')) return;
+    setDraft('');
+    void onSave?.('');
   };
 
   return createPortal((
@@ -81,8 +80,10 @@ export default function RemarksModal(props: {
               </svg>
             </div>
             <div>
-              <div className="rmk-head-title">Remarks</div>
-              <div className="rmk-head-sub">Add or view remarks for this opportunity</div>
+              <div className="rmk-head-title">Remark</div>
+              <div className="rmk-head-sub">
+                {hasExisting ? 'Edit the remark for this opportunity' : 'Add a remark to this opportunity'}
+              </div>
             </div>
           </div>
           <button className="rmk-close" onClick={onClose} aria-label="Close">
@@ -94,52 +95,58 @@ export default function RemarksModal(props: {
 
         <div className="rmk-body">
           <label className="rmk-label">
-            Write your remark <span className="rmk-req">*</span>
+            {hasExisting ? 'Your remark' : 'Write your remark'} <span className="rmk-req">*</span>
           </label>
           <textarea
             className="rmk-textarea"
             placeholder="Write your remarks here…"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            rows={4}
+            rows={6}
+            disabled={saving}
           />
 
-          <div className="rmk-list-head">
-            <span className="rmk-list-icon">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          {hasExisting && (
+            <div className="rmk-existing-hint">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
               </svg>
-            </span>
-            <span className="rmk-list-label">Stored Remarks</span>
-            <span className="rmk-list-count">{remarks.length}</span>
-          </div>
-
-          <div className="rmk-list">
-            {remarks.length === 0 ? (
-              <div className="rmk-empty">No remarks added yet.</div>
-            ) : remarks.map(r => (
-              <div key={r.id} className="rmk-row">
-                <div className="rmk-row-text">{r.text}</div>
-                <div className="rmk-row-meta">
-                  <span className="rmk-row-author">{r.author ?? 'Anonymous'}</span>
-                  <span className="rmk-row-dot">·</span>
-                  <span className="rmk-row-time">{fmtTime(r.at)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+              <span>This opportunity already has a remark — editing will overwrite it.</span>
+            </div>
+          )}
         </div>
 
         <div className="rmk-foot">
-          <button className="rmk-btn-ghost" onClick={onClose}>Close</button>
-          <button className="rmk-btn-primary" onClick={handleSave} disabled={!draft.trim()}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-              <polyline points="17 21 17 13 7 13 7 21" />
-              <polyline points="7 3 7 8 15 8" />
-            </svg>
-            Save Remark
-          </button>
+          {hasExisting && (
+            <button
+              className="rmk-btn-danger"
+              onClick={handleClear}
+              disabled={saving}
+              title="Remove the saved remark"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
+              </svg>
+              Clear
+            </button>
+          )}
+          <div className="rmk-foot-right">
+            <button className="rmk-btn-ghost" onClick={onClose} disabled={saving}>Close</button>
+            <button
+              className="rmk-btn-primary"
+              onClick={() => void handleSave()}
+              disabled={saving || !trimmed || isUnchanged}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
+              {saving ? 'Saving…' : (hasExisting ? 'Update Remark' : 'Add Remark')}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -157,7 +164,7 @@ const SCOPED_CSS = `
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
 }
 .rmk-modal {
-  width: 100%; max-width: 720px;
+  width: 100%; max-width: 640px;
   background: #fff;
   border-radius: 18px;
   overflow: hidden;
@@ -165,7 +172,9 @@ const SCOPED_CSS = `
   box-shadow: 0 30px 80px rgba(15, 23, 42, .45);
   color: #1e1b4b;
   max-height: calc(100vh - 96px);
+  animation: rmk-pop .18s cubic-bezier(.22,1,.36,1);
 }
+@keyframes rmk-pop { from { transform: scale(.97); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .rmk-modal *, .rmk-modal *::before, .rmk-modal *::after { box-sizing: border-box; }
 
 .rmk-head {
@@ -209,7 +218,7 @@ const SCOPED_CSS = `
   overflow-y: auto;
 }
 .rmk-label {
-  font-size: 10.5px; font-weight: 500;
+  font-size: 10.5px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase;
   color: #5b21b6;
 }
@@ -222,7 +231,7 @@ const SCOPED_CSS = `
   background: #fff;
   color: #1e1b4b;
   font-family: inherit; font-size: 13px; font-weight: 400;
-  outline: none; resize: vertical; min-height: 100px;
+  outline: none; resize: vertical; min-height: 140px;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
 .rmk-textarea::placeholder { color: #94a3b8; opacity: .55; }
@@ -230,86 +239,36 @@ const SCOPED_CSS = `
   border-color: #7c3aed;
   box-shadow: 0 0 0 3px rgba(124, 58, 237, .15);
 }
+.rmk-textarea:disabled { opacity: .65; cursor: not-allowed; }
 
-/* Stored remarks list */
-.rmk-list-head {
-  display: inline-flex; align-items: center; gap: 6px;
-  margin-top: 6px;
+.rmk-existing-hint {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 11px; color: #6d28d9;
+  background: #ede9fe; border: 1px solid #ddd6fe;
+  padding: 7px 11px; border-radius: 8px;
 }
-.rmk-list-icon {
-  width: 24px; height: 24px; border-radius: 7px;
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
-  color: #fff;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.rmk-list-label {
-  font-size: 10.5px; font-weight: 600;
-  letter-spacing: 0.06em; text-transform: uppercase;
-  color: #5b21b6;
-}
-.rmk-list-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 22px; height: 22px; padding: 0 8px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
-  color: #fff;
-  font-size: 11px; font-weight: 700;
-}
-
-.rmk-list {
-  display: flex; flex-direction: column; gap: 8px;
-  max-height: 240px; overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: #c4b5fd transparent;
-}
-.rmk-list::-webkit-scrollbar { width: 6px; }
-.rmk-list::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 99px; }
-.rmk-empty {
-  padding: 18px;
-  text-align: center;
-  color: #94a3b8;
-  font-size: 12.5px; font-style: italic;
-}
-.rmk-row {
-  padding: 10px 14px;
-  border: 1px solid #ede9fe;
-  border-radius: 10px;
-  background: #fff;
-}
-.rmk-row-text {
-  font-size: 12.5px; color: #1e1b4b;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-.rmk-row-meta {
-  display: inline-flex; align-items: center; gap: 6px;
-  margin-top: 6px;
-  font-size: 10.5px; color: #94a3b8;
-}
-.rmk-row-author { color: #7c3aed; font-weight: 600; }
-.rmk-row-dot    { color: #c4b5fd; }
 
 .rmk-foot {
-  display: flex; justify-content: flex-end; gap: 8px;
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
   padding: 14px 22px;
   background: #fff;
   border-top: 1px solid #ede9fe;
 }
-.rmk-btn-ghost, .rmk-btn-primary {
+.rmk-foot-right { display: flex; gap: 8px; margin-left: auto; }
+.rmk-btn-ghost, .rmk-btn-primary, .rmk-btn-danger {
   display: inline-flex; align-items: center; gap: 8px;
   height: 38px; padding: 0 18px;
   border-radius: 10px;
   font-family: inherit; font-size: 13px; font-weight: 600;
   cursor: pointer;
-  transition: background .15s, border-color .15s, transform .12s, box-shadow .15s;
+  transition: background .15s, border-color .15s, transform .12s, box-shadow .15s, color .15s;
 }
-.rmk-btn-ghost {
+.rmk-btn-ghost  {
   background: #fff;
   border: 1.5px solid #e2e8f0;
   color: #475569;
 }
-.rmk-btn-ghost:hover { background: #f1f5f9; border-color: #cbd5e1; }
+.rmk-btn-ghost:hover:not(:disabled)  { background: #f1f5f9; border-color: #cbd5e1; }
 .rmk-btn-primary {
   border: none;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
@@ -317,7 +276,13 @@ const SCOPED_CSS = `
   box-shadow: 0 4px 12px rgba(124, 58, 237, .35);
 }
 .rmk-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124, 58, 237, .45); }
-.rmk-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+.rmk-btn-primary:disabled, .rmk-btn-ghost:disabled, .rmk-btn-danger:disabled { opacity: 0.55; cursor: not-allowed; }
+.rmk-btn-danger {
+  background: #fff;
+  border: 1.5px solid #fecaca;
+  color: #b91c1c;
+}
+.rmk-btn-danger:hover:not(:disabled) { background: #fee2e2; border-color: #fca5a5; }
 
 /* Dark mode */
 [data-bs-theme="dark"] .rmk-modal { background: #14102a; color: #ede9fe; }
@@ -328,15 +293,21 @@ const SCOPED_CSS = `
   background: #2a2150; border-color: rgba(167, 139, 250, .35); color: #ede9fe;
 }
 [data-bs-theme="dark"] .rmk-textarea::placeholder { color: #6b7280; }
-[data-bs-theme="dark"] .rmk-list-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .rmk-row {
-  background: #1a1538; border-color: rgba(167, 139, 250, .25);
+[data-bs-theme="dark"] .rmk-existing-hint {
+  background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.32); color: #d8b4fe;
 }
-[data-bs-theme="dark"] .rmk-row-text { color: #ede9fe; }
-[data-bs-theme="dark"] .rmk-row-author { color: #c4b5fd; }
-[data-bs-theme="dark"] .rmk-row-dot    { color: #6b7280; }
-[data-bs-theme="dark"] .rmk-row-meta   { color: #94a3b8; }
-[data-bs-theme="dark"] .rmk-empty { color: #94a3b8; }
 [data-bs-theme="dark"] .rmk-btn-ghost { background: transparent; color: #cbd5e1; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .rmk-btn-ghost:hover { background: #2a2150; border-color: #4338ca; }
+[data-bs-theme="dark"] .rmk-btn-ghost:hover:not(:disabled) { background: #2a2150; border-color: #4338ca; }
+[data-bs-theme="dark"] .rmk-btn-danger {
+  background: rgba(239,68,68,.10); border-color: rgba(248,113,113,.35); color: #fca5a5;
+}
+[data-bs-theme="dark"] .rmk-btn-danger:hover:not(:disabled) { background: rgba(239,68,68,.22); }
+
+@media (max-width: 520px) {
+  .rmk-backdrop { padding: 12px; }
+  .rmk-modal    { border-radius: 14px; }
+  .rmk-foot     { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+  .rmk-foot-right { flex-direction: column-reverse; gap: 8px; margin-left: 0; }
+  .rmk-foot button { width: 100%; justify-content: center; }
+}
 `;

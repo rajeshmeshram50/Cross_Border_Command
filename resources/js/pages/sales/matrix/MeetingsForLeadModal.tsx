@@ -13,6 +13,10 @@ import { useToast } from '../../../contexts/ToastContext';
  * form here. Status toggles fire the existing PATCH endpoint inline.
  * ───────────────────────────────────────────────────────────────────────── */
 
+/* Server status values are the exact constants on SalesMeeting (capitalised
+ * strings with spaces). Keep them as-is so PATCH /status doesn't 422. */
+type MeetingStatus = 'In Progress' | 'Done' | 'Postponed' | 'Cancelled';
+
 type Meeting = {
   id:         number;
   meeting_code: string | null;
@@ -28,13 +32,14 @@ type Meeting = {
   link:       string | null;
   venue:      string | null;
   agenda:     string;
-  status:     'scheduled' | 'completed' | 'cancelled';
+  status:     MeetingStatus;
 };
 
-const STATUS_META: Record<Meeting['status'], { label: string; pill: string }> = {
-  scheduled: { label: 'Scheduled', pill: 'mfl-pill-sch' },
-  completed: { label: 'Completed', pill: 'mfl-pill-done' },
-  cancelled: { label: 'Cancelled', pill: 'mfl-pill-cncl' },
+const STATUS_META: Record<MeetingStatus, { label: string; pill: string }> = {
+  'In Progress': { label: 'In Progress', pill: 'mfl-pill-sch'  },
+  'Done':        { label: 'Done',        pill: 'mfl-pill-done' },
+  'Postponed':   { label: 'Postponed',   pill: 'mfl-pill-sch'  },
+  'Cancelled':   { label: 'Cancelled',   pill: 'mfl-pill-cncl' },
 };
 
 type Props = {
@@ -66,12 +71,13 @@ export default function MeetingsForLeadModal({ open, oppId, onClose, onAddNew }:
 
   if (!open) return null;
 
-  const setStatus = async (m: Meeting, next: Meeting['status']) => {
+  const setStatus = async (m: Meeting, next: MeetingStatus) => {
     try {
       await api.patch(`/sales/meetings/${m.id}/status`, { status: next });
       setRows(prev => prev.map(x => x.id === m.id ? { ...x, status: next } : x));
-    } catch {
-      toast.error('Update failed', 'Could not change status');
+      toast.success('Status updated', `Meeting marked ${next}`);
+    } catch (e: any) {
+      toast.error('Update failed', e?.response?.data?.message ?? 'Could not change status');
     }
   };
 
@@ -118,12 +124,14 @@ export default function MeetingsForLeadModal({ open, oppId, onClose, onAddNew }:
             </div>
           )}
           {rows.map(m => (
-            <div key={m.id} className={`mfl-row mfl-row-${m.status}`}>
+            <div key={m.id} className={`mfl-row mfl-row-${m.status.toLowerCase().replace(/\s+/g, '-')}`}>
               <div className="mfl-row-main">
                 <div className="mfl-row-head">
                   <span className="mfl-row-code">{m.meeting_code ?? `MTG-${m.id}`}</span>
                   <span className={`mfl-type mfl-type-${m.type}`}>{m.type === 'virtual' ? '🔗 Virtual' : '📍 Physical'}</span>
-                  <span className={`mfl-pill ${STATUS_META[m.status].pill}`}>{STATUS_META[m.status].label}</span>
+                  <span className={`mfl-pill ${STATUS_META[m.status]?.pill ?? 'mfl-pill-sch'}`}>
+                    {STATUS_META[m.status]?.label ?? m.status}
+                  </span>
                 </div>
                 <div className="mfl-row-title">{m.customer}</div>
                 <div className="mfl-row-meta">
@@ -138,14 +146,14 @@ export default function MeetingsForLeadModal({ open, oppId, onClose, onAddNew }:
                 <div className="mfl-row-agenda">{m.agenda}</div>
               </div>
               <div className="mfl-row-actions">
-                {m.status === 'scheduled' && (
+                {(m.status === 'In Progress' || m.status === 'Postponed') && (
                   <>
-                    <button className="mfl-row-btn" onClick={() => void setStatus(m, 'completed')}>Done</button>
-                    <button className="mfl-row-btn mfl-row-btn-x" onClick={() => void setStatus(m, 'cancelled')}>Cancel</button>
+                    <button className="mfl-row-btn" onClick={() => void setStatus(m, 'Done')}>Done</button>
+                    <button className="mfl-row-btn mfl-row-btn-x" onClick={() => void setStatus(m, 'Cancelled')}>Cancel</button>
                   </>
                 )}
-                {m.status !== 'scheduled' && (
-                  <button className="mfl-row-btn" onClick={() => void setStatus(m, 'scheduled')}>Reopen</button>
+                {(m.status === 'Done' || m.status === 'Cancelled') && (
+                  <button className="mfl-row-btn" onClick={() => void setStatus(m, 'In Progress')}>Reopen</button>
                 )}
               </div>
             </div>
