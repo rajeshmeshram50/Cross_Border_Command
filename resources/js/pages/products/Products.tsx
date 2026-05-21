@@ -40,6 +40,15 @@ export type Product = {
   condition: string;
   vendors: string[];                           // company_name of every mapped vendor
   vendorCount: number;
+  /** Creator (product owner). Sourced from products.created_by joined to users
+   *  on the API. Drives the Product Owner filter and the "Created by" line on
+   *  the card. ownerId is null only for legacy rows where the user was deleted. */
+  ownerId: number | null;
+  ownerName: string;
+  ownerBranchId: number | null;
+  ownerBranchName: string;
+  /** ISO timestamp of when the product was created. */
+  createdAt: string;
   stepCompleted: number;                       // 0..4 — wizard re-entry hint
   badge?: 'Best Seller' | 'New' | 'Trending' | 'Top Rated';
   thumb: string;                               // gradient fallback when no real image
@@ -70,6 +79,8 @@ function apiToCard(row: Record<string, unknown>): Product {
   const condObj = row.condition as { title?: string } | null;
   const vendorMaps = Array.isArray(row.vendor_maps) ? (row.vendor_maps as { vendor_name?: string }[]) : [];
   const vendorNames = vendorMaps.map(v => v?.vendor_name ?? '').filter(Boolean);
+  const creator = row.creator as { id?: number; name?: string; branch_id?: number | null; branch?: { id?: number; name?: string } | null } | null;
+  const ownerBranch = creator?.branch ?? null;
   const apiStatus = String(row.status ?? 'draft').toLowerCase();
   const displayStatus: Product['status'] =
     apiStatus === 'active' ? 'Active' : apiStatus === 'inactive' ? 'Inactive' : 'Draft';
@@ -102,6 +113,11 @@ function apiToCard(row: Record<string, unknown>): Product {
     condition: condObj?.title ?? '',
     vendors: vendorNames,
     vendorCount: vendorMaps.length,
+    ownerId: creator?.id ?? null,
+    ownerName: creator?.name ?? '',
+    ownerBranchId: creator?.branch_id ?? ownerBranch?.id ?? null,
+    ownerBranchName: ownerBranch?.name ?? '',
+    createdAt: String(row.created_at ?? ''),
     stepCompleted: Number(row.step_completed ?? 0),
     thumb: THUMB_GRADIENTS[idNum % THUMB_GRADIENTS.length],
     images,
@@ -120,7 +136,6 @@ const CONDITIONS = ['New', 'Refurbished', 'Open Box', 'Second Hand'];
 const VENDORS = ['GreenHarvest', 'Shree Exports', 'Sun Agri', 'MJ Foods', 'BrightHarvest', 'Eastern Harvest', 'Delta Agro', 'Apex Foods', 'Spice Route', 'Bharat Agro', 'SunGrow'];
 const SCORE_RANGES = ['0 – 1', '1 – 2', '2 – 3', '3 – 4', '4 – 5'];
 const TOP_PRODUCTS = ['Top 10', 'Top 25', 'Top 50', 'Top 100'];
-const PRODUCT_OWNERS = ['Branch Admin', 'Inventory Manager', 'Procurement Lead', 'Branch User', 'Employee'];
 const INWARD_BUCKETS = ['0 – 50', '51 – 200', '201 – 500', '501 – 1000', '1000+'];
 
 type FilterState = {
@@ -186,6 +201,15 @@ export default function Products() {
   const [conditionOpts, setConditionOpts] = useState<string[]>(CONDITIONS);
   const [vendorOpts,  setVendorOpts]    = useState<string[]>(VENDORS);
   const [gstRateOpts, setGstRateOpts]   = useState<string[]>(GST_RATES);
+  /* Product Owner options — sourced from /products/owners. The endpoint
+     scopes the list per user_type:
+       • main-branch user → every branch_user / employee across the client
+       • sub-branch user  → only their own branch's users
+     The old `PRODUCT_OWNERS` const was generic role labels (Branch Admin,
+     Inventory Manager…) that never matched a real `created_by` row, so the
+     filter never selected anything. */
+  type OwnerOpt = { id: number; name: string; branchId: number | null; branchName: string; isMainBranch: boolean };
+  const [ownerOpts, setOwnerOpts] = useState<OwnerOpt[]>([]);
 
   useEffect(() => {
     type MasterRow = { id: number | string; status?: string; name?: string; title?: string; short_code?: string; hsn_code?: string; percentage?: number | string };
@@ -239,6 +263,24 @@ export default function Products() {
         const names = rows.map(v => v.company_name ?? '').filter(Boolean);
         if (names.length) setVendorOpts(dedupe(names));
       } catch { /* fall back to hardcoded */ }
+
+      // Product Owner dropdown — pulls the user list the backend says
+      // is in scope (main branch → whole client, sub branch → own
+      // branch only). Empty list means the role has no use for the
+      // filter (e.g. client_admin) and the panel will just render
+      // empty.
+      try {
+        type OwnerRow = { id: number; name: string; branch_id: number | null; branch_name: string | null; is_main_branch: boolean };
+        const res = await api.get<{ data?: OwnerRow[] }>('/products/owners');
+        const rows = Array.isArray(res.data?.data) ? res.data!.data! : [];
+        setOwnerOpts(rows.map(r => ({
+          id:           r.id,
+          name:         r.name,
+          branchId:     r.branch_id,
+          branchName:   r.branch_name ?? '',
+          isMainBranch: !!r.is_main_branch,
+        })));
+      } catch { /* leave panel empty on error */ }
     })();
   }, []);
 
@@ -365,6 +407,29 @@ export default function Products() {
         const [lo, hi] = r.split('–').map(s => parseFloat(s.trim()));
         return p.rating >= lo && p.rating <= hi;
       }));
+    }
+    /* Product Owner — the dropdown values are user IDs (as strings) from
+       /products/owners, and p.ownerId is the row's created_by joined to
+       users on the API. */
+    if (filters.productOwner.length) {
+      const ownerSet = new Set(filters.productOwner);
+      src = src.filter(p => p.ownerId != null && ownerSet.has(String(p.ownerId)));
+    }
+    /* Created Date — inclusive From/To window on the product's created_at
+       timestamp. Empty strings mean unbounded on that side. */
+    if (filters.createdFrom) {
+      const from = new Date(filters.createdFrom + 'T00:00:00').getTime();
+      src = src.filter(p => {
+        const t = Date.parse(p.createdAt);
+        return Number.isFinite(t) && t >= from;
+      });
+    }
+    if (filters.createdTo) {
+      const to = new Date(filters.createdTo + 'T23:59:59').getTime();
+      src = src.filter(p => {
+        const t = Date.parse(p.createdAt);
+        return Number.isFinite(t) && t <= to;
+      });
     }
 
     const sorted = [...src];
@@ -795,9 +860,21 @@ export default function Products() {
           </FilterPanel>
 
           <FilterPanel label="Product Owner" panelKey="productOwner" open={expandedPanel === 'productOwner'} onToggle={togglePanel} count={filters.productOwner.length}>
-            {PRODUCT_OWNERS.map(v => (
-              <CheckRow key={v} label={v} checked={filters.productOwner.includes(v)} onChange={() => toggleMulti('productOwner', v)} />
-            ))}
+            {ownerOpts.length === 0 ? (
+              <div className="prd-filter-empty">No owners available</div>
+            ) : ownerOpts.map(o => {
+              /* Main-branch user sees rows from every branch — append
+                 the branch suffix so two people named "Ravi" in
+                 different branches stay distinguishable. Sub-branch
+                 user only ever sees their own branch, so the suffix
+                 would be redundant noise. */
+              const showBranch = ownerOpts.some(x => x.branchId !== o.branchId);
+              const label = showBranch && o.branchName ? `${o.name} · ${o.branchName}` : o.name;
+              const id = String(o.id);
+              return (
+                <CheckRow key={id} label={label} checked={filters.productOwner.includes(id)} onChange={() => toggleMulti('productOwner', id)} />
+              );
+            })}
           </FilterPanel>
 
           <FilterPanel label="Inward Count" panelKey="inwardCount" open={expandedPanel === 'inwardCount'} onToggle={togglePanel} count={filters.inwardCount.length}>
@@ -1793,6 +1870,12 @@ const SCOPED_CSS = `
   transition: background .12s;
 }
 .prd-filter-row:hover { background: #f5f3ff; }
+.prd-filter-empty {
+  padding: 10px 8px;
+  font-size: 12px;
+  color: #94a3b8;
+  font-style: italic;
+}
 .prd-filter-row input[type="checkbox"],
 .prd-filter-row input[type="radio"] {
   appearance: none;
