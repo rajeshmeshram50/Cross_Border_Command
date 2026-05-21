@@ -2268,10 +2268,11 @@ const QUICK_ADD_SCHEMAS: Record<QuickAddSlug, { title: string; fields: QaField[]
                           { name: 'unit_type',  label: 'Unit Type', placeholder: 'e.g. Weight / Volume / Count' },
                         ] },
   hsn_codes:          { title: 'Add HSN / SAC Code',     fields: [
-                          /* SAC codes for services are alphanumeric (e.g. 9986AB),
-                             so the placeholder shows both forms. Backend validates
-                             ^[A-Za-z0-9]{4,10}$; matched by submit() below. */
-                          { name: 'hsn_code',    label: 'HSN / SAC Code', required: true, placeholder: 'e.g. 08013100 or 9986AB' },
+                          /* HSN / SAC are numeric per Indian GST notification
+                             (4, 6, 8 or 10 digit codes). Backend validates
+                             ^[0-9]{4,10}$; matched by submit() below, and the
+                             input strips non-digits as the user types. */
+                          { name: 'hsn_code',    label: 'HSN / SAC Code', required: true, placeholder: 'e.g. 08013100' },
                           { name: 'description', label: 'Description', placeholder: 'Brief description' },
                         ] },
   conditions:         { title: 'Add Condition',          fields: [{ name: 'title', label: 'Condition Name', required: true, placeholder: 'e.g. New, Refurbished' }] },
@@ -2307,12 +2308,12 @@ function MasterQuickAddPopup(props: {
         errs[f.name] = `${f.label} is required`;
         return;
       }
-      /* HSN/SAC code — mirrors the backend's ^[A-Za-z0-9]{4,10}$ pattern
-         so the user gets instant feedback if they typed a hyphen, a
-         space, or fewer than 4 chars, instead of hitting the server
-         roundtrip with a 422. */
-      if (raw && f.name === 'hsn_code' && !/^[A-Za-z0-9]{4,10}$/.test(raw)) {
-        errs[f.name] = 'HSN / SAC must be 4 to 10 alphanumeric characters';
+      /* HSN/SAC code — mirrors the backend's ^[0-9]{4,10}$ pattern so
+         the user gets instant feedback if they typed a letter, a hyphen,
+         a space, or fewer than 4 digits, instead of hitting the server
+         with a 422 round-trip. */
+      if (raw && f.name === 'hsn_code' && !/^[0-9]{4,10}$/.test(raw)) {
+        errs[f.name] = 'HSN / SAC must be 4 to 10 digits';
       }
     });
     if (Object.keys(errs).length) {
@@ -2362,17 +2363,28 @@ function MasterQuickAddPopup(props: {
           </button>
         </div>
         <div className="apm-qa-body">
-          {schema.fields.map(f => (
-            <Field key={f.name} label={f.label} required={f.required} error={errors[f.name]}>
-              <input
-                className="apm-input"
-                type={f.type === 'number' ? 'number' : 'text'}
-                placeholder={f.placeholder ?? ''}
-                value={values[f.name] ?? ''}
-                onChange={(e) => set(f.name, e.target.value)}
-              />
-            </Field>
-          ))}
+          {schema.fields.map(f => {
+            /* HSN/SAC inputs accept only digits — strip everything else
+               on the fly so a paste of "0802-1200" becomes "08021200"
+               and the backend's ^[0-9]{4,10}$ validator never trips. */
+            const isHsn = f.name === 'hsn_code';
+            return (
+              <Field key={f.name} label={f.label} required={f.required} error={errors[f.name]}>
+                <input
+                  className="apm-input"
+                  type={f.type === 'number' ? 'number' : 'text'}
+                  placeholder={f.placeholder ?? ''}
+                  value={values[f.name] ?? ''}
+                  inputMode={isHsn ? 'numeric' : undefined}
+                  maxLength={isHsn ? 10 : undefined}
+                  onChange={(e) => set(
+                    f.name,
+                    isHsn ? e.target.value.replace(/\D/g, '') : e.target.value,
+                  )}
+                />
+              </Field>
+            );
+          })}
         </div>
         <div className="apm-qa-foot">
           <button className="apm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
