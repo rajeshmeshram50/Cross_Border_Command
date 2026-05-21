@@ -262,7 +262,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   // Form: company + primary address + primary contact
   const [form, setForm] = useState({
     coName:'', coLegal:'', coType:'', coWeb:'', coSeg:'', coClass:'', coRisk:'',
-    addrType:'', addr:'', country:'', state:'', city:'', pin:'',
+    /* Primary address type is locked to "Registered Office" in the UI
+       — other types live on the Address & Contact Details tab. */
+    addrType: DEFAULT_ADDRESS_TYPE, addr:'', country:'', state:'', city:'', pin:'',
     cpName:'', cpDesig:'', cpTel:'', cpEmail:'', cpWa:'yes' as 'yes'|'no'|'',
   });
   const setF = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(prev => ({ ...prev, [k]: v }));
@@ -455,7 +457,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           coSeg:    d.segment       ?? '',
           coClass:  d.classification ?? '',
           coRisk:   d.riskLevel     ?? '',
-          addrType: pa.type         ?? d.addrType ?? DEFAULT_ADDRESS_TYPE,
+          // Primary address type is locked to "Registered Office" — even
+          // if older data stored a different label, normalise here so
+          // the disabled dropdown stays in sync with the saved record.
+          addrType: DEFAULT_ADDRESS_TYPE,
           addr:     pa.address_line ?? d.addr    ?? '',
           country:  pa.country      ?? d.country ?? '',
           state:    pa.state        ?? d.state   ?? '',
@@ -965,9 +970,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 
         {/* FOOTER */}
         <div className="acm-footer">
-          <div className="acm-req-note">
-            <span className="acm-req-dot" />
-            Fields marked with <span className="acm-req">*</span> are required
+          <div className="acm-req-note">           
+         
           </div>
           <div className="acm-footer-actions">
             {!atStart && (
@@ -1231,7 +1235,17 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
         <div className="acm-section-body">
           <div className="acm-row acm-row-2">
             <Field label="Address Type" required error={errors.addrType} fieldKey="addrType">
-              <MasterSelect value={form.addrType} options={optsWith(masters.addressTypes, form.addrType)} placeholder="Select address type" invalid={!!errors.addrType} onChange={v => set('addrType', v)} />
+              {/* The primary address is, by definition, the registered
+                 office — locked here so a user can't pick anything else
+                 for the primary slot. Other types (Warehouse, Billing,
+                 etc.) belong on the "Address & Contact Details" tab. */}
+              <MasterSelect
+                value={DEFAULT_ADDRESS_TYPE}
+                options={[{ value: DEFAULT_ADDRESS_TYPE, label: DEFAULT_ADDRESS_TYPE }]}
+                placeholder="Select address type"
+                disabled
+                onChange={() => { /* locked */ }}
+              />
             </Field>
             <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" /></Field>
           </div>
@@ -2056,6 +2070,7 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
     const next: Record<string, string> = {};
     if (!d.name.trim())      next.name      = 'Document name is required';
     if (!d.license.trim())   next.license   = 'License number is required';
+    else if (d.license.trim().length > 25) next.license = 'License number must be 25 characters or fewer';
     if (!d.authority.trim()) next.authority = 'Issuing authority is required';
     if (!d.issueDate)        next.issueDate = 'Issue date is required';
     if (!d.expiryDate)       next.expiryDate = 'Expiry date is required';
@@ -2170,7 +2185,7 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
               </div>
             </Field>
             <Field label="License Number" required error={errs.license}>
-              <input className={errs.license ? 'acm-input-error' : ''} value={d.license} onChange={e => set('license', e.target.value)} placeholder="Enter license number" />
+              <input className={errs.license ? 'acm-input-error' : ''} value={d.license} maxLength={25} onChange={e => set('license', e.target.value.slice(0, 25))} placeholder="Enter license number (max 25)" />
             </Field>
           </div>
           <div className="acm-row acm-row-4">
@@ -2766,32 +2781,65 @@ function HistoryStage1({ form, locations, customerId }: { form: any; locations: 
   const wa = form.cpWa === 'yes' ? 'Yes' : form.cpWa === 'no' ? 'No' : '';
   return (
     <div className="acm-hs-mirror">
+      {/* ── Address & Contact Details first ──────────────────────── */}
+      <div className="acm-hs-section-label">Address &amp; Contact Details</div>
       <div className="acm-hs-grid">
-        <ReadInline label="Customer ID"               value={customerId} />
-        <ReadInline label="Company Name"              value={form.coName} />
-        <ReadInline label="Company Legal Name"        value={form.coLegal} />
-        <ReadInline label="Customer Type"             value={form.coType} />
-
-        <ReadInline label="Company Website"           value={form.coWeb} />
-        <ReadInline label="Customer Segment"          value={form.coSeg} />
-        <ReadInline label="Classification"            value={form.coClass} />
-        <ReadInline label="Risk Level"                value={form.coRisk} />
-
-        <ReadInline label="Registered Office Address" value={form.addr} span={2} />
+        <ReadInline label="Address Type"              value={form.addrType || 'Registered Office'} />
+        <ReadInline label="Registered Office Address" value={form.addr} span={3} />
         <ReadInline label="Country"                   value={form.country} />
         <ReadInline label="State"                     value={form.state} />
-
         <ReadInline label="City"                      value={form.city} />
         <ReadInline label="PIN / Postal Code"         value={form.pin} />
         <ReadInline label="Contact Person Name"       value={form.cpName} />
         <ReadInline label="Designation"               value={form.cpDesig} />
-
         <ReadInline label="Contact No"                value={form.cpTel} />
         <ReadInline label="Email"                     value={form.cpEmail} />
         <ReadInline label="WhatsApp Enable"           value={wa} />
-        {locations.length > 0 && (
-          <ReadInline label="Additional Locations" value={`${locations.length} captured`} />
-        )}
+      </div>
+
+      {locations.length > 0 && (
+        <div className="acm-hs-extras">
+          <div className="acm-hs-extras-head">
+            <span className="acm-hs-extras-title">Additional Address &amp; Contact Details</span>
+            <span className="acm-hs-extras-badge">{locations.length} captured</span>
+          </div>
+          {locations.map((l, i) => {
+            const place = [l.city, l.state, l.country].filter(Boolean).join(' • ');
+            const lwa = l.cpWhatsapp === 'yes' ? 'Yes' : l.cpWhatsapp === 'no' ? 'No' : '';
+            return (
+              <div key={l.id} className="acm-hs-extras-item">
+                <div className="acm-hs-extras-row">
+                  <span className="acm-hs-extras-num">#{i + 1}</span>
+                  <span className="acm-hs-extras-type">{l.type || '—'}</span>
+                </div>
+                <div className="acm-hs-grid acm-hs-extras-grid">
+                  <ReadInline label="Address"                value={l.line} span={2} />
+                  <ReadInline label="City / State / Country" value={place} span={2} />
+                  <ReadInline label="PIN / Postal Code"      value={l.pin} />
+                  <ReadInline label="Contact Person"         value={l.cpName} />
+                  <ReadInline label="Designation"            value={l.cpDesignation} />
+                  <ReadInline label="Phone"                  value={l.cpContact} />
+                  <ReadInline label="Email"                  value={l.cpEmail} span={2} />
+                  <ReadInline label="WhatsApp Enable"        value={lwa} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Customer Identification fields second ─────────────────── */}
+      <div className="acm-hs-section-label">Customer Identification</div>
+      <div className="acm-hs-grid">
+        <ReadInline label="Customer ID"        value={customerId} />
+        <ReadInline label="Company Name"       value={form.coName} />
+        <ReadInline label="Company Legal Name" value={form.coLegal} />
+        <ReadInline label="Customer Type"      value={form.coType} />
+
+        <ReadInline label="Company Website"    value={form.coWeb} />
+        <ReadInline label="Customer Segment"   value={form.coSeg} />
+        <ReadInline label="Classification"     value={form.coClass} />
+        <ReadInline label="Risk Level"         value={form.coRisk} />
       </div>
     </div>
   );
@@ -3068,11 +3116,87 @@ const SCOPED_CSS = `
 }
 .acm-hs-inline-val.is-empty { color: #cbd5e1; font-weight: 500; }
 
+/* Additional Address & Contact entries inside the history panel —
+   each row from the Stage 1 second tab gets its own outlined block
+   so the user can review every captured warehouse/billing address
+   without leaving the Stage 2/3 view. */
+.acm-hs-extras {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #ddd6fe;
+}
+.acm-hs-extras-head {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 8px;
+}
+.acm-hs-extras-title {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: #5b21b6;
+}
+.acm-hs-extras-badge {
+  font-size: 10px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px;
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  color: #5b21b6; border: 1px solid #c4b5fd;
+}
+.acm-hs-extras-item {
+  background: rgba(124,58,237,0.04);
+  border: 1px solid rgba(124,58,237,0.18);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.acm-hs-extras-item:last-child { margin-bottom: 0; }
+.acm-hs-extras-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px;
+}
+.acm-hs-extras-num {
+  font-size: 10px; font-weight: 800; color: #5b21b6;
+  background: #ede9fe; border: 1px solid #c4b5fd;
+  padding: 2px 7px; border-radius: 999px;
+}
+.acm-hs-extras-type {
+  font-size: 12px; font-weight: 700; color: #3b0764;
+  letter-spacing: .02em;
+}
+.acm-hs-extras-grid { row-gap: 8px; }
+
+/* Tiny section heading above each history block — visually separates
+   the Customer Identification grid from the Address & Contact list. */
+.acm-hs-section-label {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: #5b21b6;
+  margin-bottom: 10px;
+}
+.acm-hs-section-label:not(:first-child) { margin-top: 14px; }
+
+/* "Primary" tag inline next to the address-type label on the first
+   row of the address list. Distinguishes the form-sourced primary
+   entry from the user-added additionals. */
+.acm-hs-extras-primary {
+  display: inline-block;
+  padding: 2px 8px; border-radius: 999px;
+  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  color: #065f46; border: 1px solid #6ee7b7;
+  font-size: 9.5px; font-weight: 800;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+
+[data-bs-theme="dark"] .acm-hs-section-label { color: #ddd6fe; }
+[data-bs-theme="dark"] .acm-hs-extras-primary { background: rgba(16,185,129,0.22); color: #a7f3d0; border-color: rgba(110,231,183,0.40); }
+
 /* Dark-mode variant. */
 [data-bs-theme="dark"] .acm-hs-inline:hover { background: rgba(167,139,250,0.10); }
 [data-bs-theme="dark"] .acm-hs-inline-lbl { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-hs-inline-val { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-hs-inline-val.is-empty { color: #475569; }
+[data-bs-theme="dark"] .acm-hs-extras { border-top-color: rgba(167,139,250,0.25); }
+[data-bs-theme="dark"] .acm-hs-extras-title { color: #ddd6fe; }
+[data-bs-theme="dark"] .acm-hs-extras-badge { background: rgba(124,58,237,0.30); color: #ede9fe; border-color: rgba(167,139,250,0.45); }
+[data-bs-theme="dark"] .acm-hs-extras-item { background: rgba(124,58,237,0.10); border-color: rgba(167,139,250,0.25); }
+[data-bs-theme="dark"] .acm-hs-extras-num { background: rgba(167,139,250,0.22); color: #ddd6fe; border-color: rgba(167,139,250,0.45); }
+[data-bs-theme="dark"] .acm-hs-extras-type { color: #f5f3ff; }
 
 /* Narrower viewports — collapse the dense 4-col layout to 2 cols so
    labels still fit beside their values on a 3:2 ratio. */
@@ -3519,10 +3643,13 @@ const SCOPED_CSS = `
 
 /* History panel */
 .acm-history { margin: 10px 22px 0; border-radius: 12px; border: 1.5px solid #c4b5fd; background: #fff; overflow: hidden; box-shadow: 0 2px 12px rgba(109,40,217,.09); flex-shrink: 0; max-height: 46px; transition: max-height .38s cubic-bezier(.4,0,.2,1); }
-/* Expanded panel needs room for the 5-row inline grid + breathing
-   padding; below 900px the grid collapses to 2 cols (9-10 rows) so
-   the body keeps scrolling for narrow viewports. */
-.acm-history.acm-hist-open { max-height: 340px; }
+/* Expanded panel needs room for three sections (Address & Contact
+   Details + any Additional Locations + Customer Identification). The
+   body still scrolls if the content grows past this cap, but 600px
+   is enough to show the full primary address block plus the first
+   couple of additional locations without any scroll for the common
+   case. */
+.acm-history.acm-hist-open { max-height: 600px; }
 .acm-history-header { height: 46px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; cursor: pointer; background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 100%); border-left: 4px solid #7c3aed; user-select: none; }
 .acm-history-header:hover { background: linear-gradient(110deg, #ede9fe, #ddd6fe); }
 .acm-history-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -3533,7 +3660,7 @@ const SCOPED_CSS = `
 .acm-history-badge { padding: 3px 11px; border-radius: 20px; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-size: 9.5px; font-weight: 800; white-space: nowrap; }
 .acm-history-chevron { width: 22px; height: 22px; border-radius: 50%; background: rgba(124,58,237,.12); display: flex; align-items: center; justify-content: center; color: #7c3aed; transition: transform .3s; }
 .acm-history-chevron.acm-open { transform: rotate(180deg); }
-.acm-history-body { overflow-y: auto; max-height: calc(340px - 46px); border-top: 1px solid #ede9fe; }
+.acm-history-body { overflow-y: auto; max-height: calc(600px - 46px); border-top: 1px solid #ede9fe; }
 .acm-hs-block { padding: 12px 16px 10px; border-bottom: 1px solid #f3f0fb; }
 .acm-hs-block:last-child { border-bottom: none; }
 .acm-hs-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
@@ -3762,10 +3889,20 @@ const SCOPED_CSS = `
 
 /* Stage 2 doc toolbar + search */
 [data-bs-theme="dark"] .acm-doc-toolbar { background: rgba(28,37,49,0.4); border-color: rgba(255,255,255,0.06); }
-[data-bs-theme="dark"] .acm-doc-search { background: #1c2531; border-color: rgba(167,139,250,0.20); }
-[data-bs-theme="dark"] .acm-doc-search input { background: transparent; color: #f1f5f9; }
-[data-bs-theme="dark"] .acm-doc-search input::placeholder { color: #475569; }
-[data-bs-theme="dark"] .acm-doc-search-icon { color: #94a3b8; }
+/* Light-mode .acm-doc-search input uses !important on background +
+   border so the dark override must match that specificity or the
+   white pill leaks into dark mode. */
+[data-bs-theme="dark"] .acm-doc-search input {
+  background: #131c33 !important;
+  border-color: rgba(167,139,250,0.40) !important;
+  color: #ffffff;
+}
+[data-bs-theme="dark"] .acm-doc-search input::placeholder { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-doc-search input:focus {
+  border-color: #a78bfa !important;
+  box-shadow: 0 0 0 3px rgba(167,139,250,0.22) !important;
+}
+[data-bs-theme="dark"] .acm-doc-search-icon { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-doc-count { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-doc-pag-wrap { background: rgba(28,37,49,0.40); border-color: rgba(255,255,255,0.06); }
 [data-bs-theme="dark"] .acm-doc-pag-info { color: #94a3b8; }

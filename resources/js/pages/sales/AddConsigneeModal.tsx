@@ -418,7 +418,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       segment:        customer.segment ?? '',
       classification: customer.classification ?? '',
       risk:           customer.risk ?? '',
-      addressType:    customer.addressType || 'Registered Office',
+      // Primary address type is locked to "Registered Office" in the UI
+      // — normalise on hydration so the form state stays in sync with
+      // the disabled dropdown shown to the user.
+      addressType:    'Registered Office',
       address:        customer.address ?? '',
       country:        customer.country ?? '',
       state:          customer.state ?? '',
@@ -486,7 +489,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           segment:        d.segment       ?? '',
           classification: d.classification ?? '',
           risk:           d.riskLevel     ?? '',
-          addressType:    d.primary_address?.type       ?? 'Registered Office',
+          // Locked to "Registered Office" in the UI — see the disabled
+          // MasterSelect in Stage 1's Primary Address section.
+          addressType:    'Registered Office',
           address:        d.primary_address?.address_line ?? '',
           country:        d.primary_address?.country    ?? '',
           state:          d.primary_address?.state      ?? '',
@@ -1725,13 +1730,17 @@ const Stage1 = ({
           <div className="acm-sec-pad">
             <div className="acm-grid-2">
               <Field label="Address Type" required error={errors.addressType} fieldKey="addressType">
+                {/* Primary address is, by definition, the registered
+                   office — locked here so a user can't pick anything
+                   else for the primary slot. Other types (Warehouse,
+                   Billing, etc.) belong on the Address & Contact
+                   Details tab. */}
                 <MasterSelect
-                  value={form.addressType}
-                  options={optsWith(masters.addressTypes, form.addressType)}
+                  value="Registered Office"
+                  options={[{ value: 'Registered Office', label: 'Registered Office' }]}
                   placeholder="Select Address Type"
-                  invalid={!!errors.addressType}
-                  disabled={lock}
-                  onChange={v => set('addressType', v)}
+                  disabled
+                  onChange={() => { /* locked */ }}
                 />
               </Field>
               <Field label="Address" required error={errors.address} fieldKey="address">
@@ -2657,6 +2666,7 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
     const next: Record<string, string> = {};
     if (!d.name.trim())                                   next.name              = 'Document name is required';
     if (!(d.license_number ?? '').trim())                 next.license_number    = 'License / document number is required';
+    else if ((d.license_number ?? '').trim().length > 25) next.license_number    = 'License number must be 25 characters or fewer';
     if (!(d.issuing_authority ?? '').trim())              next.issuing_authority = 'Issuing authority is required';
     if (!d.issue_date)                                    next.issue_date        = 'Issue date is required';
     if (!d.expiry_date)                                   next.expiry_date       = 'Expiry date is required';
@@ -2740,9 +2750,10 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
               <label className="acm-field-label">LICENSE / DOCUMENT NUMBER <span className="acm-req">*</span></label>
               <input
                 className={`acm-input ${errs.license_number ? 'acm-input-error' : ''}`}
-                placeholder="e.g. ABC123456789"
+                placeholder="Enter license number (max 25)"
                 value={d.license_number ?? ''}
-                onChange={e => set('license_number', e.target.value)}
+                maxLength={25}
+                onChange={e => set('license_number', e.target.value.slice(0, 25))}
               />
               {errs.license_number && <span className="acm-err-text">{errs.license_number}</span>}
             </div>
