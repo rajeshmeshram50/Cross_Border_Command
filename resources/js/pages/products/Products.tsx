@@ -279,9 +279,15 @@ export default function Products() {
       } else {
         params.status = statusTab;
       }
+      // Stats endpoint mirrors the vendor filter so the
+      // Active / Inactive tab badges show counts scoped to the
+      // vendor's mapped products instead of the org-wide totals.
+      const statsParams: Record<string, string> = {};
+      if (vendorFilterId) statsParams.vendor_id = vendorFilterId;
+
       const [list, st] = await Promise.all([
         api.get<{ data: Record<string, unknown>[] }>('/products', { params }),
-        api.get<{ active: number; inactive: number }>('/products/stats'),
+        api.get<{ active: number; inactive: number }>('/products/stats', { params: statsParams }),
       ]);
       setProducts(list.data.data.map(apiToCard));
       setStats({ active: st.data.active, inactive: st.data.inactive });

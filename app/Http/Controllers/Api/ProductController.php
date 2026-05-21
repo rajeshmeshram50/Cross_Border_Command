@@ -493,6 +493,18 @@ class ProductController extends Controller
     {
         $query = $this->applyScope(Product::query(), $request);
 
+        // Mirror the index endpoint's vendor filter so the
+        // Active / Inactive tab counts stay in sync with the rows
+        // the user is actually seeing. Without this, the deep-link
+        // (/products?vendor_id=…) showed e.g. "Active 24 / Inactive 9"
+        // — the org-wide numbers — even though only 2 products were
+        // listed below them.
+        if ($vendorId = $request->query('vendor_id')) {
+            $query->whereHas('vendorMaps', function ($w) use ($vendorId) {
+                $w->where('vendor_id', $vendorId);
+            });
+        }
+
         $active   = (clone $query)->where('status', 'active')->count();
         $inactive = (clone $query)->whereIn('status', ['inactive', 'draft'])->count();
 

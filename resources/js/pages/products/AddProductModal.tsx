@@ -437,6 +437,10 @@ export default function AddProductModal(props: {
      confirmation; backdrop click and Esc respect `qcDeleting` so the
      user can't cancel mid-action. */
   const [qcDeleteTarget, setQcDeleteTarget] = useState<QcRecord | null>(null);
+  /* Two-stage delete for mapped vendors — clicking the row's
+     delete icon stages the entry; DeleteConfirmModal hits the
+     actual remove on confirm. Mirrors the QC delete flow. */
+  const [vendorDeleteTarget, setVendorDeleteTarget] = useState<VendorEntry | null>(null);
 
   /* Edit-mode for an existing QC row: opens the same QcAddPopup
      pre-filled with the row's data. On save we update the existing
@@ -1488,8 +1492,23 @@ export default function AddProductModal(props: {
                       { label: 'Length',       value: length ? `${length} cm` : '—' },
                       { label: 'Width',        value: width  ? `${width} cm`  : '—' },
                       { label: 'Height',       value: height ? `${height} cm` : '—' },
-                      { label: 'QC Records',   value: String(qcRecords.length) },
                     ],
+                    /* Per-QC detail rows replace the "QC Records : N"
+                       count so the user can scan what was actually
+                       captured (and open the attachment) without
+                       flipping back to the QC tab. */
+                    extras: qcRecords.map((q, i) => ({
+                      label: `QC ${String(i + 1).padStart(2, '0')}`,
+                      pairs: [
+                        { k: 'Name',       v: q.name || '—' },
+                        { k: 'Purpose',    v: q.purpose || '—' },
+                        { k: 'Issued By',  v: q.issuedBy || '—' },
+                        { k: 'Min Accept', v: q.minAcceptance || '—' },
+                      ],
+                      attachment: q.attachmentName
+                        ? { name: q.attachmentName, href: q.attachmentUrl || '' }
+                        : null,
+                    })),
                   },
                 ]}
               />
@@ -1639,32 +1658,22 @@ export default function AddProductModal(props: {
                             <td><span className="fs-13">{v.gstPct.toFixed(2)}%</span></td>
                             <td><span className="fs-13">₹{v.gstAmt.toFixed(2)}</span></td>
                             <td><span className="text-success fw-semibold fs-13">₹{v.totalAmt.toLocaleString()}</span></td>
-                            <td>
-                              <span className="d-inline-flex align-items-center gap-1 fs-13">
-                                <i className="ri-calendar-line text-muted" />
-                                <span>{v.mapDate}</span>
-                              </span>
-                            </td>
+                            <td><span className="fs-13">{v.mapDate || <span className="text-muted">—</span>}</span></td>
                             <td><span className="fs-13">{v.remarks || <span className="text-muted">—</span>}</span></td>
                             <td>
-                              <div className="hstack gap-1">
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-soft-primary"
+                              <div className="d-flex gap-1">
+                                <QcActionBtn
                                   title="Edit"
-                                  aria-label="Edit"
-                                >
-                                  <i className="ri-pencil-line" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-soft-danger"
-                                  onClick={() => removeVendor(v.id)}
+                                  icon="ri-pencil-line"
+                                  color="info"
+                                  onClick={() => { /* edit flow lands later */ }}
+                                />
+                                <QcActionBtn
                                   title="Delete"
-                                  aria-label="Delete"
-                                >
-                                  <i className="ri-delete-bin-line" />
-                                </button>
+                                  icon="ri-delete-bin-line"
+                                  color="danger"
+                                  onClick={() => setVendorDeleteTarget(v)}
+                                />
                               </div>
                             </td>
                           </tr>
@@ -1753,6 +1762,18 @@ export default function AddProductModal(props: {
         onConfirm={() => {
           if (qcDeleteTarget) removeQc(qcDeleteTarget.id);
           setQcDeleteTarget(null);
+        }}
+      />
+
+      <DeleteConfirmModal
+        open={vendorDeleteTarget !== null}
+        itemName={vendorDeleteTarget?.vendorName}
+        title="Remove Mapped Vendor"
+        subMessage="This unmaps the vendor from the product on this form. The product must be saved (Save Product) for the change to persist on the server."
+        onClose={() => setVendorDeleteTarget(null)}
+        onConfirm={() => {
+          if (vendorDeleteTarget) removeVendor(vendorDeleteTarget.id);
+          setVendorDeleteTarget(null);
         }}
       />
 
@@ -1944,6 +1965,18 @@ type PrevStage = {
   name: string;
   tone: 'violet' | 'amber' | 'green';
   fields: { label: string; value: string }[];
+  /** Optional extra rows that render BELOW the field grid for the
+   *  stage. Used by QUALITY & COMPLIANCE to show per-QC details +
+   *  the (clickable) attachment link instead of just a row count. */
+  extras?: PrevStageExtra[];
+};
+type PrevStageExtra = {
+  /** Row label (e.g. "QC Record 1" or the QC's name). */
+  label: string;
+  /** Inline `key : value` pairs flowed in a row. */
+  pairs: { k: string; v: string }[];
+  /** Optional clickable attachment link rendered at the row end. */
+  attachment?: { name: string; href: string } | null;
 };
 
 function PreviousStages(props: {
@@ -1980,6 +2013,32 @@ function PreviousStages(props: {
                   </div>
                 ))}
               </div>
+              {s.extras && s.extras.length > 0 && (
+                <div className="apm-prev-extras">
+                  {s.extras.map((ex, i) => (
+                    <div key={i} className="apm-prev-extra-row">
+                      <span className="apm-prev-extra-label">{ex.label}</span>
+                      {ex.pairs.map((p, j) => (
+                        <span key={j} className="apm-prev-extra-pair">
+                          <span className="apm-prev-extra-k">{p.k} :</span>{' '}
+                          <span className="apm-prev-extra-v" title={p.v}>{p.v}</span>
+                        </span>
+                      ))}
+                      {ex.attachment?.href && (
+                        <a
+                          href={ex.attachment.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="apm-prev-extra-attach"
+                          title={`Open ${ex.attachment.name}`}
+                        >
+                          <i className="ri-attachment-line" /> {ex.attachment.name}
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -2911,6 +2970,42 @@ const SCOPED_CSS = `
   margin-top: 2px;
   cursor: default;
 }
+
+/* Extras row — sits BELOW the field grid for stages that ship
+   richer per-item data (QC records carry name/purpose/issuer +
+   an attachment link). Renders inline so multiple key:value
+   pairs sit on one line and wrap on narrow viewports. */
+.apm-prev-extras {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px dashed #d1fae5;
+}
+.apm-prev-extra-row {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 4px 18px;
+  font-size: 12.5px;
+}
+.apm-prev-extra-label {
+  font-weight: 800; color: #15803d;
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  margin-right: 4px;
+}
+.apm-prev-extra-pair { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; }
+.apm-prev-extra-k {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
+  color: #94a3b8; text-transform: uppercase; white-space: nowrap;
+}
+.apm-prev-extra-v {
+  font-weight: 600; color: #1e1b4b;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 220px;
+}
+.apm-prev-extra-attach {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-weight: 700; color: #4338ca; text-decoration: underline;
+  font-size: 12px;
+}
+.apm-prev-extra-attach:hover { color: #312e81; }
 
 /* ─── Vendor toolbar ─── */
 .apm-vendor-toolbar {
