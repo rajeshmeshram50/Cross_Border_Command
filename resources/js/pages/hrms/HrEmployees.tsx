@@ -1582,9 +1582,19 @@ export default function HrEmployees() {
     }
     if (!eSalaryFrom) {
       e.salary_effective_from = 'Effective-from date is required';
+    } else if (eJoinDate && eSalaryFrom < eJoinDate) {
+      /* Salary can't start paying out before the employee has even
+       * joined. Both values are ISO YYYY-MM-DD strings emitted by
+       * MasterDatePicker, so the lexical < compare matches a
+       * chronological compare exactly. The error pins to Step 4 so
+       * firstStepWithErrors() jumps the user back to the compensation
+       * step where the picker lives, not Step 2 where the joining
+       * date lives — the picker on this step is what they need to
+       * change. */
+      e.salary_effective_from = `Salary effective date can't be before the joining date (${eJoinDate})`;
     }
     return e;
-  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom]);
+  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom, eJoinDate]);
 
   // First step that contains any of the given error keys. Used to jump-back
   // when a deeper step's submit surfaces a problem in an earlier step.
@@ -4861,7 +4871,19 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Salary Effective From{eEnablePayroll && <span className="req">*</span>}</label>
-                      <MasterDatePicker value={eSalaryFrom} onChange={(v) => { setESalaryFrom(v); clearEErr('salary_effective_from'); }} placeholder="dd-mm-yyyy" invalid={!!eErrors.salary_effective_from} />
+                      {/* minDate locks the calendar so dates before the
+                          Step-2 joining date are visually disabled —
+                          the user can't even pick an invalid value.
+                          validateStep4 still re-checks at submit time
+                          for the case where a joining date is changed
+                          AFTER the salary date was picked. */}
+                      <MasterDatePicker
+                        value={eSalaryFrom}
+                        onChange={(v) => { setESalaryFrom(v); clearEErr('salary_effective_from'); }}
+                        placeholder="dd-mm-yyyy"
+                        minDate={eJoinDate || undefined}
+                        invalid={!!eErrors.salary_effective_from}
+                      />
                       {eErrors.salary_effective_from && <small className="emp-err">{eErrors.salary_effective_from}</small>}
                     </Col>
                     <Col md={6}>
@@ -5031,7 +5053,14 @@ export default function HrEmployees() {
               <span />
             )}
 
-            {/* Right side — Next (steps 1-3) or Skip + Save (step 4) */}
+            {/* Right side — Next (steps 1-3) or Save (step 4).
+                The "Skip this Step" ghost button that used to sit
+                next to Save was removed: it called the same
+                handleSaveEmployee handler as the primary Save button,
+                so it didn't actually skip anything — clicking it
+                still persisted Step 4 just like Save did. Having two
+                buttons that do the same thing while one of them
+                implies "discard" was confusing users. */}
             <div className="d-flex align-items-center gap-2">
               {empStep < 4 ? (
                 <button
@@ -5059,16 +5088,6 @@ export default function HrEmployees() {
                 </button>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={handleSaveEmployee}
-                    className="rec-btn-ghost"
-                    style={{ opacity: saving ? 0.6 : 1 }}
-                  >
-                    <i className="ri-skip-forward-line" />
-                    Skip this Step
-                  </button>
                   <button
                     type="button"
                     disabled={saving}
