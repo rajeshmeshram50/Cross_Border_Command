@@ -245,7 +245,10 @@ class MasterController extends Controller
         // of subdivisions — downloading the whole table just to translate an
         // id on the frontend was prohibitively slow).
         if ($slug === 'state_codes') {
-            $q->with('state:id,name');
+            // Country id rides along so the frontend can cascade State
+            // off the chosen Country (e.g. vendor address form filters
+            // states to India once the user picks India).
+            $q->with('state:id,name,country_id');
         }
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 

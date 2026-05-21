@@ -6,9 +6,25 @@ import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import {
-  validateEmail, validatePhoneGeneric, validatePincode, validateWebsite,
+  validateEmail, validatePincode, validateWebsite,
   validateGstin, validateIfsc, validateAccountNumber,
 } from '../../utils/fieldValidators';
+
+/* Vendor-specific contact number rule — 6 to 15 digits, numerics only.
+ * Stricter than the shared `validatePhoneGeneric` (which permits +, spaces,
+ * parens, hyphens) because the vendor module wants a clean digit string
+ * for WhatsApp / SMS automations downstream. */
+function validateContactNumber(value: string, label = 'Contact No'): string {
+  const v = (value ?? '').trim();
+  if (!v) return '';
+  if (!/^\d+$/.test(v))           return `${label} must contain digits only (no spaces, +, or punctuation)`;
+  if (v.length < 6 || v.length > 15) return `${label} must be 6 to 15 digits`;
+  return '';
+}
+
+/* Strip any non-digit character from a contact-number input as the user
+ * types, so the field is impossible to populate with letters or symbols. */
+const digitsOnly = (raw: string): string => (raw || '').replace(/\D/g, '').slice(0, 15);
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Vendor — 4-step wizard
@@ -253,15 +269,14 @@ export default function AddVendorModal(props: {
     state_id: string;
     state_code: string;
     state_name: string;
+    /* country_id rides along the state_codes payload so the State
+       dropdown can be filtered by the currently-selected Country —
+       picking India narrows the list to Indian states, etc. */
+    country_id: string;
   }>>([]);
-  /* State dropdown is ID-based — `value` is state_id, `label` is the
-     state's name. The state-code field auto-fills off the same lookup
-     so the wizard always submits a consistent state_id + state_code
-     pair. */
-  const stateOpts = useMemo<Opt[]>(
-    () => stateCodeRows.map(r => ({ value: r.state_id, label: r.state_name })),
-    [stateCodeRows]
-  );
+  /* The State dropdown is now declared further down (after `country`
+     is in scope) so it can cascade off the selected country. See
+     `stateOpts` below the country/state useState block. */
 
   /* ─── Per-field validation errors keyed by field name ─── */
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -307,6 +322,24 @@ export default function AddVendorModal(props: {
   const [stateCode, setStateCode] = useState('');
   const [city,      setCity]      = useState('');
   const [pincode,   setPincode]   = useState('');
+
+  /* State dropdown is ID-based — `value` is state_id, `label` is the
+     state's name. We cascade off the selected Country (when one is
+     picked) so the list narrows to that country's states; the state
+     code auto-fills once a state is picked. De-duped by state_id
+     because the state_codes master can carry multiple codes per state
+     in theory, and we only want one entry per state on the picker. */
+  const stateOpts = useMemo<Opt[]>(() => {
+    const seen = new Set<string>();
+    const filtered = stateCodeRows.filter(r => {
+      if (!r.state_id) return false;
+      if (country && r.country_id && r.country_id !== country) return false;
+      if (seen.has(r.state_id)) return false;
+      seen.add(r.state_id);
+      return true;
+    });
+    return filtered.map(r => ({ value: r.state_id, label: r.state_name }));
+  }, [stateCodeRows, country]);
   const [contactName, setContactName] = useState('');
   const [designation, setDesignation] = useState('');
   const [contactNo,   setContactNo]   = useState('');
@@ -445,7 +478,13 @@ export default function AddVendorModal(props: {
     };
     const fetchStateCodes = async () => {
       try {
-        type Sc = { id: number | string; state_id: number | string; state_code: string; status?: string; state?: { id?: number; name?: string } };
+        type Sc = {
+          id: number | string;
+          state_id: number | string;
+          state_code: string;
+          status?: string;
+          state?: { id?: number; name?: string; country_id?: number | string };
+        };
         const res = await api.get<Sc[]>(`/master/state_codes`);
         return (res.data || [])
           .filter(r => String(r.status ?? '').toLowerCase() !== 'inactive')
@@ -454,10 +493,11 @@ export default function AddVendorModal(props: {
             state_id: String(r.state_id ?? ''),
             state_code: String(r.state_code ?? ''),
             state_name: String(r.state?.name ?? ''),
+            country_id: String(r.state?.country_id ?? ''),
           }))
           .filter(r => r.state_name !== '');
       } catch {
-        return [] as Array<{ id: string; state_id: string; state_code: string; state_name: string }>;
+        return [] as Array<{ id: string; state_id: string; state_code: string; state_name: string; country_id: string }>;
       }
     };
     (async () => {
@@ -734,7 +774,7 @@ export default function AddVendorModal(props: {
     if (!contactNo.trim())         errs.contactNo        = 'Contact No is required';
     if (!email.trim())             errs.email            = 'Email is required';
     if (!errs.email && email)      { const e = validateEmail(email);              if (e) errs.email     = e; }
-    if (!errs.contactNo && contactNo) { const e = validatePhoneGeneric(contactNo, 'Contact No'); if (e) errs.contactNo = e; }
+    if (!errs.contactNo && contactNo) { const e = validateContactNumber(contactNo, 'Contact No'); if (e) errs.contactNo = e; }
     if (pincode)                   { const e = validatePincode(pincode);          if (e) errs.pincode   = e; }
     if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); toast.error('Missing required fields', 'Please fix the highlighted fields'); return false; }
 
@@ -1222,7 +1262,7 @@ export default function AddVendorModal(props: {
       return;
     }
     // Format checks — phone and email
-    const phoneErr = validatePhoneGeneric(contactDraft.phone, 'Contact No');
+    const phoneErr = validateContactNumber(contactDraft.phone, 'Contact No');
     if (phoneErr) { toast.error('Invalid Contact No', phoneErr); return; }
     const emailErr = validateEmail(contactDraft.email);
     if (emailErr) { toast.error('Invalid Email', emailErr); return; }
@@ -1539,7 +1579,15 @@ export default function AddVendorModal(props: {
                       <input className="avm-input" placeholder="admin" value={designation} onChange={e => { setDesignation(e.target.value); clearFieldError('designation'); }} />
                     </Field>
                     <Field label="Contact No" required error={fieldErrors.contactNo}>
-                      <input className="avm-input" placeholder="9876543210" value={contactNo} onChange={e => { setContactNo(e.target.value); clearFieldError('contactNo'); }} />
+                      <input
+                        className="avm-input"
+                        placeholder="9876543210"
+                        inputMode="numeric"
+                        pattern="\d*"
+                        maxLength={15}
+                        value={contactNo}
+                        onChange={e => { setContactNo(digitsOnly(e.target.value)); clearFieldError('contactNo'); }}
+                      />
                     </Field>
                     <Field label="Email" required error={fieldErrors.email}>
                       <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
@@ -1703,16 +1751,34 @@ export default function AddVendorModal(props: {
               </div>
 
               {kycTab === 'company' && (
-                <DdTable rows={ddRows} onRemove={removeDdRow} onAttach={attachFileToDd} />
+                <DdTable
+                  rows={ddRows}
+                  onRemove={removeDdRow}
+                  onAttach={attachFileToDd}
+                  onClearFile={(id) => setDdRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
+                />
               )}
               {kycTab === 'owner' && (
-                <OwnerKycTable rows={ownerRows} onRemove={removeOwnerRow} />
+                <OwnerKycTable
+                  rows={ownerRows}
+                  onRemove={removeOwnerRow}
+                  onClearFile={(id) => setOwnerRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
+                />
               )}
               {kycTab === 'license' && (
-                <TradeLicenseTable rows={licenseRows} onRemove={removeLicRow} onAttach={attachFileToLicense} />
+                <TradeLicenseTable
+                  rows={licenseRows}
+                  onRemove={removeLicRow}
+                  onAttach={attachFileToLicense}
+                  onClearFile={(id) => setLicenseRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
+                />
               )}
               {kycTab === 'bank' && (
-                <BankTable rows={bankRows} onRemove={removeBankRow} />
+                <BankTable
+                  rows={bankRows}
+                  onRemove={removeBankRow}
+                  onClearFile={(id) => setBankRows(prev => prev.map(r => r.id === id ? { ...r, chequeFile: null, chequeFileName: '', existingPath: undefined } : r))}
+                />
               )}
               {kycTab === 'gst' && (
                 <GstScrutinyTable rows={gstRows} onRemove={removeGstRow} />
@@ -2062,7 +2128,15 @@ function ContactAddPopup(props: {
               <input className="avm-input" placeholder="Enter designation" value={draft.designation} onChange={e => set('designation', e.target.value)} />
             </Field>
             <Field label="Contact No" required>
-              <input className="avm-input" placeholder="Enter 10-15 digit mobile number" value={draft.phone} onChange={e => set('phone', e.target.value)} />
+              <input
+                className="avm-input"
+                placeholder="Enter 6-15 digit number"
+                inputMode="numeric"
+                pattern="\d*"
+                maxLength={15}
+                value={draft.phone}
+                onChange={e => set('phone', digitsOnly(e.target.value))}
+              />
             </Field>
             <Field label="Email" required>
               <input className="avm-input" placeholder="Enter email" value={draft.email} onChange={e => set('email', e.target.value)} />
@@ -2219,10 +2293,61 @@ function EmptyTable(props: { label: string }) {
   return <div className="avm-empty">{props.label}</div>;
 }
 
+/* Reusable FILE-cell renderer for the KYC tables — shows the filename
+ * plus inline View (opens the file in a new tab) and Delete (clears
+ * the attachment) action buttons. Works equally well for freshly-
+ * picked File objects (via createObjectURL) and previously-uploaded
+ * server paths (via resolveFileUrl). */
+function AttachmentCell(props: {
+  fileName?: string;
+  file?: File | null;
+  existingPath?: string;
+  onClear?: () => void;
+}) {
+  const { fileName, file, existingPath, onClear } = props;
+  const hasContent = !!(fileName || file || existingPath);
+  if (!hasContent) return <span className="text-muted fs-13">—</span>;
+  const href = file ? URL.createObjectURL(file) : (existingPath ? resolveFileUrl(existingPath) : '');
+  return (
+    <div className="d-inline-flex align-items-center gap-2">
+      <span className="fs-13 text-truncate" style={{ maxWidth: 180 }} title={fileName}>
+        <i className="ri-attachment-line text-muted me-1" />
+        {fileName || 'Attachment'}
+      </span>
+      {href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-sm btn-soft-primary p-0 d-inline-flex align-items-center justify-content-center"
+          style={{ width: 26, height: 26 }}
+          title="View attachment"
+          aria-label="View attachment"
+        >
+          <i className="ri-eye-line" style={{ fontSize: 13 }} />
+        </a>
+      ) : null}
+      {onClear ? (
+        <button
+          type="button"
+          onClick={onClear}
+          className="btn btn-sm btn-soft-danger p-0 d-inline-flex align-items-center justify-content-center"
+          style={{ width: 26, height: 26 }}
+          title="Delete attachment"
+          aria-label="Delete attachment"
+        >
+          <i className="ri-delete-bin-line" style={{ fontSize: 13 }} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function DdTable(props: {
   rows: DueDiligenceRow[];
   onRemove?: (id: string) => void;
   onAttach?: (id: string, file: File) => void;
+  onClearFile?: (id: string) => void;
   readOnly?: boolean;
 }) {
   if (props.rows.length === 0) return <EmptyTable label="No due-diligence documents added yet. Use “+ Add More Due Diligence” to begin." />;
@@ -2255,9 +2380,12 @@ function DdTable(props: {
                 </span>
               </td>
               <td>
-                {r.fileName
-                  ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.fileName}</span>
-                  : <span className="text-muted fs-13">—</span>}
+                <AttachmentCell
+                  fileName={r.fileName}
+                  file={r.file}
+                  existingPath={r.existingPath}
+                  onClear={props.onClearFile && !props.readOnly ? () => props.onClearFile?.(r.id) : undefined}
+                />
               </td>
               {!props.readOnly && (
                 <td>
@@ -2293,6 +2421,7 @@ function DdTable(props: {
 function OwnerKycTable(props: {
   rows: OwnerKycRow[];
   onRemove?: (id: string) => void;
+  onClearFile?: (id: string) => void;
   readOnly?: boolean;
 }) {
   if (props.rows.length === 0) return <EmptyTable label="No owner-KYC documents added yet. Use “+ Add Owner KYC” to begin." />;
@@ -2329,9 +2458,12 @@ function OwnerKycTable(props: {
                 </span>
               </td>
               <td>
-                {r.fileName
-                  ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.fileName}</span>
-                  : <span className="text-muted fs-13">—</span>}
+                <AttachmentCell
+                  fileName={r.fileName}
+                  file={r.file}
+                  existingPath={r.existingPath}
+                  onClear={props.onClearFile && !props.readOnly ? () => props.onClearFile?.(r.id) : undefined}
+                />
               </td>
               {!props.readOnly && (
                 <td>
@@ -2352,6 +2484,7 @@ function TradeLicenseTable(props: {
   rows: TradeLicenseRow[];
   onRemove?: (id: string) => void;
   onAttach?: (id: string, file: File) => void;
+  onClearFile?: (id: string) => void;
   readOnly?: boolean;
 }) {
   if (props.rows.length === 0) return <EmptyTable label="No trade licenses added yet. Use “+ Add Trade License” to begin." />;
@@ -2384,9 +2517,12 @@ function TradeLicenseTable(props: {
                 <td>{r.issueDate || '—'}</td>
                 <td>{r.expiryDate || '—'}</td>
                 <td>
-                  {r.fileName
-                    ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.fileName}</span>
-                    : <span className="text-muted fs-13">—</span>}
+                  <AttachmentCell
+                    fileName={r.fileName}
+                    file={r.file}
+                    existingPath={r.existingPath}
+                    onClear={props.onClearFile && !props.readOnly ? () => props.onClearFile?.(r.id) : undefined}
+                  />
                 </td>
                 {!props.readOnly && (
                   <td>
@@ -2417,7 +2553,7 @@ function TradeLicenseTable(props: {
   );
 }
 
-function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void }) {
+function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; onClearFile?: (id: string) => void }) {
   if (props.rows.length === 0) return <EmptyTable label="No bank records added yet." />;
   return (
     <div className="table-responsive table-card border rounded">
@@ -2444,9 +2580,12 @@ function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void }) 
               <td><span className="font-monospace fs-13">{r.ifsc}</span></td>
               <td>{r.branchAddress || '—'}</td>
               <td>
-                {r.chequeFileName
-                  ? <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.chequeFileName}</span>
-                  : <span className="text-muted fs-13">—</span>}
+                <AttachmentCell
+                  fileName={r.chequeFileName}
+                  file={r.chequeFile}
+                  existingPath={r.existingPath}
+                  onClear={props.onClearFile ? () => props.onClearFile?.(r.id) : undefined}
+                />
               </td>
               <td>
                 <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} title="Remove">
@@ -3037,8 +3176,8 @@ const SCOPED_CSS = `
   border: 1px solid rgba(255,255,255,.25);
   display: flex; align-items: center; justify-content: center;
 }
-.avm-title { font-size: 18px; font-weight: 800; }
-.avm-sub   { font-size: 12px; color: rgba(255,255,255,.85); margin-top: 2px; }
+.avm-title { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.avm-sub   { font-size: 12px; font-weight: 400; color: rgba(255,255,255,.85); margin-top: 2px; }
 .avm-head-right { display: inline-flex; align-items: center; gap: 8px; }
 .avm-map-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -3071,10 +3210,10 @@ const SCOPED_CSS = `
   width: 26px; height: 26px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   background: #e2e8f0; color: #6b7280;
-  font-size: 12px; font-weight: 800;
+  font-size: 12px; font-weight: 600;
 }
-.avm-step-title { font-size: 12.5px; font-weight: 800; color: #1e1b4b; }
-.avm-step-sub   { font-size: 10.5px; color: #6b7280; }
+.avm-step-title { font-size: 12.5px; font-weight: 600; color: #1e1b4b; letter-spacing: -0.01em; }
+.avm-step-sub   { font-size: 10.5px; font-weight: 400; color: #6b7280; }
 
 .avm-step-violet.avm-step-active { border-color: #405189; }
 .avm-step-violet.avm-step-active .avm-step-num { background: linear-gradient(135deg, #405189, #6691e7); color: #fff; }
@@ -3111,10 +3250,10 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, #dcfce7, #ecfdf5);
   border-bottom: 1px solid #bbf7d0;
 }
-.avm-prev-title { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: #166534; }
+.avm-prev-title { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: #166534; letter-spacing: -0.01em; }
 .avm-prev-check { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
-.avm-prev-chip { padding: 3px 10px; border-radius: 99px; background: #fff; color: #166534; font-size: 11px; font-weight: 700; border: 1px solid #bbf7d0; }
-.avm-prev-toggle { height: 28px; padding: 0 12px; background: #fff; border: 1px solid #bbf7d0; color: #166534; border-radius: 7px; font-family: inherit; font-size: 11.5px; font-weight: 800; cursor: pointer; }
+.avm-prev-chip { padding: 3px 10px; border-radius: 99px; background: #fff; color: #166534; font-size: 11px; font-weight: 500; border: 1px solid #bbf7d0; }
+.avm-prev-toggle { height: 28px; padding: 0 12px; background: #fff; border: 1px solid #bbf7d0; color: #166534; border-radius: 7px; font-family: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; }
 .avm-prev-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
 /* Step-grouped summary — each stage gets a tone-coloured label
    followed by a flat grid of label/value pairs. No per-cell box;
@@ -3123,7 +3262,7 @@ const SCOPED_CSS = `
 .avm-prev-stage { display: flex; flex-direction: column; gap: 6px; }
 .avm-prev-stage + .avm-prev-stage { margin-top: 10px; }
 .avm-prev-stage-label {
-  font-size: 10.5px; font-weight: 800; letter-spacing: .08em;
+  font-size: 10.5px; font-weight: 600; letter-spacing: .08em;
   display: inline-flex; align-items: center;
 }
 .avm-prev-stage.tone-violet .avm-prev-stage-label { color: #5b21b6; }
@@ -3172,31 +3311,31 @@ const SCOPED_CSS = `
 }
 .avm-tab {
   background: none; border: none; padding: 10px 16px;
-  font-family: inherit; font-size: 13px; font-weight: 700;
+  font-family: inherit; font-size: 13px; font-weight: 500;
   color: #94a3b8; cursor: pointer;
   border-bottom: 2.5px solid transparent;
   margin-bottom: -1.5px;
   transition: color .15s, border-color .15s;
 }
 .avm-tab:hover { color: #405189; }
-.avm-tab.on { color: #405189; border-bottom-color: #405189; }
+.avm-tab.on { color: #405189; border-bottom-color: #405189; font-weight: 600; }
 
 /* Pill tabs (Step 2 sub-tabs) */
 .avm-pill-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 .avm-pill {
   background: #eef2ff; color: #405189;
   border: 1px solid #d8e3fa; border-radius: 99px;
-  padding: 7px 14px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  padding: 7px 14px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
   transition: background .15s, border-color .15s;
 }
 .avm-pill:hover { background: #dbe5fc; border-color: #c0cffb; }
-.avm-pill.on { background: linear-gradient(120deg, #405189, #6691e7); color: #fff; border-color: transparent; }
+.avm-pill.on { background: linear-gradient(120deg, #405189, #6691e7); color: #fff; border-color: transparent; font-weight: 600; }
 .avm-sub-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
 .avm-sub-pill {
   display: inline-flex; align-items: center; gap: 6px;
   background: #fff; color: #475569;
   border: 1.5px solid #e2e8f0; border-radius: 8px;
-  padding: 6px 14px; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  padding: 6px 14px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
 }
 .avm-sub-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; display: inline-block; }
 .avm-sub-pill.on { color: #15803d; border-color: #86efac; background: #ecfdf5; }
@@ -3236,8 +3375,8 @@ const SCOPED_CSS = `
 .avm-section-teal   .avm-section-icon { background: linear-gradient(135deg, #14b8a6, #0f766e); }
 .avm-section-green  .avm-section-icon { background: linear-gradient(135deg, #16a34a, #0f8a3e); }
 .avm-section-purple .avm-section-icon { background: linear-gradient(135deg, #6691e7, #405189); }
-.avm-section-title { font-size: 13.5px; font-weight: 800; color: #1e1b4b; }
-.avm-section-sub   { font-size: 11px; color: #6b7280; margin-top: 1px; }
+.avm-section-title { font-size: 13.5px; font-weight: 600; color: #1e1b4b; letter-spacing: -0.01em; }
+.avm-section-sub   { font-size: 11px; font-weight: 400; color: #6b7280; margin-top: 1px; }
 .avm-section-amber .avm-section-title { color: #92400e; }
 .avm-section-amber .avm-section-sub   { color: #b45309; }
 .avm-section-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
@@ -3246,7 +3385,7 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; gap: 5px;
   padding: 7px 14px; border-radius: 8px;
   background: linear-gradient(120deg, #405189 0%, #6691e7 100%); color: #fff; border: none;
-  font-family: inherit; font-size: 12px; font-weight: 800; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
   transition: transform .12s, box-shadow .15s;
 }
 .avm-section-add-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(64,81,137,.35); }
@@ -3256,34 +3395,62 @@ const SCOPED_CSS = `
 .avm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .avm-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 
-.avm-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.avm-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* Labels match the Client / Recruitment master forms: small, uppercase,
+   modest letter-spacing, navy color, lighter weight (500) so the
+   surrounding form chrome doesn't shout at the user. */
 .avm-field-label {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12.5px; font-weight: 600;
-  color: var(--vz-body-color, #495057);
-  margin-bottom: 2px;
+  font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: #405189;
+  margin-bottom: 3px;
 }
-.avm-req { color: #ef4444; font-weight: 700; }
+[data-bs-theme="dark"] .avm-field-label,
+[data-layout-mode="dark"] .avm-field-label { color: #8aa1d9; }
+.avm-req { color: #f06548; font-weight: 600; margin-left: 1px; }
 .avm-field-plus {
   width: 18px; height: 18px;
   border: none; border-radius: 5px;
   background: #405189; color: #fff;
-  font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer;
+  font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
-/* Inputs — Velzon form-control look (white surface, light border, 6px
-   radius). Focus uses the project's primary navy. */
+/* Inputs — mirror .master-modal .form-control from masterFormKit so the
+   wizard reads as part of the same form family as Clients / Recruitment.
+   Subtle blue-tinted surface, indigo focus ring, 10px radius. */
 .avm-input {
   height: 38px; width: 100%;
-  padding: 0 12px;
-  border: 1px solid var(--vz-border-color, #e9ebec);
-  border-radius: 6px;
-  background: var(--vz-card-bg, #fff); color: var(--vz-body-color, #495057);
-  font-family: inherit; font-size: 13px; outline: none;
-  transition: border-color .15s, box-shadow .15s;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, #6691e7 20%, var(--vz-border-color, #e9ebec));
+  border-radius: 10px;
+  background: color-mix(in srgb, #6691e7 5%, var(--vz-card-bg, #fff));
+  color: var(--vz-body-color, #495057);
+  font-family: inherit; font-size: 13px; font-weight: 400; outline: none;
+  box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
 }
-.avm-input::placeholder { color: #b3b3b3; }
-.avm-input:focus { border-color: #405189; box-shadow: 0 0 0 3px rgba(64,81,137,.15); }
+.avm-input::placeholder,
+.avm-modal input::placeholder,
+.avm-modal textarea::placeholder,
+.avm-modal .master-select-placeholder {
+  color: #94a3b8 !important;
+  opacity: 0.45 !important;
+  font-weight: 400 !important;
+}
+.avm-input:hover:not(:disabled):not([readonly]) {
+  border-color: rgba(99,102,241,0.55);
+  box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+}
+.avm-input:focus {
+  background: var(--vz-card-bg, #fff);
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
+}
+[data-bs-theme="dark"] .avm-input,
+[data-layout-mode="dark"] .avm-input {
+  background: color-mix(in srgb, #6691e7 12%, var(--vz-card-bg));
+}
 
 /* Inline per-field error — red text + warning icon under the input,
    plus a red border on the input itself (matches the Add Product form). */
@@ -3361,7 +3528,7 @@ const SCOPED_CSS = `
 .avm-doctable-banner {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 8px 14px; border-radius: 8px;
-  font-size: 12.5px; font-weight: 800; letter-spacing: .04em;
+  font-size: 12.5px; font-weight: 500; letter-spacing: .04em;
   align-self: flex-start;
 }
 .avm-doctable-banner.tone-amber { background: linear-gradient(135deg, #fef3c7, #fef9c3); color: #92400e; border: 1px solid #fde68a; }
@@ -3405,10 +3572,10 @@ const SCOPED_CSS = `
 }
 .avm-product-row.on { border-color: #16a34a; background: #ecfdf5; }
 .avm-product-row input { width: 18px; height: 18px; accent-color: #16a34a; }
-.avm-product-code { font-size: 11px; font-weight: 800; color: #405189; letter-spacing: .06em; }
-.avm-product-name { font-size: 13px; font-weight: 700; color: #1e1b4b; }
+.avm-product-code { font-size: 11px; font-weight: 600; color: #405189; letter-spacing: .06em; }
+.avm-product-name { font-size: 13px; font-weight: 500; color: #1e1b4b; }
 .avm-product-info { display: inline-flex; gap: 6px; }
-.avm-product-tag { padding: 3px 9px; border-radius: 99px; background: #eef2ff; color: #405189; font-size: 10.5px; font-weight: 700; }
+.avm-product-tag { padding: 3px 9px; border-radius: 99px; background: #eef2ff; color: #405189; font-size: 10.5px; font-weight: 500; }
 
 /* Footer */
 .avm-foot {
@@ -3420,7 +3587,7 @@ const SCOPED_CSS = `
 .avm-btn-ghost, .avm-btn-outline, .avm-btn-primary {
   display: inline-flex; align-items: center; gap: 6px;
   height: 40px; padding: 0 18px;
-  font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
   border-radius: 10px;
   transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
 }
@@ -3529,7 +3696,7 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, #2b3a85, #6691e7);
   color: #fff;
 }
-.avm-qa-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 800; }
+.avm-qa-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 .avm-qa-title i { font-size: 18px; }
 .avm-qa-close {
   width: 30px; height: 30px; border-radius: 8px;
@@ -3572,7 +3739,7 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, #2b3a85, #6691e7);
   color: #fff;
 }
-.avm-cp-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 800; }
+.avm-cp-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 .avm-cp-title i { font-size: 18px; }
 .avm-cp-close {
   width: 30px; height: 30px; border-radius: 8px;

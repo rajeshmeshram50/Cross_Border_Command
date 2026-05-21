@@ -1688,10 +1688,10 @@ export default function AddProductModal(props: {
         </div>
 
         {/* ─── Footer ─── */}
-        <div className="apm-foot">
-          <div className="apm-foot-left">
-            <button className="apm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-          </div>
+        {/* Footer Cancel removed — the header ✕ already dismisses the
+            modal, and shipping two Cancel paths confused users. The
+            action cluster (Previous + Save) now sits flush right. */}
+        <div className="apm-foot apm-foot-actions-only">
           <div className="apm-foot-right">
             {(step === 2 || (step === 1 && tab !== 'core')) && (
               <button
@@ -3070,6 +3070,9 @@ const SCOPED_CSS = `
   padding: 14px 22px;
   background: #fff; border-top: 1px solid #ede9fe;
 }
+/* When Cancel is gone the action cluster sits flush right so the
+   right column doesn't visually drift toward center. */
+.apm-foot.apm-foot-actions-only { justify-content: flex-end; }
 .apm-foot-left  { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .apm-foot-right { display: flex; align-items: center; gap: 8px; }
 .apm-foot-error {
