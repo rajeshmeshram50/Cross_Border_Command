@@ -36,9 +36,40 @@ const HorizontalLayout = (props : any) => {
     // sits near a viewport edge — common for branch/employee users whose
     // fewer top-level items shift HR/More leftward — the wide mega-menu
     // clips. Measure after layout and shift the transform by any overflow.
+    //
+    // Additionally, align the leaves panel directly under the currently
+    // active category button. Without this, the wrap's flex-start alignment
+    // would dock the leaves to the strip's left edge regardless of which
+    // category was open. We compute the offset of the active cat button
+    // within the cats strip and apply it as `margin-left` on the leaves.
     useLayoutEffect(() => {
         const menus = document.querySelectorAll('.hr-mega-menu.show') as NodeListOf<HTMLElement>;
         menus.forEach(menu => {
+            // Position the leaves panel under the active cat button first,
+            // BEFORE we measure the menu for overflow — the leaves width is
+            // part of the menu's bounding box only after it's placed.
+            const wrap = menu.querySelector('.hr-mega-wrap') as HTMLElement | null;
+            const cats = wrap?.querySelector('.hr-mega-cats') as HTMLElement | null;
+            const leaves = wrap?.querySelector('.hr-mega-leaves') as HTMLElement | null;
+            const activeBtn = cats?.querySelector('.hr-mega-cat-btn.is-active') as HTMLElement | null;
+            if (cats && leaves && activeBtn) {
+                const catsRect = cats.getBoundingClientRect();
+                const btnRect = activeBtn.getBoundingClientRect();
+                const leavesWidth = leaves.getBoundingClientRect().width;
+                // Center leaves under the active button, but clamp so the
+                // leaves panel never extends past the cats strip on either
+                // side (the panels are visually paired — looks odd if the
+                // leaves drift wider than the strip above).
+                const btnCenter = btnRect.left + btnRect.width / 2 - catsRect.left;
+                let leftOffset = btnCenter - leavesWidth / 2;
+                const maxLeft = catsRect.width - leavesWidth;
+                if (leftOffset < 0) leftOffset = 0;
+                if (leftOffset > maxLeft) leftOffset = Math.max(0, maxLeft);
+                leaves.style.marginLeft = `${leftOffset}px`;
+            } else if (leaves) {
+                leaves.style.marginLeft = '';
+            }
+
             menu.style.transform = '';
             const rect = menu.getBoundingClientRect();
             const vw = window.innerWidth;
