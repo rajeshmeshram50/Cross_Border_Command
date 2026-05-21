@@ -2125,11 +2125,30 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
       if (d.issueDate > today) next.issueDate = 'Issue date cannot be in the future';
     }
     if (!d.expiryDate)       next.expiryDate = 'Expiry date is required';
+    else {
+      // Expiry must not be earlier than today — a document that has
+      // already expired isn't useful and shouldn't be captured against
+      // an active KYC record.
+      const today = new Date().toISOString().slice(0, 10);
+      if (d.expiryDate < today) next.expiryDate = 'Expiry date cannot be in the past';
+    }
     // Cross-field check: expiry must not be earlier than issue date.
     // Dates come from MasterDatePicker as YYYY-MM-DD strings, which
     // sort lexicographically — direct string compare is safe.
     if (d.issueDate && d.expiryDate && d.expiryDate < d.issueDate) {
       next.expiryDate = 'Expiry date must be on or after the issue date';
+    }
+    /* Attachment is mandatory for Company Due Diligence documents — the
+     * uploaded proof is the whole point of the KYC checklist. Trade
+     * Licence keeps the attachment optional (some licences are number-
+     * only references). On edit, an existing server-side attachment
+     * (still in place) counts as satisfying the requirement. */
+    if (sub === 'company-dd') {
+      const hasNew      = !!d.attachment;
+      const hasExisting = !!editing?.attachment_url && !removeAttachment;
+      if (!hasNew && !hasExisting) {
+        next.attachment = 'Attachment is required for Company Due Diligence documents';
+      }
     }
     setErrs(next);
     if (Object.keys(next).length > 0) return;
@@ -2265,10 +2284,16 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
               />
             </Field>
             <Field label="Expiry Date" required error={errs.expiryDate}>
-              {/* minDate forces expiry ≥ issue date when both are picked. */}
+              {/* minDate forces expiry ≥ the later of (issue date, today)
+                  — a document can't be issued in the future, and it
+                  can't already be expired. Submit-time validator below
+                  is the backstop. */}
               <MasterDatePicker
                 value={d.expiryDate}
-                minDate={d.issueDate || undefined}
+                minDate={(() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  return d.issueDate && d.issueDate > today ? d.issueDate : today;
+                })()}
                 invalid={!!errs.expiryDate}
                 onChange={(v: string) => set('expiryDate', v)}
                 placeholder="DD/MM/YYYY"
@@ -2276,6 +2301,11 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
             </Field>
             <KycFileSlot
               label="Attachment"
+              /* Company Due Diligence requires the proof file — the
+                 whole point of the DD checklist is the uploaded
+                 document, so the red asterisk + submit-time validator
+                 enforce it. Trade Licence keeps it optional. */
+              required={sub === 'company-dd'}
               kind="doc"
               accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
               value={d.attachment}
