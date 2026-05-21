@@ -843,22 +843,25 @@ const SCOPED_CSS = `
 .smc-table-wrap .table thead.table-light tr {
   background: linear-gradient(110deg, #f5f0ff 0%, #ede9fe 50%, #e0d7fc 100%) !important;
 }
+/* Typography matches the HR Employees / Master pages — every cell +
+   header reads at 13px with header weight 600 so the table looks like
+   a single grid (consistent with Clients / Branches / Employees). */
 .smc-table-wrap .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
   background: transparent !important;
   color: #5b21b6 !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  letter-spacing: .02em !important;
-  padding: 11px 14px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: .01em !important;
+  padding: 12px 14px !important;
   line-height: 1.3 !important;
   border-bottom: 1px solid rgba(124,58,237,0.18) !important;
   white-space: nowrap;
   text-transform: uppercase;
   vertical-align: middle !important;
 }
-.smc-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; color: #6d28d9; }
+.smc-table-wrap .table thead th i { font-size: 13px; opacity: 0.55; color: #6d28d9; }
 /* Body — white rows with soft lavender hover. */
 .smc-table-wrap .table tbody tr {
   background: transparent;
@@ -872,8 +875,10 @@ const SCOPED_CSS = `
   background: transparent !important;
   padding: 12px 14px !important;
   font-size: 13px;
+  font-weight: 500;
   color: var(--vz-body-color);
   vertical-align: middle;
+  line-height: 1.45;
   border-bottom: 1px solid rgba(124,58,237,0.08) !important;
   white-space: nowrap;
 }
