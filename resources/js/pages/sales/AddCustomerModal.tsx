@@ -1657,8 +1657,15 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                       s ? (() => { const [y, m] = s.split('-'); return `${m}/${y}`; })() : 'N/A';
                     const expLabel = fmtMonthYear(d.expiry_date);
                     const issLabel = fmtMonthYear(d.issue_date);
-                    const expClass = d.expiry_date ? 'acm-expiry-date' : 'acm-expiry-na';
-                    const issClass = d.issue_date  ? 'acm-expiry-date' : 'acm-expiry-na';
+                    // Date pill colour: issue dates are informational
+                    // (blue), expiry dates are contextual — green when
+                    // still in the future, red only after they've
+                    // actually expired, grey when missing.
+                    const todayStr = new Date().toISOString().slice(0, 10);
+                    const expClass = !d.expiry_date ? 'acm-expiry-na'
+                      : d.expiry_date < todayStr ? 'acm-expiry-past'
+                      : 'acm-expiry-future';
+                    const issClass = d.issue_date ? 'acm-issue-date' : 'acm-expiry-na';
                     return (
                       <tr key={d.id}>
                         <td>{String(sr).padStart(2, '0')}</td>
@@ -3265,17 +3272,47 @@ const SCOPED_CSS = `
 
 /* Tables */
 .acm-table-wrap { width: 100%; overflow-x: auto; }
-.acm-table { width: 100%; border-collapse: collapse; font-size: 11.5px; min-width: 900px; }
+.acm-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 900px; font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif; }
 .acm-table thead tr { background: linear-gradient(180deg, #faf7ff, #f5efff); }
-.acm-table thead th { padding: 13px 14px; text-align: left; font-size: 9.5px; font-weight: 800; letter-spacing: .1em; color: #6b7280; text-transform: uppercase; border-bottom: 1px solid #ede9fe; white-space: nowrap; }
-.acm-table tbody td { padding: 13px 14px; border-bottom: 1px solid #f5f3ff; color: #3b0764; vertical-align: middle; font-size: 11.5px; }
+.acm-table thead th {
+  padding: 14px 16px;
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  color: #5b21b6;
+  text-transform: uppercase;
+  border-bottom: 1.5px solid #e9d5ff;
+  white-space: nowrap;
+}
+.acm-table tbody td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f5f3ff;
+  color: #1f2937;
+  vertical-align: middle;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.45;
+}
 .acm-table tbody tr:last-child td { border-bottom: none; }
 .acm-table tbody tr:hover td { background: #faf7ff; }
 .acm-empty-row td { text-align: center; color: #9ca3af; padding: 26px 14px !important; font-size: 11.5px; font-style: italic; background: #fafaff; }
 .acm-empty-row strong { color: #6d28d9; font-style: normal; }
 
 /* Pills + chips */
-.acm-doc-code { display: inline-block; padding: 3px 9px; border-radius: 6px; background: linear-gradient(135deg, #f5f3ff, #ede9fe); color: #5b21b6; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 700; border: 1px solid #c4b5fd; letter-spacing: .02em; }
+.acm-doc-code {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  color: #5b21b6;
+  font-family: ui-monospace, 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  border: 1px solid #c4b5fd;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
 .acm-status-toggle { display: inline-flex; gap: 6px; align-items: center; }
 .acm-status-mandatory, .acm-status-optional { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 10.5px; font-weight: 700; border: 1px solid transparent; }
 .acm-status-mandatory { background: #f5f3ff; color: #9ca3af; border-color: #e5e1f3; }
@@ -3283,9 +3320,23 @@ const SCOPED_CSS = `
 .acm-status-optional { background: #fff; color: #9ca3af; border-color: #e5e1f3; }
 .acm-status-optional.is-on { background: #fff; color: #374151; border-color: #9ca3af; font-weight: 700; }
 .acm-status-active { display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px; border-radius: 20px; font-size: 10.5px; font-weight: 700; background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #15803d; border: 1px solid #86efac; }
-.acm-expiry-na, .acm-expiry-date, .acm-expiry-varies { display: inline-block; padding: 3px 11px; border-radius: 20px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
-.acm-expiry-na { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
-.acm-expiry-date { background: linear-gradient(135deg,#fee2e2,#fecaca); color: #b91c1c; border: 1px solid #fca5a5; }
+.acm-expiry-na, .acm-expiry-date, .acm-expiry-varies, .acm-expiry-future, .acm-expiry-past, .acm-issue-date {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: .02em;
+}
+.acm-expiry-na     { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
+.acm-issue-date    { background: linear-gradient(135deg,#e0e7ff,#c7d2fe); color: #3730a3; border: 1px solid #a5b4fc; }
+.acm-expiry-future { background: linear-gradient(135deg,#d1fae5,#a7f3d0); color: #047857; border: 1px solid #6ee7b7; }
+.acm-expiry-past   { background: linear-gradient(135deg,#fee2e2,#fecaca); color: #b91c1c; border: 1px solid #fca5a5; }
+/* Legacy class — used by the design-only Trade Licence placeholder
+   table. Kept around so old data still renders consistently with the
+   new contextual colours; treats any non-empty date as future. */
+.acm-expiry-date   { background: linear-gradient(135deg,#d1fae5,#a7f3d0); color: #047857; border: 1px solid #6ee7b7; }
 .acm-expiry-varies { background: linear-gradient(135deg,#fef3c7,#fde68a); color: #92400e; border: 1px solid #fcd34d; }
 
 /* Action buttons */
@@ -3330,8 +3381,14 @@ const SCOPED_CSS = `
 .acm-page-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 /* Attachment link */
-.acm-attach-link { display: inline-flex; align-items: center; gap: 5px; color: #2563eb; font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; background: none; border: none; padding: 0; }
-.acm-attach-link:hover { color: #1d4ed8; text-decoration: underline; }
+.acm-attach-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: #7c3aed; font-family: inherit;
+  font-size: 12px; font-weight: 700;
+  cursor: pointer; background: none; border: none; padding: 0;
+  text-decoration: none;
+}
+.acm-attach-link:hover { color: #5b21b6; text-decoration: underline; }
 
 /* Trade docs table */
 .acm-td-table col.col-srno { width: 52px; }
@@ -3879,8 +3936,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-status-mandatory { background: transparent; color: #64748b; border-color: rgba(255,255,255,0.10); }
 [data-bs-theme="dark"] .acm-status-optional.is-on { background: rgba(255,255,255,0.06); color: #cbd5e1; border-color: rgba(255,255,255,0.20); }
 [data-bs-theme="dark"] .acm-status-optional { background: transparent; color: #64748b; border-color: rgba(255,255,255,0.10); }
-[data-bs-theme="dark"] .acm-expiry-na { background: rgba(255,255,255,0.05); color: #94a3b8; border-color: rgba(255,255,255,0.10); }
-[data-bs-theme="dark"] .acm-expiry-date { background: rgba(239,68,68,0.18); color: #fca5a5; border-color: rgba(239,68,68,0.40); }
+[data-bs-theme="dark"] .acm-expiry-na     { background: rgba(255,255,255,0.05); color: #94a3b8; border-color: rgba(255,255,255,0.10); }
+[data-bs-theme="dark"] .acm-issue-date    { background: rgba(99,102,241,0.20); color: #c7d2fe; border-color: rgba(99,102,241,0.40); }
+[data-bs-theme="dark"] .acm-expiry-future { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-expiry-past   { background: rgba(239,68,68,0.18); color: #fca5a5; border-color: rgba(239,68,68,0.40); }
+[data-bs-theme="dark"] .acm-expiry-date   { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
 [data-bs-theme="dark"] .acm-expiry-varies { background: rgba(245,158,11,0.18); color: #fcd34d; border-color: rgba(245,158,11,0.40); }
 [data-bs-theme="dark"] .acm-doc-code { background: rgba(167,139,250,0.15); color: #c4b5fd; border-color: rgba(167,139,250,0.30); }
 [data-bs-theme="dark"] .acm-pill-yes { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
