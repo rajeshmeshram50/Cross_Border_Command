@@ -183,7 +183,6 @@ function ExpenseClaimRowView({
   const tone = STATUS_TONE[c.status];
   const empName = c.employee_name || fallbackName || ('#' + c.employee_id);
   const empInitials = initialsFromName(c.employee_name, fallbackInitials);
-  const proof = c.attachments?.[0];
 
   const [menuOpen, setMenuOpen] = useState(false);
   // Confirmation modal for both approve & reject. The action shape carries
@@ -256,22 +255,36 @@ function ExpenseClaimRowView({
       <td className="text-muted">{fmtDate(c.expense_date)}</td>
       <td className="fw-bold">₹{Number(c.amount || 0).toLocaleString('en-IN')}</td>
       <td>
-        {proof?.url ? (
-          <a
-            href={withAuthToken(proof.url)}
-            target="_blank"
-            rel="noreferrer"
-            className="d-inline-flex align-items-center gap-1 text-decoration-none"
-            style={{
-              fontSize: 11, padding: '3px 9px', borderRadius: 8,
-              background: 'rgba(239,68,68,0.10)', color: '#dc2626',
-              fontWeight: 600, border: '1px solid rgba(239,68,68,0.25)',
-            }}
-          >
-            <i className="ri-file-text-line" />
-            {(proof.name || 'receipt').slice(0, 14)}
-            {(c.attachments?.length ?? 0) > 1 && <small className="ms-1 text-muted">+{(c.attachments?.length ?? 0) - 1}</small>}
-          </a>
+        {(c.attachments?.length ?? 0) > 0 ? (
+          /* Previously the cell rendered just the FIRST attachment as a
+             link and showed "+N" for the rest — so any claim with
+             multiple receipts hid every attachment past the first one,
+             and the user had no way to open them from the list view.
+             Render every attachment as its own clickable chip; the
+             flex-wrap keeps the column readable when there are several. */
+          <div className="d-flex flex-wrap align-items-center" style={{ gap: 4, maxWidth: 220 }}>
+            {(c.attachments ?? []).map((att, idx) => (
+              att?.url ? (
+                <a
+                  key={`${att.url}-${idx}`}
+                  href={withAuthToken(att.url)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="d-inline-flex align-items-center gap-1 text-decoration-none"
+                  title={att.name || `Attachment ${idx + 1}`}
+                  style={{
+                    fontSize: 11, padding: '3px 9px', borderRadius: 8,
+                    background: 'rgba(239,68,68,0.10)', color: '#dc2626',
+                    fontWeight: 600, border: '1px solid rgba(239,68,68,0.25)',
+                    maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}
+                >
+                  <i className="ri-file-text-line" />
+                  {(att.name || `Receipt ${idx + 1}`).slice(0, 14)}
+                </a>
+              ) : null
+            ))}
+          </div>
         ) : (
           <span className="text-muted" style={{ fontSize: 11 }}>—</span>
         )}

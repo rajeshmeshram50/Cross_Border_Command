@@ -368,6 +368,10 @@ export default function AddVendorModal(props: {
        /vendors/{id}. Empty for freshly-added rows that haven't been
        saved yet. */
     attachmentPath?: string;
+    /* Freshly-picked File — set while the popup is open so the
+       FileChooser can render a blob: preview URL with View + Delete
+       buttons before the row is persisted. Cleared on save. */
+    attachmentFile?: File | null;
   };
   const [extraContacts, setExtraContacts] = useState<ContactRow[]>([]);
 
@@ -376,7 +380,7 @@ export default function AddVendorModal(props: {
      so it always stays centred when the form is long. */
   const [contactPopupOpen, setContactPopupOpen] = useState(false);
   const [contactDraft, setContactDraft] = useState<Omit<ContactRow, 'id'>>({
-    name: '', designation: '', phone: '', email: '', whatsapp: true, attachmentName: '',
+    name: '', designation: '', phone: '', email: '', whatsapp: true, attachmentName: '', attachmentFile: null,
   });
 
 
@@ -1277,7 +1281,7 @@ export default function AddVendorModal(props: {
   const removeMapRow = (id: string) => setProductMappings(prev => prev.filter(r => r.id !== id));
 
   const openContactPopup = () => {
-    setContactDraft({ name: '', designation: '', phone: '', email: '', whatsapp: true, attachmentName: '' });
+    setContactDraft({ name: '', designation: '', phone: '', email: '', whatsapp: true, attachmentName: '', attachmentFile: null });
     setContactPopupOpen(true);
   };
   const saveContactDraft = () => {
@@ -1769,7 +1773,7 @@ export default function AddVendorModal(props: {
                                   <td><span className="font-monospace fs-13">{r.phone || '—'}</span></td>
                                   <td>{r.email || '—'}</td>
                                   <td>
-                                    <span className={`badge ${r.whatsapp ? 'bg-success-subtle text-success' : 'bg-light text-muted'}`} style={{ padding: '4px 10px' }}>
+                                    <span className={`avm-pill ${r.whatsapp ? 'avm-pill-success' : 'avm-pill-muted'}`}>
                                       {r.whatsapp ? '✓ Yes' : '— No'}
                                     </span>
                                   </td>
@@ -2180,6 +2184,14 @@ type ContactDraft = {
   email: string;
   whatsapp: boolean;
   attachmentName: string;
+  /* Newly picked File while the popup is open. The wider ContactRow
+   * carries this too so the just-added row keeps a working "View" link
+   * via a blob URL until the next /vendors/{id} reload. */
+  attachmentFile?: File | null;
+  /* Server-stored path on edit. Drives the FileChooser's "existing"
+   * state so the user sees the previously-attached file with View +
+   * Delete actions instead of an empty input. */
+  attachmentPath?: string;
 };
 function ContactAddPopup(props: {
   draft: ContactDraft;
@@ -2189,10 +2201,6 @@ function ContactAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof ContactDraft>(k: K, v: ContactDraft[K]) => setDraft({ ...draft, [k]: v });
-  const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) set('attachmentName', f.name);
-  };
   return createPortal((
     /* Backdrop click is intentionally NOT wired to onClose so an
        accidental outside click doesn't wipe an in-flight contact entry.
@@ -2244,11 +2252,24 @@ function ContactAddPopup(props: {
               </div>
             </Field>
             <Field label="Attachments">
-              <div className="avm-filechooser">
-                <input type="file" className="avm-filechooser-input" onChange={onPickFile} />
-                <span className="avm-filechooser-icon"><i className="ri-attachment-line" /></span>
-                <span className="avm-filechooser-text">{draft.attachmentName || 'No files attached'}</span>
-              </div>
+              {/* FileChooser provides the empty-state input + populated-
+                 state filename / View / Delete actions. Swapping in here
+                 so the contact popup matches the rest of the wizard's
+                 file fields and the user can preview / remove an
+                 attachment without retyping the form. */}
+              <FileChooser
+                file={draft.attachmentFile ?? null}
+                existingPath={draft.attachmentFile ? undefined : draft.attachmentPath}
+                onPick={(f) => setDraft({
+                  ...draft,
+                  attachmentFile: f,
+                  attachmentName: f?.name ?? '',
+                  // Picking null = delete. Drop the saved server path too
+                  // so the row doesn't silently re-attach it on Save.
+                  attachmentPath: f ? draft.attachmentPath : undefined,
+                })}
+                placeholder="No files attached"
+              />
             </Field>
           </div>
         </div>
@@ -2607,7 +2628,7 @@ function DdTable(props: {
               <td>{r.issuingAuthority}</td>
               <td>{r.expiry || 'N/A'}</td>
               <td>
-                <span className={`badge ${r.mandatory ? 'bg-success-subtle text-success' : 'bg-light text-muted'} border`} style={{ padding: '4px 10px' }}>
+                <span className={`avm-pill ${r.mandatory ? 'avm-pill-success' : 'avm-pill-muted'}`}>
                   {r.mandatory ? '✓ Mandatory' : 'Optional'}
                 </span>
               </td>
@@ -2686,7 +2707,7 @@ function OwnerKycTable(props: {
               <td>{r.issueDate || '—'}</td>
               <td>{r.expiry || 'N/A'}</td>
               <td>
-                <span className={`badge ${r.status === 'Active' ? 'bg-success-subtle text-success' : 'bg-light text-muted'} border`} style={{ padding: '4px 10px' }}>
+                <span className={`avm-pill ${r.status === 'Active' ? 'avm-pill-success' : 'avm-pill-muted'}`}>
                   {r.status}
                 </span>
               </td>
@@ -2858,7 +2879,7 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[]; onRemove?: (id: strin
               <td>{String(i + 1).padStart(2, '0')}</td>
               <td><span className="font-monospace fs-13">{r.gstNumber}</span></td>
               <td>
-                <span className={`badge ${r.status === 'Active' ? 'bg-success-subtle text-success' : (r.status === 'Suspended' ? 'bg-warning-subtle text-warning' : 'bg-danger-subtle text-danger')} border`} style={{ padding: '4px 10px' }}>
+                <span className={`avm-pill ${r.status === 'Active' ? 'avm-pill-success' : (r.status === 'Suspended' ? 'avm-pill-warning' : 'avm-pill-danger')}`}>
                   {r.status}
                 </span>
               </td>
@@ -2921,7 +2942,7 @@ function TradeDocsTable(props: {
                 </div>
               </td>
               <td>
-                <span className={`badge ${r.status === 'Sent' ? 'bg-success-subtle text-success' : (r.status === 'Signed' ? 'bg-primary-subtle text-primary' : 'bg-light text-muted')} border`} style={{ padding: '4px 10px' }}>
+                <span className={`avm-pill ${r.status === 'Sent' ? 'avm-pill-success' : (r.status === 'Signed' ? 'avm-pill-primary' : 'avm-pill-muted')}`}>
                   {r.status}
                 </span>
               </td>
@@ -3046,13 +3067,13 @@ function DocTable(props: {
                   <td><strong>{r.name}</strong></td>
                   <td>{r.authority}</td>
                   <td>
-                    <span className={`badge ${expiryDanger ? 'bg-danger-subtle text-danger' : 'bg-light text-muted'} border`} style={{ padding: '4px 10px' }}>
+                    <span className={`avm-pill ${expiryDanger ? 'avm-pill-danger' : 'avm-pill-muted'}`}>
                       {r.expiry}
                     </span>
                   </td>
                   {props.showMandatory && (
                     <td>
-                      <span className={`badge ${r.mandatory ? 'bg-success-subtle text-success' : 'bg-light text-muted'} border`} style={{ padding: '4px 10px' }}>
+                      <span className={`avm-pill ${r.mandatory ? 'avm-pill-success' : 'avm-pill-muted'}`}>
                         {r.mandatory ? '✓ Mandatory' : 'Optional'}
                       </span>
                     </td>
@@ -3785,6 +3806,11 @@ const SCOPED_CSS = `
 .avm-radio-row { display: inline-flex; align-items: center; gap: 16px; height: 38px; }
 .avm-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #1e1b4b; cursor: pointer; }
 .avm-radio input { width: 16px; height: 16px; accent-color: #405189; }
+/* Dark-theme: navy text turns invisible on the modal's dark background.
+ * Lift Yes / No labels to a high-contrast off-white and tint the radio
+ * accent to the indigo used elsewhere in the wizard. */
+[data-bs-theme="dark"] .avm-radio { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-radio input { accent-color: #818cf8; }
 
 /* File chooser — same chrome as the inputs, dashed border to signal upload */
 .avm-filechooser {
@@ -4364,4 +4390,32 @@ const SCOPED_CSS = `
   color: #fde68a;
   border-color: #78521a;
 }
+
+/* Status / mandatory / whatsapp pills used inside the vendor modal tables.
+ * Custom-named classes (no collision with Bootstrap utility classes like
+ * .bg-success-subtle / .text-muted) so the rendering is identical across
+ * Chrome, Edge and any cache state. Earlier the badges depended on
+ * Bootstrap's --bs-*-subtle CSS vars that Chrome could resolve to a
+ * near-white background, producing the "empty pill" the user reported. */
+.avm-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: .01em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.avm-pill-success { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+.avm-pill-warning { background: #fef3c7; color: #854d0e; border-color: #fde68a; }
+.avm-pill-danger  { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.avm-pill-primary { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.avm-pill-muted   { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+[data-bs-theme="dark"] .avm-pill-success { background: #0c2e1d; color: #4ade80; border-color: #15803d; }
+[data-bs-theme="dark"] .avm-pill-warning { background: #3a2a08; color: #fbbf24; border-color: #b45309; }
+[data-bs-theme="dark"] .avm-pill-danger  { background: #3a0e0e; color: #f87171; border-color: #b91c1c; }
+[data-bs-theme="dark"] .avm-pill-primary { background: #0f1e3a; color: #60a5fa; border-color: #1d4ed8; }
+[data-bs-theme="dark"] .avm-pill-muted   { background: rgba(255,255,255,0.06); color: #cbd5e1; border-color: rgba(255,255,255,0.14); }
 `;

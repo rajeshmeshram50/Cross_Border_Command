@@ -262,7 +262,23 @@ class BranchController extends Controller
             if (Settings::shouldSendMail('newUser')) {
                 try {
                     $clientName = \App\Models\Client::find($clientId)?->org_name ?? 'Your Organization';
-                    Mail::to($request->user_email)->send(new WelcomeCredentialsMail(
+
+                    /* Mail goes to the branch USER who'll actually log in
+                     * (user_email), and is CC'd to the branch's own
+                     * organisation inbox (the `email` field on the
+                     * Branch Details form, e.g. ops@gurgaon.acme.com)
+                     * when one was provided AND it's a different
+                     * mailbox from the user. That gives the branch
+                     * admin / operations inbox a record of the
+                     * credentials handover without duplicating the
+                     * message to the same address. */
+                    $branchEmail = trim((string) $request->email);
+                    $userEmail   = trim((string) $request->user_email);
+                    $mail = Mail::to($userEmail);
+                    if ($branchEmail !== '' && strcasecmp($branchEmail, $userEmail) !== 0) {
+                        $mail = $mail->cc($branchEmail);
+                    }
+                    $mail->send(new WelcomeCredentialsMail(
                         $request->user_name,
                         $request->user_email,
                         $request->user_password,
@@ -274,6 +290,7 @@ class BranchController extends Controller
                     Log::warning('Branch welcome mail failed', [
                         'branch_id' => $branch->id,
                         'user_email' => $request->user_email,
+                        'branch_email' => $request->email,
                         'error' => $e->getMessage(),
                     ]);
                 }

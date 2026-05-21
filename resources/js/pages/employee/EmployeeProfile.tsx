@@ -1307,16 +1307,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const blankDraft = (): ClaimDraft => ({
     employee: employeeId,
     category: '',
-    // Currency + payment used to default to 'INR' / 'UPI' which made
-    // them look like "the user already picked something" — the dropdowns
-    // need an explicit choice. Start empty so the placeholder text shows
-    // and the user has to click in.
+    // Currency, payment, and date all start empty so every field reads
+    // as "untouched" with its placeholder visible. Previously currency/
+    // payment defaulted to INR/UPI and date defaulted to today —
+    // people submitted with wrong defaults assuming they'd been filled
+    // in deliberately. Force an explicit choice on each.
     currency: '',
     project: '',
     payment: '',
     title: '',
     amount: '',
-    date: new Date().toISOString().slice(0, 10),
+    date: '',
     vendor: '',
     purpose: '',
     saved: false,

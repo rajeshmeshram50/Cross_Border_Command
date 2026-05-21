@@ -789,16 +789,18 @@ const SCOPED_CSS = `
 .smcg-step[data-n="1"] .smcg-step-tag-dot { background: #405189; }
 .smcg-step[data-n="1"] .smcg-step-tag { color: #405189; }
 
-/* Tile 3 — Amber (Compliance & Risk Details — risk-themed warm tone). */
+/* Tile 3 — Rose / Crimson (Compliance & Risk Details — warning tone
+   that reads as "risk" without clashing with the emerald theme like
+   the previous amber did). */
 .smcg-step[data-n="2"] {
-  border-color: rgba(247,184,75,0.25);
-  border-left-color: #d97a08;
+  border-color: rgba(225,29,72,0.25);
+  border-left-color: #e11d48;
 }
-.smcg-step[data-n="2"]:hover { box-shadow: 0 8px 22px rgba(247,184,75,0.25), 0 2px 6px rgba(247,184,75,0.14); }
-.smcg-step[data-n="2"] .smcg-step-num  { background: linear-gradient(135deg, #f7b84b, #ffd47a); box-shadow: 0 3px 8px rgba(247,184,75,0.30); }
-.smcg-step[data-n="2"] .smcg-step-name { color: #d97a08; }
-.smcg-step[data-n="2"] .smcg-step-tag-dot { background: #d97a08; }
-.smcg-step[data-n="2"] .smcg-step-tag { color: #d97a08; }
+.smcg-step[data-n="2"]:hover { box-shadow: 0 8px 22px rgba(225,29,72,0.22), 0 2px 6px rgba(225,29,72,0.14); }
+.smcg-step[data-n="2"] .smcg-step-num  { background: linear-gradient(135deg, #e11d48, #f43f5e); box-shadow: 0 3px 8px rgba(225,29,72,0.30); }
+.smcg-step[data-n="2"] .smcg-step-name { color: #be123c; }
+.smcg-step[data-n="2"] .smcg-step-tag-dot { background: #e11d48; }
+.smcg-step[data-n="2"] .smcg-step-tag { color: #be123c; }
 
 /* Tile 4 — Violet (Shipment & Export Readiness — "final execution"). */
 .smcg-step[data-n="3"] {
@@ -1259,23 +1261,22 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .smcg-step[data-n="0"] { border-color: rgba(16,185,129,0.40); border-left-color: #10b981; }
 [data-bs-theme="dark"] .smcg-step[data-n="1"] { border-color: rgba(102,145,231,0.40); border-left-color: #6691e7; }
-/* Tile 3 (Compliance & Risk) — the light-mode amber/yellow read as
-   harsh and out-of-place against the dark emerald wash. Swapped to
-   a muted coral-orange so it still reads as a warm "warning" tone
-   without the bright lemon yellow that clashed with the theme. */
-[data-bs-theme="dark"] .smcg-step[data-n="2"] { border-color: rgba(251,146,60,0.45); border-left-color: #fb923c; }
+/* Tile 3 (Compliance & Risk) — rose / crimson palette in dark mode.
+   Reads as a clear warning accent against the dark emerald wash
+   without the harsh yellow of the original amber. */
+[data-bs-theme="dark"] .smcg-step[data-n="2"] { border-color: rgba(251,113,133,0.45); border-left-color: #fb7185; }
 [data-bs-theme="dark"] .smcg-step[data-n="3"] { border-color: rgba(167,139,250,0.40); border-left-color: #a78bfa; }
 [data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-name { color: #6ee7b7; }
 [data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-name { color: #93b4f0; }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-name { color: #fdba74; }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-name { color: #fda4af; }
 [data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-name { color: #c4b5fd; }
 [data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-tag     { color: #6ee7b7; }
 [data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-tag     { color: #93b4f0; }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag     { color: #fdba74; }
-/* Badge "3" number tile + tag dot — also coral-orange so the whole
-   tile reads as one cohesive warm accent in dark mode. */
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-num    { background: linear-gradient(135deg, #fb923c, #fdba74); box-shadow: 0 3px 8px rgba(251,146,60,0.40); }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag-dot { background: #fb923c; }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag     { color: #fda4af; }
+/* Badge "3" number tile + tag dot — rose / crimson so the whole tile
+   reads as one cohesive warning accent in dark mode. */
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-num    { background: linear-gradient(135deg, #fb7185, #fda4af); box-shadow: 0 3px 8px rgba(251,113,133,0.40); }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag-dot { background: #fb7185; }
 [data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-tag     { color: #c4b5fd; }
 [data-bs-theme="dark"] .smcg-step-desc { color: #cbd5e1; }
 [data-bs-theme="dark"] .smcg-step-arrow { color: #ccfbf1; }
@@ -1385,9 +1386,22 @@ const SCOPED_CSS = `
  *  "what we are doing" cards wrap, search row collapses, table
  *  keeps horizontal scroll via .table-responsive.
  * ============================================================ */
+/* Compact laptop — 4-col WDH tiles get squeezed past 1280 with
+   long titles, drop to 2x2 grid which reads more cleanly. */
+@media (max-width: 1280px) {
+  .smcg-wdh-cards { grid-template-columns: repeat(2, 1fr); }
+  .smcg-wdh-arrow { display: none; }
+  /* Page padding tightens slightly on narrower laptops so the table
+     gets more room before horizontal scroll kicks in. */
+  .smcg-root { padding: 12px 14px; }
+}
 @media (max-width: 1024px) {
   .smcg-wdh-cards { grid-template-columns: repeat(2, 1fr); }
   .smcg-wdh-arrow { display: none; }
+  /* Tighter spacing on tablet so the table card gets max usable
+     width before forcing horizontal scroll. */
+  .smcg-cstrip { padding: 14px 16px; }
+  .smcg-wdh, .smcg-tabs-row { padding: 12px 14px; }
 }
 @media (max-width: 768px) {
   .smcg-cstrip { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px; }
