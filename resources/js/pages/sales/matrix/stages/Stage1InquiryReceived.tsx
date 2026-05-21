@@ -1,12 +1,41 @@
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 
-/* Sales Matrix → Stage 1 — Inquiry Received
- * Shows the captured opportunity details + the purchase-decision-maker block. */
+/* ─────────────────────────────────────────────────────────────────────────
+ * Sales Matrix → Stage 1: Inquiry Received  (read-only display)
+ *
+ * Pure presentation. Renders the captured opportunity details + the
+ * Purchase-Decision-Maker block sourced from `header.taskManager`. The
+ * editable form lives in the right-side TaskManagerPanel; that panel
+ * calls back to SalesMatrixDetail which refreshes the lead row, which
+ * cascades fresh values down here as props.
+ *
+ * Read-only by design — there are no save/next buttons in this stage
+ * itself. Advancing to Stage 2 is driven by the page-level stepper.
+ * ───────────────────────────────────────────────────────────────────────── */
+
 export default function Stage1InquiryReceived({ header, onNext }: StageProps) {
+  const tm = header.taskManager ?? null;
+
+  const orderValue = tm?.order_value != null
+    ? formatINR(Number(tm.order_value))
+    : '—';
+  const buyingPlanDate = tm?.buying_plan
+    ? new Date(tm.buying_plan).toLocaleDateString('en-GB')
+    : '—';
+
+  const dmName   = tm?.name      ?? '—';
+  const dmMobile = tm?.mobile_no ?? '—';
+  const dmEmail  = tm?.email     ?? '—';
+
+  const status: 'qualified' | 'disqualified' | 'pending' =
+    header.disqualified ? 'disqualified' : (header.qualified ? 'qualified' : 'pending');
+
   return (
     <>
       <style>{SHARED_STAGE_CSS}</style>
+      <style>{STAGE1_CSS}</style>
 
+      {/* Stage header */}
       <div className="smd-stg-head">
         <div className="smd-stg-head-left">
           <div className="smd-stg-head-icon">
@@ -19,11 +48,15 @@ export default function Stage1InquiryReceived({ header, onNext }: StageProps) {
             <div className="smd-stg-head-sub">● Lead inquiry captured and logged</div>
           </div>
         </div>
-        <span className="smd-stg-head-badge">● ACTIVE</span>
+        <span className={`smd-stg-head-badge s1-badge s1-badge-${status}`}>
+          {status === 'qualified'    && '● QUALIFIED'}
+          {status === 'disqualified' && '● DISQUALIFIED'}
+          {status === 'pending'      && '● PENDING'}
+        </span>
       </div>
 
       <div className="smd-stg-body">
-        {/* Opportunity Details */}
+        {/* Opportunity Details — driven by lead + task_manager.order_value/buying_plan */}
         <div className="smd-sect">
           <div className="smd-sect-head">
             <div className="smd-sect-icon">
@@ -35,15 +68,17 @@ export default function Stage1InquiryReceived({ header, onNext }: StageProps) {
             <div className="smd-sect-title">Opportunity Details</div>
           </div>
           <div className="smd-sect-grid">
-            <Cell label="OPPORTUNITY ID" value={header.oppId} />
+            <Cell label="OPPORTUNITY ID"   value={header.oppId} />
             <Cell label="OPPORTUNITY DATE" value={header.oppDate} />
-            <Cell label="CUSTOMER NAME" value={header.customer} />
-            <Cell label="DATE" value="—" muted />
-            <Cell label="ORDER VALUE" value="₹7,00,000" />
+            <Cell label="CUSTOMER NAME"    value={header.customer} />
+            <Cell label="BUYING PLAN"      value={buyingPlanDate} muted={buyingPlanDate === '—'} />
+          </div>
+          <div className="s1-grid-1">
+            <Cell label="ORDER VALUE" value={orderValue} muted={orderValue === '—'} />
           </div>
         </div>
 
-        {/* Purchase Decision Maker */}
+        {/* Purchase Decision Maker — driven by task_manager.name/mobile_no/email */}
         <div className="smd-sect">
           <div className="smd-sect-head">
             <div className="smd-sect-icon">
@@ -55,20 +90,40 @@ export default function Stage1InquiryReceived({ header, onNext }: StageProps) {
             <div className="smd-sect-title">Purchase Decision Maker</div>
           </div>
           <div className="smd-sect-grid">
-            <Cell label="NAME" value="Rakesh Vardhan" />
-            <Cell label="MOBILE NUMBER" value="+91 91234 56789" />
+            <Cell label="NAME"          value={dmName}   muted={dmName   === '—'} />
+            <Cell label="MOBILE NUMBER" value={dmMobile} muted={dmMobile === '—'} />
           </div>
-          <div style={{ marginTop: 10 }}>
-            <Cell label="EMAIL" value="r.vardhan@gmail.com" />
+          <div className="s1-grid-1">
+            <Cell label="EMAIL" value={dmEmail} muted={dmEmail === '—'} />
           </div>
         </div>
+
+        {/* Hint: data flows from the right-side Task Manager panel */}
+        {!tm && (
+          <div className="s1-empty-hint">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" />
+            </svg>
+            <span>
+              No Purchase Decision Maker captured yet —
+              fill the <strong>Task Manager</strong> panel on the right to populate this section.
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="smd-stg-foot">
         <div className="smd-stg-foot-note">
-          ⚠ Note : Fill in the Purchase Manager details to proceed to the next stage.
+          ⚠ Fill in the Purchase Decision Maker details to proceed to the next stage.
         </div>
-        <button className="smd-stg-btn smd-stg-btn-primary" onClick={onNext}>
+        <button
+          type="button"
+          className="smd-stg-btn smd-stg-btn-primary"
+          onClick={onNext}
+          disabled={!tm?.name || !tm?.mobile_no || !tm?.email}
+        >
           Save &amp; Next →
         </button>
       </div>
@@ -84,3 +139,34 @@ function Cell({ label, value, muted }: { label: string; value: string; muted?: b
     </div>
   );
 }
+
+/* INR with the Indian numbering convention (lakhs/crores) — matches the
+ * mockup "₹7,00,000" rather than "₹700,000". */
+function formatINR(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+}
+
+const STAGE1_CSS = `
+.s1-grid-1 { display: grid; grid-template-columns: 1fr; gap: 10px 14px; margin-top: 10px; }
+
+.s1-badge { border: 1px solid transparent; }
+.s1-badge-qualified    { background: rgba(34,197,94,.22);  color: #bbf7d0; border-color: rgba(74,222,128,.35); }
+.s1-badge-disqualified { background: rgba(239,68,68,.22);  color: #fecaca; border-color: rgba(248,113,113,.35); }
+.s1-badge-pending      { background: rgba(245,158,11,.22); color: #fde68a; border-color: rgba(252,211,77,.35); }
+
+.s1-empty-hint {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px; margin: 6px 0 2px;
+  font-size: 11.5px; color: #5b21b6;
+  background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 10px;
+}
+.s1-empty-hint svg { color: #7c3aed; flex-shrink: 0; margin-top: 1px; }
+
+[data-bs-theme="dark"] .s1-empty-hint {
+  background: rgba(124,58,237,.16);
+  border-color: rgba(167,139,250,.35);
+  color: #d8b4fe;
+}
+[data-bs-theme="dark"] .s1-empty-hint svg { color: #c4b5fd; }
+`;

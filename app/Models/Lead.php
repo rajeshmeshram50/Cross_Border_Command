@@ -84,4 +84,23 @@ class Lead extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    /**
+     * Stage 1 (Inquiry Received) → Task Manager row. One-to-one; the
+     * controller upserts via POST /sales/leads/{lead}/task-manager.
+     */
+    public function taskManager()
+    {
+        return $this->hasOne(LeadTaskManager::class);
+    }
+
+    /**
+     * Stage 2 (Lead Acknowledgement) → activity log. Append-only;
+     * Stage 2 saves one row per picked master reason. Latest row's
+     * opportunity_type drives the lead's qualified/disqualified flags.
+     */
+    public function acknowledgements()
+    {
+        return $this->hasMany(LeadAcknowledgement::class)->latest('id');
+    }
 }

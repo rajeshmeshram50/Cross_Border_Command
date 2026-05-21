@@ -422,6 +422,9 @@ export default function SalesLeadWorksheet() {
     navigate(`/sales/matrix/${l.oppId}/stage/1`, {
       state: {
         row: {
+          // Pass the DB id so Stage 1 / Task Manager can hit the API
+          // directly without re-resolving the opp code first.
+          id:           l.id,
           oppId:        l.oppId,
           customer:     l.customer,
           customerCode: `C-${l.oppId.replace(/^OPP-/, '')}`,
