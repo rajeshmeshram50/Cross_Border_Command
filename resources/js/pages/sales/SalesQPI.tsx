@@ -1319,6 +1319,7 @@ const SCOPED_CSS = `
   padding: 8px 14px; border-radius: 7px; border: none;
   background: transparent; color: #7c3aed;
   font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  white-space: nowrap;
   transition: all .15s;
 }
 .qpi-tab:hover { background: rgba(124,58,237,.08); }
@@ -1395,6 +1396,7 @@ const SCOPED_CSS = `
   padding: 9px 14px; border-radius: 10px;
   background: #fff; border: 1.5px solid #ddd6fe;
   color: #5b21b6; font-size: 12.5px; font-weight: 800;
+  white-space: nowrap;
   flex-shrink: 0;
 }
 .qpi-listpill-icon {
@@ -1409,6 +1411,7 @@ const SCOPED_CSS = `
   padding: 9px 14px; border-radius: 10px;
   background: #fff; border: 1.5px solid #ddd6fe;
   color: #5b21b6; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  white-space: nowrap;
   transition: all .15s;
 }
 .qpi-pi-subtab:hover { background: #f5f3ff; }
@@ -1436,6 +1439,7 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
   font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
   box-shadow: 0 4px 12px rgba(124,58,237,.4);
+  white-space: nowrap;
   flex-shrink: 0;
   transition: transform .15s, box-shadow .15s;
 }
