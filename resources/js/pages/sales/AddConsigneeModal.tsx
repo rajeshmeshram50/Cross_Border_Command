@@ -1774,57 +1774,65 @@ const Stage1 = ({
     : [];
   return (
     <>
-      <div className="acm-id-tabs">
-        <button className={`acm-id-tab ${tab === 'identification' ? 'on' : ''}`} onClick={() => setTab('identification')}>
-          <IconTruck size={14} /> Consignee Identification Details
-        </button>
-        <button className={`acm-id-tab ${tab === 'address-contact' ? 'on' : ''}`} onClick={() => setTab('address-contact')}>
-          <IconPin /> Address &amp; Contact Details
-        </button>
+      {/* Sub-tabs + Same-as-Customer banner sit on the SAME row so the
+          banner fills the otherwise-empty space next to the two tab
+          pills. On narrow viewports the row wraps and the banner
+          drops below the tabs as a full-width strip.
+          Same-as-Customer governs the entire Stage 1 (both tabs lock
+          when ticked), so it stays visible on BOTH Identification and
+          Address & Contact tabs. */}
+      <div className="acm-id-tabs-row">
+        <div className="acm-id-tabs">
+          <button className={`acm-id-tab ${tab === 'identification' ? 'on' : ''}`} onClick={() => setTab('identification')}>
+            <IconTruck size={14} /> Consignee Identification Details
+          </button>
+          <button className={`acm-id-tab ${tab === 'address-contact' ? 'on' : ''}`} onClick={() => setTab('address-contact')}>
+            <IconPin /> Address &amp; Contact Details
+          </button>
+        </div>
+        {/* "Same as Customer" toggle. Three visual states:
+              - normal:   regular emerald banner, click toggles
+              - is-on:    emerald-filled, fields mirroring customer
+              - is-blocked: amber warning style, customer already has
+                          its one allowed mirror. Click still fires
+                          but the parent's setSameAsCustomer wrapper
+                          intercepts and shows a toast — user gets
+                          *immediate* feedback instead of waiting
+                          until Save & Next.
+              - is-disabled: greyed out, no customer resolved yet */}
+        <label className={`acm-same-banner acm-same-banner-inline ${sameAsCustomer ? 'is-on' : ''} ${!customer ? 'is-disabled' : ''} ${mirrorAlreadyTakenByOther && customer ? 'is-blocked' : ''}`}>
+          <input
+            type="checkbox"
+            checked={sameAsCustomer}
+            disabled={!customer}
+            onChange={e => setSameAsCustomer(e.target.checked)}
+          />
+          <span className="acm-same-banner-box" aria-hidden>
+            {sameAsCustomer && (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            )}
+          </span>
+          <span className="acm-same-banner-text">
+            <span className="acm-same-banner-title">
+              {mirrorAlreadyTakenByOther && customer
+                ? <>Same as Customer <span className="acm-same-banner-warn">— not available</span></>
+                : 'Same as Customer'}
+            </span>
+            <span className="acm-same-banner-sub">
+              {!customer
+                ? <>Pick a customer first to enable this shortcut.</>
+                : mirrorAlreadyTakenByOther
+                  ? <><strong>{customer.name}</strong> already has a same-as-customer consignee. Only one mirror is allowed per customer — open the existing one to edit it, or save this consignee with its own details.</>
+                  : <>Use <strong>{customer.name}</strong>&rsquo;s company identity, address, and primary contact for this consignee. Untick anytime to edit individual fields.</>}
+            </span>
+          </span>
+        </label>
       </div>
 
       {tab === 'identification' && (
         <>
-          {/* "Same as Customer" toggle. Three visual states:
-                - normal:   regular emerald banner, click toggles
-                - is-on:    emerald-filled, fields mirroring customer
-                - is-blocked: amber warning style, customer already has
-                            its one allowed mirror. Click still fires
-                            but the parent's setSameAsCustomer wrapper
-                            intercepts and shows a toast — user gets
-                            *immediate* feedback instead of waiting
-                            until Save & Next.
-                - is-disabled: greyed out, no customer resolved yet */}
-          <label className={`acm-same-banner ${sameAsCustomer ? 'is-on' : ''} ${!customer ? 'is-disabled' : ''} ${mirrorAlreadyTakenByOther && customer ? 'is-blocked' : ''}`}>
-            <input
-              type="checkbox"
-              checked={sameAsCustomer}
-              disabled={!customer}
-              onChange={e => setSameAsCustomer(e.target.checked)}
-            />
-            <span className="acm-same-banner-box" aria-hidden>
-              {sameAsCustomer && (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              )}
-            </span>
-            <span className="acm-same-banner-text">
-              <span className="acm-same-banner-title">
-                {mirrorAlreadyTakenByOther && customer
-                  ? <>Same as Customer <span className="acm-same-banner-warn">— not available</span></>
-                  : 'Same as Customer'}
-              </span>
-              <span className="acm-same-banner-sub">
-                {!customer
-                  ? <>Pick a customer first to enable this shortcut.</>
-                  : mirrorAlreadyTakenByOther
-                    ? <><strong>{customer.name}</strong> already has a same-as-customer consignee. Only one mirror is allowed per customer — open the existing one to edit it, or save this consignee with its own details.</>
-                    : <>Use <strong>{customer.name}</strong>&rsquo;s company identity, address, and primary contact for this consignee. Untick anytime to edit individual fields.</>}
-              </span>
-            </span>
-          </label>
-
           <SectionHeader icon={<IconHome />} title="Basic Company Details"     sub="Company identity, segment, and risk classification" accent="#10b981" />
           <div className="acm-grid-2 acm-sec-pad">
             <Field label="Company Name" required error={errors.companyName} fieldKey="companyName">
@@ -4128,15 +4136,15 @@ const SCOPED_CSS = `
    with the form below. */
 .acm-wiz-pinned-top {
   flex-shrink: 0;
-  padding: 14px 20px 10px;
-  display: flex; flex-direction: column; gap: 12px;
+  padding: 8px 20px 4px;
+  display: flex; flex-direction: column; gap: 6px;
   background: #f0fdf4;
   border-bottom: 1px solid rgba(16,185,129,0.12);
 }
 .acm-wiz-body {
   flex: 1; min-height: 0; overflow-y: auto;
-  padding: 14px 20px 16px;
-  display: flex; flex-direction: column; gap: 14px;
+  padding: 6px 20px 14px;
+  display: flex; flex-direction: column; gap: 8px;
 }
 
 /* Linked customer summary */
@@ -4245,6 +4253,34 @@ const SCOPED_CSS = `
 .acm-id-tabs {
   display: flex; align-items: center; gap: 10px;
   padding: 4px 0 2px;
+}
+/* Row that places the sub-tabs + Same-as-Customer banner side-by-side.
+   Tabs stay their natural width on the left; banner takes the rest of
+   the row. Wraps to two stacked rows on narrow viewports. */
+.acm-id-tabs-row {
+  display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap;
+  padding: 0;
+}
+.acm-id-tabs-row .acm-id-tabs { flex: 0 0 auto; padding: 0; }
+/* Inline variant of the Same-as-Customer banner — slimmer padding +
+   compact typography so it fits next to the tab pills without
+   dominating the row. Title + sub stack tightly to keep the height
+   close to the 38px tab pill height. */
+.acm-same-banner-inline {
+  flex: 1 1 320px;
+  min-width: 0;
+  margin-bottom: 0;
+  padding: 4px 12px;
+  gap: 8px;
+  align-items: center;
+}
+.acm-same-banner-inline .acm-same-banner-text { line-height: 1.25; }
+.acm-same-banner-inline .acm-same-banner-title { font-size: 11.5px; }
+.acm-same-banner-inline .acm-same-banner-sub { font-size: 10.5px; }
+.acm-same-banner-inline .acm-same-banner-box { width: 16px; height: 16px; }
+@media (max-width: 820px) {
+  .acm-same-banner-inline { flex: 1 1 100%; }
 }
 .acm-id-tab {
   display: inline-flex; align-items: center; gap: 7px;
@@ -4379,10 +4415,21 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acg-history-chevron.acg-open { transform: rotate(180deg); }
 .acg-history-body {
   overflow-y: auto;
-  max-height: calc(700px - 46px);
+  /* Cap the expanded panel height so a fully-populated Stage 1 +
+     Stage 2 stats recap doesn't blow out the modal. Anything past
+     this scrolls inside the panel — the rest of the wizard body
+     stays on screen. Custom thin emerald scrollbar matches the
+     other internal-scroll wrappers in the modal. */
+  max-height: 260px;
   border-top: 1px solid #d1fae5;
   background: #fff;
+  scrollbar-width: thin;
 }
+.acg-history-body::-webkit-scrollbar { width: 6px; }
+.acg-history-body::-webkit-scrollbar-thumb {
+  background: rgba(16,185,129,.35); border-radius: 999px;
+}
+.acg-history-body::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
 
 /* Body content — dense 4-column "Label : Value" grid (Stage 1) +
    inline stat tiles (Stage 2). Tight row spacing keeps the panel
@@ -4816,7 +4863,11 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-same-banner {
   display: flex; align-items: flex-start; gap: 12px;
   padding: 12px 16px;
-  margin-bottom: 14px;
+  /* margin-bottom removed — Stage 1's flex body gap already provides
+     separation, and the banner now sits in the same row as the sub-
+     tabs so a static bottom margin would create dead space below the
+     row. */
+  margin-bottom: 0;
   /* Saturated emerald gradient with a clear green undertone — the
      previous #ecfdf5 mix read as cream/yellow on low-contrast displays
      and certain sRGB profiles, which is why the banner looked yellow in
@@ -4836,39 +4887,40 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   box-shadow: 0 2px 10px rgba(16,185,129,.25);
 }
 .acm-same-banner.is-disabled { opacity: 0.55; cursor: not-allowed; }
-/* "Blocked" state — customer already has its one mirror. Amber accent
- * so the user can tell at a glance this is a warning, not just "off".
- * The label stays clickable (cursor unchanged) because the click
- * fires the toast — that's the whole point. */
+/* "Blocked" state — customer already has its one mirror. Muted slate
+ * accent so it reads as "informationally unavailable" instead of the
+ * harsh yellow warning the user found jarring. The label stays
+ * clickable (cursor unchanged) because the click fires the toast —
+ * that's the whole point. */
 .acm-same-banner.is-blocked {
-  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-  border-color: rgba(245,158,11,.45);
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  border-color: rgba(100,116,139,.40);
 }
 .acm-same-banner.is-blocked:hover {
-  border-color: #d97706;
-  box-shadow: 0 2px 10px rgba(245,158,11,.20);
+  border-color: #475569;
+  box-shadow: 0 2px 10px rgba(100,116,139,.18);
 }
 .acm-same-banner.is-blocked .acm-same-banner-box {
-  border-color: #d97706;
+  border-color: #475569;
 }
-.acm-same-banner.is-blocked .acm-same-banner-title { color: #92400e; }
-.acm-same-banner.is-blocked .acm-same-banner-sub   { color: #b45309; }
-.acm-same-banner.is-blocked .acm-same-banner-sub strong { color: #78350f; }
+.acm-same-banner.is-blocked .acm-same-banner-title { color: #334155; }
+.acm-same-banner.is-blocked .acm-same-banner-sub   { color: #475569; }
+.acm-same-banner.is-blocked .acm-same-banner-sub strong { color: #1e293b; }
 .acm-same-banner-warn {
   display: inline-block;
   font-weight: 600;
   font-size: 11.5px;
   letter-spacing: .01em;
-  color: #b45309;
+  color: #64748b;
   margin-left: 2px;
 }
 [data-bs-theme="dark"] .acm-same-banner.is-blocked {
-  background: linear-gradient(135deg, rgba(245,158,11,.20) 0%, rgba(245,158,11,.10) 100%);
-  border-color: rgba(245,158,11,.40);
+  background: linear-gradient(135deg, rgba(148,163,184,.16) 0%, rgba(148,163,184,.08) 100%);
+  border-color: rgba(148,163,184,.35);
 }
-[data-bs-theme="dark"] .acm-same-banner.is-blocked .acm-same-banner-title { color: #fcd34d; }
-[data-bs-theme="dark"] .acm-same-banner.is-blocked .acm-same-banner-sub   { color: #fbbf24; }
-[data-bs-theme="dark"] .acm-same-banner-warn { color: #fbbf24; }
+[data-bs-theme="dark"] .acm-same-banner.is-blocked .acm-same-banner-title { color: #e2e8f0; }
+[data-bs-theme="dark"] .acm-same-banner.is-blocked .acm-same-banner-sub   { color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-same-banner-warn { color: #cbd5e1; }
 .acm-same-banner input[type="checkbox"] { display: none; }
 .acm-same-banner-box {
   flex-shrink: 0;
