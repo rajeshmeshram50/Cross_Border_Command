@@ -147,11 +147,15 @@ class ProductController extends Controller
             //   secondary_images[]     existing paths to keep
             //   secondary_image_files[] new files to append
             'primary_image'         => 'nullable|string|max:500',
-            'primary_image_file'    => 'nullable|file|image|mimes:jpg,jpeg,png,webp|max:2048',
+            // Product image attachments are limited to PNG / JPG / PDF
+            // only. Dropped `webp` and `image:` flag (the flag rejects
+            // PDFs since they're not images) so a PDF spec sheet can be
+            // attached as a product reference.
+            'primary_image_file'    => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
             'secondary_images'      => 'nullable|array',
             'secondary_images.*'    => 'nullable|string|max:500',
             'secondary_image_files'   => 'nullable|array|max:10',
-            'secondary_image_files.*' => 'file|image|mimes:jpg,jpeg,png,webp|max:2048',
+            'secondary_image_files.*' => 'file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);
 
         $product = isset($data['id'])
@@ -328,9 +332,10 @@ class ProductController extends Controller
             'qc_records.*.qa_testing_parameter' => 'nullable|string',
             'qc_records.*.min_acceptance_criteria' => 'nullable|string',
             'qc_records.*.attachment_path' => 'nullable|string|max:500',
+            'qc_records.*.attachment_file' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:10240',
         ]);
 
-        DB::transaction(function () use ($product, $data) {
+        DB::transaction(function () use ($product, $data, $request) {
             $product->fill(collect($data)->except('qc_records')->toArray());
 
             // Step 1 fully complete when Quality is saved — flip status to inactive
@@ -341,10 +346,20 @@ class ProductController extends Controller
             }
             $product->save();
 
-            // Replace QC list
+            // Replace QC list — persist each row, swapping `attachment_file`
+            // (a real uploaded file when the user picked one) for the
+            // public-disk storage path so the frontend can render a working
+            // link via resolveFileUrl(). Without this, `attachment_path` was
+            // just the original filename, which 404'd and the SPA fallback
+            // routed the user to the products overview instead of the file.
             $product->qcRecords()->delete();
-            foreach ($data['qc_records'] ?? [] as $qc) {
-                $product->qcRecords()->create($qc);
+            foreach ($data['qc_records'] ?? [] as $idx => $qc) {
+                $row = collect($qc)->except(['attachment_file'])->toArray();
+                $uploaded = $request->file("qc_records.{$idx}.attachment_file");
+                if ($uploaded) {
+                    $row['attachment_path'] = $uploaded->store('products/qc', 'public');
+                }
+                $product->qcRecords()->create($row);
             }
         });
 

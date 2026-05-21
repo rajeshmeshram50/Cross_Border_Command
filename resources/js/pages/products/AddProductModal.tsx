@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
-import { resolveFileUrl } from '../../utils/resolveFileUrl';
+import { resolveFileUrl, viewFile } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import Tooltip from '../../components/ui/Tooltip';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Product — 2-step wizard
@@ -76,6 +78,17 @@ export type QcRecord = {
   testingParameter: string;
   minAcceptance: string;
   attachmentName: string;  // single attachment filename
+  /** Resolved URL for the attachment (from API's `attachment_url`
+   *  accessor when available, else built via resolveFileUrl).
+   *  Empty when the row has no attachment yet. */
+  attachmentUrl?: string;
+  /** Newly picked File object (set by the QC modal's file input)
+   *  — kept in memory until Save uploads it via multipart and the
+   *  server returns the stored attachment_path. */
+  attachmentFile?: File | null;
+  /** Existing server-side path. Preserved on edit so the row keeps
+   *  its uploaded file when the user doesn't replace the attachment. */
+  attachmentPath?: string;
 };
 
 /* ─── Static option lists ─── */
@@ -149,16 +162,24 @@ export default function AddProductModal(props: {
   const [previousOpen, setPreviousOpen] = useState(true);
 
   /* Add-mode tab-lock — user can only click into tabs they've already
-   * reached via Save & Next. Edit mode unlocks everything because the
-   * full record already exists on the server.
+   * reached via Save & Next. Edit mode unlocks everything immediately
+   * because the full record already exists on the server.
    *
-   *   reachedTabs always contains 'core' on first render. saveCore() /
-   *   saveSales() append the next tab as they succeed. The edit loader
-   *   effect floods all three on prefill. */
-  const [reachedTabs, setReachedTabs] = useState<Set<Tab>>(() => new Set<Tab>(['core']));
+   *   On first render reachedTabs already includes every tab when
+   *   `initialId` is set, so Save & Next on Core saves and advances
+   *   instantly without waiting for the prefill fetch to finish.
+   *   Previously the load effect reset step/tab AFTER the await,
+   *   yanking the user back to Core when they'd already advanced. */
+  const [reachedTabs, setReachedTabs] = useState<Set<Tab>>(() =>
+    new Set<Tab>(initialId ? ['core', 'sales', 'quality'] : ['core'])
+  );
   const markTabReached = (t: Tab) => setReachedTabs(prev => new Set(prev).add(t));
   const canSwitchToTab = (t: Tab) => reachedTabs.has(t);
   const [productId, setProductId] = useState<number | null>(initialId ?? null);
+  /* True while the edit-mode prefill is in flight. Disables Save &
+     Next so the user can't fire a save against half-loaded form state
+     and hit spurious validation errors. */
+  const [loadingEdit, setLoadingEdit] = useState<boolean>(!!initialId);
   const [productCodeFromApi, setProductCodeFromApi] = useState<string>('');
   const [saving, setSaving] = useState(false);
   /**
@@ -223,11 +244,20 @@ export default function AddProductModal(props: {
   const [secondaryImagePaths, setSecondaryImagePaths] = useState<string[]>([]);
   const [secondaryImageFiles, setSecondaryImageFiles] = useState<File[]>([]);
 
+  /* Display URLs for already-uploaded images. The backend ships these
+     ready-to-render (Product::primary_image_url + secondary_images_url
+     accessors) so the frontend doesn't have to guess at storage layout
+     — `resolveFileUrl` was returning broken paths for some prod
+     configurations. Paths stay separate because the save round-trip
+     uses raw `primary_image` / `secondary_images[]` keys. */
+  const [primaryImageUrl, setPrimaryImageUrl]     = useState<string | null>(null);
+  const [secondaryImageUrls, setSecondaryImageUrls] = useState<string[]>([]);
+
   const primaryPreview = primaryImageFile
     ? URL.createObjectURL(primaryImageFile)
-    : (primaryImagePath ? resolveFileUrl(primaryImagePath) : '');
+    : (primaryImageUrl || (primaryImagePath ? resolveFileUrl(primaryImagePath) : ''));
   const secondaryPreviews = [
-    ...secondaryImagePaths.map(p => resolveFileUrl(p)),
+    ...secondaryImagePaths.map((p, i) => secondaryImageUrls[i] || resolveFileUrl(p)),
     ...secondaryImageFiles.map(f => URL.createObjectURL(f)),
   ];
 
@@ -311,10 +341,22 @@ export default function AddProductModal(props: {
      reject the request with PostTooLargeException. Mirrors the
      `max:2048` rule on ProductController::storeCore. */
   const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+  const ALLOWED_PRODUCT_EXTS = ['.png', '.jpg', '.jpeg', '.pdf'];
+  /* Two-stage validation on picked product files:
+       1. extension/mime → only PNG, JPG, or PDF allowed
+       2. size → 2 MB cap (matches `max:2048` rule on storeCore)
+     Extension check uses the filename suffix because some browsers ship
+     an empty `file.type` for PDFs picked via drag-drop. */
   const validateImageSize = (file: File): boolean => {
+    const lowerName = file.name.toLowerCase();
+    const okExt = ALLOWED_PRODUCT_EXTS.some(ext => lowerName.endsWith(ext));
+    if (!okExt) {
+      toast.error('Unsupported file type', `${file.name} — only PNG, JPG, or PDF files are allowed.`);
+      return false;
+    }
     if (file.size <= MAX_IMAGE_BYTES) return true;
     const mb = (file.size / (1024 * 1024)).toFixed(2);
-    toast.error('Image too large', `${file.name} is ${mb} MB — each image must be 2 MB or smaller.`);
+    toast.error('File too large', `${file.name} is ${mb} MB — each file must be 2 MB or smaller.`);
     return false;
   };
 
@@ -324,6 +366,7 @@ export default function AddProductModal(props: {
     if (!validateImageSize(f)) { e.target.value = ''; return; }
     setPrimaryImageFile(f);
     setPrimaryImagePath(null); // queued file supersedes any stored path
+    setPrimaryImageUrl(null);  // and its display URL
   };
 
   const onSecondaryUpload = (e: ChangeEvent<HTMLInputElement>) => {
@@ -341,17 +384,24 @@ export default function AddProductModal(props: {
    */
   const removeSecondary = (i: number) => {
     if (i < secondaryImagePaths.length) {
+      // Path-backed slot — drop the path AND its parallel display URL.
       setSecondaryImagePaths(prev => prev.filter((_, idx) => idx !== i));
+      setSecondaryImageUrls(prev => prev.filter((_, idx) => idx !== i));
     } else {
       const fi = i - secondaryImagePaths.length;
       setSecondaryImageFiles(prev => prev.filter((_, idx) => idx !== fi));
     }
   };
 
-  const clearPrimary = () => { setPrimaryImageFile(null); setPrimaryImagePath(null); };
+  const clearPrimary = () => {
+    setPrimaryImageFile(null);
+    setPrimaryImagePath(null);
+    setPrimaryImageUrl(null);
+  };
 
   const openQcModal = () => {
     setQcDraft({ name: '', purpose: '', issuedBy: '', testingParameter: '', minAcceptance: '', attachmentName: '' });
+    setQcEditingId(null);
     setQcModalOpen(true);
   };
   const saveQcDraft = () => {
@@ -363,12 +413,82 @@ export default function AddProductModal(props: {
       toast.error('Missing required fields', `Please fill: ${missing.join(', ')}`);
       return;
     }
-    setQcRecords(prev => [...prev, { id: Date.now(), ...qcDraft }]);
+    if (qcEditingId !== null) {
+      // Update-in-place when the user opened an existing row via Edit.
+      setQcRecords(prev => prev.map(q => q.id === qcEditingId ? { ...q, ...qcDraft } : q));
+      toast.success('QC updated', `${qcDraft.name} updated`);
+    } else {
+      setQcRecords(prev => [...prev, { id: Date.now(), ...qcDraft }]);
+      toast.success('QC added', `${qcDraft.name} added to the QC list`);
+    }
+    setQcEditingId(null);
     setQcModalOpen(false);
-    toast.success('QC added', `${qcDraft.name} added to the QC list`);
   };
   const removeQc = (id: number) =>
     setQcRecords(prev => prev.filter(q => q.id !== id));
+
+  /* QC delete confirmation — same DeleteConfirmModal used by Clients /
+     HR Employees / the Products list. Holds the row pending user
+     confirmation; backdrop click and Esc respect `qcDeleting` so the
+     user can't cancel mid-action. */
+  const [qcDeleteTarget, setQcDeleteTarget] = useState<QcRecord | null>(null);
+
+  /* Edit-mode for an existing QC row: opens the same QcAddPopup
+     pre-filled with the row's data. On save we update the existing
+     entry instead of appending a new one. */
+  const [qcEditingId, setQcEditingId] = useState<number | null>(null);
+
+  const openQcViewer = (q: QcRecord) => {
+    if (q.attachmentUrl) viewFile(q.attachmentUrl);
+    else toast.info('No attachment', `${q.name} has no file uploaded`);
+  };
+  const openQcEdit = (q: QcRecord) => {
+    setQcDraft({
+      name: q.name, purpose: q.purpose, issuedBy: q.issuedBy,
+      testingParameter: q.testingParameter, minAcceptance: q.minAcceptance,
+      attachmentName: q.attachmentName, attachmentUrl: q.attachmentUrl,
+    });
+    setQcEditingId(q.id);
+    setQcModalOpen(true);
+  };
+
+  /* QC table action button — matches the outline-pill style used in the
+     Clients list (Clients.tsx#L131) so the visual language stays
+     consistent across the app. Inline so the modal stays a single file. */
+  const QcActionBtn = ({
+    title, icon, color, onClick, disabled,
+  }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
+    <Tooltip label={title}>
+      <button
+        type="button"
+        aria-label={title}
+        disabled={disabled}
+        className="btn p-0 d-inline-flex align-items-center justify-content-center"
+        style={{
+          width: 30, height: 30, borderRadius: 8,
+          background: 'var(--vz-secondary-bg)',
+          border: '1px solid var(--vz-border-color)',
+          color: 'var(--vz-secondary-color)',
+          transition: 'all .15s ease',
+        }}
+        onMouseEnter={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = `var(--vz-${color}-bg-subtle, ${color === 'primary' ? '#40518918' : color === 'danger' ? '#f0654818' : color === 'success' ? '#0ab39c18' : color === 'info' ? '#299cdb18' : color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)'})`;
+          el.style.borderColor = `var(--vz-${color})`;
+          el.style.color = `var(--vz-${color})`;
+        }}
+        onMouseLeave={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = 'var(--vz-secondary-bg)';
+          el.style.borderColor = 'var(--vz-border-color)';
+          el.style.color = 'var(--vz-secondary-color)';
+        }}
+        onClick={onClick}
+      >
+        <i className={`${icon} fs-14`} />
+      </button>
+    </Tooltip>
+  );
 
   const saveVendorDraft = () => {
     const missing: string[] = [];
@@ -527,11 +647,12 @@ export default function AddProductModal(props: {
           uom_id?: number; hsn_id?: number; condition_id?: number;
           packaging_material_id?: number; confidential_info?: string;
           primary_image?: string | null; secondary_images?: string[] | null;
+          primary_image_url?: string | null; secondary_images_url?: string[] | null;
           base_price?: string | number; gst_id?: number; mark_bottom?: string;
           net_weight?: string | number; gross_weight?: string | number;
           length_cm?: string | number; width_cm?: string | number; height_cm?: string | number;
           step_completed?: number;
-          qc_records?: Array<{ id: number; qc_name: string; qc_purpose?: string; issued_by?: string; qa_testing_parameter?: string; min_acceptance_criteria?: string; attachment_path?: string }>;
+          qc_records?: Array<{ id: number; qc_name: string; qc_purpose?: string; issued_by?: string; qa_testing_parameter?: string; min_acceptance_criteria?: string; attachment_path?: string; attachment_url?: string | null }>;
           vendor_maps?: Array<Record<string, unknown>>;
         };
         const res = await api.get<ProductDto>(`/products/${initialId}`);
@@ -551,8 +672,10 @@ export default function AddProductModal(props: {
         setPackagingMaterialId(p.packaging_material_id ? String(p.packaging_material_id) : '');
         setConfidential(p.confidential_info ?? '');
         setPrimaryImagePath(p.primary_image ?? null);
+        setPrimaryImageUrl(p.primary_image_url ?? (p.primary_image ? resolveFileUrl(p.primary_image) : null));
         setPrimaryImageFile(null);
         setSecondaryImagePaths(p.secondary_images ?? []);
+        setSecondaryImageUrls(p.secondary_images_url ?? (p.secondary_images ?? []).map(s => resolveFileUrl(s)));
         setSecondaryImageFiles([]);
         setBasePrice(p.base_price != null ? String(p.base_price) : '');
         setGstId(p.gst_id ? String(p.gst_id) : '');
@@ -574,6 +697,7 @@ export default function AddProductModal(props: {
           testingParameter: q.qa_testing_parameter ?? '',
           minAcceptance: q.min_acceptance_criteria ?? '',
           attachmentName: q.attachment_path ? q.attachment_path.split('/').pop() ?? '' : '',
+          attachmentUrl: q.attachment_url ?? (q.attachment_path ? resolveFileUrl(q.attachment_path) : ''),
         })));
         setVendors((p.vendor_maps ?? []).map(v => ({
           id: String(v.id),
@@ -594,17 +718,17 @@ export default function AddProductModal(props: {
           remarks: String(v.remarks ?? ''),
         })));
 
-        // Edit always opens at Step 1 → Product Core Information so the
-        // user can walk through every section with the prefilled data
-        // instead of being dropped into the middle of the wizard.
-        // All inner tabs are unlocked in edit mode since the full record
-        // already exists on the server.
-        setStep(1);
-        setTab('core');
-        setReachedTabs(new Set<Tab>(['core', 'sales', 'quality']));
+        // Wizard starts at Core (the useState defaults already do this)
+        // and all three tabs are pre-unlocked via reachedTabs's initial
+        // value when initialId is set. Resetting step/tab here would
+        // override the user if they Save&Next'd while the prefill was
+        // still loading — that was the source of the "stuck on Core"
+        // glitch reported from the Single Product View edit flow.
       } catch {
         toast.error('Not found', 'Failed to load product. Closing…');
         setTimeout(onClose, 1200);
+      } finally {
+        setLoadingEdit(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -670,7 +794,12 @@ export default function AddProductModal(props: {
       secondaryImagePaths.forEach(p => fd.append('secondary_images[]', p));
       secondaryImageFiles.forEach(f => fd.append('secondary_image_files[]', f));
 
-      const res = await api.post<{ id: number; product_code?: string; primary_image?: string | null; secondary_images?: string[] | null; step_completed?: number }>(
+      const res = await api.post<{
+        id: number; product_code?: string;
+        primary_image?: string | null; secondary_images?: string[] | null;
+        primary_image_url?: string | null; secondary_images_url?: string[] | null;
+        step_completed?: number;
+      }>(
         '/products/step/core',
         fd,
         { headers: { 'Content-Type': 'multipart/form-data' } }
@@ -680,8 +809,10 @@ export default function AddProductModal(props: {
       setProductId(res.data.id);
       setProductCodeFromApi(res.data.product_code ?? '');
       setPrimaryImagePath(res.data.primary_image ?? null);
+      setPrimaryImageUrl(res.data.primary_image_url ?? (res.data.primary_image ? resolveFileUrl(res.data.primary_image) : null));
       setPrimaryImageFile(null);
       setSecondaryImagePaths(res.data.secondary_images ?? []);
+      setSecondaryImageUrls(res.data.secondary_images_url ?? (res.data.secondary_images ?? []).map(s => resolveFileUrl(s)));
       setSecondaryImageFiles([]);
 
       onSaved(res.data.id, false);
@@ -831,7 +962,11 @@ export default function AddProductModal(props: {
   };
 
   return createPortal((
-    <div className="apm-backdrop" onClick={onClose}>
+    // Backdrop click intentionally does NOT close the wizard — the
+    // user has multi-step form data in flight; an accidental click
+    // outside would wipe everything. The Cancel button and the
+    // top-right X are the only dismissal paths.
+    <div className="apm-backdrop">
       <style>{SCOPED_CSS}</style>
       <div className="apm-modal" onClick={(e) => e.stopPropagation()}>
         {/* ─── Gradient header ─── */}
@@ -1177,22 +1312,17 @@ export default function AddProductModal(props: {
                                 </td>
                                 <td>
                                   {q.attachmentName ? (
-                                    <span className="d-inline-flex align-items-center gap-2">
-                                      <span className="fs-13">{q.attachmentName}</span>
-                                      <button type="button" className="btn btn-sm btn-soft-info" title="View" aria-label="View">
-                                        <i className="ri-eye-line" />
-                                      </button>
+                                    <span className="fs-13 d-inline-block text-truncate" style={{ maxWidth: 200 }} title={q.attachmentName}>
+                                      <i className="ri-attachment-line text-muted me-1" />
+                                      {q.attachmentName}
                                     </span>
                                   ) : <span className="text-muted fs-13">—</span>}
                                 </td>
                                 <td>
-                                  <div className="hstack gap-1">
-                                    <button type="button" className="btn btn-sm btn-soft-primary" title="Edit" aria-label="Edit">
-                                      <i className="ri-pencil-line" />
-                                    </button>
-                                    <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => removeQc(q.id)} title="Delete" aria-label="Delete">
-                                      <i className="ri-delete-bin-line" />
-                                    </button>
+                                  <div className="d-flex gap-1">
+                                    <QcActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => openQcViewer(q)} disabled={!q.attachmentUrl} />
+                                    <QcActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => openQcEdit(q)} />
+                                    <QcActionBtn title="Delete" icon="ri-delete-bin-line" color="danger"  onClick={() => setQcDeleteTarget(q)} />
                                   </div>
                                 </td>
                               </tr>
@@ -1451,18 +1581,18 @@ export default function AddProductModal(props: {
               </button>
             )}
             {step === 2 ? (
-              <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving}>
+              <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving || loadingEdit}>
                 {saving ? (
                   <span className="apm-spinner" />
                 ) : (
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                 )}
-                Save Product
+                {saving ? 'Saving…' : 'Save Product'}
               </button>
             ) : (
               <button
                 className="apm-btn-primary"
-                disabled={saving}
+                disabled={saving || loadingEdit}
                 onClick={() => {
                   if (tab === 'core')         saveCore();
                   else if (tab === 'sales')   saveSales();
@@ -1470,7 +1600,7 @@ export default function AddProductModal(props: {
                 }}
               >
                 {saving ? <span className="apm-spinner" /> : null}
-                Save &amp; Next →
+                {saving ? 'Saving…' : <>Save &amp; Next →</>}
               </button>
             )}
           </div>
@@ -1481,6 +1611,7 @@ export default function AddProductModal(props: {
         <QcAddPopup
           draft={qcDraft}
           setDraft={setQcDraft}
+          isEdit={qcEditingId !== null}
           product={{
             code: productCode || 'P-NEW',
             name: name || '—',
@@ -1491,10 +1622,22 @@ export default function AddProductModal(props: {
             hazClass: labelOf(optHazClasses, hazClassId),
             vendorCount: vendors.length,
           }}
-          onClose={() => setQcModalOpen(false)}
+          onClose={() => { setQcModalOpen(false); setQcEditingId(null); }}
           onSave={saveQcDraft}
         />
       )}
+
+      <DeleteConfirmModal
+        open={qcDeleteTarget !== null}
+        itemName={qcDeleteTarget?.name}
+        title="Delete QC Record"
+        subMessage="This removes the QC record from the form. The product must be saved (Save & Next) for the change to persist."
+        onClose={() => setQcDeleteTarget(null)}
+        onConfirm={() => {
+          if (qcDeleteTarget) removeQc(qcDeleteTarget.id);
+          setQcDeleteTarget(null);
+        }}
+      />
 
       {quickAdd && (
         <MasterQuickAddPopup
@@ -1643,7 +1786,7 @@ function UploadDropzone(props: {
       <div className="apm-dropzone">
         <input
           type="file"
-          accept="image/*"
+          accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf"
           multiple={props.multiple}
           onChange={props.onPick}
           className="apm-dropzone-input"
@@ -1734,6 +1877,7 @@ function PreviousStages(props: {
 function QcAddPopup(props: {
   draft: Omit<QcRecord, 'id'>;
   setDraft: (next: Omit<QcRecord, 'id'>) => void;
+  isEdit?: boolean;
   product: {
     code: string; name: string; generic: string; hsn: string;
     segment: string; hazType: string; hazClass: string; vendorCount: number;
@@ -1741,13 +1885,15 @@ function QcAddPopup(props: {
   onClose: () => void;
   onSave: () => void;
 }) {
-  const { draft, setDraft, product, onClose, onSave } = props;
+  const { draft, setDraft, isEdit, product, onClose, onSave } = props;
   const set = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
     setDraft({ ...draft, [key]: value });
 
   const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) set('attachmentName', f.name);
+    if (f) {
+      setDraft({ ...draft, attachmentName: f.name, attachmentFile: f });
+    }
   };
 
   return createPortal((
@@ -1756,7 +1902,7 @@ function QcAddPopup(props: {
         <div className="apm-qc-popup-head">
           <div className="apm-qc-popup-title">
             <i className="ri-shield-check-line" />
-            Add QC Record
+            {isEdit ? 'Edit QC Record' : 'Add QC Record'}
           </div>
           <button className="apm-close apm-qc-close" onClick={onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -1790,7 +1936,7 @@ function QcAddPopup(props: {
             </Field>
             <Field label={`Attachment ( Only One File Allowed )`} required>
               <div className="apm-qc-file">
-                <input id="qc-file-input" type="file" className="apm-qc-file-input" onChange={onPickFile} />
+                <input id="qc-file-input" type="file" accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf" className="apm-qc-file-input" onChange={onPickFile} />
                 <label htmlFor="qc-file-input" className="apm-qc-file-trigger">
                   <i className="ri-attachment-2" />
                   <span>{draft.attachmentName || 'Choose file'}</span>

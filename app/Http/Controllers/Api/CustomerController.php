@@ -288,7 +288,8 @@ class CustomerController extends Controller
             'primary_address.country'        => 'nullable|string|max:64',
             'primary_address.state'          => 'nullable|string|max:64',
             'primary_address.city'           => 'nullable|string|max:64',
-            'primary_address.pin'            => 'nullable|string|max:16',
+            // PIN must be exactly 6 digits (Indian postal code format).
+            'primary_address.pin'            => ['nullable', 'string', 'regex:/^\d{6}$/'],
             'primary_address.cp_name'        => 'required|string|max:255',
             'primary_address.cp_designation' => 'nullable|string|max:128',
             'primary_address.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
@@ -309,7 +310,7 @@ class CustomerController extends Controller
             'locations.*.country'        => 'nullable|string|max:64',
             'locations.*.state'          => 'nullable|string|max:64',
             'locations.*.city'           => 'nullable|string|max:64',
-            'locations.*.pin'            => 'nullable|string|max:16',
+            'locations.*.pin'            => ['nullable', 'string', 'regex:/^\d{6}$/'],
             'locations.*.cp_name'        => 'required_with:locations|string|max:255',
             'locations.*.cp_designation' => 'nullable|string|max:128',
             'locations.*.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],

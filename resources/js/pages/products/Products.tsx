@@ -7,6 +7,7 @@ import api from '../../api';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import AddProductModal from './AddProductModal';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Products
@@ -159,6 +160,55 @@ export default function Products() {
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [expandedPanel, setExpandedPanel] = useState<string | null>(null);
 
+  /* Filter dropdown options live in state so they can be refreshed
+     from the master APIs on mount. The hardcoded `SEGMENTS` /
+     `HSN_CODES` / `UOMS` / `CONDITIONS` / `VENDORS` constants are
+     fallbacks that ship until the fetch resolves — keeps the panel
+     usable even with a slow or unreachable backend. */
+  const [segmentOpts, setSegmentOpts]   = useState<string[]>(SEGMENTS);
+  const [hsnOpts,     setHsnOpts]       = useState<string[]>(HSN_CODES);
+  const [uomOpts,     setUomOpts]       = useState<string[]>(UOMS);
+  const [conditionOpts, setConditionOpts] = useState<string[]>(CONDITIONS);
+  const [vendorOpts,  setVendorOpts]    = useState<string[]>(VENDORS);
+  const [gstRateOpts, setGstRateOpts]   = useState<string[]>(GST_RATES);
+
+  useEffect(() => {
+    type MasterRow = { id: number | string; status?: string; name?: string; title?: string; hsn_code?: string; percentage?: number | string };
+    const active = (r: MasterRow) => String(r.status ?? 'Active').toLowerCase() !== 'inactive';
+    const fetchMaster = async <T,>(slug: string, map: (r: MasterRow) => T | null): Promise<T[]> => {
+      try {
+        const res = await api.get<MasterRow[]>(`/master/${slug}`);
+        const rows = Array.isArray(res.data) ? res.data : [];
+        return rows.filter(active).map(map).filter((v): v is T => v !== null && v !== '');
+      } catch { return []; }
+    };
+    (async () => {
+      const [seg, hsn, uom, cond, gst] = await Promise.all([
+        fetchMaster<string>('segments',       r => r.title ?? null),
+        fetchMaster<string>('hsn_codes',      r => r.hsn_code ?? null),
+        fetchMaster<string>('uom',            r => r.title ?? null),
+        fetchMaster<string>('conditions',     r => r.title ?? null),
+        fetchMaster<string>('gst_percentage', r => (r.percentage != null ? `${r.percentage}%` : null)),
+      ]);
+      if (seg.length)  setSegmentOpts(seg);
+      if (hsn.length)  setHsnOpts(hsn);
+      if (uom.length)  setUomOpts(uom);
+      if (cond.length) setConditionOpts(cond);
+      if (gst.length)  setGstRateOpts(gst);
+
+      // Vendor dropdown — sources from the vendor directory rather than
+      // a master so the filter matches what the user can actually
+      // associate with a product.
+      try {
+        type VendorRow = { id: number; company_name?: string; vendor_code?: string };
+        const res = await api.get<{ data?: VendorRow[] } | VendorRow[]>('/vendors?per_page=200');
+        const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+        const names = rows.map(v => v.company_name ?? '').filter(Boolean);
+        if (names.length) setVendorOpts(names);
+      } catch { /* fall back to hardcoded */ }
+    })();
+  }, []);
+
   /* Escape-to-close — a second exit path beyond the backdrop click and
      the close button. Bound only while the drawer is open so we don't
      listen forever. */
@@ -296,14 +346,32 @@ export default function Products() {
     setAddOpen(true);
   };
 
-  const handleDelete = async (p: Product) => {
-    if (!confirm(`Delete ${p.name}? This cannot be undone.`)) return;
+  /* Delete confirmation — mirrors the modal used on Clients and HR
+     Employees. Two-stage flow: click "Delete" in the row action ->
+     opens DeleteConfirmModal -> Confirm -> hits the API. Server-side
+     this is a soft delete (Product uses SoftDeletes), so the row only
+     disappears from the active list and can be restored from the
+     trashed rows later if a recovery flow ever ships. */
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = (p: Product) => {
+    setDeleteTarget(p);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      await api.delete(`/products/${p.apiId}`);
-      toast.success('Deleted', `${p.name} removed`);
+      await api.delete(`/products/${deleteTarget.apiId}`);
+      toast.success('Deleted', `${deleteTarget.name} moved to deleted state`);
+      setDeleteTarget(null);
       refresh();
-    } catch {
-      toast.error('Delete failed', 'Please try again');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Please try again';
+      toast.error('Delete failed', msg);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -376,7 +444,7 @@ export default function Products() {
             value={segment}
             onChange={setSegment}
             placeholder="All Segments"
-            options={SEGMENTS.map(s => ({ value: s, label: s }))}
+            options={['All Segments', ...segmentOpts.filter(s => s !== 'All Segments')].map(s => ({ value: s, label: s }))}
           />
         </div>
         <div className="prd-ms-wrap">
@@ -481,6 +549,16 @@ export default function Products() {
         />
       )}
 
+      <DeleteConfirmModal
+        open={deleteTarget !== null}
+        itemName={deleteTarget?.name}
+        title="Delete Product"
+        subMessage="This action moves the product to the deleted state. Its vendor mappings and QC records remain linked and can be restored if you bring the product back."
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={confirmDelete}
+        loading={deleting}
+      />
+
       {/* Filter sidebar — slides in from the left.
           Portalled to <body> so the fixed positioning escapes the
           page-content stacking context. Without the portal the drawer's
@@ -524,19 +602,19 @@ export default function Products() {
 
         <div className="prd-filter-body">
           <FilterPanel label="GST Rate" panelKey="gstRate" open={expandedPanel === 'gstRate'} onToggle={togglePanel} count={filters.gstRate.length}>
-            {GST_RATES.map(v => (
+            {gstRateOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.gstRate.includes(v)} onChange={() => toggleMulti('gstRate', v)} />
             ))}
           </FilterPanel>
 
           <FilterPanel label="Product Segment" panelKey="segment" open={expandedPanel === 'segment'} onToggle={togglePanel} count={filters.segment.length}>
-            {SEGMENTS.filter(s => s !== 'All Segments').map(v => (
+            {segmentOpts.filter(s => s !== 'All Segments').map(v => (
               <CheckRow key={v} label={v} checked={filters.segment.includes(v)} onChange={() => toggleMulti('segment', v)} />
             ))}
           </FilterPanel>
 
           <FilterPanel label="HSN/SAC Code" panelKey="hsn" open={expandedPanel === 'hsn'} onToggle={togglePanel} count={filters.hsn.length}>
-            {HSN_CODES.map(v => (
+            {hsnOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.hsn.includes(v)} onChange={() => toggleMulti('hsn', v)} />
             ))}
           </FilterPanel>
@@ -548,19 +626,19 @@ export default function Products() {
           </FilterPanel>
 
           <FilterPanel label="Unit of Measurement" panelKey="uom" open={expandedPanel === 'uom'} onToggle={togglePanel} count={filters.uom.length}>
-            {UOMS.map(v => (
+            {uomOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.uom.includes(v)} onChange={() => toggleMulti('uom', v)} />
             ))}
           </FilterPanel>
 
           <FilterPanel label="Condition" panelKey="condition" open={expandedPanel === 'condition'} onToggle={togglePanel} count={filters.condition.length}>
-            {CONDITIONS.map(v => (
+            {conditionOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.condition.includes(v)} onChange={() => toggleMulti('condition', v)} />
             ))}
           </FilterPanel>
 
           <FilterPanel label="Vendor" panelKey="vendor" open={expandedPanel === 'vendor'} onToggle={togglePanel} count={filters.vendor.length}>
-            {VENDORS.map(v => (
+            {vendorOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.vendor.includes(v)} onChange={() => toggleMulti('vendor', v)} />
             ))}
           </FilterPanel>

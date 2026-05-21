@@ -651,7 +651,7 @@ function MasterPageInner({
     // master form. Skips identifier-style fields (codes / GSTIN / PAN / etc.)
     // and email, which have their own casing rules.
     const SKIP_CAPITALIZE = new Set([
-      'code', 'iso_code', 'state_code', 'short_code',
+      'code', 'iso_code', 'state_code', 'short_code', 'hsn_code',
       'gstin', 'pan', 'tan', 'cin', 'iec',
       'ifsc_code', 'swift_code', 'ad_code',
       'email', 'website', 'url', 'domain', 'phone', 'mobile', 'whatsapp',
@@ -3897,7 +3897,7 @@ function renderField(
     // exactly as typed. Skipped for email/number, code-style, and contact
     // fields (handled by SKIP_AUTOCAP_FIELDS below).
     const SKIP_AUTOCAP_FIELDS = new Set([
-      'code', 'iso_code', 'state_code', 'short_code',
+      'code', 'iso_code', 'state_code', 'short_code', 'hsn_code',
       'gstin', 'pan', 'tan', 'cin', 'iec',
       'ifsc_code', 'swift_code', 'ad_code',
       'email', 'website', 'url', 'domain', 'phone', 'mobile', 'whatsapp',

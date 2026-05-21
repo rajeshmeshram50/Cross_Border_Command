@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../api';
 import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
@@ -268,6 +268,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
    * a `/customers/{id}/documents` target without forcing the user to
    * close + re-open the modal. */
   const [savedDbId, setSavedDbId] = useState<number | null>(customer?.db_id ?? null);
+  /* Synchronous re-entry lock — `saving` state is async and React
+   * batches updates, so two rapid Save & Next clicks can both pass
+   * the saving check before either has set saving=true. A ref flips
+   * immediately on the synchronous tick, blocking the second call
+   * cold. Fixes the duplicate-row issue users saw on quick clicks. */
+  const inFlightRef = useRef(false);
 
   // Trade docs selection
   const [tdDocs, setTdDocs] = useState([
@@ -517,7 +523,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     if (!form.state)                                    next.state    = 'Select a state';
     if (!form.city.trim())                              next.city     = 'City is required';
     if (!form.pin.trim())                               next.pin      = 'PIN / Postal code is required';
-    else if (!/^[A-Za-z0-9-\s]{3,12}$/.test(form.pin))  next.pin      = 'PIN / Postal code looks invalid';
+    else if (!/^\d{6}$/.test(form.pin.trim()))          next.pin      = 'PIN must be exactly 6 digits';
     if (!form.cpName.trim())                            next.cpName   = 'Contact person name is required';
     if (!form.cpDesig.trim())                           next.cpDesig  = 'Designation is required';
     if (!form.cpTel.trim())                             next.cpTel    = 'Contact number is required';
@@ -575,14 +581,26 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   });
 
   const submitCustomer = async () => {
-    if (saving) return;
+    // Synchronous re-entry lock — saving state is async so two
+    // rapid clicks could both slip past the check. The ref blocks
+    // any second call on the same tick.
+    if (inFlightRef.current || saving) return;
+    inFlightRef.current = true;
     setSaving(true);
     try {
       const payload = buildPayload();
-      if (isEdit && customer?.db_id) {
-        await api.put(`/customers/${customer.db_id}`, payload);
+      // Prefer customer.db_id (edit mode) BUT fall back to savedDbId
+      // (the id persistStage1 just created in this session). Without
+      // that fallback, the final Submit click after a Stage 1→2 auto-
+      // save would POST a *second* row for the same customer — silent
+      // duplicate. Mirrors persistStage1's idempotent check.
+      const persistedDbId = (isEdit && customer?.db_id) || savedDbId;
+      if (persistedDbId) {
+        await api.put(`/customers/${persistedDbId}`, payload);
       } else {
-        await api.post('/customers', payload);
+        const r = await api.post('/customers', payload);
+        const newId = r.data?.data?.db_id ?? null;
+        if (newId) setSavedDbId(newId);
       }
       onSaved?.();
       onClose();
@@ -620,6 +638,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       }
     } finally {
       setSaving(false);
+      inFlightRef.current = false;
     }
   };
 
@@ -630,13 +649,22 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
    * list, and re-open as edit. Same auto-save pattern is used by
    * AddConsigneeModal. */
   const persistStage1 = async (): Promise<number | null> => {
-    if (saving) return savedDbId;
+    // Synchronous re-entry lock — see inFlightRef declaration.
+    // Without it, two rapid Save & Next clicks both read savedDbId
+    // before the first POST's response had set it, and both end up
+    // POSTing — silent duplicate.
+    if (inFlightRef.current || saving) return savedDbId;
+    inFlightRef.current = true;
     setSaving(true);
     try {
       const payload = buildPayload();
-      if (savedDbId) {
-        await api.put(`/customers/${savedDbId}`, payload);
-        return savedDbId;
+      // Prefer the existing customer.db_id (edit mode) over savedDbId
+      // (in-session POST result). Either way, if we already have a
+      // row id we PUT — never re-POST.
+      const persistedDbId = (isEdit && customer?.db_id) || savedDbId;
+      if (persistedDbId) {
+        await api.put(`/customers/${persistedDbId}`, payload);
+        return persistedDbId;
       }
       const r = await api.post('/customers', payload);
       const newId = r.data?.data?.db_id ?? null;
@@ -673,6 +701,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       return null;
     } finally {
       setSaving(false);
+      inFlightRef.current = false;
     }
   };
 
@@ -1160,7 +1189,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
               />
             </Field>
             <Field label="City" required error={errors.city} fieldKey="city"><input className={errors.city ? 'acm-input-error' : ''} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City name" /></Field>
-            <Field label="Pin / Postal Code" required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', e.target.value)} maxLength={12} placeholder="6-digit PIN" /></Field>
+            <Field label="Pin / Postal Code" required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" maxLength={6} placeholder="6-digit PIN" /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Contact Person Name" required error={errors.cpName} fieldKey="cpName"><input className={errors.cpName ? 'acm-input-error' : ''} value={form.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
@@ -2301,7 +2330,7 @@ function LocationSubModal({ editing, masters, onClose, onSave }:
     if (!d.state)                                      next.state         = 'Select state';
     if (!d.city.trim())                                next.city          = 'City is required';
     if (!d.pin.trim())                                 next.pin           = 'PIN is required';
-    else if (!/^[A-Za-z0-9-\s]{3,12}$/.test(d.pin))    next.pin           = 'PIN looks invalid';
+    else if (!/^\d{6}$/.test(d.pin.trim()))            next.pin           = 'PIN must be exactly 6 digits';
     if (!d.cpName.trim())                              next.cpName        = 'Contact name required';
     if (!d.cpDesignation.trim())                       next.cpDesignation = 'Designation required';
     if (!d.cpContact.trim())                           next.cpContact     = 'Phone required';
@@ -2349,7 +2378,7 @@ function LocationSubModal({ editing, masters, onClose, onSave }:
               />
             </Field>
             <Field label="City" required error={errs.city}><input className={errs.city ? 'acm-input-error' : ''} value={d.city} onChange={e => set('city', e.target.value)} placeholder="Enter City" /></Field>
-            <Field label="Pin / Postal Code" required error={errs.pin}><input className={errs.pin ? 'acm-input-error' : ''} value={d.pin} onChange={e => set('pin', e.target.value)} maxLength={12} placeholder="Enter PIN" /></Field>
+            <Field label="Pin / Postal Code" required error={errs.pin}><input className={errs.pin ? 'acm-input-error' : ''} value={d.pin} onChange={e => set('pin', e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" maxLength={6} placeholder="6-digit PIN" /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Contact Person Name" required error={errs.cpName}><input className={errs.cpName ? 'acm-input-error' : ''} value={d.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
@@ -2490,9 +2519,9 @@ const SCOPED_CSS = `
   position: fixed; inset: 0; z-index: 10000;
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
-  background: radial-gradient(ellipse at center, rgba(76,29,149,.45) 0%, rgba(15,5,40,.78) 100%);
-  -webkit-backdrop-filter: blur(10px) saturate(1.3);
-          backdrop-filter: blur(10px) saturate(1.3);
+  background: rgba(15, 23, 42, 0.55);
+  -webkit-backdrop-filter: blur(4px);
+          backdrop-filter: blur(4px);
   font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
   animation: acmFadeIn .25s ease;
 }
@@ -2501,40 +2530,68 @@ const SCOPED_CSS = `
 .acm-root *, .acm-root *::before, .acm-root *::after { box-sizing: border-box; }
 
 .acm-card {
-  /* Stable card size: width caps at 1200, height pins at 90vh so the
+  /* Stable card size: width caps at 1440, height pins at 92vh so the
      modal doesn't reflow each time the user switches between Stage 1
-     sub-tabs (the empty Address & Contact table is shorter than the
-     full Identification form). Height = min(90vh, 100vh - 32px) keeps
-     a small breathing gap on shorter viewports. */
+     sub-tabs. Clean white body (was a heavy lavender wash that made
+     everything look blurred together) with a defined violet border. */
   width: 100%; max-width: 1440px;
   height: min(92vh, calc(100vh - 24px));
-  background: linear-gradient(165deg,#faf7ff 0%,#f5efff 45%,#ede9fe 100%);
-  border: 1px solid rgba(167,139,250,.5);
+  background: #ffffff;
+  border: 1px solid #d6c5ff;
   border-radius: 20px;
-  box-shadow: 0 32px 80px -20px rgba(76,29,149,.55), 0 12px 30px rgba(15,5,40,.25), inset 0 1px 0 rgba(255,255,255,.75);
+  box-shadow: 0 32px 80px -20px rgba(76,29,149,.40), 0 12px 30px rgba(15,5,40,.18);
   overflow: hidden; display: flex; flex-direction: column;
   animation: acmSlideUp .35s cubic-bezier(.34,1.56,.64,1);
 }
 @keyframes acmSlideUp { from { opacity: 0; transform: translateY(24px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
+/* Header — solid violet gradient banner. Bold brand color carries
+   the modal identity; white text + glassy icon box on top. */
 .acm-header {
-  background: linear-gradient(135deg,#2e1065 0%,#4c1d95 30%,#6d28d9 65%,#7c3aed 100%);
-  padding: 16px 22px; display: flex; align-items: center; justify-content: space-between;
-  position: relative; overflow: hidden; flex-shrink: 0;
+  position: relative;
+  background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 45%, #7c3aed 100%);
+  padding: 18px 24px;
+  display: flex; align-items: center; justify-content: space-between;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 .acm-header::before {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background-image: radial-gradient(ellipse at 15% 50%, rgba(167,139,250,.32) 0%, transparent 55%), radial-gradient(ellipse at 85% 50%, rgba(139,92,246,.22) 0%, transparent 55%);
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse at 15% 50%, rgba(167,139,250,0.30) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 50%, rgba(139,92,246,0.20) 0%, transparent 55%);
 }
 .acm-header-left { display: flex; align-items: center; gap: 14px; position: relative; z-index: 1; }
-.acm-header-icon { width: 40px; height: 40px; border-radius: 12px; background: rgba(255,255,255,.18); border: 1.5px solid rgba(255,255,255,.3); display: flex; align-items: center; justify-content: center; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); flex-shrink: 0; }
+.acm-header-icon {
+  width: 42px; height: 42px; border-radius: 12px;
+  background: rgba(255,255,255,0.18);
+  border: 1.5px solid rgba(255,255,255,0.30);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+}
 .acm-title { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -.3px; line-height: 1.2; }
-.acm-subtitle { font-size: 12px; color: rgba(255,255,255,.78); margin-top: 3px; }
-.acm-close { width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.3); background: rgba(255,255,255,.1); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .25s; position: relative; z-index: 1; }
-.acm-close:hover { background: rgba(255,255,255,.28); transform: rotate(90deg); }
+.acm-subtitle { font-size: 12px; color: rgba(255,255,255,0.80); margin-top: 3px; }
+.acm-close {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.30);
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .25s;
+  position: relative; z-index: 1;
+}
+.acm-close:hover { background: rgba(255,255,255,0.28); transform: rotate(90deg); }
 
 /* Stepper */
-.acm-stepper { padding: 16px 22px 14px; display: flex; align-items: center; gap: 0; flex-shrink: 0; }
+.acm-stepper { padding: 16px 22px 14px; display: flex; align-items: center; gap: 0; flex-shrink: 0; background: #fff; border-bottom: 1px solid #ede9fe; }
 .acm-step-connector { flex: 0 0 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; z-index: 0; }
 .acm-connector-line { width: 100%; height: 3px; background: #e2e8f0; border-radius: 3px; position: relative; overflow: hidden; }
 .acm-connector-line::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #10b981, #059669); border-radius: 3px; transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.4,0,.2,1); }
@@ -2563,14 +2620,14 @@ const SCOPED_CSS = `
 .acm-step-pending .acm-step-sub { color: #cbd5e1; }
 
 /* Tabs */
-.acm-tabs { padding: 14px 22px 0; display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+.acm-tabs { padding: 14px 22px 14px; display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; background: #fff; border-bottom: 1px solid #ede9fe; }
 .acm-tab { padding: 7px 18px; border-radius: 10px; border: 1.5px solid transparent; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .2s; white-space: nowrap; }
 .acm-tab-on { background: linear-gradient(135deg,#7c3aed,#6d28d9); color: #fff; border-color: #7c3aed; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
 .acm-tab-off { background: #fff; color: #6d28d9; border-color: #c4b5fd; }
 .acm-tab-off:hover { background: #ede9fe; border-color: #7c3aed; }
 
 /* Body */
-.acm-body { flex: 1; overflow-y: auto; padding: 16px 22px 20px; scrollbar-width: thin; scrollbar-color: #a78bfa #ede9fe; }
+.acm-body { flex: 1; overflow-y: auto; padding: 16px 22px 20px; background: #fafafd; scrollbar-width: thin; scrollbar-color: #a78bfa #ede9fe; }
 .acm-body::-webkit-scrollbar { width: 6px; }
 .acm-body::-webkit-scrollbar-track { background: #ede9fe; border-radius: 10px; }
 .acm-body::-webkit-scrollbar-thumb { background: #a78bfa; border-radius: 10px; }
@@ -3069,6 +3126,24 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-body::-webkit-scrollbar-track { background: #11182a; }
 [data-bs-theme="dark"] .acm-body::-webkit-scrollbar-thumb { background: #6d28d9; }
 
+/* Header banner — dark variant of the soft lavender wash. */
+[data-bs-theme="dark"] .acm-header {
+  background: linear-gradient(135deg, #1e1838 0%, #251c44 50%, #2a1d49 100%);
+  border-bottom-color: rgba(167,139,250,0.20);
+}
+[data-bs-theme="dark"] .acm-title { color: #e9d5ff; }
+[data-bs-theme="dark"] .acm-subtitle { color: #9aa0b4; }
+[data-bs-theme="dark"] .acm-close {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(167,139,250,0.30);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .acm-close:hover {
+  background: rgba(167,139,250,0.15);
+  border-color: #a78bfa;
+  color: #e9d5ff;
+}
+
 /* Stepper — keep colored states but darken pending */
 [data-bs-theme="dark"] .acm-step-active { background: linear-gradient(135deg, rgba(76,29,149,0.45) 0%, rgba(109,40,217,0.30) 100%); border-color: #a78bfa; box-shadow: 0 6px 22px rgba(0,0,0,.4), 0 0 0 1px rgba(167,139,250,.15) inset; }
 [data-bs-theme="dark"] .acm-step-active .acm-step-title { color: #f1f5f9; }
@@ -3238,36 +3313,82 @@ const SCOPED_CSS = `
  *  still usable on a phone.
  * ============================================================ */
 
-/* ── Tablet (≤ 1024px) ───────────────────────────────────────── */
+/* ── Small laptop (≤ 1440px) ─────────────────────────────────
+   1366×768 / 1440×900 are the most common laptop sizes. The
+   modal caps at max-width: 1440 so on a 1440px viewport it fills
+   the entire screen edge-to-edge — give it breathing room. */
+@media (max-width: 1440px) {
+  .acm-root { padding: 10px; }
+  .acm-card {
+    max-width: calc(100vw - 20px);
+    height: min(94vh, calc(100vh - 16px));
+  }
+  .acm-header { padding: 12px 18px; }
+  .acm-stepper { padding: 12px 16px 10px; }
+  .acm-body { padding: 14px 18px 16px; }
+  .acm-footer { padding: 10px 18px; }
+  .acm-section-body, .acm-sec-pad { padding: 14px; }
+}
+
+/* ── Compact laptop (≤ 1280px) ────────────────────────────────
+   Common HP/Dell business laptops (1280×800, 1366×768). 4-col
+   grids start to feel cramped here — collapse to 2x2 and tighten
+   the stepper chrome. */
+@media (max-width: 1280px) {
+  .acm-row-4 { grid-template-columns: 1fr 1fr; }
+  .acm-step { padding: 9px 11px; gap: 9px; }
+  .acm-step-badge-wrap,
+  .acm-step-badge { width: 34px; height: 34px; }
+  .acm-step-title { font-size: 11.5px; }
+  .acm-step-sub   { font-size: 9px; }
+  .acm-step-connector { flex-basis: 18px; }
+}
+
+/* ── Tablet (≤ 1024px) ───────────────────────────────────────
+   Collapse all multi-col grids to 2 cols, fix the stepper to
+   wrap, and tighten paddings further. */
 @media (max-width: 1024px) {
-  .acm-overlay { padding: 12px; }
-  .acm-wiz { max-width: 100%; }
-  /* 4-col grids → 2 cols; 3-col → 2 cols; 2-col → stays */
+  .acm-root { padding: 8px; }
+  .acm-card {
+    max-width: calc(100vw - 16px);
+    height: min(96vh, calc(100vh - 12px));
+  }
   .acm-row-4 { grid-template-columns: 1fr 1fr; }
   .acm-row-3 { grid-template-columns: 1fr 1fr; }
   .acm-row-2 { grid-template-columns: 1fr 1fr; }
   .acm-section-body, .acm-sec-pad { padding: 12px; }
+  /* Stepper: hide the connector lines (the chevrons get tiny) and
+     allow steps to flex-wrap onto two rows so they don't shrink
+     into unreadable pills. */
+  .acm-stepper { padding: 10px 12px 8px; flex-wrap: wrap; gap: 8px; }
+  .acm-step-connector { display: none; }
+  .acm-step { flex: 1 1 calc(50% - 6px); min-width: 0; }
+  /* Tabs: tighter padding */
+  .acm-tabs { padding: 0 16px; }
+  /* Body */
+  .acm-body { padding: 12px 14px 14px; }
 }
 
 /* ── Mobile (≤ 640px) ───────────────────────────────────────── */
 @media (max-width: 640px) {
-  .acm-overlay { padding: 0; align-items: stretch; }
-  .acm-wiz {
+  .acm-root { padding: 0; align-items: stretch; }
+  .acm-card {
     border-radius: 0;
     max-height: 100vh;
     height: 100vh;
     width: 100vw;
+    max-width: 100vw;
   }
   /* Header: stack icon + title, tighten font */
   .acm-header { padding: 14px 16px; flex-direction: column; align-items: flex-start; gap: 10px; }
   .acm-header-icon { width: 40px; height: 40px; }
   .acm-title { font-size: 16px; }
-  .acm-sub   { font-size: 11.5px; }
+  .acm-subtitle   { font-size: 11.5px; }
   .acm-close { position: absolute; top: 12px; right: 12px; }
-  /* Steps: stack vertically (or hide intermediate connectors) */
-  .acm-steps { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; }
-  .acm-steps-arrow, .acm-step-connector { display: none; }
-  .acm-step { width: 100%; }
+  /* Stepper: full vertical stack on phone */
+  .acm-stepper { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; }
+  .acm-step-connector { display: none; }
+  .acm-step { width: 100%; flex: 0 0 auto; }
   /* Tabs */
   .acm-tabs { flex-wrap: wrap; padding: 0 12px; }
   .acm-tab { flex: 1 1 auto; min-width: 40%; font-size: 12px; padding: 8px 10px; }

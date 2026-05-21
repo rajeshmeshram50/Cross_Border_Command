@@ -107,10 +107,43 @@ export default function ProductView() {
   }, [product]);
 
   if (loading) {
+    // Shimmer placeholder that mirrors the actual layout: image strip
+    // on the left, header + info blocks on the right. Beats a single
+    // "Loading…" message because the user sees the page structure
+    // immediately and the perceived load time drops sharply.
     return (
       <div className="pv2-root">
         <style>{SCOPED_CSS}</style>
-        <div className="pv2-loading">Loading product…</div>
+        <div className="pv2-shell">
+          <div className="pv2-grid">
+            <div className="pv2-gallery">
+              <div className="pv2-thumbs">
+                <div className="pv2-shimmer" style={{ height: 60, borderRadius: 8 }} />
+                <div className="pv2-shimmer" style={{ height: 60, borderRadius: 8 }} />
+                <div className="pv2-shimmer" style={{ height: 60, borderRadius: 8 }} />
+              </div>
+              <div className="pv2-shimmer pv2-main-shimmer" />
+            </div>
+            <div className="pv2-info">
+              <div className="pv2-shimmer" style={{ height: 32, width: '60%', marginBottom: 12, borderRadius: 6 }} />
+              <div className="pv2-shimmer" style={{ height: 18, width: '40%', marginBottom: 24, borderRadius: 4 }} />
+              <div className="pv2-info-grid">
+                <div className="pv2-info-block">
+                  <div className="pv2-shimmer" style={{ height: 16, width: 140, marginBottom: 12, borderRadius: 4 }} />
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i} className="pv2-shimmer" style={{ height: 14, width: i % 2 ? '70%' : '85%', marginBottom: 10, borderRadius: 4 }} />
+                  ))}
+                </div>
+                <div className="pv2-info-block">
+                  <div className="pv2-shimmer" style={{ height: 16, width: 140, marginBottom: 12, borderRadius: 4 }} />
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i} className="pv2-shimmer" style={{ height: 14, width: i % 2 ? '60%' : '80%', marginBottom: 10, borderRadius: 4 }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -191,8 +224,30 @@ export default function ProductView() {
                 </div>
               </div>
               <div className="pv2-head-actions">
-                <button className="pv2-back" onClick={() => navigate('/products')}>
-                  <i className="ri-arrow-left-s-line" /> Back
+                {/* Back-to-list pill — matches the master pages so the
+                    visual language is consistent across detail screens. */}
+                <button
+                  type="button"
+                  onClick={() => navigate('/products')}
+                  title="Back to Products"
+                  className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
+                  style={{
+                    height: 38,
+                    padding: '0 18px',
+                    background: 'color-mix(in srgb, #405189 8%, #ffffff)',
+                    color: '#405189',
+                    border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'background 0.18s ease',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
+                >
+                  <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
+                  Back to Products
                 </button>
                 <button className="pv2-edit" onClick={() => setEditOpen(true)}>
                   <i className="ri-edit-box-line" /> Edit Product
@@ -421,6 +476,25 @@ const SCOPED_CSS = `
 }
 .pv2-root *, .pv2-root *::before, .pv2-root *::after { box-sizing: border-box; }
 .pv2-loading { padding: 60px 20px; text-align: center; color: #6b7280; font-weight: 600; }
+
+/* Shimmer placeholder — animated gradient sweep that approximates the
+   loaded layout. Mirrors the .pv2-grid two-column structure. */
+@keyframes pv2-shimmer-sweep {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.pv2-shimmer {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%);
+  background-size: 200% 100%;
+  animation: pv2-shimmer-sweep 1.4s ease-in-out infinite;
+  border-radius: 6px;
+}
+.pv2-main-shimmer { flex: 1; min-height: 280px; border-radius: 12px; }
+[data-bs-theme="dark"] .pv2-shimmer,
+[data-layout-mode="dark"] .pv2-shimmer {
+  background: linear-gradient(90deg, #1c2531 25%, #283042 37%, #1c2531 63%);
+  background-size: 200% 100%;
+}
 
 /* Surface card */
 .pv2-card {

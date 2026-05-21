@@ -56,6 +56,7 @@ import SalesEnquiries from '../pages/sales/SalesEnquiries';
 import SalesLeadsDetails from '../pages/sales/SalesLeadsDetails';
 import SalesQPI from '../pages/sales/SalesQPI';
 import SalesP2PSummary from '../pages/sales/SalesP2PSummary';
+import SalesMatrixDetail from '../pages/sales/matrix/SalesMatrixDetail';
 import Products from '../pages/products/Products';
 import ProductView from '../pages/products/ProductView';
 import Vendors from '../pages/vendors/Vendors';
@@ -151,6 +152,7 @@ const getPagePath = (page: string, data?: any): string => {
       if (page === 'sales.todo')            return '/sales/todo';
       if (page === 'sales.lead_distribution') return '/sales/lead-distribution';
       if (page === 'sales.lead_detail')     return data?.oppId ? `/sales/lead-detail/${data.oppId}` : '/sales/lead-detail';
+      if (page === 'sales.matrix_detail')   return data?.oppId ? `/sales/matrix/${data.oppId}/stage/${data?.stage || 1}` : '/sales/matrix';
       if (page === 'sales.enquiries')       return '/sales/enquiries';
       if (page === 'sales.leads_details')   return data?.empId ? `/sales/leads-details/${data.empId}` : '/sales/leads-details';
       if (page === 'sales.qpi')             return '/sales/qpi';
@@ -581,6 +583,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/sales/lead-distribution" element={<SalesLeadDistribution />} />
               <Route path="/sales/lead-detail" element={<SalesLeadDetail />} />
               <Route path="/sales/lead-detail/:oppId" element={<SalesLeadDetail />} />
+              <Route path="/sales/matrix/:oppId/stage/:stage" element={<SalesMatrixDetail />} />
               <Route path="/sales/enquiries" element={<SalesEnquiries />} />
               <Route path="/sales/leads-details" element={<SalesLeadsDetails />} />
               <Route path="/sales/leads-details/:empId" element={<SalesLeadsDetails />} />
