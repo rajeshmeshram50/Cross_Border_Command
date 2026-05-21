@@ -552,6 +552,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   const validateStage1 = (): boolean => {
     const next: Record<string, string> = {};
     if (!form.coName.trim())                            next.coName  = 'Company name is required';
+    else if (form.coName.trim().length > 30)            next.coName  = 'Company name must be 30 characters or fewer';
     if (!form.coLegal.trim())                           next.coLegal = 'Legal name is required';
     if (!form.coType)                                   next.coType  = 'Select a customer type';
     if (!form.coSeg)                                    next.coSeg   = 'Select a segment';
@@ -1240,7 +1241,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
         </div>
         <div className="acm-section-body">
           <div className="acm-row acm-row-3">
-            <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={errors.coName ? 'acm-input-error' : ''} value={form.coName} onChange={e => set('coName', e.target.value)} placeholder="e.g. Shree Agro Pvt Ltd" /></Field>
+            <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={errors.coName ? 'acm-input-error' : ''} value={form.coName} maxLength={30} onChange={e => set('coName', e.target.value.slice(0, 30))} placeholder="e.g. Shree Agro Pvt Ltd (max 30)" /></Field>
             <Field label="Company Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
             <Field label="Customer Type" required error={errors.coType} fieldKey="coType">
               <MasterSelect value={form.coType} options={optsWith(masters.customerTypes, form.coType)} placeholder="Select customer type" invalid={!!errors.coType} onChange={v => set('coType', v)} />
