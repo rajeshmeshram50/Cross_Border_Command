@@ -617,6 +617,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 
   /* Build the POST/PUT payload from the form + locations. Mirrors the
    * shape declared in CustomerController::validatePayload(). */
+  /* Normalize the pin code so the backend's strict `regex:/^\d{6}$/`
+   * rule doesn't trip on legacy / partial values. Anything that isn't
+   * exactly 6 digits arrives as null — the `nullable` rule then lets
+   * it through, and the user fixes it on the next edit. */
+  const cleanPin = (v: any): string | null => {
+    const s = String(v ?? '').trim();
+    return /^\d{6}$/.test(s) ? s : null;
+  };
   const buildPayload = () => ({
     company_name:   form.coName,
     legal_name:     form.coLegal,
@@ -632,7 +640,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       country:        form.country,
       state:          form.state,
       city:           form.city,
-      pin:            form.pin,
+      pin:            cleanPin(form.pin),
       cp_name:        form.cpName,
       cp_designation: form.cpDesig,
       cp_contact:     form.cpTel,
@@ -645,7 +653,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       country:        l.country,
       state:          l.state,
       city:           l.city,
-      pin:            l.pin,
+      pin:            cleanPin(l.pin),
       cp_name:        l.cpName,
       cp_designation: l.cpDesignation,
       cp_contact:     l.cpContact,
@@ -3401,8 +3409,17 @@ const SCOPED_CSS = `
 .acm-doc-search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #a78bfa; pointer-events: none; }
 .acm-doc-count { font-size: 11.5px; color: #6d28d9; font-weight: 700; white-space: nowrap; letter-spacing: .02em; }
 
-/* Tables */
-.acm-table-wrap { width: 100%; overflow-x: auto; }
+/* Tables — cap height + scroll the table body when there are lots of
+   rows so the modal footer never gets pushed off-screen. Header strip
+   stays sticky so the user always sees which column they're on. */
+.acm-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 360px;
+  scrollbar-width: thin;
+}
+.acm-table thead th { position: sticky; top: 0; z-index: 1; }
 .acm-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 900px; font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif; }
 .acm-table thead tr { background: linear-gradient(180deg, #faf7ff, #f5efff); }
 .acm-table thead th {
