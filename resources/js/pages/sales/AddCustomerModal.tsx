@@ -366,6 +366,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   /** Confirm-delete state for Stage 2 rows. `kind` decides which
    *  endpoint the confirm calls. */
   const [kycDelModal, setKycDelModal] = useState<{ open: boolean; kind: 'doc' | 'owner'; id: number | null; label?: string }>({ open: false, kind: 'doc', id: null });
+  /* In-flight flag for the Stage 2 delete confirm — drives spinner +
+   * disabled state on the confirm dialog while the DELETE request is
+   * in flight. */
+  const [kycDeleting, setKycDeleting] = useState(false);
 
   /** Edit-mode targets for Stage 2 sub-modals. When set, the matching
    *  sub-modal opens pre-filled and saves via PUT instead of POST. */
@@ -1125,11 +1129,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         subMessage={kycDelModal.kind === 'doc'
           ? 'This will permanently delete the document and its uploaded attachment.'
           : 'This will permanently delete the owner record and all uploaded identity proofs.'}
-        onClose={() => setKycDelModal({ open: false, kind: kycDelModal.kind, id: null })}
+        onClose={() => { if (!kycDeleting) setKycDelModal({ open: false, kind: kycDelModal.kind, id: null }); }}
+        loading={kycDeleting}
         onConfirm={async () => {
           const id = kycDelModal.id;
           const kind = kycDelModal.kind;
           if (!id || !customer?.db_id) { setKycDelModal({ open: false, kind, id: null }); return; }
+          setKycDeleting(true);
           try {
             if (kind === 'doc') {
               await api.delete(`/customers/${customer.db_id}/documents/${id}`);
@@ -1142,6 +1148,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
             toast.error('Delete failed', err?.response?.data?.message ?? 'Please try again.');
           } finally {
             setKycDelModal({ open: false, kind, id: null });
+            setKycDeleting(false);
           }
         }}
       />

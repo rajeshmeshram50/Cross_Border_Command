@@ -56,6 +56,10 @@ export default function SalesConsignee() {
   const [rows, setRows] = useState<ConsigneeRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [delTarget, setDelTarget] = useState<ConsigneeRow | null>(null);
+  /* In-flight flag for the delete confirm — drives the spinner +
+   * disabled state on the confirm dialog so the user has a visual
+   * cue that the DELETE request is still going. */
+  const [deleting, setDeleting] = useState(false);
 
   const fetchRows = useCallback(async () => {
     if (!canView) return;
@@ -93,6 +97,7 @@ export default function SalesConsignee() {
 
   const handleDelete = async () => {
     if (!delTarget?.db_id) { setDelTarget(null); return; }
+    setDeleting(true);
     try {
       await api.delete(`/consignees/${delTarget.db_id}`);
       toast.success('Consignee deleted', delTarget.company);
@@ -100,6 +105,8 @@ export default function SalesConsignee() {
       fetchRows();
     } catch (e: any) {
       toast.error('Delete failed', e?.response?.data?.message ?? 'Please try again.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -431,8 +438,9 @@ export default function SalesConsignee() {
         title="Delete Consignee"
         itemName={delTarget?.company}
         subMessage="This will permanently delete the consignee and all linked addresses. The action cannot be undone."
-        onClose={() => setDelTarget(null)}
+        onClose={() => { if (!deleting) setDelTarget(null); }}
         onConfirm={handleDelete}
+        loading={deleting}
       />
     </div>
   );

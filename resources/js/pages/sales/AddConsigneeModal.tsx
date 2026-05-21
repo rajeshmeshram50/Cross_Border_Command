@@ -194,7 +194,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
   const [search, setSearch]     = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
-  const [linkedHidden, setLinkedHidden] = useState(false);
+  /* Linked-customer panel starts COLLAPSED — when the user picks a
+   * customer they only see the bar with the customer's id + name,
+   * not the full address/contact details. Detail block expands when
+   * the user ticks "Same as Customer" (handled in the setter wired
+   * to Stage1's setSameAsCustomer) OR when they click the chevron. */
+  const [linkedHidden, setLinkedHidden] = useState(true);
   /* Live customer list pulled from /api/customers when the modal
    * opens. This is the same endpoint SalesCustomers populates via
    * its Add Customer flow, so a freshly-created customer shows up
@@ -301,6 +306,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const [docModal, setDocModal]   = useState<{ open: boolean; sub: KycSubTab; editingId: string | null }>({ open: false, sub: 'company-dd', editingId: null });
   const [ownerModal, setOwnerModal] = useState<{ open: boolean; editingId: string | null }>({ open: false, editingId: null });
   const [kycDelModal, setKycDelModal] = useState<{ open: boolean; kind: 'doc' | 'owner' | null; id: string | null; label?: string }>({ open: false, kind: null, id: null });
+  /* In-flight flag for the Stage 2 delete confirm — drives spinner +
+   * disabled state on the confirm dialog while the DELETE request
+   * is going. */
+  const [kycDeleting, setKycDeleting] = useState(false);
 
   /* Stage 3 — Evidence Vault. Outer tab = KYC vs Trade. Inner sub-tab
    * (when on KYC) = which KYC kind to view. */
@@ -340,11 +349,28 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setVaultTab(remembered?.vaultTab ?? 'kyc');
     setSearch('');
     setSearchOpen(false);
-    setLinkedHidden(false);
+    /* Panel collapsed by default — picking a customer alone shows
+     * only the id+name bar. Ticking "Same as Customer" (or clicking
+     * the chevron) expands it. Hydration below re-opens it for an
+     * existing same-as-customer consignee. */
+    setLinkedHidden(true);
     setErrors1({});
     setSameAsCustomer(false);
     setEvSub('dd');
     setLocations([]);
+    /* Reset Stage 1 form to empty defaults — CREATE mode only. In edit
+     * mode the hydration effect below replays the consignee's saved
+     * payload, so wiping here would just cause an empty flash before
+     * the GET resolves. Create mode lands on a clean form so picking
+     * a customer never reveals stale residue from a prior session;
+     * mirror copy only happens after the user ticks Same-as-Customer. */
+    if (!consignee?.db_id) {
+      setForm1({
+        companyName: '', legalName: '', website: '', segment: '', classification: '', risk: '',
+        addressType: 'Registered Office', address: '', country: '', state: '', city: '', pin: '',
+        contactName: '', designation: '', contactNo: '', email: '', whatsapp: 'Yes',
+      });
+    }
     setLocModal({ open: false, editing: null });
     setDelModal({ open: false, id: null });
     setKycSearch('');
@@ -531,6 +557,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         // the consignee flagged as same-as-customer on update.
         if (typeof d.same_as_customer === 'boolean') {
           setSameAsCustomer(d.same_as_customer);
+          // Auto-expand the linked-customer panel when editing a mirror
+          // so the user sees the cloned customer details immediately.
+          if (d.same_as_customer) setLinkedHidden(false);
         }
         const extra: any[] = Array.isArray(d.locations) ? d.locations : [];
         setLocations(extra.map((a: any) => ({
@@ -1220,6 +1249,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 }
 
                 setSameAsCustomer(v);
+                /* Auto-toggle the linked-customer detail panel with the
+                 * checkbox so the rule "customer details visible iff
+                 * Same-as-Customer is ticked" actually holds. Picking a
+                 * customer from the dropdown alone leaves the panel
+                 * collapsed (just the id + name bar). */
+                setLinkedHidden(!v);
                 /* Tick  = useEffect mirrors customer's Stage 1 fields +
                  *         additional addresses onto form1 + locations[].
                  *         After Stage 1 save, persistStage1 then fires the
@@ -1440,12 +1475,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       subMessage={kycDelModal.kind === 'owner'
         ? 'This will remove the owner KYC record from this consignee. The action cannot be undone.'
         : 'This will remove the document from this consignee. The action cannot be undone.'}
-      onClose={() => setKycDelModal({ open: false, kind: null, id: null })}
+      onClose={() => { if (!kycDeleting) setKycDelModal({ open: false, kind: null, id: null }); }}
+      loading={kycDeleting}
       onConfirm={async () => {
         const id = kycDelModal.id;
         const kind = kycDelModal.kind;
-        setKycDelModal({ open: false, kind: null, id: null });
-        if (!id || !savedDbId) return;
+        if (!id || !savedDbId) {
+          setKycDelModal({ open: false, kind: null, id: null });
+          return;
+        }
         // Server rows are stored under id = 'db_<numeric>' so we can
         // map back to the persisted row. Bare in-memory rows (no db_
         // prefix) can only be dropped from the table since they were
@@ -1453,6 +1491,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         // Stage 1, but kept as a defensive branch).
         if (id.startsWith('db_')) {
           const numericId = Number(id.replace('db_', ''));
+          setKycDeleting(true);
           try {
             if (kind === 'owner') {
               await api.delete(`/consignees/${savedDbId}/owners/${numericId}`);
@@ -1462,11 +1501,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             await refetchKyc(savedDbId);
           } catch (err: any) {
             toast.error('Delete failed', err?.response?.data?.message ?? 'Please try again.');
+          } finally {
+            setKycDeleting(false);
+            setKycDelModal({ open: false, kind: null, id: null });
           }
         } else {
           // Optimistic local-only drop fallback.
           if (kind === 'owner') setKycOwners(prev => prev.filter(o => o.id !== id));
           else if (kind === 'doc') setKycDocs(prev => prev.filter(d => d.id !== id));
+          setKycDelModal({ open: false, kind: null, id: null });
         }
       }}
     />

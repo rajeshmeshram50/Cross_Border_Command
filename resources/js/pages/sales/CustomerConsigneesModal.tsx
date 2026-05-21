@@ -44,6 +44,9 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ConsigneeRow | null>(null);
   const [delTarget, setDelTarget] = useState<ConsigneeRow | null>(null);
+  /* In-flight flag for the delete confirm — drives spinner + disabled
+   * state on the confirm dialog while the DELETE request is going. */
+  const [deleting, setDeleting] = useState(false);
 
   const fetchRows = useCallback(async () => {
     if (!customer?.db_id) return;
@@ -103,6 +106,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
 
   const handleDelete = async () => {
     if (!delTarget?.db_id) { setDelTarget(null); return; }
+    setDeleting(true);
     try {
       await api.delete(`/consignees/${delTarget.db_id}`);
       toast.success('Consignee deleted', delTarget.company);
@@ -110,6 +114,8 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
       fetchRows();
     } catch (e: any) {
       toast.error('Delete failed', e?.response?.data?.message ?? 'Please try again.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -283,8 +289,9 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
         title="Delete Consignee"
         itemName={delTarget?.company}
         subMessage="This will permanently delete the consignee and all linked addresses. The action cannot be undone."
-        onClose={() => setDelTarget(null)}
+        onClose={() => { if (!deleting) setDelTarget(null); }}
         onConfirm={handleDelete}
+        loading={deleting}
       />
     </>,
     document.body,
