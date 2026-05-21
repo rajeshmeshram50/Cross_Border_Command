@@ -1243,13 +1243,49 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-table tbody td {
   background: #0f172a !important;
   color: #cbd5e1 !important;
-  border-top-color: rgba(51, 65, 85, 0.55) !important;
+  /* Repaints the row separator in a near-invisible navy so the
+     previous off-white border doesn't leave a bright line streaking
+     across every row. */
+  border-top-color: rgba(30, 41, 59, 0.65) !important;
+  border-bottom: none !important;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-table tbody tr {
+  border-bottom: 1px solid rgba(30, 41, 59, 0.65) !important;
+  background: transparent !important;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:last-child {
+  border-bottom: none !important;
 }
 [data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:nth-child(even) td { background: #111c33 !important; }
 [data-bs-theme="dark"] .lwp-root .lwp-table tbody tr:hover td { background: #16223d !important; }
 [data-bs-theme="dark"] .lwp-root .lwp-table a { color: #67e8f9; }
 
-/* Status pills + per-row action buttons */
+/* Cell-level text — customer name was hard-coded to slate-900 (near
+   black) which becomes invisible on the dark slate row surface. */
+[data-bs-theme="dark"] .lwp-root .lwp-cust-name { color: #f1f5f9; font-weight: 600; }
+[data-bs-theme="dark"] .lwp-root .lwp-asgn span { color: #e2e8f0; }
+[data-bs-theme="dark"] .lwp-root .lwp-av-xs.u   { background: #1e293b; color: #64748b; }
+[data-bs-theme="dark"] .lwp-root .lwp-opp-link  { color: #67e8f9; }
+[data-bs-theme="dark"] .lwp-root .lwp-opp-link:hover { color: #a5f3fc; }
+
+/* Country tag — the light version uses a bright cyan gradient with
+   white text. On the dark theme that screams against the surface;
+   recolor as a subtler translucent chip so it reads as data, not a
+   call-to-action. */
+[data-bs-theme="dark"] .lwp-root .lwp-ctag {
+  background: rgba(14, 165, 233, 0.16) !important;
+  color: #7dd3fc !important;
+  border: 1px solid rgba(34, 211, 238, 0.35) !important;
+  box-shadow: none !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+}
+
+/* WhatsApp + status pills — keep the meaning, dim the brightness. */
+[data-bs-theme="dark"] .lwp-root .lwp-wa-badge {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+}
 [data-bs-theme="dark"] .lwp-root .lwp-pill-pending {
   background: rgba(245, 158, 11, 0.18); color: #fbbf24; border-color: rgba(245, 158, 11, 0.40);
 }
