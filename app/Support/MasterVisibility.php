@@ -115,32 +115,74 @@ class MasterVisibility
      * Returns a human-readable denial message, or null when the action is
      * allowed. Use in update() / destroy() to block descendants from
      * modifying ancestor-created rows even when they can see them.
+     *
+     * The row's tier is determined by — in order — (1) its creator's
+     * user_type when `created_by` resolves to a live user, otherwise
+     * (2) its ownership stamp (`client_id` + `branch_id`). The fallback
+     * is critical: without it, rows with a NULL or stale `created_by`
+     * (seeded data, migrated rows, rows whose creator was deleted)
+     * would silently fall through this check and become deletable by
+     * any tier — a sub-branch user could delete a Main-Branch row.
      */
     public static function hierarchicalDenial(?User $user, $row, string $action): ?string
     {
         if (!$user || $user->user_type === 'super_admin') return null;
-        if (!isset($row->created_by) || !$row->created_by) return null;
-        if ((int) $row->created_by === (int) $user->id) return null;
 
-        $creator = User::find($row->created_by);
-        if (!$creator) return null;
+        // Always allow the row's own creator to manage it. (When
+        // created_by is null, this short-circuit doesn't fire — we
+        // fall through to the tier check below.)
+        if (isset($row->created_by) && $row->created_by
+            && (int) $row->created_by === (int) $user->id) {
+            return null;
+        }
 
-        $userTier    = self::tierFor($user);
-        $creatorTier = self::tierFor($creator, $row->branch_id ?? null);
+        $userTier = self::tierFor($user);
 
-        if ($creatorTier <= $userTier) return null;
+        // Prefer the creator user when we can resolve one — gives the
+        // most accurate tier (handles client_admin vs client_user
+        // labelling for the message, etc.).
+        $creator = (isset($row->created_by) && $row->created_by)
+            ? User::find($row->created_by)
+            : null;
 
-        $byWhom = match ($creator->user_type) {
-            'super_admin'             => 'a Super Admin',
-            'client_admin'            => 'a Client Admin',
-            'client_user'             => 'a Client user',
-            'branch_user', 'employee' => $creatorTier === self::TIER_MAIN
-                ? 'the Main Branch'
-                : 'another Branch',
-            default                   => 'a higher-privileged user',
-        };
+        if ($creator) {
+            $rowTier = self::tierFor($creator, $row->branch_id ?? null);
+            $rowLabel = match ($creator->user_type) {
+                'super_admin'             => 'a Super Admin',
+                'client_admin'            => 'a Client Admin',
+                'client_user'             => 'a Client user',
+                'branch_user', 'employee' => $rowTier === self::TIER_MAIN
+                    ? 'the Main Branch'
+                    : 'another Branch',
+                default                   => 'a higher-privileged user',
+            };
+        } else {
+            // Creator unknown → infer tier from the row's own ownership
+            // stamp. Globals (no client) ranked as Super so only super
+            // admins can delete; otherwise rank by branch type.
+            $rowClientId = $row->client_id ?? null;
+            $rowBranchId = $row->branch_id ?? null;
+
+            if (!$rowClientId) {
+                $rowTier = self::TIER_SUPER;
+                $rowLabel = 'a Super Admin';
+            } elseif (!$rowBranchId) {
+                $rowTier = self::TIER_CLIENT;
+                $rowLabel = 'a Client user';
+            } else {
+                $isMain = Branch::where('id', $rowBranchId)
+                    ->where('client_id', $rowClientId)
+                    ->where('is_main', true)
+                    ->exists();
+                $rowTier  = $isMain ? self::TIER_MAIN : self::TIER_SUB;
+                $rowLabel = $isMain ? 'the Main Branch' : 'another Branch';
+            }
+        }
+
+        if ($rowTier <= $userTier) return null;
+
         $verb = $action === 'delete' ? 'delete' : 'edit';
-        return "You cannot {$verb} this record — it was created by {$byWhom}.";
+        return "You cannot {$verb} this record — it was created by {$rowLabel}.";
     }
 
     /** Narrow an already-scoped query when BranchSwitcher injects ?branch_id=N.
