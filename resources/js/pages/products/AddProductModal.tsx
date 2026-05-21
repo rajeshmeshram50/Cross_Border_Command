@@ -283,7 +283,11 @@ export default function AddProductModal(props: {
     const row = optGst.find(o => o.value === gstId);
     return parseFloat(String(row?.extra?.percentage ?? '0')) || 0;
   }, [optGst, gstId]);
-  const gstPctStr = gstPctNum ? `${gstPctNum}%` : '';
+  /* Cap GST % display to 2 decimal places — backend ships values like
+     40.0000 / 5.000 which look noisy on the UI. Two decimals match
+     the convention used everywhere else (vendor pricing, ProductView
+     vendor table) and are enough resolution for any practical rate. */
+  const gstPctStr = gstPctNum ? `${gstPctNum.toFixed(2)}%` : '';
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
   const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
 
@@ -625,7 +629,13 @@ export default function AddProductModal(props: {
       setOptHsn(hs.map(o => ({ ...o, label: o.label + (o.extra?.description ? ` — ${String(o.extra.description).slice(0, 40)}` : '') })));
       setOptConditions(co);
       setOptPackaging(pk);
-      setOptGst(gst.map(o => ({ ...o, label: `${o.label}%` })));
+      setOptGst(gst.map(o => {
+        // Trim noisy trailing zeros (40.0000 → 40) on the dropdown
+        // label while keeping the % suffix.
+        const n = parseFloat(o.label);
+        const clean = Number.isFinite(n) ? String(Number(n.toFixed(2))) : o.label;
+        return { ...o, label: `${clean}%` };
+      }));
       setVendorOpts(vd);
     })();
   }, []);
@@ -677,8 +687,12 @@ export default function AddProductModal(props: {
         setPackagingMaterialId(id);
         clearFieldError('packagingMaterialId');
         break;
-      case 'gst_percentage':
-        setOptGst(prev => [...prev, { value: id, label: `${labelOf('percentage')}%`, extra: { percentage: row.percentage } }]);
+      case 'gst_percentage': {
+        const raw = labelOf('percentage');
+        const n = parseFloat(raw);
+        const clean = Number.isFinite(n) ? String(Number(n.toFixed(2))) : raw;
+        setOptGst(prev => [...prev, { value: id, label: `${clean}%`, extra: { percentage: row.percentage } }]);
+      }
         setGstId(id);
         clearFieldError('gstId');
         break;
@@ -1856,8 +1870,14 @@ function Field(props: {
   disabled?: boolean;
   children: ReactNode;
 }) {
+  /* Renders as a <div>, NOT a <label>. A <label> proxies clicks
+     anywhere within it to the first form control inside — when
+     `addNew` is set, that first control is the "+" button, so
+     clicking the field area or even the label text was firing the
+     quick-add popup. Using a plain <div> keeps the visual layout
+     but breaks the click-association entirely. */
   return (
-    <label className={`apm-field${props.error ? ' has-error' : ''}${props.disabled ? ' is-disabled' : ''}`}>
+    <div className={`apm-field${props.error ? ' has-error' : ''}${props.disabled ? ' is-disabled' : ''}`}>
       <span className="apm-field-label">
         {props.label} {props.required && <span className="apm-req">*</span>}
         {props.addNew && !props.disabled && (
@@ -1882,7 +1902,7 @@ function Field(props: {
           <i className="ri-error-warning-line" /> {props.error}
         </span>
       )}
-    </label>
+    </div>
   );
 }
 

@@ -297,7 +297,7 @@ export default function ProductView() {
                 <h6 className="pv2-info-heading">Product Pricing Details:</h6>
                 <div className="pv2-info-body">
                   <Row k="Product Base Price" v={fmtMoney(product.base_price)} />
-                  <Row k="GST %"              v={gstPct ? `${gstPct}%` : '—'} />
+                  <Row k="GST %"              v={gstPct ? `${gstPct.toFixed(2)}%` : '—'} />
                   <Row k="GST Amount"         v={fmtMoney(product.gst_amount)} />
                   <div className="pv2-info-divider" />
                   <div className="pv2-info-row pv2-total-line">
@@ -407,7 +407,7 @@ export default function ProductView() {
                         <td>{String(v.contact_person ?? '—')}</td>
                         <td>{String(v.contact_no ?? '—')}</td>
                         <td className="pv2-vt-num">{fmtMoney(v.purchase_price as string | number | null)}</td>
-                        <td className="pv2-vt-num">{`${Number(v.gst_percentage ?? 0)}%`}</td>
+                        <td className="pv2-vt-num">{`${Number(v.gst_percentage ?? 0).toFixed(2)}%`}</td>
                         <td className="pv2-vt-num">{fmtMoney(v.gst_amount as string | number | null)}</td>
                         <td className="pv2-vt-num pv2-vt-total">{fmtMoney(v.total_amount as string | number | null)}</td>
                         <td>{mapDate
