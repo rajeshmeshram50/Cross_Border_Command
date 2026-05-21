@@ -179,14 +179,23 @@ const TableContainer = ({
             {getHeaderGroups().map((headerGroup: any) => (
               <tr className={trClass} key={headerGroup.id}>
                 {headerGroup.headers.map((header: any) => {
-                  const canSort = header.column.getCanSort?.() ?? true;
-                  const sortDir = header.column.getIsSorted() as string;
-                  // Per-column alignment hint — columns whose cells render
-                  // visually-centered content (status pills, action icons,
-                  // numeric counts) can opt in via `meta: { align: 'center' | 'end' }`
-                  // on the column def. Without this the header sat left
-                  // (inline-flex wrapper) while the cell content centered
-                  // itself, producing the misalignment users called out.
+                  /* Column sorting was disabled across the table component
+                   * deliberately:
+                   *   - Users reported the asc/desc arrows feeling random
+                   *     on tables with a Date column (e.g. Client → Payment
+                   *     History) because a double-click toggled the
+                   *     direction twice and they were left with the
+                   *     opposite of what they expected.
+                   *   - Several columns render formatted strings (`DD MMM
+                   *     YYYY`, currency, pill labels) where the lexical
+                   *     react-table sort doesn't match the visual order.
+                   *   - Lists across the app already have a server-side
+                   *     "Recent / Price / Rating" sort dropdown that
+                   *     drives ordering.
+                   * Removing the header click handler AND the asc/desc
+                   * arrow icons leaves a clean static header — the
+                   * dataset still respects whatever sort the page already
+                   * applies before passing rows in. */
                   const align: 'start' | 'center' | 'end' =
                     (header.column.columnDef as any)?.meta?.align || 'start';
                   const justify =
@@ -199,33 +208,13 @@ const TableContainer = ({
                   <th
                     key={header.id}
                     className={thClass}
-                    onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                    style={{ cursor: canSort ? 'pointer' : 'default', userSelect: 'none', textAlign }}
+                    style={{ cursor: 'default', userSelect: 'none', textAlign }}
                   >
                     {header.isPlaceholder ? null : (
                       <span className="d-flex align-items-center gap-1" style={{ justifyContent: justify }}>
                         {flexRender(
                           header.column.columnDef.header,
                           header.getContext()
-                        )}
-                        {canSort && (
-                          // Render an explicit asc/desc arrow when the
-                          // column is being sorted. The previous code
-                          // mapped the state to a single space, so the
-                          // user got no visual feedback when toggling
-                          // sort — making double-clicks feel random.
-                          <i
-                            className={
-                              sortDir === 'asc'  ? 'ri-arrow-up-line'
-                              : sortDir === 'desc' ? 'ri-arrow-down-line'
-                              :                      'ri-expand-up-down-line'
-                            }
-                            style={{
-                              fontSize: 13,
-                              color: sortDir ? '#405189' : 'var(--vz-secondary-color, #9ca3af)',
-                              opacity: sortDir ? 1 : 0.55,
-                            }}
-                          />
                         )}
                       </span>
                     )}
