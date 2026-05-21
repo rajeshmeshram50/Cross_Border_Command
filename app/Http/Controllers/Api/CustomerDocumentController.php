@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\CustomerDocument;
+use App\Services\ConsigneeKycMirror;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -70,6 +71,7 @@ class CustomerDocumentController extends Controller
         }
 
         $doc = CustomerDocument::create($data);
+        $this->resyncMirrors($customer, $request);
         return response()->json(['data' => $this->shape($doc)], 201);
     }
 
@@ -93,6 +95,7 @@ class CustomerDocumentController extends Controller
         }
 
         $doc->update($data);
+        $this->resyncMirrors($customer, $request);
         return response()->json(['data' => $this->shape($doc->fresh())]);
     }
 
@@ -104,7 +107,22 @@ class CustomerDocumentController extends Controller
             Storage::disk('public')->delete($doc->attachment_path);
         }
         $doc->delete();
+        $this->resyncMirrors($customer, $request);
         return response()->json(['id' => $doc->id, 'deleted' => true]);
+    }
+
+    /**
+     * Push the current customer KYC into every same-as-customer
+     * consignee linked to this customer. Called after every create /
+     * update / delete so a mirror never drifts. Silent no-op when no
+     * mirrors exist (cheap).
+     */
+    private function resyncMirrors(Customer $customer, Request $request): void
+    {
+        app(ConsigneeKycMirror::class)->resyncForCustomer(
+            $customer,
+            optional($request->user())->id
+        );
     }
 
     /* ── Helpers ──────────────────────────────────────────────────── */
@@ -145,14 +163,14 @@ class CustomerDocumentController extends Controller
             'expiry_date'       => 'nullable|date|after_or_equal:issue_date',
             'description'       => 'nullable|string|max:1000',
             'status'            => 'nullable|in:Active,Inactive',
-            // Attachment: 10 MB cap, restricted to safe document types
+            // Attachment: 2 MB cap, restricted to safe document types
             // (image / PDF / Office docs). Rejects executables, scripts,
             // and archives (.php, .zip, .txt, .exe, etc.) at the server
             // so even a manipulated client request can't slip them through.
-            'attachment'        => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:10240',
+            'attachment'        => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
         ], [
             'attachment.mimes' => 'Attachment must be a JPG, JPEG, PNG, PDF, DOC or DOCX file.',
-            'attachment.max'   => 'Attachment must not exceed 10 MB.',
+            'attachment.max'   => 'Attachment must not exceed 2 MB.',
         ]);
     }
 

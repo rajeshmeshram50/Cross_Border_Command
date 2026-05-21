@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\CustomerOwner;
+use App\Services\ConsigneeKycMirror;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -63,6 +64,7 @@ class CustomerOwnerController extends Controller
         }
 
         $owner = CustomerOwner::create($data);
+        $this->resyncMirrors($customer, $request);
         return response()->json(['data' => $this->shape($owner)], 201);
     }
 
@@ -83,6 +85,7 @@ class CustomerOwnerController extends Controller
         }
 
         $owner->update($data);
+        $this->resyncMirrors($customer, $request);
         return response()->json(['data' => $this->shape($owner->fresh())]);
     }
 
@@ -94,7 +97,22 @@ class CustomerOwnerController extends Controller
             if ($owner->{$column}) Storage::disk('public')->delete($owner->{$column});
         }
         $owner->delete();
+        $this->resyncMirrors($customer, $request);
         return response()->json(['id' => $owner->id, 'deleted' => true]);
+    }
+
+    /**
+     * Re-mirror the customer's KYC into every same-as-customer consignee
+     * linked to this customer. Called after every owner create / update /
+     * delete so the mirrored consignees stay in lock-step instead of
+     * drifting until the user triggers another manual clone.
+     */
+    private function resyncMirrors(Customer $customer, Request $request): void
+    {
+        app(ConsigneeKycMirror::class)->resyncForCustomer(
+            $customer,
+            optional($request->user())->id
+        );
     }
 
     /* ── Helpers ──────────────────────────────────────────────────── */
@@ -135,23 +153,23 @@ class CustomerOwnerController extends Controller
             'official_email'  => 'nullable|email|max:255',
             'phone_number'    => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
             'status'          => 'nullable|in:Active,Inactive',
-            // File slots — 10 MB cap, restricted to safe document types.
+            // File slots — 2 MB cap, restricted to safe document types.
             // ID / Address proof allow PDF + Office docs alongside images
             // (passports, utility bills are often scanned PDFs). Photograph
             // is image-only since it's literally a picture of a person.
             // Server-side enforcement so executables / scripts / archives
             // (.php, .exe, .zip, .txt) are rejected even if the UI is
             // bypassed.
-            'id_proof'        => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:10240',
-            'address_proof'   => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:10240',
-            'photograph'      => 'sometimes|file|mimes:jpg,jpeg,png|max:10240',
+            'id_proof'        => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
+            'address_proof'   => 'sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
+            'photograph'      => 'sometimes|file|mimes:jpg,jpeg,png|max:2048',
         ], [
             'id_proof.mimes'      => 'ID Proof must be a JPG, JPEG, PNG, PDF, DOC or DOCX file.',
-            'id_proof.max'        => 'ID Proof must not exceed 10 MB.',
+            'id_proof.max'        => 'ID Proof must not exceed 2 MB.',
             'address_proof.mimes' => 'Address Proof must be a JPG, JPEG, PNG, PDF, DOC or DOCX file.',
-            'address_proof.max'   => 'Address Proof must not exceed 10 MB.',
+            'address_proof.max'   => 'Address Proof must not exceed 2 MB.',
             'photograph.mimes'    => 'Photograph must be a JPG, JPEG or PNG image.',
-            'photograph.max'      => 'Photograph must not exceed 10 MB.',
+            'photograph.max'      => 'Photograph must not exceed 2 MB.',
         ]);
     }
 

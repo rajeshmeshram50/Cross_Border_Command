@@ -5,6 +5,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
+import { useToast } from '../../contexts/ToastContext';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Customer — 3-stage modal
@@ -143,7 +144,7 @@ const TL_DOCS: KycDocRow[] = [
  * slip through either. */
 const ALLOWED_DOC_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
 const ALLOWED_PHOTO_EXTS = ['jpg', 'jpeg', 'png'];
-const MAX_UPLOAD_MB = 10;
+const MAX_UPLOAD_MB = 2;
 type FileKind = 'doc' | 'photo';
 function validateUpload(file: File, kind: FileKind = 'doc'): string | null {
   const allowed = kind === 'photo' ? ALLOWED_PHOTO_EXTS : ALLOWED_DOC_EXTS;
@@ -171,6 +172,18 @@ const EV_SUB_META: Record<EvSubTab, { title: string; sub: string; nameCol: strin
 
 const newId = (prefix: string) => prefix + '_' + Math.random().toString(36).slice(2, 9);
 
+/* ── Stage memory ──────────────────────────────────────────────────
+ * Module-level map keyed by customer.db_id (edit mode) that survives
+ * close/reopen so a user who accidentally dismisses the modal on
+ * Stage 2 or Stage 3 lands back on the same stage when they reopen —
+ * not jarringly bounced back to Stage 1.
+ *
+ * Only writes happen for edit-mode customers; create mode starts
+ * fresh on every open. The entry is cleared after a successful final
+ * submit so the next visit reads as "fresh open" again. */
+type StageMemoryEntry = { stage: Stage; maxStage: Stage; tab: StageTab; kycSub: KycSubTab; evTab: EvTab };
+const stageMemory = new Map<number, StageMemoryEntry>();
+
 // Minimal customer shape the parent list passes in when editing. Mirrors the
 // `Customer` type in SalesCustomers; kept inline so this modal doesn't depend
 // on the parent file. `db_id` is the underlying numeric primary key — needed
@@ -192,6 +205,7 @@ interface Props {
 
 export default function AddCustomerModal({ open, onClose, customer, onSaved }: Props) {
   const isEdit = !!customer;
+  const toast = useToast();
   const [stage, setStage] = useState<Stage>(1);
   const [maxStage, setMaxStage] = useState<Stage>(1);
   const [tab, setTab] = useState<StageTab>('identification');
@@ -249,7 +263,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   const [form, setForm] = useState({
     coName:'', coLegal:'', coType:'', coWeb:'', coSeg:'', coClass:'', coRisk:'',
     addrType:'', addr:'', country:'', state:'', city:'', pin:'',
-    cpName:'', cpDesig:'', cpTel:'', cpEmail:'', cpWa:'' as 'yes'|'no'|'',
+    cpName:'', cpDesig:'', cpTel:'', cpEmail:'', cpWa:'yes' as 'yes'|'no'|'',
   });
   const setF = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(prev => ({ ...prev, [k]: v }));
 
@@ -349,9 +363,19 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   // /api/customers/:id endpoint lands, fetch and hydrate the rest here.
   useEffect(() => {
     if (!open) return;
-    setStage(1); setMaxStage(1); setTab('identification');
-    setKycSub('company-dd'); setKycPage({ 'company-dd':1, 'owner-kyc':1, 'trade-licence':1 }); setKycSearch('');
-    setEvTab('kyc-documents'); setEvSub('dd');
+    // Restore the stage / sub-tab the user was on when they last
+    // closed this customer's modal (edit mode only). Create mode
+    // always starts at Stage 1 — there's no anchor to remember it by.
+    const memKey = customer?.db_id ?? null;
+    const remembered = memKey ? stageMemory.get(memKey) : null;
+    setStage   (remembered?.stage    ?? 1);
+    setMaxStage(remembered?.maxStage ?? 1);
+    setTab     (remembered?.tab      ?? 'identification');
+    setKycSub  (remembered?.kycSub   ?? 'company-dd');
+    setEvTab   (remembered?.evTab    ?? 'kyc-documents');
+    setKycPage({ 'company-dd':1, 'owner-kyc':1, 'trade-licence':1 });
+    setKycSearch('');
+    setEvSub('dd');
     setHistoryOpen(true);
     setForm({
       coName:   customer?.company ?? '',
@@ -371,7 +395,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       cpDesig:  '',
       cpTel:    customer?.phone ?? '',
       cpEmail:  customer?.email ?? '',
-      cpWa:     customer?.whatsapp === 'Yes' ? 'yes' : customer?.whatsapp === 'No' ? 'no' : '',
+      cpWa:     customer?.whatsapp === 'No' ? 'no' : 'yes',
     });
     setLocations([]);
     setKycDocs([]);
@@ -394,6 +418,18 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     // Stage 2/3 edits, and jump the user back to Stage 1.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, customer?.db_id ?? null, customer?.id ?? null]);
+
+  /* Persist stage/tab into module-level memory whenever it changes.
+   * Reading happens in the open-effect above — closing the modal
+   * (which unmounts the component or flips `open` to false) leaves the
+   * last-known stage in the map ready for the next open. Edit mode
+   * only; create mode has no anchor key to remember it by. */
+  useEffect(() => {
+    if (!open) return;
+    const memKey = customer?.db_id ?? null;
+    if (memKey == null) return;
+    stageMemory.set(memKey, { stage, maxStage, tab, kycSub, evTab });
+  }, [open, customer?.db_id, stage, maxStage, tab, kycSub, evTab]);
 
   /* ── Edit-mode hydration. The list row passed in `customer` only
    * carries a thin slice of fields (company / type / segment / country
@@ -429,8 +465,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           cpDesig:  pa.cp_designation ?? d.cpDesig ?? '',
           cpTel:    pa.cp_contact     ?? d.phone   ?? '',
           cpEmail:  pa.cp_email       ?? d.email   ?? '',
-          cpWa:     (pa.cp_whatsapp === 'yes' || d.whatsapp === 'Yes') ? 'yes'
-                  : (pa.cp_whatsapp === 'no'  || d.whatsapp === 'No')  ? 'no' : '',
+          cpWa:     (pa.cp_whatsapp === 'no' || d.whatsapp === 'No') ? 'no' : 'yes',
         });
         // Additional locations — map the server shape back to LocationRow.
         const extra = Array.isArray(d.locations) ? d.locations : [];
@@ -446,7 +481,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           cpDesignation:  a.cp_designation ?? '',
           cpContact:      a.cp_contact     ?? '',
           cpEmail:        a.cp_email       ?? '',
-          cpWhatsapp:     (a.cp_whatsapp === 'yes' || a.cp_whatsapp === 'no') ? a.cp_whatsapp : '',
+          cpWhatsapp:     a.cp_whatsapp === 'no' ? 'no' : 'yes',
         })));
       })
       .catch(() => { /* hydration failure: leave the thin prefill from the list row */ })
@@ -535,9 +570,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     if (Object.keys(next).length === 0) return true;
     // Surface the first field with an error to the user. The body
     // is scrollable so an off-screen field can be missed otherwise.
+    // Also fire a toast — inline reds can be off-screen on small
+    // viewports, and the toast guarantees the user sees the rejection.
     const firstKey = Object.keys(next)[0];
     const el = document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    toast.error('Please complete required fields', next[firstKey]);
     return false;
   };
 
@@ -602,6 +640,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         const newId = r.data?.data?.db_id ?? null;
         if (newId) setSavedDbId(newId);
       }
+      // Final submit succeeded → drop the remembered stage so a future
+      // re-open of this customer starts fresh on Stage 1 instead of
+      // bouncing back to Stage 3 (which is where this submit fired from).
+      if (persistedDbId) stageMemory.delete(persistedDbId);
       onSaved?.();
       onClose();
     } catch (err: any) {
@@ -633,8 +675,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         const firstKey = Object.keys(next)[0];
         const el = document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`);
         el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        toast.error('Please review the highlighted fields', next[firstKey]);
       } else {
-        alert(err?.response?.data?.message ?? 'Save failed. Please try again.');
+        toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
       }
     } finally {
       setSaving(false);
@@ -695,8 +738,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         setTab('identification');
         const firstKey = Object.keys(next)[0];
         document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        toast.error('Please review the highlighted fields', next[firstKey]);
       } else {
-        alert(err?.response?.data?.message ?? 'Save failed. Please try again.');
+        toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
       }
       return null;
     } finally {
@@ -740,7 +784,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         const missing = !hasOwner && !hasDD
           ? 'at least one Owner KYC entry and one Company DD document'
           : !hasOwner ? 'at least one Owner KYC entry' : 'at least one Company Due Diligence document';
-        alert(`KYC required — add ${missing} before continuing.`);
+        toast.warning('KYC required', `Add ${missing} before continuing.`);
         return;
       }
       setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
@@ -762,7 +806,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     : 'Save & Next';
 
   return (
-    <div className="acm-root" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    /* No backdrop-click-to-close — users were losing partially filled
+       forms by misclicking the overlay. Close only via the X / Cancel
+       button or the ESC key. */
+    <div className="acm-root">
       <style>{SCOPED_CSS}</style>
       <div className="acm-card">
 
@@ -853,10 +900,24 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           )}
           {stage === 1 && !hydrating && tab === 'address-contact' && (
             <Stage1AdditionalLocations
+              primary={{
+                type:          form.addrType,
+                line:          form.addr,
+                country:       form.country,
+                state:         form.state,
+                city:          form.city,
+                pin:           form.pin,
+                cpName:        form.cpName,
+                cpDesignation: form.cpDesig,
+                cpContact:     form.cpTel,
+                cpEmail:       form.cpEmail,
+                cpWhatsapp:    form.cpWa,
+              }}
               locations={locations}
               onAdd={() => setLocModal({ open:true, editing:null })}
               onEdit={(id) => setLocModal({ open:true, editing:id })}
               onDel={(id) => setDelModal({ open:true, id })}
+              onEditPrimary={() => setTab('identification')}
             />
           )}
           {stage === 2 && (
@@ -928,11 +989,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 
       </div>
 
-      {/* SUB-MODAL: Add/edit a single Location (address + contact) */}
+      {/* SUB-MODAL: Add/edit a single Location (address + contact).
+          `disallowedTypes` blocks "Registered Office" when the primary
+          address is already the registered office — a customer can
+          have only one. */}
       {locModal.open && (
         <LocationSubModal
           editing={locModal.editing ? locations.find(l => l.id === locModal.editing) ?? null : null}
           masters={masters}
+          disallowedTypes={form.addrType === 'Registered Office' ? ['Registered Office'] : []}
           onClose={() => setLocModal({ open:false, editing:null })}
           onSave={(rec) => {
             if (locModal.editing) setLocations(prev => prev.map(l => l.id === locModal.editing ? { ...rec, id: l.id } : l));
@@ -981,7 +1046,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               setKycOwners(prev => prev.filter(o => o.id !== id));
             }
           } catch (err: any) {
-            alert(err?.response?.data?.message ?? 'Could not delete. Try again.');
+            toast.error('Delete failed', err?.response?.data?.message ?? 'Please try again.');
           } finally {
             setKycDelModal({ open: false, kind, id: null });
           }
@@ -1213,12 +1278,30 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
   );
 }
 
-/* ───── Stage 1 — Additional Locations & Contacts (merged table) ─────
- * Replaces the previous two-table layout (Addresses + Contact Persons).
- * Each row now captures both the address and the contact person at
- * that address, since the old shapes were identical. */
-function Stage1AdditionalLocations({ locations, onAdd, onEdit, onDel }:
-  { locations: LocationRow[]; onAdd: () => void; onEdit: (id: string) => void; onDel: (id: string) => void }) {
+/* ───── Stage 1 — Address & Contact Details (primary + additional) ─────
+ * Single table that surfaces both the primary address (captured on the
+ * Customer Identification tab) and any additional locations the user
+ * has added here. The primary row is read-only from this table — the
+ * edit button jumps back to the Identification tab and the delete
+ * button is disabled, since the primary address is mandatory for a
+ * customer. */
+type PrimaryRowData = {
+  type: string; line: string; country: string; state: string; city: string; pin: string;
+  cpName: string; cpDesignation: string; cpContact: string; cpEmail: string; cpWhatsapp: string;
+};
+function Stage1AdditionalLocations({ primary, locations, onAdd, onEdit, onDel, onEditPrimary }:
+  { primary: PrimaryRowData;
+    locations: LocationRow[];
+    onAdd: () => void;
+    onEdit: (id: string) => void;
+    onDel: (id: string) => void;
+    onEditPrimary: () => void;
+  }) {
+  type DisplayRow = PrimaryRowData & { id: string; isPrimary: boolean };
+  const allRows: DisplayRow[] = [
+    { id: '__primary__', isPrimary: true, ...primary },
+    ...locations.map(l => ({ ...l, isPrimary: false })),
+  ];
   return (
     <div className="acm-section acm-section-purple">
       <div className="acm-section-head">
@@ -1244,33 +1327,44 @@ function Stage1AdditionalLocations({ locations, onAdd, onEdit, onDel }:
               </tr>
             </thead>
             <tbody>
-              {locations.length === 0 ? (
-                <tr className="acm-empty-row"><td colSpan={9}>No additional locations yet. Click <strong>+ Add More Location</strong> to capture another branch, warehouse, or shipping address with its contact person.</td></tr>
-              ) : locations.map((l, i) => {
+              {allRows.map((l, i) => {
                 const place = [l.city, l.state, l.country].filter(Boolean).join(' • ');
                 const contact = l.cpName + (l.cpDesignation ? ` (${l.cpDesignation})` : '');
                 return (
-                  <tr key={l.id}>
+                  <tr key={l.id} className={l.isPrimary ? 'acm-primary-row' : undefined}>
                     <td>{i + 1}</td>
-                    <td>{l.type}</td>
+                    <td>
+                      <div className="acm-type-cell">
+                        <span>{l.type || '—'}</span>
+                        {l.isPrimary && <span className="acm-primary-tag">Primary</span>}
+                      </div>
+                    </td>
                     <td><TruncatedCell text={l.line} max={36} /></td>
                     <td><TruncatedCell text={place} max={32} /></td>
                     <td><TruncatedCell text={contact} max={26} /></td>
                     <td><TruncatedCell text={l.cpContact} max={18} mono /></td>
                     <td><TruncatedCell text={l.cpEmail} max={28} /></td>
-                    <td>{l.cpWhatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : <span className="acm-pill-no">✕ No</span>}</td>
+                    <td>{l.cpWhatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : l.cpWhatsapp === 'no' ? <span className="acm-pill-no">✕ No</span> : <span style={{ color: '#9ca3af' }}>—</span>}</td>
                     <td>
                       <div className="acm-row-actions">
-                        <Tooltip label="Edit">
-                          <button type="button" className="acm-row-btn" aria-label="Edit" onClick={() => onEdit(l.id)}>
+                        <Tooltip label={l.isPrimary ? 'Edit in Customer Identification tab' : 'Edit'}>
+                          <button type="button" className="acm-row-btn" aria-label="Edit" onClick={() => l.isPrimary ? onEditPrimary() : onEdit(l.id)}>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                           </button>
                         </Tooltip>
-                        <Tooltip label="Delete">
-                          <button type="button" className="acm-row-btn acm-row-btn-del" aria-label="Delete" onClick={() => onDel(l.id)}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                          </button>
-                        </Tooltip>
+                        {l.isPrimary ? (
+                          <Tooltip label="The primary address cannot be deleted">
+                            <button type="button" className="acm-row-btn acm-row-btn-del" aria-label="Delete (disabled)" disabled style={{ opacity: 0.4, cursor: 'not-allowed' }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                            </button>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip label="Delete">
+                            <button type="button" className="acm-row-btn acm-row-btn-del" aria-label="Delete" onClick={() => onDel(l.id)}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                            </button>
+                          </Tooltip>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1463,11 +1557,11 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
               <table className="acm-table">
                 <thead><tr>
                   <th>Sr No</th><th>Owner Name</th><th>Designation</th><th>Email</th><th>Phone</th>
-                  <th>ID Proof</th><th>Address Proof</th><th>Photograph</th><th>Status</th><th>Actions</th>
+                  <th>ID Proof</th><th>Address Proof</th><th>Photograph</th><th>Actions</th>
                 </tr></thead>
                 <tbody>
                   {totalRows === 0 ? (
-                    <tr className="acm-empty-row"><td colSpan={10}>{q ? 'No owners match your search.' : 'No owners captured yet. Click "+ Add Owner KYC Document" to add one.'}</td></tr>
+                    <tr className="acm-empty-row"><td colSpan={9}>{q ? 'No owners match your search.' : 'No owners captured yet. Click "+ Add Owner KYC Document" to add one.'}</td></tr>
                   ) : ownerSlice.map((o, i) => (
                     <tr key={o.id}>
                       <td>{String(start + i + 1).padStart(2, '0')}</td>
@@ -1475,16 +1569,9 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                       <td>{o.designation || '—'}</td>
                       <td>{o.official_email || '—'}</td>
                       <td style={{ fontFamily: 'JetBrains Mono, ui-monospace, monospace', fontSize: 11 }}>{o.phone_number || '—'}</td>
-                      <td>{(o.id_proof_url || o.id_proof_path)
-                        ? <a href={o.id_proof_url || resolveFileUrl(o.id_proof_path)} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a>
-                        : '—'}</td>
-                      <td>{(o.address_proof_url || o.address_proof_path)
-                        ? <a href={o.address_proof_url || resolveFileUrl(o.address_proof_path)} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a>
-                        : '—'}</td>
-                      <td>{(o.photograph_url || o.photograph_path)
-                        ? <a href={o.photograph_url || resolveFileUrl(o.photograph_path)} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a>
-                        : '—'}</td>
-                      <td>{(o.status || 'Active') === 'Active' ? <span className="acm-status-active">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
+                      <td><BustedLink url={o.id_proof_url}      path={o.id_proof_path} /></td>
+                      <td><BustedLink url={o.address_proof_url} path={o.address_proof_path} /></td>
+                      <td><BustedLink url={o.photograph_url}    path={o.photograph_path} /></td>
                       <td>
                         <div className="acm-row-actions">
                           <Tooltip label="Edit">
@@ -1507,11 +1594,11 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
               <table className="acm-table">
                 <thead><tr>
                   <th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>License #</th>
-                  <th>Issuing Authority</th><th>Issuing Date</th><th>Expiry</th><th>Status</th><th>Attachment</th><th>Actions</th>
+                  <th>Issuing Authority</th><th>Issuing Date</th><th>Expiry</th><th>Attachment</th><th>Actions</th>
                 </tr></thead>
                 <tbody>
                   {totalRows === 0 ? (
-                    <tr className="acm-empty-row"><td colSpan={10}>{q ? 'No documents match your search.' : 'No documents captured yet. Click "+ Add Document / License" to add one.'}</td></tr>
+                    <tr className="acm-empty-row"><td colSpan={9}>{q ? 'No documents match your search.' : 'No documents captured yet. Click "+ Add Document / License" to add one.'}</td></tr>
                   ) : docSlice.map((d, i) => {
                     const sr = start + i + 1;
                     const code = codeFor(kind.toUpperCase(), sr);
@@ -1530,10 +1617,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                         <td style={{ color: '#6b7280' }}>{d.issuing_authority || '—'}</td>
                         <td><span className={issClass}>{issLabel}</span></td>
                         <td><span className={expClass}>{expLabel}</span></td>
-                        <td>{(d.status || 'Active') === 'Active' ? <span className="acm-status-active">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
-                        <td>{(d.attachment_url || d.attachment_path)
-                          ? <a href={d.attachment_url || resolveFileUrl(d.attachment_path)} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a>
-                          : '—'}</td>
+                        <td><BustedLink url={d.attachment_url} path={d.attachment_path} /></td>
                         <td>
                           <div className="acm-row-actions">
                             <Tooltip label="Edit">
@@ -1723,6 +1807,187 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
   );
 }
 
+/* ───── KYC file slot ─────
+ * Shared widget used by Stage 2's Add Document / License and Owner KYC
+ * sub-modals. Renders one of four states:
+ *   1. No file        → "Click to upload" drop zone
+ *   2. New File picked → name chip + Preview (blob URL) + Remove + Replace
+ *   3. Existing file   → name chip + Preview (server URL) + Remove (flags
+ *                        backend to delete) + Replace
+ *   4. Existing flagged for removal → muted notice + Undo + Replace
+ *
+ * The parent controls the actual state — this component is pure UI plus
+ * validation. The parent reads `removeExisting` on submit and appends
+ * `remove_<field>=1` to the FormData so the backend nulls the column
+ * and deletes the file from disk. */
+function KycFileSlot({
+  label, required, kind = 'doc', accept, value, existingUrl, existingName,
+  removeExisting, error, fieldKey,
+  onPick, onRemoveExisting, onRestoreExisting,
+}: {
+  label: string;
+  required?: boolean;
+  kind?: FileKind;
+  accept: string;
+  value: File | null;
+  existingUrl?: string | null;
+  existingName?: string | null;
+  removeExisting: boolean;
+  error?: string;
+  fieldKey?: string;
+  onPick: (file: File | null) => void;
+  onRemoveExisting: () => void;
+  onRestoreExisting: () => void;
+}) {
+  const toast = useToast();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  // Blob URL for the newly-picked file so Preview opens it inline.
+  // Revoke on unmount / file-change to avoid leaks.
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!value) { setBlobUrl(null); return; }
+    const url = URL.createObjectURL(value);
+    setBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [value]);
+
+  const hasNew      = !!value;
+  const showExisting = !hasNew && !!existingUrl && !removeExisting;
+  const showRemoved  = !hasNew && removeExisting && !!existingUrl;
+  const hintText     = kind === 'photo'
+    ? `JPG, JPEG, PNG — max ${MAX_UPLOAD_MB} MB`
+    : `PDF, DOC, DOCX, JPG, PNG — max ${MAX_UPLOAD_MB} MB`;
+
+  const handlePick = (f: File | null) => {
+    if (!f) { onPick(null); return; }
+    const err = validateUpload(f, kind);
+    if (err) {
+      toast.error('File rejected', err);
+      if (inputRef.current) inputRef.current.value = '';
+      return;
+    }
+    onPick(f);
+  };
+
+  const previewUrl = hasNew ? blobUrl : (showExisting ? existingUrl : null);
+  const previewName = hasNew ? value!.name : existingName || 'attachment';
+  // Cache-bust the server URL on click so a freshly-uploaded replacement
+  // shows the new file instead of the browser's cached copy. The blob
+  // URL (newly-picked file) is already unique per File instance, no
+  // busting needed. Evaluated at click time (not render time) so the
+  // URL doesn't churn every re-render.
+  const openPreview = () => {
+    if (!previewUrl) return;
+    let url = previewUrl;
+    if (!hasNew) {
+      const sep = url.includes('?') ? '&' : '?';
+      url = `${url}${sep}t=${Date.now()}`;
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <div className="acm-field" data-field={fieldKey}>
+      <label>{label} {required && <span className="acm-req">*</span>}</label>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        hidden
+        onChange={e => handlePick(e.target.files?.[0] ?? null)}
+      />
+      {hasNew || showExisting ? (
+        <div className={`acm-fileslot-chip ${hasNew ? 'is-new' : 'is-existing'}`}>
+          <div className="acm-fileslot-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </div>
+          <span className="acm-fileslot-name" title={previewName}>{previewName}</span>
+          <div className="acm-fileslot-actions">
+            <Tooltip label="Preview">
+              <button
+                type="button"
+                className="acm-fileslot-btn acm-fileslot-btn-view"
+                aria-label="Preview"
+                disabled={!previewUrl}
+                onClick={openPreview}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </Tooltip>
+            <Tooltip label="Replace">
+              <button
+                type="button"
+                className="acm-fileslot-btn"
+                aria-label="Replace"
+                onClick={() => inputRef.current?.click()}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </button>
+            </Tooltip>
+            <Tooltip label="Remove">
+              <button
+                type="button"
+                className="acm-fileslot-btn acm-fileslot-btn-del"
+                aria-label="Remove"
+                onClick={() => {
+                  if (hasNew) {
+                    onPick(null);
+                    if (inputRef.current) inputRef.current.value = '';
+                  } else {
+                    onRemoveExisting();
+                  }
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+              </button>
+            </Tooltip>
+          </div>
+        </div>
+      ) : showRemoved ? (
+        <div className="acm-fileslot-removed">
+          <span className="acm-fileslot-removed-text">Attachment will be removed on save</span>
+          <div className="acm-fileslot-actions">
+            <Tooltip label="Undo">
+              <button
+                type="button"
+                className="acm-fileslot-btn"
+                aria-label="Undo"
+                onClick={onRestoreExisting}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+              </button>
+            </Tooltip>
+            <Tooltip label="Pick a different file">
+              <button
+                type="button"
+                className="acm-fileslot-btn"
+                aria-label="Replace"
+                onClick={() => inputRef.current?.click()}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </button>
+            </Tooltip>
+          </div>
+        </div>
+      ) : (
+        /* Single-line drop zone — the full mime hint lives in a tooltip
+           so the widget can slot into a narrow 4-column grid without
+           wrapping. Matches the height of the other inputs in the row. */
+        <Tooltip label={hintText}>
+          <button type="button" className={`acm-fileslot-drop ${error ? 'acm-input-error' : ''}`} onClick={() => inputRef.current?.click()}>
+            <span className="acm-fileslot-drop-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </span>
+            <span className="acm-fileslot-drop-title">Click to upload</span>
+            <span className="acm-fileslot-drop-size">max {MAX_UPLOAD_MB} MB</span>
+          </button>
+        </Tooltip>
+      )}
+      {error && <span className="acm-field-error">{error}</span>}
+    </div>
+  );
+}
+
 /* ───── Document / License sub-modal (Stage 2 — KYC) ─────
  * One form covers all three sub-tabs (Company DD / Owner KYC / Trade
  * Licence). The doc name dropdown is sourced from the master list for
@@ -1744,12 +2009,13 @@ type NewDoc = {
 function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved, onDocTypeAdded }:
   { sub: KycSubTab; masters: MasterLists; customerId: number | null;
     /** When set the form opens pre-filled with this row and saves via PUT. */
-    editing?: { id: number; name: string; license_number?: string | null; issuing_authority?: string | null; issue_date?: string | null; expiry_date?: string | null; attachment_name?: string | null } | null;
+    editing?: { id: number; name: string; license_number?: string | null; issuing_authority?: string | null; issue_date?: string | null; expiry_date?: string | null; attachment_name?: string | null; attachment_url?: string | null; attachment_path?: string | null } | null;
     onClose: () => void;
     /** Fires with the saved server row (already shaped by the API) so
      *  the parent can prepend / replace it in the table state. */
     onSaved: (row: any) => void;
     onDocTypeAdded: (opt: MasterOpt) => void }) {
+  const toast = useToast();
   const [d, setD] = useState<NewDoc>(() => editing ? {
     name:       editing.name             ?? '',
     license:    editing.license_number   ?? '',
@@ -1760,6 +2026,11 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
   } : { name: '', license: '', authority: '', issueDate: '', expiryDate: '', attachment: null });
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  // When editing, the parent's row may already carry an uploaded
+  // attachment. Track a "remove on save" flag so we can null it
+  // server-side via remove_attachment=1 without forcing the user to
+  // re-upload a placeholder. Reset whenever a new file is picked.
+  const [removeAttachment, setRemoveAttachment] = useState(false);
   // Inline "Add Document Type" master popup (opens from the `+` next
   // to the doc-name dropdown). Stays modal — never navigates away.
   const [typeModal, setTypeModal] = useState(false);
@@ -1798,7 +2069,7 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
     if (Object.keys(next).length > 0) return;
 
     if (!customerId) {
-      alert('Please save the customer (Stage 1) first before adding KYC documents.');
+      toast.warning('Save customer first', 'Complete Stage 1 before adding KYC documents.');
       return;
     }
 
@@ -1812,7 +2083,13 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
     fd.append('issuing_authority', d.authority.trim());
     if (d.issueDate)  fd.append('issue_date',  d.issueDate);
     if (d.expiryDate) fd.append('expiry_date', d.expiryDate);
-    if (d.attachment) fd.append('attachment',  d.attachment);
+    if (d.attachment) {
+      fd.append('attachment', d.attachment);
+    } else if (removeAttachment && editing?.attachment_url) {
+      // No new pick + user clicked Remove on the existing file →
+      // backend nulls the column and deletes the disk file.
+      fd.append('remove_attachment', '1');
+    }
     fd.append('status', 'Active');
 
     setSaving(true);
@@ -1843,8 +2120,10 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
           next2[localKey] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
         }
         setErrs(next2);
+        const firstKey = Object.keys(next2)[0];
+        if (firstKey) toast.error('Please review the highlighted fields', next2[firstKey]);
       } else {
-        alert(err?.response?.data?.message ?? 'Could not save the document. Try again.');
+        toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the document. Try again.');
       }
     } finally {
       setSaving(false);
@@ -1852,7 +2131,7 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
   };
 
   return (
-    <div className="acm-sub-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="acm-sub-modal">
       <div className="acm-sub-card acm-doc-sub-card">
         <div className="acm-sub-header acm-doc-sub-header">
           <div className="acm-sub-title acm-doc-sub-title">{editing ? 'Edit Document / License' : 'Add New Document / License'}</div>
@@ -1924,31 +2203,26 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
                 placeholder="DD/MM/YYYY"
               />
             </Field>
-            <Field label="Attachments" error={errs.attachment}>
-              <Tooltip label={d.attachment ? `Replace: ${d.attachment.name}` : 'PDF, DOC, DOCX, JPG, PNG — max 10 MB'}>
-                <label className={`acm-doc-attach ${errs.attachment ? 'acm-input-error' : ''}`}>
-                  <input
-                    type="file"
-                    hidden
-                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                    onChange={e => {
-                      const f = e.target.files?.[0] ?? null;
-                      if (!f) { set('attachment', null); return; }
-                      const err = validateUpload(f, 'doc');
-                      if (err) {
-                        setErrs(s => ({ ...s, attachment: err }));
-                        e.target.value = '';
-                        return;
-                      }
-                      setErrs(s => { const n = { ...s }; delete n.attachment; return n; });
-                      set('attachment', f);
-                    }}
-                  />
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                  <span className="acm-doc-attach-label">{d.attachment ? (d.attachment.name.length > 14 ? d.attachment.name.slice(0, 14) + '…' : d.attachment.name) : 'ATTACH FILE'}</span>
-                </label>
-              </Tooltip>
-            </Field>
+            <KycFileSlot
+              label="Attachment"
+              kind="doc"
+              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              value={d.attachment}
+              existingUrl={editing?.attachment_url ?? null}
+              existingName={editing?.attachment_name ?? null}
+              removeExisting={removeAttachment}
+              error={errs.attachment}
+              fieldKey="attachment"
+              onPick={(f) => {
+                set('attachment', f);
+                if (f) {
+                  setRemoveAttachment(false);
+                  setErrs(s => { const n = { ...s }; delete n.attachment; return n; });
+                }
+              }}
+              onRemoveExisting={() => setRemoveAttachment(true)}
+              onRestoreExisting={() => setRemoveAttachment(false)}
+            />
           </div>
         </div>
         <div className="acm-sub-footer acm-doc-sub-footer">
@@ -1987,6 +2261,7 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
  */
 function AddDocumentTypeMasterModal({ onClose, onSaved }:
   { onClose: () => void; onSaved: (opt: MasterOpt) => void }) {
+  const toast = useToast();
   const [title, setTitle]               = useState('');
   const [applicableTo, setApplicableTo] = useState('');
   const [isMandatory, setIsMandatory]   = useState('');
@@ -2023,8 +2298,10 @@ function AddDocumentTypeMasterModal({ onClose, onSaved }:
           next2[k] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
         }
         setErrs(next2);
+        const firstKey = Object.keys(next2)[0];
+        if (firstKey) toast.error('Please review the highlighted fields', next2[firstKey]);
       } else {
-        alert(err?.response?.data?.message ?? 'Could not save the document type. Try again.');
+        toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the document type. Try again.');
       }
     } finally {
       setSaving(false);
@@ -2032,7 +2309,7 @@ function AddDocumentTypeMasterModal({ onClose, onSaved }:
   };
 
   return (
-    <div className="acm-sub-modal acm-doc-type-sub-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="acm-sub-modal acm-doc-type-sub-modal">
       <div className="acm-sub-card acm-doc-sub-card acm-doc-type-master-card">
         <div className="acm-sub-header acm-doc-sub-header acm-doc-type-master-head">
           <div className="acm-doc-type-master-head-left">
@@ -2133,11 +2410,12 @@ type NewOwnerDD = {
 function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
   { masters: MasterLists; customerId: number | null;
     /** When set the form opens pre-filled and saves via update. */
-    editing?: { id: number; owner_name: string; designation?: string | null; official_email?: string | null; phone_number?: string | null } | null;
+    editing?: { id: number; owner_name: string; designation?: string | null; official_email?: string | null; phone_number?: string | null; id_proof_path?: string | null; id_proof_url?: string | null; id_proof_name?: string | null; address_proof_path?: string | null; address_proof_url?: string | null; address_proof_name?: string | null; photograph_path?: string | null; photograph_url?: string | null; photograph_name?: string | null } | null;
     onClose: () => void;
     /** Fires with the saved server row so the parent can prepend / replace it
      *  in the Owner KYC table. */
     onSaved: (row: any) => void }) {
+  const toast = useToast();
   const [d, setD] = useState<NewOwnerDD>(() => editing ? {
     ownerName:     editing.owner_name      ?? '',
     designation:   editing.designation     ?? '',
@@ -2152,6 +2430,12 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
   });
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  // Track per-slot "remove existing" flags. The submit appends
+  // remove_<field>=1 when these are set and no new file has been
+  // picked, so the backend nulls the column + deletes the disk file.
+  const [removeIdProof,      setRemoveIdProof]      = useState(false);
+  const [removeAddressProof, setRemoveAddressProof] = useState(false);
+  const [removePhotograph,   setRemovePhotograph]   = useState(false);
   const set = <K extends keyof NewOwnerDD>(k: K, v: NewOwnerDD[K]) => {
     setD(prev => ({ ...prev, [k]: v }));
     setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
@@ -2167,16 +2451,23 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
     else if (!/^\+?[0-9\s-]{7,15}$/.test(d.phoneNumber)) next.phoneNumber = 'Phone must be 7–15 digits';
     // Files are required only when creating a new owner. On edit the
     // existing files stay on disk until the user picks a replacement.
-    if (!editing) {
-      if (!d.idProof)        next.idProof      = 'ID proof is required';
-      if (!d.addressProof)   next.addressProof = 'Address proof is required';
-      if (!d.photograph)     next.photograph   = 'Photograph is required';
-    }
+    // If the user explicitly removed an existing file (without picking
+    // a replacement) we also fail validation — owners must have all
+    // three proofs at all times.
+    const has = (file: File | null, existing: string | null | undefined, remove: boolean) =>
+      !!file || (!!existing && !remove);
+    if (!has(d.idProof,      editing?.id_proof_url,      removeIdProof))      next.idProof      = 'ID proof is required';
+    if (!has(d.addressProof, editing?.address_proof_url, removeAddressProof)) next.addressProof = 'Address proof is required';
+    if (!has(d.photograph,   editing?.photograph_url,    removePhotograph))   next.photograph   = 'Photograph is required';
     setErrs(next);
-    if (Object.keys(next).length > 0) return;
+    if (Object.keys(next).length > 0) {
+      const firstKey = Object.keys(next)[0];
+      toast.error('Please complete required fields', next[firstKey]);
+      return;
+    }
 
     if (!customerId) {
-      alert('Please save the customer (Stage 1) first before adding owner KYC.');
+      toast.warning('Save customer first', 'Complete Stage 1 before adding owner KYC.');
       return;
     }
 
@@ -2185,9 +2476,12 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
     fd.append('designation',    d.designation);
     fd.append('official_email', d.officialEmail.trim());
     fd.append('phone_number',   d.phoneNumber.trim());
-    if (d.idProof)      fd.append('id_proof',      d.idProof);
-    if (d.addressProof) fd.append('address_proof', d.addressProof);
-    if (d.photograph)   fd.append('photograph',    d.photograph);
+    if (d.idProof)           fd.append('id_proof',           d.idProof);
+    else if (removeIdProof && editing?.id_proof_url) fd.append('remove_id_proof', '1');
+    if (d.addressProof)      fd.append('address_proof',      d.addressProof);
+    else if (removeAddressProof && editing?.address_proof_url) fd.append('remove_address_proof', '1');
+    if (d.photograph)        fd.append('photograph',         d.photograph);
+    else if (removePhotograph && editing?.photograph_url) fd.append('remove_photograph', '1');
     fd.append('status', 'Active');
 
     setSaving(true);
@@ -2215,56 +2509,76 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
           next2[localKey] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
         }
         setErrs(next2);
+        const firstKey = Object.keys(next2)[0];
+        if (firstKey) toast.error('Please review the highlighted fields', next2[firstKey]);
       } else {
-        alert(err?.response?.data?.message ?? 'Could not save the owner. Try again.');
+        toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the owner. Try again.');
       }
     } finally {
       setSaving(false);
     }
   };
-  /** Renders one of the three file-upload pills. Same shape as the
-   *  ATTACH FILE control on the other doc sub-modal, but bound to the
-   *  named field key so its placeholder + error text can vary. */
-  const FileField = ({ field, label }: { field: 'idProof' | 'addressProof' | 'photograph'; label: string }) => {
-    const file = d[field];
-    // Photograph is image-only (it's a picture of a person), the other
-    // two proof slots also accept PDF/DOC since scanned passports + bills
-    // commonly arrive in those formats.
-    const isPhoto = field === 'photograph';
-    const acceptAttr = isPhoto ? '.jpg,.jpeg,.png' : '.pdf,.jpg,.jpeg,.png,.doc,.docx';
-    const hintText = isPhoto ? 'JPG, JPEG, PNG — max 10 MB' : 'PDF, DOC, DOCX, JPG, PNG — max 10 MB';
+  // Per-slot meta — picks accept attribute + which "remove" flag the
+  // KycFileSlot's onRemoveExisting / onRestoreExisting toggles, plus
+  // the existing-file URL/name resolved from the editing prop.
+  const SLOT_META: Record<'idProof' | 'addressProof' | 'photograph', {
+    label: string; kind: FileKind; accept: string;
+    existingUrl: string | null | undefined; existingName: string | null | undefined;
+    removeFlag: boolean; setRemoveFlag: (v: boolean) => void;
+  }> = {
+    idProof: {
+      label: 'ID Proof', kind: 'doc',
+      accept: '.pdf,.jpg,.jpeg,.png,.doc,.docx',
+      existingUrl:  editing?.id_proof_url,
+      existingName: editing?.id_proof_name,
+      removeFlag:    removeIdProof,
+      setRemoveFlag: setRemoveIdProof,
+    },
+    addressProof: {
+      label: 'Address Proof', kind: 'doc',
+      accept: '.pdf,.jpg,.jpeg,.png,.doc,.docx',
+      existingUrl:  editing?.address_proof_url,
+      existingName: editing?.address_proof_name,
+      removeFlag:    removeAddressProof,
+      setRemoveFlag: setRemoveAddressProof,
+    },
+    photograph: {
+      label: 'Photograph', kind: 'photo',
+      accept: '.jpg,.jpeg,.png',
+      existingUrl:  editing?.photograph_url,
+      existingName: editing?.photograph_name,
+      removeFlag:    removePhotograph,
+      setRemoveFlag: setRemovePhotograph,
+    },
+  };
+  const slot = (field: 'idProof' | 'addressProof' | 'photograph') => {
+    const m = SLOT_META[field];
     return (
-      <Field label={label} required error={errs[field]}>
-        <Tooltip label={file ? `Replace: ${file.name}` : hintText}>
-          <label className={`acm-doc-attach ${errs[field] ? 'acm-input-error' : ''}`}>
-            <input
-              type="file"
-              hidden
-              accept={acceptAttr}
-              onChange={e => {
-                const f = e.target.files?.[0] ?? null;
-                if (!f) { set(field, null); return; }
-                const err = validateUpload(f, isPhoto ? 'photo' : 'doc');
-                if (err) {
-                  setErrs(s => ({ ...s, [field]: err }));
-                  e.target.value = '';
-                  return;
-                }
-                setErrs(s => { const n = { ...s }; delete n[field]; return n; });
-                set(field, f);
-              }}
-            />
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-            <span className="acm-doc-attach-label">
-              {file ? (file.name.length > 18 ? file.name.slice(0, 18) + '…' : file.name) : `UPLOAD ${label.toUpperCase()}`}
-            </span>
-          </label>
-        </Tooltip>
-      </Field>
+      <KycFileSlot
+        label={m.label}
+        required
+        kind={m.kind}
+        accept={m.accept}
+        value={d[field]}
+        existingUrl={m.existingUrl ?? null}
+        existingName={m.existingName ?? null}
+        removeExisting={m.removeFlag}
+        error={errs[field]}
+        fieldKey={field}
+        onPick={(f) => {
+          set(field, f);
+          if (f) {
+            m.setRemoveFlag(false);
+            setErrs(s => { const n = { ...s }; delete n[field]; return n; });
+          }
+        }}
+        onRemoveExisting={() => m.setRemoveFlag(true)}
+        onRestoreExisting={() => m.setRemoveFlag(false)}
+      />
     );
   };
   return (
-    <div className="acm-sub-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="acm-sub-modal">
       <div className="acm-sub-card acm-doc-sub-card">
         <div className="acm-sub-header acm-doc-sub-header">
           <div className="acm-sub-title acm-doc-sub-title">{editing ? 'Edit Owner Due Diligence' : 'Add Owner Due Diligence'}</div>
@@ -2290,9 +2604,9 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
             </Field>
           </div>
           <div className="acm-row acm-row-3">
-            <FileField field="idProof"      label="ID Proof" />
-            <FileField field="addressProof" label="Address Proof" />
-            <FileField field="photograph"   label="Photograph" />
+            {slot('idProof')}
+            {slot('addressProof')}
+            {slot('photograph')}
           </div>
         </div>
         <div className="acm-sub-footer acm-doc-sub-footer">
@@ -2306,13 +2620,32 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
   );
 }
 
-/* ───── Location sub-modal (merged Address + Contact form) ───── */
-function LocationSubModal({ editing, masters, onClose, onSave }:
-  { editing: LocationRow | null; masters: MasterLists; onClose: () => void; onSave: (rec: Omit<LocationRow, 'id'>) => void }) {
+/* ───── Location sub-modal (merged Address + Contact form) ─────
+ * `disallowedTypes` excludes address types already claimed elsewhere
+ * (e.g. "Registered Office" when the primary address is already the
+ * registered office — a customer can only have one). The currently
+ * editing row's own type is still shown so existing data isn't hidden
+ * from the user mid-edit. */
+function LocationSubModal({ editing, masters, disallowedTypes, onClose, onSave }:
+  { editing: LocationRow | null; masters: MasterLists; disallowedTypes?: string[]; onClose: () => void; onSave: (rec: Omit<LocationRow, 'id'>) => void }) {
+  const toast = useToast();
+  // For new locations, skip the default "Registered Office" prefill if
+  // that type is disallowed — otherwise the user lands on a value
+  // they can't actually save with.
+  const initialType = editing
+    ? editing.type
+    : (disallowedTypes?.includes(DEFAULT_ADDRESS_TYPE) ? '' : DEFAULT_ADDRESS_TYPE);
   const [d, setD] = useState<Omit<LocationRow, 'id'>>(() => editing ? { ...editing } : {
-    type: DEFAULT_ADDRESS_TYPE, line: '', country: '', state: '', city: '', pin: '',
-    cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: '' as 'yes' | 'no' | '',
+    type: initialType, line: '', country: '', state: '', city: '', pin: '',
+    cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: 'yes' as 'yes' | 'no' | '',
   });
+  // Strip disallowed types, but keep whatever the row currently has
+  // so an existing value never silently disappears from its own
+  // dropdown.
+  const availableAddressTypes = useMemo(() => {
+    if (!disallowedTypes || disallowedTypes.length === 0) return masters.addressTypes;
+    return masters.addressTypes.filter(t => !disallowedTypes.includes(t.name) || t.name === d.type);
+  }, [masters.addressTypes, disallowedTypes, d.type]);
   const [errs, setErrs] = useState<Record<string, string>>({});
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => {
     setD(prev => ({ ...prev, [k]: v }));
@@ -2339,10 +2672,12 @@ function LocationSubModal({ editing, masters, onClose, onSave }:
     else if (!/^\S+@\S+\.\S+$/.test(d.cpEmail))        next.cpEmail       = 'Enter a valid email';
     if (!d.cpWhatsapp)                                 next.cpWhatsapp    = 'Select WhatsApp preference';
     setErrs(next);
-    if (Object.keys(next).length === 0) onSave(d);
+    if (Object.keys(next).length === 0) { onSave(d); return; }
+    const firstKey = Object.keys(next)[0];
+    toast.error('Please complete required fields', next[firstKey]);
   };
   return (
-    <div className="acm-sub-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="acm-sub-modal">
       <div className="acm-sub-card acm-doc-sub-card">
         <div className="acm-sub-header acm-doc-sub-header">
           <div className="acm-sub-title acm-doc-sub-title">{editing ? 'Edit' : 'Add New'} Location &amp; Contact</div>
@@ -2355,7 +2690,7 @@ function LocationSubModal({ editing, masters, onClose, onSave }:
         <div className="acm-sub-body">
           <div className="acm-row acm-row-2">
             <Field label="Address Type" required error={errs.type}>
-              <MasterSelect value={d.type} options={optsWith(masters.addressTypes, d.type)} placeholder="Select address type" invalid={!!errs.type} onChange={v => set('type', v)} />
+              <MasterSelect value={d.type} options={optsWith(availableAddressTypes, d.type)} placeholder="Select address type" invalid={!!errs.type} onChange={v => set('type', v)} />
             </Field>
             <Field label="Address" required error={errs.line}><input className={errs.line ? 'acm-input-error' : ''} value={d.line} onChange={e => set('line', e.target.value)} placeholder="Enter complete address" /></Field>
           </div>
@@ -2492,6 +2827,32 @@ function Field({ label, required, children, error, fieldKey }: { label: string; 
       {children}
       {error && <span className="acm-field-error">{error}</span>}
     </div>
+  );
+}
+
+/* Attachment link with cache-busting. The browser caches /storage/
+ * URLs aggressively, so a freshly-uploaded replacement at the same
+ * URL slot would otherwise show the old image. Busting on click (not
+ * in href) keeps middle-click / copy-link working with a stable URL,
+ * while a left-click forces a fresh fetch. */
+function BustedLink({ url, path, label = 'View', className = 'acm-attach-link' }:
+  { url?: string | null; path?: string | null; label?: string; className?: string }) {
+  const href = url || (path ? resolveFileUrl(path) : '');
+  if (!href) return <span style={{ color: '#9ca3af' }}>—</span>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={className}
+      onClick={(e) => {
+        e.preventDefault();
+        const sep = href.includes('?') ? '&' : '?';
+        window.open(`${href}${sep}t=${Date.now()}`, '_blank', 'noopener,noreferrer');
+      }}
+    >
+      {label}
+    </a>
   );
 }
 
@@ -2807,6 +3168,15 @@ const SCOPED_CSS = `
 .acm-pill-yes { background: linear-gradient(135deg,#dcfce7,#bbf7d0); color: #15803d; border: 1px solid #86efac; }
 .acm-pill-no { background: linear-gradient(135deg,#fee2e2,#fecaca); color: #b91c1c; border: 1px solid #fca5a5; }
 
+/* Primary row marker in the Address & Contact Details table — the
+   row sourced from Stage 1's "PRIMARY ADDRESS & CONTACT PERSON"
+   section. Subtle violet wash + a small Primary tag so users can
+   distinguish it from rows added via "+ Add More Address & Contact". */
+.acm-primary-row td { background: linear-gradient(180deg, #faf7ff, #f5efff); }
+.acm-primary-row:hover td { background: #f3edff; }
+.acm-type-cell { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.acm-primary-tag { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 9.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #5b21b6; border: 1px solid #c4b5fd; }
+
 /* Add pill button */
 .acm-add-pill { display: inline-flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: 20px; border: 1px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .18s; white-space: nowrap; box-shadow: 0 2px 6px rgba(109,40,217,.1); flex-shrink: 0; }
 .acm-add-pill:hover { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border-color: #7c3aed; transform: translateY(-1px); }
@@ -2929,6 +3299,96 @@ const SCOPED_CSS = `
 }
 .acm-doc-attach:hover { border-color: #7c3aed; background: #faf7ff; color: #7c3aed; }
 .acm-doc-attach-label { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+
+/* ───── KYC file slot ─────
+   Used for the attachment in Document/License sub-modal and for the 3
+   identity-proof fields in the Owner KYC sub-modal. Three visual modes:
+   drop zone (no file), chip (file picked or existing), or muted notice
+   (existing flagged for removal). */
+.acm-fileslot-drop {
+  display: inline-flex; align-items: center; gap: 8px;
+  width: 100%; height: 40px;
+  padding: 0 12px;
+  border: 1.5px dashed #c4b5fd; border-radius: 10px;
+  background: #faf7ff; color: #6d28d9;
+  cursor: pointer; transition: all .18s;
+  font-family: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.acm-fileslot-drop:hover { border-color: #7c3aed; background: #ede9fe; }
+.acm-fileslot-drop.acm-input-error { border-color: #ef4444; background: #fef2f2; }
+.acm-fileslot-drop-icon { display: inline-flex; flex-shrink: 0; color: #7c3aed; }
+.acm-fileslot-drop-title { font-size: 12px; font-weight: 700; color: #5b21b6; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.acm-fileslot-drop-size {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(124,58,237,0.10);
+  color: #6d28d9;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: .03em;
+}
+
+.acm-fileslot-chip {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; min-height: 40px; padding: 6px 8px 6px 10px;
+  border: 1.5px solid #e0d9f7; border-radius: 10px;
+  background: #fff;
+}
+.acm-fileslot-chip.is-existing { border-color: #c4b5fd; background: linear-gradient(180deg, #faf7ff, #f5efff); }
+.acm-fileslot-chip.is-new      { border-color: #86efac; background: linear-gradient(180deg, #f0fdf4, #ecfdf5); }
+.acm-fileslot-icon {
+  width: 26px; height: 26px; border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #ede9fe; color: #6d28d9; flex-shrink: 0;
+}
+.acm-fileslot-chip.is-new .acm-fileslot-icon { background: #d1fae5; color: #047857; }
+.acm-fileslot-name {
+  flex: 1; min-width: 0;
+  font-size: 11.5px; color: #3b0764; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.acm-fileslot-actions { display: inline-flex; gap: 4px; flex-shrink: 0; }
+.acm-fileslot-btn {
+  width: 26px; height: 26px; border-radius: 7px;
+  border: 1px solid #e0d9f7; background: #fff;
+  color: #7c3aed; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; transition: all .15s;
+}
+.acm-fileslot-btn:hover:not(:disabled) { background: #ede9fe; border-color: #c4b5fd; }
+.acm-fileslot-btn:disabled { opacity: .45; cursor: not-allowed; }
+.acm-fileslot-btn-view { border-color: #c4b5fd; background: linear-gradient(135deg, #f5f3ff, #ede9fe); color: #6d28d9; }
+.acm-fileslot-btn-view:hover:not(:disabled) { background: linear-gradient(135deg, #a78bfa, #7c3aed); color: #fff; border-color: #7c3aed; }
+.acm-fileslot-btn-del { color: #ef4444; }
+.acm-fileslot-btn-del:hover:not(:disabled) { background: #fee2e2; border-color: #fca5a5; }
+
+.acm-fileslot-removed {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; min-height: 40px; padding: 6px 8px 6px 12px;
+  border: 1.5px dashed #fca5a5; border-radius: 10px;
+  background: #fef2f2;
+}
+.acm-fileslot-removed-text { font-size: 11.5px; color: #b91c1c; font-weight: 600; }
+
+/* Dark-mode variants */
+[data-bs-theme="dark"] .acm-fileslot-drop { background: rgba(124,58,237,0.10); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-fileslot-drop:hover { background: rgba(124,58,237,0.18); border-color: #a78bfa; }
+[data-bs-theme="dark"] .acm-fileslot-drop-title { color: #ddd6fe; }
+[data-bs-theme="dark"] .acm-fileslot-drop-size { background: rgba(167,139,250,0.22); color: #ddd6fe; }
+[data-bs-theme="dark"] .acm-fileslot-chip { background: #11182a; border-color: rgba(255,255,255,0.10); }
+[data-bs-theme="dark"] .acm-fileslot-chip.is-existing { background: rgba(124,58,237,0.10); border-color: rgba(167,139,250,0.30); }
+[data-bs-theme="dark"] .acm-fileslot-chip.is-new { background: rgba(16,185,129,0.10); border-color: rgba(110,231,183,0.40); }
+[data-bs-theme="dark"] .acm-fileslot-icon { background: rgba(167,139,250,0.22); color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-fileslot-chip.is-new .acm-fileslot-icon { background: rgba(16,185,129,0.22); color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-fileslot-name { color: #ecfdf5; }
+[data-bs-theme="dark"] .acm-fileslot-btn { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.12); color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-fileslot-btn:hover:not(:disabled) { background: rgba(167,139,250,0.18); border-color: rgba(167,139,250,0.40); }
+[data-bs-theme="dark"] .acm-fileslot-btn-del { color: #fca5a5; }
+[data-bs-theme="dark"] .acm-fileslot-btn-del:hover:not(:disabled) { background: rgba(239,68,68,0.18); border-color: rgba(252,165,165,0.50); }
+[data-bs-theme="dark"] .acm-fileslot-removed { background: rgba(239,68,68,0.10); border-color: rgba(252,165,165,0.40); }
+[data-bs-theme="dark"] .acm-fileslot-removed-text { color: #fca5a5; }
 
 /* "Add Document Type" master popup — sits above the Add Document /
    License sub-modal at z-index 10002. Header is left-aligned (icon
@@ -3122,9 +3582,22 @@ const SCOPED_CSS = `
   border-color: rgba(167,139,250,0.20);
   box-shadow: 0 32px 80px -20px rgba(0,0,0,0.7), 0 12px 30px rgba(0,0,0,0.45);
 }
-[data-bs-theme="dark"] .acm-body { scrollbar-color: #4c1d95 #11182a; }
+[data-bs-theme="dark"] .acm-body {
+  /* Light-mode default is #fafafd which leaks through in dark mode
+     and makes the form look like a white slab inside a dark card.
+     Use a near-black navy so the section cards (#1a2236) sitting on
+     top read as distinct, slightly-lighter panels. */
+  background: #0c1322;
+  scrollbar-color: #4c1d95 #11182a;
+}
 [data-bs-theme="dark"] .acm-body::-webkit-scrollbar-track { background: #11182a; }
 [data-bs-theme="dark"] .acm-body::-webkit-scrollbar-thumb { background: #6d28d9; }
+/* Tabs strip + stepper share the same dark body background so the
+   transition between header and body reads as one continuous panel. */
+[data-bs-theme="dark"] .acm-stepper,
+[data-bs-theme="dark"] .acm-tabs { background: #0c1322; border-bottom-color: rgba(167,139,250,0.18); }
+/* Footer + req-note dark styles live below — keep here only the
+   stepper + tabs strip dark-mode matching. */
 
 /* Header banner — dark variant of the soft lavender wash. */
 [data-bs-theme="dark"] .acm-header {
@@ -3174,35 +3647,55 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-tab-off:hover { background: rgba(167,139,250,0.10); border-color: #a78bfa; }
 [data-bs-theme="dark"] .acm-tab-on { background: linear-gradient(135deg,#6d28d9,#4c1d95); border-color: #7c3aed; box-shadow: 0 3px 10px rgba(0,0,0,.4); }
 
-/* Section card */
-[data-bs-theme="dark"] .acm-section { background: #11182a; border-color: rgba(167,139,250,0.20); box-shadow: 0 2px 12px rgba(0,0,0,0.35); }
+/* Section card — lift further above the body so the panels really
+   pop. The brighter border + stronger top highlight make them read
+   as distinct elevated cards instead of muddy washes. */
+[data-bs-theme="dark"] .acm-section {
+  background: #1f2942;
+  border-color: rgba(167,139,250,0.35);
+  box-shadow:
+    0 6px 22px rgba(0,0,0,0.50),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+}
 [data-bs-theme="dark"] .acm-section-purple { border-top-color: #a78bfa; }
-[data-bs-theme="dark"] .acm-section-head { background: linear-gradient(110deg, rgba(76,29,149,0.28) 0%, rgba(109,40,217,0.18) 100%); border-bottom-color: rgba(167,139,250,0.15); }
-[data-bs-theme="dark"] .acm-section-icon { background: linear-gradient(135deg, #4c1d95, #2e1065); color: #c4b5fd; border-color: rgba(167,139,250,0.35); }
-[data-bs-theme="dark"] .acm-section-title { color: #ede9fe; }
-[data-bs-theme="dark"] .acm-section-sub { color: #94a3b8; }
+/* Softer header wash — the previous gradient competed with the modal
+   header. A muted lavender tint keeps the section heading subtle while
+   the brighter title text below carries the emphasis. */
+[data-bs-theme="dark"] .acm-section-head {
+  background: linear-gradient(110deg, rgba(124,58,237,0.22) 0%, rgba(167,139,250,0.10) 100%);
+  border-bottom-color: rgba(167,139,250,0.28);
+}
+[data-bs-theme="dark"] .acm-section-icon { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; border-color: rgba(167,139,250,0.55); box-shadow: 0 2px 8px rgba(124,58,237,0.35); }
+[data-bs-theme="dark"] .acm-section-title { color: #ffffff; }
+[data-bs-theme="dark"] .acm-section-sub { color: #d1d5db; }
 
-/* Form fields */
-[data-bs-theme="dark"] .acm-field label { color: #94a3b8; }
+/* Form fields — proper contrast for labels, borders, and placeholders.
+   Previously borders were so faded inputs looked like ghost outlines
+   and placeholders blended into the input background. */
+[data-bs-theme="dark"] .acm-field label { color: #e2e8f0; font-weight: 700; }
 [data-bs-theme="dark"] .acm-field input,
 [data-bs-theme="dark"] .acm-field select,
 [data-bs-theme="dark"] .acm-field textarea {
-  background: #1c2531 !important;
-  border-color: rgba(167,139,250,0.20);
-  color: #f1f5f9;
+  background: #131c33 !important;
+  border-color: rgba(167,139,250,0.50);
+  color: #ffffff;
 }
 [data-bs-theme="dark"] .acm-field input::placeholder,
-[data-bs-theme="dark"] .acm-field textarea::placeholder { color: #475569; }
+[data-bs-theme="dark"] .acm-field textarea::placeholder { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-field input:hover,
+[data-bs-theme="dark"] .acm-field select:hover,
+[data-bs-theme="dark"] .acm-field textarea:hover { border-color: rgba(167,139,250,0.75); }
 [data-bs-theme="dark"] .acm-field input:focus,
 [data-bs-theme="dark"] .acm-field select:focus,
 [data-bs-theme="dark"] .acm-field textarea:focus {
   border-color: #a78bfa;
-  box-shadow: 0 0 0 3.5px rgba(167,139,250,0.18);
+  box-shadow: 0 0 0 3.5px rgba(167,139,250,0.22);
 }
 [data-bs-theme="dark"] .acm-field input.acm-input-error { background: rgba(239,68,68,0.10); border-color: #ef4444; }
-[data-bs-theme="dark"] .acm-radio { color: #94a3b8; }
-[data-bs-theme="dark"] .acm-radio-pill { background: #1c2531; border-color: rgba(167,139,250,0.20); color: #c4b5fd; }
-[data-bs-theme="dark"] .acm-radio-pill.is-active { background: rgba(124,58,237,0.30); border-color: #a78bfa; color: #ede9fe; }
+[data-bs-theme="dark"] .acm-radio { color: #e2e8f0; }
+[data-bs-theme="dark"] .acm-radio input[type="radio"] { accent-color: #a78bfa; }
+[data-bs-theme="dark"] .acm-radio-pill { background: #131c33; border-color: rgba(167,139,250,0.40); color: #ddd6fe; }
+[data-bs-theme="dark"] .acm-radio-pill.is-active { background: rgba(124,58,237,0.45); border-color: #a78bfa; color: #ffffff; }
 
 /* Add buttons / action pills inside sections */
 [data-bs-theme="dark"] .acm-add-pill { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
@@ -3253,6 +3746,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-doc-code { background: rgba(167,139,250,0.15); color: #c4b5fd; border-color: rgba(167,139,250,0.30); }
 [data-bs-theme="dark"] .acm-pill-yes { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
 [data-bs-theme="dark"] .acm-pill-no  { background: rgba(255,255,255,0.06); color: #94a3b8; border-color: rgba(255,255,255,0.20); }
+[data-bs-theme="dark"] .acm-primary-row td { background: rgba(124,58,237,0.10); }
+[data-bs-theme="dark"] .acm-primary-row:hover td { background: rgba(124,58,237,0.16); }
+[data-bs-theme="dark"] .acm-primary-tag { background: rgba(124,58,237,0.20); color: #ddd6fe; border-color: rgba(167,139,250,0.40); }
 [data-bs-theme="dark"] .acm-attach-link { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-attach-link:hover { color: #ede9fe; }
 [data-bs-theme="dark"] .acm-doc-action-upload { background: rgba(167,139,250,0.12); color: #c4b5fd; border-color: rgba(167,139,250,0.30); }
@@ -3294,10 +3790,13 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-hs-stat-lbl { color: #c4b5fd; }
 
 /* Footer + bottom action buttons */
-[data-bs-theme="dark"] .acm-footer { background: rgba(28,37,49,0.40); border-top-color: rgba(167,139,250,0.18); }
-[data-bs-theme="dark"] .acm-req-note { color: #94a3b8; }
-[data-bs-theme="dark"] .acm-btn-prev { background: transparent; color: #c4b5fd; border-color: rgba(167,139,250,0.40); }
-[data-bs-theme="dark"] .acm-btn-prev:hover { background: rgba(167,139,250,0.12); }
+[data-bs-theme="dark"] .acm-footer {
+  background: linear-gradient(180deg, rgba(15,23,42,0.6) 0%, rgba(17,24,42,0.95) 100%);
+  border-top-color: rgba(167,139,250,0.25);
+}
+[data-bs-theme="dark"] .acm-req-note { color: #c4b5fd; font-weight: 600; }
+[data-bs-theme="dark"] .acm-btn-prev { background: rgba(167,139,250,0.08); color: #ddd6fe; border-color: rgba(167,139,250,0.45); }
+[data-bs-theme="dark"] .acm-btn-prev:hover { background: rgba(167,139,250,0.18); border-color: #a78bfa; color: #ffffff; }
 
 /* Error message text under invalid fields */
 [data-bs-theme="dark"] .acm-field-error { color: #fca5a5; }
