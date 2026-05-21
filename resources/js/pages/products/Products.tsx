@@ -789,16 +789,78 @@ export default function Products() {
             ))}
           </FilterPanel>
 
+          {/* Created Date pulled up to position 3.
+              Its calendar popup is portalled & fixed-positioned, but when
+              the trigger sits near the bottom of the long sidebar the
+              floating month grid renders OVER the subsequent collapsible
+              panels — Product Owner / Inward Count read as "ghosting"
+              behind the calendar. Moving the panel near the top means
+              the popup has the full sidebar height below it to expand
+              into without overlapping any unrelated controls. */}
+          <FilterPanel label="Created Date" panelKey="createdDate" open={expandedPanel === 'createdDate'} onToggle={togglePanel} count={(filters.createdFrom ? 1 : 0) + (filters.createdTo ? 1 : 0)}>
+            <div className="prd-filter-date-grid">
+              <label className="prd-filter-date-field">
+                <span>From</span>
+                <div className="prd-filter-date-picker">
+                  <MasterDatePicker
+                    value={filters.createdFrom}
+                    onChange={(v) => setFilters(prev => ({ ...prev, createdFrom: v }))}
+                    placeholder="Select date"
+                    maxDate={filters.createdTo || undefined}
+                  />
+                </div>
+              </label>
+              <label className="prd-filter-date-field">
+                <span>To</span>
+                <div className="prd-filter-date-picker">
+                  <MasterDatePicker
+                    value={filters.createdTo}
+                    onChange={(v) => setFilters(prev => ({ ...prev, createdTo: v }))}
+                    placeholder="Select date"
+                    minDate={filters.createdFrom || undefined}
+                  />
+                </div>
+              </label>
+            </div>
+          </FilterPanel>
+
           <FilterPanel label="HSN/SAC Code" panelKey="hsn" open={expandedPanel === 'hsn'} onToggle={togglePanel} count={filters.hsn.length}>
             {hsnOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.hsn.includes(v)} onChange={() => toggleMulti('hsn', v)} />
             ))}
           </FilterPanel>
 
+          {/* Hazard Type is mutually exclusive — a product is either HAZ
+              or NON HAZ, never both. Render as radio rows so the user
+              can only pick one; clicking the active row again clears
+              it (returns to "any"). The underlying filters.hazType
+              stays a string[] for type consistency with the other
+              multi-select filters, but it never holds more than one
+              entry, so the include() match in filtered still works. */}
           <FilterPanel label="Hazard Type" panelKey="hazType" open={expandedPanel === 'hazType'} onToggle={togglePanel} count={filters.hazType.length}>
-            {HAZ_TYPES.map(v => (
-              <CheckRow key={v} label={v} checked={filters.hazType.includes(v)} onChange={() => toggleMulti('hazType', v)} />
-            ))}
+            {HAZ_TYPES.map(v => {
+              const selected = filters.hazType[0] === v;
+              return (
+                <label key={v} className="prd-filter-row">
+                  <input
+                    type="radio"
+                    name="hazType"
+                    checked={selected}
+                    onChange={() => setFilters(prev => ({ ...prev, hazType: [v] }))}
+                    onClick={() => {
+                      // Click on the already-selected radio clears it,
+                      // giving the user a way to drop the filter without
+                      // hunting for a separate Reset.
+                      if (selected) setFilters(prev => ({ ...prev, hazType: [] }));
+                    }}
+                  />
+                  <span>{v}</span>
+                </label>
+              );
+            })}
+            {filters.hazType.length > 0 && (
+              <button className="prd-filter-clear-mini" onClick={() => setFilters(prev => ({ ...prev, hazType: [] }))}>Clear selection</button>
+            )}
           </FilterPanel>
 
           <FilterPanel label="Unit of Measurement" panelKey="uom" open={expandedPanel === 'uom'} onToggle={togglePanel} count={filters.uom.length}>
@@ -840,33 +902,6 @@ export default function Products() {
             {filters.topProducts && (
               <button className="prd-filter-clear-mini" onClick={() => setFilters(prev => ({ ...prev, topProducts: '' }))}>Clear selection</button>
             )}
-          </FilterPanel>
-
-          <FilterPanel label="Created Date" panelKey="createdDate" open={expandedPanel === 'createdDate'} onToggle={togglePanel} count={(filters.createdFrom ? 1 : 0) + (filters.createdTo ? 1 : 0)}>
-            <div className="prd-filter-date-grid">
-              <label className="prd-filter-date-field">
-                <span>From</span>
-                <div className="prd-filter-date-picker">
-                  <MasterDatePicker
-                    value={filters.createdFrom}
-                    onChange={(v) => setFilters(prev => ({ ...prev, createdFrom: v }))}
-                    placeholder="Select date"
-                    maxDate={filters.createdTo || undefined}
-                  />
-                </div>
-              </label>
-              <label className="prd-filter-date-field">
-                <span>To</span>
-                <div className="prd-filter-date-picker">
-                  <MasterDatePicker
-                    value={filters.createdTo}
-                    onChange={(v) => setFilters(prev => ({ ...prev, createdTo: v }))}
-                    placeholder="Select date"
-                    minDate={filters.createdFrom || undefined}
-                  />
-                </div>
-              </label>
-            </div>
           </FilterPanel>
 
           <FilterPanel label="Product Owner" panelKey="productOwner" open={expandedPanel === 'productOwner'} onToggle={togglePanel} count={filters.productOwner.length}>

@@ -130,7 +130,12 @@ const today = () => {
 
 const formatDate = (iso: string) => {
   if (!iso) return '';
-  const [y, m, d] = iso.split('-');
+  // Accept both bare ISO dates ("2026-05-21") and full timestamps
+  // ("2026-05-21T00:00:00.000000Z") — strip the time portion first so
+  // the day segment doesn't end up "21T00:00:00.000000Z" and produce
+  // the "21T00:00:00.000000Z/05/2026" display glitch.
+  const datePart = iso.split('T')[0];
+  const [y, m, d] = datePart.split('-');
   if (!y || !m || !d) return iso;
   return `${d}/${m}/${y}`;
 };
@@ -320,6 +325,10 @@ export default function AddProductModal(props: {
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
   const [vendorGstPct, setVendorGstPct] = useState<string>('');
   const [vendorRemarks, setVendorRemarks] = useState('');
+  /* When set, the Map Vendor draft is in EDIT mode for this row.id —
+   * saveVendorDraft updates that row instead of appending a new one,
+   * and the draft form's heading + button labels flip accordingly. */
+  const [vendorEditingId, setVendorEditingId] = useState<string | null>(null);
 
   const vendorSelected = useMemo(
     () => vendorOpts.find(v => v.code === vendorSelectedCode) || null,
@@ -512,6 +521,40 @@ export default function AddProductModal(props: {
       return;
     }
     if (!vendorSelected) return; // type-guard after the check
+
+    /* Edit mode — overlay the editable fields onto the existing row
+     * and keep its id so the change is in-place rather than producing
+     * a duplicate "added" row. Map date is preserved from the original
+     * row in edit mode (the row was already mapped at that date). */
+    if (vendorEditingId) {
+      setVendors(prev => prev.map(row =>
+        row.id !== vendorEditingId ? row : {
+          ...row,
+          vendorId:      vendorSelected.id,
+          vendorCode:    vendorSelected.code,
+          vendorName:    vendorSelected.name,
+          website:       vendorSelected.website,
+          contactPerson: vendorSelected.contact,
+          contactNo:     vendorSelected.phone,
+          email:         vendorSelected.email,
+          designation:   vendorSelected.designation,
+          purchasePrice: vendorPp,
+          gstPct:        vendorGp,
+          gstAmt:        vendorGsta,
+          totalAmt:      vendorTota,
+          remarks:       vendorRemarks,
+        }
+      ));
+      setVendorDraftOpen(false);
+      setVendorEditingId(null);
+      setVendorSelectedCode('');
+      setVendorPurchasePrice('');
+      setVendorGstPct('');
+      setVendorRemarks('');
+      toast.success('Vendor updated', `${vendorSelected.name} mapping updated`);
+      return;
+    }
+
     const entry: VendorEntry = {
       id: String(Date.now()),
       vendorId: vendorSelected.id,
@@ -540,6 +583,29 @@ export default function AddProductModal(props: {
     setVendorGstPct('');
     setVendorRemarks('');
     toast.success('Vendor mapped', `${entry.vendorName} added to this product`);
+  };
+
+  /* Open the Map Vendor draft in EDIT mode — preselect the vendor in
+   * the dropdown and prefill purchase price, GST %, and remarks from
+   * the row. saveVendorDraft sees vendorEditingId and updates in place. */
+  const openVendorEdit = (v: VendorEntry) => {
+    setVendorEditingId(v.id);
+    setVendorSelectedCode(v.vendorCode);
+    setVendorPurchasePrice(v.purchasePrice ? String(v.purchasePrice) : '');
+    setVendorGstPct(v.gstPct ? String(v.gstPct) : '');
+    setVendorRemarks(v.remarks ?? '');
+    setVendorDraftOpen(true);
+  };
+
+  /* Close the draft without saving — wipes any in-flight edits so the
+   * next "+ Map New Vendor" click opens a clean form. */
+  const closeVendorDraft = () => {
+    setVendorDraftOpen(false);
+    setVendorEditingId(null);
+    setVendorSelectedCode('');
+    setVendorPurchasePrice('');
+    setVendorGstPct('');
+    setVendorRemarks('');
   };
 
   const removeVendor = (id: string) =>
@@ -1625,11 +1691,11 @@ export default function AddProductModal(props: {
                       <div className="apm-mv-popup-title">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                         <div>
-                          <div className="apm-mv-popup-title-main">Map Product Vendor</div>
-                          <div className="apm-mv-popup-title-sub">Select a vendor and enter purchase pricing</div>
+                          <div className="apm-mv-popup-title-main">{vendorEditingId ? 'Edit Mapped Vendor' : 'Map Product Vendor'}</div>
+                          <div className="apm-mv-popup-title-sub">{vendorEditingId ? 'Update vendor selection and pricing' : 'Select a vendor and enter purchase pricing'}</div>
                         </div>
                       </div>
-                      <button className="apm-close apm-mv-close" onClick={() => setVendorDraftOpen(false)} aria-label="Close">
+                      <button className="apm-close apm-mv-close" onClick={closeVendorDraft} aria-label="Close">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                       </button>
                     </div>
@@ -1700,9 +1766,9 @@ export default function AddProductModal(props: {
                     </div>
 
                     <div className="apm-mv-popup-foot">
-                      <button className="apm-btn-ghost" onClick={() => setVendorDraftOpen(false)}>Cancel</button>
+                      <button className="apm-btn-ghost" onClick={closeVendorDraft}>Cancel</button>
                       <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={!vendorSelected || !vendorPp}>
-                        Save Vendor
+                        {vendorEditingId ? 'Save Changes' : 'Save Vendor'}
                       </button>
                     </div>
                   </div>
@@ -1762,7 +1828,7 @@ export default function AddProductModal(props: {
                                   title="Edit"
                                   icon="ri-pencil-line"
                                   color="info"
-                                  onClick={() => { /* edit flow lands later */ }}
+                                  onClick={() => openVendorEdit(v)}
                                 />
                                 <QcActionBtn
                                   title="Delete"
