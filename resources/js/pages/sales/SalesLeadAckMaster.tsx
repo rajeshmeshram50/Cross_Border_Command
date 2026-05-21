@@ -1144,6 +1144,13 @@ const SCOPED_CSS = `
   background: rgba(148,163,184,.12) !important;
   color: #6b7280 !important;
 }
+/* Dark-mode override for the small-screen scroll-shadow gradient (defined
+   in the 520px media query). Plain solid bg matching the table card. */
+@media (max-width: 520px) {
+  [data-bs-theme="dark"] .lam-table-wrap {
+    background: #1a1530;
+  }
+}
 [data-bs-theme="dark"] .lam-ab-muted:hover {
   background: rgba(148,163,184,.12) !important;
   color: #6b7280 !important;
@@ -1173,5 +1180,42 @@ const SCOPED_CSS = `
   .lam-footer-actions { width: 100%; justify-content: flex-end; }
   .lam-footer-hint { font-size: 10.5px; }
   .lam-pag-right { flex-wrap: wrap; }
+  /* Table starts horizontally scrolling; give the wrap a clear edge so
+     it reads as "scrollable" rather than "broken". */
+  .lam-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-bottom: 1px solid transparent;
+    background:
+      linear-gradient(to right, #fff 30%, rgba(255,255,255,0)),
+      linear-gradient(to right, rgba(15,23,42,0.06), #fff 70%) 0 100%,
+      radial-gradient(farthest-side at 0 50%, rgba(15,23,42,0.10), transparent),
+      radial-gradient(farthest-side at 100% 50%, rgba(15,23,42,0.10), transparent) 0 100%;
+    background-repeat: no-repeat;
+    background-color: #fff;
+    background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+    background-attachment: local, local, scroll, scroll;
+  }
+}
+@media (max-width: 400px) {
+  .lam-root { padding: 10px 8px 14px; font-size: 12.5px; }
+  .lam-header { padding: 10px 12px; gap: 8px; }
+  .lam-header-icon { width: 34px; height: 34px; }
+  .lam-header-title { font-size: 13px; }
+  .lam-header-sub   { font-size: 10px; }
+  .lam-back-btn { width: 32px; height: 32px; }
+  .lam-tab { padding: 5px 9px; font-size: 11px; }
+  .lam-tab-active svg, .lam-tab svg { width: 10px; height: 10px; }
+  /* Pagination chips lose horizontal padding so they fit narrow screens */
+  .lam-pag-info, .lam-pag-range, .lam-rpp { padding: 3px 8px; font-size: 11px; }
+  .lam-pag-btn { width: 26px; height: 26px; }
+  /* Badge / action chips shrink */
+  .lam-badge { font-size: 9.5px; padding: 2px 7px; }
+  .lam-ab { width: 24px; height: 24px; }
+  /* Modal header pill / title shrink so 3 elements + close fit */
+  .lam-modal-title { font-size: 14px; }
+  .lam-modal-sub   { font-size: 10px; }
+  .lam-modal-hicon { width: 36px; height: 36px; }
+  .lam-modal-htext { padding-right: 28px; }
 }
 `;
