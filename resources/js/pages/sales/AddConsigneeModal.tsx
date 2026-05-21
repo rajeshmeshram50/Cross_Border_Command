@@ -605,6 +605,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     const e: Record<string, string> = {};
     const f = form1;
     if (!f.companyName.trim())                                e.companyName = 'Company name is required';
+    else if (f.companyName.trim().length > 30)                e.companyName = 'Company name must be 30 characters or fewer';
     if (!f.legalName.trim())                                  e.legalName   = 'Company legal name is required';
     if (!f.segment)                                           e.segment     = 'Select a segment';
     if (!f.risk)                                              e.risk        = 'Select a risk level';
@@ -1687,7 +1688,14 @@ const Stage1 = ({
           <SectionHeader icon={<IconHome />} title="Basic Company Details"     sub="Company identity, segment, and risk classification" accent="#10b981" />
           <div className="acm-grid-2 acm-sec-pad">
             <Field label="Company Name" required error={errors.companyName} fieldKey="companyName">
-              <input className={`acm-input ${errors.companyName ? 'acm-input-error' : ''}`} placeholder="Enter company name" value={form.companyName} onChange={e => set('companyName', e.target.value)} disabled={lock} />
+              <input
+                className={`acm-input ${errors.companyName ? 'acm-input-error' : ''}`}
+                placeholder="Enter company name (max 30)"
+                value={form.companyName}
+                maxLength={30}
+                onChange={e => set('companyName', e.target.value.slice(0, 30))}
+                disabled={lock}
+              />
             </Field>
             <Field label="Company Legal Name" required error={errors.legalName} fieldKey="legalName">
               <input className={`acm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} disabled={lock} />
