@@ -205,17 +205,13 @@ type KycSubTab = 'owner' | 'company' | 'license';
  * vendors.vendor_type_id / risk_level_id / segment_id etc. */
 
 /* ─── Step 2 seed rows ─────────────────────────────────────────────
- * One mandatory default per applicable tab so the table isn't empty
- * on open and the user can see what a row looks like. Mandatory rows
- * can be uploaded against but not deleted. Everything else comes from
- * the "+ Add …" modal. */
-const SEED_DD: DueDiligenceRow[] = [
-  { id: 'seed-dd-1', code: 'DD-001', documentName: 'Certificate of Incorporation', issuingAuthority: 'Registrar of Companies (ROC)', expiry: 'N/A', mandatory: true, file: null, fileName: '' },
-];
+ * Both DD and Trade License now start empty — the user adds every
+ * row via the "+ Add …" modal. The previous seeded "Certificate of
+ * Incorporation" / "IEC" rows were misleading on imports where those
+ * docs aren't applicable, and forced an extra delete click anyway. */
+const SEED_DD: DueDiligenceRow[] = [];
 
-const SEED_TRADE_LICENSE: TradeLicenseRow[] = [
-  { id: 'seed-tl-1', code: 'TL-001', licenseType: 'Import Export Code (IEC)', licenseNumber: '', issuingAuthority: 'DGFT', issueDate: '', expiryDate: '', file: null, fileName: '' },
-];
+const SEED_TRADE_LICENSE: TradeLicenseRow[] = [];
 
 /* Step 3 — Trade Documents preset list. These are common B2B agreements
  * an onboarder typically sends for e-signature. Status flips to 'Sent'
@@ -1859,6 +1855,29 @@ export default function AddVendorModal(props: {
           setDraft={setContactDraft}
           onClose={() => setContactPopupOpen(false)}
           onSave={saveContactDraft}
+          /* Step-1 snapshot rendered as a readonly strip at the top
+             so the user can verify they're adding a contact under the
+             correct vendor without scrolling back to Step 1. */
+          vendor={{
+            vendorCode,
+            companyName,
+            legalName,
+            vendorType:          labelFor(vendorType, vendorTypeOpts),
+            riskLevel:           labelFor(riskLevel, riskLevelOpts),
+            vendorBehaviour:     labelFor(vendorBehaviour, behaviourOpts),
+            segment:             labelFor(segment, segmentOpts),
+            complianceBehaviour: labelFor(complianceBehaviour, complianceOpts),
+            country:             labelFor(country, countryOpts),
+            state:               labelFor(state, stateOpts),
+            stateCode,
+            city,
+            pincode,
+            primaryContactName:  contactName,
+            primaryDesignation:  designation,
+            primaryContactNo:    contactNo,
+            primaryEmail:        email,
+            whatsappEnabled,
+          }}
         />
       )}
 
@@ -2095,18 +2114,48 @@ type ContactDraft = {
   whatsapp: boolean;
   attachmentName: string;
 };
+type VendorSnapshot = {
+  vendorCode: string;
+  companyName: string;
+  legalName: string;
+  vendorType: string;
+  riskLevel: string;
+  vendorBehaviour: string;
+  segment: string;
+  complianceBehaviour: string;
+  country: string;
+  state: string;
+  stateCode: string;
+  city: string;
+  pincode: string;
+  primaryContactName: string;
+  primaryDesignation: string;
+  primaryContactNo: string;
+  primaryEmail: string;
+  whatsappEnabled: boolean;
+};
+
 function ContactAddPopup(props: {
   draft: ContactDraft;
   setDraft: (next: ContactDraft) => void;
   onClose: () => void;
   onSave: () => void;
+  vendor: VendorSnapshot;
 }) {
-  const { draft, setDraft, onClose, onSave } = props;
+  const { draft, setDraft, onClose, onSave, vendor } = props;
   const set = <K extends keyof ContactDraft>(k: K, v: ContactDraft[K]) => setDraft({ ...draft, [k]: v });
   const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (f) set('attachmentName', f.name);
   };
+  /* Inline "Label : value" pair — same compact tone as the
+     "What you did in previous stages" strip elsewhere in the wizard. */
+  const Pair = ({ k, v }: { k: string; v: string }) => (
+    <span className="avm-cp-pair">
+      <span className="avm-cp-pair-k">{k} :</span>
+      <span className="avm-cp-pair-v" title={v || '—'}>{v || '—'}</span>
+    </span>
+  );
   return createPortal((
     <div className="avm-cp-backdrop" onClick={onClose}>
       <div className="avm-cp-popup" onClick={(e) => e.stopPropagation()}>
@@ -2117,6 +2166,39 @@ function ContactAddPopup(props: {
           <button className="avm-close avm-cp-close" onClick={onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
+        </div>
+
+        {/* Step-1 readonly summary — so the user has the vendor's
+            identity + primary contact on hand while filling out an
+            additional contact entry. Mirrors the read-only strip on
+            the Edit Vendor wizard's later steps. */}
+        <div className="avm-cp-summary">
+          <div className="avm-cp-summary-row">
+            <Pair k="Vendor Code"          v={vendor.vendorCode} />
+            <Pair k="Company Name"         v={vendor.companyName} />
+            <Pair k="Company Legal Name"   v={vendor.legalName} />
+            <Pair k="Vendor Type"          v={vendor.vendorType} />
+          </div>
+          <div className="avm-cp-summary-row">
+            <Pair k="Risk Level"           v={vendor.riskLevel} />
+            <Pair k="Vendor Behaviour"     v={vendor.vendorBehaviour} />
+            <Pair k="Segment"              v={vendor.segment} />
+            <Pair k="Compliance Behaviour" v={vendor.complianceBehaviour} />
+          </div>
+          <div className="avm-cp-summary-row">
+            <Pair k="Country"     v={vendor.country} />
+            <Pair k="State"       v={vendor.state} />
+            <Pair k="State Code"  v={vendor.stateCode} />
+            <Pair k="City"        v={vendor.city} />
+            <Pair k="Pincode"     v={vendor.pincode} />
+          </div>
+          <div className="avm-cp-summary-row">
+            <Pair k="Primary Contact" v={vendor.primaryContactName} />
+            <Pair k="Designation"     v={vendor.primaryDesignation} />
+            <Pair k="Contact No"      v={vendor.primaryContactNo} />
+            <Pair k="Email"           v={vendor.primaryEmail} />
+            <Pair k="WhatsApp"        v={vendor.whatsappEnabled ? 'Yes' : 'No'} />
+          </div>
         </div>
 
         <div className="avm-cp-body">
@@ -3083,13 +3165,12 @@ function AddProductMappingPopup(props: {
   draft: ProductMappingDraft;
   setDraft: Setter<ProductMappingDraft>;
   productOpts: Array<{ value: string; label: string }>;
-  gstPctOpts: Array<{ value: string; label: string }>;
   onProductChange: (productIdStr: string) => void;
   recompute: (d: ProductMappingDraft) => ProductMappingDraft;
   onClose: () => void;
   onSave: () => void;
 }) {
-  const { draft, setDraft, productOpts, gstPctOpts, onProductChange, recompute, onClose, onSave } = props;
+  const { draft, setDraft, productOpts, onProductChange, recompute, onClose, onSave } = props;
   const set = <K extends keyof ProductMappingDraft>(k: K, v: ProductMappingDraft[K]) => setDraft({ ...draft, [k]: v });
   return (
     <PopupShell title="Add Product Mapping" icon="ri-box-3-line" subtitle="Link a product with purchase price & GST for this vendor" onClose={onClose} onSave={onSave}>
@@ -3118,10 +3199,18 @@ function AddProductMappingPopup(props: {
         <Field label="Purchase Price (₹)" required>
           <input className="avm-input" type="number" min="0" step="0.01" placeholder="Enter purchase price" value={draft.purchasePrice} onChange={e => setDraft(recompute({ ...draft, purchasePrice: e.target.value }))} />
         </Field>
+        {/* GST % is inherited from the selected product (set in the
+            Product wizard's Sales Config step) and locked here so a
+            vendor mapping can never carry a different tax rate than
+            the product itself. Same behavior as the product form's
+            Map Vendor popup — the two flows are now symmetric. */}
         <Field label="GST %">
-          {gstPctOpts.length > 0
-            ? <SelectInput value={draft.gstPercentage} onChange={v => setDraft(recompute({ ...draft, gstPercentage: v }))} placeholder="Select" options={gstPctOpts} />
-            : <input className="avm-input" type="number" min="0" step="0.01" placeholder="e.g. 18" value={draft.gstPercentage} onChange={e => setDraft(recompute({ ...draft, gstPercentage: e.target.value }))} />}
+          <input
+            className="avm-input"
+            value={draft.gstPercentage ? `${draft.gstPercentage}%` : '—'}
+            readOnly
+            title="GST % comes from the product's Sales Config — not editable here"
+          />
         </Field>
         <Field label="GST Amount (₹)">
           <input className="avm-input" value={draft.gstAmount} readOnly placeholder="Auto-computed" />
@@ -3756,7 +3845,40 @@ const SCOPED_CSS = `
   border-top: 1px solid #ede9fe;
 }
 
+/* Readonly Step-1 summary strip at the top of the popup. Compact
+   "LABEL : value" pairs flowed across multiple rows; lavender-tinted
+   background so the strip reads as context, not editable input. */
+.avm-cp-summary {
+  padding: 12px 18px;
+  background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
+  border-bottom: 1px solid #e9d5ff;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.avm-cp-summary-row {
+  display: flex; flex-wrap: wrap;
+  gap: 4px 22px;
+  align-items: baseline;
+}
+.avm-cp-pair {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  font-size: 12px; line-height: 1.4;
+  min-width: 0;
+}
+.avm-cp-pair-k {
+  font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  color: #7c3aed; text-transform: uppercase;
+  white-space: nowrap;
+}
+.avm-cp-pair-v {
+  font-weight: 500; color: #1e1b4b;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 280px;
+}
+
 [data-bs-theme="dark"] .avm-cp-popup { background: #14102a; color: #ede9fe; }
 [data-bs-theme="dark"] .avm-cp-head  { background: linear-gradient(135deg, #2b3a85, #6691e7); }
 [data-bs-theme="dark"] .avm-cp-foot  { border-top-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-cp-summary { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-bottom-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-cp-pair-k { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-cp-pair-v { color: #ede9fe; }
 `;

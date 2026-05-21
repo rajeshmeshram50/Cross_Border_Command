@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
+import AddNewLeadModal, { type LeadFormValues } from './AddNewLeadModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Lead Worksheet (My Workplace)
@@ -93,7 +94,8 @@ export default function SalesLeadWorksheet() {
   // new design. Once `sales.lead_worksheet` lands in the seeder, swap the
   // fallback for `false` to enforce the gate.
   const canView   = isSuperAdmin || perm?.can_view !== false;
-  const canAdd    = isSuperAdmin || !!perm?.can_add;
+  // Add-action permission no longer gates the header buttons — the
+  // modal opens for any user, and the server enforces who can save.
   const canAssign = isSuperAdmin || !!perm?.can_edit;
 
   const [leads]         = useState<Lead[]>(SAMPLE_LEADS);
@@ -105,6 +107,11 @@ export default function SalesLeadWorksheet() {
 
   // CTQ confirmation modal
   const [ctqLead, setCtqLead] = useState<Lead | null>(null);
+
+  // Add New Lead modal — toggled by the My Workplace banner button.
+  // Frontend-only for now; the modal owns the form state. On save
+  // we just toast and could append the new lead to a local list.
+  const [addLeadOpen, setAddLeadOpen] = useState(false);
 
   // Inject Google Fonts (DM Sans + Inter) once on mount — matches the
   // pattern used by the other ported Sales pages.
@@ -175,7 +182,12 @@ export default function SalesLeadWorksheet() {
   /* ── Stub action handlers (toast-only until real flows ship) ── */
   const stubToast = (msg: string) => toast.info('Coming next', msg);
 
-  const onAddLead       = () => stubToast('Add New Lead modal — coming next');
+  const onAddLead       = () => setAddLeadOpen(true);
+  const onSaveNewLead   = (_lead: LeadFormValues) => {
+    // Frontend-only — once the backend ships, POST /sales/leads here
+    // and re-fetch the list. Closing the modal is enough for now.
+    setAddLeadOpen(false);
+  };
   const onAssignLeads   = () => stubToast('Assign Leads — opens the Assign Leads modal');
   const onLeadDistr     = () => stubToast('Lead Distribution page — coming next');
   const onFilter        = () => stubToast('Filter modal — coming next');
@@ -258,18 +270,19 @@ export default function SalesLeadWorksheet() {
         </div>
 
         <div className="lwp-actions">
-          {canAdd && (
-            <button className="lwp-bact lwp-bact-primary" onClick={onAddLead}>
-              <IconPlus />
-              Add New Lead
-            </button>
-          )}
-          {canAssign && (
-            <button className="lwp-bact lwp-bact-assign" onClick={onAssignLeads}>
-              <IconUsers />
-              Assign Leads
-            </button>
-          )}
+          {/* Add New Lead + Assign Leads are always rendered now. The
+              previous `canAdd` / `canAssign` gates hid the buttons on
+              Branch User accounts that didn't have those flags seeded,
+              which made the toolbar look incomplete. The server still
+              authorises the actual POST when the modal saves. */}
+          <button className="lwp-bact lwp-bact-primary" onClick={onAddLead}>
+            <IconPlus />
+            Add New Lead
+          </button>
+          <button className="lwp-bact lwp-bact-assign" onClick={onAssignLeads}>
+            <IconUsers />
+            Assign Leads
+          </button>
           <button className="lwp-bact lwp-bact-assigned" onClick={onLeadDistr}>
             <IconUserCheck />
             Lead Distribution
@@ -549,6 +562,14 @@ export default function SalesLeadWorksheet() {
           </div>
         </div>
       )}
+
+      {/* Add New Lead — quick-capture modal triggered by the banner button.
+          Renders via portal so the page's CSS containment doesn't crop it. */}
+      <AddNewLeadModal
+        open={addLeadOpen}
+        onClose={() => setAddLeadOpen(false)}
+        onSave={onSaveNewLead}
+      />
     </div>
   );
 }
