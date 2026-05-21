@@ -272,7 +272,7 @@ class CustomerController extends Controller
      */
     private function validatePayload(Request $request, ?int $customerId, $clientId): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'company_name'   => 'required|string|max:255',
             'legal_name'     => 'nullable|string|max:255',
             'type'           => 'nullable|string|max:64',
@@ -340,6 +340,39 @@ class CustomerController extends Controller
             'locations.*.cp_email'       => 'nullable|email|max:255',
             'locations.*.cp_whatsapp'    => 'nullable|in:yes,no',
         ]);
+
+        /* Cross-row uniqueness within the payload. Catches the case
+         * where the user reuses the primary contact's email/phone on
+         * an additional location (or duplicates across two additional
+         * locations) — the same address book can't list one person
+         * under two different addresses. Errors are keyed by the
+         * `locations.{i}.cp_email` / `cp_contact` paths so the
+         * frontend's 422 mapper lands them on the right field. */
+        $primary       = $data['primary_address'] ?? [];
+        $seenEmails    = [];
+        $seenPhones    = [];
+        $primaryEmail  = strtolower(trim((string) ($primary['cp_email']   ?? '')));
+        $primaryPhone  = trim((string) ($primary['cp_contact'] ?? ''));
+        if ($primaryEmail) $seenEmails[$primaryEmail] = 'primary_address';
+        if ($primaryPhone) $seenPhones[$primaryPhone] = 'primary_address';
+        $errors = [];
+        foreach ($data['locations'] ?? [] as $i => $loc) {
+            $email = strtolower(trim((string) ($loc['cp_email']   ?? '')));
+            $phone = trim((string) ($loc['cp_contact'] ?? ''));
+            if ($email && isset($seenEmails[$email])) {
+                $errors["locations.{$i}.cp_email"]   = ['This email is already used by another address on this customer.'];
+            }
+            if ($phone && isset($seenPhones[$phone])) {
+                $errors["locations.{$i}.cp_contact"] = ['This phone number is already used by another address on this customer.'];
+            }
+            if ($email) $seenEmails[$email] = "locations.{$i}";
+            if ($phone) $seenPhones[$phone] = "locations.{$i}";
+        }
+        if (!empty($errors)) {
+            throw \Illuminate\Validation\ValidationException::withMessages($errors);
+        }
+
+        return $data;
     }
 
     /**

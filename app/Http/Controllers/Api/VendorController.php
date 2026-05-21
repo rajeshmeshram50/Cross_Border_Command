@@ -585,7 +585,20 @@ class VendorController extends Controller
         if ($request->hasFile($inputKey)) {
             $file = $request->file($inputKey);
             $ext  = $file->getClientOriginalExtension() ?: 'bin';
-            $name = $slug . '-' . bin2hex(random_bytes(6)) . '.' . $ext;
+            // Encode the original filename into the stored name so the
+            // frontend can show "PAN Card.pdf" instead of the random
+            // collision-safe prefix. Format:
+            //   {slug}-{rand}__{sanitized-original}.{ext}
+            // The frontend `basename` strips everything up to and
+            // including the "__" separator. We avoid a DB migration by
+            // round-tripping the name through the filesystem path.
+            $original = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+            $safe = preg_replace('/[^A-Za-z0-9 ._-]/', '_', (string) $original);
+            $safe = trim((string) $safe);
+            if ($safe === '') {
+                $safe = 'file';
+            }
+            $name = $slug . '-' . bin2hex(random_bytes(4)) . '__' . $safe . '.' . $ext;
             return $file->storeAs("vendor_documents/{$vendorId}", $name, 'public');
         }
         return $existingPath ?: null;
@@ -659,6 +672,7 @@ class VendorController extends Controller
                 'email'             => $a->email,
                 'whatsapp_enabled'  => (bool) $a->whatsapp_enabled,
                 'attachment_path'   => $a->attachment_path,
+                'attachment_url'    => file_url($a->attachment_path),
             ])->all(),
 
             'due_diligence' => $v->documents->where('kind', 'dd')->values()->map(fn ($d) => [
@@ -669,6 +683,7 @@ class VendorController extends Controller
                 'expiry'            => $d->expiry,
                 'mandatory'         => (bool) $d->mandatory,
                 'attachment_path'   => $d->attachment_path,
+                'attachment_url'    => file_url($d->attachment_path),
             ])->all(),
 
             'trade_licenses' => $v->documents->where('kind', 'tl')->values()->map(fn ($d) => [
@@ -681,6 +696,7 @@ class VendorController extends Controller
                 'issue_date'          => optional($d->issue_date)->toDateString(),
                 'expiry_date'         => optional($d->expiry_date)->toDateString(),
                 'attachment_path'     => $d->attachment_path,
+                'attachment_url'      => file_url($d->attachment_path),
             ])->all(),
 
             'owner_kyc' => $v->owners->map(fn ($o) => [
@@ -693,6 +709,7 @@ class VendorController extends Controller
                 'expiry'            => $o->expiry,
                 'status'            => $o->status,
                 'attachment_path'   => $o->attachment_path,
+                'attachment_url'    => file_url($o->attachment_path),
             ])->all(),
 
             'bank_accounts' => $v->bankAccounts->map(fn ($b) => [
@@ -703,6 +720,7 @@ class VendorController extends Controller
                 'ifsc'           => $b->ifsc,
                 'branch_address' => $b->branch_address,
                 'cheque_path'    => $b->cheque_path,
+                'cheque_url'     => file_url($b->cheque_path),
             ])->all(),
 
             'gst_scrutiny' => $v->gstScrutiny->map(fn ($g) => [

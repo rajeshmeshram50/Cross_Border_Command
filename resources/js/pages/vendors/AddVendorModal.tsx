@@ -106,6 +106,11 @@ export type DueDiligenceRow = {
   file: File | null;
   fileName: string;
   existingPath?: string;
+  /** Pre-resolved URL from the backend (via file_url(), matches the URL
+   *  scheme used for client/branch profile photos). Prefer this over
+   *  composing a URL from existingPath — it understands Azure Blob
+   *  Storage where Storage::url() is the authoritative builder. */
+  existingUrl?: string;
 };
 
 export type OwnerKycRow = {
@@ -120,6 +125,7 @@ export type OwnerKycRow = {
   file: File | null;
   fileName: string;
   existingPath?: string;
+  existingUrl?: string;
 };
 
 export type TradeLicenseRow = {
@@ -133,6 +139,7 @@ export type TradeLicenseRow = {
   file: File | null;
   fileName: string;
   existingPath?: string;
+  existingUrl?: string;
 };
 
 export type BankRow = {
@@ -145,6 +152,7 @@ export type BankRow = {
   chequeFile: File | null;
   chequeFileName: string;
   existingPath?: string;
+  existingUrl?: string;
 };
 
 export type GstScrutinyRow = {
@@ -544,12 +552,12 @@ export default function AddVendorModal(props: {
     type ApiExtra = {
       id: number; contact_name?: string | null; designation?: string | null;
       contact_no?: string | null; email?: string | null; whatsapp_enabled?: boolean;
-      attachment_path?: string | null;
+      attachment_path?: string | null; attachment_url?: string | null;
     };
-    type ApiDd = { id: number; code?: string | null; document_name?: string | null; issuing_authority?: string | null; expiry?: string | null; mandatory?: boolean; attachment_path?: string | null };
-    type ApiOwner = { id: number; code?: string | null; document_name?: string | null; issuing_authority?: string | null; document_number?: string | null; issue_date?: string | null; expiry?: string | null; status?: string | null; attachment_path?: string | null };
-    type ApiTl = { id: number; code?: string | null; license_type_id?: number | null; license_type_name?: string | null; license_number?: string | null; issuing_authority?: string | null; issue_date?: string | null; expiry_date?: string | null; attachment_path?: string | null };
-    type ApiBank = { id: number; bank_name?: string | null; branch_name?: string | null; account_number?: string | null; ifsc?: string | null; branch_address?: string | null; cheque_path?: string | null };
+    type ApiDd = { id: number; code?: string | null; document_name?: string | null; issuing_authority?: string | null; expiry?: string | null; mandatory?: boolean; attachment_path?: string | null; attachment_url?: string | null };
+    type ApiOwner = { id: number; code?: string | null; document_name?: string | null; issuing_authority?: string | null; document_number?: string | null; issue_date?: string | null; expiry?: string | null; status?: string | null; attachment_path?: string | null; attachment_url?: string | null };
+    type ApiTl = { id: number; code?: string | null; license_type_id?: number | null; license_type_name?: string | null; license_number?: string | null; issuing_authority?: string | null; issue_date?: string | null; expiry_date?: string | null; attachment_path?: string | null; attachment_url?: string | null };
+    type ApiBank = { id: number; bank_name?: string | null; branch_name?: string | null; account_number?: string | null; ifsc?: string | null; branch_address?: string | null; cheque_path?: string | null; cheque_url?: string | null };
     type ApiGst = { id: number; gst_number?: string | null; status?: string | null; last_filing_date?: string | null; prev_non_gst_2a_invoice?: string | null; red_flags?: string | null };
     type ApiMapping = { id: number; product_id?: number | null; product_code?: string | null; product_name?: string | null; batch_serial_lot?: string | null; purchase_price?: number | string | null; gst_percentage?: number | string | null; gst_amount?: number | string | null; total_amount?: number | string | null };
     type ApiVendor = {
@@ -571,8 +579,13 @@ export default function AddVendorModal(props: {
 
     const basename = (p?: string | null): string => {
       if (!p) return '';
-      const slashed = String(p).split('/');
-      return slashed[slashed.length - 1] ?? '';
+      const last = String(p).split('/').pop() ?? '';
+      // Backend stores attachments as `{slug}-{rand}__{original}.{ext}`
+      // so the original filename can be recovered without a DB
+      // migration. If the separator is absent (legacy uploads) we
+      // fall back to the raw stored name.
+      const sep = last.indexOf('__');
+      return sep >= 0 ? last.slice(sep + 2) : last;
     };
     const numStr = (n?: number | null): string => (n ?? '') === '' || n == null ? '' : String(n);
 
@@ -620,7 +633,12 @@ export default function AddVendorModal(props: {
           attachmentPath: c.attachment_path ?? undefined,
         })));
 
-        // Step 2 — KYC sub-collections (file fields restored via existingPath)
+        // Step 2 — KYC sub-collections (file fields restored via existingPath
+        // + existingUrl). `existingUrl` is the backend-resolved file_url()
+        // value (same helper that powers client/branch profile photos and
+        // knows how to address Azure Blob Storage); we hand that to the
+        // FileChooser so View links don't try to compose Azure URLs from
+        // a raw path on the frontend.
         setDdRows((v.due_diligence ?? []).map(r => ({
           id: String(r.id),
           code: r.code ?? '',
@@ -631,6 +649,7 @@ export default function AddVendorModal(props: {
           file: null,
           fileName: basename(r.attachment_path),
           existingPath: r.attachment_path ?? undefined,
+          existingUrl: r.attachment_url ?? undefined,
         })));
         setOwnerRows((v.owner_kyc ?? []).map(r => ({
           id: String(r.id),
@@ -644,6 +663,7 @@ export default function AddVendorModal(props: {
           file: null,
           fileName: basename(r.attachment_path),
           existingPath: r.attachment_path ?? undefined,
+          existingUrl: r.attachment_url ?? undefined,
         })));
         setLicenseRows((v.trade_licenses ?? []).map(r => ({
           id: String(r.id),
@@ -659,6 +679,7 @@ export default function AddVendorModal(props: {
           file: null,
           fileName: basename(r.attachment_path),
           existingPath: r.attachment_path ?? undefined,
+          existingUrl: r.attachment_url ?? undefined,
         })));
         setBankRows((v.bank_accounts ?? []).map(r => ({
           id: String(r.id),
@@ -670,6 +691,7 @@ export default function AddVendorModal(props: {
           chequeFile: null,
           chequeFileName: basename(r.cheque_path),
           existingPath: r.cheque_path ?? undefined,
+          existingUrl: r.cheque_url ?? undefined,
         })));
         setGstRows((v.gst_scrutiny ?? []).map(r => ({
           id: String(r.id),
@@ -1418,10 +1440,10 @@ export default function AddVendorModal(props: {
               }
               if (own) {
                 kycRows.push([
-                  { label: 'Owner Name',     value: own.documentName || '—' },
-                  { label: 'Designation',    value: own.issuingAuthority || '—' },
-                  { label: 'Official Email', value: own.documentNumber || '—' },
-                  { label: 'Phone No',       value: own.issueDate || '—' },
+                  { label: 'Document Name',     value: own.documentName || '—' },
+                  { label: 'Issuing Authority', value: own.issuingAuthority || '—' },
+                  { label: 'Document Number',   value: own.documentNumber || '—' },
+                  { label: 'Issue Date',        value: own.issueDate || '—' },
                 ]);
               }
               if (kycRows.length) {
@@ -2370,8 +2392,13 @@ function FileChooser(props: {
   onPick: (f: File | null) => void;
   placeholder?: string;
   existingPath?: string;
+  /** Pre-resolved URL from the backend (file_url() helper). Prefer this
+   *  over composing a URL via resolveFileUrl(existingPath) — the helper
+   *  knows about Azure Blob Storage, where Storage::url() is the only
+   *  authoritative URL builder. */
+  existingUrl?: string;
 }) {
-  const { file, onPick, placeholder, existingPath } = props;
+  const { file, onPick, placeholder, existingPath, existingUrl } = props;
   const toast = useToast();
 
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -2396,8 +2423,17 @@ function FileChooser(props: {
   };
 
   const hasFile = !!file || !!existingPath;
-  const fileName = file?.name ?? (existingPath ? existingPath.split('/').pop() ?? 'Attachment' : '');
-  const viewHref = file ? URL.createObjectURL(file) : (existingPath ? resolveFileUrl(existingPath) : '');
+  // Strip the storage prefix from the filename so users see the original
+  // upload name (e.g. "PAN Card.pdf"), not the slug+rand prefix that
+  // absorbFile() puts in front to keep filenames collision-safe.
+  const stripPrefix = (n: string) => {
+    const idx = n.indexOf('__');
+    return idx >= 0 ? n.slice(idx + 2) : n;
+  };
+  const fileName = file?.name ?? (existingPath ? stripPrefix(existingPath.split('/').pop() ?? 'Attachment') : '');
+  const viewHref = file
+    ? URL.createObjectURL(file)
+    : (existingUrl || (existingPath ? resolveFileUrl(existingPath) : ''));
 
   if (!hasFile) {
     // Empty state — clickable drop affordance.
@@ -2483,12 +2519,15 @@ function AttachmentCell(props: {
   fileName?: string;
   file?: File | null;
   existingPath?: string;
+  existingUrl?: string;
   onClear?: () => void;
 }) {
-  const { fileName, file, existingPath, onClear } = props;
+  const { fileName, file, existingPath, existingUrl, onClear } = props;
   const hasContent = !!(fileName || file || existingPath);
   if (!hasContent) return <span className="text-muted fs-13">—</span>;
-  const href = file ? URL.createObjectURL(file) : (existingPath ? resolveFileUrl(existingPath) : '');
+  const href = file
+    ? URL.createObjectURL(file)
+    : (existingUrl || (existingPath ? resolveFileUrl(existingPath) : ''));
   return (
     <div className="d-inline-flex align-items-center gap-2">
       {href ? (
@@ -2579,6 +2618,7 @@ function DdTable(props: {
                   fileName={r.fileName}
                   file={r.file}
                   existingPath={r.existingPath}
+                  existingUrl={r.existingUrl}
                   onClear={props.onClearFile && !props.readOnly ? () => props.onClearFile?.(r.id) : undefined}
                 />
               </td>
@@ -2657,6 +2697,7 @@ function OwnerKycTable(props: {
                   fileName={r.fileName}
                   file={r.file}
                   existingPath={r.existingPath}
+                  existingUrl={r.existingUrl}
                   onClear={props.onClearFile && !props.readOnly ? () => props.onClearFile?.(r.id) : undefined}
                 />
               </td>
@@ -2716,6 +2757,7 @@ function TradeLicenseTable(props: {
                     fileName={r.fileName}
                     file={r.file}
                     existingPath={r.existingPath}
+                    existingUrl={r.existingUrl}
                     onClear={props.onClearFile && !props.readOnly ? () => props.onClearFile?.(r.id) : undefined}
                   />
                 </td>
@@ -2779,6 +2821,7 @@ function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; on
                   fileName={r.chequeFileName}
                   file={r.chequeFile}
                   existingPath={r.existingPath}
+                  existingUrl={r.existingUrl}
                   onClear={props.onClearFile ? () => props.onClearFile?.(r.id) : undefined}
                 />
               </td>
@@ -3154,7 +3197,12 @@ function OwnerKycAddPopup(props: {
       </div>
       <div className="avm-grid-3">
         <Field label="Issue Date">
-          <MasterDatePicker value={draft.issueDate} onChange={(v) => set('issueDate', v)} placeholder="dd/mm/yyyy" />
+          <MasterDatePicker
+            value={draft.issueDate}
+            onChange={(v) => set('issueDate', v)}
+            placeholder="dd/mm/yyyy"
+            maxDate={new Date().toISOString().slice(0, 10)}
+          />
         </Field>
         <Field label="Expiry">
           <input className="avm-input" placeholder="MM/YYYY or N/A" value={draft.expiry} onChange={e => set('expiry', e.target.value)} />
@@ -3202,10 +3250,20 @@ function TradeLicenseAddPopup(props: {
           <input className="avm-input" placeholder="e.g. FSSAI, Govt. of India" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
         </Field>
         <Field label="Issue Date" required>
-          <MasterDatePicker value={draft.issueDate} onChange={(v) => set('issueDate', v)} placeholder="dd/mm/yyyy" />
+          <MasterDatePicker
+            value={draft.issueDate}
+            onChange={(v) => set('issueDate', v)}
+            placeholder="dd/mm/yyyy"
+            maxDate={new Date().toISOString().slice(0, 10)}
+          />
         </Field>
         <Field label="Expiry Date" required>
-          <MasterDatePicker value={draft.expiryDate} onChange={(v) => set('expiryDate', v)} placeholder="dd/mm/yyyy" />
+          <MasterDatePicker
+            value={draft.expiryDate}
+            onChange={(v) => set('expiryDate', v)}
+            placeholder="dd/mm/yyyy"
+            minDate={new Date().toISOString().slice(0, 10)}
+          />
         </Field>
       </div>
       <Field label="License Document" required>
@@ -3281,7 +3339,12 @@ function GstScrutinyAddPopup(props: {
           <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Suspended' | 'Cancelled')} placeholder="Select GST status" options={['Active', 'Suspended', 'Cancelled']} />
         </Field>
         <Field label="GST Last Filing Date" required>
-          <MasterDatePicker value={draft.lastFilingDate} onChange={(v) => set('lastFilingDate', v)} placeholder="dd/mm/yyyy" />
+          <MasterDatePicker
+            value={draft.lastFilingDate}
+            onChange={(v) => set('lastFilingDate', v)}
+            placeholder="dd/mm/yyyy"
+            maxDate={new Date().toISOString().slice(0, 10)}
+          />
         </Field>
       </div>
       <div className="avm-grid-2">
@@ -4066,15 +4129,18 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-doctable-search { background: #110c25; border-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-doctable-search input { color: #ede9fe; }
 [data-bs-theme="dark"] .avm-doctable-count { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev { background: #14241a; border-color: #14532d; }
-[data-bs-theme="dark"] .avm-prev-head { background: linear-gradient(135deg, #14241a, #1a3225); border-bottom-color: #14532d; }
-[data-bs-theme="dark"] .avm-prev-title { color: #bbf7d0; }
-[data-bs-theme="dark"] .avm-prev-toggle { background: #14241a; color: #bbf7d0; border-color: #166534; }
-[data-bs-theme="dark"] .avm-prev-chip { background: #14241a; border-color: #166534; color: #bbf7d0; }
-[data-bs-theme="dark"] .avm-prev-field-label { color: #6d6391; }
-[data-bs-theme="dark"] .avm-prev-field-value { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-prev-k { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev-v { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-prev { background: #14241a; border-color: #166534; }
+[data-bs-theme="dark"] .avm-prev-head { background: linear-gradient(135deg, #16321f, #1d4029); border-bottom-color: #166534; }
+[data-bs-theme="dark"] .avm-prev-title { color: #ffffff; }
+[data-bs-theme="dark"] .avm-prev-toggle { background: #1a3225; color: #d1fae5; border-color: #22c55e; }
+[data-bs-theme="dark"] .avm-prev-chip { background: #1a3225; border-color: #22c55e; color: #ffffff; }
+[data-bs-theme="dark"] .avm-prev-field-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-field-value { color: #ffffff; }
+[data-bs-theme="dark"] .avm-prev-k { color: #d8b4fe; font-weight: 600; }
+[data-bs-theme="dark"] .avm-prev-v { color: #ffffff; font-weight: 500; }
+[data-bs-theme="dark"] .avm-prev-link { color: #a5b4fc; }
+[data-bs-theme="dark"] .avm-prev-link:hover { color: #c7d2fe; }
+[data-bs-theme="dark"] .avm-prev-suffix { color: #cbd5e1; }
 [data-bs-theme="dark"] .avm-prev-stage.tone-violet .avm-prev-stage-label { color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #5eead4; }
 [data-bs-theme="dark"] .avm-prev-stage.tone-purple .avm-prev-stage-label { color: #d8b4fe; }

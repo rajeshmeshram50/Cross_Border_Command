@@ -232,6 +232,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * to advance if any required field is empty/invalid; the error map
    * drives the red border + helper text under each affected Field. */
   const [errors1, setErrors1] = useState<Record<string, string>>({});
+
   /* Saving state — disables the Save button while api.post/put is in
    * flight so a double-click can't fire two creates. */
   const [saving, setSaving] = useState(false);
@@ -266,6 +267,28 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [locModal, setLocModal]   = useState<{ open: boolean; editing: string | null }>({ open: false, editing: null });
   const [delModal, setDelModal]   = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
+
+  /* Real-time duplicate detection for the primary contact phone & email.
+   * Fires the inline error the moment the user types a value already
+   * used by an additional location row, so they don't get bounced back
+   * after clicking Save & Next. Mirrors AddCustomerModal. */
+  useEffect(() => {
+    const phone = (form1.contactNo || '').trim();
+    const email = (form1.email     || '').trim().toLowerCase();
+    const dupPhoneMsg = 'This phone number is already used by another address on this consignee';
+    const dupEmailMsg = 'This email is already used by another address on this consignee';
+    setErrors1(prev => {
+      const next = { ...prev };
+      const phoneDup = phone && locations.some(l => (l.cpContact || '').trim() === phone);
+      const emailDup = email && locations.some(l => (l.cpEmail   || '').trim().toLowerCase() === email);
+      if (phoneDup) next.contactNo = dupPhoneMsg;
+      else if (next.contactNo === dupPhoneMsg) delete next.contactNo;
+      if (emailDup) next.email = dupEmailMsg;
+      else if (next.email === dupEmailMsg) delete next.email;
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form1.contactNo, form1.email, locations]);
 
   /* Stage 2 — KYC / Due Diligence
    * Table-driven now (matches AddCustomerModal): docs covers both
@@ -620,8 +643,14 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     if (!f.designation.trim())                                e.designation = 'Designation is required';
     if (!f.contactNo.trim())                                  e.contactNo   = 'Contact number is required';
     else if (!/^\+?[0-9\s-]{7,15}$/.test(f.contactNo))        e.contactNo   = 'Phone must be 7-15 digits';
+    else if (locations.some(l => (l.cpContact || '').trim() === f.contactNo.trim())) {
+      e.contactNo = 'This phone number is already used by another address on this consignee';
+    }
     if (!f.email.trim())                                      e.email       = 'Email is required';
     else if (!/^\S+@\S+\.\S+$/.test(f.email))                 e.email       = 'Enter a valid email';
+    else if (locations.some(l => (l.cpEmail || '').trim().toLowerCase() === f.email.trim().toLowerCase())) {
+      e.email = 'This email is already used by another address on this consignee';
+    }
     if (!f.whatsapp)                                          e.whatsapp    = 'Select WhatsApp preference';
     return e;
   };
@@ -1308,30 +1337,53 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       </div>
     </div>
 
-    {locModal.open && (
-      <LocationSubModal
-        editing={locModal.editing ? locations.find(l => l.id === locModal.editing) ?? null : null}
-        masters={{
-          addressTypes: mAddressTypes,
-          countries: mCountries,
-          states: mStates,
-          designations: mDesignations,
-        }}
-        /* Block "Registered Office" in additional locations when the
-         * primary address already claims it — a consignee can only
-         * have one registered office. */
-        disallowedTypes={form1.addressType === 'Registered Office' ? ['Registered Office'] : []}
-        onClose={() => setLocModal({ open: false, editing: null })}
-        onSave={(rec) => {
-          if (locModal.editing) {
-            setLocations(prev => prev.map(l => l.id === locModal.editing ? { ...rec, id: l.id } : l));
-          } else {
-            setLocations(prev => [...prev, { ...rec, id: newLocId() }]);
-          }
-          setLocModal({ open: false, editing: null });
-        }}
-      />
-    )}
+    {locModal.open && (() => {
+      /* Collect every email + phone already used on this consignee —
+       * primary contact (Stage 1) plus every additional location the
+       * user has already added — minus the row currently being edited.
+       * The sub-modal blocks save (and surfaces a real-time error)
+       * when the user tries to enter a value already in this set. */
+      const editingId = locModal.editing;
+      const otherLocs = editingId
+        ? locations.filter(l => l.id !== editingId)
+        : locations;
+      const primaryEmail = (form1.email     || '').trim().toLowerCase();
+      const primaryPhone = (form1.contactNo || '').trim();
+      const existingEmails = [
+        primaryEmail,
+        ...otherLocs.map(l => (l.cpEmail || '').trim().toLowerCase()),
+      ].filter(Boolean);
+      const existingPhones = [
+        primaryPhone,
+        ...otherLocs.map(l => (l.cpContact || '').trim()),
+      ].filter(Boolean);
+      return (
+        <LocationSubModal
+          editing={editingId ? locations.find(l => l.id === editingId) ?? null : null}
+          masters={{
+            addressTypes: mAddressTypes,
+            countries: mCountries,
+            states: mStates,
+            designations: mDesignations,
+          }}
+          /* Block "Registered Office" in additional locations when the
+           * primary address already claims it — a consignee can only
+           * have one registered office. */
+          disallowedTypes={form1.addressType === 'Registered Office' ? ['Registered Office'] : []}
+          existingEmails={existingEmails}
+          existingPhones={existingPhones}
+          onClose={() => setLocModal({ open: false, editing: null })}
+          onSave={(rec) => {
+            if (editingId) {
+              setLocations(prev => prev.map(l => l.id === editingId ? { ...rec, id: l.id } : l));
+            } else {
+              setLocations(prev => [...prev, { ...rec, id: newLocId() }]);
+            }
+            setLocModal({ open: false, editing: null });
+          }}
+        />
+      );
+    })()}
 
     <DeleteConfirmModal
       open={delModal.open}
@@ -1928,11 +1980,16 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
                   <td>{i + 1}</td>
                   <td>
                     <div className="acm-loc-type-cell">
-                      <span>{l.type || '—'}</span>
+                      {/* Long custom address types get truncated to 14
+                          chars with hover tooltip so the column stays
+                          a predictable width. */}
+                      {l.type
+                        ? <TruncatedCell text={l.type} max={14} />
+                        : <span>—</span>}
                       {l.isPrimary && <span className="acm-loc-primary-tag">Primary</span>}
                     </div>
                   </td>
-                  <td><TruncatedCell text={l.line} max={36} /></td>
+                  <td><TruncatedCell text={l.line} max={16} /></td>
                   <td><TruncatedCell text={place} max={32} /></td>
                   <td><TruncatedCell text={contact} max={26} /></td>
                   <td><TruncatedCell text={l.cpContact} max={18} mono /></td>
@@ -3142,14 +3199,20 @@ type LocSubModalMasters = {
   designations: { value: string; label: string }[];
 };
 
-function LocationSubModal({ editing, masters, disallowedTypes, onClose, onSave }: {
+function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = [], existingPhones = [], onClose, onSave }: {
   editing: LocationRow | null;
   masters: LocSubModalMasters;
   /** Address types already claimed elsewhere (e.g. Registered Office on
-   *  the primary address). Filtered out of the dropdown so a customer
+   *  the primary address). Filtered out of the dropdown so a consignee
    *  doesn't end up with two registered offices. The currently-editing
    *  row's own type is still shown to avoid hiding existing data. */
   disallowedTypes?: string[];
+  /** Emails / phones already used by other addresses (primary + other
+   *  locations) on this consignee — used to block duplicates within
+   *  the same form before the user can save and run into a backend
+   *  conflict. Lower-cased emails, trimmed phones. */
+  existingEmails?: string[];
+  existingPhones?: string[];
   onClose: () => void;
   onSave: (rec: Omit<LocationRow, 'id'>) => void;
 }) {
@@ -3169,6 +3232,24 @@ function LocationSubModal({ editing, masters, disallowedTypes, onClose, onSave }
     setD(prev => ({ ...prev, [k]: v }));
     setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
   };
+  /* Real-time duplicate check — fires the inline error the moment the
+   * user types a phone or email already in use by the primary contact
+   * or another location on this consignee. Mirrors the click-time
+   * validator in submit() so behaviour stays consistent. */
+  useEffect(() => {
+    const phone = (d.cpContact || '').trim();
+    const email = (d.cpEmail   || '').trim().toLowerCase();
+    const dupPhoneMsg = 'This phone number is already used by another address on this consignee';
+    const dupEmailMsg = 'This email is already used by another address on this consignee';
+    setErrs(prev => {
+      const next = { ...prev };
+      if (phone && existingPhones.includes(phone)) next.cpContact = dupPhoneMsg;
+      else if (next.cpContact === dupPhoneMsg) delete next.cpContact;
+      if (email && existingEmails.includes(email)) next.cpEmail = dupEmailMsg;
+      else if (next.cpEmail === dupEmailMsg) delete next.cpEmail;
+      return next;
+    });
+  }, [d.cpContact, d.cpEmail, existingPhones, existingEmails]);
 
   /* Defensive local refetch — the parent fires the same masters on
    * modal open, but if the user clicks Add before that lands (or one
@@ -3231,8 +3312,14 @@ function LocationSubModal({ editing, masters, disallowedTypes, onClose, onSave }
     if (!d.cpDesignation.trim())                       next.cpDesignation = 'Designation required';
     if (!d.cpContact.trim())                           next.cpContact     = 'Phone required';
     else if (!/^\+?[0-9\s-]{7,15}$/.test(d.cpContact)) next.cpContact     = 'Phone must be 7-15 digits';
+    else if (existingPhones.includes(d.cpContact.trim())) {
+      next.cpContact = 'This phone number is already used by another address on this consignee';
+    }
     if (!d.cpEmail.trim())                             next.cpEmail       = 'Email required';
     else if (!/^\S+@\S+\.\S+$/.test(d.cpEmail))        next.cpEmail       = 'Enter a valid email';
+    else if (existingEmails.includes(d.cpEmail.trim().toLowerCase())) {
+      next.cpEmail = 'This email is already used by another address on this consignee';
+    }
     if (!d.cpWhatsapp)                                 next.cpWhatsapp    = 'Select WhatsApp preference';
     setErrs(next);
     if (Object.keys(next).length === 0) { onSave(d); return; }
