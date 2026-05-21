@@ -393,14 +393,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   // /api/customers/:id endpoint lands, fetch and hydrate the rest here.
   useEffect(() => {
     if (!open) return;
-    // Restore the stage / sub-tab the user was on when they last
-    // closed this customer's modal (edit mode only). Create mode
-    // always starts at Stage 1 — there's no anchor to remember it by.
+    /* Both create and edit modes always land on Stage 1 so the user
+     * reviews identity first before stepping forward. Sub-tab memory
+     * (KYC sub-tab, vault tab) is still restored so inner navigation
+     * isn't lost if the user advances back to Stage 2/3 manually. */
     const memKey = customer?.db_id ?? null;
     const remembered = memKey ? stageMemory.get(memKey) : null;
-    setStage   (remembered?.stage    ?? 1);
+    setStage   (1);
     setMaxStage(remembered?.maxStage ?? 1);
-    setTab     (remembered?.tab      ?? 'identification');
+    setTab     ('identification');
     setKycSub  (remembered?.kycSub   ?? 'company-dd');
     setEvTab   (remembered?.evTab    ?? 'kyc-documents');
     setKycPage({ 'company-dd':1, 'owner-kyc':1, 'trade-licence':1 });
@@ -1048,11 +1049,17 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
                   undefined
                 }
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" />
-                  <polyline points="17 21 17 13 7 13 7 21" />
-                  <polyline points="7 3 7 8 15 8" />
-                </svg>
+                {saving ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="acm-cust-spin">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" />
+                    <polyline points="17 21 17 13 7 13 7 21" />
+                    <polyline points="7 3 7 8 15 8" />
+                  </svg>
+                )}
                 <span>{saving ? 'Saving…' : nextLabel}</span>
               </button>
             </Tooltip>
@@ -3103,6 +3110,8 @@ const SCOPED_CSS = `
   animation: acmFadeIn .25s ease;
 }
 @keyframes acmFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes acm-cust-spin { to { transform: rotate(360deg); } }
+.acm-cust-spin { animation: acm-cust-spin .9s linear infinite; transform-origin: 50% 50%; }
 
 .acm-root *, .acm-root *::before, .acm-root *::after { box-sizing: border-box; }
 

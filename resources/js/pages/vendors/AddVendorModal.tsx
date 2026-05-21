@@ -4229,37 +4229,51 @@ const SCOPED_CSS = `
    surfaces every field captured on the Vendor Identification sub-tab
    so the user can verify they're entering the right vendor's address
    / extra contacts without tab-flipping. */
+/* Read-only identity summary — aligned with the customer & consignee
+ * modals' .acm-hs-grid / .acg-hs-grid look: dense 4-column grid of
+ * "LABEL : Value" pairs, hover affordance, and ellipsis on long values.
+ * Old layout was flex-wrap rows which produced uneven column widths
+ * and mismatched the rest of the suite. */
 .avm-id-summary {
-  padding: 12px 16px;
+  padding: 14px 18px 16px;
   margin-bottom: 14px;
   background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
   border: 1px solid #e9d5ff;
   border-radius: 12px;
-  display: flex; flex-direction: column; gap: 6px;
+  display: flex; flex-direction: column; gap: 13px;
 }
 .avm-id-summary-row {
-  display: flex; flex-wrap: wrap;
-  gap: 4px 22px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 28px;
+  row-gap: 13px;
   align-items: baseline;
 }
 .avm-id-pair {
-  display: inline-flex; align-items: baseline; gap: 5px;
+  display: flex; align-items: baseline; gap: 6px;
   font-size: 12px; line-height: 1.4;
   min-width: 0;
+  cursor: default; padding: 1px 2px; border-radius: 4px;
+  transition: background .12s;
 }
+.avm-id-pair:hover { background: rgba(124,58,237,0.06); }
 .avm-id-k {
-  font-size: 10px; font-weight: 500; letter-spacing: .04em;
-  color: #7c3aed; text-transform: uppercase;
-  white-space: nowrap;
+  font-size: 12px; font-weight: 600; letter-spacing: .01em;
+  color: #64748b;
+  white-space: nowrap; flex-shrink: 0;
 }
 .avm-id-v {
-  font-weight: 500; color: #1e1b4b;
+  font-weight: 600; color: #6d28d9; line-height: 1.4;
+  min-width: 0; flex: 1 1 auto;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 280px;
+}
+@media (max-width: 900px) {
+  .avm-id-summary-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 [data-bs-theme="dark"] .avm-id-summary { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-id-k { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-id-v { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-id-pair:hover { background: rgba(167,139,250,0.10); }
+[data-bs-theme="dark"] .avm-id-k { color: #94a3b8; }
+[data-bs-theme="dark"] .avm-id-v { color: #c4b5fd; }
 
 [data-bs-theme="dark"] .avm-cp-popup { background: #14102a; color: #ede9fe; }
 [data-bs-theme="dark"] .avm-cp-head  { background: linear-gradient(135deg, #2b3a85, #6691e7); }
@@ -4267,11 +4281,71 @@ const SCOPED_CSS = `
 /* .avm-cp-summary moved to .avm-id-summary on the Address tab — see
    the rule block above. The dark-mode overrides used to live here. */
 
-/* Auto-code badge (e.g. KYC-001, V-001-P-002). The previous
- * "badge bg-light text-warning-emphasis" combo rendered as bright
- * cream-on-amber in dark mode — visually screaming against the dark
- * table background. Custom class so dark mode gets a muted amber pill
- * that stays readable on the dark canvas. */
+/* Bootstrap "subtle" badge palette inside the modal's tables.
+ * Bootstrap 5.3's bg-*-subtle / text-* tokens swap via --bs-* vars,
+ * which depend on Bootstrap's own CSS being applied BEFORE this
+ * scoped block. In Edge those vars resolved fine, but in Chrome (and
+ * in some cache states) the dark-mode swap was missing — the STATUS
+ * pill rendered as pale-on-pale and the user reported the table
+ * "looks empty" in Chrome. Pin solid colours per state so the
+ * rendering is identical in every Chromium-based browser. */
+.avm-modal .badge.bg-success-subtle,
+.avm-modal .badge.bg-success-subtle.text-success {
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+}
+.avm-modal .badge.bg-warning-subtle,
+.avm-modal .badge.bg-warning-subtle.text-warning {
+  background-color: #fef3c7 !important;
+  color: #854d0e !important;
+}
+.avm-modal .badge.bg-danger-subtle,
+.avm-modal .badge.bg-danger-subtle.text-danger {
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+}
+.avm-modal .badge.bg-primary-subtle,
+.avm-modal .badge.bg-primary-subtle.text-primary {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+}
+.avm-modal .badge.bg-light,
+.avm-modal .badge.bg-light.text-muted {
+  background-color: #f1f5f9 !important;
+  color: #475569 !important;
+}
+[data-bs-theme="dark"] .avm-modal .badge.bg-success-subtle,
+[data-bs-theme="dark"] .avm-modal .badge.bg-success-subtle.text-success {
+  background-color: #0c2e1d !important;
+  color: #4ade80 !important;
+}
+[data-bs-theme="dark"] .avm-modal .badge.bg-warning-subtle,
+[data-bs-theme="dark"] .avm-modal .badge.bg-warning-subtle.text-warning {
+  background-color: #3a2a08 !important;
+  color: #fbbf24 !important;
+}
+[data-bs-theme="dark"] .avm-modal .badge.bg-danger-subtle,
+[data-bs-theme="dark"] .avm-modal .badge.bg-danger-subtle.text-danger {
+  background-color: #3a0e0e !important;
+  color: #f87171 !important;
+}
+[data-bs-theme="dark"] .avm-modal .badge.bg-primary-subtle,
+[data-bs-theme="dark"] .avm-modal .badge.bg-primary-subtle.text-primary {
+  background-color: #0f1e3a !important;
+  color: #60a5fa !important;
+}
+[data-bs-theme="dark"] .avm-modal .badge.bg-light,
+[data-bs-theme="dark"] .avm-modal .badge.bg-light.text-muted {
+  background-color: rgba(255,255,255,0.06) !important;
+  color: #94a3b8 !important;
+}
+
+/* Auto-code badge (e.g. KYC-001, V-001-P-002). Uses solid hex
+ * colours (no rgba alpha, no Bootstrap CSS vars) so it renders the
+ * SAME in Chrome and Edge — the rgba variant the badge used before
+ * composited to different perceived shades when Chrome cached an
+ * older Bootstrap layer, producing a faded "barely visible" look.
+ * Solid backgrounds avoid that drift entirely. */
 .avm-auto-code {
   display: inline-block;
   padding: 4px 10px;
@@ -4279,14 +4353,15 @@ const SCOPED_CSS = `
   background: #fef3c7;
   color: #854d0e;
   border: 1px solid #fde68a;
-  font-family: monospace;
+  font-family: 'DM Mono', 'JetBrains Mono', monospace;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.2;
+  letter-spacing: .02em;
 }
 [data-bs-theme="dark"] .avm-auto-code {
-  background: rgba(251, 191, 36, 0.12);
-  color: #fcd34d;
-  border-color: rgba(251, 191, 36, 0.3);
+  background: #3a2a08;
+  color: #fde68a;
+  border-color: #78521a;
 }
 `;

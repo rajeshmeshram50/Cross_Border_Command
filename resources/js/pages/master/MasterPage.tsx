@@ -653,6 +653,12 @@ function MasterPageInner({
         errs[f.n] = 'Invalid CIN — must be 21 characters';
       } else if (f.n === 'ifsc_code' && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(raw.toUpperCase())) {
         errs[f.n] = 'Invalid IFSC — must be 11 characters (e.g. HDFC0000350)';
+      } else if (f.n === 'hsn_code' && !/^[0-9]{4,10}$/.test(raw)) {
+        /* HSN / SAC are strictly numeric per Indian GST notification —
+         * 4, 6, or 8 (occasionally 10) digit codes. Mirrors the backend
+         * rule (^[0-9]{4,10}$) so the user sees an instant inline error
+         * instead of a server-side 422 round-trip. */
+        errs[f.n] = 'Invalid HSN / SAC — 4 to 10 digit numeric code';
       }
     }
     return errs;
@@ -4013,9 +4019,31 @@ function renderField(
       'pincode', 'postal_code', 'zip',
     ]);
     const shouldAutoCap = f.t === 'text' && !isAutogen && !SKIP_AUTOCAP_FIELDS.has(f.n);
+    /* Numeric-only text fields — HSN/SAC codes are 4–10 digit numeric per
+     * Indian GST notification, so strip anything non-numeric as the user
+     * types / pastes. The validateForm pattern catches anything that slips
+     * through (e.g. programmatic value setters); this just gives instant
+     * feedback while typing. Extend this set if more code-style fields
+     * need the same behaviour (e.g. PIN, mobile). */
+    const NUMERIC_ONLY_FIELDS = new Set(['hsn_code']);
+    const isNumericOnly = f.t === 'text' && NUMERIC_ONLY_FIELDS.has(f.n);
 
     const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
-      if (shouldAutoCap) {
+      if (isNumericOnly) {
+        const target = e.currentTarget;
+        const v = target.value;
+        const cleaned = v.replace(/\D/g, '');
+        if (cleaned !== v) {
+          const cursor = target.selectionStart;
+          target.value = cleaned;
+          // Re-position the caret roughly where it was — clamped to the
+          // new (possibly shorter) string length.
+          if (cursor != null) {
+            const next = Math.min(cursor, cleaned.length);
+            target.setSelectionRange(next, next);
+          }
+        }
+      } else if (shouldAutoCap) {
         const target = e.currentTarget;
         const v = target.value;
         const idx = v.search(/[a-zA-Z]/);
@@ -4059,6 +4087,9 @@ function renderField(
         maxLength={maxLength}
         min={numMin}
         max={numMax}
+        // Numeric-only text fields (HSN/SAC) get the on-screen numeric
+        // keypad on mobile + a hint to the browser's autofill heuristics.
+        inputMode={isNumericOnly ? 'numeric' : undefined}
         // `key` forces a remount when the auto-generated value changes between
         // opens of the Add modal so React picks up the new defaultValue.
         key={isAutogen ? autogenVal : undefined}
