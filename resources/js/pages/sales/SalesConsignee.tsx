@@ -1386,9 +1386,22 @@ const SCOPED_CSS = `
  *  "what we are doing" cards wrap, search row collapses, table
  *  keeps horizontal scroll via .table-responsive.
  * ============================================================ */
+/* Compact laptop — 4-col WDH tiles get squeezed past 1280 with
+   long titles, drop to 2x2 grid which reads more cleanly. */
+@media (max-width: 1280px) {
+  .smcg-wdh-cards { grid-template-columns: repeat(2, 1fr); }
+  .smcg-wdh-arrow { display: none; }
+  /* Page padding tightens slightly on narrower laptops so the table
+     gets more room before horizontal scroll kicks in. */
+  .smcg-root { padding: 12px 14px; }
+}
 @media (max-width: 1024px) {
   .smcg-wdh-cards { grid-template-columns: repeat(2, 1fr); }
   .smcg-wdh-arrow { display: none; }
+  /* Tighter spacing on tablet so the table card gets max usable
+     width before forcing horizontal scroll. */
+  .smcg-cstrip { padding: 14px 16px; }
+  .smcg-wdh, .smcg-tabs-row { padding: 12px 14px; }
 }
 @media (max-width: 768px) {
   .smcg-cstrip { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px; }
