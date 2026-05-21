@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add New Lead — frontend-only quick-capture modal.
@@ -41,96 +43,15 @@ const EMPTY_LEAD: LeadFormValues = {
   state: '',
 };
 
-/* Static dummy customer directory — frontend-only stub. Once the
- * Sales Customer master is wired, swap this for a `GET /sales/customers`
- * call and shape the response to this same DummyCustomer interface. */
-type DummyCustomer = LeadFormValues & { id: string };
-const DUMMY_CUSTOMERS: DummyCustomer[] = [
-  {
-    id: 'CUST-001',
-    customerName: 'GreenHarvest Global',
-    mobileNumber: '+91 9123456789',
-    customerEmail: 'r.vardhan@greenharvest.in',
-    companyName: 'GreenHarvest Global Pvt Ltd',
-    customerAddress: 'Plot 21, Industrial Area, MIDC',
-    customerCity: 'Pune',
-    pincode: '411001',
-    country: 'India',
-    state: 'Maharashtra',
-  },
-  {
-    id: 'CUST-002',
-    customerName: 'Shree Exports',
-    mobileNumber: '9011033444',
-    customerEmail: 'shree.exports@gmail.com',
-    companyName: 'Shree Exports LLP',
-    customerAddress: 'Building B, Trade Tower',
-    customerCity: 'Ahmedabad',
-    pincode: '380001',
-    country: 'India',
-    state: 'Gujarat',
-  },
-  {
-    id: 'CUST-003',
-    customerName: 'Aadi Trading',
-    mobileNumber: '+91 9315093788',
-    customerEmail: 'aadi.trading@india.com',
-    companyName: 'Aadi Trading Co.',
-    customerAddress: '14 Market Road',
-    customerCity: 'Delhi',
-    pincode: '110001',
-    country: 'India',
-    state: 'Delhi',
-  },
-  {
-    id: 'CUST-004',
-    customerName: 'Universal Agro Supplies',
-    mobileNumber: '+91 9898989898',
-    customerEmail: 'karan@universalagro.com',
-    companyName: 'Universal Agro Supplies',
-    customerAddress: 'APMC Central Market, Vashi',
-    customerCity: 'Navi Mumbai',
-    pincode: '400703',
-    country: 'India',
-    state: 'Maharashtra',
-  },
-  {
-    id: 'CUST-005',
-    customerName: 'KisanBazaar',
-    mobileNumber: '+91 8765432109',
-    customerEmail: 'sales@kisanbazaar.in',
-    companyName: 'KisanBazaar Pvt Ltd',
-    customerAddress: 'Sector 18, Phase 2',
-    customerCity: 'Noida',
-    pincode: '201301',
-    country: 'India',
-    state: 'Uttar Pradesh',
-  },
-  {
-    id: 'CUST-006',
-    customerName: 'Bianchi Imports',
-    mobileNumber: '+39 3456789012',
-    customerEmail: 'luca.bianchi@bianchi.it',
-    companyName: 'Bianchi Imports SRL',
-    customerAddress: 'Via Roma 14',
-    customerCity: 'Milan',
-    pincode: '20121',
-    country: 'Italy',
-    state: 'Lombardy',
-  },
-  {
-    id: 'CUST-007',
-    customerName: 'Raza Exports',
-    mobileNumber: '+92 3012345678',
-    customerEmail: 'ayesha.raza@razaexports.pk',
-    companyName: 'Raza Exports Pvt Ltd',
-    customerAddress: 'Block C, Korangi Industrial Area',
-    customerCity: 'Karachi',
-    pincode: '74900',
-    country: 'Pakistan',
-    state: 'Sindh',
-  },
-];
+/* Live customer row — minimal shape used by the dropdown. Pulled from
+ * `GET /customers` (Customer + CustomerAddress eloquent join). The
+ * extended detail used for auto-fill is fetched lazily when a row is
+ * picked via `GET /customers/{id}` so the dropdown stays light. */
+type CustomerOption = {
+  id: string;        // public id e.g. "CUST-001"
+  dbId: number;      // primary key — used for the show() call
+  company: string;
+};
 
 const COUNTRY_OPTIONS = ['India', 'United States', 'United Kingdom', 'Australia', 'Italy', 'Pakistan', 'China', 'Saudi Arabia', 'Nigeria'];
 const STATE_BY_COUNTRY: Record<string, string[]> = {
@@ -161,6 +82,37 @@ export default function AddNewLeadModal(props: {
   const [pickedCustomerId, setPickedCustomerId] = useState<string>('');
   const [errors, setErrors] = useState<Partial<Record<keyof LeadFormValues, string>>>({});
 
+  /* Live customer list — fetched once when the modal opens (and only
+     if it hasn't been fetched yet). Cached in state so reopening the
+     modal in the same session doesn't refetch. */
+  const [customerOpts, setCustomerOpts] = useState<CustomerOption[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
+  const [customerFetching, setCustomerFetching] = useState(false);
+
+  useEffect(() => {
+    if (!open || customerOpts.length > 0) return;
+    setCustomersLoading(true);
+    api
+      .get<{ data?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>>('/customers')
+      .then(r => {
+        const rows = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
+        const opts: CustomerOption[] = rows
+          .map(c => ({
+            id:      String((c as Record<string, unknown>).id ?? ''),
+            dbId:    Number((c as Record<string, unknown>).db_id ?? (c as Record<string, unknown>).id_pk ?? 0),
+            company: String((c as Record<string, unknown>).company ?? (c as Record<string, unknown>).company_name ?? ''),
+          }))
+          .filter(c => c.dbId > 0 && c.company);
+        setCustomerOpts(opts);
+      })
+      .catch(() => {
+        toast.error('Failed to load customers', 'Could not reach the Customer API');
+        setCustomerOpts([]);
+      })
+      .finally(() => setCustomersLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   // Reset to a clean slate each time the modal opens — picking a
   // customer in a previous session shouldn't leak into the next.
   useEffect(() => {
@@ -177,24 +129,36 @@ export default function AddNewLeadModal(props: {
     if (errors[key]) setErrors(prev => { const n = { ...prev }; delete n[key]; return n; });
   };
 
-  const onPickExisting = (id: string) => {
-    setPickedCustomerId(id);
-    const c = DUMMY_CUSTOMERS.find(x => x.id === id);
-    if (!c) return;
-    // Pull every field off the picked customer so the rest of the
-    // form snaps to the customer's profile in one beat.
-    setValues({
-      customerName:    c.customerName,
-      mobileNumber:    c.mobileNumber,
-      customerEmail:   c.customerEmail,
-      companyName:     c.companyName,
-      customerAddress: c.customerAddress,
-      customerCity:    c.customerCity,
-      pincode:         c.pincode,
-      country:         c.country,
-      state:           c.state,
-    });
-    setErrors({});
+  const onPickExisting = async (publicId: string) => {
+    setPickedCustomerId(publicId);
+    if (!publicId) return;
+    const picked = customerOpts.find(c => c.id === publicId);
+    if (!picked) return;
+    // Hit /customers/{dbId} so we get the full primary-address +
+    // contact-person payload. The list endpoint deliberately doesn't
+    // ship every column, so we need the show() call for auto-fill.
+    setCustomerFetching(true);
+    try {
+      const res = await api.get<{ data?: Record<string, unknown> } | Record<string, unknown>>(`/customers/${picked.dbId}`);
+      const raw = (res.data as { data?: Record<string, unknown> }).data ?? (res.data as Record<string, unknown>);
+      const pa = (raw.primary_address as Record<string, unknown> | undefined) ?? null;
+      setValues({
+        customerName:    String(raw.company ?? picked.company ?? ''),
+        mobileNumber:    String(pa?.cp_contact ?? raw.phone ?? ''),
+        customerEmail:   String(pa?.cp_email   ?? raw.email ?? ''),
+        companyName:     String(raw.legalName  ?? raw.company ?? picked.company ?? ''),
+        customerAddress: String(pa?.address_line ?? raw.addr ?? ''),
+        customerCity:    String(pa?.city ?? raw.city ?? ''),
+        pincode:         String(pa?.pin  ?? raw.pin  ?? ''),
+        country:         String(pa?.country ?? raw.country ?? ''),
+        state:           String(pa?.state   ?? raw.state   ?? ''),
+      });
+      setErrors({});
+    } catch {
+      toast.error('Failed to load customer', `Could not fetch ${picked.company}`);
+    } finally {
+      setCustomerFetching(false);
+    }
   };
 
   const toggleUseExisting = (next: boolean) => {
@@ -208,7 +172,24 @@ export default function AddNewLeadModal(props: {
     }
   };
 
-  const stateOpts = useMemo(() => STATE_BY_COUNTRY[values.country] ?? [], [values.country]);
+  /* Country and State picker options. Start from the static lists,
+     then splice in whatever the picked customer's primary address
+     carries — without this, a customer whose country isn't in the
+     hardcoded COUNTRY_OPTIONS array (or whose state isn't under that
+     country's STATE_BY_COUNTRY entry) ends up with an empty-looking
+     dropdown even though `values.country` / `values.state` are set. */
+  const countryOpts = useMemo(() => {
+    const list = [...COUNTRY_OPTIONS];
+    if (values.country && !list.includes(values.country)) list.unshift(values.country);
+    return list;
+  }, [values.country]);
+
+  const stateOpts = useMemo(() => {
+    const base = STATE_BY_COUNTRY[values.country] ?? [];
+    const list = [...base];
+    if (values.state && !list.includes(values.state)) list.unshift(values.state);
+    return list;
+  }, [values.country, values.state]);
 
   const validate = (): boolean => {
     const next: Partial<Record<keyof LeadFormValues, string>> = {};
@@ -236,8 +217,9 @@ export default function AddNewLeadModal(props: {
   if (!open) return null;
 
   return createPortal((
-    <div className="anl-backdrop" onClick={onClose}>
+    <div className="anl-backdrop master-modal" onClick={onClose}>
       <style>{SCOPED_CSS}</style>
+      <MasterFormStyles />
       <div className="anl-modal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="anl-head">
@@ -298,14 +280,16 @@ export default function AddNewLeadModal(props: {
           <div className="anl-grid-3">
             <Field label="Customer Name" required error={errors.customerName}>
               {useExisting ? (
-                <SelectInput
-                  value={pickedCustomerId}
-                  onChange={onPickExisting}
-                  placeholder="Select a customer"
-                  options={DUMMY_CUSTOMERS.map(c => ({ value: c.id, label: `${c.id} — ${c.customerName}` }))}
-                  iconLeft="ri-user-line"
-                  error={!!errors.customerName}
-                />
+                <div className="master-field">
+                  <i className="ri-user-line master-field-icon" />
+                  <MasterSelect
+                    value={pickedCustomerId}
+                    onChange={(v) => { void onPickExisting(v); }}
+                    placeholder={customersLoading ? 'Loading customers…' : 'Select a customer'}
+                    options={customerOpts.map(c => ({ value: c.id, label: `${c.id} — ${c.company}` }))}
+                    disabled={customersLoading || customerFetching}
+                  />
+                </div>
               ) : (
                 <TextInput
                   value={values.customerName}
@@ -386,28 +370,32 @@ export default function AddNewLeadModal(props: {
               />
             </Field>
             <Field label="Country" required error={errors.country}>
-              <SelectInput
-                value={values.country}
-                onChange={(v) => {
-                  // Picking a new country resets State because the
-                  // previous state probably belongs to the old country.
-                  setValues(prev => ({ ...prev, country: v, state: '' }));
-                  setErrors(prev => { const n = { ...prev }; delete n.country; delete n.state; return n; });
-                }}
-                placeholder="Select country"
-                options={COUNTRY_OPTIONS.map(c => ({ value: c, label: c }))}
-                error={!!errors.country}
-              />
+              <div className="master-field">
+                <i className="ri-earth-line master-field-icon" />
+                <MasterSelect
+                  value={values.country}
+                  onChange={(v) => {
+                    // Picking a new country resets State because the
+                    // previous state probably belongs to the old country.
+                    setValues(prev => ({ ...prev, country: v, state: '' }));
+                    setErrors(prev => { const n = { ...prev }; delete n.country; delete n.state; return n; });
+                  }}
+                  placeholder="Select country"
+                  options={countryOpts.map(c => ({ value: c, label: c }))}
+                />
+              </div>
             </Field>
             <Field label="State" required error={errors.state}>
-              <SelectInput
-                value={values.state}
-                onChange={(v) => set('state', v)}
-                placeholder={values.country ? 'Select state' : 'Select country first'}
-                options={stateOpts.map(s => ({ value: s, label: s }))}
-                disabled={!values.country}
-                error={!!errors.state}
-              />
+              <div className="master-field">
+                <i className="ri-map-2-line master-field-icon" />
+                <MasterSelect
+                  value={values.state}
+                  onChange={(v) => set('state', v)}
+                  placeholder={values.country ? 'Select state' : 'Select country first'}
+                  options={stateOpts.map(s => ({ value: s, label: s }))}
+                  disabled={!values.country}
+                />
+              </div>
             </Field>
           </div>
         </div>
@@ -736,14 +724,34 @@ const SCOPED_CSS = `
 }
 .anl-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37, 99, 235, 0.40); }
 
-[data-bs-theme="dark"] .anl-modal { background: #14102a; color: #ede9fe; }
+[data-bs-theme="dark"] .anl-modal { background: #14102a; color: #ede9fe; box-shadow: 0 30px 80px rgba(0,0,0,0.75); }
 [data-bs-theme="dark"] .anl-body  { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); }
 [data-bs-theme="dark"] .anl-foot  { background: #1a1538; border-top-color: #2a2150; }
 [data-bs-theme="dark"] .anl-input { background: #2a2150; border-color: #3b2a6b; color: #ede9fe; }
 [data-bs-theme="dark"] .anl-input:focus { background: #14102a; }
 [data-bs-theme="dark"] .anl-input::placeholder { color: #6b7280; }
+[data-bs-theme="dark"] .anl-input:disabled { background: #1a1538; color: #6b7280; }
+[data-bs-theme="dark"] .anl-input-icon { color: #6b7280; }
+[data-bs-theme="dark"] .anl-input-wrap:focus-within .anl-input-icon { color: #93c5fd; }
+[data-bs-theme="dark"] .anl-select-arrow { color: #6b7280; }
 [data-bs-theme="dark"] .anl-label { color: #8aa1d9; }
+[data-bs-theme="dark"] .anl-section-label { color: #93c5fd; }
+[data-bs-theme="dark"] .anl-section-icon { background: rgba(37, 99, 235, 0.22); color: #93c5fd; }
 [data-bs-theme="dark"] .anl-existing-toggle { background: #1a1538; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .anl-existing-toggle:hover { background: #1f1845; border-color: #4338ca; }
 [data-bs-theme="dark"] .anl-existing-title { color: #93c5fd; }
 [data-bs-theme="dark"] .anl-existing-sub   { color: #94a3b8; }
+[data-bs-theme="dark"] .anl-existing-icon  { background: rgba(37, 99, 235, 0.22); color: #93c5fd; }
+[data-bs-theme="dark"] .anl-foot-hint      { color: #94a3b8; }
+[data-bs-theme="dark"] .anl-btn-ghost      { background: transparent; color: #cbd5e1; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .anl-btn-ghost:hover{ background: #2a2150; border-color: #4338ca; }
+[data-bs-theme="dark"] .anl-input-wrap.has-error .anl-input { background: rgba(239, 68, 68, 0.12); border-color: #ef4444; color: #fecaca; }
+[data-bs-theme="dark"] .anl-field-error    { color: #fca5a5; }
+
+/* MasterSelect / MasterFormStyles icon-prefixed wrappers used for
+   Customer Name, Country, State. The light-mode shell is provided by
+   masterFormKit; here we only adjust the leading icon's tint so it
+   stays visible against the dark input surface. */
+[data-bs-theme="dark"] .master-modal .anl-modal .master-field-icon { color: #6b7280; }
+[data-bs-theme="dark"] .master-modal .anl-modal .master-field:focus-within .master-field-icon { color: #93c5fd; }
 `;
