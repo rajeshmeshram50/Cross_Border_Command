@@ -209,6 +209,24 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-act-wa .smd-act-icon { color: #10b981; }
 .smd-act-wa:hover { background: #d1fae5; border-color: #6ee7b7; }
 
+/* Key Opportunity — applied after the user confirms in the
+   KeyOpportunityModal so the toolbar visibly reflects the
+   high-priority flag. Amber wash with a slightly stronger glow than
+   the other neutral action pills. */
+.smd-act-key {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border-color: #d97706;
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(245, 158, 11, .35);
+}
+.smd-act-key .smd-act-icon { color: #fff; }
+.smd-act-key:hover {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  border-color: #b45309;
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(245, 158, 11, .50);
+}
+
 /* ── Body grid ── */
 .smd-body {
   display: grid; grid-template-columns: 240px minmax(0,1fr) 300px; gap: 10px;
@@ -451,6 +469,16 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 [data-bs-theme="dark"] .smd-root .smd-act-wa .smd-act-icon { color: #34d399; }
 [data-bs-theme="dark"] .smd-root .smd-act-trail { color: rgba(255,255,255,.55); }
+[data-bs-theme="dark"] .smd-root .smd-act-key {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border-color: rgba(252, 211, 77, .60);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, .45);
+}
+[data-bs-theme="dark"] .smd-root .smd-act-key:hover {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  border-color: #fbbf24;
+}
 
 /* ─── Left column: CLM Details panel ─── */
 [data-bs-theme="dark"] .smd-root .smd-clm-card {
