@@ -185,11 +185,11 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // numeric {id}. The whereNumber on {id} is the second defense.
     Route::get   ('/sales/leads/sync/config',     [SalesLeadController::class, 'syncConfig']);
     Route::post  ('/sales/leads/sync',            [SalesLeadController::class, 'syncFromCrm']);
-    Route::post  ('/sales/leads/assign',          [SalesLeadController::class, 'assign']);
-    Route::post  ('/sales/leads/convert-to-qualified', [SalesLeadController::class, 'convertToQualified']);
-    Route::post  ('/sales/leads/distribute',      [SalesLeadController::class, 'distribute']);
-    Route::get   ('/sales/leads/salespeople',     [SalesLeadController::class, 'salespeople']);
-    Route::get   ('/sales/leads/filter-options',  [SalesLeadController::class, 'filterOptions']);
+    Route::post  ('/sales/leads/assign',                 [SalesLeadController::class, 'assign']);
+    Route::post  ('/sales/leads/convert-to-qualified',   [SalesLeadController::class, 'convertToQualified']);
+    Route::get   ('/sales/leads/salespeople',            [SalesLeadController::class, 'salespeople']);
+    Route::get   ('/sales/leads/salesperson-summary',    [SalesLeadController::class, 'salespersonSummary']);
+    Route::get   ('/sales/leads/filter-options',         [SalesLeadController::class, 'filterOptions']);
     Route::get   ('/sales/leads/{id}',          [SalesLeadController::class, 'show'])->whereNumber('id');
     Route::put   ('/sales/leads/{id}',          [SalesLeadController::class, 'update'])->whereNumber('id');
     Route::delete('/sales/leads/{id}',          [SalesLeadController::class, 'destroy'])->whereNumber('id');

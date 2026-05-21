@@ -5,9 +5,9 @@ import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import AddNewLeadModal, { type LeadFormValues } from './AddNewLeadModal';
+import AssignedLeadsModal from './AssignedLeadsModal';
 import AssignLeadsModal from './AssignLeadsModal';
 import LeadDetailsModal from './LeadDetailsModal';
-import LeadDistributionModal from './LeadDistributionModal';
 import LeadFilterModal, { type LeadFilters } from './LeadFilterModal';
 
 /* Shape returned by GET /sales/leads — Laravel paginator items. Mapped to
@@ -94,6 +94,7 @@ const renderFilterChips = (
     countries: Array<{ value: string; label: string }>;
     customers: Array<{ value: string; label: string }>;
   },
+  salespersonNames: Record<number, string> = {},
 ): FilterChip[] => {
   const lookup = (
     list: Array<{ value: string; label: string }>,
@@ -105,6 +106,14 @@ const renderFilterChips = (
   if (f.query_type)         out.push({ key: 'query_type',         label: 'Type',     value: lookup(o.queryTypes, f.query_type) });
   if (f.sender_country_iso) out.push({ key: 'sender_country_iso', label: 'Country',  value: lookup(o.countries,  f.sender_country_iso) });
   if (f.customer_id)        out.push({ key: 'customer_id',        label: 'Customer', value: lookup(o.customers,  f.customer_id) });
+  if (f.salesperson_id)     out.push({
+    key:   'salesperson_id',
+    label: 'Salesperson',
+    // Resolve from the modal-supplied name cache; fall back to the raw
+    // id so the chip is still removable if the cache was cleared (e.g.
+    // page refresh restoring filters from a future URL-state plumb).
+    value: salespersonNames[Number(f.salesperson_id)] ?? `#${f.salesperson_id}`,
+  });
   if (f.start_date && f.end_date) out.push({ key: 'start_date', label: 'Date', value: `${f.start_date} → ${f.end_date}` });
   return out;
 };
@@ -184,8 +193,16 @@ export default function SalesLeadWorksheet() {
      * owner — mixed selections leave the field blank. */
     initialSalespersonId?: number | null;
   }>({ open: false, mode: 'filters' });
-  const [distributeOpen, setDistributeOpen] = useState(false);
+  const [assignedLeadsOpen, setAssignedLeadsOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // Salesperson chip-label resolver — when "View Leads" applies a
+  // salesperson_id filter we want the chip strip to read "Salesperson:
+  // John Doe", not "Salesperson: 42". Stash the picked person's name
+  // here keyed by id; renderFilterChips reads from this. Persisted only
+  // for the session (in-memory) since the lead list itself will surface
+  // the name on every row anyway.
+  const [salespersonNames, setSalespersonNames] = useState<Record<number, string>>({});
 
   // Quick-view (eye icon) — fetches GET /sales/leads/{id} for the picked
   // row and renders all the row's details in a read-only card layout.
@@ -396,7 +413,7 @@ export default function SalesLeadWorksheet() {
     }
   };
   const onAssignLeads   = () => setAssignModal({ open: true, mode: 'filters' });
-  const onLeadDistr     = () => setDistributeOpen(true);
+  const onAssignedLeads = () => setAssignedLeadsOpen(true);
   const onFilter        = () => setFilterOpen(true);
   // Opens the Sales Matrix detail page (Stage 1) for this opportunity.
   // The clicked row travels in router state so the detail page can render
@@ -545,9 +562,9 @@ export default function SalesLeadWorksheet() {
             <IconUsers />
             Assign Leads
           </button>
-          <button className="lwp-bact lwp-bact-assigned" onClick={onLeadDistr}>
+          <button className="lwp-bact lwp-bact-assigned" onClick={onAssignedLeads}>
             <IconUserCheck />
-            Lead Distribution
+            Assigned Leads
           </button>
           {/* Pulls leads from every IndiaMart CRM key configured in .env.
               LEAD_SYNC_BRANCH_ID in .env decides which branch sees this
@@ -612,7 +629,7 @@ export default function SalesLeadWorksheet() {
       {Object.values(activeFilters).some(v => v) && (
         <div className="lwp-chip-strip">
           <span className="lwp-chip-strip-label">Filters:</span>
-          {renderFilterChips(activeFilters, filterOptions).map(c => (
+          {renderFilterChips(activeFilters, filterOptions, salespersonNames).map(c => (
             <span key={c.key} className="lwp-chip">
               <span className="lwp-chip-key">{c.label}:</span>
               <span className="lwp-chip-val">{c.value}</span>
@@ -952,13 +969,21 @@ export default function SalesLeadWorksheet() {
         onAssigned={() => { clearSelection(); fetchLeads(); }}
       />
 
-      <LeadDistributionModal
-        open={distributeOpen}
-        platforms={filterOptions.platforms.map(p => p.value)}
-        queryTypes={filterOptions.queryTypes.map(t => t.value)}
-        countries={filterOptions.countries}
-        onClose={() => setDistributeOpen(false)}
-        onDistributed={() => { clearSelection(); fetchLeads(); }}
+      <AssignedLeadsModal
+        open={assignedLeadsOpen}
+        onClose={() => setAssignedLeadsOpen(false)}
+        onViewLeads={(sp) => {
+          // Remember the picked person's name so the chip strip can show
+          // it (the lead row name surfaces on every visible row anyway,
+          // but the chip needs an explicit label).
+          setSalespersonNames(prev => ({ ...prev, [sp.id]: sp.name }));
+          setAssignedLeadsOpen(false);
+          // Switch to All so rows from any qualification bucket appear,
+          // then apply the salesperson filter and reset pagination.
+          setTab('all');
+          setActiveFilters(prev => ({ ...prev, salesperson_id: String(sp.id) }));
+          setPage(1);
+        }}
       />
 
       <LeadFilterModal
@@ -1870,5 +1895,76 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-sub   { color: #94a3b8; }
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-btn-cancel {
   background: transparent; color: #cbd5e1; border-color: #334155;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * Responsive layout — single consolidated block covering every surface
+ * on this page. Breakpoints follow the rough phone (≤480) / large-
+ * phone (≤640) / tablet (≤900) bands; the table itself always lives
+ * inside .lwp-table-wrap { overflow:auto } so it horizontally scrolls
+ * unchanged on phones while everything around it reflows.
+ * ════════════════════════════════════════════════════════════════════ */
+
+/* Tablet — banner + actions wrap; pre-table stacks; tighter table cells */
+@media (max-width: 900px) {
+  .lwp-root .lwp-banner {
+    flex-direction: column; align-items: stretch;
+    padding: 14px 16px; gap: 10px;
+  }
+  .lwp-root .lwp-banner-left { width: 100%; }
+  .lwp-root .lwp-actions { flex-wrap: wrap; gap: 6px; justify-content: flex-start; }
+  .lwp-root .lwp-actions .lwp-bact { flex: 1 0 auto; justify-content: center; }
+  .lwp-root .lwp-actions .lwp-banner-divider { display: none; }
+  .lwp-root .lwp-pre-table { flex-direction: column; align-items: stretch; gap: 8px; }
+  .lwp-root .lwp-search { width: 100%; }
+  .lwp-root .lwp-pills { width: 100%; justify-content: space-between; overflow-x: auto; }
+  .lwp-root .lwp-pill  { padding: 8px 14px; font-size: 12px; }
+}
+
+/* Large phone — actions become 2-column grid, pills shrink */
+@media (max-width: 640px) {
+  .lwp-root .lwp-banner-title  { font-size: 15px; }
+  .lwp-root .lwp-banner-entity { font-size: 11px; }
+  .lwp-root .lwp-actions {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+  }
+  .lwp-root .lwp-actions .lwp-bact {
+    padding: 9px 12px; font-size: 11.5px;
+    min-height: 38px; min-width: 0;
+  }
+  .lwp-root .lwp-pill { padding: 7px 10px; font-size: 11px; }
+  .lwp-root .lwp-chip-strip { gap: 4px; }
+  .lwp-root .lwp-chip { font-size: 10.5px; padding: 2px 4px 2px 8px; }
+  .lwp-root .lwp-pagination { padding: 8px 12px; gap: 6px; }
+  .lwp-root .lwp-pag-info, .lwp-root .lwp-rows-sel { font-size: 11px; padding: 4px 10px; }
+  /* Bulk bar — full-width sheet at the bottom on phones rather than
+     centred floating pill, so all buttons remain reachable. */
+  .lwp-root .lwp-bulk-bar {
+    left: 8px; right: 8px; bottom: 10px;
+    transform: none; width: auto;
+    padding: 10px 12px; gap: 8px; flex-wrap: wrap;
+    border-radius: 14px;
+  }
+  .lwp-root .lwp-bulk-bar > * { flex: 1 1 auto; }
+  .lwp-root .lwp-bulk-divider  { display: none; }
+}
+
+/* Phone — single-column actions, even more compact */
+@media (max-width: 480px) {
+  .lwp-root .lwp-banner { border-radius: 12px; padding: 12px 14px; }
+  .lwp-root .lwp-actions { grid-template-columns: 1fr; }
+  .lwp-root .lwp-table-card { border-radius: 10px; }
+  .lwp-root .lwp-table { font-size: 11px; }
+  .lwp-root .lwp-table thead th, .lwp-root .lwp-table tbody td { padding: 0 6px; }
+  .lwp-root .lwp-pag-range { font-size: 11px; }
+  /* CTQ — tighter padding so the hero icon doesn't crowd the title */
+  .lwp-root .lwp-ctq-modal { border-radius: 16px; }
+  .lwp-root .lwp-ctq-body { padding: 0 18px 20px; }
+  .lwp-root .lwp-ctq-title { font-size: 15.5px; }
+  .lwp-root .lwp-ctq-hero { padding: 22px 0 4px; }
+  .lwp-root .lwp-ctq-hero-icon { width: 56px; height: 56px; }
+  .lwp-root .lwp-ctq-actions { flex-direction: column-reverse; }
+  .lwp-root .lwp-ctq-btn-cancel,
+  .lwp-root .lwp-ctq-btn-confirm { max-width: none; width: 100%; flex: none; }
 }
 `;

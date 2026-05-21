@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\Employee;
 use App\Models\Lead;
 use App\Models\User;
 use App\Services\IndiaMartLeadSyncService;
@@ -415,84 +416,135 @@ class SalesLeadController extends Controller
     }
 
     /* ─────────────────────────────────────────────────────────────────
-     *  DISTRIBUTE — POST /sales/leads/distribute
+     *  SALESPERSON SUMMARY — GET /sales/leads/salesperson-summary
      *
-     *  Round-robin distribute unassigned leads (optionally filtered by
-     *  platform/query_type/date range) across the chosen salespeople.
-     *  Body: { salesperson_ids: int[], filters?: {...} }.
+     *  Powers the Lead-Distribution table inside the "Assigned Leads"
+     *  modal. Returns:
+     *    - summary    : { total_sales_persons, total_leads, assigned, unassigned }
+     *    - platforms  : distinct platforms seen across this tenant's leads
+     *    - data       : one row per salesperson, with employee-record
+     *                   enrichment (department / designation / primary
+     *                   & ancillary role / reporting manager) so the
+     *                   table can render the chip-driven layout
      *
-     *  Idempotent against re-distribution: once a lead has a
-     *  salesperson_id it's skipped here so a re-run doesn't shuffle
-     *  ownership. Use the explicit Assign flow for forced reassignment.
+     *  Tenant-scoped via applyScope().
      * ───────────────────────────────────────────────────────────────── */
-    public function distribute(Request $request)
+    public function salespersonSummary(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        $data = $request->validate([
-            'salesperson_ids'   => 'required|array|min:1',
-            'salesperson_ids.*' => 'integer|exists:users,id',
-            'filters'                       => 'array',
-            'filters.platform'              => 'nullable|string|max:64',
-            'filters.query_type'            => 'nullable|string|max:64',
-            'filters.start_date'            => 'nullable|date_format:Y-m-d',
-            'filters.end_date'              => 'nullable|date_format:Y-m-d',
-            'filters.lead_stage_id'         => 'nullable|integer|between:1,8',
-            'filters.sender_country_iso'    => 'nullable|string|max:8',
-        ]);
+        // ── 1) Lead counts pivoted per (salesperson, platform).
+        $countsQ = Lead::query()
+            ->whereNotNull('salesperson_id')
+            ->selectRaw('salesperson_id, platform, COUNT(*) AS cnt')
+            ->groupBy('salesperson_id', 'platform');
+        $this->applyScope($countsQ, $user);
+        $countRows = $countsQ->get();
 
-        $q = Lead::query()->whereNull('salesperson_id');
-        $this->applyScope($q, $user);
+        $platforms = $countRows->pluck('platform')->filter()->unique()->sort()->values()->all();
 
-        $f = $data['filters'] ?? [];
-        if (!empty($f['platform']))           $q->where('platform', $f['platform']);
-        if (!empty($f['query_type']))         $q->where('query_type', $f['query_type']);
-        if (!empty($f['lead_stage_id']))      $q->where('lead_stage_id', $f['lead_stage_id']);
-        if (!empty($f['sender_country_iso'])) $q->where('sender_country_iso', $f['sender_country_iso']);
-        if (!empty($f['start_date']) && !empty($f['end_date'])) {
-            $q->whereBetween('query_time', [
-                $f['start_date'] . ' 00:00:00',
-                $f['end_date']   . ' 23:59:59',
-            ]);
-        }
-
-        $leadIds = $q->orderBy('id')->pluck('id')->all();
-
-        if (empty($leadIds)) {
-            return response()->json([
-                'status'  => true,
-                'message' => 'No unassigned leads matched the filters',
-                'total'   => 0,
-                'per_user' => [],
-            ]);
-        }
-
-        // Round-robin: bucket lead ids by salesperson index, then bulk-update
-        // each bucket in one UPDATE so we don't issue N queries on a 100k+ run.
-        $sps     = $data['salesperson_ids'];
-        $buckets = array_fill(0, count($sps), []);
-        foreach ($leadIds as $i => $leadId) {
-            $buckets[$i % count($sps)][] = $leadId;
-        }
-
-        $perUser = [];
-        DB::transaction(function () use ($sps, $buckets, &$perUser) {
-            foreach ($sps as $i => $sp) {
-                if (empty($buckets[$i])) {
-                    $perUser[$sp] = 0;
-                    continue;
-                }
-                Lead::whereIn('id', $buckets[$i])->update(['salesperson_id' => $sp]);
-                $perUser[$sp] = count($buckets[$i]);
+        $perUser = [];   // salesperson_id => ['platform_counts' => [...], 'total' => N]
+        foreach ($countRows as $r) {
+            $uid = (int) $r->salesperson_id;
+            if (!isset($perUser[$uid])) {
+                $perUser[$uid] = ['platform_counts' => array_fill_keys($platforms, 0), 'total' => 0];
             }
+            $platform = $r->platform ?? 'Unknown';
+            $perUser[$uid]['platform_counts'][$platform] = (int) $r->cnt;
+            $perUser[$uid]['total']                     += (int) $r->cnt;
+        }
+
+        // ── 2) Aggregate stats for the 4 header cards.
+        $totalsQ = Lead::query();
+        $this->applyScope($totalsQ, $user);
+        $totalsRow = $totalsQ->selectRaw(
+            "COUNT(*) AS total_all,
+             SUM(CASE WHEN salesperson_id IS NOT NULL THEN 1 ELSE 0 END) AS total_assigned,
+             SUM(CASE WHEN salesperson_id IS NULL THEN 1 ELSE 0 END) AS total_unassigned"
+        )->first();
+
+        // ── 3) Salespeople roster — every user the tenant can assign
+        // leads to (mirrors GET /sales/leads/salespeople scope), enriched
+        // with the corresponding employee profile when one exists. The
+        // table shows zero-lead salespeople too so the user can see the
+        // whole team at a glance.
+        $usersQ = User::query()
+            ->whereIn('user_type', ['client_admin', 'client_user', 'branch_user', 'employee'])
+            ->where('status', 'active');
+
+        if ($user->user_type !== 'super_admin') {
+            $usersQ->where('client_id', $user->client_id);
+            $isMain = $user->branch?->is_main ?? false;
+            if ($user->user_type === 'branch_user' && !$isMain) {
+                $usersQ->where(function ($w) use ($user) {
+                    $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
+                });
+            }
+        }
+
+        $users = $usersQ->orderBy('name')->get(['id', 'name', 'designation', 'user_type', 'email']);
+
+        // Pull employee profiles for those users in one query (linked via
+        // employees.user_id). Eager-load the four relations we need so the
+        // shape stays predictable even when a relation is missing.
+        $userIds = $users->pluck('id')->all();
+        $employees = Employee::whereIn('user_id', $userIds)
+            ->with([
+                'department:id,name',
+                'designation:id,name',
+                'primaryRole:id,name',
+                'ancillaryRole:id,name',
+                'reportingManager:id,first_name,last_name,display_name',
+            ])
+            ->get()
+            ->keyBy('user_id');
+
+        $data = [];
+        foreach ($users as $u) {
+            $emp     = $employees->get($u->id);
+            $counts  = $perUser[$u->id]['platform_counts'] ?? array_fill_keys($platforms, 0);
+            $total   = $perUser[$u->id]['total']           ?? 0;
+
+            $mgr = $emp?->reportingManager;
+            $mgrName = $mgr
+                ? trim($mgr->display_name ?: trim(($mgr->first_name ?? '') . ' ' . ($mgr->last_name ?? '')))
+                : null;
+
+            $data[] = [
+                'salesperson_id'        => $u->id,
+                'salesperson_name'      => $emp
+                    ? trim($emp->display_name ?: trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? '')))
+                    : ($u->name ?: '—'),
+                'salesperson_code'      => $emp?->emp_code ?: ('EMP-' . str_pad((string) $u->id, 3, '0', STR_PAD_LEFT)),
+                'department'            => $emp?->department?->name,
+                'designation'           => $emp?->designation?->name ?: ($u->designation ?: null),
+                'primary_role'          => $emp?->primaryRole?->name,
+                'ancillary_role'        => $emp?->ancillaryRole?->name,
+                'reporting_manager'     => $mgrName,
+                'email'                 => $u->email,
+                'platform_counts'       => $counts,
+                'total_assigned_leads'  => $total,
+            ];
+        }
+
+        // Stable order: most loaded first, then by name. Keeps the
+        // top-performers visible above the fold.
+        usort($data, function ($a, $b) {
+            $diff = $b['total_assigned_leads'] - $a['total_assigned_leads'];
+            return $diff !== 0 ? $diff : strcmp($a['salesperson_name'], $b['salesperson_name']);
         });
 
         return response()->json([
-            'status'   => true,
-            'message'  => 'Leads distributed',
-            'total'    => count($leadIds),
-            'per_user' => $perUser,
+            'status'    => true,
+            'summary'   => [
+                'total_sales_persons' => $users->count(),
+                'total_leads'         => (int) ($totalsRow->total_all        ?? 0),
+                'assigned_leads'      => (int) ($totalsRow->total_assigned   ?? 0),
+                'unassigned_leads'    => (int) ($totalsRow->total_unassigned ?? 0),
+            ],
+            'platforms' => $platforms,
+            'data'      => $data,
         ]);
     }
 

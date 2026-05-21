@@ -479,5 +479,17 @@ const LDV_CSS = `
 
 @media (max-width: 720px) {
   .ldv-grid, .ldv-loading { grid-template-columns: 1fr; }
+  .ldv-head { padding: 14px 16px; flex-wrap: wrap; gap: 10px; }
+  .ldv-head-title { font-size: 16px; }
+  .ldv-head-icon { width: 36px; height: 36px; }
+  .ldv-status { order: 3; flex-basis: 100%; justify-content: flex-start; }
+  .ldv-body { padding: 14px 16px; }
+  .ldv-foot { padding: 12px 16px; flex-direction: column; gap: 10px; align-items: stretch; }
+  .ldv-btn  { width: 100%; }
+  .ldv-foot-meta { text-align: center; }
+}
+@media (max-width: 480px) {
+  .ldv-backdrop { padding: 0; }
+  .ldv-modal { border-radius: 0; max-height: 100vh; height: 100vh; }
 }
 `;
