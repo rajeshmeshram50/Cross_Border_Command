@@ -632,6 +632,19 @@ function MasterPageInner({
         errs[f.n] = 'Please enter a valid email address';
       } else if (f.t === 'number' && isNaN(Number(raw))) {
         errs[f.n] = 'Must be a valid number';
+      } else if (f.t === 'number') {
+        /* Range guard — both per-field overrides (`min` / `max`) and the
+         * default 0..999999999 cap from the input renderer above. Stops
+         * users from pasting numbers that overflow the backend column
+         * before the request ever leaves the browser. */
+        const num = Number(raw);
+        const minOverride = typeof (f as any).min === 'number' ? (f as any).min : 0;
+        const maxOverride = typeof (f as any).max === 'number' ? (f as any).max : 999999999;
+        if (num < minOverride) {
+          errs[f.n] = `${f.l} must be at least ${minOverride}`;
+        } else if (num > maxOverride) {
+          errs[f.n] = `${f.l} must be at most ${maxOverride}`;
+        }
       } else if (f.n === 'gstin' && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(raw.toUpperCase())) {
         errs[f.n] = 'Invalid GSTIN — must be 15 characters (e.g. 27AADCI6120M1ZH)';
       } else if (f.n === 'pan' && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(raw.toUpperCase())) {
@@ -713,7 +726,25 @@ function MasterPageInner({
       }
       const raw = fd.get(f.n);
       if (f.t === 'number') {
-        payload[f.n] = raw == null || raw === '' ? null : Number(raw);
+        if (raw == null || raw === '') {
+          payload[f.n] = null;
+        } else {
+          /* Belt-and-suspenders clamp — validateForm already rejects
+           * out-of-range numbers, but if a future code path skips it
+           * (or scientific-notation input slips past the HTML control)
+           * we still cap here so the server never sees a value that
+           * would overflow the column. */
+          let num = Number(raw);
+          const minOverride = typeof (f as any).min === 'number' ? (f as any).min : 0;
+          const maxOverride = typeof (f as any).max === 'number' ? (f as any).max : 999999999;
+          if (Number.isFinite(num)) {
+            if (num < minOverride) num = minOverride;
+            else if (num > maxOverride) num = maxOverride;
+          } else {
+            num = minOverride;
+          }
+          payload[f.n] = num;
+        }
       } else {
         let s = String(raw ?? '').trim();
         if (s !== '' && (f.t === 'text' || f.t === 'textarea') && !SKIP_CAPITALIZE.has(f.n)) {
@@ -907,7 +938,10 @@ function MasterPageInner({
 
     // "code"-type identifiers — bold honey-amber glossy chip.
     if (fieldName === 'code') {
-      return (
+      const codeTxt = String(raw).toUpperCase();
+      const CODE_MAX = 14;
+      const display = codeTxt.length > CODE_MAX ? `${codeTxt.slice(0, CODE_MAX - 1)}…` : codeTxt;
+      const chip = (
         <span
           className="rounded-pill d-inline-block"
           style={{
@@ -924,9 +958,13 @@ function MasterPageInner({
             boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 rgba(245,158,11,0.22), 0 1px 3px rgba(245,158,11,0.26)',
           }}
         >
-          {String(raw).toUpperCase()}
+          {display}
         </span>
       );
+      if (codeTxt.length > CODE_MAX) {
+        return <Tooltip label={codeTxt} maxWidth={320}>{chip}</Tooltip>;
+      }
+      return chip;
     }
 
     // KPI Target Type — colored text pill (matches Status/Created By style).
@@ -1105,10 +1143,33 @@ function MasterPageInner({
     // value is ALL UPPERCASE alphanumerics (e.g. "INMAA", "USD", "FOB"). This
     // avoids false positives on plain words like "developer" or "soft tech".
     if (typeof raw === 'string' && /^[A-Z0-9]{2,}$/.test(raw.replace(/\s|-/g, ''))) {
-      return <code className="text-body" style={{ fontSize: '0.8125rem' }}>{raw}</code>;
+      const idTxt = String(raw);
+      const idMax = 18;
+      if (idTxt.length <= idMax) {
+        return <code className="text-body" style={{ fontSize: '0.8125rem' }}>{idTxt}</code>;
+      }
+      return (
+        <Tooltip label={idTxt} maxWidth={320}>
+          <code className="text-body" style={{ fontSize: '0.8125rem' }}>{idTxt.slice(0, idMax - 1)}…</code>
+        </Tooltip>
+      );
     }
 
-    return <span className="text-body">{String(raw)}</span>;
+    /* Long free-text cells — truncate with ellipsis + hover tooltip so a
+     * 200-char milestone description or address doesn't blow out the
+     * column. Mirrors the first-column truncation rule. */
+    const txt = String(raw);
+    const MAX = 24;
+    if (txt.length <= MAX) {
+      return <span className="text-body">{txt}</span>;
+    }
+    return (
+      <Tooltip label={txt} maxWidth={320}>
+        <span className="text-body" style={{ display: 'inline-block', maxWidth: '100%' }}>
+          {txt.slice(0, MAX - 1)}…
+        </span>
+      </Tooltip>
+    );
   };
 
   // Columns for TableContainer (TanStack Table). Built dynamically from cfg.cols + ownershipCols
@@ -3977,12 +4038,27 @@ function renderField(
         ? (typeof (f as any).maxLen === 'number' ? (f as any).maxLen : TEXT_MAX)
         : undefined;
 
+    /* Number-range defaults — uncapped numeric fields previously let users
+     * paste 30M+ values that overflowed the column on the backend. The
+     * defaults below are wide enough for any sane business value (credit
+     * days, percentages, INR thresholds, etc.) but stop the SQL overflow.
+     * Field configs can override via `min` / `max` for stricter ranges
+     * (e.g. percentages at max:100). */
+    const numMin = f.t === 'number'
+      ? (typeof (f as any).min === 'number' ? (f as any).min : 0)
+      : undefined;
+    const numMax = f.t === 'number'
+      ? (typeof (f as any).max === 'number' ? (f as any).max : 999999999)
+      : undefined;
+
     input = (
       <Input
         type={f.t === 'email' ? 'email' : f.t === 'number' ? 'number' : 'text'}
         name={f.n}
         placeholder={f.p}
         maxLength={maxLength}
+        min={numMin}
+        max={numMax}
         // `key` forces a remount when the auto-generated value changes between
         // opens of the Add modal so React picks up the new defaultValue.
         key={isAutogen ? autogenVal : undefined}

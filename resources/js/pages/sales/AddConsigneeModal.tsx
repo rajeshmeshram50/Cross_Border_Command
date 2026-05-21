@@ -4750,18 +4750,23 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   display: flex; align-items: flex-start; gap: 12px;
   padding: 12px 16px;
   margin-bottom: 14px;
-  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
-  border: 1px solid rgba(16,185,129,.30);
+  /* Saturated emerald gradient with a clear green undertone — the
+     previous #ecfdf5 mix read as cream/yellow on low-contrast displays
+     and certain sRGB profiles, which is why the banner looked yellow in
+     some browsers. Anchoring both stops in the green-100 → green-200
+     range keeps the hue unambiguous across all renderers. */
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  border: 1px solid rgba(16,185,129,.45);
   border-radius: 12px;
   cursor: pointer;
   transition: all .15s ease;
   user-select: none;
 }
-.acm-same-banner:hover { border-color: #10b981; box-shadow: 0 2px 8px rgba(16,185,129,.10); }
+.acm-same-banner:hover { border-color: #10b981; box-shadow: 0 2px 8px rgba(16,185,129,.18); }
 .acm-same-banner.is-on {
-  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  background: linear-gradient(135deg, #a7f3d0 0%, #6ee7b7 100%);
   border-color: #10b981;
-  box-shadow: 0 2px 10px rgba(16,185,129,.18);
+  box-shadow: 0 2px 10px rgba(16,185,129,.25);
 }
 .acm-same-banner.is-disabled { opacity: 0.55; cursor: not-allowed; }
 /* "Blocked" state — customer already has its one mirror. Amber accent
@@ -4958,14 +4963,30 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 }
 .acm-add-pill:hover { background: #10b981; color: #fff; border-color: #10b981; }
 .acm-loc-body { padding: 0; }
-.acm-loc-table-wrap { overflow-x: auto; }
+/* Horizontal scroll wrapper. -webkit-overflow-scrolling: touch smooths
+   the scroll on iPad/Android, and a thin scrollbar style keeps the rail
+   from dominating the table on narrow screens. */
+.acm-loc-table-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.acm-loc-table-wrap::-webkit-scrollbar { height: 8px; }
+.acm-loc-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(16,185,129,.35); border-radius: 999px;
+}
+.acm-loc-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
 /* Stage 2 KYC tables — cap the body height so a long list of
    documents / owners scrolls inside the card instead of pushing the
    modal footer off-screen. The header strip stays sticky so the user
-   can always see which column they're scrolling through. */
+   can always see which column they're scrolling through. Both axes
+   scroll: vertical for many rows, horizontal for many columns on
+   narrow viewports. */
 .acm-kyc-body .acm-loc-table-wrap {
   max-height: 360px;
   overflow-y: auto;
+  overflow-x: auto;
   scrollbar-width: thin;
 }
 .acm-kyc-body .acm-loc-table thead th {
@@ -4979,6 +5000,12 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   width: 100%; border-collapse: collapse;
   font-size: 13px; color: #1f2937;
 }
+/* Stage 2 KYC tables carry more columns (ID Proof, Address Proof,
+   Photograph, Status, Actions …) than the Stage 1 location table.
+   Give them a minimum width so columns stay readable and the wrap
+   div picks up horizontal scroll on narrow viewports instead of
+   squashing every column into illegible strips. */
+.acm-kyc-body .acm-loc-table { min-width: 980px; }
 .acm-loc-table thead tr {
   background: #f9fafb;
   border-bottom: 1px solid #e5e7eb;
@@ -5144,6 +5171,16 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-steps-arrow { background: #103129; border-color: rgba(16,185,129,.30); color: #6ee7b7; }
 
 [data-bs-theme="dark"] .acm-id-tab     { background: #103129; border-color: rgba(16,185,129,.20); color: #ecfdf5; }
+/* Selected tab in dark mode — the light-mode emerald gradient blended
+   into the modal's dark-green wash, so the active tab was almost
+   invisible. Brighter mint gradient + emerald glow ring makes the
+   selection unmistakable against the dark backdrop. */
+[data-bs-theme="dark"] .acm-id-tab.on {
+  background: linear-gradient(135deg, #34d399, #10b981);
+  color: #022c22;
+  border-color: rgba(110,231,183,.55);
+  box-shadow: 0 0 0 1px rgba(110,231,183,.45), 0 4px 14px rgba(16,185,129,.45);
+}
 [data-bs-theme="dark"] .acm-sec-header { background: #103129; border-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-sec-pad    { background: #103129; border-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-sec-title  { color: #ecfdf5; }

@@ -45,6 +45,13 @@ export type FieldDef = {
   // both the picker's min and the on-save validator to >= today, used
   // for things like warranty expiry where backdating doesn't make sense.
   futureOnly?: boolean;
+  // Numeric range constraints — kick in when t === 'number'. Both the
+  // input's HTML min/max attrs and the on-save validator honour these,
+  // so percentages can be clamped to 0..100 and ₹ amounts to a sane
+  // upper bound that fits the backend column. If omitted, MasterPage
+  // defaults to min:0 / max:999999999 to prevent SQL overflow.
+  min?: number;
+  max?: number;
   // Auto-derive this field's value from another field as the user types.
   // The source field is referenced by `n` (e.g. autoDeriveFrom: 'title').
   // MasterPage wires up a DOM input-listener while the modal is open and
@@ -896,8 +903,8 @@ const C: Record<string, MasterConfig> = {
     cat: 'Party & Classification',
     fields: [
       { n: 'name', l: 'Classification Name', t: 'text', r: true, p: 'e.g. Tier A, Key Account' },
-      { n: 'credit_limit', l: 'Credit Limit (₹)', t: 'number', p: 'e.g. 500000' },
-      { n: 'payment_terms', l: 'Payment Terms (days)', t: 'number', p: 'e.g. 30' },
+      { n: 'credit_limit', l: 'Credit Limit (₹)', t: 'number', p: 'e.g. 500000', min: 0, max: 999999999 },
+      { n: 'payment_terms', l: 'Payment Terms (days)', t: 'number', p: 'e.g. 30', min: 0, max: 3650 },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
     cols: ['name', 'credit_limit', 'payment_terms', 'status'],
@@ -1039,7 +1046,7 @@ const C: Record<string, MasterConfig> = {
     desc: 'Risk severity tags for vendor & shipment screening',
     cat: 'Legal & Compliance',
     fields: [
-      { n: 'name', l: 'Risk Level', t: 'text', r: true, p: 'e.g. Low, Medium, High' },
+      { n: 'name', l: 'Risk Level', t: 'select', r: true, opts: ['Low', 'Medium', 'High', 'Critical'] },
       { n: 'description', l: 'Description', t: 'text', p: 'Risk criteria' },
       { n: 'action_required', l: 'Action Required', t: 'text', p: 'e.g. Escalate' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
@@ -1264,8 +1271,8 @@ const C: Record<string, MasterConfig> = {
     fields: [
       { n: 'term_code', l: 'Term Code', t: 'text', r: true, p: 'e.g. NET30, ADV100' },
       { n: 'term_name', l: 'Term Name', t: 'text', r: true, p: 'e.g. Net 30 Days' },
-      { n: 'credit_days', l: 'Credit Days', t: 'number', r: true, p: 'e.g. 30' },
-      { n: 'advance_pct', l: 'Advance Required (%)', t: 'number', p: 'e.g. 30' },
+      { n: 'credit_days', l: 'Credit Days', t: 'number', r: true, p: 'e.g. 30', min: 0, max: 3650 },
+      { n: 'advance_pct', l: 'Advance Required (%)', t: 'number', p: 'e.g. 30', min: 0, max: 100 },
       { n: 'payment_type', l: 'Payment Type', t: 'select', r: true, opts: ['Full Advance', 'Partial Advance', 'Credit', 'Milestone-Based', 'COD'] },
       { n: 'milestone_desc', l: 'Milestone Description', t: 'text', p: 'e.g. 50% on dispatch, 50% on delivery' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },

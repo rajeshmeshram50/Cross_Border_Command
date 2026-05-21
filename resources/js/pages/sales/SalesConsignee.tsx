@@ -243,19 +243,16 @@ export default function SalesConsignee() {
       cell: (info: any) => {
         const c = info.row.original as Consignee;
         const country = (c.country ?? '').trim();
-        const detail = (c.countryDetail ?? '').trim();
-        const full = detail ? `${country} (${detail})` : country;
         if (!country) return <span className="text-muted">—</span>;
-        // Show the country name in full + the parenthesised detail truncated.
-        const maxDetail = 22;
-        const showShort = detail.length > maxDetail;
-        const detailDisplay = showShort ? detail.slice(0, maxDetail) + '…' : detail;
-        const inner = (
-          <span className="smcg-country" style={{ maxWidth: 240, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
-            {country}{detail && <span className="smcg-country-sub"> ({detailDisplay})</span>}
+        /* Country-only display per the cleaner-list UX. City/state are
+         * still on the row (countryDetail) but stay surfaced inside the
+         * Edit modal — the list column was getting noisy with all three
+         * stacked horizontally. */
+        return (
+          <span className="smcg-country" style={{ whiteSpace: 'nowrap' }}>
+            {country}
           </span>
         );
-        return showShort ? <Tooltip label={full}>{inner}</Tooltip> : inner;
       },
     },
     {
