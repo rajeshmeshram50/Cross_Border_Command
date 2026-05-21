@@ -57,6 +57,7 @@ type Lead = {
   date: string;
   source: string;
   assigned: string;       // 'Unassigned' or a person's name
+  salespersonId: number | null;  // current owner — drives the assign-modal pre-select
   oppId: string;          // OPP-001
   customer: string;
   phone: string;
@@ -122,6 +123,7 @@ const mapServerToLead = (r: ServerLead): Lead => {
     date,
     source:   r.platform || '—',
     assigned: r.salesperson?.name ?? 'Unassigned',
+    salespersonId: r.salesperson?.id ?? null,
     oppId:    r.opp_code,
     customer: r.sender_name || '—',
     phone:    r.sender_mobile || '—',
@@ -175,6 +177,12 @@ export default function SalesLeadWorksheet() {
     mode: 'single' | 'selection' | 'filters';
     leadId?: number | null;
     leadIds?: number[];
+    /* When the picked row(s) already have an owner, we pre-select that
+     * person in the modal's salesperson dropdown so the user sees "this
+     * lead is currently with X" instead of an empty box. For 'selection'
+     * mode this only kicks in when every selected row shares the same
+     * owner — mixed selections leave the field blank. */
+    initialSalespersonId?: number | null;
   }>({ open: false, mode: 'filters' });
   const [distributeOpen, setDistributeOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -410,7 +418,13 @@ export default function SalesLeadWorksheet() {
   // Eye-icon → quick-view modal. The row-click anywhere else still opens
   // the full matrix detail page; the eye icon is the lightweight peek.
   const onViewLead      = (l: Lead) => setViewLeadId(l.id);
-  const onAssignOne     = (l: Lead) => setAssignModal({ open: true, mode: 'single', leadId: l.id });
+
+  const onAssignOne     = (l: Lead) => setAssignModal({
+    open: true,
+    mode: 'single',
+    leadId: l.id,
+    initialSalespersonId: l.salespersonId,
+  });
   const onOpenLead      = (l: Lead) => openMatrixDetail(l);
   const onOpenOpp       = (oppId: string) => {
     // Find the lead in the current page; the table is server-paginated so
@@ -423,12 +437,23 @@ export default function SalesLeadWorksheet() {
   const onBulkAssign    = () => {
     // Translate the selection (Set of OPP-#### display codes) into the
     // numeric DB ids the assign endpoint expects.
-    const ids = leads.filter(l => selected.has(l.oppId)).map(l => l.id);
+    const picked = leads.filter(l => selected.has(l.oppId));
+    const ids = picked.map(l => l.id);
     if (ids.length === 0) {
       toast.warning('Nothing selected', 'Tick at least one row to bulk-assign');
       return;
     }
-    setAssignModal({ open: true, mode: 'selection', leadIds: ids });
+    // Pre-select the common owner only when every selected lead shares
+    // it — a mixed selection leaves the dropdown blank so the user makes
+    // a deliberate choice rather than silently inheriting one owner.
+    const owners = new Set(picked.map(l => l.salespersonId));
+    const shared = owners.size === 1 ? picked[0].salespersonId : null;
+    setAssignModal({
+      open: true,
+      mode: 'selection',
+      leadIds: ids,
+      initialSalespersonId: shared,
+    });
   };
   const onBulkCTQ       = async () => {
     const ids = leads.filter(l => selected.has(l.oppId) && l.status === 'disqualified').map(l => l.id);
@@ -918,6 +943,7 @@ export default function SalesLeadWorksheet() {
         mode={assignModal.mode}
         leadId={assignModal.leadId ?? null}
         leadIds={assignModal.leadIds ?? []}
+        initialSalespersonId={assignModal.initialSalespersonId ?? null}
         /* Account list comes from the .env-configured IndiaMart key labels
          * for this branch (via /sales/leads/sync/config). If nothing is
          * configured for the branch, the Account field hides itself. */
