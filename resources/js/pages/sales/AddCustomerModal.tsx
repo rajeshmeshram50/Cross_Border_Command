@@ -2073,6 +2073,12 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
     else if (d.license.trim().length > 25) next.license = 'License number must be 25 characters or fewer';
     if (!d.authority.trim()) next.authority = 'Issuing authority is required';
     if (!d.issueDate)        next.issueDate = 'Issue date is required';
+    else {
+      // Backstop in case a stale picker / paste lets a future issue
+      // date through — a document can't be issued in the future.
+      const today = new Date().toISOString().slice(0, 10);
+      if (d.issueDate > today) next.issueDate = 'Issue date cannot be in the future';
+    }
     if (!d.expiryDate)       next.expiryDate = 'Expiry date is required';
     // Cross-field check: expiry must not be earlier than issue date.
     // Dates come from MasterDatePicker as YYYY-MM-DD strings, which
@@ -2193,11 +2199,16 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
               <input className={errs.authority ? 'acm-input-error' : ''} value={d.authority} onChange={e => set('authority', e.target.value)} placeholder="Enter issuing authority" />
             </Field>
             <Field label="Issuing Date" required error={errs.issueDate}>
-              {/* maxDate constrains the picker to dates at or before the
-                  chosen expiry, so the two fields can never disagree. */}
+              {/* maxDate caps the picker at the earlier of today and
+                  the chosen expiry — a document can never be issued in
+                  the future, and the two date fields can never
+                  disagree with each other. */}
               <MasterDatePicker
                 value={d.issueDate}
-                maxDate={d.expiryDate || undefined}
+                maxDate={(() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  return d.expiryDate && d.expiryDate < today ? d.expiryDate : today;
+                })()}
                 invalid={!!errs.issueDate}
                 onChange={(v: string) => {
                   set('issueDate', v);
