@@ -467,11 +467,35 @@ class VendorController extends Controller
 
         DB::transaction(function () use ($vendor, $data, $user) {
             $userId = $user?->id;
+
+            // Reset the vendor side. Any rows referencing this vendor
+            // that aren't part of the resubmit get force-deleted so
+            // the mirror on the product side can drop too.
             $vendor->productMappings()->forceDelete();
+
+            // Snapshot of the vendor's identity to denormalise onto
+            // product_vendor_maps. Cheap to do once outside the loop.
+            $primary = $vendor->primaryAddress;
+            $vendorSnapshot = [
+                'vendor_id'      => $vendor->id,
+                'vendor_code'    => $vendor->vendor_code,
+                'vendor_name'    => $vendor->company_name,
+                'vendor_website' => $vendor->website,
+                'contact_person' => $primary?->contact_name,
+                'contact_no'     => $primary?->contact_no,
+                'email'          => $primary?->email ?? $vendor->primary_email,
+                'designation'    => $primary?->designation,
+            ];
+
+            $nowMappedProductIds = [];
+
             foreach ($data['mappings'] as $row) {
+                $productId = (int) $row['product_id'];
+                $nowMappedProductIds[] = $productId;
+
                 VendorProductMapping::create([
                     'vendor_id'        => $vendor->id,
-                    'product_id'       => $row['product_id'],
+                    'product_id'       => $productId,
                     'batch_serial_lot' => $row['batch_serial_lot'] ?? null,
                     'purchase_price'   => $row['purchase_price'],
                     'gst_percentage'   => $row['gst_percentage'] ?? 0,
@@ -479,7 +503,41 @@ class VendorController extends Controller
                     'total_amount'     => $row['total_amount'] ?? $row['purchase_price'],
                     'created_by'       => $userId,
                 ]);
+
+                // Mirror onto product side. updateOrCreate so a
+                // re-save doesn't duplicate the row for the same
+                // (product, vendor) pair.
+                \App\Models\ProductVendorMap::updateOrCreate(
+                    ['product_id' => $productId, 'vendor_id' => $vendor->id],
+                    array_merge($vendorSnapshot, [
+                        'purchase_price' => $row['purchase_price'],
+                        'gst_percentage' => $row['gst_percentage'] ?? 0,
+                        'gst_amount'     => $row['gst_amount'] ?? 0,
+                        'total_amount'   => $row['total_amount'] ?? $row['purchase_price'],
+                        'map_date'       => now()->toDateString(),
+                    ])
+                );
+
+                // Flip the product to Active once it has a vendor
+                // mapped. Mirrors the end-state the product wizard
+                // reaches after Step 4.
+                $product = \App\Models\Product::find($productId);
+                if ($product) {
+                    $product->step_completed = max((int) $product->step_completed, 4);
+                    if ($product->status !== 'active') {
+                        $product->status = 'active';
+                    }
+                    $product->save();
+                }
             }
+
+            // Drop any product_vendor_maps that USED to mirror this
+            // vendor but aren't in the current submit, so the two
+            // tables stay symmetric.
+            \App\Models\ProductVendorMap::where('vendor_id', $vendor->id)
+                ->when(!empty($nowMappedProductIds), fn ($q) => $q->whereNotIn('product_id', $nowMappedProductIds))
+                ->delete();
+
             $vendor->step_completed = 4;
             $vendor->status         = 'active';
             $vendor->save();

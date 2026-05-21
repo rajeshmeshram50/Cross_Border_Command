@@ -23,6 +23,9 @@ import Tooltip from '../../components/ui/Tooltip';
 
 export type VendorEntry = {
   id: string;
+  /** DB id of the vendor row. Carries through so storeVendors can
+   *  mirror the mapping into VendorProductMapping (vendor side). */
+  vendorId: string;
   productCode: string;
   vendorCode: string;
   vendorName: string;
@@ -101,14 +104,21 @@ export type QcRecord = {
 const HAZ_TYPES = ['Non-Haz', 'Haz'];
 const BOTTOM_OPTIONS = ['Bottom', 'Non Bottom'];
 const QC_NAMES = ['COA', 'MSDS', 'FSSAI', 'AGMARK', 'ISO 9001', 'ISO 22000', 'HACCP', 'HALAL', 'KOSHER', 'FSSC 22000'];
-// Local vendor stub — there's no Vendor master yet. Once it ships, swap this
-// for a `GET /api/master/vendors` call in the loaders effect.
-const VENDOR_LIST = [
-  { code: 'V-001', name: 'Golden Grain Suppliers', website: 'www.goldengrain.in', contact: 'Rakesh Mehta',  phone: '+91 98765 43210', email: 'rakesh@goldengrain.in',  designation: 'Sales Head' },
-  { code: 'V-002', name: 'GreenHarvest',           website: 'www.greenharvest.co', contact: 'Anita Desai',  phone: '+91 99888 77665', email: 'anita@greenharvest.co',  designation: 'Procurement Mgr' },
-  { code: 'V-003', name: 'Shree Exports',          website: 'www.shreeexports.in', contact: 'Mohit Sharma', phone: '+91 95544 22119', email: 'mohit@shreeexports.in',  designation: 'Director' },
-  { code: 'V-004', name: 'Sun Agri',               website: 'www.sunagri.com',     contact: 'Pooja Iyer',   phone: '+91 91234 56789', email: 'pooja@sunagri.com',      designation: 'Account Mgr' },
-];
+/** Vendor option as it lives in the in-memory list backing the
+ *  Step-2 dropdown. Loaded from /api/vendors when the wizard reaches
+ *  the vendor step, includes both Active and Inactive vendors so the
+ *  user can map any vendor the org has on file. */
+export type VendorOpt = {
+  id: string;
+  code: string;
+  name: string;
+  website: string;
+  contact: string;
+  phone: string;
+  email: string;
+  designation: string;
+  status: string;
+};
 
 type Tab = 'core' | 'sales' | 'quality';
 
@@ -312,6 +322,10 @@ export default function AddProductModal(props: {
   /* ─── Step 2: Vendor ─── */
   const [vendors, setVendors] = useState<VendorEntry[]>([]);
   const [vendorDraftOpen, setVendorDraftOpen] = useState(false);
+  /* Vendors loaded from /api/vendors. Both Active and Inactive show
+     up — the user may map either, since a draft vendor still needs
+     its products linked before the vendor itself can flip to Active. */
+  const [vendorOpts, setVendorOpts] = useState<VendorOpt[]>([]);
   const [vendorSelectedCode, setVendorSelectedCode] = useState('');
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
   const [vendorGstPct, setVendorGstPct] = useState<string>('');
@@ -319,8 +333,8 @@ export default function AddProductModal(props: {
   const [vendorMapDate, setVendorMapDate] = useState<string>('');
 
   const vendorSelected = useMemo(
-    () => VENDOR_LIST.find(v => v.code === vendorSelectedCode) || null,
-    [vendorSelectedCode]
+    () => vendorOpts.find(v => v.code === vendorSelectedCode) || null,
+    [vendorOpts, vendorSelectedCode]
   );
   const vendorPp   = parseFloat(vendorPurchasePrice) || 0;
   const vendorGp   = parseFloat(vendorGstPct.replace('%', '')) || 0;
@@ -501,6 +515,7 @@ export default function AddProductModal(props: {
     if (!vendorSelected) return; // type-guard after the check
     const entry: VendorEntry = {
       id: String(Date.now()),
+      vendorId: vendorSelected.id,
       productCode: productCode || 'P-NEW',
       vendorCode: vendorSelected.code,
       vendorName: vendorSelected.name,
@@ -560,8 +575,45 @@ export default function AddProductModal(props: {
       }
     };
 
+    /* Vendor master ships its own paginated endpoint, not /master/*.
+       We pull every vendor (no status filter) so both Active and
+       Inactive rows show up in the Step-2 dropdown — the user may
+       legitimately want to map a draft/inactive vendor, after which
+       the vendor flips to Active. */
+    const fetchVendors = async (): Promise<VendorOpt[]> => {
+      try {
+        type VRow = {
+          id: number | string;
+          vendor_code?: string | null;
+          company_name?: string | null;
+          website?: string | null;
+          primary_email?: string | null;
+          status?: string | null;
+          primary_address?: {
+            contact_name?: string | null;
+            contact_no?: string | null;
+            email?: string | null;
+            designation?: string | null;
+          } | null;
+        };
+        const res = await api.get<{ data?: VRow[] } | VRow[]>('/vendors?per_page=500');
+        const rows: VRow[] = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+        return rows.map(r => ({
+          id:          String(r.id),
+          code:        String(r.vendor_code ?? ''),
+          name:        String(r.company_name ?? ''),
+          website:     String(r.website ?? ''),
+          contact:     String(r.primary_address?.contact_name ?? ''),
+          phone:       String(r.primary_address?.contact_no ?? ''),
+          email:       String(r.primary_address?.email ?? r.primary_email ?? ''),
+          designation: String(r.primary_address?.designation ?? ''),
+          status:      String(r.status ?? '').toLowerCase(),
+        }));
+      } catch { return []; }
+    };
+
     (async () => {
-      const [seg, hz, uo, hs, co, pk, gst] = await Promise.all([
+      const [seg, hz, uo, hs, co, pk, gst, vd] = await Promise.all([
         fetchMaster('segments',           'title'),
         fetchMaster('haz_class',          'name'),
         fetchMaster('uom',                'title', { extraKeys: ['short_code', 'unit_type'] }),
@@ -569,6 +621,7 @@ export default function AddProductModal(props: {
         fetchMaster('conditions',         'title'),
         fetchMaster('packaging_material', 'title'),
         fetchMaster('gst_percentage',     'percentage', { extraKeys: ['percentage'] }),
+        fetchVendors(),
       ]);
       setOptSegments(seg);
       setOptHazClasses(hz);
@@ -577,6 +630,7 @@ export default function AddProductModal(props: {
       setOptConditions(co);
       setOptPackaging(pk);
       setOptGst(gst.map(o => ({ ...o, label: `${o.label}%` })));
+      setVendorOpts(vd);
     })();
   }, []);
 
@@ -698,9 +752,12 @@ export default function AddProductModal(props: {
           minAcceptance: q.min_acceptance_criteria ?? '',
           attachmentName: q.attachment_path ? q.attachment_path.split('/').pop() ?? '' : '',
           attachmentUrl: q.attachment_url ?? (q.attachment_path ? resolveFileUrl(q.attachment_path) : ''),
+          attachmentPath: q.attachment_path ?? '',
+          attachmentFile: null,
         })));
         setVendors((p.vendor_maps ?? []).map(v => ({
           id: String(v.id),
+          vendorId: (v as Record<string, unknown>).vendor_id ? String((v as Record<string, unknown>).vendor_id) : '',
           productCode: p.product_code ?? '',
           vendorCode: String(v.vendor_code ?? ''),
           vendorName: String(v.vendor_name ?? ''),
@@ -892,7 +949,25 @@ export default function AddProductModal(props: {
     setFieldErrors({});
     setSaving(true);
     try {
-      await api.put(`/products/${productId}/step/quality`, {
+      /* Switch the request to multipart only when a QC row carries a
+         newly-picked File. Pure-text saves stay on the JSON path so
+         existing call sites don't pay the multipart overhead.
+         Laravel reads array-indexed file inputs as
+         `qc_records.{idx}.attachment_file`. */
+      const hasNewFiles = qcRecords.some(q => q.attachmentFile instanceof File);
+      const qcRows = qcRecords.map(q => ({
+        qc_name: q.name,
+        qc_purpose: q.purpose,
+        issued_by: q.issuedBy,
+        qa_testing_parameter: q.testingParameter,
+        min_acceptance_criteria: q.minAcceptance,
+        // Keep the existing server-side path when the user didn't
+        // replace the attachment on this open of the modal. The
+        // backend overrides with the multipart upload path below.
+        attachment_path: q.attachmentPath || (q.attachmentFile ? null : (q.attachmentName || null)),
+      }));
+
+      const qualityFields = {
         batch_no: batchNo || null,
         serial_no: serialNo || null,
         cat_no: catNo || null,
@@ -902,15 +977,41 @@ export default function AddProductModal(props: {
         length_cm: parseFloat(length) || null,
         width_cm: parseFloat(width) || null,
         height_cm: parseFloat(height) || null,
-        qc_records: qcRecords.map(q => ({
-          qc_name: q.name,
-          qc_purpose: q.purpose,
-          issued_by: q.issuedBy,
-          qa_testing_parameter: q.testingParameter,
-          min_acceptance_criteria: q.minAcceptance,
-          attachment_path: q.attachmentName || null,
-        })),
-      });
+      };
+
+      if (hasNewFiles) {
+        const fd = new FormData();
+        // Laravel needs a method override since the route is PUT.
+        fd.append('_method', 'PUT');
+        Object.entries(qualityFields).forEach(([k, v]) => {
+          if (v === null || v === undefined) return;
+          fd.append(k, String(v));
+        });
+        qcRows.forEach((row, idx) => {
+          Object.entries(row).forEach(([k, v]) => {
+            if (v === null || v === undefined) return;
+            fd.append(`qc_records[${idx}][${k}]`, String(v));
+          });
+          const file = qcRecords[idx]?.attachmentFile;
+          if (file instanceof File) {
+            fd.append(`qc_records[${idx}][attachment_file]`, file);
+          }
+        });
+        await api.post(`/products/${productId}/step/quality`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      } else {
+        await api.put(`/products/${productId}/step/quality`, {
+          ...qualityFields,
+          qc_records: qcRows,
+        });
+      }
+
+      // Clear the in-memory File objects — on the next save the row
+      // should be treated as having no fresh file picked, so we don't
+      // re-upload the same blob.
+      setQcRecords(prev => prev.map(q => ({ ...q, attachmentFile: null })));
+
       // Step 1 fully complete — product is now Inactive on the server.
       onSaved(productId, false);
       toast.success('Quality saved', 'Product is now Inactive — map a vendor to activate');
@@ -936,6 +1037,7 @@ export default function AddProductModal(props: {
     try {
       await api.put(`/products/${productId}/step/vendors`, {
         vendors: vendors.map(v => ({
+          vendor_id: v.vendorId ? Number(v.vendorId) : null,
           vendor_code: v.vendorCode,
           vendor_name: v.vendorName,
           vendor_website: v.website,
@@ -1411,7 +1513,10 @@ export default function AddProductModal(props: {
                   <div className="apm-grid-2">
                     <Field label="Select Vendor" required>
                       <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select vendor"
-                        options={VENDOR_LIST.map(v => ({ value: v.code, label: `${v.code} — ${v.name}` }))}
+                        options={vendorOpts.map(v => ({
+                          value: v.code,
+                          label: `${v.code} — ${v.name}${v.status && v.status !== 'active' ? ` (${v.status.charAt(0).toUpperCase()}${v.status.slice(1)})` : ''}`,
+                        }))}
                       />
                     </Field>
                     <span />

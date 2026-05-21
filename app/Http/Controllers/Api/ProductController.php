@@ -379,6 +379,7 @@ class ProductController extends Controller
 
         $data = $request->validate([
             'vendors'                    => 'required|array|min:1',
+            'vendors.*.vendor_id'        => 'nullable|integer|exists:vendors,id',
             'vendors.*.vendor_code'      => 'nullable|string|max:50',
             'vendors.*.vendor_name'      => 'required|string|max:255',
             'vendors.*.vendor_website'   => 'nullable|string|max:255',
@@ -395,11 +396,61 @@ class ProductController extends Controller
             'vendors.*.remarks'          => 'nullable|string',
         ]);
 
-        DB::transaction(function () use ($product, $data) {
+        DB::transaction(function () use ($product, $data, $request) {
+            $userId = $request->user()?->id;
+
+            // Replace the product's vendor list.
             $product->vendorMaps()->delete();
+
+            // Track which vendors this product is now mapped to so we
+            // can mirror the link onto vendor_product_mappings (the
+            // vendor side's source of truth). Any vendor that the
+            // product used to be linked to but is no longer listed
+            // gets its corresponding row dropped, keeping the two
+            // tables in sync.
+            $nowMappedVendorIds = [];
+
             foreach ($data['vendors'] as $v) {
                 $product->vendorMaps()->create($v);
+
+                $vendorId = $v['vendor_id'] ?? null;
+                if (!$vendorId) continue;
+                $nowMappedVendorIds[] = (int) $vendorId;
+
+                // Mirror onto the vendor side. updateOrCreate so a
+                // second save doesn't duplicate the row when the same
+                // (vendor, product) pair is re-saved on this product.
+                \App\Models\VendorProductMapping::updateOrCreate(
+                    ['vendor_id' => $vendorId, 'product_id' => $product->id],
+                    [
+                        'purchase_price' => $v['purchase_price'] ?? 0,
+                        'gst_percentage' => $v['gst_percentage'] ?? 0,
+                        'gst_amount'     => $v['gst_amount']     ?? 0,
+                        'total_amount'   => $v['total_amount']   ?? ($v['purchase_price'] ?? 0),
+                        'created_by'     => $userId,
+                    ]
+                );
+
+                // Auto-activate the vendor as soon as it has at least
+                // one product linked to it — same end-state the
+                // vendor wizard reaches after Step 4. Use existing
+                // step_completed if the vendor was further along.
+                $vendor = \App\Models\Vendor::find($vendorId);
+                if ($vendor) {
+                    $vendor->step_completed = max((int) $vendor->step_completed, 4);
+                    if ($vendor->status !== 'active') {
+                        $vendor->status = 'active';
+                    }
+                    $vendor->save();
+                }
             }
+
+            // Drop stale mirror rows on the vendor side — any vendor
+            // that USED to be mapped to this product but isn't in the
+            // current submit.
+            \App\Models\VendorProductMapping::where('product_id', $product->id)
+                ->when(!empty($nowMappedVendorIds), fn ($q) => $q->whereNotIn('vendor_id', $nowMappedVendorIds))
+                ->delete();
 
             $product->step_completed = 4;
             $product->status = 'active';

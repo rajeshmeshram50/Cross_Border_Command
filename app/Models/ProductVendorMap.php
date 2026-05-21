@@ -11,7 +11,7 @@ class ProductVendorMap extends Model
     use HasFactory;
 
     protected $fillable = [
-        'product_id',
+        'product_id', 'vendor_id',
         'vendor_code', 'vendor_name', 'vendor_website',
         'contact_person', 'contact_no', 'email', 'designation',
         'attachment_path',

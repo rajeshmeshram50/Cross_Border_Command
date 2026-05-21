@@ -217,15 +217,20 @@ const SEED_TRADE_DOCS: TradeDocRow[] = [
 export default function AddVendorModal(props: {
   /** Existing vendor id to edit; omit or pass null to create a new one. */
   vendorId?: number | null;
+  /** Optional step to land on when the modal opens — used by row
+   *  actions like "Map Products" that want to drop the user
+   *  straight onto Step 4 instead of replaying Step 1. Ignored in
+   *  create mode (no vendorId) so we never skip past required setup. */
+  initialStep?: StepKey;
   onClose: () => void;
   onSubmit: (payload: VendorPayload) => void;
 }) {
-  const { onClose, onSubmit, vendorId: initialVendorId } = props;
+  const { onClose, onSubmit, vendorId: initialVendorId, initialStep } = props;
   const toast = useToast();
   const isEdit = !!initialVendorId;
 
   /* ─── Wizard navigation ─── */
-  const [step, setStep] = useState<StepKey>(1);
+  const [step, setStep] = useState<StepKey>(isEdit && initialStep ? initialStep : 1);
   const [idTab,    setIdTab]    = useState<IdTab>('identification');
   const [kycTab,   setKycTab]   = useState<KycTab>('company');
   const [tradeTab, setTradeTab] = useState<TradeTab>('kyc');
@@ -3025,7 +3030,7 @@ const SCOPED_CSS = `
 .avm-prev-check { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
 .avm-prev-chip { padding: 3px 10px; border-radius: 99px; background: #fff; color: #166534; font-size: 11px; font-weight: 700; border: 1px solid #bbf7d0; }
 .avm-prev-toggle { height: 28px; padding: 0 12px; background: #fff; border: 1px solid #bbf7d0; color: #166534; border-radius: 7px; font-family: inherit; font-size: 11.5px; font-weight: 800; cursor: pointer; }
-.avm-prev-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; padding: 12px 14px; }
+.avm-prev-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
 /* Step-grouped summary — each stage gets a tone-coloured label
    followed by a flat grid of label/value pairs. No per-cell box;
    stage labels do the visual grouping. Mirrors the Add Product
