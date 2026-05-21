@@ -2430,7 +2430,20 @@ function InlineSublist({
                       type={sf.t === 'number' ? 'number' : 'text'}
                       placeholder={sf.p}
                       value={String(val)}
-                      onChange={(e) => updateDraft(sf.n, e.target.value)}
+                      inputMode={sf.t === 'number' ? 'numeric' : undefined}
+                      onKeyDown={(e) => {
+                        /* Block scientific-notation keys on integer
+                         * number sub-fields so "e/E/+/-/." can't slip
+                         * into the value and submit as NaN. */
+                        if (sf.t === 'number' && ['e', 'E', '+', '-', '.', ','].includes(e.key)) {
+                          e.preventDefault();
+                        }
+                      }}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const v = sf.t === 'number' ? raw.replace(/[^\d]/g, '') : raw;
+                        updateDraft(sf.n, v);
+                      }}
                       invalid={!!err}
                     />
                   </div>
@@ -3807,7 +3820,20 @@ function renderField(
   const autogenVal = (isAutogen && editing == null)
     ? (apiAutogenVal || (f.autogen ? f.autogen(allRecords) : ''))
     : '';
-  const defaultVal = (isAutogen && editing == null) ? autogenVal : (editing?.[f.n] ?? '');
+  /* Clean the hydrated value for number fields so edit-mode never
+   * shows stale decimals / scientific-notation entries that pre-date
+   * the integer-only rule (e.g. legacy "34334434.0000" rows show as
+   * "34334434"). The sanitised value also feeds back into the form
+   * payload as integer. */
+  const rawDefaultVal = (isAutogen && editing == null) ? autogenVal : (editing?.[f.n] ?? '');
+  const defaultVal = (() => {
+    if (f.t !== 'number' || rawDefaultVal === '' || rawDefaultVal == null) return rawDefaultVal;
+    // Truncate at the first non-digit (drops decimals + exponent suffix),
+    // so "34334434.0000" → "34334434" and "1.5e3" → "1".
+    const s = String(rawDefaultVal);
+    const m = s.match(/^-?\d+/);
+    return m ? m[0].replace(/^-/, '') : '';
+  })();
   const err = fieldErrors[f.n];
   const onFieldChange = () => clearFieldError(f.n);
   const icon = isAutogen ? 'ri-magic-line' : iconForField(f);
@@ -4031,7 +4057,32 @@ function renderField(
           if (cursor != null) target.setSelectionRange(cursor, cursor);
         }
       }
+      /* Number-input sanitiser. HTML `type="number"` accepts scientific
+       * notation (`e`, `+`, `-`, `.`) which silently breaks integer-only
+       * fields like Credit Limit and Payment Terms — a user typing "e"
+       * leaves the input value as just "e" and the form submits NaN.
+       * Strip everything except digits so only whole numbers stick. */
+      if (f.t === 'number') {
+        const target = e.currentTarget;
+        const cleaned = target.value.replace(/[^\d]/g, '');
+        if (target.value !== cleaned) {
+          const cursor = Math.max(0, (target.selectionStart ?? cleaned.length) - (target.value.length - cleaned.length));
+          target.value = cleaned;
+          try { target.setSelectionRange(cursor, cursor); } catch { /* selection on type=number is finicky in some browsers */ }
+        }
+      }
       onFieldChange();
+    };
+
+    /* Block the keys that drive HTML number inputs off the integer
+     * rails before they ever land in the value — keeps the cursor in
+     * a sensible spot and avoids the "I typed e and nothing shows" UX
+     * trap. Paste is still cleaned by handleInput above. */
+    const handleNumberKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (f.t !== 'number') return;
+      if (['e', 'E', '+', '-', '.', ','].includes(e.key)) {
+        e.preventDefault();
+      }
     };
 
     /* Default 50-char cap on text inputs — names, titles, labels and
@@ -4065,6 +4116,7 @@ function renderField(
         maxLength={maxLength}
         min={numMin}
         max={numMax}
+        inputMode={f.t === 'number' ? 'numeric' : undefined}
         // `key` forces a remount when the auto-generated value changes between
         // opens of the Add modal so React picks up the new defaultValue.
         key={isAutogen ? autogenVal : undefined}
@@ -4073,6 +4125,7 @@ function renderField(
         readOnly={isAutogen || !!f.auto}
         invalid={!!err}
         onInput={handleInput}
+        onKeyDown={handleNumberKeyDown}
         className={f.auto ? 'master-field-auto' : undefined}
       />
     );

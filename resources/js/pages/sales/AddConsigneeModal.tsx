@@ -1269,22 +1269,16 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                  *         After Stage 1 save, persistStage1 then fires the
                  *         clone-from-customer backend endpoint to copy KYC
                  *         docs + owners (with file attachments).
-                 * Untick = wipe everything mirrored from the form so "data
-                 *         present iff box checked" actually holds. Stage 2
-                 *         KYC isn't cleared here because it lives on the
-                 *         server — see handleSave / refetchKyc for that.
+                 * Untick = KEEP the mirrored values in form1 + locations
+                 *         and just unlock the inputs so the user can
+                 *         tweak any field. Wiping on untick (the old
+                 *         behaviour) forced users to start over even
+                 *         though most of the customer data was almost
+                 *         certainly what they wanted — they just needed
+                 *         to edit one or two fields. Stage 2 KYC lives
+                 *         on the server so it isn't touched here either.
                  */
                 if (!v) {
-                  setForm1(prev => ({
-                    ...prev,
-                    companyName: '', legalName: '', website: '',
-                    segment: '', classification: '', risk: '',
-                    addressType: 'Registered Office',
-                    address: '', country: '', state: '', city: '', pin: '',
-                    contactName: '', designation: '', contactNo: '', email: '',
-                    whatsapp: 'Yes',
-                  }));
-                  setLocations([]);
                   setErrors1({});
                 }
               }}
@@ -1370,18 +1364,32 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 <IconChevronLeft /> Previous
               </button>
             )}
-            {stage < 3 && (
-              <button
-                className="acm-btn acm-btn-primary"
-                onClick={goNext}
-                disabled={saving}
-                style={saving ? { opacity: 0.75, cursor: 'wait' } : undefined}
-              >
-                {saving
-                  ? <><IconSpinner /> Saving…</>
-                  : <>Save &amp; Next <IconChevronRight /></>}
-              </button>
-            )}
+            {stage < 3 && (() => {
+              /* Stage 2 gate visualised — disable Save & Next when the
+               * user hasn't captured the required KYC rows yet (at
+               * least one Company DD doc + one Owner KYC entry). The
+               * goNext handler still re-runs the same check, but
+               * disabling the button up-front makes the requirement
+               * obvious without needing to click and read a toast. */
+              const stage2Gate = stage === 2 && (kycOwners.length === 0 || !kycDocs.some(d => d.kind === 'dd'));
+              const blocked = saving || stage2Gate;
+              const title = stage2Gate
+                ? 'Add at least one Company Due Diligence document and one Owner KYC entry to continue.'
+                : undefined;
+              return (
+                <button
+                  className="acm-btn acm-btn-primary"
+                  onClick={goNext}
+                  disabled={blocked}
+                  title={title}
+                  style={blocked ? { opacity: 0.55, cursor: stage2Gate ? 'not-allowed' : 'wait' } : undefined}
+                >
+                  {saving
+                    ? <><IconSpinner /> Saving…</>
+                    : <>Save &amp; Next <IconChevronRight /></>}
+                </button>
+              );
+            })()}
             {stage === 3 && (
               <button
                 className="acm-btn acm-btn-primary"
@@ -2220,19 +2228,24 @@ const Stage2 = ({
               <span className="acm-kyc-head-sub">{meta.sub}</span>
             </div>
             {/* When Same as Customer is on, KYC mirrors the customer
-                exactly — no manual additions allowed. The user must
-                untick the toggle on Stage 1 first. */}
-            <Tooltip label="Same as Customer is on — untick it to add KYC entries." disabled={!sameAsCustomer}>
+                exactly — no manual additions allowed. Swap the Add pill
+                for a clearly-locked pill so the disabled state reads as
+                "intentionally locked" instead of "broken button". */}
+            {sameAsCustomer ? (
+              <Tooltip label="Same as Customer is on — untick it on Stage 1 to add new KYC entries.">
+                <span className="acm-add-pill acm-add-pill-locked" aria-disabled="true">
+                  <IconLock /> Locked — mirroring customer
+                </span>
+              </Tooltip>
+            ) : (
               <button
                 type="button"
                 className="acm-add-pill"
-                onClick={() => { if (sameAsCustomer) return; isOwners ? onAddOwner() : onAddDoc(sub); }}
-                disabled={sameAsCustomer}
-                style={sameAsCustomer ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                onClick={() => { isOwners ? onAddOwner() : onAddDoc(sub); }}
               >
                 <IconPlus /> {meta.addLabel}
               </button>
-            </Tooltip>
+            )}
           </div>
         </div>
 
@@ -3727,6 +3740,14 @@ const IconPlus = ({ size = 11 }: { size?: number }) => (
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
   </svg>
 );
+/* Padlock — used to mark the Stage 2 KYC tables as locked while
+ * Same-as-Customer is on. Reads more clearly than a faded button. */
+const IconLock = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="11" rx="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+);
 const IconPencil = ({ size = 12 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -4643,8 +4664,13 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   background: #fff;
   border-top: 1px solid #e5e7eb;
   flex-shrink: 0;
+  /* Allow wrap so narrow viewports stack Cancel above Previous +
+     Save & Next instead of overflowing. flex-shrink stays 0 so the
+     footer never disappears even when the body is overflowing. */
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
-.acm-footer-right { display: flex; align-items: center; gap: 10px; }
+.acm-footer-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 8px; }
 
 /* When a popup-on-popup is open, blur the wizard underneath so the
  * focus is squarely on the sub-modal. Disable pointer events too so
@@ -4980,6 +5006,26 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   cursor: pointer; transition: all .15s ease;
 }
 .acm-add-pill:hover { background: #10b981; color: #fff; border-color: #10b981; }
+/* Locked variant — shown in place of the Add pill while Same-as-
+   Customer mirrors the customer's KYC. Muted slate look reads as
+   intentionally locked rather than a faded / broken button. */
+.acm-add-pill-locked {
+  background: rgba(100,116,139,0.10);
+  color: #475569;
+  border-color: rgba(100,116,139,0.30);
+  cursor: not-allowed;
+}
+.acm-add-pill-locked:hover { background: rgba(100,116,139,0.10); color: #475569; border-color: rgba(100,116,139,0.30); }
+[data-bs-theme="dark"] .acm-add-pill-locked {
+  background: rgba(148,163,184,0.10);
+  color: #cbd5e1;
+  border-color: rgba(148,163,184,0.30);
+}
+[data-bs-theme="dark"] .acm-add-pill-locked:hover {
+  background: rgba(148,163,184,0.10);
+  color: #cbd5e1;
+  border-color: rgba(148,163,184,0.30);
+}
 .acm-loc-body { padding: 0; }
 /* Horizontal scroll wrapper. -webkit-overflow-scrolling: touch smooths
    the scroll on iPad/Android, and a thin scrollbar style keeps the rail
@@ -5134,6 +5180,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-loc-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; }
 .acm-loc-sub-footer {
   display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  flex-wrap: wrap; row-gap: 8px;
   padding: 14px 20px;
   background: #f9fafb;
   border-top: 1px solid #e5e7eb;
@@ -5367,7 +5414,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-sec-pad { padding: 12px; }
 }
 
-/* ── Tablet (≤ 1024px) ───────────────────────────────────────── */
+/* ── Tablet landscape (≤ 1024px) ─────────────────────────────── */
 @media (max-width: 1024px) {
   .acm-overlay { padding: 8px; }
   .acm-wiz, .acm-pick {
@@ -5389,6 +5436,34 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-steps { flex-wrap: wrap; gap: 8px; padding: 10px 12px 8px; }
   .acm-steps-arrow { display: none; }
   .acm-step { flex: 1 1 calc(50% - 6px); min-width: 0; }
+  /* Primary CTA min-width was 180px for desktop prominence — at
+     tablet that forces the footer's button row to overflow when
+     all three buttons sit side by side. Drop the floor here. */
+  .acm-btn-primary { min-width: 0; }
+}
+
+/* ── Tablet portrait (≤ 820px) ───────────────────────────────────
+   iPad portrait + small tablets land here. Two-up form grids start
+   to crowd — collapse to single column, slim down headers, drop the
+   stepper sub-text so each step still fits two-up. */
+@media (max-width: 820px) {
+  .acm-wiz, .acm-pick {
+    max-width: calc(100vw - 12px);
+    max-height: min(97vh, calc(100vh - 10px));
+  }
+  .acm-grid-4, .acm-grid-3, .acm-grid-2 { grid-template-columns: 1fr; }
+  .acm-loc-grid-4, .acm-loc-grid-2 { grid-template-columns: 1fr 1fr; }
+  .acm-linked-grid { grid-template-columns: repeat(2, 1fr); }
+  .acm-step-sub { display: none; }
+  .acm-step-title { font-size: 11px; }
+  .acm-wiz-header { padding: 12px 16px; }
+  .acm-wiz-htitle { font-size: 17px; }
+  .acm-wiz-hsub   { font-size: 11px; }
+  .acm-wiz-body { padding: 12px 14px 14px; }
+  .acm-sec-pad { padding: 12px; }
+  /* Sub-modal stays a centered card on portrait tablet — only goes
+     fullscreen on actual phones (640 breakpoint below). */
+  .acm-loc-sub-card { width: min(96vw, 640px); max-height: min(94vh, calc(100vh - 16px)); }
 }
 
 /* ── Mobile (≤ 640px) ───────────────────────────────────────── */

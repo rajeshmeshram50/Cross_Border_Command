@@ -877,7 +877,10 @@ const C: Record<string, MasterConfig> = {
     cat: 'Party & Classification',
     fields: [
       { n: 'name', l: 'Customer Consignee Type', t: 'text', r: true, p: 'e.g. Retailer, Wholesaler' },
-      { n: 'gst_applicable', l: 'GST Applicable', t: 'select', opts: ['Yes', 'No'] },
+      // "No" listed first so a fresh form defaults to GST-not-applicable;
+      // user flips to "Yes" for taxable buyer types. Required so the
+      // server never sees a null GST flag for a customer-type row.
+      { n: 'gst_applicable', l: 'GST Applicable', t: 'select', r: true, opts: ['No', 'Yes'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
     cols: ['name', 'gst_applicable', 'status'],
