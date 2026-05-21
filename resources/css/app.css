@@ -2029,9 +2029,14 @@ body .modal.cbc-payment-modal .modal-dialog {
 .hr-mega-wrap {
   display: flex;
   flex-direction: column;
-  align-items: center;  /* keep the leaves panel centered under the strip */
+  align-items: flex-start;
   gap: 6px;
 }
+/* Leaves panel is positioned under the active category button via JS that
+   sets an inline `margin-left` (see HorizontalLayout.useLayoutEffect). The
+   wrap itself sticks to flex-start so the JS-set offset isn't fighting a
+   centering rule. */
+.hr-mega-leaves { margin-left: 0; }
 
 .hr-mega-cats {
   display: flex;
@@ -2173,13 +2178,19 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 
 
 /* Default = LIGHT mode (the app sets `data-bs-theme="dark"` only for dark;
-   light has no attribute, so the unconditional block IS the light rule). */
-[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active,
-[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] {
-  background: linear-gradient(135deg, rgba(124,92,252,0.28) 0%, rgba(124,92,252,0.50) 100%) !important;
-  color: #2e1a8a !important;
-  border: 1px solid rgba(124,92,252,0.55) !important;
+   light has no attribute, so the unconditional block IS the light rule).
+   ONLY .active gets the strong gradient pill — that represents the page the
+   user is currently on. An open dropdown (aria-expanded=true) without
+   .active gets a much softer treatment below, so the active page stays
+   visually distinct when another menu is opened on top of it.
+   Strong saturated purple + white text mirrors the vertical sidebar pill so
+   the active page reads clearly against any header background. */
+[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid #7c3aed !important;
   border-radius: 8px !important;
+  box-shadow: 0 2px 6px rgba(124, 58, 237, 0.25);
   /* Shorten the pill so it doesn't fill the full nav-link height — sits
      compactly like the HR CORE / EMP ID pill. Margin compensates for the
      padding reduction so the .nav-item total height stays close to the
@@ -2190,10 +2201,25 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   margin-bottom: 6px;
 }
 [data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active i,
-[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] i,
 [data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active span,
-[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] span {
-  color: #2e1a8a !important;
+[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active * {
+  color: #ffffff !important;
+}
+
+/* Open-dropdown indicator — subtle, no full pill. Only applies when the
+   trigger is NOT also the active page, so the active-page pill keeps its
+   strong gradient when another menu is opened on top of it. Padding +
+   margin mirror the .active block so the open pill has the SAME compact
+   height as the active pill — without these the default nav-link height
+   stretches the open pill taller than its neighbour. */
+[data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"]:not(.active) {
+  background: rgba(124,92,252,0.10) !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  margin-top: 6px;
+  margin-bottom: 6px;
 }
 
 /* DARK-mode override. No `html` prefix so the selector matches whether
@@ -2201,19 +2227,25 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
    !important and we re-target i + span explicitly because Velzon's SCSS
    nav-link rules pipe `color` through --vz-topnav-item-active-color,
    which is dynamically set per-tenant by AuthContext. */
-[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active,
-[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] {
-  background: linear-gradient(135deg, rgba(124,92,252,0.22) 0%, rgba(124,92,252,0.42) 100%) !important;
-  border: 1px solid rgba(124,92,252,0.45) !important;
+[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+  border: 1px solid #7c3aed !important;
   color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.35);
 }
 [data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active i,
-[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] i,
 [data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active span,
-[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] span,
-[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active *,
-[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] * {
+[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active * {
   color: #ffffff !important;
+}
+[data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"]:not(.active) {
+  background: rgba(124,92,252,0.16) !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  margin-top: 6px;
+  margin-bottom: 6px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -2222,29 +2254,39 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
    Scoped to direct `.nav-item > .nav-link` children of `.navbar-nav` so
    we only hit top-level entries, not the indented sub-links (.nav-sm).
    ───────────────────────────────────────────────────────────────────── */
-/* Default = light mode (see note on horizontal block above). */
-[data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active,
-[data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] {
-  background: linear-gradient(135deg, rgba(124,92,252,0.28) 0%, rgba(124,92,252,0.50) 100%);
-  color: #2e1a8a !important;
-  border-radius: 8px;
-  border: 1px solid rgba(124,92,252,0.55);
+/* Default = light mode (see note on horizontal block above). Only .active
+   gets the strong pill; open-but-not-active uses a softer wash.
+   Strong saturated purple + white text so the pill reads clearly against
+   ANY sidebar background — light/white sidebars used to wash this out. */
+[data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+  color: #ffffff !important;
+  border-radius: 8px !important;
+  border: 1px solid #7c3aed !important;
   margin: 2px 10px;
+  box-shadow: 0 2px 6px rgba(124, 58, 237, 0.25);
 }
 [data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active i,
-[data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] i {
-  color: #2e1a8a !important;
-}
-[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active,
-[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] {
-  background: linear-gradient(135deg, rgba(124,92,252,0.22) 0%, rgba(124,92,252,0.42) 100%);
-  border-color: rgba(124,92,252,0.45);
-}
-[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active,
-[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"],
-[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active *,
-[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"] * {
+[data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active span,
+[data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active * {
   color: #ffffff !important;
+}
+[data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"]:not(.active) {
+  background: rgba(124,92,252,0.10);
+  border-radius: 8px;
+  margin: 2px 10px;
+}
+[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+  border-color: #7c3aed !important;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.35);
+}
+[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active,
+[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active * {
+  color: #ffffff !important;
+}
+[data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"]:not(.active) {
+  background: rgba(124,92,252,0.16);
 }
 
 /* ─────────────────────────────────────────────────────────────────────

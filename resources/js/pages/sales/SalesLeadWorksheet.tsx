@@ -5,6 +5,10 @@ import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import AddNewLeadModal, { type LeadFormValues } from './AddNewLeadModal';
+import AssignLeadsModal from './AssignLeadsModal';
+import LeadDetailsModal from './LeadDetailsModal';
+import LeadDistributionModal from './LeadDistributionModal';
+import LeadFilterModal, { type LeadFilters } from './LeadFilterModal';
 
 /* Shape returned by GET /sales/leads — Laravel paginator items. Mapped to
  * the table's Lead type below via mapServerToLead(). */
@@ -48,6 +52,7 @@ type LeadStatus = 'qualified' | 'disqualified';
 type TabKey     = 'qualified' | 'disqualified' | 'all';
 
 type Lead = {
+  id:   number;           // DB primary key — needed for /sales/leads/assign payloads
   type: string;
   date: string;
   source: string;
@@ -75,6 +80,34 @@ const initials = (name: string): string => {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 };
 
+/* Build human-readable chips for whatever filter fields are active. Looks
+ * each value up against the parent's cached options list so the chip shows
+ * the label ('Inquiry Required') rather than the wire value ('1'). */
+type FilterChip = { key: string; label: string; value: string };
+const renderFilterChips = (
+  f: LeadFilters,
+  o: {
+    stages: Array<{ value: string; label: string }>;
+    platforms: Array<{ value: string; label: string }>;
+    queryTypes: Array<{ value: string; label: string }>;
+    countries: Array<{ value: string; label: string }>;
+    customers: Array<{ value: string; label: string }>;
+  },
+): FilterChip[] => {
+  const lookup = (
+    list: Array<{ value: string; label: string }>,
+    v: string | undefined,
+  ): string => list.find(o => o.value === v)?.label ?? v ?? '';
+  const out: FilterChip[] = [];
+  if (f.lead_stage_id)      out.push({ key: 'lead_stage_id',      label: 'Stage',    value: lookup(o.stages,     f.lead_stage_id) });
+  if (f.platform)           out.push({ key: 'platform',           label: 'Platform', value: lookup(o.platforms,  f.platform) });
+  if (f.query_type)         out.push({ key: 'query_type',         label: 'Type',     value: lookup(o.queryTypes, f.query_type) });
+  if (f.sender_country_iso) out.push({ key: 'sender_country_iso', label: 'Country',  value: lookup(o.countries,  f.sender_country_iso) });
+  if (f.customer_id)        out.push({ key: 'customer_id',        label: 'Customer', value: lookup(o.customers,  f.customer_id) });
+  if (f.start_date && f.end_date) out.push({ key: 'start_date', label: 'Date', value: `${f.start_date} → ${f.end_date}` });
+  return out;
+};
+
 /* Convert a server lead row to the table's display shape. The columns
  * use placeholder dashes for absent values to match the existing styling
  * (the in-page '—' tests check string equality). */
@@ -84,6 +117,7 @@ const mapServerToLead = (r: ServerLead): Lead => {
     ? new Date(dateSrc).toLocaleDateString('en-GB') // DD/MM/YYYY
     : '—';
   return {
+    id:       r.id,
     type:     r.query_type || 'Manual',
     date,
     source:   r.platform || '—',
@@ -133,6 +167,33 @@ export default function SalesLeadWorksheet() {
   // we just toast and could append the new lead to a local list.
   const [addLeadOpen, setAddLeadOpen] = useState(false);
 
+  // Assign / Distribute / Filter modals — the lead worksheet's three
+  // banner-action modals. Assign supports three modes (single/selection/
+  // filters); the others are mode-free.
+  const [assignModal, setAssignModal] = useState<{
+    open: boolean;
+    mode: 'single' | 'selection' | 'filters';
+    leadId?: number | null;
+    leadIds?: number[];
+  }>({ open: false, mode: 'filters' });
+  const [distributeOpen, setDistributeOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  // Quick-view (eye icon) — fetches GET /sales/leads/{id} for the picked
+  // row and renders all the row's details in a read-only card layout.
+  const [viewLeadId, setViewLeadId] = useState<number | null>(null);
+
+  // Filter modal options + active filters. Options are fetched once when
+  // the page mounts so opening the modal is instant.
+  const [filterOptions, setFilterOptions] = useState<{
+    stages: Array<{ value: string; label: string }>;
+    platforms: Array<{ value: string; label: string }>;
+    queryTypes: Array<{ value: string; label: string }>;
+    countries: Array<{ value: string; label: string }>;
+    customers: Array<{ value: string; label: string }>;
+  }>({ stages: [], platforms: [], queryTypes: [], countries: [], customers: [] });
+  const [activeFilters, setActiveFilters] = useState<LeadFilters>({});
+
   // Sync-config state. The Sync button only renders when:
   //   - LEAD_SYNC_BRANCH_ID matches the user's branch (or =all), AND
   //   - at least one INDIAMART_*_KEY is configured.
@@ -146,6 +207,26 @@ export default function SalesLeadWorksheet() {
     api.get<{ enabled: boolean; labels: string[] }>('/sales/leads/sync/config')
       .then(r => setSyncCfg(r.data))
       .catch(() => { /* silent — button just stays hidden */ });
+  }, []);
+
+  // Filter modal options — fetch once. The modal can open instantly,
+  // and the Assign/Distribute modals reuse `platforms` from this too.
+  useEffect(() => {
+    api.get<{
+      stages:      Array<{ value: string; label: string }>;
+      platforms:   string[];
+      query_types: string[];
+      countries:   Array<{ value: string; label: string }>;
+      customers:   Array<{ value: string; label: string }>;
+    }>('/sales/leads/filter-options')
+      .then(r => setFilterOptions({
+        stages: r.data.stages,
+        platforms:  (r.data.platforms  ?? []).map(p => ({ value: p, label: p })),
+        queryTypes: (r.data.query_types ?? []).map(t => ({ value: t, label: t })),
+        countries:  r.data.countries ?? [],
+        customers:  r.data.customers ?? [],
+      }))
+      .catch(() => { /* silent — filter modal degrades gracefully */ });
   }, []);
 
   // Inject Google Fonts (DM Sans + Inter) once on mount — matches the
@@ -172,9 +253,10 @@ export default function SalesLeadWorksheet() {
   // moved (tab / search / per-page).
   const countSigRef = useRef<string>('');
 
-  // Fetch leads from the API whenever tab / search / pagination changes.
+  // Fetch leads from the API whenever tab / search / pagination / filters change.
   const fetchLeads = useCallback(async () => {
-    const countSig = `${tab}|${debouncedQ}|${rpp}`;
+    const filtersSig = JSON.stringify(activeFilters);
+    const countSig = `${tab}|${debouncedQ}|${rpp}|${filtersSig}`;
     const withCounts = countSigRef.current !== countSig ? 1 : 0;
     countSigRef.current = countSig;
 
@@ -192,6 +274,9 @@ export default function SalesLeadWorksheet() {
           page,
           per_page: rpp,
           with_counts: withCounts,
+          // Spread active filters — undefined values are dropped by axios's
+          // paramsSerializer so empty fields don't bloat the query string.
+          ...activeFilters,
         },
       });
       setLeads((data.data ?? []).map(mapServerToLead));
@@ -204,7 +289,7 @@ export default function SalesLeadWorksheet() {
     } finally {
       setLoading(false);
     }
-  }, [tab, debouncedQ, page, rpp, toast]);
+  }, [tab, debouncedQ, page, rpp, toast, activeFilters]);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
@@ -244,9 +329,6 @@ export default function SalesLeadWorksheet() {
   };
 
   const clearSelection = () => setSelected(new Set());
-
-  /* ── Stub action handlers (toast-only until real flows ship) ── */
-  const stubToast = (msg: string) => toast.info('Coming next', msg);
 
   const onAddLead       = () => setAddLeadOpen(true);
   const onSaveNewLead   = async (lead: LeadFormValues, pickedCustomerDbId?: number | null) => {
@@ -305,9 +387,9 @@ export default function SalesLeadWorksheet() {
       setSyncing(false);
     }
   };
-  const onAssignLeads   = () => stubToast('Assign Leads — opens the Assign Leads modal');
-  const onLeadDistr     = () => stubToast('Lead Distribution page — coming next');
-  const onFilter        = () => stubToast('Filter modal — coming next');
+  const onAssignLeads   = () => setAssignModal({ open: true, mode: 'filters' });
+  const onLeadDistr     = () => setDistributeOpen(true);
+  const onFilter        = () => setFilterOpen(true);
   // Opens the Sales Matrix detail page (Stage 1) for this opportunity.
   // The clicked row travels in router state so the detail page can render
   // the customer header without a second fetch.
@@ -325,8 +407,10 @@ export default function SalesLeadWorksheet() {
     });
   };
 
-  const onViewLead      = (l: Lead) => openMatrixDetail(l);
-  const onAssignOne     = (l: Lead) => stubToast(`Assign lead ${l.oppId} to a salesperson`);
+  // Eye-icon → quick-view modal. The row-click anywhere else still opens
+  // the full matrix detail page; the eye icon is the lightweight peek.
+  const onViewLead      = (l: Lead) => setViewLeadId(l.id);
+  const onAssignOne     = (l: Lead) => setAssignModal({ open: true, mode: 'single', leadId: l.id });
   const onOpenLead      = (l: Lead) => openMatrixDetail(l);
   const onOpenOpp       = (oppId: string) => {
     // Find the lead in the current page; the table is server-paginated so
@@ -336,15 +420,47 @@ export default function SalesLeadWorksheet() {
     if (lead) openMatrixDetail(lead);
     else navigate(`/sales/matrix/${oppId}/stage/1`);
   };
-  const onBulkAssign    = () => stubToast(`Bulk-assign ${selected.size} leads`);
-  const onBulkCTQ       = () => stubToast(`Bulk-convert ${selected.size} leads to Qualified`);
+  const onBulkAssign    = () => {
+    // Translate the selection (Set of OPP-#### display codes) into the
+    // numeric DB ids the assign endpoint expects.
+    const ids = leads.filter(l => selected.has(l.oppId)).map(l => l.id);
+    if (ids.length === 0) {
+      toast.warning('Nothing selected', 'Tick at least one row to bulk-assign');
+      return;
+    }
+    setAssignModal({ open: true, mode: 'selection', leadIds: ids });
+  };
+  const onBulkCTQ       = async () => {
+    const ids = leads.filter(l => selected.has(l.oppId) && l.status === 'disqualified').map(l => l.id);
+    if (ids.length === 0) {
+      toast.warning('Nothing to convert', 'Select disqualified rows first');
+      return;
+    }
+    try {
+      const { data } = await api.post<{ status: boolean; converted: number }>(
+        '/sales/leads/convert-to-qualified',
+        { lead_ids: ids },
+      );
+      toast.success('Converted', `${data.converted} lead(s) moved to Qualified`);
+      clearSelection();
+      fetchLeads();
+    } catch (e: any) {
+      toast.error('Convert failed', e?.response?.data?.message ?? 'Could not convert leads');
+    }
+  };
 
-  // CTQ for disqualified — opens confirmation, then "converts" (toast).
+  // CTQ for a single disqualified row — confirmation dialog → backend.
   const onAskCTQ      = (l: Lead) => setCtqLead(l);
-  const onConfirmCTQ  = () => {
+  const onConfirmCTQ  = async () => {
     if (!ctqLead) return;
-    toast.success('Converted', `${ctqLead.oppId} would be moved to Qualified`);
-    setCtqLead(null);
+    try {
+      await api.post('/sales/leads/convert-to-qualified', { lead_ids: [ctqLead.id] });
+      toast.success('Converted', `${ctqLead.oppId} moved to Qualified`);
+      setCtqLead(null);
+      fetchLeads();
+    } catch (e: any) {
+      toast.error('Convert failed', e?.response?.data?.message ?? 'Could not convert lead');
+    }
   };
 
   /* ── No-access early return ── */
@@ -422,9 +538,18 @@ export default function SalesLeadWorksheet() {
             </button>
           )}
           <span className="lwp-banner-divider" />
-          <button className="lwp-bact lwp-bact-filter" title="Filter Leads" onClick={onFilter}>
+          <button
+            className={`lwp-bact lwp-bact-filter ${Object.values(activeFilters).some(v => v) ? 'lwp-bact-filter-active' : ''}`}
+            title="Filter Leads"
+            onClick={onFilter}
+          >
             <IconFilter />
             Filter
+            {Object.values(activeFilters).filter(v => v).length > 0 && (
+              <span className="lwp-bact-badge">
+                {Object.values(activeFilters).filter(v => v).length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -455,6 +580,41 @@ export default function SalesLeadWorksheet() {
           />
         </div>
       </div>
+
+      {/* Active-filter chips — one per applied field, with an inline × to
+          drop just that filter. Rendered above the table so the user can
+          see at a glance why the row count shrank. */}
+      {Object.values(activeFilters).some(v => v) && (
+        <div className="lwp-chip-strip">
+          <span className="lwp-chip-strip-label">Filters:</span>
+          {renderFilterChips(activeFilters, filterOptions).map(c => (
+            <span key={c.key} className="lwp-chip">
+              <span className="lwp-chip-key">{c.label}:</span>
+              <span className="lwp-chip-val">{c.value}</span>
+              <button
+                className="lwp-chip-x"
+                aria-label={`Clear ${c.label}`}
+                onClick={() => {
+                  setActiveFilters(prev => {
+                    const next = { ...prev };
+                    delete next[c.key as keyof LeadFilters];
+                    return next;
+                  });
+                  setPage(1);
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <button
+            className="lwp-chip-clear-all"
+            onClick={() => { setActiveFilters({}); setPage(1); }}
+          >
+            Clear all
+          </button>
+        </div>
+      )}
 
       {/* ── Table ── */}
       <div className="lwp-table-card">
@@ -668,47 +828,73 @@ export default function SalesLeadWorksheet() {
       {ctqLead && (
         <div className="lwp-ctq-overlay" onMouseDown={() => setCtqLead(null)}>
           <div className="lwp-ctq-modal" onMouseDown={e => e.stopPropagation()}>
-            <div className="lwp-ctq-header">
-              <span className="lwp-ctq-header-glow" />
-              <div className="lwp-ctq-header-left">
-                <div className="lwp-ctq-header-icon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
+            <button className="lwp-ctq-close" onClick={() => setCtqLead(null)} aria-label="Close">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            {/* Big illustrated icon — sits half over the body to draw the eye
+                to "this is a state-change confirmation, not a generic dialog". */}
+            <div className="lwp-ctq-hero">
+              <div className="lwp-ctq-hero-ring">
+                <div className="lwp-ctq-hero-icon">
+                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                 </div>
-                <div>
-                  <div className="lwp-ctq-header-title">Convert to Qualified</div>
-                  <div className="lwp-ctq-header-sub">Lead qualification confirmation</div>
-                </div>
               </div>
-              <button className="lwp-ctq-close" onClick={() => setCtqLead(null)}>
-                <IconX />
-              </button>
             </div>
+
             <div className="lwp-ctq-body">
-              <div className="lwp-ctq-row">
-                <div className="lwp-ctq-row-icon">
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="1.8">
-                    <circle cx="12" cy="12" r="10" />
-                    <polyline points="12 6 12 12 16 14" />
+              <div className="lwp-ctq-title">Convert this lead to Qualified?</div>
+              <div className="lwp-ctq-sub">
+                Lead <span className="lwp-ctq-opp">{ctqLead.oppId}</span> will move to the Qualified bucket and reappear in the sales pipeline.
+              </div>
+
+              {/* Disqualified → Qualified — visual transition arrow */}
+              <div className="lwp-ctq-transition">
+                <span className="lwp-ctq-pill lwp-ctq-pill-from">
+                  <span className="lwp-ctq-pill-dot" />
+                  Disqualified
+                </span>
+                <span className="lwp-ctq-arrow">
+                  <svg width="18" height="14" viewBox="0 0 24 18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="3" y1="9" x2="20" y2="9" />
+                    <polyline points="14 3 20 9 14 15" />
                   </svg>
-                </div>
-                <div>
-                  <div className="lwp-ctq-row-title">Convert this lead to Qualified?</div>
-                  <div className="lwp-ctq-row-sub">
-                    Lead <span className="lwp-ctq-opp">{ctqLead.oppId}</span> will be moved from{' '}
-                    <span style={{ color: '#e11d48', fontWeight: 600 }}>Disqualified</span> to{' '}
-                    <span style={{ color: '#059669', fontWeight: 600 }}>Qualified</span>. This action can be reversed.
+                </span>
+                <span className="lwp-ctq-pill lwp-ctq-pill-to">
+                  <span className="lwp-ctq-pill-dot" />
+                  Qualified
+                </span>
+              </div>
+
+              {/* Lead summary card */}
+              <div className="lwp-ctq-lead-card">
+                <div className="lwp-ctq-lead-avatar">{initials(ctqLead.customer)}</div>
+                <div className="lwp-ctq-lead-meta">
+                  <div className="lwp-ctq-lead-name">{ctqLead.customer}</div>
+                  <div className="lwp-ctq-lead-row">
+                    <span>{ctqLead.product === '—' ? 'No product specified' : ctqLead.product}</span>
+                    <span className="lwp-ctq-lead-dot" />
+                    <span>{ctqLead.country}</span>
                   </div>
                 </div>
               </div>
-              <div className="lwp-ctq-lead-info">
-                <strong>{ctqLead.customer}</strong> · {ctqLead.product === '—' ? 'No product specified' : ctqLead.product} · {ctqLead.country}
+
+              <div className="lwp-ctq-hint">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 8v4" /><path d="M12 16h.01" />
+                </svg>
+                You can reverse this any time from the Qualified tab.
               </div>
+
               <div className="lwp-ctq-actions">
                 <button className="lwp-ctq-btn-cancel" onClick={() => setCtqLead(null)}>Cancel</button>
                 <button className="lwp-ctq-btn-confirm" onClick={onConfirmCTQ}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginRight: 5, verticalAlign: 'middle' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                   Convert to Qualified
@@ -725,6 +911,42 @@ export default function SalesLeadWorksheet() {
         open={addLeadOpen}
         onClose={() => setAddLeadOpen(false)}
         onSave={onSaveNewLead}
+      />
+
+      <AssignLeadsModal
+        open={assignModal.open}
+        mode={assignModal.mode}
+        leadId={assignModal.leadId ?? null}
+        leadIds={assignModal.leadIds ?? []}
+        /* Account list comes from the .env-configured IndiaMart key labels
+         * for this branch (via /sales/leads/sync/config). If nothing is
+         * configured for the branch, the Account field hides itself. */
+        accountLabels={syncCfg.labels}
+        onClose={() => setAssignModal(s => ({ ...s, open: false }))}
+        onAssigned={() => { clearSelection(); fetchLeads(); }}
+      />
+
+      <LeadDistributionModal
+        open={distributeOpen}
+        platforms={filterOptions.platforms.map(p => p.value)}
+        queryTypes={filterOptions.queryTypes.map(t => t.value)}
+        countries={filterOptions.countries}
+        onClose={() => setDistributeOpen(false)}
+        onDistributed={() => { clearSelection(); fetchLeads(); }}
+      />
+
+      <LeadFilterModal
+        open={filterOpen}
+        initial={activeFilters}
+        options={filterOptions}
+        onClose={() => setFilterOpen(false)}
+        onApply={(f) => { setActiveFilters(f); setPage(1); }}
+      />
+
+      <LeadDetailsModal
+        open={viewLeadId !== null}
+        leadId={viewLeadId}
+        onClose={() => setViewLeadId(null)}
       />
     </div>
   );
@@ -953,6 +1175,49 @@ const SCOPED_CSS = `
   transform: translateY(-2px);
   box-shadow: 0 0 0 3px rgba(6,182,212,.5), 0 8px 28px rgba(6,182,212,.6), 0 1px 0 rgba(255,255,255,.2) inset;
 }
+.lwp-root .lwp-bact-filter-active {
+  box-shadow: 0 0 0 2px #facc15, 0 6px 20px rgba(8,145,178,.4);
+}
+.lwp-root .lwp-bact-badge {
+  background: #facc15; color: #422006;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px; font-size: 10px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-left: 4px;
+}
+
+/* ─── Active filter chips ─── */
+.lwp-root .lwp-chip-strip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin: -2px 0 8px;
+}
+.lwp-root .lwp-chip-strip-label {
+  font-size: 11px; font-weight: 600; color: #64748b; margin-right: 2px;
+}
+.lwp-root .lwp-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #ecfeff; border: 1px solid #a5f3fc; color: #0e7490;
+  padding: 3px 4px 3px 10px; border-radius: 999px;
+  font-size: 11px;
+}
+.lwp-root .lwp-chip-key { font-weight: 600; opacity: .8; }
+.lwp-root .lwp-chip-val { font-weight: 500; }
+.lwp-root .lwp-chip-x {
+  width: 16px; height: 16px; border: none; background: rgba(8,145,178,.15);
+  color: #0e7490; border-radius: 50%; cursor: pointer; font-size: 13px;
+  line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  transition: background .12s;
+}
+.lwp-root .lwp-chip-x:hover { background: rgba(8,145,178,.32); }
+.lwp-root .lwp-chip-clear-all {
+  background: transparent; border: none; color: #ef4444; font-size: 11px;
+  font-weight: 600; cursor: pointer; padding: 3px 8px; border-radius: 6px;
+}
+.lwp-root .lwp-chip-clear-all:hover { background: rgba(239,68,68,.08); }
+[data-bs-theme="dark"] .lwp-root .lwp-chip {
+  background: rgba(8,145,178,.20); border-color: rgba(34,211,238,.35); color: #67e8f9;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-chip-x { background: rgba(34,211,238,.18); color: #67e8f9; }
 
 /* ─── Pre-table: pills + search ─── */
 .lwp-root .lwp-pre-table {
@@ -1276,14 +1541,17 @@ const SCOPED_CSS = `
 /* ─── CTQ confirmation modal ─── */
 .lwp-ctq-overlay {
   position: fixed; inset: 0; z-index: 9500;
-  background: rgba(15,23,42,.45);
+  background: rgba(15,23,42,.55);
   backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
+  padding: 16px;
 }
 .lwp-ctq-modal {
-  background: #fff; border-radius: 18px; width: min(92vw, 440px);
-  box-shadow: 0 24px 60px rgba(8,145,178,.2), 0 8px 24px rgba(0,0,0,.1);
-  overflow: hidden;
+  position: relative;
+  background: #fff;
+  border-radius: 20px; width: min(94vw, 460px);
+  box-shadow: 0 24px 60px rgba(8,145,178,.22), 0 8px 24px rgba(0,0,0,.12);
+  overflow: visible;
   font-family: 'DM Sans', 'Inter', sans-serif;
   animation: lwpCtqIn .22s cubic-bezier(.22,1,.36,1);
 }
@@ -1291,82 +1559,139 @@ const SCOPED_CSS = `
   from { opacity: 0; transform: scale(.93) translateY(10px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
-.lwp-ctq-header {
-  background: linear-gradient(135deg, #0891b2, #0e7490, #155e75);
-  padding: 18px 22px;
-  display: flex; align-items: center; justify-content: space-between;
-  position: relative; overflow: hidden;
+.lwp-ctq-close {
+  position: absolute; top: 14px; right: 14px;
+  width: 30px; height: 30px; border-radius: 9px; border: none;
+  background: #f1f5f9; color: #475569; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s; z-index: 2;
 }
-.lwp-ctq-header-glow {
-  position: absolute; right: -20px; top: -20px;
-  width: 90px; height: 90px; border-radius: 50%;
-  background: rgba(255,255,255,.07); pointer-events: none;
+.lwp-ctq-close:hover { background: #e2e8f0; color: #0f172a; }
+
+/* Hero icon — emerald gradient circle floating above the body so the
+   confirmation feels celebratory rather than a generic dialog. */
+.lwp-ctq-hero {
+  display: flex; justify-content: center;
+  padding: 28px 0 8px;
 }
-.lwp-ctq-header-left {
-  display: flex; align-items: center; gap: 12px; z-index: 1;
-}
-.lwp-ctq-header-icon {
-  width: 38px; height: 38px; border-radius: 10px;
-  background: rgba(255,255,255,.2);
-  border: 1px solid rgba(255,255,255,.3);
+.lwp-ctq-hero-ring {
+  width: 84px; height: 84px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(34,197,94,.15), rgba(34,197,94,0) 70%);
   display: flex; align-items: center; justify-content: center;
 }
-.lwp-ctq-header-title {
-  font-size: 14px; font-weight: 800; color: #fff; letter-spacing: -.2px;
+.lwp-ctq-hero-icon {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
+  box-shadow: 0 10px 28px rgba(34,197,94,.35), 0 0 0 5px rgba(34,197,94,.10);
+  display: flex; align-items: center; justify-content: center;
+  animation: lwpCtqPop .35s cubic-bezier(.34,1.56,.64,1) .05s both;
 }
-.lwp-ctq-header-sub {
-  font-size: 10.5px; color: rgba(255,255,255,.7); margin-top: 2px;
+@keyframes lwpCtqPop {
+  from { transform: scale(0); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
 }
-.lwp-ctq-close {
-  width: 28px; height: 28px; border-radius: 8px; border: none;
-  background: rgba(255,255,255,.18); color: #fff; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; z-index: 1;
+
+.lwp-ctq-body { padding: 4px 26px 24px; text-align: center; }
+.lwp-ctq-title {
+  font-size: 17px; font-weight: 700; color: #0f172a;
+  letter-spacing: -.3px; margin-bottom: 8px;
 }
-.lwp-ctq-body { padding: 24px 22px; }
-.lwp-ctq-row {
-  display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px;
-}
-.lwp-ctq-row-icon {
-  width: 44px; height: 44px; border-radius: 12px;
-  background: linear-gradient(135deg, #ecfeff, #cffafe);
-  border: 1.5px solid #a5f3fc;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-}
-.lwp-ctq-row-title {
-  font-size: 13.5px; font-weight: 700; color: #0f172a; margin-bottom: 6px;
-}
-.lwp-ctq-row-sub {
-  font-size: 12px; color: #64748b; line-height: 1.6;
+.lwp-ctq-sub {
+  font-size: 12.5px; color: #64748b; line-height: 1.55;
+  margin-bottom: 18px;
 }
 .lwp-ctq-opp {
-  font-weight: 700; color: #0891b2; font-family: 'JetBrains Mono', monospace;
+  font-weight: 700; color: #0891b2;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #ecfeff; padding: 1px 7px; border-radius: 5px;
 }
-.lwp-ctq-lead-info {
-  background: linear-gradient(110deg, #f0fdfe, #ecfeff);
-  border: 1px solid #a5f3fc; border-radius: 10px;
-  padding: 12px 14px; margin-bottom: 20px;
-  font-size: 12px; color: #0e7490;
+
+/* From / To pill row */
+.lwp-ctq-transition {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin-bottom: 18px;
 }
+.lwp-ctq-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600;
+  border: 1.5px solid;
+}
+.lwp-ctq-pill-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor; opacity: .9;
+}
+.lwp-ctq-pill-from {
+  background: #fef2f2; color: #b91c1c; border-color: #fecaca;
+}
+.lwp-ctq-pill-to {
+  background: #f0fdf4; color: #15803d; border-color: #bbf7d0;
+}
+.lwp-ctq-arrow {
+  display: inline-flex; align-items: center; color: #0891b2;
+  animation: lwpCtqArrow 1.6s ease-in-out infinite;
+}
+@keyframes lwpCtqArrow {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(3px); }
+}
+
+/* Lead summary card */
+.lwp-ctq-lead-card {
+  display: flex; align-items: center; gap: 12px;
+  background: linear-gradient(135deg, #f0fdfe, #ecfeff);
+  border: 1px solid #a5f3fc; border-radius: 12px;
+  padding: 12px 14px; margin-bottom: 14px; text-align: left;
+}
+.lwp-ctq-lead-avatar {
+  width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
+  background: linear-gradient(135deg, #0891b2, #0e7490);
+  color: #fff; font-size: 12.5px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 12px rgba(8,145,178,.25);
+}
+.lwp-ctq-lead-meta { flex: 1; min-width: 0; }
+.lwp-ctq-lead-name {
+  font-size: 13px; font-weight: 700; color: #0f172a;
+  line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lwp-ctq-lead-row {
+  display: flex; align-items: center; gap: 8px; margin-top: 4px;
+  font-size: 11px; color: #475569;
+}
+.lwp-ctq-lead-dot {
+  width: 3px; height: 3px; border-radius: 50%; background: #94a3b8;
+  flex-shrink: 0;
+}
+
+.lwp-ctq-hint {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; color: #94a3b8; margin-bottom: 18px;
+}
+
 .lwp-ctq-actions {
-  display: flex; gap: 10px; justify-content: flex-end;
+  display: flex; gap: 10px; justify-content: center;
 }
 .lwp-ctq-btn-cancel {
-  padding: 10px 22px; border-radius: 10px;
+  flex: 1; max-width: 140px;
+  padding: 11px 22px; border-radius: 10px;
   border: 1.5px solid #e2e8f0; background: #fff;
-  color: #64748b; font-family: inherit;
+  color: #475569; font-family: inherit;
   font-size: 12.5px; font-weight: 600; cursor: pointer;
   transition: all .15s;
 }
-.lwp-ctq-btn-cancel:hover { border-color: #94a3b8; }
+.lwp-ctq-btn-cancel:hover { border-color: #94a3b8; background: #f8fafc; }
 .lwp-ctq-btn-confirm {
-  padding: 10px 24px; border-radius: 10px; border: none;
-  background: linear-gradient(135deg, #0891b2, #0e7490);
+  flex: 1.4; padding: 11px 24px; border-radius: 10px; border: none;
+  background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
   color: #fff; font-family: inherit;
   font-size: 12.5px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 3px 12px rgba(8,145,178,.4);
+  box-shadow: 0 4px 14px rgba(34,197,94,.35);
   transition: all .15s;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
 }
-.lwp-ctq-btn-confirm:hover { transform: translateY(-1px); }
+.lwp-ctq-btn-confirm:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.lwp-ctq-btn-confirm:active { transform: translateY(0); }
 
 /* ════════════════════════════════════════════════════════════════════
    Dark-mode adaptation — every panel re-tints against the deep slate
