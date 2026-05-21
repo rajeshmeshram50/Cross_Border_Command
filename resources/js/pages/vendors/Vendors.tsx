@@ -65,12 +65,23 @@ type ApiVendor = {
   } | null;
 };
 
+/* Per-type accent colors. Anything not listed falls back to the indigo
+ * accent below — previously the fallback was a muted slate that became
+ * almost invisible on the dark theme's already-dark table row. */
 const TYPE_COLORS: Record<string, string> = {
-  Genuine:    '#16a34a',
-  Verified:   '#2563eb',
-  Pending:    '#f59e0b',
-  Blacklisted:'#dc2626',
+  Genuine:           '#16a34a',
+  Verified:          '#2563eb',
+  Pending:           '#f59e0b',
+  Blacklisted:       '#dc2626',
+  'Service Provider':'#8b5cf6',
+  Manufacturer:      '#0ea5e9',
+  Distributor:       '#06b6d4',
+  Wholesaler:        '#14b8a6',
+  Trader:            '#a855f7',
+  Importer:          '#ec4899',
+  Exporter:          '#f97316',
 };
+const TYPE_FALLBACK_COLOR = '#6366f1';
 
 const AVATAR_COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#9b72cf'];
 
@@ -246,11 +257,14 @@ export default function Vendors() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       cell: (info: any) => {
         const v: Vendor = info.row.original;
-        const typeColor = TYPE_COLORS[v.type] || '#475569';
+        const typeColor = TYPE_COLORS[v.type] || TYPE_FALLBACK_COLOR;
+        /* Bumped tint/border alpha from 15/40 → 28/66 so the chip stays
+         * legible against both the light and dark table rows; the
+         * previous values washed out completely on the dark theme. */
         return (
           <span
             className="badge rounded-pill fw-semibold px-3 py-2 fs-13"
-            style={{ background: `${typeColor}15`, color: typeColor, border: `1px solid ${typeColor}40` }}
+            style={{ background: `${typeColor}28`, color: typeColor, border: `1px solid ${typeColor}66` }}
           >
             {v.type}
           </span>

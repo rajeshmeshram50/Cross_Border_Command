@@ -1671,7 +1671,6 @@ export default function AddVendorModal(props: {
                       <span className="avm-id-pair"><span className="avm-id-k">STATE :</span> <span className="avm-id-v">{labelFor(state, stateOpts) || '—'}</span></span>
                       <span className="avm-id-pair"><span className="avm-id-k">STATE CODE :</span> <span className="avm-id-v">{stateCode || '—'}</span></span>
                       <span className="avm-id-pair"><span className="avm-id-k">CITY :</span> <span className="avm-id-v">{city || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">PINCODE :</span> <span className="avm-id-v">{pincode || '—'}</span></span>
                     </div>
                     <div className="avm-id-summary-row">
                       <span className="avm-id-pair"><span className="avm-id-k">PRIMARY CONTACT :</span> <span className="avm-id-v">{contactName || '—'}</span></span>
@@ -1846,7 +1845,6 @@ export default function AddVendorModal(props: {
                 <OwnerKycTable
                   rows={ownerRows}
                   onRemove={removeOwnerRow}
-                  onClearFile={(id) => setOwnerRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
                 />
               )}
               {kycTab === 'license' && (
@@ -2604,7 +2602,7 @@ function DdTable(props: {
           {props.rows.map((r, i) => (
             <tr key={r.id}>
               <td>{String(i + 1).padStart(2, '0')}</td>
-              <td><span className="badge bg-light text-warning-emphasis border" style={{ fontFamily: 'monospace', padding: '4px 10px' }}>{r.code}</span></td>
+              <td><span className="avm-auto-code">{r.code}</span></td>
               <td><strong>{r.documentName}</strong></td>
               <td>{r.issuingAuthority}</td>
               <td>{r.expiry || 'N/A'}</td>
@@ -2681,7 +2679,7 @@ function OwnerKycTable(props: {
           {props.rows.map((r, i) => (
             <tr key={r.id}>
               <td>{String(i + 1).padStart(2, '0')}</td>
-              <td><span className="badge bg-light text-warning-emphasis border" style={{ fontFamily: 'monospace', padding: '4px 10px' }}>{r.code}</span></td>
+              <td><span className="avm-auto-code">{r.code}</span></td>
               <td><strong>{r.documentName}</strong></td>
               <td>{r.issuingAuthority}</td>
               <td><span className="font-monospace fs-13">{r.documentNumber || '—'}</span></td>
@@ -2746,7 +2744,7 @@ function TradeLicenseTable(props: {
             return (
               <tr key={r.id}>
                 <td>{String(i + 1).padStart(2, '0')}</td>
-                <td><span className="badge bg-light text-warning-emphasis border" style={{ fontFamily: 'monospace', padding: '4px 10px' }}>{r.code}</span></td>
+                <td><span className="avm-auto-code">{r.code}</span></td>
                 <td><strong>{r.licenseType}</strong></td>
                 <td><span className="font-monospace fs-13">{r.licenseNumber || '—'}</span></td>
                 <td>{r.issuingAuthority}</td>
@@ -2974,7 +2972,7 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
           {props.rows.map((r, i) => (
             <tr key={r.id}>
               <td>{String(i + 1).padStart(2, '0')}</td>
-              <td><span className="badge bg-light text-warning-emphasis border" style={{ fontFamily: 'monospace', padding: '4px 10px' }}>{r.productCode}</span></td>
+              <td><span className="avm-auto-code">{r.productCode}</span></td>
               <td><strong>{r.productName}</strong></td>
               <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
               <td>{r.segment || '—'}</td>
@@ -3044,7 +3042,7 @@ function DocTable(props: {
               return (
                 <tr key={r.code}>
                   <td>{String(i + 1).padStart(2, '0')}</td>
-                  <td><span className="badge bg-light text-warning-emphasis border" style={{ fontFamily: 'monospace', padding: '4px 10px' }}>{r.code}</span></td>
+                  <td><span className="avm-auto-code">{r.code}</span></td>
                   <td><strong>{r.name}</strong></td>
                   <td>{r.authority}</td>
                   <td>
@@ -4268,4 +4266,27 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-cp-foot  { border-top-color: #3b2a6b; }
 /* .avm-cp-summary moved to .avm-id-summary on the Address tab — see
    the rule block above. The dark-mode overrides used to live here. */
+
+/* Auto-code badge (e.g. KYC-001, V-001-P-002). The previous
+ * "badge bg-light text-warning-emphasis" combo rendered as bright
+ * cream-on-amber in dark mode — visually screaming against the dark
+ * table background. Custom class so dark mode gets a muted amber pill
+ * that stays readable on the dark canvas. */
+.avm-auto-code {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: #fef3c7;
+  color: #854d0e;
+  border: 1px solid #fde68a;
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+[data-bs-theme="dark"] .avm-auto-code {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fcd34d;
+  border-color: rgba(251, 191, 36, 0.3);
+}
 `;

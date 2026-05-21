@@ -78,7 +78,7 @@ class VendorController extends Controller
         $q = Vendor::query()
             ->forUser($user)
             ->with([
-                'primaryAddress:id,vendor_id,city,state_id,contact_name,email,contact_no',
+                'primaryAddress:id,vendor_id,city,state_id,contact_name,email,contact_no,designation',
                 'vendorType:id,name',
                 'segment:id,title',
                 'riskLevel:id,name',
