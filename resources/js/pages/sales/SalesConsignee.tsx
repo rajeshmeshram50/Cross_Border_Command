@@ -976,25 +976,26 @@ const SCOPED_CSS = `
 .smcg-table-wrap .table thead.table-light tr {
   background: linear-gradient(110deg, #f0fdf9 0%, #ccfbf1 25%, #99f6e4 55%, #5eead4 85%, #2dd4bf 100%) !important;
 }
-/* Typography matches the HR Employees / Master pages — every cell +
-   header reads at 13px with header weight 600 so the table looks like
-   a single grid (consistent with Clients / Branches / Employees). */
+/* Typography matches the HR Employees / Master pages — header reads
+   at 12px (was 13px which looked oversized next to 13px body cells
+   because of the uppercase + letter-spacing). Tighter padding keeps
+   the strip slim. */
 .smcg-table-wrap .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
   background: transparent !important;
   color: #064e3b !important;
-  font-size: 13px !important;
+  font-size: 12px !important;
   font-weight: 600 !important;
-  letter-spacing: .01em !important;
-  padding: 12px 14px !important;
+  letter-spacing: .02em !important;
+  padding: 10px 14px !important;
   line-height: 1.3 !important;
   border-bottom: 1px solid #5eead4 !important;
   white-space: nowrap;
   text-transform: uppercase;
   vertical-align: middle !important;
 }
-.smcg-table-wrap .table thead th i { font-size: 13px; opacity: 0.7; color: #047857; }
+.smcg-table-wrap .table thead th i { font-size: 12px; opacity: 0.7; color: #047857; }
 
 /* Body — white rows with soft emerald hover. */
 .smcg-table-wrap .table tbody tr { background: transparent; transition: background .12s ease; }

@@ -851,17 +851,20 @@ const SCOPED_CSS = `
   --bs-table-accent-bg: transparent !important;
   background: transparent !important;
   color: #5b21b6 !important;
-  font-size: 13px !important;
+  /* Header reads at 12px so it sits as a muted label row above the
+     13px body cells (was 13px + uppercase which looked heavier than
+     the rest of the table). */
+  font-size: 12px !important;
   font-weight: 600 !important;
-  letter-spacing: .01em !important;
-  padding: 12px 14px !important;
+  letter-spacing: .02em !important;
+  padding: 10px 14px !important;
   line-height: 1.3 !important;
   border-bottom: 1px solid rgba(124,58,237,0.18) !important;
   white-space: nowrap;
   text-transform: uppercase;
   vertical-align: middle !important;
 }
-.smc-table-wrap .table thead th i { font-size: 13px; opacity: 0.55; color: #6d28d9; }
+.smc-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; color: #6d28d9; }
 /* Body — white rows with soft lavender hover. */
 .smc-table-wrap .table tbody tr {
   background: transparent;

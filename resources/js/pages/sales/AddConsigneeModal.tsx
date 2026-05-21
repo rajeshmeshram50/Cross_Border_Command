@@ -338,13 +338,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setCustomer(null);
       setPhase('pick-customer');
     }
-    // Restore the stage / sub-tab the user was on when they last
-    // closed this consignee's modal (edit mode only). Create mode
-    // always starts at Stage 1 — there's no anchor to remember it by.
+    /* Both create and edit modes always land on Stage 1 so the user
+     * reviews identity first before stepping forward. The sub-tab
+     * memory (KYC sub-tab, vault tab) is still restored so a user
+     * returning to Stage 2/3 doesn't lose their inner navigation
+     * if they manually advance again. */
     const memKey = consignee?.db_id ?? null;
     const remembered = memKey ? consigneeStageMemory.get(memKey) : null;
-    setStage   (remembered?.stage    ?? 1);
-    setIdTab   (remembered?.idTab    ?? 'identification');
+    setStage   (1);
+    setIdTab   ('identification');
     setKycSub  (remembered?.kycSub   ?? 'company-dd');
     setVaultTab(remembered?.vaultTab ?? 'kyc');
     setSearch('');
@@ -1117,12 +1119,19 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     <div className="acm-overlay">
       <style>{SCOPED_CSS}</style>
       <div className={`acm-wiz ${subOpen ? 'acm-wiz-blurred' : ''}`}>
-        {/* Header */}
+        {/* Header — title flips to Edit mode when the modal opens with
+             an existing consignee row attached (db_id present), so the
+             user can tell at a glance whether they're creating or
+             modifying. Subtitle changes too for parallel symmetry. */}
         <div className="acm-wiz-header">
           <div className="acm-wiz-hicon"><IconTruck size={20} /></div>
           <div className="acm-wiz-htxt">
-            <div className="acm-wiz-htitle">Add Consignee</div>
-            <div className="acm-wiz-hsub">Capture consignee identity, customer linkage, compliance, and shipment readiness for export execution.</div>
+            <div className="acm-wiz-htitle">{consignee?.db_id ? 'Edit Consignee' : 'Add Consignee'}</div>
+            <div className="acm-wiz-hsub">
+              {consignee?.db_id
+                ? 'Update consignee identity, KYC, and trade documents.'
+                : 'Capture consignee identity, customer linkage, compliance, and shipment readiness for export execution.'}
+            </div>
           </div>
           <button className="acm-close" onClick={onClose} aria-label="Close"><IconClose /></button>
         </div>
@@ -1362,8 +1371,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               </button>
             )}
             {stage < 3 && (
-              <button className="acm-btn acm-btn-primary" onClick={goNext}>
-                Save &amp; Next <IconChevronRight />
+              <button
+                className="acm-btn acm-btn-primary"
+                onClick={goNext}
+                disabled={saving}
+                style={saving ? { opacity: 0.75, cursor: 'wait' } : undefined}
+              >
+                {saving
+                  ? <><IconSpinner /> Saving…</>
+                  : <>Save &amp; Next <IconChevronRight /></>}
               </button>
             )}
             {stage === 3 && (
@@ -1371,9 +1387,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 className="acm-btn acm-btn-primary"
                 onClick={handleSave}
                 disabled={saving}
-                style={saving ? { opacity: 0.7, cursor: 'wait' } : undefined}
+                style={saving ? { opacity: 0.75, cursor: 'wait' } : undefined}
               >
-                <IconCheck /> {saving ? 'Saving…' : 'Save Consignee'}
+                {saving ? <IconSpinner /> : <IconCheck />} {saving ? 'Saving…' : 'Save Consignee'}
               </button>
             )}
           </div>
@@ -1839,7 +1855,7 @@ const Stage1 = ({
             </Field>
           </div>
 
-          <SectionHeader icon={<IconPin />} title="Primary Address &amp; Contact Person" sub="Registered office and primary contact at this location" accent="#3b82f6" />
+          <SectionHeader icon={<IconPin />} title="Primary Address &amp; Contact Person" sub="Registered office and primary contact at this location" />
           <div className="acm-sec-pad">
             <div className="acm-grid-2">
               <Field label="Address Type" required error={errors.addressType} fieldKey="addressType">
@@ -2242,12 +2258,12 @@ const Stage2 = ({
                 <thead>
                   <tr>
                     <th>SR NO</th><th>OWNER NAME</th><th>DESIGNATION</th><th>EMAIL</th><th>PHONE</th>
-                    <th>ID PROOF</th><th>ADDRESS PROOF</th><th>PHOTOGRAPH</th><th>STATUS</th><th>ACTIONS</th>
+                    <th>ID PROOF</th><th>ADDRESS PROOF</th><th>PHOTOGRAPH</th><th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredOwners.length === 0 ? (
-                    <tr className="acm-loc-empty"><td colSpan={10}>{q ? 'No owners match your search.' : 'No owners captured yet. Click "+ Add Owner KYC" to add one.'}</td></tr>
+                    <tr className="acm-loc-empty"><td colSpan={9}>{q ? 'No owners match your search.' : 'No owners captured yet. Click "+ Add Owner KYC" to add one.'}</td></tr>
                   ) : filteredOwners.map((o, i) => (
                     <tr key={o.id}>
                       <td>{String(i + 1).padStart(2, '0')}</td>
@@ -2258,7 +2274,6 @@ const Stage2 = ({
                       <td><AttachmentLink url={o.id_proof_url}      path={o.id_proof_path} /></td>
                       <td><AttachmentLink url={o.address_proof_url} path={o.address_proof_path} /></td>
                       <td><AttachmentLink url={o.photograph_url}    path={o.photograph_path} /></td>
-                      <td>{o.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
                       <td>
                         <div className="acm-loc-actions">
                           <Tooltip label={sameAsCustomer ? 'Same as Customer is on — untick it to edit KYC entries.' : 'Edit'}>
@@ -2296,7 +2311,7 @@ const Stage2 = ({
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>{meta.nameCol.toUpperCase()}</th><th>LICENSE #</th>
-                    <th>ISSUING AUTHORITY</th><th>ISSUE DATE</th><th>EXPIRY</th><th>STATUS</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                    <th>ISSUING AUTHORITY</th><th>ISSUE DATE</th><th>EXPIRY</th><th>ATTACHMENT</th><th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2318,11 +2333,6 @@ const Stage2 = ({
                         <td>{tl.authority}</td>
                         <td><span className="acm-kyc-exp na">—</span></td>
                         <td><span className={tl.expiry === 'N/A' ? 'acm-kyc-exp na' : 'acm-kyc-exp'}>{tl.expiry}</span></td>
-                        <td>
-                          {tl.status === 'mandatory'
-                            ? <span className="acm-pill-yes">Mandatory</span>
-                            : <span className="acm-pill-no" style={{ background: '#fef3c7', color: '#92400e' }}>Optional</span>}
-                        </td>
                         <td><span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span></td>
                         <td>
                           <Tooltip label="Reference row — click + Add Trade Licence above to capture a real one.">
@@ -2335,7 +2345,7 @@ const Stage2 = ({
                     ))
                   )}
                   {filteredDocs.length === 0 && (sub !== 'trade-licence' || q) ? (
-                    <tr className="acm-loc-empty"><td colSpan={10}>{q ? 'No documents match your search.' : `No ${kind === 'dd' ? 'DD' : 'trade licence'} documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
+                    <tr className="acm-loc-empty"><td colSpan={9}>{q ? 'No documents match your search.' : `No ${kind === 'dd' ? 'DD' : 'trade licence'} documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
                   ) : filteredDocs.map((d, i) => {
                     const sr = i + 1;
                     return (
@@ -2347,7 +2357,6 @@ const Stage2 = ({
                         <td>{d.issuing_authority || '—'}</td>
                         <td><span className={d.issue_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.issue_date)}</span></td>
                         <td><span className={d.expiry_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.expiry_date)}</span></td>
-                        <td>{d.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
                         <td><AttachmentLink url={d.attachment_url} path={d.attachment_path} /></td>
                         <td>
                           <div className="acm-loc-actions">
@@ -2473,7 +2482,7 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-                    <th>ISSUING AUTHORITY</th><th>EXPIRY</th><th>STATUS</th><th>ATTACHMENT</th>
+                    <th>ISSUING AUTHORITY</th><th>EXPIRY</th><th>ATTACHMENT</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2484,11 +2493,6 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                       <td style={{ fontWeight: 700 }}>{tl.name}</td>
                       <td>{tl.authority}</td>
                       <td><span className={tl.expiry === 'N/A' ? 'acm-kyc-exp na' : 'acm-kyc-exp'}>{tl.expiry}</span></td>
-                      <td>
-                        {tl.status === 'mandatory'
-                          ? <span className="acm-pill-yes">Mandatory</span>
-                          : <span className="acm-pill-no" style={{ background: '#fef3c7', color: '#92400e' }}>Optional</span>}
-                      </td>
                       <td><span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Pending upload</span></td>
                     </tr>
                   ))}
@@ -2801,12 +2805,12 @@ const VaultDocsTable = ({ docs, kind }: { docs: KycDocRow[]; kind: 'dd' | 'tl' }
             <tr>
               <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
               <th>LICENSE #</th><th>ISSUING AUTHORITY</th>
-              <th>ISSUE</th><th>EXPIRY</th><th>STATUS</th><th>ATTACHMENT</th>
+              <th>ISSUE</th><th>EXPIRY</th><th>ATTACHMENT</th>
             </tr>
           </thead>
           <tbody>
             {docs.length === 0 ? (
-              <tr className="acm-loc-empty"><td colSpan={9}>No {kind === 'dd' ? 'company DD' : 'trade licence'} documents captured in Stage 2.</td></tr>
+              <tr className="acm-loc-empty"><td colSpan={8}>No {kind === 'dd' ? 'company DD' : 'trade licence'} documents captured in Stage 2.</td></tr>
             ) : docs.map((d, i) => (
               <tr key={d.id}>
                 <td>{String(i + 1).padStart(2, '0')}</td>
@@ -2816,7 +2820,6 @@ const VaultDocsTable = ({ docs, kind }: { docs: KycDocRow[]; kind: 'dd' | 'tl' }
                 <td>{d.issuing_authority || '—'}</td>
                 <td><span className={d.issue_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.issue_date)}</span></td>
                 <td><span className={d.expiry_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.expiry_date)}</span></td>
-                <td>{d.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
                 <td><AttachmentLink url={d.attachment_url} path={d.attachment_path} /></td>
               </tr>
             ))}
@@ -2834,12 +2837,12 @@ const VaultOwnersTable = ({ owners }: { owners: KycOwnerRow[] }) => (
         <thead>
           <tr>
             <th>SR NO</th><th>OWNER NAME</th><th>DESIGNATION</th><th>EMAIL</th><th>PHONE</th>
-            <th>ID PROOF</th><th>ADDRESS PROOF</th><th>PHOTOGRAPH</th><th>STATUS</th>
+            <th>ID PROOF</th><th>ADDRESS PROOF</th><th>PHOTOGRAPH</th>
           </tr>
         </thead>
         <tbody>
           {owners.length === 0 ? (
-            <tr className="acm-loc-empty"><td colSpan={9}>No owners captured in Stage 2.</td></tr>
+            <tr className="acm-loc-empty"><td colSpan={8}>No owners captured in Stage 2.</td></tr>
           ) : owners.map((o, i) => (
             <tr key={o.id}>
               <td>{String(i + 1).padStart(2, '0')}</td>
@@ -2850,7 +2853,6 @@ const VaultOwnersTable = ({ owners }: { owners: KycOwnerRow[] }) => (
               <td><AttachmentLink url={o.id_proof_url}      path={o.id_proof_path} /></td>
               <td><AttachmentLink url={o.address_proof_url} path={o.address_proof_path} /></td>
               <td><AttachmentLink url={o.photograph_url}    path={o.photograph_path} /></td>
-              <td>{o.status === 'Active' ? <span className="acm-pill-yes">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
             </tr>
           ))}
         </tbody>
@@ -3050,26 +3052,15 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
               {errs.license_number && <span className="acm-err-text">{errs.license_number}</span>}
             </div>
           </div>
-          <div className="acm-loc-grid-2 acm-mt-12">
-            <div className="acm-field" data-field="issuing_authority">
-              <label className="acm-field-label">ISSUING AUTHORITY <span className="acm-req">*</span></label>
-              <input
-                className={`acm-input ${errs.issuing_authority ? 'acm-input-error' : ''}`}
-                placeholder="e.g. Registrar of Companies"
-                value={d.issuing_authority ?? ''}
-                onChange={e => set('issuing_authority', e.target.value)}
-              />
-              {errs.issuing_authority && <span className="acm-err-text">{errs.issuing_authority}</span>}
-            </div>
-            <div className="acm-field">
-              <label className="acm-field-label">STATUS</label>
-              <MasterSelect
-                value={d.status}
-                options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]}
-                placeholder="Select status"
-                onChange={(v) => set('status', (v as 'Active' | 'Inactive'))}
-              />
-            </div>
+          <div className="acm-field acm-mt-12" data-field="issuing_authority">
+            <label className="acm-field-label">ISSUING AUTHORITY <span className="acm-req">*</span></label>
+            <input
+              className={`acm-input ${errs.issuing_authority ? 'acm-input-error' : ''}`}
+              placeholder="e.g. Registrar of Companies"
+              value={d.issuing_authority ?? ''}
+              onChange={e => set('issuing_authority', e.target.value)}
+            />
+            {errs.issuing_authority && <span className="acm-err-text">{errs.issuing_authority}</span>}
           </div>
           <div className="acm-loc-grid-2 acm-mt-12">
             <div className="acm-field" data-field="issue_date">
@@ -3326,27 +3317,16 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
               />
             </div>
           </div>
-          <div className="acm-loc-grid-2 acm-mt-12">
-            <div className="acm-field">
-              <label className="acm-field-label">PHOTOGRAPH</label>
-              <FileUploadField
-                value={photograph}
-                displayName={photograph ? '' : (removePhotograph ? '' : existingPhotographName)}
-                existingUrl={removePhotograph ? null : existingPhotographUrl}
-                onPick={(f) => { setPhotograph(f); if (f) setRemovePhotograph(false); }}
-                onRemoveExisting={() => setRemovePhotograph(true)}
-                accept=".jpg,.jpeg,.png"
-              />
-            </div>
-            <div className="acm-field">
-              <label className="acm-field-label">STATUS</label>
-              <MasterSelect
-                value={d.status}
-                options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]}
-                placeholder="Select status"
-                onChange={(v) => set('status', (v as 'Active' | 'Inactive'))}
-              />
-            </div>
+          <div className="acm-field acm-mt-12">
+            <label className="acm-field-label">PHOTOGRAPH</label>
+            <FileUploadField
+              value={photograph}
+              displayName={photograph ? '' : (removePhotograph ? '' : existingPhotographName)}
+              existingUrl={removePhotograph ? null : existingPhotographUrl}
+              onPick={(f) => { setPhotograph(f); if (f) setRemovePhotograph(false); }}
+              onRemoveExisting={() => setRemovePhotograph(true)}
+              accept=".jpg,.jpeg,.png"
+            />
           </div>
         </div>
         <div className="acm-loc-sub-footer">
@@ -3704,6 +3684,14 @@ const IconCheck = ({ size = 14 }: { size?: number }) => (
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
+/* Inline spinner used by the wizard footer buttons while a save/persist
+ * request is in flight. Rendered as currentColor so it picks up the
+ * button's existing text color on both light and dark mode. */
+const IconSpinner = ({ size = 14 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="acg-spin">
+    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+  </svg>
+);
 const IconChevronDown = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
     <polyline points="6 9 12 15 18 9" />
@@ -3787,6 +3775,10 @@ const SCOPED_CSS = `
 /* ─── Phase A — Customer picker ─── */
 .acm-pick {
   width: 100%; max-width: 460px;
+  /* Locked height so the picker doesn't grow / shrink when the search
+     dropdown opens or the customer list lands. The body scrolls
+     internally — header + footer stay anchored at top / bottom. */
+  height: min(560px, calc(100vh - 32px));
   background: #fff; border-radius: 18px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0,0,0,.30);
   display: flex; flex-direction: column;
@@ -3831,7 +3823,13 @@ const SCOPED_CSS = `
   font-size: 12px; color: rgba(255,255,255,0.92);
   margin-top: 6px; line-height: 1.45; padding: 0 14px;
 }
-.acm-pick-body  { padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 12px; }
+.acm-pick-body  {
+  padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 12px;
+  /* Body absorbs the variable space between the fixed header / footer.
+     Internal scroll handles a long customer list without pushing the
+     popup itself taller. */
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+}
 .acm-label {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 11px; font-weight: 800; color: #047857;
@@ -3999,7 +3997,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acg-linked.is-open .acg-linked-bar { border-bottom-color: rgba(16,185,129,0.18); }
 
 .acm-pick-footer {
-  display: flex; align-items: center; gap: 10px;
+  /* Right-aligned button group so the primary action sits at the
+     button-bar's natural anchor point instead of stretching to fill
+     leftover space. At 125–175% browser zoom the previous flex:1
+     primary made Cancel look like a tiny chip next to a huge bar. */
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
   padding: 14px 20px 18px;
   border-top: 1px solid #f0fdf4;
 }
@@ -4016,21 +4018,37 @@ const SCOPED_CSS = `
 }
 .acm-btn-light:hover { background: #f9fafb; border-color: #d1d5db; }
 .acm-btn-primary {
-  flex: 1;
   background: linear-gradient(135deg, #10b981, #047857);
   color: #fff;
   box-shadow: 0 4px 14px rgba(5,150,105,.30);
+  /* Sensible min-width so the primary CTA stays prominent without
+     stretching to fill the footer at high zoom levels. The wizard
+     footer .acm-footer-right row overrides this with flex:1 for the
+     2-up Previous + Save & Next layout. */
+  min-width: 180px;
 }
 .acm-btn-primary:hover { box-shadow: 0 6px 20px rgba(5,150,105,.45); transform: translateY(-1px); }
 .acm-btn-disabled,
 .acm-btn:disabled {
   opacity: .60; cursor: not-allowed; transform: none !important; box-shadow: none !important;
 }
+/* Spin animation for the footer Save & Next / Save Consignee buttons
+   while a persist request is in flight — gives the user immediate
+   visual feedback that the click was registered and work is happening. */
+@keyframes acg-spin { to { transform: rotate(360deg); } }
+.acg-spin { animation: acg-spin .9s linear infinite; transform-origin: 50% 50%; }
 
 /* ─── Phase B — Wizard ─── */
 .acm-wiz {
   width: 100%; max-width: 1440px;
-  max-height: calc(100vh - 24px);
+  /* Locked height so all three stages occupy the same viewport
+     footprint — switching between Stage 1 (lots of fields), Stage 2
+     (single row table), and Stage 3 no longer makes the modal grow
+     or shrink. min() caps at 900px so 4K / tall monitors don't end
+     up with an oversized modal, while shorter laptops still get a
+     near-fullscreen workspace. Body scrolls internally; header +
+     footer stay anchored. */
+  height: min(900px, calc(100vh - 24px));
   background: #f0fdf4; border-radius: 16px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0,0,0,.40);
   display: flex; flex-direction: column;
@@ -4999,12 +5017,17 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-loc-table {
   width: 100%; border-collapse: collapse;
   font-size: 13px; color: #1f2937;
+  /* Stage 1 location table has 9 cols (SR / Type / Address / City-
+     State-Country / Contact / Phone / Email / WhatsApp / Actions);
+     anchor the table to a min-width so columns keep their natural
+     widths and the wrapper scrolls horizontally on narrow viewports
+     instead of cramming everything into illegible strips. */
+  min-width: 860px;
 }
 /* Stage 2 KYC tables carry more columns (ID Proof, Address Proof,
    Photograph, Status, Actions …) than the Stage 1 location table.
-   Give them a minimum width so columns stay readable and the wrap
-   div picks up horizontal scroll on narrow viewports instead of
-   squashing every column into illegible strips. */
+   Wider min-width so columns stay readable and the wrap div picks
+   up horizontal scroll on narrow viewports. */
 .acm-kyc-body .acm-loc-table { min-width: 980px; }
 .acm-loc-table thead tr {
   background: #f9fafb;
@@ -5012,7 +5035,10 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 }
 .acm-loc-table thead th {
   padding: 10px 12px; text-align: left;
-  font-weight: 700; font-size: 11px; letter-spacing: .04em;
+  /* Slightly smaller + tighter so the table header strip reads as a
+     muted label row rather than competing with the row content for
+     attention. */
+  font-weight: 700; font-size: 10px; letter-spacing: .05em;
   color: #6b7280; text-transform: uppercase;
   white-space: nowrap;
 }
@@ -5308,13 +5334,20 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 /* ── Compact laptop (≤ 1280px) ────────────────────────────────
    Common HP/Dell business laptops (1280×800, 1366×768). 4-col
    grids start to feel cramped — collapse to 2x2 and tighten the
-   stepper chrome. */
+   stepper chrome. Linked-customer 7-col strip drops to 4 cols so
+   each detail still gets a readable column instead of waiting for
+   the 1024 breakpoint where it collapses all the way to 2. */
 @media (max-width: 1280px) {
   .acm-grid-4 { grid-template-columns: repeat(2, 1fr); }
   .acm-loc-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .acm-linked-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .acm-step { padding: 9px 11px; }
   .acm-step-title { font-size: 11.5px; }
   .acm-step-sub   { font-size: 9px; }
+  /* Wizard body padding shrinks slightly so the form has more
+     horizontal room on 1366-wide screens. */
+  .acm-wiz-body { padding: 12px 14px 14px; }
+  .acm-sec-pad { padding: 12px; }
 }
 
 /* ── Tablet (≤ 1024px) ───────────────────────────────────────── */
