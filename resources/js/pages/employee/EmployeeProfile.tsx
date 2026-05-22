@@ -760,8 +760,8 @@ const VAULT_EMPLOYEE: EmpDocSection[] = [
       { name: 'Last 3 Pay Slips',       authority: 'Infotech Solutions Ltd', issueDate: '01-Oct-2023', attachment: 'PaySlips.pdf',   status: 'Verified' },
       { name: 'Form 16 (FY 2022-23)',   authority: 'Infotech Solutions Ltd', issueDate: '01-Jun-2023', attachment: 'Form16.pdf',     status: 'Verified' },
       { name: 'Bank Statement (3 mo.)', authority: 'Kotak Mahindra Bank',    issueDate: '01-Nov-2023', attachment: 'BankStmt.pdf',   status: 'Uploaded' },
-      { name: 'Background Verification',authority: 'BGV Vendor',             issueDate: '15-Nov-2023', attachment: 'BGV.pdf',        status: 'Verified' },
-      { name: 'Reference Check',        authority: 'BGV Vendor',             issueDate: '15-Nov-2023',                                status: 'Pending'  },
+      { name: 'Background Verification',authority: 'BGV Supplier',             issueDate: '15-Nov-2023', attachment: 'BGV.pdf',        status: 'Verified' },
+      { name: 'Reference Check',        authority: 'BGV Supplier',             issueDate: '15-Nov-2023',                                status: 'Pending'  },
     ],
   },
 ];
@@ -6216,8 +6216,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </Col>
                 </Row>
                 <div className="mb-3">
-                  <div className="ep-claim-label">Vendor / Merchant</div>
-                  <input className="ep-claim-input" placeholder="Vendor name (optional)" value={claimVendor} onChange={e => setClaimVendor(e.target.value)} />
+                  <div className="ep-claim-label">Supplier / Merchant</div>
+                  <input className="ep-claim-input" placeholder="Supplier name (optional)" value={claimVendor} onChange={e => setClaimVendor(e.target.value)} />
                 </div>
                 <div className="mb-0">
                   <div className="ep-claim-label">Business Purpose <span className="ep-claim-req">*</span></div>

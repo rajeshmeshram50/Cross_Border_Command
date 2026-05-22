@@ -551,7 +551,7 @@ export default function AddProductModal(props: {
       setVendorPurchasePrice('');
       setVendorGstPct('');
       setVendorRemarks('');
-      toast.success('Vendor updated', `${vendorSelected.name} mapping updated`);
+      toast.success('Supplier updated', `${vendorSelected.name} mapping updated`);
       return;
     }
 
@@ -582,7 +582,7 @@ export default function AddProductModal(props: {
     setVendorPurchasePrice('');
     setVendorGstPct('');
     setVendorRemarks('');
-    toast.success('Vendor mapped', `${entry.vendorName} added to this product`);
+    toast.success('Supplier mapped', `${entry.vendorName} added to this product`);
   };
 
   /* Open the Map Vendor draft in EDIT mode — preselect the vendor in
@@ -1182,9 +1182,9 @@ export default function AddProductModal(props: {
         })),
       });
       onSaved(productId, true);
-      toast.success('Product saved', 'Vendors mapped — product is now Active');
+      toast.success('Product saved', 'Suppliers mapped — product is now Active');
     } catch (e: unknown) {
-      const msg = extractError(e, 'Failed to save vendors.');
+      const msg = extractError(e, 'Failed to save suppliers.');
       toast.error('Save failed', msg);
     } finally {
       setSaving(false);
@@ -1212,12 +1212,12 @@ export default function AddProductModal(props: {
             <div>
               <div className="apm-title">
                 {step === 2
-                  ? 'Map Product Vendor'
+                  ? 'Map Product Supplier'
                   : (initialId ? 'Edit Product' : 'Add Product')}
               </div>
               <div className="apm-sub">
                 {step === 2
-                  ? 'Link this product to one or more vendors with purchase pricing.'
+                  ? 'Link this product to one or more suppliers with purchase pricing.'
                   : (initialId
                       ? 'Update product details — identity, pricing, compliance and dimensions.'
                       : 'Add complete product details — identity, pricing, compliance and dimensions.')}
@@ -1232,7 +1232,7 @@ export default function AddProductModal(props: {
         {/* ─── Step strip — two pill cards side by side ─── */}
         <div className="apm-stepper">
           <StepperItem n={1} title="Product Information" sub="Identity, pricing, compliance" current={step} icon={<i className="ri-home-line" />} />
-          <StepperItem n={2} title="Map Product Vendor"  sub="Link vendors with pricing"    current={step} icon={<i className="ri-shield-check-line" />} />
+          <StepperItem n={2} title="Map Product Supplier"  sub="Link suppliers with pricing"  current={step} icon={<i className="ri-shield-check-line" />} />
         </div>
 
         {/* ─── Body ─── */}
@@ -1674,9 +1674,9 @@ export default function AddProductModal(props: {
 
               {!vendorDraftOpen && (
                 <div className="apm-vendor-toolbar">
-                  <div className="apm-vendor-toolbar-title">Map Product Vendor</div>
+                  <div className="apm-vendor-toolbar-title">Map Product Supplier</div>
                   <button className="apm-btn-primary" onClick={() => setVendorDraftOpen(true)}>
-                    <span>+</span> Map New Vendor
+                    <span>+</span> Map New Supplier
                   </button>
                 </div>
               )}
@@ -1691,8 +1691,8 @@ export default function AddProductModal(props: {
                       <div className="apm-mv-popup-title">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                         <div>
-                          <div className="apm-mv-popup-title-main">{vendorEditingId ? 'Edit Mapped Vendor' : 'Map Product Vendor'}</div>
-                          <div className="apm-mv-popup-title-sub">{vendorEditingId ? 'Update vendor selection and pricing' : 'Select a vendor and enter purchase pricing'}</div>
+                          <div className="apm-mv-popup-title-main">{vendorEditingId ? 'Edit Mapped Supplier' : 'Map Product Supplier'}</div>
+                          <div className="apm-mv-popup-title-sub">{vendorEditingId ? 'Update supplier selection and pricing' : 'Select a supplier and enter purchase pricing'}</div>
                         </div>
                       </div>
                       <button className="apm-close apm-mv-close" onClick={closeVendorDraft} aria-label="Close">
@@ -1702,8 +1702,8 @@ export default function AddProductModal(props: {
 
                     <div className="apm-mv-popup-body">
                       <div className="apm-grid-2">
-                        <Field label="Select Vendor" required>
-                          <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select vendor"
+                        <Field label="Select Supplier" required>
+                          <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select supplier"
                             options={vendorOpts.map(v => ({
                               value: v.code,
                               label: `${v.code} — ${v.name}${v.status && v.status !== 'active' ? ` (${v.status.charAt(0).toUpperCase()}${v.status.slice(1)})` : ''}`,
@@ -1715,8 +1715,8 @@ export default function AddProductModal(props: {
 
                       {/* Read-only vendor info grid */}
                       <div className="apm-vendor-info">
-                        <InfoCell label="Vendor Code"          value={vendorSelected?.code   ?? 'NA'} />
-                        <InfoCell label="Vendor Company Name"  value={vendorSelected?.name   ?? 'NA'} />
+                        <InfoCell label="Supplier Code"        value={vendorSelected?.code   ?? 'NA'} />
+                        <InfoCell label="Supplier Company Name" value={vendorSelected?.name  ?? 'NA'} />
                         <InfoCell label="Company Website"      value={vendorSelected?.website ?? 'NA'} />
                         <InfoCell label="Contact person name" value={vendorSelected?.contact ?? 'NA'} />
                         <InfoCell label="Contact no"           value={vendorSelected?.phone  ?? 'NA'} />
@@ -1768,7 +1768,7 @@ export default function AddProductModal(props: {
                     <div className="apm-mv-popup-foot">
                       <button className="apm-btn-ghost" onClick={closeVendorDraft}>Cancel</button>
                       <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={!vendorSelected || !vendorPp}>
-                        {vendorEditingId ? 'Save Changes' : 'Save Vendor'}
+                        {vendorEditingId ? 'Save Changes' : 'Save Supplier'}
                       </button>
                     </div>
                   </div>
@@ -1781,7 +1781,7 @@ export default function AddProductModal(props: {
                   <div className="apm-vendor-table-head">
                     <div className="apm-vendor-table-title">
                       <i className="ri-links-line" />
-                      Mapped Vendors
+                      Mapped Suppliers
                       <span className="apm-vendor-table-count">{vendors.length}</span>
                     </div>
                   </div>
@@ -1790,8 +1790,8 @@ export default function AddProductModal(props: {
                       <thead className="table-light">
                         <tr>
                           <th scope="col">Sr No</th>
-                          <th scope="col">Product/Vendor Code</th>
-                          <th scope="col">Vendor Company Name</th>
+                          <th scope="col">Product/Supplier Code</th>
+                          <th scope="col">Supplier Company Name</th>
                           <th scope="col">Company Website</th>
                           <th scope="col">Purchase Price</th>
                           <th scope="col">GST %</th>
@@ -1930,8 +1930,8 @@ export default function AddProductModal(props: {
       <DeleteConfirmModal
         open={vendorDeleteTarget !== null}
         itemName={vendorDeleteTarget?.vendorName}
-        title="Remove Mapped Vendor"
-        subMessage="This unmaps the vendor from the product on this form. The product must be saved (Save Product) for the change to persist on the server."
+        title="Remove Mapped Supplier"
+        subMessage="This unmaps the supplier from the product on this form. The product must be saved (Save Product) for the change to persist on the server."
         onClose={() => setVendorDeleteTarget(null)}
         onConfirm={() => {
           if (vendorDeleteTarget) removeVendor(vendorDeleteTarget.id);
@@ -2281,7 +2281,7 @@ function QcAddPopup(props: {
           <QcProd label="Segment"       value={product.segment} />
           <QcProd label="Haz/Non-Haz"   value={product.hazType} />
           <QcProd label="Haz Class"     value={product.hazClass} />
-          <QcProd label="Product Vendors" value={String(product.vendorCount)} accent />
+          <QcProd label="Product Suppliers" value={String(product.vendorCount)} accent />
         </div>
 
         <div className="apm-qc-body">

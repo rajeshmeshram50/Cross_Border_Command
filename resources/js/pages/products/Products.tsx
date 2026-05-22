@@ -525,7 +525,7 @@ export default function Products() {
           </span>
           <div>
             <h5 className="prd-header-title">Products</h5>
-            <div className="prd-header-sub">Manage your product catalog — pricing, compliance, vendors and documents in one place</div>
+            <div className="prd-header-sub">Manage your product catalog — pricing, compliance, suppliers and documents in one place</div>
           </div>
         </div>
         <button className="prd-add-btn" onClick={() => { setEditingId(null); setAddOpen(true); }}>
@@ -624,7 +624,7 @@ export default function Products() {
         <div className="prd-vendor-banner">
           <i className="ri-links-line" />
           <span className="prd-vendor-banner-text">
-            Showing products mapped to vendor
+            Showing products mapped to supplier
             {' '}<strong>{vendorFilterCode || `#${vendorFilterId}`}</strong>
             {vendorFilterName && <> — <strong>{vendorFilterName}</strong></>}
           </span>
@@ -664,11 +664,11 @@ export default function Products() {
             <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
           </div>
           <div className="prd-empty-title">
-            {vendorFilterId ? 'No products mapped to this vendor yet' : 'No products found'}
+            {vendorFilterId ? 'No products mapped to this supplier yet' : 'No products found'}
           </div>
           <div className="prd-empty-desc">
             {vendorFilterId
-              ? `Open any product and map ${vendorFilterCode || 'this vendor'} on Step 2 — or clear the filter to browse all products.`
+              ? `Open any product and map ${vendorFilterCode || 'this supplier'} on Step 2 — or clear the filter to browse all products.`
               : 'Try clearing filters, or click "Add Product" to create a new one.'}
           </div>
           {vendorFilterId && (
@@ -729,7 +729,7 @@ export default function Products() {
         open={deleteTarget !== null}
         itemName={deleteTarget?.name}
         title="Delete Product"
-        subMessage="This action moves the product to the deleted state. Its vendor mappings and QC records remain linked and can be restored if you bring the product back."
+        subMessage="This action moves the product to the deleted state. Its supplier mappings and QC records remain linked and can be restored if you bring the product back."
         onClose={() => { if (!deleting) setDeleteTarget(null); }}
         onConfirm={confirmDelete}
         loading={deleting}
@@ -875,7 +875,7 @@ export default function Products() {
             ))}
           </FilterPanel>
 
-          <FilterPanel label="Vendor" panelKey="vendor" open={expandedPanel === 'vendor'} onToggle={togglePanel} count={filters.vendor.length}>
+          <FilterPanel label="Supplier" panelKey="vendor" open={expandedPanel === 'vendor'} onToggle={togglePanel} count={filters.vendor.length}>
             {vendorOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.vendor.includes(v)} onChange={() => toggleMulti('vendor', v)} />
             ))}
@@ -1071,7 +1071,7 @@ function ProductCard(props: {
             <span className="prd-card-info-key">GST:</span>
             <span className="prd-card-info-val">{product.gstRate}%</span>
           </span>
-          <span className="prd-card-info-cell prd-card-vendor-cell" title={`${product.vendorCount} linked vendor${product.vendorCount === 1 ? '' : 's'}`}>
+          <span className="prd-card-info-cell prd-card-vendor-cell" title={`${product.vendorCount} linked supplier${product.vendorCount === 1 ? '' : 's'}`}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
