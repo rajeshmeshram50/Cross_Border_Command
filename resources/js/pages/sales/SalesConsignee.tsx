@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import AddConsigneeModal, { type ConsigneeRow } from './AddConsigneeModal';
-import { Shimmer } from '../../components/ui/Shimmer';
+import { ShimmerTable } from '../../components/ui/Shimmer';
 import api from '../../api';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 
@@ -33,6 +33,29 @@ const RISK_COLORS: Record<string, { bg: string; color: string; dot: string }> = 
 
 const ROWS_PER_PAGE = 10;
 
+/* titleCase + TruncatedCell are module-level so the function refs
+ * stay stable across renders. The page's `columns` useMemo captures
+ * them via the cell renderers; a per-render closure would bust the
+ * memo every time and force TanStack Table to rebuild its column
+ * model on every parent re-render. */
+const titleCase = (s: string): string => {
+  if (!s) return s;
+  if (s === s.toUpperCase() && /[A-Z]/.test(s)) return s;
+  const idx = s.search(/[a-zA-Z]/);
+  if (idx === -1) return s;
+  return s.slice(0, idx) + s[idx].toUpperCase() + s.slice(idx + 1);
+};
+
+const TruncatedCell = ({ value, className, max = 22, caseSensitive = false }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean }) => {
+  const raw = (value ?? '').trim();
+  if (!raw) return <span className="text-muted">—</span>;
+  const v = caseSensitive ? raw : titleCase(raw);
+  const needsTooltip = v.length > max;
+  const display = needsTooltip ? v.slice(0, max) + '…' : v;
+  const inner = <span className={className} style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
+  return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
+};
+
 export default function SalesConsignee() {
   const toast = useToast();
   const { user } = useAuth();
@@ -54,7 +77,10 @@ export default function SalesConsignee() {
    * (un-referenced) so a designer can still eyeball the empty state
    * without the API; tests/seeders will populate the real list. */
   const [rows, setRows] = useState<ConsigneeRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  /* Initialise to TRUE so the shimmer shows from frame 1 — the
+   * fetch effect below flips it true then false; the default needed
+   * to start at true to avoid an empty-state flash before mount. */
+  const [loading, setLoading] = useState(true);
   const [delTarget, setDelTarget] = useState<ConsigneeRow | null>(null);
   /* In-flight flag for the delete confirm — drives the spinner +
    * disabled state on the confirm dialog so the user has a visual
@@ -176,18 +202,9 @@ export default function SalesConsignee() {
     </Tooltip>
   );
 
-  /* ── Truncated cell — for fields that can hold long values (company
-   * name, contact person, email, country detail). Renders the value
-   * with an ellipsis cap + Tooltip showing the full value on hover.
-   * Falls back to "—" when empty so columns stay visually aligned. */
-  const TruncatedCell = ({ value, className, max = 22 }: { value?: string | null; className?: string; max?: number }) => {
-    const v = (value ?? '').trim();
-    if (!v) return <span className="text-muted">—</span>;
-    const needsTooltip = v.length > max;
-    const display = needsTooltip ? v.slice(0, max) + '…' : v;
-    const inner = <span className={className} style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
-    return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
-  };
+  /* titleCase + TruncatedCell are hoisted to module scope at the top
+   * of this file so the function references stay stable across
+   * renders — see the comment block above the page component. */
 
   /* ── TanStack column defs. Cell renderers keep the emerald-themed
    * pills/chips (ID chip, risk pill, country sub-text) so the page
@@ -235,7 +252,7 @@ export default function SalesConsignee() {
       },
     },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-contact" max={16} /> },
-    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" max={18} /> },
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" max={18} caseSensitive /> },
     { header: 'Contact No',     accessorKey: 'phone',   cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
     {
       header: 'Country',
@@ -404,7 +421,12 @@ export default function SalesConsignee() {
 
         <div className="smcg-table-wrap">
           {loading && rows.length === 0 ? (
-            <ConsigneeListShimmer rows={ROWS_PER_PAGE} />
+            /* Canonical ShimmerTable from the shared Shimmer component
+               — matches the skeleton used on Dashboard + Master pages.
+               cols=12 matches the live header strip (Sr No, Consignee ID,
+               Customer ID, Company, Segment, Risk Level, Contact,
+               Email, Contact No, Country, Actions, +1 buffer). */
+            <ShimmerTable rows={ROWS_PER_PAGE} cols={12} />
           ) : (
             <TableContainer
               columns={columns}
@@ -501,34 +523,10 @@ const IconVault = () => (
   </svg>
 );
 
-/* ─── List-page shimmer ─────
- * Drop-in replacement for the empty TableContainer while the initial
- * /consignees fetch is in flight. Mirrors the live column count + the
- * lavender/emerald header strip so the layout doesn't reflow when the
- * real data lands. Light + dark mode both inherit from app.css's
- * `.shimmer` token. */
-function ConsigneeListShimmer({ rows = 10 }: { rows?: number }) {
-  // 12 columns to match the live table: Sr No, Consignee ID, Customer
-  // ID, Company, Segment, Risk Level, Contact, Email, Phone, Country,
-  // (city/state — countryDetail), Actions.
-  const cols = 12;
-  return (
-    <div className="smcg-shimmer-wrap">
-      <div className="smcg-shimmer-head">
-        {Array.from({ length: cols }).map((_, i) => (
-          <Shimmer key={i} height={10} width="65%" radius={4} />
-        ))}
-      </div>
-      {Array.from({ length: rows }).map((_, r) => (
-        <div key={r} className="smcg-shimmer-row">
-          {Array.from({ length: cols }).map((_, c) => (
-            <Shimmer key={c} height={14} radius={6} />
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
+/* The page-specific list-shimmer has been removed — the canonical
+ * `ShimmerTable` from components/ui/Shimmer is now used inline at
+ * the table render site, matching the loading look on Dashboard and
+ * Master pages. */
 
 /* ─── Scoped page CSS (all rules under .smcg-root) ─── */
 const SCOPED_CSS = `
@@ -767,13 +765,17 @@ const SCOPED_CSS = `
   transform: translateY(-2px);
   box-shadow: 0 8px 22px rgba(16,185,129,0.20), 0 2px 6px rgba(16,185,129,0.12);
 }
+/* WDH tile palette — flat solid colors (no gradients) so each tile
+   reads as one cohesive accent rather than a two-tone fade. Number
+   badge, border-left, name + tag all share the same solid hue. */
+
 /* Tile 1 — Emerald (matches the page brand color). */
 .smcg-step[data-n="0"] {
   border-color: rgba(16,185,129,0.20);
   border-left-color: #10b981;
 }
 .smcg-step[data-n="0"]:hover { box-shadow: 0 8px 22px rgba(16,185,129,0.22), 0 2px 6px rgba(16,185,129,0.14); }
-.smcg-step[data-n="0"] .smcg-step-num  { background: linear-gradient(135deg, #10b981, #34d399); box-shadow: 0 3px 8px rgba(16,185,129,0.30); }
+.smcg-step[data-n="0"] .smcg-step-num  { background: #10b981; box-shadow: 0 3px 8px rgba(16,185,129,0.30); }
 .smcg-step[data-n="0"] .smcg-step-name { color: #047857; }
 .smcg-step[data-n="0"] .smcg-step-tag-dot { background: #10b981; }
 .smcg-step[data-n="0"] .smcg-step-tag { color: #047857; }
@@ -784,23 +786,23 @@ const SCOPED_CSS = `
   border-left-color: #405189;
 }
 .smcg-step[data-n="1"]:hover { box-shadow: 0 8px 22px rgba(64,81,137,0.22), 0 2px 6px rgba(64,81,137,0.14); }
-.smcg-step[data-n="1"] .smcg-step-num  { background: linear-gradient(135deg, #405189, #6691e7); box-shadow: 0 3px 8px rgba(64,81,137,0.30); }
+.smcg-step[data-n="1"] .smcg-step-num  { background: #405189; box-shadow: 0 3px 8px rgba(64,81,137,0.30); }
 .smcg-step[data-n="1"] .smcg-step-name { color: #405189; }
 .smcg-step[data-n="1"] .smcg-step-tag-dot { background: #405189; }
 .smcg-step[data-n="1"] .smcg-step-tag { color: #405189; }
 
-/* Tile 3 — Rose / Crimson (Compliance & Risk Details — warning tone
-   that reads as "risk" without clashing with the emerald theme like
-   the previous amber did). */
+/* Tile 3 — Indigo (Compliance & Risk Details — formal, professional
+   tone that sits between tile 2's navy blue and tile 4's violet
+   without using the harsher red the previous palette had). */
 .smcg-step[data-n="2"] {
-  border-color: rgba(225,29,72,0.25);
-  border-left-color: #e11d48;
+  border-color: rgba(79,70,229,0.22);
+  border-left-color: #4f46e5;
 }
-.smcg-step[data-n="2"]:hover { box-shadow: 0 8px 22px rgba(225,29,72,0.22), 0 2px 6px rgba(225,29,72,0.14); }
-.smcg-step[data-n="2"] .smcg-step-num  { background: linear-gradient(135deg, #e11d48, #f43f5e); box-shadow: 0 3px 8px rgba(225,29,72,0.30); }
-.smcg-step[data-n="2"] .smcg-step-name { color: #be123c; }
-.smcg-step[data-n="2"] .smcg-step-tag-dot { background: #e11d48; }
-.smcg-step[data-n="2"] .smcg-step-tag { color: #be123c; }
+.smcg-step[data-n="2"]:hover { box-shadow: 0 8px 22px rgba(79,70,229,0.22), 0 2px 6px rgba(79,70,229,0.14); }
+.smcg-step[data-n="2"] .smcg-step-num  { background: #4f46e5; box-shadow: 0 3px 8px rgba(79,70,229,0.30); }
+.smcg-step[data-n="2"] .smcg-step-name { color: #3730a3; }
+.smcg-step[data-n="2"] .smcg-step-tag-dot { background: #4f46e5; }
+.smcg-step[data-n="2"] .smcg-step-tag { color: #3730a3; }
 
 /* Tile 4 — Violet (Shipment & Export Readiness — "final execution"). */
 .smcg-step[data-n="3"] {
@@ -808,14 +810,16 @@ const SCOPED_CSS = `
   border-left-color: #7c3aed;
 }
 .smcg-step[data-n="3"]:hover { box-shadow: 0 8px 22px rgba(124,58,237,0.22), 0 2px 6px rgba(124,58,237,0.14); }
-.smcg-step[data-n="3"] .smcg-step-num  { background: linear-gradient(135deg, #7c3aed, #a78bfa); box-shadow: 0 3px 8px rgba(124,58,237,0.30); }
+.smcg-step[data-n="3"] .smcg-step-num  { background: #7c3aed; box-shadow: 0 3px 8px rgba(124,58,237,0.30); }
 .smcg-step[data-n="3"] .smcg-step-name { color: #6d28d9; }
 .smcg-step[data-n="3"] .smcg-step-tag-dot { background: #7c3aed; }
 .smcg-step[data-n="3"] .smcg-step-tag { color: #6d28d9; }
 .smcg-step-head { display: flex; align-items: center; gap: 8px; }
 .smcg-step-num {
   width: 24px; height: 24px; border-radius: 50%;
-  background: linear-gradient(135deg, #10b981, #34d399);
+  /* Default flat emerald — each per-tile rule above overrides this
+     with its own solid colour. No more two-stop gradients. */
+  background: #10b981;
   display: inline-flex; align-items: center; justify-content: center;
   color: #fff; font-size: 12px; font-weight: 700;
   flex-shrink: 0;
@@ -1261,22 +1265,23 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .smcg-step[data-n="0"] { border-color: rgba(16,185,129,0.40); border-left-color: #10b981; }
 [data-bs-theme="dark"] .smcg-step[data-n="1"] { border-color: rgba(102,145,231,0.40); border-left-color: #6691e7; }
-/* Tile 3 (Compliance & Risk) — rose / crimson palette in dark mode.
-   Reads as a clear warning accent against the dark emerald wash
-   without the harsh yellow of the original amber. */
-[data-bs-theme="dark"] .smcg-step[data-n="2"] { border-color: rgba(251,113,133,0.45); border-left-color: #fb7185; }
+/* Tile 3 (Compliance & Risk) — Indigo palette in dark mode. Flat
+   solid accent (no gradient) that sits between tile 2's blue and
+   tile 4's violet, formal/professional feel without the harshness
+   of the previous red. */
+[data-bs-theme="dark"] .smcg-step[data-n="2"] { border-color: rgba(129,140,248,0.45); border-left-color: #818cf8; }
 [data-bs-theme="dark"] .smcg-step[data-n="3"] { border-color: rgba(167,139,250,0.40); border-left-color: #a78bfa; }
 [data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-name { color: #6ee7b7; }
 [data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-name { color: #93b4f0; }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-name { color: #fda4af; }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-name { color: #c7d2fe; }
 [data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-name { color: #c4b5fd; }
 [data-bs-theme="dark"] .smcg-step[data-n="0"] .smcg-step-tag     { color: #6ee7b7; }
 [data-bs-theme="dark"] .smcg-step[data-n="1"] .smcg-step-tag     { color: #93b4f0; }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag     { color: #fda4af; }
-/* Badge "3" number tile + tag dot — rose / crimson so the whole tile
-   reads as one cohesive warning accent in dark mode. */
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-num    { background: linear-gradient(135deg, #fb7185, #fda4af); box-shadow: 0 3px 8px rgba(251,113,133,0.40); }
-[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag-dot { background: #fb7185; }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag     { color: #c7d2fe; }
+/* Badge "3" number tile + tag dot — solid indigo so the whole tile
+   reads as one cohesive professional accent in dark mode. */
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-num    { background: #818cf8; box-shadow: 0 3px 8px rgba(129,140,248,0.40); }
+[data-bs-theme="dark"] .smcg-step[data-n="2"] .smcg-step-tag-dot { background: #818cf8; }
 [data-bs-theme="dark"] .smcg-step[data-n="3"] .smcg-step-tag     { color: #c4b5fd; }
 [data-bs-theme="dark"] .smcg-step-desc { color: #cbd5e1; }
 [data-bs-theme="dark"] .smcg-step-arrow { color: #ccfbf1; }

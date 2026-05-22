@@ -50,10 +50,6 @@ import SalesConsignee from '../pages/sales/SalesConsignee';
 import SalesLeadAckMaster from '../pages/sales/SalesLeadAckMaster';
 import SalesLeadWorksheet from '../pages/sales/SalesLeadWorksheet';
 import SalesTodo from '../pages/sales/SalesTodo';
-import SalesLeadDistribution from '../pages/sales/SalesLeadDistribution';
-import SalesLeadDetail from '../pages/sales/SalesLeadDetail';
-import SalesEnquiries from '../pages/sales/SalesEnquiries';
-import SalesLeadsDetails from '../pages/sales/SalesLeadsDetails';
 import SalesQPI from '../pages/sales/SalesQPI';
 import SalesP2PSummary from '../pages/sales/SalesP2PSummary';
 import SalesMatrixDetail from '../pages/sales/matrix/SalesMatrixDetail';
@@ -151,13 +147,17 @@ const getPagePath = (page: string, data?: any): string => {
       if (page === 'sales.consignee')       return '/sales/consignee';
       if (page === 'sales.lead_ack_master') return '/sales/lead-ack-master';
       if (page === 'sales.lead_worksheet')  return '/sales/lead-worksheet';
+      /* "My Workplace" reuses the Lead Worksheet page — it's the same
+         operational view, surfaced under a friendlier menu label after
+         the May-26 cleanup. */
+      if (page === 'sales.workplace')       return '/sales/lead-worksheet';
       if (page === 'sales.todo')            return '/sales/todo';
-      if (page === 'sales.lead_distribution') return '/sales/lead-distribution';
-      if (page === 'sales.lead_detail')     return data?.oppId ? `/sales/lead-detail/${data.oppId}` : '/sales/lead-detail';
       if (page === 'sales.matrix_detail')   return data?.oppId ? `/sales/matrix/${data.oppId}/stage/${data?.stage || 1}` : '/sales/matrix';
-      if (page === 'sales.enquiries')       return '/sales/enquiries';
-      if (page === 'sales.leads_details')   return data?.empId ? `/sales/leads-details/${data.empId}` : '/sales/leads-details';
       if (page === 'sales.qpi')             return '/sales/qpi';
+      /* Sales Matrix Operations menu was trimmed to "My Workplace" and
+         "Quotation Vs PI History"; the QPI page already exists and the
+         alias keeps the new menu id wired to it. */
+      if (page === 'sales.quotation_vs_pi') return '/sales/qpi';
       if (page === 'sales.p2p_summary')     return '/sales/p2p-summary';
       if (page === 'sales.diagnosis')       return '/sales/diagnosis';
       if (page === 'sales.resolution_center') return '/sales/resolution-center';
@@ -604,13 +604,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/sales/lead-ack-master" element={<SalesLeadAckMaster />} />
               <Route path="/sales/lead-worksheet" element={<SalesLeadWorksheet />} />
               <Route path="/sales/todo" element={<SalesTodo />} />
-              <Route path="/sales/lead-distribution" element={<SalesLeadDistribution />} />
-              <Route path="/sales/lead-detail" element={<SalesLeadDetail />} />
-              <Route path="/sales/lead-detail/:oppId" element={<SalesLeadDetail />} />
               <Route path="/sales/matrix/:oppId/stage/:stage" element={<SalesMatrixDetail />} />
-              <Route path="/sales/enquiries" element={<SalesEnquiries />} />
-              <Route path="/sales/leads-details" element={<SalesLeadsDetails />} />
-              <Route path="/sales/leads-details/:empId" element={<SalesLeadsDetails />} />
               <Route path="/sales/qpi" element={<SalesQPI />} />
               <Route path="/sales/p2p-summary" element={<SalesP2PSummary />} />
               <Route path="/products" element={<Products />} />

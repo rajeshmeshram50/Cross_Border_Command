@@ -129,7 +129,17 @@ export default function DeleteConfirmModal({ open, clientName, itemName: itemNam
           color: #374151;
           border: 1px solid #e5e7eb;
         }
-        .dcm-btn-cancel:hover:not(:disabled) { background: #e5e7eb; }
+        .dcm-btn-cancel:hover:not(:disabled) {
+          background: #e5e7eb;
+          border-color: #cbd5e1;
+          color: #1f2937;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(15,23,42,0.12);
+        }
+        .dcm-btn-cancel:active:not(:disabled) {
+          transform: translateY(0);
+          box-shadow: 0 2px 6px rgba(15,23,42,0.10);
+        }
         .dcm-btn-confirm {
           background: linear-gradient(135deg, #f06548, #ef4444);
           color: #fff;
@@ -165,7 +175,16 @@ export default function DeleteConfirmModal({ open, clientName, itemName: itemNam
         }
         [data-bs-theme="dark"] .dcm-btn-cancel:hover:not(:disabled),
         [data-layout-mode="dark"] .dcm-btn-cancel:hover:not(:disabled) {
-          background: rgba(255,255,255,0.1);
+          background: rgba(255,255,255,0.14);
+          border-color: rgba(255,255,255,0.25);
+          color: #f8fafc;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+        }
+        [data-bs-theme="dark"] .dcm-btn-cancel:active:not(:disabled),
+        [data-layout-mode="dark"] .dcm-btn-cancel:active:not(:disabled) {
+          transform: translateY(0);
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
       `}</style>
       {/* Backdrop click does NOT close the dialog — a destructive

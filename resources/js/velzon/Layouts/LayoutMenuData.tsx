@@ -20,7 +20,7 @@ import { isMenuOpen, toggleMenu } from "./menuState";
  */
 
 const iconMap: Record<string, string> = {
-  LayoutGrid: "ri-dashboard-2-line",
+  LayoutGrid: "ri-dashboard-2-line ms-2",
   Building2: "ri-building-line",
   CreditCard: "ri-bank-card-line",
   IndianRupee: "ri-secure-payment-line",
@@ -112,10 +112,9 @@ const salesLeafLink = (leafId: string): string => {
     case "sales.diagnosis":           return "/sales/diagnosis";
     case "sales.resolution_center":   return "/sales/resolution-center";
     case "sales.performance":         return "/sales/performance";
-    case "sales.lead_distribution":   return "/sales/lead-distribution";
-    case "sales.lead_detail":         return "/sales/lead-detail";
-    case "sales.enquiries":           return "/sales/enquiries";
-    case "sales.leads_details":       return "/sales/leads-details";
+    /* Lead Distribution / Lead Detail / Enquiries / Leads Details were
+     * removed from the menu (May-26 cleanup). Their cases are gone too
+     * — any stale link falls through to the /sales default. */
     default:                          return "/sales";
   }
 };

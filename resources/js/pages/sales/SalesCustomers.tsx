@@ -4,7 +4,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import AddCustomerModal, { type EditCustomer } from './AddCustomerModal';
 import CustomerConsigneesModal, { type CustomerLite } from './CustomerConsigneesModal';
-import { Shimmer } from '../../components/ui/Shimmer';
+import CustomerEvidenceVaultModal, { type CustomerVaultTarget } from './CustomerEvidenceVaultModal';
+import { ShimmerTable } from '../../components/ui/Shimmer';
 import api from '../../api';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 
@@ -44,6 +45,35 @@ const TYPE_COLORS: Record<string, { bg: string; color: string; border: string; d
 
 const ROWS_PER_PAGE = 10;
 
+/* Display the first alphabetic letter as upper-case so company /
+ * contact entries that were saved lowercase (e.g. "tcs", "igc")
+ * still render as "Tcs", "Igc" in the list. Skips ALL-CAPS values
+ * so identifiers like "AAAA" don't get downcased. Hoisted to module
+ * scope so the function reference stays stable across renders — the
+ * `columns` useMemo below depends on it via the cell renderers, and
+ * a per-render closure would bust the memo every time. */
+const titleCase = (s: string): string => {
+  if (!s) return s;
+  if (s === s.toUpperCase() && /[A-Z]/.test(s)) return s;
+  const idx = s.search(/[a-zA-Z]/);
+  if (idx === -1) return s;
+  return s.slice(0, idx) + s[idx].toUpperCase() + s.slice(idx + 1);
+};
+
+/* Truncated cell — pure UI, hoisted out of the page component so it
+ * doesn't capture parent state in a closure and isn't re-created on
+ * every render. Used by Company / Contact Person / Email / Country
+ * columns. */
+const TruncatedCell = ({ value, className, max = 22, caseSensitive = false }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean }) => {
+  const raw = (value ?? '').trim();
+  if (!raw) return <span className="text-muted">—</span>;
+  const v = caseSensitive ? raw : titleCase(raw);
+  const needsTooltip = v.length > max;
+  const display = needsTooltip ? v.slice(0, max) + '…' : v;
+  const inner = <span className={className} style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
+  return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
+};
+
 export default function SalesCustomers() {
   const toast = useToast();
   const { user } = useAuth();
@@ -65,6 +95,11 @@ export default function SalesCustomers() {
    * consignee linked to the picked customer and lets the user add
    * more without leaving the customer list. */
   const [mapTarget, setMapTarget] = useState<CustomerLite | null>(null);
+  /* Read-only compliance archive popup — opens from the third action
+   * icon ("Customer Evidence Vault"). Backend wiring lands later;
+   * for now the modal renders a realistic demo snapshot keyed off
+   * the customer record so designers can sign off on the UX. */
+  const [vaultTarget, setVaultTarget] = useState<CustomerVaultTarget | null>(null);
   /* Linked-consignee warning. When the user clicks Edit on a customer
    * that has at least one same-as-customer consignee mirroring its
    * Stage 1 data, we ask for confirmation before opening the wizard.
@@ -76,7 +111,12 @@ export default function SalesCustomers() {
    * didn't exist; now the table is backed by Customer + CustomerAddress
    * Eloquent models and tenant-scoped server-side. */
   const [customers, setCustomers] = useState<(Customer & { db_id?: number })[]>([]);
-  const [loading, setLoading]     = useState(false);
+  /* Initialise to TRUE so the shimmer shows from frame 1. The
+   * fetchCustomers effect below sets it true again before the API
+   * call and flips it to false in finally, but the useState default
+   * needed to start at true — otherwise the very first render before
+   * the effect fires showed the empty-state UI for a frame. */
+  const [loading, setLoading]     = useState(true);
 
   const fetchCustomers = useCallback(() => {
     setLoading(true);
@@ -112,7 +152,8 @@ export default function SalesCustomers() {
   const switchTab = (next: 'fresh' | 'recurring') => { setTab(next); };
   const onSearch = (v: string) => { setQ(v); };
 
-  const soon = (label: string) => toast.info(label, 'Coming in next phase');
+  /* `soon()` helper removed — the only caller (Customer Evidence Vault)
+   * now opens the real CustomerEvidenceVaultModal popup. */
 
   /* ── Project-standard action button — same recipe as HR Employees,
    * Clients, Branches. 30×30 tile using vz-* tokens so it adapts to
@@ -149,19 +190,9 @@ export default function SalesCustomers() {
     </Tooltip>
   );
 
-  /* ── Truncated cell — for fields that can hold long values (company
-   * name, contact person, email). Renders the value with an ellipsis
-   * cap and a Tooltip that shows the full value on hover. Falls back
-   * to "—" when the value is empty so the column stays visually
-   * aligned. */
-  const TruncatedCell = ({ value, className, max = 22 }: { value?: string | null; className?: string; max?: number }) => {
-    const v = (value ?? '').trim();
-    if (!v) return <span className="text-muted">—</span>;
-    const needsTooltip = v.length > max;
-    const display = needsTooltip ? v.slice(0, max) + '…' : v;
-    const inner = <span className={className} style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
-    return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
-  };
+  /* titleCase + TruncatedCell are hoisted to module scope at the top
+   * of this file so they share a stable reference across renders.
+   * Keep the imports at the call sites unchanged. */
 
   /* ── TanStack table columns. Cell renderers preserve the existing
    * type-color pills, segment chips, WhatsApp pill, and customer-ID
@@ -209,7 +240,7 @@ export default function SalesCustomers() {
     { header: 'Country',        accessorKey: 'country', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-country" max={16} /> },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={16} /> },
     { header: 'Contact No',     accessorKey: 'phone',   cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
-    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" max={18} /> },
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" max={18} caseSensitive /> },
     {
       header: () => <div className="text-center">WhatsApp</div>,
       accessorKey: 'whatsapp',
@@ -249,7 +280,15 @@ export default function SalesCustomers() {
                          if (!c.db_id) { toast.info('Save customer first', 'Map Consignee needs a saved customer record.'); return; }
                          setMapTarget({ id: c.id, db_id: c.db_id, company: c.company, country: c.country });
                        }} />
-                       <ActionBtn title="Customer Evidence Vault"  icon="ri-file-shield-line" color="info"   onClick={() => soon('Evidence Vault')} />
+                       <ActionBtn title="Customer Evidence Vault"  icon="ri-file-shield-line" color="info"   onClick={() => setVaultTarget({
+                         id: c.id,
+                         db_id: c.db_id,
+                         company: c.company,
+                         type: c.type,
+                         segment: c.segment,
+                         country: c.country,
+                         contact: c.contact,
+                       })} />
           </div>
         );
       },
@@ -374,7 +413,13 @@ export default function SalesCustomers() {
               row reads with personality, but the chrome is the same
               clean look used in HR Employees, Clients, etc. */}
           {loading && customers.length === 0 ? (
-            <CustomerListShimmer rows={ROWS_PER_PAGE} />
+            /* Canonical ShimmerTable from the shared Shimmer component
+               — matches the skeleton used on Dashboard + Master pages
+               for a consistent loading look across the app. cols=12
+               matches the live header strip (Sr No, Customer ID, Company,
+               Type, Segment, Country, Contact, Phone, Email, WhatsApp,
+               Consignees, Actions). */
+            <ShimmerTable rows={ROWS_PER_PAGE} cols={12} />
           ) : (
             <TableContainer
               columns={columns}
@@ -404,6 +449,18 @@ export default function SalesCustomers() {
         open={!!mapTarget}
         customer={mapTarget}
         onClose={() => { setMapTarget(null); fetchCustomers(); }}
+      />
+
+      {/* Read-only Evidence Vault popup — premium emerald layout with
+          5 tabs (Company DD, Owner KYC, Trade Licenses, Trade Docs,
+          Shipment Agreements). Demo data for now; the backend wiring
+          (GET /api/customers/{id}/vault) lands in a follow-up pass —
+          the modal's `data` prop accepts the exact shape so the swap
+          is a one-line change. */}
+      <CustomerEvidenceVaultModal
+        open={!!vaultTarget}
+        customer={vaultTarget}
+        onClose={() => setVaultTarget(null)}
       />
 
       {/* Linked-consignee warning — appears only when the user clicks
@@ -457,34 +514,10 @@ const STEPS: { n: number; name: string; desc: string }[] = [
   { n: 4, name: 'Product Mapping',  desc: 'Link customer with products, pricing, and tax details for sales use.' },
 ];
 
-/* ─── List-page shimmer ─────
- * Drop-in replacement for the empty TableContainer while the initial
- * /customers fetch is in flight. Mirrors the live column count + the
- * lavender header strip so the layout doesn't reflow when the real
- * data lands. Light + dark mode both inherit from app.css's
- * `.shimmer` token. */
-function CustomerListShimmer({ rows = 10 }: { rows?: number }) {
-  // 11 columns to match the live table: Sr No, Customer ID, Company,
-  // Type, Segment, Country, Contact, Phone, Email, WhatsApp,
-  // Consignees, Actions.
-  const cols = 12;
-  return (
-    <div className="smc-shimmer-wrap">
-      <div className="smc-shimmer-head">
-        {Array.from({ length: cols }).map((_, i) => (
-          <Shimmer key={i} height={10} width="65%" radius={4} />
-        ))}
-      </div>
-      {Array.from({ length: rows }).map((_, r) => (
-        <div key={r} className="smc-shimmer-row">
-          {Array.from({ length: cols }).map((_, c) => (
-            <Shimmer key={c} height={14} radius={6} />
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
+/* The page-specific list-shimmer has been removed — the canonical
+ * `ShimmerTable` from components/ui/Shimmer is now used inline at
+ * the table render site, matching the loading look on Dashboard and
+ * Master pages. */
 
 /* ─── Scoped page CSS (all rules under .smc-root) ─── */
 const SCOPED_CSS = `

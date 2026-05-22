@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../contexts/ToastContext';
+import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Lead Filter modal.
@@ -138,9 +139,13 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
   const radioValue = radioField ? filters[radioField] : undefined;
 
   return createPortal((
-    <div className="lfm-backdrop" onClick={onClose}>
+    /* Backdrop click intentionally not wired — the filter form holds
+     * the user's in-flight filter selections; an accidental click
+     * outside should not wipe them. ✕ and Apply / Reset buttons drive
+     * dismissal. */
+    <div className="lfm-backdrop">
       <style>{LFM_CSS}</style>
-      <div className="lfm-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="lfm-modal">
         <div className="lfm-head">
           <div className="lfm-head-title">Filters</div>
           <button className="lfm-close" onClick={onClose} aria-label="Close">
@@ -185,25 +190,30 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
             )}
             <div className="lfm-options">
               {active === 'date' ? (
+                /* Date filters use the shared MasterDatePicker
+                 * (same picker the master forms, recruitment and
+                 * onboarding flows all use) so the calendar visual
+                 * language is consistent across the app. Previously
+                 * this was a raw <input type="date"> which rendered
+                 * with the browser-default chrome and looked nothing
+                 * like the themed pickers everywhere else. */
                 <div className="lfm-date-grid">
                   <div className="lfm-field">
                     <label className="lfm-label">From</label>
-                    <input
-                      type="date"
-                      max={filters.end_date || undefined}
-                      className="lfm-input"
+                    <MasterDatePicker
                       value={filters.start_date ?? ''}
-                      onChange={e => setFilters(prev => ({ ...prev, start_date: e.target.value || undefined }))}
+                      onChange={(v) => setFilters(prev => ({ ...prev, start_date: v || undefined }))}
+                      placeholder="Select start date"
+                      maxDate={filters.end_date || undefined}
                     />
                   </div>
                   <div className="lfm-field">
                     <label className="lfm-label">To</label>
-                    <input
-                      type="date"
-                      min={filters.start_date || undefined}
-                      className="lfm-input"
+                    <MasterDatePicker
                       value={filters.end_date ?? ''}
-                      onChange={e => setFilters(prev => ({ ...prev, end_date: e.target.value || undefined }))}
+                      onChange={(v) => setFilters(prev => ({ ...prev, end_date: v || undefined }))}
+                      placeholder="Select end date"
+                      minDate={filters.start_date || undefined}
                     />
                   </div>
                 </div>

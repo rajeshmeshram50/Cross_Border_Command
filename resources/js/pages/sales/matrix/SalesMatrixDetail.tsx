@@ -146,6 +146,12 @@ export default function SalesMatrixDetail() {
   const [meetingsOpen, setMeetingsOpen] = useState(false);
   const [ownerOpts, setOwnerOpts] = useState<Array<{ value: string; label: string }>>([]);
 
+  /* Side-rail collapsing — clicking the chevron in either side card collapses
+   * it to a thin vertical rail so the stage form gets more breathing room.
+   * Clicking the rail (or its expand chevron) restores the full card. */
+  const [clmCollapsed, setClmCollapsed] = useState(false);
+  const [dealCollapsed, setDealCollapsed] = useState(false);
+
   useEffect(() => {
     if (!changeOwnerOpen || ownerOpts.length > 0) return;
     api.get<{ status: boolean; data: Array<{ id: number; name: string; code: string; subtitle: string }> }>(
@@ -473,8 +479,6 @@ export default function SalesMatrixDetail() {
           </div>
         </div>
         <div className="smd-cust-meta">
-          <Meta icon={<IconBriefcase />} label="CUSTOMER CODE"   value={header.customerCode} />
-          <span className="smd-cust-sep" />
           <Meta icon={<IconListLines />} label="OPPORTUNITY ID"   value={header.oppId} />
           <span className="smd-cust-sep" />
           <Meta icon={<IconCalendar />}  label="OPPORTUNITY DATE" value={header.oppDate} />
@@ -552,8 +556,30 @@ export default function SalesMatrixDetail() {
       </div>
 
       {/* ─── Three-column body ─── */}
-      <div className="smd-body">
-        {/* Left — CLM Details */}
+      <div
+        className={`smd-body${clmCollapsed ? ' smd-body-clm-collapsed' : ''}${dealCollapsed ? ' smd-body-deal-collapsed' : ''}`}
+      >
+        {/* Left — CLM Details (or thin rail when collapsed) */}
+        {clmCollapsed ? (
+          <aside
+            className="smd-rail smd-rail-left"
+            onClick={() => setClmCollapsed(false)}
+            role="button"
+            tabIndex={0}
+            aria-label="Expand CLM Details"
+          >
+            <button
+              className="smd-rail-btn"
+              onClick={(e) => { e.stopPropagation(); setClmCollapsed(false); }}
+              aria-label="Expand"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+            <div className="smd-rail-label">CLM DETAILS</div>
+          </aside>
+        ) : (
         <aside className="smd-clm-card">
           <div className="smd-clm-header">
             <div className="smd-clm-header-left">
@@ -568,7 +594,11 @@ export default function SalesMatrixDetail() {
                 <div className="smd-clm-sub">● Active</div>
               </div>
             </div>
-            <button className="smd-clm-collapse" aria-label="Collapse">
+            <button
+              className="smd-clm-collapse"
+              aria-label="Collapse"
+              onClick={() => setClmCollapsed(true)}
+            >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <polyline points="15 18 9 12 15 6" />
               </svg>
@@ -636,6 +666,7 @@ export default function SalesMatrixDetail() {
             />
           </div>
         </aside>
+        )}
 
         {/* Middle — stage-specific content */}
         <section className="smd-stage-card">
@@ -648,7 +679,27 @@ export default function SalesMatrixDetail() {
           />
         </section>
 
-        {/* Right — Deal Execution & Decision Engine */}
+        {/* Right — Deal Execution & Decision Engine (or thin rail when collapsed) */}
+        {dealCollapsed ? (
+          <aside
+            className="smd-rail smd-rail-right"
+            onClick={() => setDealCollapsed(false)}
+            role="button"
+            tabIndex={0}
+            aria-label="Expand Deal Execution & Decision Engine"
+          >
+            <button
+              className="smd-rail-btn"
+              onClick={(e) => { e.stopPropagation(); setDealCollapsed(false); }}
+              aria-label="Expand"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+            <div className="smd-rail-label">DECISION ENGINE</div>
+          </aside>
+        ) : (
         <aside className="smd-deal-card">
           <div className="smd-deal-header">
             <div className="smd-deal-header-left">
@@ -662,7 +713,11 @@ export default function SalesMatrixDetail() {
                 <div className="smd-deal-sub">● Control execution and track deal progress.</div>
               </div>
             </div>
-            <button className="smd-clm-collapse" aria-label="Expand">
+            <button
+              className="smd-clm-collapse"
+              aria-label="Collapse"
+              onClick={() => setDealCollapsed(true)}
+            >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <polyline points="9 18 15 12 9 6" />
               </svg>
@@ -681,6 +736,7 @@ export default function SalesMatrixDetail() {
             }}
           />
         </aside>
+        )}
       </div>
 
       {/* ── Customer picker + edit/create modal ── */}
@@ -1010,7 +1066,6 @@ function ClmRow({ icon, tone, title, sub, progress }: {
 
 /* ─── Inline icon set (keeps wrapper self-contained) ─── */
 
-const IconBriefcase = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>);
 const IconListLines = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>);
 const IconCalendar = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>);
 const IconGlobe    = () => (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10A15.3 15.3 0 0 1 8 12 15.3 15.3 0 0 1 12 2z"/></svg>);

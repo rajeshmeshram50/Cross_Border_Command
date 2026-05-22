@@ -143,12 +143,13 @@ const SCOPED_CSS = `
   position: fixed; inset: 0; z-index: 1090;
   background: rgba(15, 23, 42, .55);
   -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
-  display: flex; align-items: flex-start; justify-content: center;
-  padding: 64px 20px 20px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 20px;
   overflow-y: auto;
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
 }
 .epm-modal {
+  margin: auto;
   width: 100%; max-width: 560px;
   background: #fff;
   border-radius: 16px;

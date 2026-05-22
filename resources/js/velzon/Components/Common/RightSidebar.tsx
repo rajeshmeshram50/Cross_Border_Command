@@ -147,9 +147,21 @@ const RightSidebar = (props: any) => {
 
     return (
         <React.Fragment>
+            {/* Back-to-top floating button.
+              * Previously this was anchored at bottom-right (28px) with
+              * the loud btn-danger fill, which planted it directly on
+              * top of right-edge pagination / next-page chevrons on
+              * data-heavy pages (the user couldn't reach the "next
+              * page" arrow on My Workplace because the red square
+              * covered it). Moved to the LEFT side (still fixed, still
+              * scroll-triggered) and switched to the brand indigo so
+              * it no longer hijacks the right-side controls and reads
+              * as a navigation aid, not a destructive button. */}
             <button
                 onClick={() => toTop()}
-                className="btn btn-danger btn-icon" id="back-to-top">
+                className="btn btn-primary btn-icon" id="back-to-top"
+                style={{ left: 24, right: 'auto', bottom: 110, opacity: 0.92 }}
+                title="Back to top">
                 <i className="ri-arrow-up-line"></i>
             </button>
 

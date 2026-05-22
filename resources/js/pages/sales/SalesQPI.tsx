@@ -711,8 +711,10 @@ function CreateQuotationModal(props: { onClose: () => void; onSubmit: () => void
   const grandTotal = subTotal + (Number(shipping) || 0);
 
   return (
-    <div className="qpi-modal-backdrop" onClick={onClose}>
-      <div className="qpi-modal qpi-modal-teal" onClick={(e) => e.stopPropagation()}>
+    /* Backdrop is purely visual — closing only via the X / Cancel button
+     * so accidental outside-clicks don't wipe an in-progress quote. */
+    <div className="qpi-modal-backdrop">
+      <div className="qpi-modal qpi-modal-teal">
         {/* Header (teal) */}
         <div className="qpi-modal-head qpi-modal-head-teal">
           <div className="qpi-modal-head-left">
@@ -825,8 +827,10 @@ function CreatePIModal(props: { source: Quotation | null; onClose: () => void; o
   const grandTotal = subTotal + (Number(shipping) || 0);
 
   return (
-    <div className="qpi-modal-backdrop" onClick={onClose}>
-      <div className="qpi-modal qpi-modal-purple" onClick={(e) => e.stopPropagation()}>
+    /* Backdrop is purely visual — closing only via the X / Cancel button
+     * so accidental outside-clicks don't wipe an in-progress quote. */
+    <div className="qpi-modal-backdrop">
+      <div className="qpi-modal qpi-modal-purple">
         {/* Header (purple) */}
         <div className="qpi-modal-head qpi-modal-head-purple">
           <div className="qpi-modal-head-left">

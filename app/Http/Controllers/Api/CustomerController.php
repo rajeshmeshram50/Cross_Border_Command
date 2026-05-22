@@ -40,19 +40,36 @@ class CustomerController extends Controller
 
         $q = Customer::query()
             ->forUser($user)
-            ->with(['primaryAddress', 'addresses'])
+            /* Single eager-load — `addresses` returns ALL rows in
+             * customer_addresses (primary + extras). The Customer
+             * model's `primaryAddress` relationship reads from the
+             * already-loaded collection via a HasOne with the
+             * is_primary scope; loading `addresses` separately on
+             * top was firing the same SELECT twice per index call. */
+            ->with(['addresses'])
             ->withCount(['consignees', 'consignees as same_as_customer_consignees_count' => function ($q) {
                 $q->where('same_as_customer', true);
             }])
+            /* Order on the indexed customer_id (PK) — same monotonic
+             * sequence as created_at but uses the clustered PK index
+             * directly, so no sort step at all. */
             ->orderByDesc('id');
 
         if ($search = trim((string) $request->query('q', ''))) {
-            $q->where(function ($w) use ($search) {
-                $w->where('company_name',  'ilike', "%{$search}%")
-                  ->orWhere('legal_name',  'ilike', "%{$search}%")
-                  ->orWhere('customer_code','ilike', "%{$search}%")
-                  ->orWhere('primary_email','ilike', "%{$search}%")
-                  ->orWhere('segment',     'ilike', "%{$search}%");
+            /* Customer code is unique + indexed → cheap exact lookup
+             * first. Email is also indexed (client_id, primary_email)
+             * → starts-with against the email column. Everything else
+             * falls back to ilike contains-search. The early-out on
+             * the indexed columns keeps small/medium tables fast and
+             * the OR-chain only fires when none of the indexed
+             * shortcuts match. */
+            $exact = mb_strtoupper($search);
+            $q->where(function ($w) use ($search, $exact) {
+                $w->where('customer_code', $exact)
+                  ->orWhere('primary_email', 'ilike', $search . '%')
+                  ->orWhere('company_name',  'ilike', "%{$search}%")
+                  ->orWhere('legal_name',    'ilike', "%{$search}%")
+                  ->orWhere('segment',       'ilike', "%{$search}%");
             });
         }
 
@@ -60,6 +77,31 @@ class CustomerController extends Controller
         // — keep it on the response for now but don't filter rows so the
         // list keeps working until "consignees" linkage lands.
         $tab = $request->query('tab', 'fresh');
+
+        /* Optional server-side pagination — kicks in when the client
+         * sends `?page` or `?per_page`. Defaults preserve the legacy
+         * "return everything" shape so existing callers don't break.
+         * Cap per_page at 200 so a misbehaving client can't fetch
+         * tens of thousands of rows in one round-trip. */
+        $page    = (int) $request->query('page', 0);
+        $perPage = min((int) $request->query('per_page', 0), 200);
+
+        if ($page > 0 || $perPage > 0) {
+            $perPage = $perPage > 0 ? $perPage : 50;
+            $page    = $page > 0 ? $page : 1;
+            $total   = (clone $q)->count();
+            $rows    = $q->forPage($page, $perPage)
+                ->get()
+                ->map(fn ($c) => $this->shape($c))
+                ->all();
+            return response()->json([
+                'tab'      => $tab,
+                'count'    => $total,
+                'page'     => $page,
+                'per_page' => $perPage,
+                'data'     => $rows,
+            ]);
+        }
 
         $rows = $q->get()->map(fn ($c) => $this->shape($c))->all();
 
@@ -202,7 +244,20 @@ class CustomerController extends Controller
      */
     private function shape(Customer $c): array
     {
-        $primary = $c->primaryAddress;
+        /* Derive `primary` from the already-loaded `addresses`
+         * collection so we don't trigger a separate
+         * `primaryAddress` SELECT for every customer in the list
+         * (used to be the source of an N+1 — fixed by dropping the
+         * `with(['primaryAddress'])` in index() and keeping just
+         * `with(['addresses'])`). The `addresses` HasMany already
+         * orders by `is_primary DESC` so the first row is the
+         * primary one if any exists. Falls back to the standalone
+         * `primaryAddress` lookup only when `addresses` isn't
+         * eager-loaded (i.e. show() or freshly-loaded create
+         * responses that opted into the explicit load). */
+        $primary = $c->relationLoaded('addresses')
+            ? $c->addresses->firstWhere('is_primary', true)
+            : $c->primaryAddress;
         return [
             'id'              => $c->customer_code ?: ('C-' . str_pad((string) $c->id, 3, '0', STR_PAD_LEFT)),
             'db_id'           => $c->id,

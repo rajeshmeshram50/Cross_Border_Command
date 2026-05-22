@@ -790,7 +790,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
       </Modal>
 
       {/* Payment Modal */}
-      <Modal isOpen={paymentModal} toggle={() => !processing && setPaymentModal(false)} centered size="md" className="pay-modal">
+      <Modal isOpen={paymentModal} toggle={() => !processing && setPaymentModal(false)} centered size="md" className="pay-modal" backdrop="static">
         {/* Styles live in resources/css/app.css under the "Payment Modal" section */}
 
         {/* ── Premium Hero Header ── */}
