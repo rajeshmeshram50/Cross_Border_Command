@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import RemindersForLeadModal from './RemindersForLeadModal';
+import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Reminders Directory — list of every reminder against the current
@@ -35,6 +36,8 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
   const [rows, setRows]       = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Reminder | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const refresh = () => {
     if (!oppId) return;
@@ -64,14 +67,19 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
     }
   };
 
-  const removeRow = async (r: Reminder) => {
-    if (!confirm(`Delete reminder "${r.subject}"?`)) return;
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    const r = pendingDelete;
+    setDeleting(true);
     try {
       await api.delete(`/sales/reminders/${r.id}`);
       setRows(prev => prev.filter(x => x.id !== r.id));
       toast.success('Deleted', 'Reminder removed');
+      setPendingDelete(null);
     } catch (e: any) {
       toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete reminder');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -175,7 +183,7 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
                               </svg>
                               {done ? 'Reopen' : 'Done'}
                             </button>
-                            <button className="rlm-row-btn rlm-row-btn-del" onClick={() => void removeRow(r)} title="Delete">
+                            <button className="rlm-row-btn rlm-row-btn-del" onClick={() => setPendingDelete(r)} title="Delete">
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                                 <polyline points="3 6 5 6 21 6" />
                                 <path d="M19 6l-1.5 14a2 2 0 0 1-2 2H8.5a2 2 0 0 1-2-2L5 6" />
@@ -200,6 +208,17 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
         oppId={oppId}
         oppDate={oppDate}
         onClose={() => { setAddOpen(false); refresh(); }}
+      />
+
+      {/* Themed delete confirmation */}
+      <DeleteConfirmModal
+        open={!!pendingDelete}
+        title="Delete Reminder"
+        itemName={pendingDelete?.subject ?? ''}
+        subMessage="This reminder will be permanently removed from this opportunity."
+        loading={deleting}
+        onClose={() => { if (!deleting) setPendingDelete(null); }}
+        onConfirm={() => void confirmDelete()}
       />
     </>
   ), document.body);
