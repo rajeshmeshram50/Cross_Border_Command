@@ -22,8 +22,9 @@ class ModuleSeeder extends Seeder
             ['name' => 'Master',      'slug' => 'master',      'icon' => 'Database',    'sort_order' => 8,  'is_default' => false, 'description' => 'Master data control center'],
             ['name' => 'HR',          'slug' => 'hr',          'icon' => 'Users',       'sort_order' => 9,  'is_default' => false, 'description' => 'Human resources, payroll, attendance & policies'],
             ['name' => 'Sales Matrix','slug' => 'sales',       'icon' => 'TrendingUp',  'sort_order' => 10, 'is_default' => false, 'description' => 'Sales insights, customer masters & opportunity operations'],
-            ['name' => 'Settings',    'slug' => 'settings',    'icon' => 'Settings',    'sort_order' => 11, 'is_default' => false, 'description' => 'System settings'],
-            ['name' => 'Profile',     'slug' => 'profile',     'icon' => 'UserCircle',  'sort_order' => 12, 'is_default' => true],
+            ['name' => 'Central CLM', 'slug' => 'clm',         'icon' => 'FileText',    'sort_order' => 11, 'is_default' => false, 'description' => 'Contract Lifecycle Management — operations, masters & analytics'],
+            ['name' => 'Settings',    'slug' => 'settings',    'icon' => 'Settings',    'sort_order' => 12, 'is_default' => false, 'description' => 'System settings'],
+            ['name' => 'Profile',     'slug' => 'profile',     'icon' => 'UserCircle',  'sort_order' => 13, 'is_default' => true],
         ];
 
         foreach ($topLevel as $mod) {
@@ -278,6 +279,84 @@ class ModuleSeeder extends Seeder
                     ['slug' => $item['slug']],
                     $item + [
                         'parent_id'  => $salesCatIds[$catSlug],
+                        'sort_order' => $i + 1,
+                        'is_active'  => true,
+                        'is_default' => false,
+                    ]
+                );
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        //  CENTRAL CLM TREE — 5 grouping categories + 16 leaves.
+        //
+        //  Categories mirror the SalesMatrix_v4_9 CLM landing page:
+        //    1. CLM Command Center          (analytics + diagnosis + resolution)
+        //    2. CLM Operations / With Ship  (buyer + supplier profile)
+        //    3. CLM Operations / Without    (case-to-case + agreements)
+        //    4. CLM Master / Compliance     (segment / authority / KYC / DD / licences)
+        //    5. CLM Master / Documents      (control panel / templates / clauses)
+        //
+        //  Permissions cascade follows the same super_admin → client_admin →
+        //  branch_user → employee chain enforced by PermissionController.
+        // ─────────────────────────────────────────────────────────────
+        $clm = Module::where('slug', 'clm')->first();
+
+        $clmCategories = [
+            ['name' => 'CLM Command Center',          'slug' => 'clm.command',            'icon' => 'LayoutDashboard', 'description' => 'CLM analytics, diagnosis & resolution overview'],
+            ['name' => 'CLM Operations — With Shipment ID',    'slug' => 'clm.ops_with',    'icon' => 'Truck',           'description' => 'Buyer & supplier profile management'],
+            ['name' => 'CLM Operations — Without Shipment ID', 'slug' => 'clm.ops_without', 'icon' => 'FileText',        'description' => 'One-time contracts & agreement traffic'],
+            ['name' => 'Compliance & Regulatory',     'slug' => 'clm.compliance',         'icon' => 'ShieldCheck',     'description' => 'Segment, authority, KYC, DD, trade licences'],
+            ['name' => 'Contract & Document Masters', 'slug' => 'clm.documents',          'icon' => 'BookOpen',        'description' => 'Document panel, templates, clauses & T&C'],
+        ];
+
+        $clmCatIds = [];
+        foreach ($clmCategories as $i => $cat) {
+            $row = Module::updateOrCreate(
+                ['slug' => $cat['slug']],
+                $cat + ['parent_id' => $clm->id, 'sort_order' => $i + 1, 'is_active' => true, 'is_default' => false]
+            );
+            $clmCatIds[$cat['slug']] = $row->id;
+        }
+
+        $clmLeaves = [
+            'clm.command' => [
+                ['name' => 'CLM Analytics',             'slug' => 'clm.analytics',             'icon' => 'BarChart3',     'description' => 'Track contract KPIs & legal performance'],
+                ['name' => 'Diagnosis View',            'slug' => 'clm.diagnosis',             'icon' => 'Stethoscope',   'description' => 'Identify blockers, risks & pending approvals'],
+                ['name' => 'Resolution Center',         'slug' => 'clm.resolution_center',     'icon' => 'Wrench',        'description' => 'Resolve legal, approval & contract issues'],
+            ],
+            'clm.ops_with' => [
+                ['name' => 'Buyer Profile',             'slug' => 'clm.buyer_profile',         'icon' => 'User',          'description' => 'Manage buyer onboarding & agreements'],
+                ['name' => 'Supplier Profile',          'slug' => 'clm.supplier_profile',      'icon' => 'Truck',         'description' => 'Manage supplier contracts & compliance'],
+            ],
+            'clm.ops_without' => [
+                ['name' => 'Case to Case Contracts',    'slug' => 'clm.case_to_case',          'icon' => 'FileText',      'description' => 'Manage one-time operational contracts'],
+                ['name' => 'Agreements We Sent',        'slug' => 'clm.agreements_sent',       'icon' => 'Send',          'description' => 'Track agreements sent for approval'],
+                ['name' => 'Agreements To Approve',     'slug' => 'clm.agreements_to_approve', 'icon' => 'CheckCircle',   'description' => 'Review and approve received agreements'],
+            ],
+            'clm.compliance' => [
+                ['name' => 'Segment',                   'slug' => 'clm.segment',               'icon' => 'LayoutGrid',    'description' => 'Manage segment-wise contract structures'],
+                ['name' => 'Authority',                 'slug' => 'clm.authority',             'icon' => 'Award',         'description' => 'Manage certifying & issuing authorities'],
+                ['name' => 'Quality & Compliance Docs', 'slug' => 'clm.quality_docs',          'icon' => 'CheckSquare',   'description' => 'Manage QC & compliance documents'],
+                ['name' => 'KYC',                       'slug' => 'clm.kyc',                   'icon' => 'UserCheck',     'description' => 'Manage customer & vendor KYC records'],
+                ['name' => 'Due Diligence (DD)',        'slug' => 'clm.due_diligence',         'icon' => 'Search',        'description' => 'Manage risk verification processes'],
+                ['name' => 'Trade Licenses',            'slug' => 'clm.trade_licenses',        'icon' => 'FileBadge',     'description' => 'Manage statutory license documents'],
+            ],
+            'clm.documents' => [
+                ['name' => 'Document Control Panel',    'slug' => 'clm.document_panel',        'icon' => 'PenSquare',     'description' => 'Where all masters converge — the CLM execution handshake'],
+                ['name' => 'Trade Documents',           'slug' => 'clm.trade_documents',       'icon' => 'Hexagon',       'description' => 'Manage declarations & trade papers'],
+                ['name' => 'Agreements',                'slug' => 'clm.agreements',            'icon' => 'Users',         'description' => 'Manage agreement templates & masters'],
+                ['name' => 'Terms & Conditions',        'slug' => 'clm.terms_conditions',      'icon' => 'List',          'description' => 'Manage reusable legal T&C structures'],
+                ['name' => 'Clause Library',            'slug' => 'clm.clause_library',        'icon' => 'BookOpen',      'description' => 'Manage reusable legal clauses'],
+            ],
+        ];
+
+        foreach ($clmLeaves as $catSlug => $items) {
+            foreach ($items as $i => $item) {
+                Module::updateOrCreate(
+                    ['slug' => $item['slug']],
+                    $item + [
+                        'parent_id'  => $clmCatIds[$catSlug],
                         'sort_order' => $i + 1,
                         'is_active'  => true,
                         'is_default' => false,

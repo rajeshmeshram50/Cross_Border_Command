@@ -24,181 +24,413 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-root *,.smd-root *::before,.smd-root *::after { box-sizing: border-box; }
 
-/* ── Customer banner ── */
+/* ── Customer banner — premium lavender strip with glow, sheen, glass pills ── */
 .smd-cust-banner {
   position: relative; overflow: hidden;
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px 10px 22px; margin-bottom: 10px;
-  border: 1px solid #e9d5ff; border-radius: 14px;
-  background: linear-gradient(110deg,#f5f3ff 0%,#ede9fe 60%,#e9d5ff 100%);
-  box-shadow: 0 2px 10px rgba(124,58,237,.06);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 0 20px; min-height: 62px;
+  margin-bottom: 10px;
+  border: 1px solid #c4b5fd; border-radius: 16px;
+  background: linear-gradient(110deg, #faf5ff 0%, #f3e8ff 25%, #ede9fe 55%, #ddd6fe 85%, #c4b5fd 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,.85),
+    0 8px 28px rgba(139,92,246,.20),
+    0 2px 8px rgba(0,0,0,.06);
 }
+/* Left accent bar */
 .smd-cust-accent {
   position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
-  background: linear-gradient(180deg,#7c3aed 0%,#6d28d9 50%,#5b21b6 100%);
-  border-radius: 14px 0 0 14px;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+  border-radius: 16px 0 0 16px;
 }
-.smd-cust-left { display: flex; align-items: center; gap: 10px; flex-shrink: 0; z-index: 1; }
+/* Soft radial glows behind content */
+.smd-cust-glow {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse at 10% 50%, rgba(196,181,253,.45) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 50%, rgba(167,139,250,.25) 0%, transparent 55%);
+}
+/* Top sheen */
+.smd-cust-sheen {
+  position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.50), transparent);
+  border-radius: 16px 16px 0 0;
+}
+
+/* Left: avatar + name + glass badge */
+.smd-cust-left {
+  display: flex; align-items: center; gap: 13px;
+  flex-shrink: 0; z-index: 1;
+  padding-left: 10px;
+}
+.smd-cust-avatar-wrap { position: relative; flex-shrink: 0; }
 .smd-cust-avatar {
-  position: relative; width: 38px; height: 38px; border-radius: 12px;
+  width: 38px; height: 38px; border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg,#7c3aed 0%,#6d28d9 100%);
-  box-shadow: 0 3px 12px rgba(124,58,237,.35);
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #5b21b6 100%);
+  box-shadow:
+    0 0 0 3px rgba(139,92,246,.25),
+    0 4px 14px rgba(124,58,237,.45);
 }
-.smd-cust-avatar svg { width: 18px; height: 18px; }
 .smd-cust-avatar-dot {
   position: absolute; bottom: -1px; right: -1px;
-  width: 9px; height: 9px; border-radius: 50%;
-  background: linear-gradient(135deg,#4ade80,#22c55e);
-  border: 2px solid #ede9fe;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: linear-gradient(135deg, #4ade80, #22c55e);
+  border: 2px solid #f3e8ff;
+  box-shadow: 0 2px 4px rgba(34,197,94,.40);
 }
-.smd-cust-name { font-size: 14px; font-weight: 800; color: #4c1d95; letter-spacing: -.3px; line-height: 1.1; }
+.smd-cust-name { font-size: 14.5px; font-weight: 800; color: #3b0764; letter-spacing: -.4px; line-height: 1.2; }
 .smd-cust-tag {
-  display: inline-block; margin-top: 3px;
-  font-size: 8px; font-weight: 800; letter-spacing: .12em; color: #7c3aed;
-  padding: 1px 8px; background: #fff; border: 1px solid #ddd6fe; border-radius: 20px;
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 3px;
+  padding: 1px 9px; border-radius: 20px;
+  background: rgba(255,255,255,.60);
+  border: 1px solid rgba(139,92,246,.35);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
-.smd-cust-meta { display: flex; align-items: center; gap: 0; flex: 1; justify-content: flex-end; flex-wrap: wrap; z-index: 1; }
-/* Vertical ':' dot divider between chips */
-.smd-cust-sep {
-  width: 14px; height: 22px; margin: 0 4px;
-  background-image: radial-gradient(circle, #a78bfa 1.4px, transparent 1.8px);
-  background-size: 4px 6px;
-  background-repeat: no-repeat;
-  background-position: center top 5px, center bottom 5px;
-  background-image:
-    radial-gradient(circle at center 6px, #a78bfa 1.6px, transparent 2px),
-    radial-gradient(circle at center 16px, #a78bfa 1.6px, transparent 2px);
+.smd-cust-tag-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: #7c3aed; display: inline-block;
 }
-.smd-meta {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 12px 4px 4px;
-  background: #fff; border: 1px solid #ddd6fe; border-radius: 12px;
+.smd-cust-tag-text {
+  font-size: 8.5px; font-weight: 700; color: #5b21b6;
+  text-transform: uppercase; letter-spacing: .1em;
 }
-.smd-meta-icon {
-  width: 28px; height: 28px; border-radius: 9px;
-  background: linear-gradient(135deg,#7c3aed 0%,#6d28d9 100%);
-  color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 6px rgba(124,58,237,.3);
-}
-.smd-meta-icon svg { width: 13px; height: 13px; }
-.smd-meta-label { font-size: 8px; font-weight: 800; letter-spacing: .12em; color: #94a3b8; line-height: 1.2; text-transform: uppercase; }
-.smd-meta-value { font-size: 12px; font-weight: 800; color: #4c1d95; line-height: 1.2; letter-spacing: .02em; }
-.smd-back-btn {
-  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
-  padding: 8px 16px; border-radius: 11px;
-  background: linear-gradient(135deg,#7c3aed 0%,#6d28d9 100%);
-  border: none; color: #fff;
-  font-weight: 700; font-size: 12px; cursor: pointer;
-  box-shadow: 0 4px 14px rgba(124,58,237,.4);
-  transition: all .15s;
+
+/* Right: meta pills + 3-dot separators + line + back button */
+.smd-cust-meta {
+  display: flex; align-items: center; gap: 7px;
+  flex: 0 1 auto; justify-content: flex-end; flex-wrap: nowrap;
   z-index: 1;
 }
-.smd-back-btn:hover { transform: translateY(-1px); box-shadow: 0 5px 16px rgba(124,58,237,.5); }
 
-/* ── Stepper card (its own container) ── */
-.smd-stepper-card {
-  background: #fff; border: 1px solid #e9d5ff; border-radius: 14px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
-  box-shadow: 0 2px 10px rgba(124,58,237,.05);
+/* 3-dot vertical separator between pills */
+.smd-cust-sep {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 0 1px;
+}
+.smd-cust-sep i {
+  width: 2.5px; height: 2.5px; border-radius: 50%;
+  background: rgba(124,58,237,.30);
 }
 
-/* ── Stepper — chevron-arrow process flow ── */
-.smd-stepper {
-  display: grid; grid-template-columns: repeat(6,1fr); gap: 0;
-}
-.smd-step {
-  position: relative; isolation: isolate; overflow: hidden;
-  padding: 10px 26px 10px 32px;
-  background: #f5f3ff;
-  cursor: pointer; transition: filter .2s, transform .2s;
-  min-height: 92px;
-  /* Right edge: arrow point. Left edge: matching V-notch so the
-     previous card's arrow nestles inside. */
-  clip-path: polygon(
-    0 0,
-    calc(100% - 18px) 0,
-    100% 50%,
-    calc(100% - 18px) 100%,
-    0 100%,
-    18px 50%
-  );
-  margin-right: -16px;
-}
-.smd-step:first-child {
-  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%);
-  padding-left: 16px;
-  border-top-left-radius: 12px; border-bottom-left-radius: 12px;
-}
-.smd-step:last-child {
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 18px 50%);
-  padding-right: 16px;
-  margin-right: 0;
-  border-top-right-radius: 12px; border-bottom-right-radius: 12px;
-}
-.smd-step:hover { filter: brightness(0.98); }
-/* Active step — vivid violet gradient. The light-mode purple was a
-   touch too dark to pop against the page (especially on dark mode),
-   so we lift the start stop to a brighter #a855f7 and add a
-   highlight inset at the top edge that mirrors the screenshot. */
-.smd-step-active {
-  background: linear-gradient(135deg,#a855f7 0%,#8b5cf6 45%,#7c3aed 100%);
-  color: #fff;
+/* Glass pill — translucent with blur */
+.smd-meta {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 14px;
+  background: rgba(255,255,255,.65);
+  border: 1.5px solid rgba(139,92,246,.30);
+  border-radius: 12px;
   box-shadow:
-    0 6px 22px rgba(168,85,247,.45),
+    0 2px 8px rgba(124,58,237,.12),
+    inset 0 1px 0 rgba(255,255,255,.95);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  flex-shrink: 0;
+}
+.smd-meta-icon {
+  width: 26px; height: 26px; border-radius: 8px;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 3px 8px rgba(124,58,237,.45);
+  flex-shrink: 0;
+}
+.smd-meta-icon svg { width: 11px; height: 11px; }
+.smd-meta-label {
+  font-size: 7px; font-weight: 800; color: #a78bfa;
+  line-height: 1; margin-bottom: 2px;
+  text-transform: uppercase; letter-spacing: .14em;
+}
+.smd-meta-value {
+  font-size: 12.5px; font-weight: 800; color: #3b0764;
+  line-height: 1; letter-spacing: .05em;
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+
+/* Vertical hairline before the back button */
+.smd-cust-line {
+  width: 1px; height: 30px;
+  margin: 0 3px;
+  background: linear-gradient(to bottom,
+    transparent,
+    rgba(124,58,237,.30) 40%,
+    rgba(124,58,237,.30) 60%,
+    transparent);
+}
+
+/* Back button — tri-stop violet with top sheen ::before */
+.smd-back-btn {
+  position: relative; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 18px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #5b21b6 100%);
+  border: none; border-radius: 12px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 11.5px; font-weight: 700;
+  cursor: pointer;
+  transition: all .2s;
+  flex-shrink: 0;
+  white-space: nowrap; letter-spacing: .02em;
+  box-shadow:
+    0 4px 16px rgba(124,58,237,.50),
+    0 1px 3px rgba(91,33,182,.30),
     inset 0 1px 0 rgba(255,255,255,.20);
-  z-index: 3;
+  text-shadow: 0 1px 2px rgba(0,0,0,.20);
+  z-index: 1;
 }
-.smd-step-done { background: #ffffff; z-index: 2; }
-.smd-step-idle { background: #f5f3ff; z-index: 1; }
+.smd-back-btn::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,.18), transparent);
+  pointer-events: none;
+  border-radius: 12px 12px 0 0;
+}
+.smd-back-btn > * { position: relative; z-index: 1; }
+.smd-back-btn:hover {
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 50%, #4c1d95 100%);
+  transform: translateY(-1.5px);
+  box-shadow:
+    0 8px 24px rgba(124,58,237,.60),
+    0 2px 6px rgba(91,33,182,.35),
+    inset 0 1px 0 rgba(255,255,255,.20);
+}
+.smd-back-btn:active { transform: translateY(0); }
 
-.smd-step-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.smd-step-num  { font-size: 8.5px; font-weight: 800; letter-spacing: .15em; color: #94a3b8; }
-.smd-step-active .smd-step-num { color: rgba(255,255,255,.85); }
-.smd-step-badge {
-  font-size: 8.5px; font-weight: 800; letter-spacing: .06em;
-  padding: 2px 7px; border-radius: 20px; white-space: nowrap;
-}
-.smd-step-badge-active { background: rgba(255,255,255,.22); color: #fff; }
-.smd-step-badge-done   { background: #d1fae5; color: #047857; }
-.smd-step-big {
-  font-size: 30px; font-weight: 800; line-height: 1; letter-spacing: -1px;
-  margin-top: 4px; color: #1e293b;
-}
-.smd-step-idle .smd-step-big { color: #cbd5e1; }
-.smd-step-active .smd-step-big { color: #fff; }
-.smd-step-title { font-size: 12px; font-weight: 700; margin-top: 4px; color: #1e293b; line-height: 1.15; }
-.smd-step-idle .smd-step-title { color: #475569; }
-.smd-step-active .smd-step-title { color: #fff; }
-.smd-step-sub   { font-size: 9.5px; color: #94a3b8; line-height: 1.3; margin-top: 1px; }
-.smd-step-active .smd-step-sub { color: rgba(255,255,255,.78); }
-.smd-step-ghost {
-  position: absolute; right: 22px; bottom: -14px;
-  font-size: 56px; font-weight: 800; line-height: 1; letter-spacing: -2px;
-  color: rgba(15,23,42,.05); pointer-events: none;
-}
-.smd-step-active .smd-step-ghost { color: rgba(255,255,255,.18); }
-
-/* ── Action toolbar (own white card) ── */
-.smd-toolbar {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  justify-content: space-between; align-items: center;
-  padding: 10px 12px;
+/* ── Stepper card — unified white container that also holds the action toolbar ── */
+.smd-stepper-card {
+  background: #fff;
+  border: 1px solid #ede9fe;
+  border-radius: 16px;
+  padding: 14px 16px;
   margin-bottom: 10px;
-  background: #fff; border: 1px solid #e9d5ff; border-radius: 14px;
-  box-shadow: 0 2px 10px rgba(124,58,237,.05);
+  box-shadow:
+    0 2px 12px rgba(124,58,237,.07),
+    inset 0 1px 0 rgba(255,255,255,.90);
 }
-.smd-toolbar > .smd-act { flex: 1 1 auto; justify-content: center; }
+
+/* ── Stepper — separated cards with right-pointing chevron arrows between ── */
+.smd-stepper { display: flex; align-items: stretch; gap: 16px; }
+.smd-step {
+  flex: 1; min-width: 0;
+  position: relative;
+  border-radius: 10px;
+  padding: 5px 8px 5px 10px;
+  display: flex; flex-direction: column;
+  cursor: pointer; user-select: none;
+  /* overflow visible so the ::after chevron arrow can draw outside the
+     card into the 16px gap. The ::before sheen sits inside the card so
+     it's unaffected. */
+  overflow: visible;
+  transition: transform .17s ease, box-shadow .17s ease;
+}
+/* Top sheen — shown only on active + done via opacity overrides below. */
+.smd-step::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 44%;
+  pointer-events: none;
+  border-radius: 9px 9px 0 0;
+  opacity: 0;
+}
+/* Right-pointing chevron arrow in the gap, coloured per source-card state. */
+.smd-step::after {
+  content: '';
+  position: absolute;
+  right: -12px; top: 0; bottom: 0;
+  width: 12px;
+  background: #d1d8e2; opacity: .35;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  z-index: 10;
+  pointer-events: none;
+}
+.smd-step:last-child::after { display: none; }
+
+/* ─── ACTIVE ─── */
+.smd-step-active {
+  background: linear-gradient(150deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%);
+  border: 1.5px solid #6d28d9;
+  box-shadow:
+    0 6px 20px rgba(124,58,237,.40),
+    inset 0 1px 0 rgba(255,255,255,.13);
+}
+.smd-step-active:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 10px 26px rgba(124,58,237,.45),
+    inset 0 1px 0 rgba(255,255,255,.13);
+}
+.smd-step-active::before {
+  opacity: 1;
+  background: linear-gradient(180deg, rgba(255,255,255,.10), transparent);
+}
+.smd-step-active::after { background: #9b72f5; opacity: .65; }
+
+/* ─── DONE ─── */
+.smd-step-done {
+  background: linear-gradient(150deg, #f5f3ff 0%, #ede9fe 55%, #ddd6fe 100%);
+  border: 1.5px solid #c4b5fd;
+  box-shadow:
+    0 2px 10px rgba(124,58,237,.11),
+    inset 0 1px 0 rgba(255,255,255,.90);
+}
+.smd-step-done:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 7px 18px rgba(124,58,237,.15),
+    inset 0 1px 0 rgba(255,255,255,.90);
+}
+.smd-step-done::before {
+  opacity: 1;
+  background: linear-gradient(180deg, rgba(255,255,255,.46), transparent);
+}
+.smd-step-done::after { background: #9b72f5; opacity: .65; }
+
+/* ─── UPCOMING (idle) ─── */
+.smd-step-idle {
+  background: linear-gradient(150deg, #f8fafc, #f1f5f9);
+  border: 1.5px solid #e2e8f0;
+  box-shadow:
+    0 1px 4px rgba(0,0,0,.04),
+    inset 0 1px 0 rgba(255,255,255,.95);
+  cursor: default;
+}
+.smd-step-idle::after { background: #d1d8e2; opacity: .35; }
+
+/* Content above the sheen. */
+.smd-step > * { position: relative; z-index: 1; }
+
+.smd-step-head { margin-bottom: 2px; }
+.smd-step-num {
+  font-size: 7px; font-weight: 800;
+  letter-spacing: .20em; text-transform: uppercase;
+  line-height: 1; display: block;
+}
+.smd-step-active .smd-step-num { color: rgba(255,255,255,.50); }
+.smd-step-done   .smd-step-num { color: #b8a0f8; }
+.smd-step-idle   .smd-step-num { color: #d1d8e2; }
+
+/* Chip — absolute top-right corner. */
+.smd-step-badge {
+  position: absolute; top: 5px; right: 6px; z-index: 11;
+  display: inline-flex; align-items: center; gap: 3px;
+  border-radius: 20px;
+  padding: 1.5px 6px;
+}
+.smd-step-badge-active {
+  background: rgba(255,255,255,.13);
+  border: 1px solid rgba(255,255,255,.28);
+}
+.smd-step-badge-done {
+  background: rgba(124,58,237,.09);
+  border: 1px solid rgba(124,58,237,.20);
+}
+.smd-step-badge-text {
+  font-size: 7px; font-weight: 800; letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.smd-step-badge-active .smd-step-badge-text { color: #fff; }
+.smd-step-badge-done   .smd-step-badge-text { color: #7c3aed; }
+.smd-step-badge-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: #fff; display: inline-block;
+  animation: smd-step-pulse 1.2s ease-in-out infinite;
+}
+.smd-step-badge-done svg { color: #7c3aed; }
+@keyframes smd-step-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .5; transform: scale(.7); }
+}
+
+.smd-step-big {
+  font-size: 26px; font-weight: 900; line-height: 1;
+  letter-spacing: -.04em; margin-bottom: 2px;
+}
+.smd-step-active .smd-step-big { color: #fff; }
+.smd-step-done   .smd-step-big {
+  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.smd-step-idle .smd-step-big { color: #c8d3e0; }
+
+.smd-step-title { font-size: 10px; font-weight: 800; line-height: 1.25; }
+.smd-step-active .smd-step-title { color: #fff; }
+.smd-step-done   .smd-step-title { color: #5b21b6; }
+.smd-step-idle   .smd-step-title { color: #94a3b8; }
+
+.smd-step-sub { font-size: 8px; line-height: 1.35; margin-top: 1px; font-weight: 400; }
+.smd-step-active .smd-step-sub { color: rgba(255,255,255,.68); }
+.smd-step-done   .smd-step-sub { color: #8b5cf6; }
+.smd-step-idle   .smd-step-sub { color: #b8c5d3; }
+
+.smd-step-ghost {
+  position: absolute; right: -1px; bottom: -4px;
+  font-size: 44px; font-weight: 900; line-height: 1;
+  pointer-events: none; user-select: none;
+  z-index: 0;
+}
+.smd-step-active .smd-step-ghost { color: rgba(255,255,255,.06); }
+.smd-step-done   .smd-step-ghost { color: rgba(124,58,237,.06); }
+.smd-step-idle   .smd-step-ghost { color: rgba(148,163,184,.09); }
+
+/* Divider between stepper and action toolbar (inside .smd-stepper-card). */
+.smd-stepper-divider {
+  height: 1px;
+  margin: 12px 0;
+  background: linear-gradient(90deg, transparent, #ddd6fe 20%, #ddd6fe 80%, transparent);
+}
+
+/* ── Action toolbar — lives inside .smd-stepper-card below the divider ── */
+.smd-toolbar {
+  display: flex; align-items: center; gap: 7px;
+  flex-wrap: nowrap;
+  overflow-x: auto; overflow-y: visible;
+  white-space: nowrap;
+  padding-bottom: 2px;
+  margin-top: 0;
+  background: transparent;
+  border-top: none;
+}
+.smd-toolbar::-webkit-scrollbar { height: 3px; }
+.smd-toolbar::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 999px; }
+.smd-toolbar > .smd-act { flex: 0 0 auto; }
+.smd-act-sep {
+  display: inline-block;
+  width: 1px; height: 22px;
+  flex-shrink: 0;
+  background: linear-gradient(to bottom, transparent, #ddd6fe, transparent);
+}
 .smd-act {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 11px; border-radius: 9px;
-  background: #fff; border: 1px solid #e9d5ff; color: #6d28d9;
-  font-weight: 600; font-size: 11.5px; cursor: pointer;
-  transition: all .15s;
+  padding: 6px 13px; border-radius: 9px;
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  border: 1.5px solid #c4b5fd;
+  color: #5b21b6;
+  font-family: inherit;
+  font-weight: 700; font-size: 11px;
+  cursor: pointer;
+  transition: all .17s;
+  box-shadow:
+    0 2px 7px rgba(124,58,237,.08),
+    inset 0 1px 0 rgba(255,255,255,.90);
+  white-space: nowrap;
 }
-.smd-act:hover { border-color: #c4b5fd; background: #faf5ff; }
+.smd-act:hover {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
+  border-color: #6d28d9;
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(124,58,237,.32);
+}
+.smd-act:hover .smd-act-icon,
+.smd-act:hover .smd-act-trail { color: #fff; }
+.smd-act:active { transform: translateY(0); }
 .smd-act-disabled {
   opacity: .45; cursor: not-allowed; pointer-events: none;
   background: #f8fafc; color: #94a3b8; border-color: #e2e8f0;
@@ -218,9 +450,22 @@ export const SALES_MATRIX_DETAIL_CSS = `
   margin-left: 1px; color: #a78bfa;
 }
 .smd-act-trail svg { width: 10px; height: 10px; }
-.smd-act-wa { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
-.smd-act-wa .smd-act-icon { color: #10b981; }
-.smd-act-wa:hover { background: #d1fae5; border-color: #6ee7b7; }
+.smd-act-wa {
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  border-color: #86efac;
+  color: #15803d;
+  box-shadow:
+    0 2px 7px rgba(34,197,94,.10),
+    inset 0 1px 0 rgba(255,255,255,.90);
+}
+.smd-act-wa .smd-act-icon { color: currentColor; }
+.smd-act-wa:hover {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: #fff;
+  border-color: #15803d;
+  box-shadow: 0 5px 14px rgba(22,163,74,.32);
+}
+.smd-act-wa:hover .smd-act-icon { color: #fff; }
 
 /* Key Opportunity — applied after the user confirms in the
    KeyOpportunityModal so the toolbar visibly reflects the

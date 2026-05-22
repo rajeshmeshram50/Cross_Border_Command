@@ -60,6 +60,8 @@ import SalesDiagnosis from '../pages/sales/SalesDiagnosis';
 import SalesResolutionCenter from '../pages/sales/SalesResolutionCenter';
 import SalesAnalytics from '../pages/sales/SalesAnalytics';
 import SalesPerformance from '../pages/sales/SalesPerformance';
+import ClmStubPage from '../pages/clm/ClmStubPage';
+import ClmSegmentPage from '../pages/clm/ClmSegmentPage';
 import HrDashboard from '../pages/hrms/HrDashboard';
 import HrOverview from '../pages/hrms/HrOverview';
 import HrEmployees from '../pages/hrms/HrEmployees';
@@ -161,6 +163,28 @@ const getPagePath = (page: string, data?: any): string => {
       if (page === 'sales.resolution_center') return '/sales/resolution-center';
       if (page === 'sales.analytics')       return '/sales/analytics';
       if (page === 'sales.performance')     return '/sales/performance';
+      // Central CLM — every leaf reuses the same stub route until the
+      // real pages ship. The slug after /clm/ is what the stub reads
+      // to render the right title + breadcrumb.
+      if (page === 'clm.analytics')             return '/clm/analytics';
+      if (page === 'clm.diagnosis')             return '/clm/diagnosis';
+      if (page === 'clm.resolution_center')     return '/clm/resolution-center';
+      if (page === 'clm.buyer_profile')         return '/clm/buyer-profile';
+      if (page === 'clm.supplier_profile')      return '/clm/supplier-profile';
+      if (page === 'clm.case_to_case')          return '/clm/case-to-case';
+      if (page === 'clm.agreements_sent')       return '/clm/agreements-sent';
+      if (page === 'clm.agreements_to_approve') return '/clm/agreements-to-approve';
+      if (page === 'clm.segment')               return '/clm/segment';
+      if (page === 'clm.authority')             return '/clm/authority';
+      if (page === 'clm.quality_docs')          return '/clm/quality-docs';
+      if (page === 'clm.kyc')                   return '/clm/kyc';
+      if (page === 'clm.due_diligence')         return '/clm/due-diligence';
+      if (page === 'clm.trade_licenses')        return '/clm/trade-licenses';
+      if (page === 'clm.document_panel')        return '/clm/document-panel';
+      if (page === 'clm.trade_documents')       return '/clm/trade-documents';
+      if (page === 'clm.agreements')            return '/clm/agreements';
+      if (page === 'clm.terms_conditions')      return '/clm/terms-conditions';
+      if (page === 'clm.clause_library')        return '/clm/clause-library';
       return '/dashboard';
   }
 };
@@ -590,6 +614,11 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/sales/resolution-center" element={<SalesResolutionCenter />} />
               <Route path="/sales/analytics" element={<SalesAnalytics />} />
               <Route path="/sales/performance" element={<SalesPerformance />} />
+              {/* Central CLM — real pages get explicit routes; everything
+                  else falls through to the stub. */}
+              <Route path="/clm" element={<ClmStubPage />} />
+              <Route path="/clm/segment" element={<ClmSegmentPage />} />
+              <Route path="/clm/:slug" element={<ClmStubPage />} />
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/overview" element={<HrOverview />} />
               <Route path="/hr/employees" element={<HrEmployees />} />

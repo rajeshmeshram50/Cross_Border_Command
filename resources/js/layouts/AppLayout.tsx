@@ -64,6 +64,15 @@ const getPageFromPath = (pathname: string): string => {
     return segments[1] ? `sales.${segments[1]}` : 'sales';
   }
 
+  // Central CLM leaf routes: /clm/<dash-slug> -> clm.<underscore_slug>.
+  // The URL uses dashes (route-friendly) but menu ids use underscores
+  // (matches the modules table). Convert here so the active highlight
+  // works on every CLM page.
+  if (page === 'clm') {
+    if (!segments[1]) return 'clm';
+    return `clm.${segments[1].replace(/-/g, '_')}`;
+  }
+
   // Map URL paths to page names
   const pathToPage: Record<string, string> = {
     'dashboard': 'dashboard',

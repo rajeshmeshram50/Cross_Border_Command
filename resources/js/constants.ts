@@ -267,6 +267,67 @@ export const SALES_GROUPS: MenuGroup[] = [
   },
 ];
 
+// Central CLM tree — mirrors the SalesMatrix_v4_9 CLM landing page.
+// The sidebar flattens the legacy two-level visual into a single nesting
+// level (one MenuGroup per logical cluster); the labels keep the legacy
+// dotted prefix so the user recognises the original layout.
+export const CLM_GROUPS: MenuGroup[] = [
+  {
+    id: 'clm.command',
+    label: 'CLM Command Center',
+    icon: 'LayoutDashboard',
+    children: [
+      { id: 'clm.analytics',          icon: 'BarChart3',      label: 'CLM Analytics' },
+      { id: 'clm.diagnosis',          icon: 'Stethoscope',    label: 'Diagnosis View' },
+      { id: 'clm.resolution_center',  icon: 'Wrench',         label: 'Resolution Center' },
+    ],
+  },
+  {
+    id: 'clm.ops_with',
+    label: 'CLM Operations — With Shipment ID',
+    icon: 'Truck',
+    children: [
+      { id: 'clm.buyer_profile',      icon: 'User',           label: 'Buyer Profile' },
+      { id: 'clm.supplier_profile',   icon: 'Truck',          label: 'Supplier Profile' },
+    ],
+  },
+  {
+    id: 'clm.ops_without',
+    label: 'CLM Operations — Without Shipment ID',
+    icon: 'FileText',
+    children: [
+      { id: 'clm.case_to_case',          icon: 'FileText',     label: 'Case to Case Contracts' },
+      { id: 'clm.agreements_sent',       icon: 'Send',         label: 'Agreements We Sent' },
+      { id: 'clm.agreements_to_approve', icon: 'CheckCircle',  label: 'Agreements To Approve' },
+    ],
+  },
+  {
+    id: 'clm.compliance',
+    label: 'Compliance & Regulatory',
+    icon: 'ShieldCheck',
+    children: [
+      { id: 'clm.segment',         icon: 'LayoutGrid',  label: 'Segment' },
+      { id: 'clm.authority',       icon: 'Award',       label: 'Authority' },
+      { id: 'clm.quality_docs',    icon: 'CheckSquare', label: 'Quality & Compliance Docs' },
+      { id: 'clm.kyc',             icon: 'UserCheck',   label: 'KYC' },
+      { id: 'clm.due_diligence',   icon: 'Search',      label: 'Due Diligence (DD)' },
+      { id: 'clm.trade_licenses',  icon: 'FileBadge',   label: 'Trade Licenses' },
+    ],
+  },
+  {
+    id: 'clm.documents',
+    label: 'Contract & Document Masters',
+    icon: 'BookOpen',
+    children: [
+      { id: 'clm.document_panel',    icon: 'PenSquare',  label: 'Document Control Panel' },
+      { id: 'clm.trade_documents',   icon: 'Hexagon',    label: 'Trade Documents' },
+      { id: 'clm.agreements',        icon: 'Users',      label: 'Agreements' },
+      { id: 'clm.terms_conditions',  icon: 'List',       label: 'Terms & Conditions' },
+      { id: 'clm.clause_library',    icon: 'BookOpen',   label: 'Clause Library' },
+    ],
+  },
+];
+
 // Role alias — keeps menu-item declarations readable. Covers every tenant
 // user type plus super_admin, so any item declared with this role list is
 // visible to everyone (visibility within the group is then narrowed by
@@ -323,6 +384,17 @@ export const MENU_ITEMS: MenuItem[] = [
     // the product call: granters don't get a menu they'd never use.
     roles: ['branch_user', 'employee'],
     groups: SALES_GROUPS,
+  },
+  {
+    id: 'clm',
+    icon: 'FileText',
+    label: 'Central CLM',
+    // Same role gate as Sales Matrix — operational module surfaces only on
+    // branch_user + employee; the higher tiers grant down. Per-leaf
+    // visibility flows from `perms[id].can_view` in Sidebar.canView, so
+    // branch admins decide which CLM modules each employee sees.
+    roles: ['branch_user', 'employee'],
+    groups: CLM_GROUPS,
   },
 
   // Products catalog — branch + employee only. Amazon/Flipkart-style card
