@@ -7,7 +7,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 
 /* Central CLM → Due Diligence Master. 3-card faithful port. */
 
-type Dd = { id: number; code: string; name: string; authority: string; expiry: string; status: 'active'|'inactive' };
+type Dd = { id: number; code: string; name: string; authority: string; status: 'active'|'inactive' };
 type Authority = { id: number; code: string; name: string };
 
 export default function ClmDdPage() {
@@ -40,7 +40,7 @@ export default function ClmDdPage() {
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page);
 
-  const onSave = async (form: { name: string; authority: string; expiry: string }, id?: number) => {
+  const onSave = async (form: { name: string; authority: string }, id?: number) => {
     try {
       if (id) { await api.put(`/clm/dd-documents/${id}`, form); toast.success('Updated', `${form.name} saved`); }
       else    { await api.post('/clm/dd-documents', form);     toast.success('Added',   `${form.name} added`); }
@@ -76,8 +76,7 @@ export default function ClmDdPage() {
         steps={[
           { n: '01', title: 'Create DD Record', desc: 'Add due diligence and verification documents.',     icon: ICO.doc },
           { n: '02', title: 'Map Authority',    desc: 'Define document issuing authority details.',         icon: ICO.shield },
-          { n: '03', title: 'Set Expiry Rules', desc: 'Define expiry applicability and validity.',          icon: ICO.cal },
-          { n: '04', title: 'Enable Usage',     desc: 'Use DD documents across onboarding and compliance.', icon: ICO.check },
+          { n: '03', title: 'Enable Usage',     desc: 'Use DD documents across onboarding and compliance.', icon: ICO.check },
         ]}
       />
 
@@ -109,20 +108,16 @@ export default function ClmDdPage() {
                   <th style={{ width: 110, textAlign: 'center' }}>DD ID</th>
                   <th>DD DOCUMENT NAME</th>
                   <th>ISSUING AUTHORITY</th>
-                  <th style={{ width: 110, textAlign: 'center' }}>EXPIRY</th>
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <tr><td colSpan={6} className="clm-status">Loading…</td></tr>}
+                  {loading && <tr><td colSpan={5} className="clm-status">Loading…</td></tr>}
                   {!loading && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
                       <td className="clm-td-name">{r.name}</td>
                       <td className="clm-td-desc">{r.authority}</td>
-                      <td style={{ textAlign: 'center' }}>
-                        <span className={`clm-badge ${r.expiry === 'N/A' ? 'clm-badge-green' : r.expiry === 'Varies' ? 'clm-badge-amber' : 'clm-badge-orange'}`}>{r.expiry}</span>
-                      </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
                           <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -163,13 +158,11 @@ export default function ClmDdPage() {
   );
 }
 
-function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string; expiry: string }) => void; }) {
+function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
   const { existing, authorities, nextCode, onClose, onSave } = props;
   const isEdit = !!existing;
   const [name, setName] = useState(existing?.name ?? '');
   const [auth, setAuth] = useState(existing?.authority ?? '');
-  const [expiryMode, setExpiryMode] = useState<'N/A'|'Varies'|'date'>(existing?.expiry === 'N/A' || !existing ? 'N/A' : existing.expiry === 'Varies' ? 'Varies' : 'date');
-  const [expiry, setExpiry] = useState(existing && existing.expiry !== 'N/A' && existing.expiry !== 'Varies' ? existing.expiry : '');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -177,12 +170,10 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = 'Document name is required';
     if (!auth.trim()) next.auth = 'Authority is required';
-    if (expiryMode === 'date' && !expiry.trim()) next.expiry = 'Pick an expiry (MM/YYYY)';
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
-    const expiryValue = expiryMode === 'date' ? expiry.trim() : expiryMode;
-    try { await Promise.resolve(onSave({ name: name.trim(), authority: auth.trim(), expiry: expiryValue })); }
+    try { await Promise.resolve(onSave({ name: name.trim(), authority: auth.trim() })); }
     finally { setSaving(false); }
   };
 
@@ -222,18 +213,6 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
             </select>
             <div className="clm-field-hint">Pulls from Authority Master.</div>
             {errors.auth && <div className="clm-err">{errors.auth}</div>}
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">Expiry</label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => setExpiryMode('N/A')}    className={`clm-tab ${expiryMode === 'N/A'    ? 'active' : ''}`}>N/A</button>
-              <button type="button" onClick={() => setExpiryMode('Varies')} className={`clm-tab ${expiryMode === 'Varies' ? 'active' : ''}`}>Varies</button>
-              <button type="button" onClick={() => setExpiryMode('date')}   className={`clm-tab ${expiryMode === 'date'   ? 'active' : ''}`}>Specific (MM/YYYY)</button>
-            </div>
-            {expiryMode === 'date' && (
-              <input type="text" pattern="\d{2}/\d{4}" placeholder="MM/YYYY" className={`clm-input ${errors.expiry ? 'clm-input-err' : ''}`} value={expiry} onChange={e => { setExpiry(e.target.value); setErrors(p => ({ ...p, expiry: '' })); }} style={{ marginTop: 6 }} />
-            )}
-            {errors.expiry && <div className="clm-err">{errors.expiry}</div>}
           </div>
         </div>
         <div className="clm-modal-foot">

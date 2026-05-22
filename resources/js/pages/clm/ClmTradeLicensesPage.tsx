@@ -7,7 +7,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 
 /* Central CLM → Trade Licences Master. 3-card faithful port. */
 
-type Tl = { id: number; code: string; name: string; authority: string; validity: string; status: 'active'|'inactive' };
+type Tl = { id: number; code: string; name: string; authority: string; status: 'active'|'inactive' };
 type Authority = { id: number; code: string; name: string };
 
 export default function ClmTradeLicensesPage() {
@@ -40,7 +40,7 @@ export default function ClmTradeLicensesPage() {
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page);
 
-  const onSave = async (form: { name: string; authority: string; validity: string }, id?: number) => {
+  const onSave = async (form: { name: string; authority: string }, id?: number) => {
     try {
       if (id) { await api.put(`/clm/trade-licenses/${id}`, form); toast.success('Updated', `${form.name} saved`); }
       else    { await api.post('/clm/trade-licenses', form);     toast.success('Added',   `${form.name} added`); }
@@ -76,8 +76,7 @@ export default function ClmTradeLicensesPage() {
         steps={[
           { n: '01', title: 'Create Licence Record',     desc: 'Add statutory and regulatory licences.',           icon: ICO.doc },
           { n: '02', title: 'Map Authority',             desc: 'Define licence issuing authority details.',         icon: ICO.shield },
-          { n: '03', title: 'Set Validity & Renewal',    desc: 'Define licence validity and renewal period.',       icon: ICO.cal },
-          { n: '04', title: 'Enable Usage',              desc: 'Use licences across compliance and trade workflows.', icon: ICO.check },
+          { n: '03', title: 'Enable Usage',              desc: 'Use licences across compliance and trade workflows.', icon: ICO.check },
         ]}
       />
 
@@ -109,20 +108,16 @@ export default function ClmTradeLicensesPage() {
                   <th style={{ width: 130, textAlign: 'center' }}>TRADE LICENCE CODE</th>
                   <th>LICENCE NAME</th>
                   <th>ISSUING AUTHORITY</th>
-                  <th style={{ width: 110, textAlign: 'center' }}>VALIDITY</th>
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <tr><td colSpan={6} className="clm-status">Loading…</td></tr>}
+                  {loading && <tr><td colSpan={5} className="clm-status">Loading…</td></tr>}
                   {!loading && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
                       <td className="clm-td-name">{r.name}</td>
                       <td className="clm-td-desc">{r.authority}</td>
-                      <td style={{ textAlign: 'center' }}>
-                        <span className={`clm-badge ${r.validity === 'N/A' ? 'clm-badge-green' : 'clm-badge-amber'}`}>{r.validity}</span>
-                      </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
                           <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -163,13 +158,11 @@ export default function ClmTradeLicensesPage() {
   );
 }
 
-function TlModal(props: { existing: Tl | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string; validity: string }) => void; }) {
+function TlModal(props: { existing: Tl | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
   const { existing, authorities, nextCode, onClose, onSave } = props;
   const isEdit = !!existing;
   const [name, setName] = useState(existing?.name ?? '');
   const [auth, setAuth] = useState(existing?.authority ?? '');
-  const [validityMode, setValidityMode] = useState<'N/A'|'date'>(existing?.validity === 'N/A' || !existing ? 'N/A' : 'date');
-  const [validity, setValidity] = useState(existing && existing.validity !== 'N/A' ? existing.validity : '');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -177,12 +170,10 @@ function TlModal(props: { existing: Tl | null; authorities: Authority[]; nextCod
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = 'Licence name is required';
     if (!auth.trim()) next.auth = 'Authority is required';
-    if (validityMode === 'date' && !validity.trim()) next.validity = 'Pick a validity (MM/YYYY)';
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
-    const validityValue = validityMode === 'date' ? validity.trim() : 'N/A';
-    try { await Promise.resolve(onSave({ name: name.trim(), authority: auth.trim(), validity: validityValue })); }
+    try { await Promise.resolve(onSave({ name: name.trim(), authority: auth.trim() })); }
     finally { setSaving(false); }
   };
 
@@ -222,17 +213,6 @@ function TlModal(props: { existing: Tl | null; authorities: Authority[]; nextCod
             </select>
             <div className="clm-field-hint">Pulls from Authority Master.</div>
             {errors.auth && <div className="clm-err">{errors.auth}</div>}
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">Validity</label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => setValidityMode('N/A')}  className={`clm-tab ${validityMode === 'N/A'  ? 'active' : ''}`}>N/A (No expiry)</button>
-              <button type="button" onClick={() => setValidityMode('date')} className={`clm-tab ${validityMode === 'date' ? 'active' : ''}`}>Valid Until (MM/YYYY)</button>
-            </div>
-            {validityMode === 'date' && (
-              <input type="text" pattern="\d{2}/\d{4}" placeholder="MM/YYYY" className={`clm-input ${errors.validity ? 'clm-input-err' : ''}`} value={validity} onChange={e => { setValidity(e.target.value); setErrors(p => ({ ...p, validity: '' })); }} style={{ marginTop: 6 }} />
-            )}
-            {errors.validity && <div className="clm-err">{errors.validity}</div>}
           </div>
         </div>
         <div className="clm-modal-foot">
