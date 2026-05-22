@@ -380,19 +380,19 @@ export default function ProductView() {
         <div className="pv2-card pv2-vendors-card">
           <div className="pv2-vendors-head">
             <i className="ri-links-line" />
-            Product Vendors
+            Product Suppliers
             <span className="pv2-vendors-count">{product.vendor_maps.length}</span>
           </div>
           {product.vendor_maps.length === 0 ? (
-            <div className="pv2-vendors-empty">No vendors mapped to this product.</div>
+            <div className="pv2-vendors-empty">No suppliers mapped to this product.</div>
           ) : (
             <div className="pv2-vendor-table-wrap">
               <table className="pv2-vendor-table">
                 <thead>
                   <tr>
                     <th className="pv2-vt-num">Sr No</th>
-                    <th>Vendor Code</th>
-                    <th>Vendor Company Name</th>
+                    <th>Supplier Code</th>
+                    <th>Supplier Company Name</th>
                     <th>Contact Person Name</th>
                     <th>Contact No</th>
                     <th className="pv2-vt-num">Purchase Price</th>

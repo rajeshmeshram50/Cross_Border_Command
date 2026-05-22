@@ -360,47 +360,48 @@ const LDV_CSS = `
 @keyframes ldv-pop { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 .ldv-head {
-  display: flex; align-items: center; gap: 14px;
-  padding: 18px 22px; background: linear-gradient(135deg, #0e7490, #0891b2 55%, #22d3ee);
+  display: flex; align-items: center; gap: 11px;
+  padding: 13px 18px; background: linear-gradient(135deg, #0e7490, #0891b2 55%, #22d3ee);
   color: #fff; position: relative;
 }
-.ldv-head-left { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
+.ldv-head-left { display: flex; align-items: center; gap: 11px; flex: 1; min-width: 0; }
 .ldv-head-icon {
-  width: 42px; height: 42px; border-radius: 12px;
+  width: 34px; height: 34px; border-radius: 10px;
   background: rgba(255,255,255,.2);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.ldv-head-title { font-size: 18px; font-weight: 700; line-height: 1.2; }
-.ldv-head-sub { font-size: 12px; opacity: .85; margin-top: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ldv-head-icon svg { width: 16px; height: 16px; }
+.ldv-head-title { font-size: 14.5px; font-weight: 800; line-height: 1.2; letter-spacing: -.2px; }
+.ldv-head-sub { font-size: 10.5px; opacity: .85; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .ldv-status {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px; border-radius: 999px;
-  font-size: 11.5px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: .02em;
   background: rgba(255,255,255,.20); color: #fff;
   border: 1px solid rgba(255,255,255,.35);
 }
 .ldv-status-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.30);
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #22c55e; box-shadow: 0 0 0 2px rgba(34,197,94,.30);
 }
 .ldv-status-disqualified .ldv-status-dot {
-  background: #f87171; box-shadow: 0 0 0 3px rgba(248,113,113,.30);
+  background: #f87171; box-shadow: 0 0 0 2px rgba(248,113,113,.30);
 }
 
 .ldv-close {
-  width: 30px; height: 30px; border: none; background: rgba(255,255,255,.18);
-  color: #fff; border-radius: 9px; cursor: pointer;
+  width: 26px; height: 26px; border: none; background: rgba(255,255,255,.18);
+  color: #fff; border-radius: 8px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: background .15s;
 }
 .ldv-close:hover { background: rgba(255,255,255,.32); }
 
-.ldv-body { padding: 18px 22px; flex: 1; overflow-y: auto; background: #f8fafc; }
-.ldv-loading { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ldv-body { padding: 14px 18px; flex: 1; overflow-y: auto; background: #f8fafc; }
+.ldv-loading { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .ldv-skel {
-  height: 64px; border-radius: 12px;
+  height: 56px; border-radius: 10px;
   background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
   background-size: 200% 100%;
   animation: ldv-shimmer 1.1s ease-in-out infinite;
@@ -410,38 +411,39 @@ const LDV_CSS = `
   100% { background-position: -200% 0; }
 }
 
-.ldv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ldv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .ldv-card {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 14px; background: #fff;
-  border: 1px solid #e2e8f0; border-radius: 12px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; background: #fff;
+  border: 1px solid #e2e8f0; border-radius: 10px;
   transition: border-color .15s, box-shadow .15s;
 }
 .ldv-card:hover { border-color: #cbd5e1; box-shadow: 0 2px 10px rgba(15,23,42,.04); }
-.ldv-card-wide { grid-column: 1 / -1; align-items: flex-start; flex-direction: column; gap: 8px; }
-.ldv-card-head { display: flex; align-items: center; gap: 10px; }
+.ldv-card-wide { grid-column: 1 / -1; align-items: flex-start; flex-direction: column; gap: 6px; }
+.ldv-card-head { display: flex; align-items: center; gap: 8px; }
 .ldv-card-icon {
-  width: 36px; height: 36px; border-radius: 10px;
+  width: 30px; height: 30px; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
+.ldv-card-icon svg { width: 14px; height: 14px; }
 .ldv-card-body { flex: 1; min-width: 0; }
 .ldv-label {
-  font-size: 9.5px; font-weight: 700; color: #94a3b8;
-  letter-spacing: .08em; text-transform: uppercase; margin-bottom: 3px;
+  font-size: 8.5px; font-weight: 800; color: #94a3b8;
+  letter-spacing: .10em; text-transform: uppercase; margin-bottom: 2px;
 }
 .ldv-card-val { line-height: 1.3; }
 .ldv-value {
-  font-size: 13px; font-weight: 600; color: #0f172a;
+  font-size: 11.5px; font-weight: 700; color: #0f172a;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;
 }
 .ldv-value-muted { color: #cbd5e1; font-weight: 500; }
-.ldv-link { color: #0891b2; text-decoration: none; font-size: 13px; font-weight: 500; }
+.ldv-link { color: #0891b2; text-decoration: none; font-size: 11.5px; font-weight: 600; }
 .ldv-link:hover { text-decoration: underline; }
 
 .ldv-chip {
-  display: inline-block; padding: 4px 12px; border-radius: 8px;
-  font-size: 11.5px; font-weight: 600; border: 1.5px solid;
+  display: inline-block; padding: 2px 9px; border-radius: 6px;
+  font-size: 10px; font-weight: 700; border: 1.5px solid;
 }
 .ldv-chip-violet { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
 .ldv-chip-green  { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
@@ -449,21 +451,21 @@ const LDV_CSS = `
 .ldv-chip-slate  { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
 
 .ldv-message {
-  font-size: 12.5px; color: #334155; line-height: 1.5; margin: 0;
+  font-size: 11px; color: #334155; line-height: 1.5; margin: 0;
   background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
-  padding: 10px 12px; white-space: pre-wrap; word-break: break-word;
+  padding: 8px 11px; white-space: pre-wrap; word-break: break-word;
 }
 
 .ldv-foot {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 22px; background: #fff; border-top: 1px solid #e2e8f0;
+  padding: 10px 18px; background: #fff; border-top: 1px solid #e2e8f0;
 }
 .ldv-foot-meta {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11.5px; color: #0891b2;
+  font-size: 10.5px; color: #0891b2;
 }
 .ldv-btn {
-  padding: 9px 28px; border-radius: 9px; font-size: 12.5px; font-weight: 600;
+  padding: 7px 22px; border-radius: 8px; font-size: 11px; font-weight: 700;
   cursor: pointer; border: 1.5px solid transparent; transition: all .15s;
 }
 .ldv-btn-primary {

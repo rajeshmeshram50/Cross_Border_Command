@@ -3304,7 +3304,7 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
                 value={applicableTo}
                 options={[
                   { value: 'Customer', label: 'Customer' },
-                  { value: 'Vendor',   label: 'Vendor' },
+                  { value: 'Vendor',   label: 'Supplier' },
                   { value: 'Both',     label: 'Both' },
                   { value: 'Internal', label: 'Internal' },
                 ]}

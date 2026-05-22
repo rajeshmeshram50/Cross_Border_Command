@@ -49,6 +49,7 @@ import SalesCustomers from '../pages/sales/SalesCustomers';
 import SalesConsignee from '../pages/sales/SalesConsignee';
 import SalesLeadAckMaster from '../pages/sales/SalesLeadAckMaster';
 import SalesLeadWorksheet from '../pages/sales/SalesLeadWorksheet';
+import LeadDistributionPage from '../pages/sales/AssignedLeadsModal';
 import SalesTodo from '../pages/sales/SalesTodo';
 import SalesQPI from '../pages/sales/SalesQPI';
 import SalesP2PSummary from '../pages/sales/SalesP2PSummary';
@@ -156,7 +157,8 @@ const getPagePath = (page: string, data?: any): string => {
       if (page === 'sales.customers')       return '/sales/customers';
       if (page === 'sales.consignee')       return '/sales/consignee';
       if (page === 'sales.lead_ack_master') return '/sales/lead-ack-master';
-      if (page === 'sales.lead_worksheet')  return '/sales/lead-worksheet';
+      if (page === 'sales.lead_worksheet')  return data?.salespersonId ? `/sales/lead-worksheet?sp=${data.salespersonId}${data?.salespersonName ? `&sp_name=${encodeURIComponent(data.salespersonName)}` : ''}` : '/sales/lead-worksheet';
+      if (page === 'sales.lead_distribution') return '/sales/lead-distribution';
       /* "My Workplace" reuses the Lead Worksheet page — it's the same
          operational view, surfaced under a friendlier menu label after
          the May-26 cleanup. */
@@ -618,6 +620,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/sales/consignee" element={<SalesConsignee />} />
               <Route path="/sales/lead-ack-master" element={<SalesLeadAckMaster />} />
               <Route path="/sales/lead-worksheet" element={<SalesLeadWorksheet />} />
+              <Route path="/sales/lead-distribution" element={<LeadDistributionPage />} />
               <Route path="/sales/todo" element={<SalesTodo />} />
               <Route path="/sales/matrix/:oppId/stage/:stage" element={<SalesMatrixDetail />} />
               <Route path="/sales/qpi" element={<SalesQPI />} />

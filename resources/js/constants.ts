@@ -76,8 +76,8 @@ export const MASTER_GROUPS: MenuGroup[] = [
     children: [
       { id: 'master.customer_types',           icon: 'UserSquare', label: 'Customer Types' },
       { id: 'master.customer_classifications', icon: 'Award',      label: 'Customer Classifications' },
-      { id: 'master.vendor_types',             icon: 'Store',      label: 'Vendor Types' },
-      { id: 'master.vendor_behaviour',         icon: 'Activity',   label: 'Vendor Behaviour' },
+      { id: 'master.vendor_types',             icon: 'Store',      label: 'Supplier Types' },
+      { id: 'master.vendor_behaviour',         icon: 'Activity',   label: 'Supplier Behaviour' },
       { id: 'master.applicable_types',         icon: 'Users2',     label: 'Applicable Parties' },
     ],
   },
@@ -117,7 +117,7 @@ export const MASTER_GROUPS: MenuGroup[] = [
       { id: 'master.advance_payment_rules',  icon: 'CreditCard',   label: 'Advance Payment Rules' },
       { id: 'master.exchange_rate_log',      icon: 'Repeat',       label: 'Exchange Rate Log' },
       { id: 'master.goods_service_flag',     icon: 'ToggleRight',  label: 'Goods vs Service Flag' },
-      { id: 'master.vendor_directory',       icon: 'BookUser',     label: 'Vendor Directory' },
+      { id: 'master.vendor_directory',       icon: 'BookUser',     label: 'Supplier Directory' },
     ],
   },
   {
@@ -406,7 +406,7 @@ export const MENU_ITEMS: MenuItem[] = [
   // Vendor master — companies the branch buys product from. Sits next to
   // Products so the purchasing trio (Products → Vendors → mappings) reads
   // as a single section in the sidebar.
-  { id: 'vendors',  icon: 'Store',   label: 'Vendors',  roles: ['branch_user', 'employee'] },
+  { id: 'vendors',  icon: 'Store',   label: 'Suppliers',  roles: ['branch_user', 'employee'] },
 
   // Face-driven attendance — only employees punch in. The signed-in admin /
   // branch user has no Employee row to clock in for; surfaced ONLY to the
