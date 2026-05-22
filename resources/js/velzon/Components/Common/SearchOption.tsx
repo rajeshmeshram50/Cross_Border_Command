@@ -55,13 +55,13 @@ function pathForId(id: string): string {
         case 'sales.consignee':       return '/sales/consignee';
         case 'sales.lead_ack_master': return '/sales/lead-ack-master';
         case 'sales.lead_worksheet':  return '/sales/lead-worksheet';
+        // "My Workplace" alias — same backing page as Lead Worksheet.
+        case 'sales.workplace':       return '/sales/lead-worksheet';
         case 'sales.todo':            return '/sales/todo';
-        case 'sales.lead_distribution': return '/sales/lead-distribution';
-        case 'sales.lead_detail':     return '/sales/lead-detail';
         case 'sales.matrix_detail':   return '/sales/matrix';
-        case 'sales.enquiries':       return '/sales/enquiries';
-        case 'sales.leads_details':   return '/sales/leads-details';
         case 'sales.qpi':             return '/sales/qpi';
+        // "Quotation Vs PI History" alias — same backing page as QPI.
+        case 'sales.quotation_vs_pi': return '/sales/qpi';
         case 'sales.p2p_summary':     return '/sales/p2p-summary';
         case 'sales.diagnosis':       return '/sales/diagnosis';
         case 'sales.resolution_center': return '/sales/resolution-center';

@@ -123,7 +123,7 @@ export default function TopNav({ current, onNavigate }: Props) {
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
                     parentActive
-                      ? 'bg-primary text-white font-semibold shadow-md shadow-primary/35'
+                      ? 'topnav-active-pill text-white font-semibold'
                       : 'text-sidebar-text hover:bg-white/[.06] hover:text-slate-300'
                   }`}
                 >
@@ -192,7 +192,7 @@ export default function TopNav({ current, onNavigate }: Props) {
               onClick={() => onNavigate(m.id)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium whitespace-nowrap flex-shrink-0 transition-all duration-150 cursor-pointer ${
                 active
-                  ? 'bg-primary text-white font-semibold shadow-md shadow-primary/35'
+                  ? 'topnav-active-pill text-white font-semibold'
                   : 'text-sidebar-text hover:bg-white/[.06] hover:text-slate-300'
               }`}
             >

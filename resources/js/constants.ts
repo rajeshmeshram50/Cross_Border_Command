@@ -253,13 +253,16 @@ export const SALES_GROUPS: MenuGroup[] = [
     id: 'sales.operations',
     label: 'Sales Matrix Operations',
     icon: 'Activity',
+    /* Per product call (Vedant, 22-May-26): keep only two leaves under
+     * Sales Matrix Operations — My Workplace and Quotation Vs PI History.
+     * Lead Distribution / Lead Detail / Enquiries / Leads Details were
+     * moved out / superseded by other modules, so we drop them from the
+     * sidebar to avoid dead nav entries. Their pages still exist on
+     * disk and are reachable by direct URL; only the menu surface is
+     * trimmed here. */
     children: [
-      { id: 'sales.workplace',         icon: 'Activity',    label: 'My Workplace' },
-      { id: 'sales.quotation_vs_pi',   icon: 'FileText',    label: 'Quotation Vs PI History' },
-      { id: 'sales.lead_distribution', icon: 'Share2',      label: 'Lead Distribution' },
-      { id: 'sales.lead_detail',       icon: 'FileSearch',  label: 'Lead Detail' },
-      { id: 'sales.enquiries',         icon: 'Mail',        label: 'Enquiries' },
-      { id: 'sales.leads_details',     icon: 'ListChecks',  label: 'Leads Details' },
+      { id: 'sales.workplace',       icon: 'Activity', label: 'My Workplace' },
+      { id: 'sales.quotation_vs_pi', icon: 'FileText', label: 'Quotation Vs PI History' },
     ],
   },
 ];
