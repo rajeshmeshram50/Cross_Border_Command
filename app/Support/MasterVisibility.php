@@ -138,46 +138,49 @@ class MasterVisibility
 
         $userTier = self::tierFor($user);
 
-        // Prefer the creator user when we can resolve one — gives the
-        // most accurate tier (handles client_admin vs client_user
-        // labelling for the message, etc.).
+        // Row's tier is ALWAYS derived from its own ownership stamps
+        // (client_id + branch_id), never from the creator's *current*
+        // state. Reason: if the creator later moves from Main Branch
+        // to a Sub Branch, their old Main-Branch rows would otherwise
+        // be re-classified as Sub-tier and become editable by sibling
+        // Sub-Branch users — exactly the bug the user reported. The
+        // row's branch_id is stamped at create time and is the
+        // authoritative source for its tier. The creator user, if
+        // resolvable, is used only to pick the role label in the
+        // error message.
+        $rowClientId = $row->client_id ?? null;
+        $rowBranchId = $row->branch_id ?? null;
+
+        if (!$rowClientId) {
+            $rowTier = self::TIER_SUPER;
+            $defaultLabel = 'a Super Admin';
+        } elseif (!$rowBranchId) {
+            $rowTier = self::TIER_CLIENT;
+            $defaultLabel = 'a Client user';
+        } else {
+            $isMain = Branch::where('id', $rowBranchId)
+                ->where('client_id', $rowClientId)
+                ->where('is_main', true)
+                ->exists();
+            $rowTier      = $isMain ? self::TIER_MAIN : self::TIER_SUB;
+            $defaultLabel = $isMain ? 'the Main Branch' : 'another Branch';
+        }
+
+        // Resolve the creator just to refine the error message — the
+        // tier decision above already stands on the row's stamps.
         $creator = (isset($row->created_by) && $row->created_by)
             ? User::find($row->created_by)
             : null;
 
-        if ($creator) {
-            $rowTier = self::tierFor($creator, $row->branch_id ?? null);
-            $rowLabel = match ($creator->user_type) {
-                'super_admin'             => 'a Super Admin',
-                'client_admin'            => 'a Client Admin',
-                'client_user'             => 'a Client user',
-                'branch_user', 'employee' => $rowTier === self::TIER_MAIN
-                    ? 'the Main Branch'
-                    : 'another Branch',
-                default                   => 'a higher-privileged user',
-            };
-        } else {
-            // Creator unknown → infer tier from the row's own ownership
-            // stamp. Globals (no client) ranked as Super so only super
-            // admins can delete; otherwise rank by branch type.
-            $rowClientId = $row->client_id ?? null;
-            $rowBranchId = $row->branch_id ?? null;
-
-            if (!$rowClientId) {
-                $rowTier = self::TIER_SUPER;
-                $rowLabel = 'a Super Admin';
-            } elseif (!$rowBranchId) {
-                $rowTier = self::TIER_CLIENT;
-                $rowLabel = 'a Client user';
-            } else {
-                $isMain = Branch::where('id', $rowBranchId)
-                    ->where('client_id', $rowClientId)
-                    ->where('is_main', true)
-                    ->exists();
-                $rowTier  = $isMain ? self::TIER_MAIN : self::TIER_SUB;
-                $rowLabel = $isMain ? 'the Main Branch' : 'another Branch';
-            }
-        }
+        $rowLabel = $creator ? match ($creator->user_type) {
+            'super_admin'             => 'a Super Admin',
+            'client_admin'            => 'a Client Admin',
+            'client_user'             => 'a Client user',
+            'branch_user', 'employee' => $rowTier === self::TIER_MAIN
+                ? 'the Main Branch'
+                : ($rowTier === self::TIER_SUB ? 'another Branch' : $defaultLabel),
+            default                   => $defaultLabel,
+        } : $defaultLabel;
 
         if ($rowTier <= $userTier) return null;
 

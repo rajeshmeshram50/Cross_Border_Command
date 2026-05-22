@@ -1233,9 +1233,18 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         {/* Scrolling body — only the stage-specific form / tables /
             banners scroll. The pinned section above stays put. */}
         <div className="acm-wiz-body">
-          {/* Stage panes */}
-          {stage === 1 && hydrating && <Stage1FormShimmer />}
-          {stage === 1 && !hydrating && (
+          {/* Edit-mode hydration UX — render the form immediately
+              with whatever the consignee row already carried, and
+              overlay a thin progress strip while /consignees/:id
+              fetches the rest. Previously the full Stage1FormShimmer
+              hid the form for the entire fetch which felt slow. */}
+          {stage === 1 && hydrating && (
+            <div className="acg-hydrate-strip" aria-live="polite">
+              <div className="acg-hydrate-strip-bar" />
+              <span className="acg-hydrate-strip-text">Loading saved details…</span>
+            </div>
+          )}
+          {stage === 1 && (
             <Stage1
               tab={idTab}
               setTab={setIdTab}
@@ -2931,6 +2940,11 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
   const [removeAttachment, setRemoveAttachment] = useState(false);
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  // Inline "Add Document Type" master popup — opens from the `+`
+  // button next to the Name dropdown. Posts to /master/document_type
+  // so the new row immediately joins the dropdown without losing the
+  // user's in-progress license entry.
+  const [typeModal, setTypeModal] = useState(false);
   useEscapeKey(() => { if (!saving) onClose(); });
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => {
     setD(prev => ({ ...prev, [k]: v }));
@@ -3062,13 +3076,29 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
           <div className="acm-loc-grid-2">
             <div className="acm-field" data-field="name">
               <label className="acm-field-label">{titleLabel.toUpperCase()} NAME <span className="acm-req">*</span></label>
-              <MasterSelect
-                value={d.name}
-                options={docOptions}
-                placeholder={`Select ${titleLabel.toLowerCase()}`}
-                invalid={!!errs.name}
-                onChange={(v) => set('name', v)}
-              />
+              <div className="acg-doc-name-row">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <MasterSelect
+                    value={d.name}
+                    options={docOptions}
+                    placeholder={`Select ${titleLabel.toLowerCase()}`}
+                    invalid={!!errs.name}
+                    onChange={(v) => set('name', v)}
+                  />
+                </div>
+                <Tooltip label="Add new document type">
+                  <button
+                    type="button"
+                    className="acg-doc-plus-btn"
+                    aria-label="Add new document type"
+                    onClick={() => setTypeModal(true)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                  </button>
+                </Tooltip>
+              </div>
               {errs.name && <span className="acm-err-text">{errs.name}</span>}
             </div>
             <div className="acm-field" data-field="license_number">
@@ -3161,6 +3191,146 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
             style={saving ? { opacity: 0.7, cursor: 'wait' } : undefined}
           >
             {saving ? 'Saving…' : (editing ? 'Update' : 'Save')}
+          </button>
+        </div>
+      </div>
+      {typeModal && (
+        <AddDocumentTypeMasterPopup
+          onClose={() => setTypeModal(false)}
+          onSaved={(name) => {
+            /* Append the new master row to the dropdown source via a
+             * local state slot, then auto-select it on the form so
+             * the user can save the in-progress doc without losing
+             * any inputs. */
+            setLocalDocTypes(prev => prev.some(o => o.value === name) ? prev : [...prev, { value: name, label: name }]);
+            set('name', name);
+            setTypeModal(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ───── Inline "Add Document Type" master popup ─────
+ * Mirrors AddCustomerModal's AddDocumentTypeMasterModal — posts to
+ * /master/document_type so the new row immediately joins the dropdown.
+ * Stays modal on top of the KYC Doc sub-modal so the user never loses
+ * their in-progress license entry. */
+function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
+  onClose: () => void;
+  onSaved: (name: string) => void;
+}) {
+  const toast = useToast();
+  const [title, setTitle]               = useState('');
+  const [applicableTo, setApplicableTo] = useState('');
+  const [isMandatory, setIsMandatory]   = useState('');
+  const [status, setStatus]             = useState('Active');
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  useEscapeKey(() => { if (!saving) onClose(); });
+
+  const submit = async () => {
+    if (saving) return;
+    const next: Record<string, string> = {};
+    if (!title.trim()) next.title = 'Document type name is required';
+    if (!status)       next.status = 'Status is required';
+    setErrs(next);
+    if (Object.keys(next).length) return;
+    setSaving(true);
+    try {
+      const { data } = await api.post('/master/document_type', {
+        title:         title.trim(),
+        applicable_to: applicableTo || null,
+        is_mandatory:  isMandatory  || null,
+        status,
+      });
+      const row = data?.data ?? data;
+      onSaved(String(row?.title ?? title.trim()));
+    } catch (err: any) {
+      const apiErrors = err?.response?.data?.errors;
+      if (apiErrors && typeof apiErrors === 'object') {
+        const next2: Record<string, string> = {};
+        for (const [k, msgs] of Object.entries(apiErrors)) {
+          next2[k] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
+        }
+        setErrs(next2);
+        const firstKey = Object.keys(next2)[0];
+        if (firstKey) toast.error('Please review the highlighted fields', next2[firstKey]);
+      } else {
+        toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the document type. Try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="acm-loc-sub-overlay" style={{ zIndex: 10002 }} onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}>
+      <div className="acm-loc-sub-card" style={{ maxWidth: 480 }}>
+        <div className="acm-loc-sub-header">
+          <div className="acm-loc-sub-title">Add Document Type</div>
+          <button type="button" className="acm-loc-sub-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+        </div>
+        <div className="acm-loc-sub-body">
+          <div className="acm-field" data-field="title">
+            <label className="acm-field-label">DOCUMENT TYPE NAME <span className="acm-req">*</span></label>
+            <input
+              className={`acm-input ${errs.title ? 'acm-input-error' : ''}`}
+              placeholder="e.g. GST Registration Certificate"
+              value={title}
+              onChange={e => { setTitle(e.target.value); if (errs.title) setErrs(p => { const n = { ...p }; delete n.title; return n; }); }}
+              autoFocus
+            />
+            {errs.title && <span className="acm-err-text">{errs.title}</span>}
+          </div>
+          <div className="acm-loc-grid-2 acm-mt-12">
+            <div className="acm-field">
+              <label className="acm-field-label">APPLICABLE TO</label>
+              <MasterSelect
+                value={applicableTo}
+                options={[
+                  { value: 'Customer', label: 'Customer' },
+                  { value: 'Vendor',   label: 'Vendor' },
+                  { value: 'Both',     label: 'Both' },
+                  { value: 'Internal', label: 'Internal' },
+                ]}
+                placeholder="Select…"
+                onChange={(v) => setApplicableTo(v)}
+              />
+            </div>
+            <div className="acm-field">
+              <label className="acm-field-label">IS MANDATORY</label>
+              <MasterSelect
+                value={isMandatory}
+                options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
+                placeholder="Select…"
+                onChange={(v) => setIsMandatory(v)}
+              />
+            </div>
+          </div>
+          <div className="acm-field acm-mt-12" data-field="status">
+            <label className="acm-field-label">STATUS <span className="acm-req">*</span></label>
+            <MasterSelect
+              value={status}
+              options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]}
+              placeholder="Select…"
+              invalid={!!errs.status}
+              onChange={(v) => setStatus(v)}
+            />
+            {errs.status && <span className="acm-err-text">{errs.status}</span>}
+          </div>
+        </div>
+        <div className="acm-loc-sub-footer">
+          <button type="button" className="acm-btn acm-btn-light" onClick={onClose} disabled={saving}>Cancel</button>
+          <button
+            type="button"
+            className="acm-btn acm-btn-primary"
+            onClick={submit}
+            disabled={saving}
+            style={saving ? { opacity: 0.7, cursor: 'wait' } : undefined}
+          >
+            {saving ? 'Saving…' : 'Save Document Type'}
           </button>
         </div>
       </div>
@@ -4076,6 +4246,36 @@ const SCOPED_CSS = `
    visual feedback that the click was registered and work is happening. */
 @keyframes acg-spin { to { transform: rotate(360deg); } }
 .acg-spin { animation: acg-spin .9s linear infinite; transform-origin: 50% 50%; }
+
+/* Edit-mode hydration progress strip — thin indeterminate bar above
+   the Stage 1 form while /consignees/:id resolves. Replaces the
+   previous full-form skeleton so the user sees the pre-filled form
+   immediately and the strip just signals "more data on its way". */
+.acg-hydrate-strip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 12px;
+  background: #ecfdf5;
+  border: 1px solid rgba(16,185,129,.30);
+  border-radius: 10px;
+}
+.acg-hydrate-strip-text {
+  font-size: 11.5px; font-weight: 600; color: #047857; letter-spacing: .02em;
+}
+.acg-hydrate-strip-bar {
+  flex: 1; height: 4px; border-radius: 999px;
+  background: linear-gradient(90deg,
+    rgba(16,185,129,.10) 0%, rgba(16,185,129,.10) 30%,
+    rgba(16,185,129,.55) 50%,
+    rgba(16,185,129,.10) 70%, rgba(16,185,129,.10) 100%);
+  background-size: 200% 100%;
+  animation: acg-hydrate-slide 1.2s linear infinite;
+}
+@keyframes acg-hydrate-slide {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+[data-bs-theme="dark"] .acg-hydrate-strip { background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .acg-hydrate-strip-text { color: #6ee7b7; }
 
 /* ─── Phase B — Wizard ─── */
 .acm-wiz {
@@ -5085,6 +5285,31 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   cursor: pointer; transition: all .15s ease;
 }
 .acm-add-pill:hover { background: #10b981; color: #fff; border-color: #10b981; }
+
+/* Row that places the doc-type dropdown alongside a small "+"
+   button — opens the inline Add Document Type master popup so the
+   user can extend the master without leaving the in-progress
+   license entry. Mirrors AddCustomerModal's `.acm-doc-name-row`. */
+.acg-doc-name-row {
+  display: flex; align-items: stretch; gap: 8px; width: 100%;
+}
+.acg-doc-plus-btn {
+  flex: 0 0 auto;
+  width: 38px; height: 38px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #fff;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all .15s ease;
+  box-shadow: 0 2px 6px rgba(5,150,105,.30);
+}
+.acg-doc-plus-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(5,150,105,.45);
+}
+[data-bs-theme="dark"] .acg-doc-plus-btn { box-shadow: 0 2px 6px rgba(16,185,129,.45); }
 /* Locked variant — shown in place of the Add pill while Same-as-
    Customer mirrors the customer's KYC. Muted slate look reads as
    intentionally locked rather than a faded / broken button. */
