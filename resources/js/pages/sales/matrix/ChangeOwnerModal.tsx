@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../contexts/ToastContext';
+import { MasterSelect } from '../../../components/ui/MasterSelect';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Change Lead Owner — reassigns an opportunity to a different team
@@ -112,19 +113,12 @@ export default function ChangeOwnerModal(props: {
             <label className="com-field-label">
               Select New Owner <span className="com-req">*</span>
             </label>
-            <div className="com-select-wrap">
-              <select
-                className="com-select"
-                value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-              >
-                <option value="">Select team member</option>
-                {owners.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <i className="ri-arrow-down-s-line com-select-arrow" />
-            </div>
+            <MasterSelect
+              value={selected}
+              onChange={setSelected}
+              options={owners}
+              placeholder="Select team member"
+            />
           </div>
         </div>
 

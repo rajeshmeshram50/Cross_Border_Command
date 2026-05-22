@@ -3,8 +3,10 @@ import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
+import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
+import { DeleteConf, SimpleNameModal } from './clmCommon';
 
-/* Central CLM → Trade Documents master (two tabs: Names + Library). */
+/* Central CLM → Trade Documents Master (two tabs: List + Library). */
 
 type TdName = { id: number; code: string; name: string };
 type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; file_path: string | null };
@@ -13,8 +15,7 @@ const DOC_TYPES = ['Declaration', 'Undertaking', 'Authorization', 'Bond', 'Certi
 
 export default function ClmTradeDocumentsPage() {
   const toast = useToast();
-  const [tab, setTab]           = useState<'names'|'library'>('names');
-
+  const [tab, setTab]           = useState<'list'|'lib'>('list');
   const [names, setNames]       = useState<TdName[]>([]);
   const [lib, setLib]           = useState<TdLib[]>([]);
   const [loading, setLoading]   = useState(false);
@@ -30,42 +31,53 @@ export default function ClmTradeDocumentsPage() {
   };
   useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const pillSwitcher = (
+    <div className="clm-pill-group">
+      <button className={`clm-pill ${tab === 'list' ? 'active' : ''}`} onClick={() => setTab('list')}>
+        <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
+        Trade Documents List
+      </button>
+      <button className={`clm-pill ${tab === 'lib' ? 'active' : ''}`} onClick={() => setTab('lib')}>
+        <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
+        Trade Document Library
+      </button>
+    </div>
+  );
+
   return (
     <div className="clm-root">
       <style>{CLM_CSS}</style>
-      <div className="clm-head-card">
-        <div className="clm-head-left">
-          <div className="clm-head-ico">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-          </div>
-          <div>
-            <div className="clm-crumb">Central CLM · Contract &amp; Document Masters</div>
-            <div className="clm-head-title">Trade Documents</div>
-            <div className="clm-head-sub">Declarations, undertakings, authorisations &amp; trade-related document templates used in CLM workflows.</div>
-          </div>
-        </div>
-      </div>
 
-      <div className="clm-body-card">
-        <div className="clm-tabs">
-          <button className={`clm-tab ${tab === 'names'   ? 'active' : ''}`} onClick={() => setTab('names')}>
-            Document Names <span className="clm-tab-count">{names.length}</span>
-          </button>
-          <button className={`clm-tab ${tab === 'library' ? 'active' : ''}`} onClick={() => setTab('library')}>
-            Library <span className="clm-tab-count">{lib.length}</span>
-          </button>
-        </div>
-        {tab === 'names'   ? <NamesTab   rows={names} loading={loading} reload={reload} /> : null}
-        {tab === 'library' ? <LibraryTab rows={lib}   loading={loading} reload={reload} names={names} /> : null}
-      </div>
+      <ClmPageHeader
+        icon={ICO.hTd}
+        title="Trade Documents Master"
+        sub="Manage trade declarations, undertakings, and reusable document templates."
+        rightSlot={pillSwitcher}
+      />
+
+      <ClmBrefBox
+        icon={ICO.bTrade}
+        label="Trade Documents Master"
+        sub="Manage reusable trade document templates and declaration structures."
+        steps={[
+          { n: '01', title: 'Create Document Name', desc: 'Add declaration and undertaking document names.', icon: ICO.doc },
+          { n: '02', title: 'Create Draft Template', desc: 'Create reusable draft document content.',         icon: ICO.edit },
+          { n: '03', title: 'Set Applies To',        desc: 'Define buyer, consignee, and supplier applicability.', icon: ICO.users },
+          { n: '04', title: 'Insert Placeholders',   desc: 'Configure dynamic document placeholders.',        icon: ICO.zap },
+          { n: '05', title: 'Enable Usage',          desc: 'Use trade docs across CLM workflows.',             icon: ICO.check },
+        ]}
+      />
+
+      {tab === 'list'
+        ? <NamesPane rows={names} loading={loading} reload={reload} />
+        : <LibraryPane rows={lib} names={names} loading={loading} reload={reload} />}
     </div>
   );
 }
 
-/* ── Names sub-tab ── */
+/* ─── Names sub-tab ─── */
 
-function NamesTab(props: { rows: TdName[]; loading: boolean; reload: () => void }) {
-  const { rows, loading, reload } = props;
+function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean; reload: () => void }) {
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [page, setPage]     = useState(1);
@@ -80,11 +92,11 @@ function NamesTab(props: { rows: TdName[]; loading: boolean; reload: () => void 
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page);
 
-  const onSave = async (form: { name: string }, id?: number) => {
+  const onSave = async (name: string, id?: number) => {
     try {
-      if (id) await api.put(`/clm/trade-doc-names/${id}`, form);
-      else    await api.post('/clm/trade-doc-names', form);
-      toast.success(id ? 'Updated' : 'Added', form.name);
+      if (id) await api.put(`/clm/trade-doc-names/${id}`, { name });
+      else    await api.post('/clm/trade-doc-names', { name });
+      toast.success(id ? 'Updated' : 'Added', name);
       setModalOpen(false); setEditing(null); reload();
     } catch (e: any) { toast.error('Save failed', e?.response?.data?.message ?? 'Could not save'); }
   };
@@ -95,68 +107,74 @@ function NamesTab(props: { rows: TdName[]; loading: boolean; reload: () => void 
   };
 
   return (
-    <>
-      <div className="clm-tabs" style={{ borderTop: 'none' }}>
-        <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Add Document Name
-        </button>
-        <div className="clm-search">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
-          <input type="text" placeholder="Search trade doc names…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+    <div className="clm-page-card">
+      <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
+        <div className="clm-search clm-search-grow">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" placeholder="Search trade documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
         </div>
+        <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Trade Document
+        </button>
       </div>
-      <div className="clm-table-wrap">
-        <table className="clm-table">
-          <thead><tr>
-            <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
-            <th style={{ width: 130, textAlign: 'center' }}>DOC NAME ID</th>
-            <th>TRADE DOCUMENT NAME</th>
-            <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
-          </tr></thead>
-          <tbody>
-            {loading && <tr><td colSpan={4} className="clm-status">Loading…</td></tr>}
-            {!loading && slice.length === 0 && (
-              <tr><td colSpan={4} className="clm-empty">
-                <div className="clm-empty-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /></svg></div>
-                <div className="clm-empty-title">No trade document names yet</div>
-                <div className="clm-empty-sub">Click + Add Document Name to create the first record.</div>
-              </td></tr>
+
+      <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
+        {slice.length === 0 ? (
+          <div className="clm-empty">
+            <div className="clm-empty-ico">{ICO.bTrade}</div>
+            <div className="clm-empty-title">No trade documents yet</div>
+            <div className="clm-empty-sub">Click + Add Trade Document to create the first record.</div>
+          </div>
+        ) : (
+          <div className="clm-table-wrap">
+            <table className="clm-table">
+              <thead><tr>
+                <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
+                <th style={{ width: 130, textAlign: 'center' }}>DOC NAME ID</th>
+                <th>TRADE DOCUMENT NAME</th>
+                <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
+              </tr></thead>
+              <tbody>
+                {loading && <tr><td colSpan={4} className="clm-status">Loading…</td></tr>}
+                {!loading && slice.map((r, i) => (
+                  <tr key={r.id}>
+                    <td className="clm-td-num">{start + i + 1}</td>
+                    <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
+                    <td className="clm-td-name">{r.name}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div className="clm-actions">
+                        <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                        <button className="clm-act clm-act-del" title="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!loading && filtered.length > 0 && (
+              <div className="clm-pag">
+                <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b></span>
+                <div className="clm-pag-btns">
+                  {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
+                    <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
+                  ))}
+                </div>
+              </div>
             )}
-            {!loading && slice.map((r, i) => (
-              <tr key={r.id}>
-                <td className="clm-td-num">{start + i + 1}</td>
-                <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                <td className="clm-td-name">{r.name}</td>
-                <td style={{ textAlign: 'center' }}>
-                  <div className="clm-actions">
-                    <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg></button>
-                    <button className="clm-act clm-act-del" title="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /></svg></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!loading && filtered.length > 0 && (
-          <div className="clm-pag">
-            <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b></span>
-            <div className="clm-pag-btns">{Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-              <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-            ))}</div>
           </div>
         )}
       </div>
-      {modalOpen && <SimpleNameModal title={editing ? 'Edit Document Name' : 'Add Document Name'} placeholder="e.g. Bill of Lading, Commercial Invoice" code={editing?.code ?? `TDN-${String(rows.length + 1).padStart(3, '0')}`} isEdit={!!editing} initial={editing?.name ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(name) => onSave({ name }, editing?.id)} />}
-      {pendingDelete && createPortal(<DeleteConf title="Delete trade document name?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
-    </>
+
+      {modalOpen && <SimpleNameModal title={editing ? 'Edit Trade Document' : 'Add Trade Document'} placeholder="e.g. Bill of Lading, Commercial Invoice" code={editing?.code ?? `TDN-${String(rows.length + 1).padStart(3, '0')}`} isEdit={!!editing} initial={editing?.name ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(name) => onSave(name, editing?.id)} />}
+      {pendingDelete && createPortal(<DeleteConf title="Delete trade document?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+    </div>
   );
 }
 
-/* ── Library sub-tab ── */
+/* ─── Library sub-tab ─── */
 
-function LibraryTab(props: { rows: TdLib[]; names: TdName[]; loading: boolean; reload: () => void }) {
-  const { rows, names, loading, reload } = props;
+function LibraryPane({ rows, names, loading, reload }: { rows: TdLib[]; names: TdName[]; loading: boolean; reload: () => void }) {
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [page, setPage]     = useState(1);
@@ -194,75 +212,84 @@ function LibraryTab(props: { rows: TdLib[]; names: TdName[]; loading: boolean; r
   };
 
   return (
-    <>
-      <div className="clm-tabs" style={{ borderTop: 'none' }}>
-        <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Add Library Entry
-        </button>
-        <div className="clm-search">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
-          <input type="text" placeholder="Search title, code, type…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+    <div className="clm-page-card">
+      <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
+        <div className="clm-search clm-search-grow">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" placeholder="Search trade document drafts…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
         </div>
+        <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Draft New Trade Document
+        </button>
       </div>
-      <div className="clm-table-wrap">
-        <table className="clm-table">
-          <thead><tr>
-            <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
-            <th style={{ width: 110, textAlign: 'center' }}>TRADE DOC ID</th>
-            <th>TITLE</th>
-            <th style={{ width: 130, textAlign: 'center' }}>TYPE</th>
-            <th>PURPOSE</th>
-            <th>PARTY</th>
-            <th style={{ width: 110, textAlign: 'center' }}>FILE</th>
-            <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
-          </tr></thead>
-          <tbody>
-            {loading && <tr><td colSpan={8} className="clm-status">Loading…</td></tr>}
-            {!loading && slice.length === 0 && (
-              <tr><td colSpan={8} className="clm-empty">
-                <div className="clm-empty-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /></svg></div>
-                <div className="clm-empty-title">No library entries yet</div>
-                <div className="clm-empty-sub">Click + Add Library Entry to create the first record.</div>
-              </td></tr>
+
+      <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
+        {slice.length === 0 ? (
+          <div className="clm-empty">
+            <div className="clm-empty-ico">{ICO.bTrade}</div>
+            <div className="clm-empty-title">No library entries yet</div>
+            <div className="clm-empty-sub">Click + Draft New Trade Document to create the first record.</div>
+          </div>
+        ) : (
+          <div className="clm-table-wrap">
+            <table className="clm-table">
+              <thead><tr>
+                <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
+                <th style={{ width: 110, textAlign: 'center' }}>TRADE DOC ID</th>
+                <th>TRADE DOCUMENT TITLE</th>
+                <th style={{ width: 130, textAlign: 'center' }}>TYPE</th>
+                <th>PURPOSE</th>
+                <th>APPLICABLE PARTY</th>
+                <th style={{ width: 110, textAlign: 'center' }}>DOWNLOAD</th>
+                <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
+              </tr></thead>
+              <tbody>
+                {loading && <tr><td colSpan={8} className="clm-status">Loading…</td></tr>}
+                {!loading && slice.map((r, i) => (
+                  <tr key={r.id}>
+                    <td className="clm-td-num">{start + i + 1}</td>
+                    <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
+                    <td className="clm-td-name">{r.title}</td>
+                    <td style={{ textAlign: 'center' }}><span className={`clm-badge ${typeBadge(r.doc_type)}`}>{r.doc_type}</span></td>
+                    <td className="clm-td-desc">{r.purpose}</td>
+                    <td className="clm-td-desc">{r.party}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {r.file_path
+                        ? <a href={r.file_path} download className="clm-badge clm-badge-teal" style={{ textDecoration: 'none' }}>.docx</a>
+                        : <span className="clm-badge clm-badge-slate">No file</span>}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div className="clm-actions">
+                        <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                        <button className="clm-act clm-act-del" title="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!loading && filtered.length > 0 && (
+              <div className="clm-pag">
+                <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b></span>
+                <div className="clm-pag-btns">
+                  {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
+                    <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
+                  ))}
+                </div>
+              </div>
             )}
-            {!loading && slice.map((r, i) => (
-              <tr key={r.id}>
-                <td className="clm-td-num">{start + i + 1}</td>
-                <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                <td className="clm-td-name">{r.title}</td>
-                <td style={{ textAlign: 'center' }}><span className={`clm-badge ${typeBadge(r.doc_type)}`}>{r.doc_type}</span></td>
-                <td className="clm-td-desc">{r.purpose}</td>
-                <td className="clm-td-desc">{r.party}</td>
-                <td style={{ textAlign: 'center' }}>
-                  {r.file_path ? <a href={r.file_path} download className="clm-badge clm-badge-teal" style={{ textDecoration: 'none' }}>.docx</a> : <span className="clm-badge clm-badge-slate">No file</span>}
-                </td>
-                <td style={{ textAlign: 'center' }}>
-                  <div className="clm-actions">
-                    <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg></button>
-                    <button className="clm-act clm-act-del" title="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!loading && filtered.length > 0 && (
-          <div className="clm-pag">
-            <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b></span>
-            <div className="clm-pag-btns">{Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-              <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-            ))}</div>
           </div>
         )}
       </div>
+
       {modalOpen && <LibraryModal existing={editing} names={names} nextCode={`TD-${String(rows.length + 1).padStart(3, '0')}`} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />}
       {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
-    </>
+    </div>
   );
 }
 
-function LibraryModal(props: { existing: TdLib | null; names: TdName[]; nextCode: string; onClose: () => void; onSave: (f: Omit<TdLib, 'id'|'code'>) => void }) {
+function LibraryModal(props: { existing: TdLib | null; names: TdName[]; nextCode: string; onClose: () => void; onSave: (f: Omit<TdLib, 'id'|'code'>) => void; }) {
   const { existing, names, nextCode, onClose, onSave } = props;
   const isEdit = !!existing;
   const [name, setName]       = useState(existing?.name ?? '');
@@ -278,7 +305,6 @@ function LibraryModal(props: { existing: TdLib | null; names: TdName[]; nextCode
     const next: Record<string, string> = {};
     if (!name.trim())    next.name    = 'Document name is required';
     if (!title.trim())   next.title   = 'Title is required';
-    if (!docType.trim()) next.docType = 'Type is required';
     if (!purpose.trim()) next.purpose = 'Purpose is required';
     if (!party.trim())   next.party   = 'Party is required';
     setErrors(next);
@@ -287,7 +313,7 @@ function LibraryModal(props: { existing: TdLib | null; names: TdName[]; nextCode
     try {
       await Promise.resolve(onSave({
         name: name.trim(), title: title.trim(), doc_type: docType.trim(),
-        purpose: purpose.trim(), party: party.trim(), file_path: filePath.trim() || null,
+        purpose: purpose.trim(), party: party.trim(), file_path: filePath?.trim() || null,
       }));
     } finally { setSaving(false); }
   };
@@ -297,24 +323,23 @@ function LibraryModal(props: { existing: TdLib | null; names: TdName[]; nextCode
       <div className="clm-modal clm-modal-wide" onClick={e => e.stopPropagation()}>
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
-            <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /></svg></div>
+            <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></div>
             <div>
               <div className="clm-modal-head-title">{isEdit ? 'Edit Library Entry' : 'Add Library Entry'}</div>
               <div className="clm-modal-head-sub">{isEdit ? 'Update trade document template details.' : 'Register a reusable trade document template.'}</div>
             </div>
           </div>
-          <button className="clm-modal-close" onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+          <button className="clm-modal-close" onClick={onClose}>×</button>
         </div>
         <div className="clm-modal-body">
           <div className="clm-autocode">
-            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg></div>
+            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
             <div className="clm-autocode-text">
               <div className="clm-autocode-label">{isEdit ? 'Trade Doc ID' : 'Auto Generated Code'}</div>
               <div className="clm-autocode-val">{isEdit ? existing!.code : nextCode}</div>
             </div>
             <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
-
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div className="clm-field">
               <label className="clm-field-label">Document Name <span className="clm-req">*</span></label>
@@ -328,117 +353,41 @@ function LibraryModal(props: { existing: TdLib | null; names: TdName[]; nextCode
             </div>
             <div className="clm-field">
               <label className="clm-field-label">Type <span className="clm-req">*</span></label>
-              <select className={`clm-select ${errors.docType ? 'clm-input-err' : ''}`} value={docType} onChange={e => { setDocType(e.target.value); setErrors(p => ({ ...p, docType: '' })); }}>
+              <select className="clm-select" value={docType} onChange={e => setDocType(e.target.value)}>
                 {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
           </div>
-
           <div className="clm-field">
             <label className="clm-field-label">Document Title <span className="clm-req">*</span></label>
             <input className={`clm-input ${errors.title ? 'clm-input-err' : ''}`} placeholder="e.g. Supplier Self Declaration Form" value={title} onChange={e => { setTitle(e.target.value); setErrors(p => ({ ...p, title: '' })); }} />
             {errors.title && <div className="clm-err">{errors.title}</div>}
           </div>
-
           <div className="clm-field">
             <label className="clm-field-label">Purpose <span className="clm-req">*</span></label>
             <input className={`clm-input ${errors.purpose ? 'clm-input-err' : ''}`} placeholder="What this template is for…" value={purpose} onChange={e => { setPurpose(e.target.value); setErrors(p => ({ ...p, purpose: '' })); }} />
             {errors.purpose && <div className="clm-err">{errors.purpose}</div>}
           </div>
-
           <div className="clm-field">
-            <label className="clm-field-label">Party <span className="clm-req">*</span></label>
+            <label className="clm-field-label">Applicable Party <span className="clm-req">*</span></label>
             <input className={`clm-input ${errors.party ? 'clm-input-err' : ''}`} placeholder="Comma-separated, e.g. Buyer, Supplier-Material" value={party} onChange={e => { setParty(e.target.value); setErrors(p => ({ ...p, party: '' })); }} />
             <div className="clm-field-hint">List the parties signing or using the document.</div>
             {errors.party && <div className="clm-err">{errors.party}</div>}
           </div>
-
           <div className="clm-field">
             <label className="clm-field-label">File Path (optional)</label>
             <input className="clm-input" placeholder="storage/trade-docs/supplier-decl.docx" value={filePath ?? ''} onChange={e => setFilePath(e.target.value)} />
-            <div className="clm-field-hint">Storage-relative path to the docx / pdf template (upload UI ships later).</div>
+            <div className="clm-field-hint">Storage-relative path to the docx / pdf template.</div>
           </div>
         </div>
         <div className="clm-modal-foot">
           <button className="clm-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="clm-btn-save" onClick={() => void handleSave()} disabled={saving}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             {saving ? 'Saving…' : (isEdit ? 'Update' : 'Save')}
           </button>
         </div>
       </div>
     </div>
   ), document.body);
-}
-
-/* ── Small shared modals (used by every 2-tab page in this folder) ── */
-
-export function SimpleNameModal(props: { title: string; placeholder: string; code: string; isEdit: boolean; initial: string; onClose: () => void; onSave: (name: string) => void }) {
-  const { title, placeholder, code, isEdit, initial, onClose, onSave } = props;
-  const [name, setName]   = useState(initial);
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  const handleSave = async () => {
-    if (!name.trim()) { setError('Name is required'); return; }
-    setSaving(true);
-    try { await Promise.resolve(onSave(name.trim())); }
-    finally { setSaving(false); }
-  };
-
-  return createPortal((
-    <div className="clm-modal-bd" onClick={onClose}>
-      <div className="clm-modal" onClick={e => e.stopPropagation()}>
-        <div className="clm-modal-head">
-          <div className="clm-modal-head-left">
-            <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /></svg></div>
-            <div>
-              <div className="clm-modal-head-title">{title}</div>
-              <div className="clm-modal-head-sub">{isEdit ? 'Rename the entry below.' : 'Create a new lightweight master record.'}</div>
-            </div>
-          </div>
-          <button className="clm-modal-close" onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
-        </div>
-        <div className="clm-modal-body">
-          <div className="clm-autocode">
-            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg></div>
-            <div className="clm-autocode-text">
-              <div className="clm-autocode-label">{isEdit ? 'Code' : 'Auto Generated Code'}</div>
-              <div className="clm-autocode-val">{code}</div>
-            </div>
-            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">Name <span className="clm-req">*</span></label>
-            <input className={`clm-input ${error ? 'clm-input-err' : ''}`} placeholder={placeholder} value={name} onChange={e => { setName(e.target.value); setError(''); }} autoFocus />
-            {error && <div className="clm-err">{error}</div>}
-          </div>
-        </div>
-        <div className="clm-modal-foot">
-          <button className="clm-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="clm-btn-save" onClick={() => void handleSave()} disabled={saving}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-            {saving ? 'Saving…' : (isEdit ? 'Update' : 'Save')}
-          </button>
-        </div>
-      </div>
-    </div>
-  ), document.body);
-}
-
-export function DeleteConf(props: { title: string; sub: string; onCancel: () => void; onConfirm: () => void }) {
-  const { title, sub, onCancel, onConfirm } = props;
-  return (
-    <div className="clm-conf-bd" onClick={onCancel}>
-      <div className="clm-conf" onClick={e => e.stopPropagation()}>
-        <div className="clm-conf-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg></div>
-        <div className="clm-conf-title">{title}</div>
-        <div className="clm-conf-sub">{sub}</div>
-        <div className="clm-conf-btns">
-          <button className="clm-btn-cancel" onClick={onCancel}>Cancel</button>
-          <button className="clm-btn-del" onClick={onConfirm}>Delete</button>
-        </div>
-      </div>
-    </div>
-  );
 }

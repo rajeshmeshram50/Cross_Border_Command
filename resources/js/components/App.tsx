@@ -62,6 +62,16 @@ import SalesAnalytics from '../pages/sales/SalesAnalytics';
 import SalesPerformance from '../pages/sales/SalesPerformance';
 import ClmStubPage from '../pages/clm/ClmStubPage';
 import ClmSegmentPage from '../pages/clm/ClmSegmentPage';
+import ClmAuthorityPage from '../pages/clm/ClmAuthorityPage';
+import ClmKycPage from '../pages/clm/ClmKycPage';
+import ClmDdPage from '../pages/clm/ClmDdPage';
+import ClmTradeLicensesPage from '../pages/clm/ClmTradeLicensesPage';
+import ClmQcPage from '../pages/clm/ClmQcPage';
+import ClmTradeDocumentsPage from '../pages/clm/ClmTradeDocumentsPage';
+import ClmTncPage from '../pages/clm/ClmTncPage';
+import ClmAgreementsPage from '../pages/clm/ClmAgreementsPage';
+import ClmClauseLibraryPage from '../pages/clm/ClmClauseLibraryPage';
+import ClmDcpPage from '../pages/clm/ClmDcpPage';
 import HrDashboard from '../pages/hrms/HrDashboard';
 import HrOverview from '../pages/hrms/HrOverview';
 import HrEmployees from '../pages/hrms/HrEmployees';
@@ -598,6 +608,11 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/my-team"  element={<MyTeam />} />
               <Route path="/inbox"    element={<Inbox />} />
               <Route path="/master" element={<MasterDashboard />} />
+              {/* /master/segments and /clm/segment share the SAME backend
+                  (clm_segments table) and SAME UI. Whatever is added on either
+                  side shows on both. The explicit route below must come before
+                  the catch-all /master/:slug so it takes priority. */}
+              <Route path="/master/segments" element={<ClmSegmentPage />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/sales/customers" element={<SalesCustomers />} />
               <Route path="/sales/consignee" element={<SalesConsignee />} />
@@ -617,7 +632,20 @@ function DashboardRoutes({ user }: { user: any }) {
               {/* Central CLM — real pages get explicit routes; everything
                   else falls through to the stub. */}
               <Route path="/clm" element={<ClmStubPage />} />
-              <Route path="/clm/segment" element={<ClmSegmentPage />} />
+              <Route path="/clm/segment"          element={<ClmSegmentPage />} />
+              <Route path="/clm/authority"        element={<ClmAuthorityPage />} />
+              <Route path="/clm/kyc"              element={<ClmKycPage />} />
+              <Route path="/clm/due-diligence"    element={<ClmDdPage />} />
+              <Route path="/clm/trade-licenses"   element={<ClmTradeLicensesPage />} />
+              <Route path="/clm/quality-docs"     element={<ClmQcPage />} />
+              <Route path="/clm/trade-documents"  element={<ClmTradeDocumentsPage />} />
+              <Route path="/clm/terms-conditions" element={<ClmTncPage />} />
+              <Route path="/clm/agreements"       element={<ClmAgreementsPage />} />
+              <Route path="/clm/clause-library"   element={<ClmClauseLibraryPage />} />
+              <Route path="/clm/document-panel"   element={<ClmDcpPage />} />
+              {/* Operations leaves (analytics / diagnosis / resolution / buyer /
+                  supplier / case-to-case / agreements-sent / agreements-to-approve)
+                  still fall through to the stub until those pages ship. */}
               <Route path="/clm/:slug" element={<ClmStubPage />} />
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/overview" element={<HrOverview />} />

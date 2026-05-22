@@ -20,8 +20,8 @@ import Stage5QuotationVsPI       from './stages/Stage5QuotationVsPI';
 import Stage6VictoryStage        from './stages/Stage6VictoryStage';
 import TaskManagerPanel, { type TaskManagerRow } from './TaskManagerPanel';
 import WhatsAppStatusModal from './WhatsAppStatusModal';
-import RemindersForLeadModal from './RemindersForLeadModal';
-import MeetingsForLeadModal from './MeetingsForLeadModal';
+import RemindersListModal from './RemindersListModal';
+import MeetingsListModal from './MeetingsListModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Opportunity Detail
@@ -492,13 +492,14 @@ export default function SalesMatrixDetail() {
           <span className="smd-cust-sep" aria-hidden="true"><i /><i /><i /></span>
           <Meta icon={<IconGlobe />}     label="COUNTRY"          value={header.country} />
           <span className="smd-cust-line" aria-hidden="true" />
-        </div>
         <button className="smd-back-btn" onClick={goBack}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <polyline points="15 18 9 12 15 6" />
           </svg>
           Back to My Workplace
         </button>
+                </div>
+
       </div>
 
       {/* ─── 6-step Tracker (own white card) ─── */}
@@ -966,22 +967,21 @@ export default function SalesMatrixDetail() {
         onSaved={() => { setWhatsappOpen(false); void reloadLead(); }}
       />
 
-      {/* ── Reminders for this lead ── */}
-      <RemindersForLeadModal
+      {/* ── Reminders directory (list + child Add form) ── */}
+      <RemindersListModal
         open={remindersOpen}
         oppId={header.oppId}
         oppDate={header.oppDate}
         onClose={() => setRemindersOpen(false)}
       />
 
-      {/* ── Meetings for this lead ── */}
-      <MeetingsForLeadModal
+      {/* ── Meetings directory (list + child Add form) ── */}
+      <MeetingsListModal
         open={meetingsOpen}
         oppId={header.oppId}
-        /* Pre-fill the inline + New form with the lead's mapped
-         * customer + their primary email so the user doesn't have to
-         * retype them. Phone isn't on the customer model (lives on
-         * customer_addresses) so we leave that field empty. */
+        oppDate={header.oppDate}
+        /* Pre-fill the Add form with the lead's mapped customer + their
+         * primary email so the user doesn't have to retype them. */
         defaultCustomer={
           (serverHeader.customerRow as Record<string, unknown> | null | undefined)?.company_name as string | undefined
           ?? header.customer

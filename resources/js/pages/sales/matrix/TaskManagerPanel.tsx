@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
+import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Task Manager Panel — right sidebar of the Sales Matrix detail page.
@@ -141,6 +142,34 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
     if (fileRef.current) fileRef.current.value = '';
   };
 
+  /* Open the attached file in a new tab. For freshly picked files we
+   * mint an object URL on demand (the browser GC's it when the spawned
+   * tab is closed); for server-stored files we hit the /storage path
+   * directly. */
+  const onViewFile = () => {
+    if (pickedFile) {
+      const url = URL.createObjectURL(pickedFile);
+      window.open(url, '_blank', 'noopener');
+      return;
+    }
+    if (existingPath) {
+      window.open(`/storage/${existingPath}`, '_blank', 'noopener');
+    }
+  };
+
+  /* Delete clears the staged pick first (back to the saved file, if any).
+   * If only an existing server file is shown, clear it locally — the
+   * next save can re-upload a new attachment to overwrite. */
+  const onDeleteFile = () => {
+    if (pickedFile) {
+      clearPickedFile();
+      return;
+    }
+    setExistingPath(null);
+    setExistingName(null);
+  };
+
+  const hasFile   = !!(pickedFile || existingPath);
   const fileLabel = pickedFile?.name ?? existingName ?? 'Attach File';
 
   return (
@@ -181,46 +210,61 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
               onChange={onFileChange}
               style={{ display: 'none' }}
             />
-            <button
-              type="button"
-              className={`smd-input smd-input-file tm-file-btn ${pickedFile || existingPath ? 'tm-file-btn-has' : ''}`}
-              onClick={onPickFile}
-              title={pickedFile ? `Selected: ${pickedFile.name}` : (existingName ?? 'Choose a file')}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-              </svg>
-              <span className="tm-file-btn-label">{fileLabel}</span>
-            </button>
-            {(pickedFile || existingPath) && (
-              <div className="tm-file-actions">
-                {!pickedFile && existingPath && (
-                  <a
-                    className="tm-file-link"
-                    href={`/storage/${existingPath}`}
-                    target="_blank" rel="noreferrer"
-                    title="Open uploaded file"
-                  >
-                    View
-                  </a>
-                )}
-                {pickedFile && (
-                  <button type="button" className="tm-file-link tm-file-link-x" onClick={clearPickedFile}>
-                    Remove
-                  </button>
-                )}
+            {hasFile ? (
+              <div className="tm-file-chip" title={fileLabel}>
+                <svg className="tm-file-chip-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+                <span className="tm-file-chip-name">{fileLabel}</span>
+                <button
+                  type="button"
+                  className="tm-file-chip-btn tm-file-chip-view"
+                  onClick={onViewFile}
+                  aria-label="View file"
+                  title="View"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="tm-file-chip-btn tm-file-chip-del"
+                  onClick={onDeleteFile}
+                  aria-label="Remove file"
+                  title="Remove"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6l-1.5 14a2 2 0 0 1-2 2H8.5a2 2 0 0 1-2-2L5 6" />
+                    <path d="M10 11v6M14 11v6" />
+                    <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                  </svg>
+                </button>
               </div>
+            ) : (
+              <button
+                type="button"
+                className="smd-input smd-input-file tm-file-btn"
+                onClick={onPickFile}
+                title="Choose a file"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+                <span className="tm-file-btn-label">Attach File</span>
+              </button>
             )}
           </Field>
         </div>
 
         <div className="smd-deal-row">
           <Field label="BUYING PLAN">
-            <input
-              type="date"
-              className="smd-input"
+            <MasterDatePicker
               value={buyingPlan}
-              onChange={e => setBuyingPlan(e.target.value)}
+              onChange={setBuyingPlan}
+              placeholder="dd-mm-yyyy"
             />
           </Field>
           <Field label="ORDER VALUE">
@@ -317,24 +361,56 @@ const TM_CSS = `
   display: inline-flex; align-items: center; gap: 7px;
   font-weight: 600;
 }
-.tm-file-btn-has { color: #4c1d95; }
 .tm-file-btn-label {
   flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   text-align: left;
 }
-.tm-file-actions { display: flex; gap: 8px; margin-top: 4px; }
-.tm-file-link {
-  font-size: 10.5px; font-weight: 700;
-  background: none; border: none; padding: 0;
-  color: #7c3aed; cursor: pointer; text-decoration: none;
+
+/* File chip — shown in place of the Attach File button once a file
+ * has been picked (or already exists on the server). Filename appears
+ * in small, with inline View + Remove icon buttons in the same container. */
+.tm-file-chip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 5px 4px 10px;
+  background: #faf8ff;
+  border: 1.5px solid #e0d9ff;
+  border-radius: 8px;
+  min-height: 31px;
+  min-width: 0;
 }
-.tm-file-link:hover { text-decoration: underline; }
-.tm-file-link-x { color: #ef4444; }
+.tm-file-chip-icon { color: #7c3aed; flex-shrink: 0; }
+.tm-file-chip-name {
+  flex: 1; min-width: 0;
+  font-size: 9px; font-weight: 600; color: #5b21b6;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  letter-spacing: .01em;
+}
+.tm-file-chip-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 6px;
+  background: #fff;
+  border: 1.5px solid #e0d9ff;
+  color: #7c3aed;
+  cursor: pointer; padding: 0;
+  transition: background .15s, border-color .15s, color .15s;
+  flex-shrink: 0;
+}
+.tm-file-chip-view:hover { background: #ede9fe; border-color: #7c3aed; }
+.tm-file-chip-del { color: #ef4444; }
+.tm-file-chip-del:hover { background: #fef2f2; border-color: #ef4444; }
 
 /* Dark mode */
 [data-bs-theme="dark"] .tm-field-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .tm-file-btn-has { color: #ede9fe; }
-[data-bs-theme="dark"] .tm-file-link    { color: #d8b4fe; }
-[data-bs-theme="dark"] .tm-file-link-x  { color: #fca5a5; }
+[data-bs-theme="dark"] .tm-file-chip {
+  background: #1f1845; border-color: rgba(167,139,250,.30);
+}
+[data-bs-theme="dark"] .tm-file-chip-name { color: #ede9fe; }
+[data-bs-theme="dark"] .tm-file-chip-icon { color: #a78bfa; }
+[data-bs-theme="dark"] .tm-file-chip-btn {
+  background: #2a2150; border-color: rgba(167,139,250,.30); color: #d8b4fe;
+}
+[data-bs-theme="dark"] .tm-file-chip-view:hover { background: #3b2f6e; border-color: #a78bfa; }
+[data-bs-theme="dark"] .tm-file-chip-del { color: #fca5a5; }
+[data-bs-theme="dark"] .tm-file-chip-del:hover { background: rgba(239,68,68,.18); border-color: #fca5a5; }
 `;

@@ -150,9 +150,27 @@ function formatINR(n: number): string {
 
 const STAGE1_CSS = `
 /* Single full-width row that visually continues the .smd-sect-grid above
- * it — same cell tinting, same horizontal divider, no side gutter. */
-.s1-grid-1 { display: grid; grid-template-columns: 1fr; gap: 0; }
-.s1-grid-1 .smd-sect-field { border-right: none; background: #f5f3ff; }
+ * it — same cell tinting, same horizontal divider, no side gutter. The
+ * wrapper gets its own border so the row reads as a self-contained
+ * rounded card (matches the bordered .smd-sect-grid above it). */
+.s1-grid-1 {
+  display: grid; grid-template-columns: 1fr; gap: 0;
+  border: 1.5px solid #ddd6fe;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: -1px;
+}
+.s1-grid-1 .smd-sect-field {
+  border-right: none;
+  border-bottom: none;
+  background: #f5f3ff;
+}
+[data-bs-theme="dark"] .s1-grid-1 {
+  border-color: rgba(167, 139, 250, .25);
+}
+[data-bs-theme="dark"] .s1-grid-1 .smd-sect-field {
+  background: rgba(124, 58, 237, .08);
+}
 
 /* Badge sits on the shared dark-purple pill (.smd-stg-head-badge) and
  * paints just the leading dot in the status colour. */
