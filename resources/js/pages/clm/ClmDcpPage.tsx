@@ -116,6 +116,28 @@ export default function ClmDcpPage() {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
     }
   };
+
+  /* Bulk save — used by the Less-Regulatory multi-select. Fires one PUT
+   * or POST per picked segment, then closes + reloads once at the end so
+   * the table refreshes a single time regardless of selection size. The
+   * 409 path still runs per segment to handle race conditions cleanly. */
+  const onBulkSave = async (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => {
+    let created = 0, updated = 0;
+    const failed: string[] = [];
+    for (const { form, ruleId } of rows) {
+      try {
+        if (ruleId) { await api.put(`/clm/segment-rules/${ruleId}`, form); updated++; }
+        else        { await api.post('/clm/segment-rules', form);          created++; }
+      } catch (e: any) {
+        if (e?.response?.status === 409) { failed.push(`${form.segment_code} (already exists)`); continue; }
+        failed.push(`${form.segment_code} (${e?.response?.data?.message ?? 'error'})`);
+      }
+    }
+    if (created || updated) toast.success('Saved', `${created} created · ${updated} updated${failed.length ? ` · ${failed.length} skipped` : ''}`);
+    if (failed.length && !created && !updated) toast.error('Save failed', failed.join('; '));
+    else if (failed.length) toast.info('Some skipped', failed.join('; '));
+    setModalOpen(false); setEditing(null); reload();
+  };
   const onDelete = async () => {
     if (!pendingDelete) return;
     try { await api.delete(`/clm/segment-rules/${pendingDelete.id}`); toast.success('Deleted', pendingDelete.rule_code); setPendingDelete(null); reload(); }
@@ -249,6 +271,7 @@ export default function ClmDcpPage() {
           boot={boot}
           onClose={() => { setModalOpen(false); setEditing(null); }}
           onSave={(form, ruleId) => onSave(form, ruleId ?? editing?.id)}
+          onBulkSave={onBulkSave}
         />
       )}
       {pendingDelete && createPortal((
@@ -274,42 +297,75 @@ function SegmentRuleModal(props: {
   existing: SegRule | null; existingRules: SegRule[]; boot: Bootstrap;
   onClose: () => void;
   onSave: (f: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }, ruleId?: number) => void;
+  /** Bulk save — used when the Less-Regulatory multi-select mode picks
+   *  multiple segments. Parent loops the API calls and triggers a single
+   *  reload + close on completion. Optional: when omitted the modal
+   *  falls back to looping the single onSave (with N reloads). */
+  onBulkSave?: (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => void;
 }) {
-  const { existing, existingRules, boot, onClose, onSave } = props;
+  const { existing, existingRules, boot, onClose, onSave, onBulkSave } = props;
   const [stage, setStage]     = useState<1 | 2>(1);
   const [reg, setReg]         = useState<'highly'|'less'|null>(existing?.regulatory_status ?? null);
-  const [segCode, setSegCode] = useState<string>(existing?.segment_code ?? '');
+  /* Multi-select segment codes. Always an array internally; in edit mode
+   * and in High-Regulatory create mode the UI forces it to length ≤ 1.
+   * In Less-Regulatory create mode the user can pick many — each becomes
+   * its own SR-NNN row at save time, all sharing the Stage 2 doc rules. */
+  const [segCodes, setSegCodes] = useState<string[]>(existing?.segment_code ? [existing.segment_code] : []);
   const [docSel, setDocSel]   = useState<DocSelections>(existing?.doc_selections ?? {});
   const [activeCat, setActiveCat] = useState<keyof DocSelections>('kyc');
   const [saving, setSaving]   = useState(false);
 
-  /* When the segment picker matches a rule that already exists for this
-   * tenant, the modal pivots into Edit-mode for that rule: prefill from the
-   * existing row and PUT on save. Enforces "one rule per segment". */
-  const matchedRule = useMemo(
-    () => existingRules.find(r => r.id !== existing?.id && r.segment_code === segCode) ?? null,
-    [existingRules, segCode, existing?.id]
+  /* Less-Regulatory create-mode flips on multi-select. Edit mode locks to
+   * single because each edit targets exactly one rule, and High keeps a
+   * single-select dropdown by design (high-regulated segments need per-
+   * segment review and tend to be configured one at a time). */
+  const isMulti = !existing && reg === 'less';
+  const segCode = segCodes[0] ?? '';
+
+  /* In single-segment mode (edit / high / single-less) the matched-rule
+   * banner pivots Add → Edit for the picked segment. In multi mode every
+   * already-configured segment in the picked set is collected so the
+   * banner can list them and the save handler can PUT them individually. */
+  const matchedRules = useMemo(
+    () => existingRules.filter(r => r.id !== existing?.id && segCodes.includes(r.segment_code)),
+    [existingRules, segCodes, existing?.id]
   );
-  const effectiveExisting = existing ?? matchedRule;
-  const isEdit = !!effectiveExisting;
+  const matchedRule = matchedRules[0] ?? null;
+  const isEdit = !!existing || (!isMulti && !!matchedRule);
 
   /* Hydrate state from the matched rule the first time it's encountered so
-   * the user can immediately see and tweak the existing requirements. The
-   * effect only fires when segCode changes onto a different matched rule. */
+   * the user can immediately see and tweak the existing requirements. Only
+   * runs in single-segment mode — multi-select keeps a fresh blank Stage 2
+   * since the user is explicitly batching new rules. */
   useEffect(() => {
-    if (!existing && matchedRule) {
+    if (!existing && !isMulti && matchedRule) {
       setReg(matchedRule.regulatory_status);
       setDocSel(matchedRule.doc_selections ?? {});
     }
-  }, [matchedRule, existing]);
+  }, [matchedRule, existing, isMulti]);
 
   const segments = useMemo(() => reg ? boot.segments.filter(s => s.regulatory_status === reg) : [], [reg, boot.segments]);
-  const selSeg   = useMemo(() => boot.segments.find(s => s.code === segCode) ?? null, [segCode, boot.segments]);
-  const auths    = useMemo(() => selSeg ? authsForSegment(selSeg.code, boot.authorities) : [], [selSeg, boot.authorities]);
+  const selSeg   = useMemo(() => segCodes.length === 1 ? (boot.segments.find(s => s.code === segCodes[0]) ?? null) : null, [segCodes, boot.segments]);
+  /* Authority union — Stage 1's Mapped Authorities card aggregates auths
+   * across every picked segment so the user sees the full footprint. At
+   * save time each rule still gets its own segment-specific auth list. */
+  const auths = useMemo(() => {
+    const set = new Map<string, Authority>();
+    for (const code of segCodes) {
+      for (const a of authsForSegment(code, boot.authorities)) set.set(a.code, a);
+    }
+    return Array.from(set.values());
+  }, [segCodes, boot.authorities]);
+
+  const toggleSegCode = (code: string, on: boolean) => {
+    setSegCodes(prev => on ? Array.from(new Set([...prev, code])) : prev.filter(c => c !== code));
+  };
+  const selectAllSegments = () => setSegCodes(segments.map(s => s.code));
+  const clearAllSegments  = () => setSegCodes([]);
 
   const goStage2 = () => {
-    if (!reg)     { alert('Please select a Regulatory Status to continue.'); return; }
-    if (!segCode) { alert('Please select a Segment to continue.'); return; }
+    if (!reg)              { alert('Please select a Regulatory Status to continue.'); return; }
+    if (segCodes.length === 0) { alert(isMulti ? 'Pick at least one segment to continue.' : 'Please select a Segment to continue.'); return; }
     setStage(2);
   };
 
@@ -331,15 +387,31 @@ function SegmentRuleModal(props: {
   const grandTotal = CAT_KEYS.reduce((sum, c) => sum + totalSel(c), 0);
 
   const handleSave = async () => {
-    if (!reg || !segCode) return;
+    if (!reg || segCodes.length === 0) return;
     setSaving(true);
     try {
-      await Promise.resolve(onSave({
-        segment_code: segCode,
-        regulatory_status: reg,
-        auths: auths.map(a => a.code),
-        doc_selections: docSel,
-      }, effectiveExisting?.id));
+      /* Build one payload per picked segment. Each rule gets its own
+       * segment-specific authority list (auto-mapped from the prototype
+       * lookup) while sharing the Stage 2 doc selections — that's the
+       * "configure once, apply to many" semantics the multi-select is
+       * for. Pre-existing rules in the selection become PUTs; new ones
+       * POSTs. */
+      const rows = segCodes.map(code => {
+        const segAuths = authsForSegment(code, boot.authorities).map(a => a.code);
+        const existingRow = existingRules.find(r => r.id !== existing?.id && r.segment_code === code);
+        return {
+          form: { segment_code: code, regulatory_status: reg, auths: segAuths, doc_selections: docSel },
+          ruleId: existing?.id && existing.segment_code === code ? existing.id : existingRow?.id,
+        };
+      });
+      if (rows.length > 1 && onBulkSave) {
+        await Promise.resolve(onBulkSave(rows));
+      } else {
+        // Single-segment OR no bulk handler: fall through to per-row onSave.
+        // Multi without onBulkSave still works but the parent will reload N
+        // times — acceptable as a fallback, never hit in our current wiring.
+        for (const r of rows) await Promise.resolve(onSave(r.form, r.ruleId));
+      }
     } finally { setSaving(false); }
   };
 
@@ -394,13 +466,13 @@ function SegmentRuleModal(props: {
                     const on = reg === v;
                     const hi = v === 'highly';
                     return (
-                      <label key={v} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: `1.5px solid ${on ? (hi ? 'rgba(239,68,68,.38)' : 'rgba(34,197,94,.32)') : 'rgba(203,213,225,.38)'}`, background: on ? (hi ? 'rgba(254,242,242,.45)' : 'rgba(240,253,244,.45)') : 'rgba(248,250,252,.5)', cursor: 'pointer', transition: 'all .15s' }}
-                        onClick={() => { setReg(v); setSegCode(''); }}>
-                        <input type="radio" checked={on} onChange={() => {}} style={{ accentColor: hi ? '#ef4444' : '#16a34a', width: 14, height: 14 }} />
+                      <label key={v} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: `1.5px solid ${on ? (hi ? 'rgba(239,68,68,.38)' : 'rgba(34,197,94,.32)') : 'rgba(203,213,225,.38)'}`, background: on ? (hi ? 'rgba(254,242,242,.45)' : 'rgba(240,253,244,.45)') : 'rgba(248,250,252,.5)', cursor: existing ? 'not-allowed' : 'pointer', opacity: existing && !on ? 0.55 : 1, transition: 'all .15s' }}
+                        onClick={() => { if (existing) return; setReg(v); setSegCodes([]); }}>
+                        <input type="radio" checked={on} onChange={() => {}} disabled={!!existing} style={{ accentColor: hi ? '#ef4444' : '#16a34a', width: 14, height: 14 }} />
                         <span style={{ width: 16, height: 16, borderRadius: '50%', background: hi ? '#ef4444' : '#22c55e' }} />
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 700, color: on ? (hi ? '#991b1b' : '#166534') : '#1e293b' }}>{hi ? 'High Regulatory' : 'Less Regulatory'}</div>
-                          <div style={{ fontSize: 9, color: on ? (hi ? '#b91c1c' : '#15803d') : '#94a3b8', marginTop: 2 }}>{hi ? 'Requires specific segment & compliance review' : 'Applicable to all standard segments by default'}</div>
+                          <div style={{ fontSize: 9, color: on ? (hi ? '#b91c1c' : '#15803d') : '#94a3b8', marginTop: 2 }}>{hi ? 'Requires specific segment & compliance review' : 'Pick one or many — each becomes its own rule row'}</div>
                         </div>
                       </label>
                     );
@@ -408,16 +480,54 @@ function SegmentRuleModal(props: {
                 </div>
                 {reg && (
                   <div style={{ margin: '0 12px 12px', padding: '11px 12px', background: reg === 'highly' ? 'linear-gradient(110deg, rgba(239,68,68,.03), rgba(254,242,242,.4))' : 'linear-gradient(110deg, rgba(22,163,74,.03), rgba(240,253,244,.4))', border: `1px solid ${reg === 'highly' ? 'rgba(239,68,68,.15)' : 'rgba(22,163,74,.15)'}`, borderRadius: 10 }}>
-                    <div style={{ fontSize: 8.5, fontWeight: 800, color: reg === 'highly' ? '#dc2626' : '#15803d', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 7 }}>Select Segment <span className="clm-req">*</span></div>
-                    <select className="clm-select" value={segCode} onChange={e => setSegCode(e.target.value)}>
-                      <option value="">— Choose a {reg === 'highly' ? 'Highly' : 'Less'} Regulated Segment —</option>
-                      {segments.map(s => <option key={s.id} value={s.code}>{s.name} ({s.code})</option>)}
-                    </select>
-                    {!existing && matchedRule && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
+                      <div style={{ fontSize: 8.5, fontWeight: 800, color: reg === 'highly' ? '#dc2626' : '#15803d', textTransform: 'uppercase', letterSpacing: '.08em' }}>
+                        {isMulti ? 'Select Segments (multi)' : 'Select Segment'} <span className="clm-req">*</span>
+                      </div>
+                      {isMulti && segments.length > 0 && (
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 10, color: '#15803d' }}>
+                          <span style={{ fontWeight: 700 }}>{segCodes.length} of {segments.length} picked</span>
+                          <button type="button" onClick={selectAllSegments} style={{ background: 'transparent', border: '1px solid rgba(22,163,74,.32)', color: '#15803d', fontWeight: 700, fontSize: 9.5, borderRadius: 5, padding: '2px 7px', cursor: 'pointer' }}>Select all</button>
+                          <button type="button" onClick={clearAllSegments} disabled={segCodes.length === 0} style={{ background: 'transparent', border: '1px solid rgba(148,163,184,.32)', color: '#64748b', fontWeight: 700, fontSize: 9.5, borderRadius: 5, padding: '2px 7px', cursor: segCodes.length === 0 ? 'not-allowed' : 'pointer', opacity: segCodes.length === 0 ? 0.5 : 1 }}>Clear</button>
+                        </div>
+                      )}
+                    </div>
+
+                    {isMulti ? (
+                      segments.length === 0 ? (
+                        <div style={{ padding: '12px', fontSize: 11, color: '#64748b', background: 'rgba(248,250,252,.6)', borderRadius: 7, border: '1px dashed rgba(148,163,184,.4)' }}>
+                          No less-regulated segments configured yet. Add them in <em>CLM → Segment Master</em> first.
+                        </div>
+                      ) : (
+                        <div style={{ maxHeight: 168, overflowY: 'auto', background: '#fff', border: '1px solid rgba(22,163,74,.18)', borderRadius: 8, padding: 4 }}>
+                          {segments.map(s => {
+                            const checked = segCodes.includes(s.code);
+                            const has = existingRules.some(r => r.segment_code === s.code);
+                            return (
+                              <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 6, cursor: 'pointer', background: checked ? 'rgba(22,163,74,.07)' : 'transparent', border: `1px solid ${checked ? 'rgba(22,163,74,.22)' : 'transparent'}`, marginBottom: 2 }}>
+                                <input type="checkbox" checked={checked} onChange={e => toggleSegCode(s.code, e.target.checked)} style={{ accentColor: '#16a34a', width: 14, height: 14 }} />
+                                <span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 10.5, fontWeight: 700, color: '#0c4a6e', minWidth: 48 }}>{s.code}</span>
+                                <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: '#1e293b' }}>{s.name}</span>
+                                {has && <span style={{ fontSize: 8.5, fontWeight: 800, color: '#92400e', background: 'rgba(217,119,6,.12)', border: '1px solid rgba(217,119,6,.28)', padding: '1px 6px', borderRadius: 4 }}>HAS RULE</span>}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )
+                    ) : (
+                      <select className="clm-select" value={segCode} onChange={e => setSegCodes(e.target.value ? [e.target.value] : [])} disabled={!!existing}>
+                        <option value="">— Choose a {reg === 'highly' ? 'Highly' : 'Less'} Regulated Segment —</option>
+                        {segments.map(s => <option key={s.id} value={s.code}>{s.name} ({s.code})</option>)}
+                      </select>
+                    )}
+
+                    {!existing && matchedRules.length > 0 && (
                       <div style={{ marginTop: 9, display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 11px', background: 'linear-gradient(110deg, rgba(251,191,36,.10), rgba(254,243,199,.55))', border: '1.5px solid rgba(217,119,6,.32)', borderRadius: 9 }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                         <div style={{ fontSize: 11, color: '#92400e', lineHeight: 1.45 }}>
-                          <strong style={{ color: '#78350f' }}>A rule already exists for this segment ({matchedRule.rule_code}).</strong> One rule per segment is allowed — you're now editing that rule. Save will update it instead of creating a new one.
+                          {isMulti
+                            ? <><strong style={{ color: '#78350f' }}>{matchedRules.length} of the picked segments already have a rule</strong> ({matchedRules.map(r => `${r.segment_code} → ${r.rule_code}`).join(', ')}). Those will be updated; the rest will be created as new rows.</>
+                            : <><strong style={{ color: '#78350f' }}>A rule already exists for this segment ({matchedRule!.rule_code}).</strong> One rule per segment is allowed — you're now editing that rule. Save will update it instead of creating a new one.</>}
                         </div>
                       </div>
                     )}
