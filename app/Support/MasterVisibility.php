@@ -13,28 +13,37 @@ use Illuminate\Database\Eloquent\Builder;
  * Tenant tree (per client):
  *   Client
  *     └── Main Branch (is_main = true)
- *            ├── Main-branch members (branch_user + employee in main branch)
+ *            ├── Main-branch branch_user (admin tier)
+ *            ├── Main-branch employees   (peer-isolated)
  *            └── Sub Branches (is_main = false)
- *                   └── Sub-branch members
+ *                   ├── Sub-branch branch_user (branch admin)
+ *                   └── Sub-branch employees   (peer-isolated)
  *
  * READ visibility — every row is visible to:
  *   - super_admin                         : all rows
  *   - client_admin / client_user          : their client's rows + globals
- *   - main-branch member                  : their client's rows + globals
- *   - sub-branch member                   : globals + client-level rows
+ *   - main-branch branch_user             : their client's rows + globals
+ *   - sub-branch branch_user              : globals + client-level rows
  *                                           + main-branch rows
  *                                           + own sub-branch rows
  *                                           (sibling sub-branches blocked)
+ *   - employee (any branch)               : globals + client-level rows
+ *                                           + main-branch rows
+ *                                           + ONLY OWN rows (created_by = self)
+ *                                           — peer employees in the same
+ *                                           branch are HIDDEN from each
+ *                                           other so each employee operates
+ *                                           in their own data sandbox.
  *
  * MUTATE (edit/delete) — only the creator + ancestor branches can modify:
  *   - super_admin                         : any row
  *   - own row (created_by == auth)        : always allowed
+ *   - employee viewer (peer-isolated)     : ONLY own rows (created_by must
+ *                                           equal the viewer); cannot edit
+ *                                           even rows their own branch
+ *                                           admin created.
  *   - else: viewer's tier must be >= creator's tier on the ladder
  *           super_admin > client > main-branch > sub-branch
- *
- * Branch users and employees share the same tier within a branch — there is
- * no sub-level between them, so same-branch colleagues can edit each
- * other's rows.
  */
 class MasterVisibility
 {
@@ -72,11 +81,40 @@ class MasterVisibility
             return;
         }
 
-        if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
+        // Employees are PEER-ISOLATED — they see only their own rows plus
+        // ancestor-tier reference data (globals + client-level + main
+        // branch). Two employees in the same branch can never see each
+        // other's data. This is checked FIRST so it covers employees in
+        // both main and sub branches uniformly.
+        if (($user->user_type ?? null) === 'employee') {
+            $userId       = (int) $user->id;
+            $mainBranchId = Branch::where('client_id', $clientId)
+                ->where('is_main', true)
+                ->value('id');
+
+            $q->where(function ($w) use ($clientId, $userId, $mainBranchId) {
+                $w->whereNull('client_id')                      // globals
+                  ->orWhere(function ($ww) use ($clientId, $userId, $mainBranchId) {
+                      $ww->where('client_id', $clientId)
+                         ->where(function ($wb) use ($userId, $mainBranchId) {
+                             $wb->whereNull('branch_id')        // client-level rows
+                                ->orWhere('created_by', $userId); // own rows
+                             if ($mainBranchId) {
+                                 // Main-branch rows (read-only reference data)
+                                 $wb->orWhere('branch_id', $mainBranchId);
+                             }
+                         });
+                  });
+            });
+            // Employees can't use the BranchSwitcher.
+            return;
+        }
+
+        if (($user->user_type ?? null) === 'branch_user') {
             $isMain = $user->branch?->is_main ?? false;
 
             if ($isMain) {
-                // Main-branch members see everything in their client.
+                // Main-branch admin sees everything in their client.
                 $q->where(function ($w) use ($clientId) {
                     $w->whereNull('client_id')->orWhere('client_id', $clientId);
                 });
@@ -84,7 +122,8 @@ class MasterVisibility
                 return;
             }
 
-            // Sub-branch member: globals + client-level + main-branch + own.
+            // Sub-branch admin: globals + client-level + main-branch + own
+            // branch. Sibling sub-branches stay blocked.
             $branchId = $user->branch_id;
             $mainBranchId = Branch::where('client_id', $clientId)
                 ->where('is_main', true)
@@ -131,9 +170,18 @@ class MasterVisibility
         // Always allow the row's own creator to manage it. (When
         // created_by is null, this short-circuit doesn't fire — we
         // fall through to the tier check below.)
-        if (isset($row->created_by) && $row->created_by
-            && (int) $row->created_by === (int) $user->id) {
-            return null;
+        $isOwnRow = isset($row->created_by) && $row->created_by
+            && (int) $row->created_by === (int) $user->id;
+        if ($isOwnRow) return null;
+
+        // Employees are peer-isolated — they can ONLY mutate rows they
+        // created themselves. Even rows their own branch admin created
+        // are off-limits. This short-circuits before the tier ladder so
+        // an employee in the same branch as the row's creator still
+        // gets denied.
+        if (($user->user_type ?? null) === 'employee') {
+            $verb = $action === 'delete' ? 'delete' : 'edit';
+            return "You cannot {$verb} this record — employees can only manage rows they created themselves.";
         }
 
         $userTier = self::tierFor($user);

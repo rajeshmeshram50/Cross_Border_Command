@@ -432,10 +432,36 @@ function MasterPageInner({
     const deriveFields = cfg.fields.filter((f: any) => f.autoDeriveFrom);
     if (deriveFields.length === 0) return;
 
-    const timer = window.setTimeout(() => {
-      const form = document.querySelector('.master-modal form, .master-form-modal form, form.master-form') as HTMLFormElement | null
-                || document.querySelector('.modal.show form') as HTMLFormElement | null;
-      if (!form) return;
+    // Resolve the form lazily. Reactstrap's modal can be off-DOM for
+    // a tick after `modalOpen` flips, and on some systems the 60ms
+    // delay races the actual mount. Retry up to ~600ms before giving
+    // up. The selector list widens progressively to handle different
+    // modal wrappers across the project.
+    const findForm = (): HTMLFormElement | null => {
+      const selectors = [
+        '.master-modal form',
+        '.master-form-modal form',
+        'form.master-form',
+        '.modal.show form',
+        '.modal[role="dialog"] form',
+      ];
+      for (const sel of selectors) {
+        const el = document.querySelector(sel) as HTMLFormElement | null;
+        if (el) return el;
+      }
+      return null;
+    };
+
+    let attemptHandle = 0;
+    const attach = () => {
+      const form = findForm();
+      if (!form) {
+        if (attemptHandle < 12) {
+          attemptHandle++;
+          window.setTimeout(attach, 50);
+        }
+        return;
+      }
 
       const cleanups: Array<() => void> = [];
       deriveFields.forEach((field: any) => {
@@ -447,7 +473,15 @@ function MasterPageInner({
         // Clearing the target back to empty re-enables auto-fill, so users
         // can re-trigger derivation by emptying the short code.
         let userEdited = !!target.value && editing != null;
+        // Guard flag — set true while we programmatically update the
+        // target. Without it, dispatching the synthetic 'input' event
+        // below fires onTargetInput, which sees a non-empty value and
+        // flips userEdited to true permanently — that left every UOM
+        // entry stuck at the first letter ("K" instead of "KG"). The
+        // guard makes onTargetInput ignore self-fired events.
+        let programmatic = false;
         const onTargetInput = () => {
+          if (programmatic) return;
           userEdited = target.value !== '';
         };
         target.addEventListener('input', onTargetInput);
@@ -458,8 +492,13 @@ function MasterPageInner({
           // Set via the native setter so React/Reactstrap don't strip the
           // change; then dispatch an 'input' event so any listeners fire.
           const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-          setter ? setter.call(target, next) : (target.value = next);
-          target.dispatchEvent(new Event('input', { bubbles: true }));
+          programmatic = true;
+          try {
+            setter ? setter.call(target, next) : (target.value = next);
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+          } finally {
+            programmatic = false;
+          }
         };
         source.addEventListener('input', onSourceInput);
 
@@ -471,7 +510,8 @@ function MasterPageInner({
 
       // Stash for cleanup phase below.
       (window as any).__autoDeriveCleanups = cleanups;
-    }, 60);
+    };
+    const timer = window.setTimeout(attach, 60);
 
     return () => {
       window.clearTimeout(timer);
@@ -2939,18 +2979,28 @@ const SECTION_PALETTES: { color: string; grad: string; tint: string; border: str
 // (Kilogram → KG, Metric Ton → MT). Falls back to the first 3 uppercase
 // letters of the source string so unknown inputs still produce a usable
 // suggestion the user can refine.
+// Unit short codes follow the standard "First letter caps + prefix
+// lowercase" convention used on Indian commerce forms — e.g. "Kg"
+// rather than "KG", "Mm" rather than "MM". Counts / non-SI units
+// (PCS, BOX, CTN…) stay uppercase since that's how they read in
+// stock and packaging lists.
 const UOM_SHORT_CODE_DICT: Record<string, string> = {
-  'kilogram': 'KG', 'kilo': 'KG', 'kg': 'KG',
-  'gram': 'G', 'milligram': 'MG',
-  'ton': 'T', 'metric ton': 'MT', 'tonne': 'MT', 'tonnes': 'MT',
-  'pound': 'LB', 'pounds': 'LB', 'ounce': 'OZ', 'ounces': 'OZ',
-  'liter': 'LTR', 'litre': 'LTR', 'liters': 'LTR', 'litres': 'LTR',
-  'milliliter': 'ML', 'millilitre': 'ML',
-  'gallon': 'GAL', 'cubic meter': 'CBM', 'cubic metre': 'CBM',
-  'meter': 'M', 'metre': 'M',
-  'centimeter': 'CM', 'centimetre': 'CM',
-  'millimeter': 'MM', 'millimetre': 'MM',
-  'kilometer': 'KM', 'kilometre': 'KM',
+  'kilogram': 'Kg', 'kilo': 'Kg', 'kg': 'Kg',
+  'gram': 'g', 'milligram': 'mg',
+  'ton': 'T', 'metric ton': 'Mt', 'tonne': 'Mt', 'tonnes': 'Mt',
+  'pound': 'Lb', 'pounds': 'Lb', 'ounce': 'Oz', 'ounces': 'Oz',
+  'liter': 'Ltr', 'litre': 'Ltr', 'liters': 'Ltr', 'litres': 'Ltr',
+  'milliliter': 'Ml', 'millilitre': 'Ml',
+  'gallon': 'Gal', 'cubic meter': 'Cbm', 'cubic metre': 'Cbm',
+  'meter': 'm', 'metre': 'm', 'meters': 'm', 'metres': 'm',
+  'centimeter': 'Cm', 'centimetre': 'Cm', 'centimeters': 'Cm', 'centimetres': 'Cm',
+  'millimeter': 'Mm', 'millimetre': 'Mm', 'millimeters': 'Mm', 'millimetres': 'Mm',
+  // Common one-L misspellings — surface the same Mm short code so a
+  // typo in the title still produces the correct unit code.
+  'milimeter': 'Mm', 'milimetre': 'Mm', 'milimeters': 'Mm', 'milimetres': 'Mm',
+  'kilometer': 'Km', 'kilometre': 'Km', 'kilometers': 'Km', 'kilometres': 'Km',
+  // "Killogram" with double L — same Kg short code.
+  'killogram': 'Kg', 'killograms': 'Kg', 'kilograms': 'Kg',
   'inch': 'IN', 'inches': 'IN', 'foot': 'FT', 'feet': 'FT', 'yard': 'YD', 'yards': 'YD',
   'piece': 'PCS', 'pieces': 'PCS', 'pcs': 'PCS',
   'box': 'BOX', 'boxes': 'BOX',
