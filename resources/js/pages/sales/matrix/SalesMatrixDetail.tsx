@@ -465,25 +465,33 @@ export default function SalesMatrixDetail() {
       {/* ─── Customer Banner ─── */}
       <div className="smd-cust-banner">
         <span className="smd-cust-accent" />
+        <span className="smd-cust-glow"  aria-hidden="true" />
+        <span className="smd-cust-sheen" aria-hidden="true" />
         <div className="smd-cust-left">
-          <div className="smd-cust-avatar">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
+          <div className="smd-cust-avatar-wrap">
+            <div className="smd-cust-avatar">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+            </div>
             <span className="smd-cust-avatar-dot" />
           </div>
           <div>
             <div className="smd-cust-name">{header.customer}</div>
-            <div className="smd-cust-tag">● CUSTOMER</div>
+            <span className="smd-cust-tag">
+              <span className="smd-cust-tag-dot" />
+              <span className="smd-cust-tag-text">Customer</span>
+            </span>
           </div>
         </div>
         <div className="smd-cust-meta">
           <Meta icon={<IconListLines />} label="OPPORTUNITY ID"   value={header.oppId} />
-          <span className="smd-cust-sep" />
+          <span className="smd-cust-sep" aria-hidden="true"><i /><i /><i /></span>
           <Meta icon={<IconCalendar />}  label="OPPORTUNITY DATE" value={header.oppDate} />
-          <span className="smd-cust-sep" />
+          <span className="smd-cust-sep" aria-hidden="true"><i /><i /><i /></span>
           <Meta icon={<IconGlobe />}     label="COUNTRY"          value={header.country} />
+          <span className="smd-cust-line" aria-hidden="true" />
         </div>
         <button className="smd-back-btn" onClick={goBack}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -505,34 +513,42 @@ export default function SalesMatrixDetail() {
                 onClick={() => goToStage(s.n)}
               >
                 <div className="smd-step-head">
-                  <span className="smd-step-num">STEP 0{s.n}</span>
-                  {state === 'active' && <span className="smd-step-badge smd-step-badge-active">● ACTIVE</span>}
-                  {state === 'done'   && <span className="smd-step-badge smd-step-badge-done">✓ DONE</span>}
+                  <span className="smd-step-num">Step 0{s.n}</span>
                 </div>
                 <div className="smd-step-big">0{s.n}</div>
                 <div className="smd-step-title">{s.title}</div>
                 <div className="smd-step-sub">{s.sub}</div>
                 <span className="smd-step-ghost">0{s.n}</span>
+                {state === 'active' && (
+                  <span className="smd-step-badge smd-step-badge-active">
+                    <span className="smd-step-badge-dot" />
+                    <span className="smd-step-badge-text">Active</span>
+                  </span>
+                )}
+                {state === 'done' && (
+                  <span className="smd-step-badge smd-step-badge-done">
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    <span className="smd-step-badge-text">Done</span>
+                  </span>
+                )}
               </div>
             );
           })}
         </div>
-      </div>
 
-      {/* ─── Action Toolbar (separate white card) ─── */}
-      <div className="smd-toolbar">
-        {/* Customer — if a customer is already mapped on the lead we
-            open the Edit form directly with that row; otherwise we
-            surface the Picker so the user can pick one or add a new
-            customer. Matches the legacy IDIMS "is_main_customer_map" gate. */}
+        {/* ─── Divider between stepper and action toolbar ─── */}
+        <div className="smd-stepper-divider" aria-hidden="true" />
+
+        {/* ─── Action Toolbar — same container as the stepper ─── */}
+        <div className="smd-toolbar">
         <ActionBtn icon={<IconUser />}     label="Customer" trailing="edit"
           onClick={onCustomerClick} />
-        {/* Consignee — gated on a mapped customer. When unmapped we
-            disable to mirror the legacy flow (you can't consign for a
-            lead without first pinning the buyer). */}
         <ActionBtn icon={<IconTruck />}    label="Consignee" trailing="edit"
           className={!serverHeader.customerId ? 'smd-act-disabled' : ''}
           onClick={onConsigneeClick} />
+        <span className="smd-act-sep" aria-hidden="true" />
         <ActionBtn icon={<IconPlusSq />}   label="Add Product"
           onClick={() => setProductAddOpen(true)} />
         <ActionBtn icon={<IconBook />}     label="Product Directory"
@@ -541,6 +557,7 @@ export default function SalesMatrixDetail() {
           onClick={() => setChangeOwnerOpen(true)} />
         <ActionBtn icon={<IconMsg />}      label="Remark"
           onClick={() => setRemarksOpen(true)} />
+        <span className="smd-act-sep" aria-hidden="true" />
         <ActionBtn icon={<IconStar />}     label="Key Opportunity"
           className={isKeyOpportunity ? 'smd-act-key' : ''}
           onClick={() => setKeyOppOpen(true)} />
@@ -553,6 +570,7 @@ export default function SalesMatrixDetail() {
         <ActionBtn icon={<IconWhats />}    label="WhatsApp Status"
           className={`smd-act-wa ${serverHeader.whatsappStatus === 'connected' ? 'smd-act-wa-on' : ''}`}
           onClick={() => setWhatsappOpen(true)} />
+        </div>
       </div>
 
       {/* ─── Three-column body ─── */}

@@ -14,28 +14,41 @@ export type StageProps = {
 /* Shared stage shell styles — each stage imports SHARED_STAGE_CSS once. */
 export const SHARED_STAGE_CSS = `
 .smd-stg-head {
+  position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px;
-  /* Soft lavender header — the deep purple lives in the icon + badge so
-   * the body content reads in dark ink on a light tinted surface. */
-  background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
-  color: #1e1b4b;
+  padding: 11px 16px 10px;
+  /* Lavender gradient header — sits between two deep-violet side panels.
+   * Title is dark purple ink; the deep colour lives in the icon + ACTIVE pill. */
+  background: linear-gradient(110deg, #ede9fe 0%, #ddd6fe 40%, #c4b5fd 100%);
+  color: #3b0764;
   border-bottom: 1px solid #c4b5fd;
 }
-.smd-stg-head-left { display: flex; align-items: center; gap: 11px; }
+.smd-stg-head::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,.55), transparent);
+  pointer-events: none;
+}
+.smd-stg-head-left { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; }
 .smd-stg-head-icon {
   width: 32px; height: 32px; border-radius: 10px;
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 4px 10px rgba(124,58,237,.28);
+  box-shadow:
+    0 3px 10px rgba(124,58,237,.35),
+    inset 0 1px 0 rgba(255,255,255,.20);
+  flex-shrink: 0;
 }
-.smd-stg-head-title { font-size: 14.5px; font-weight: 800; line-height: 1.2; color: #1e1b4b; }
-.smd-stg-head-sub   { font-size: 10.5px; color: #6d28d9; margin-top: 2px; font-weight: 600; }
+.smd-stg-head-title { font-size: 13.5px; font-weight: 900; line-height: 1.2; color: #3b0764; letter-spacing: -.3px; }
+.smd-stg-head-sub   { font-size: 10px; color: #6d28d9; margin-top: 2px; font-weight: 600; letter-spacing: .04em; }
 .smd-stg-head-badge {
-  font-size: 10px; font-weight: 800; letter-spacing: .08em;
-  padding: 6px 14px; border-radius: 999px;
-  background: #4c1d95; color: #fff;
-  display: inline-flex; align-items: center; gap: 6px;
+  position: relative; z-index: 1;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .08em;
+  padding: 4px 12px; border-radius: 999px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(124,58,237,.30);
+  display: inline-flex; align-items: center; gap: 5px;
 }
 
 .smd-stg-body { padding: 14px 16px; flex: 1; }
