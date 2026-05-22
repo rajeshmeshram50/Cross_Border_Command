@@ -37,6 +37,27 @@ const STATUS_META: Record<ReminderStatus, { label: string; pill: string }> = {
   'Done':        { label: 'Done',        pill: 'rfl-pill-done' },
 };
 
+/* Normalise a date that could come in as DD/MM/YYYY (display format),
+ * YYYY-MM-DD (already ISO), or ISO 8601 with time → return YYYY-MM-DD
+ * if anything parses, undefined otherwise. Server's `date` rule only
+ * accepts an unambiguous date string. */
+function toIsoDate(input: string | undefined | null): string | undefined {
+  if (!input) return undefined;
+  const s = String(input).trim();
+  if (!s) return undefined;
+  // Already YYYY-MM-DD or ISO with time → take the first 10 chars
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  // DD/MM/YYYY (en-GB locale format) → reorder
+  const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+  if (dmy) {
+    const [, d, m, y] = dmy;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  // Last resort — let the Date parser try
+  const d = new Date(s);
+  return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : undefined;
+}
+
 type Props = {
   open:   boolean;
   oppId:  string | undefined;   // OPP-#### code, used to filter + prefill
@@ -84,19 +105,30 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
     if (!setDate) { toast.warning('Date required', 'Pick the reminder date'); return; }
     setSaving(true);
     try {
-      await api.post('/sales/reminders', {
+      // `oppDate` arrives from the parent as the human display string
+      // (DD/MM/YYYY) so Laravel's `date` rule rejects it. Convert to
+      // ISO (YYYY-MM-DD) before sending; omit the field if it doesn't
+      // parse cleanly — the column is nullable, no need to gamble.
+      const isoOppDate = toIsoDate(oppDate);
+      const payload: Record<string, unknown> = {
         opp_id:   oppId,
-        opp_date: oppDate,
         subject:  subject.trim(),
         set_date: setDate,
         tat,
-        remark:   remark.trim() || undefined,
-      });
+      };
+      if (isoOppDate)            payload.opp_date = isoOppDate;
+      if (remark.trim())         payload.remark   = remark.trim();
+
+      await api.post('/sales/reminders', payload);
       toast.success('Reminder added', 'Saved to this opportunity');
       setSubject(''); setRemark(''); setSetDate(''); setDraftOpen(false);
       refresh();
     } catch (e: any) {
-      toast.error('Save failed', e?.response?.data?.message ?? 'Could not save reminder');
+      // Surface the first server-side validation error if any so the
+      // user sees the real complaint ("subject must be 3+ chars" etc).
+      const errors = e?.response?.data?.errors as Record<string, string[]> | undefined;
+      const firstErr = errors ? Object.values(errors)[0]?.[0] : undefined;
+      toast.error('Save failed', firstErr ?? e?.response?.data?.message ?? 'Could not save reminder');
     } finally {
       setSaving(false);
     }

@@ -904,14 +904,19 @@ export default function SalesMatrixDetail() {
       <MeetingsForLeadModal
         open={meetingsOpen}
         oppId={header.oppId}
+        /* Pre-fill the inline + New form with the lead's mapped
+         * customer + their primary email so the user doesn't have to
+         * retype them. Phone isn't on the customer model (lives on
+         * customer_addresses) so we leave that field empty. */
+        defaultCustomer={
+          (serverHeader.customerRow as Record<string, unknown> | null | undefined)?.company_name as string | undefined
+          ?? header.customer
+        }
+        defaultEmail={
+          (serverHeader.customerRow as Record<string, unknown> | null | undefined)?.primary_email as string | undefined
+          ?? undefined
+        }
         onClose={() => setMeetingsOpen(false)}
-        onAddNew={() => {
-          // Deep-link to the existing Sales To-Do page; the page handles
-          // the rich form (timezones, link/venue, contact, agenda)
-          // far better than embedding it here.
-          setMeetingsOpen(false);
-          navigate('sales.todo');
-        }}
       />
 
       {/* ── Key Opportunity confirm popup ──
