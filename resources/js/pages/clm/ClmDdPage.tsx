@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
+import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 
-/* Central CLM → Due Diligence master. */
+/* Central CLM → Due Diligence Master. 3-card faithful port. */
 
-type Dd = { id: number; code: string; name: string; authority: string; expiry: string; status: 'active'|'inactive'; };
+type Dd = { id: number; code: string; name: string; authority: string; expiry: string; status: 'active'|'inactive' };
 type Authority = { id: number; code: string; name: string };
 
 export default function ClmDdPage() {
@@ -59,75 +60,89 @@ export default function ClmDdPage() {
   return (
     <div className="clm-root">
       <style>{CLM_CSS}</style>
-      <div className="clm-head-card">
-        <div className="clm-head-left">
-          <div className="clm-head-ico">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          </div>
-          <div>
-            <div className="clm-crumb">Central CLM · Compliance &amp; Regulatory</div>
-            <div className="clm-head-title">Due Diligence Documents</div>
-            <div className="clm-head-sub">Entity-level diligence — incorporation certificate, board resolutions, financials, credit bureau reports.</div>
-          </div>
-        </div>
-        <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Add DD Document
-        </button>
-      </div>
 
-      <div className="clm-body-card">
-        <div className="clm-tabs">
-          <span className="clm-total-pill">Total DD Documents · <b>{count}</b></span>
-          <div className="clm-search">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
-            <input type="text" placeholder="Search…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+      <ClmPageHeader
+        icon={ICO.hDd}
+        title="Due Diligence Master"
+        sub="Manage due diligence documents, verification records, and risk validation requirements."
+        addLabel="Add DD Document"
+        onAdd={() => { setEditing(null); setModalOpen(true); }}
+      />
+
+      <ClmBrefBox
+        icon={ICO.bDoc}
+        label="Due Diligence Master"
+        sub="Manage due diligence document structures and risk verification requirements."
+        steps={[
+          { n: '01', title: 'Create DD Record', desc: 'Add due diligence and verification documents.',     icon: ICO.doc },
+          { n: '02', title: 'Map Authority',    desc: 'Define document issuing authority details.',         icon: ICO.shield },
+          { n: '03', title: 'Set Expiry Rules', desc: 'Define expiry applicability and validity.',          icon: ICO.cal },
+          { n: '04', title: 'Enable Usage',     desc: 'Use DD documents across onboarding and compliance.', icon: ICO.check },
+        ]}
+      />
+
+      <div className="clm-page-card">
+        <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
+          <div className="clm-search clm-search-grow">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="text" placeholder="Search DD documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          </div>
+          <div className="clm-total">
+            <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+            <div className="clm-total-lbl">Total DD Documents</div>
+            <div className="clm-total-num">{count}</div>
           </div>
         </div>
-        <div className="clm-table-wrap">
-          <table className="clm-table">
-            <thead><tr>
-              <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
-              <th style={{ width: 110, textAlign: 'center' }}>DD ID</th>
-              <th>DD DOCUMENT NAME</th>
-              <th>ISSUING AUTHORITY</th>
-              <th style={{ width: 110, textAlign: 'center' }}>EXPIRY</th>
-              <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
-            </tr></thead>
-            <tbody>
-              {loading && <tr><td colSpan={6} className="clm-status">Loading…</td></tr>}
-              {!loading && slice.length === 0 && (
-                <tr><td colSpan={6} className="clm-empty">
-                  <div className="clm-empty-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></div>
-                  <div className="clm-empty-title">No DD documents yet</div>
-                  <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add DD Document to create the first record.' : 'No results match the current search.'}</div>
-                </td></tr>
+
+        <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
+          {slice.length === 0 ? (
+            <div className="clm-empty">
+              <div className="clm-empty-ico">{ICO.bDoc}</div>
+              <div className="clm-empty-title">No DD documents yet</div>
+              <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add DD Document to create the first record.' : 'No results match the current search.'}</div>
+            </div>
+          ) : (
+            <div className="clm-table-wrap">
+              <table className="clm-table">
+                <thead><tr>
+                  <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
+                  <th style={{ width: 110, textAlign: 'center' }}>DD ID</th>
+                  <th>DD DOCUMENT NAME</th>
+                  <th>ISSUING AUTHORITY</th>
+                  <th style={{ width: 110, textAlign: 'center' }}>EXPIRY</th>
+                  <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
+                </tr></thead>
+                <tbody>
+                  {loading && <tr><td colSpan={6} className="clm-status">Loading…</td></tr>}
+                  {!loading && slice.map((r, i) => (
+                    <tr key={r.id}>
+                      <td className="clm-td-num">{start + i + 1}</td>
+                      <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
+                      <td className="clm-td-name">{r.name}</td>
+                      <td className="clm-td-desc">{r.authority}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span className={`clm-badge ${r.expiry === 'N/A' ? 'clm-badge-green' : r.expiry === 'Varies' ? 'clm-badge-amber' : 'clm-badge-orange'}`}>{r.expiry}</span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <div className="clm-actions">
+                          <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                          <button className="clm-act clm-act-del" title="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!loading && filtered.length > 0 && (
+                <div className="clm-pag">
+                  <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
+                  <div className="clm-pag-btns">
+                    {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
+                      <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
+                    ))}
+                  </div>
+                </div>
               )}
-              {!loading && slice.map((r, i) => (
-                <tr key={r.id}>
-                  <td className="clm-td-num">{start + i + 1}</td>
-                  <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                  <td className="clm-td-name">{r.name}</td>
-                  <td className="clm-td-desc">{r.authority}</td>
-                  <td style={{ textAlign: 'center' }}>
-                    <span className={`clm-badge ${r.expiry === 'N/A' ? 'clm-badge-green' : r.expiry === 'Varies' ? 'clm-badge-amber' : 'clm-badge-red'}`}>{r.expiry}</span>
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <div className="clm-actions">
-                      <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg></button>
-                      <button className="clm-act clm-act-del" title="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /></svg></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!loading && filtered.length > 0 && (
-            <div className="clm-pag">
-              <span className="clm-pag-info">Showing <b>{start + 1}–{Math.min(start + PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b> record{filtered.length === 1 ? '' : 's'}</span>
-              <div className="clm-pag-btns">{Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                <button key={p} onClick={() => setPage(p)} disabled={p === safePage} className={`clm-pag-btn ${p === safePage ? 'on' : ''}`}>{p}</button>
-              ))}</div>
             </div>
           )}
         </div>
@@ -137,7 +152,7 @@ export default function ClmDdPage() {
       {pendingDelete && createPortal((
         <div className="clm-conf-bd" onClick={() => setPendingDelete(null)}>
           <div className="clm-conf" onClick={e => e.stopPropagation()}>
-            <div className="clm-conf-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg></div>
+            <div className="clm-conf-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div>
             <div className="clm-conf-title">Delete DD document?</div>
             <div className="clm-conf-sub"><strong>{pendingDelete.name}</strong> ({pendingDelete.code}) will be removed.</div>
             <div className="clm-conf-btns"><button className="clm-btn-cancel" onClick={() => setPendingDelete(null)}>Cancel</button><button className="clm-btn-del" onClick={() => void onDelete()}>Delete</button></div>
@@ -176,30 +191,28 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
       <div className="clm-modal" onClick={e => e.stopPropagation()}>
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
-            <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></div>
+            <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
             <div>
               <div className="clm-modal-head-title">{isEdit ? 'Edit DD Document' : 'Add DD Document'}</div>
               <div className="clm-modal-head-sub">{isEdit ? 'Update due diligence document details.' : 'Register a due diligence document for entity verification.'}</div>
             </div>
           </div>
-          <button className="clm-modal-close" onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+          <button className="clm-modal-close" onClick={onClose}>×</button>
         </div>
         <div className="clm-modal-body">
           <div className="clm-autocode">
-            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg></div>
+            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
             <div className="clm-autocode-text">
               <div className="clm-autocode-label">{isEdit ? 'DD Code' : 'Auto Generated Code'}</div>
               <div className="clm-autocode-val">{isEdit ? existing!.code : nextCode}</div>
             </div>
             <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
-
           <div className="clm-field">
             <label className="clm-field-label">DD Document Name <span className="clm-req">*</span></label>
             <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. Audited Financials, Board Resolution" value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
-
           <div className="clm-field">
             <label className="clm-field-label">Issuing Authority <span className="clm-req">*</span></label>
             <select className={`clm-select ${errors.auth ? 'clm-input-err' : ''}`} value={auth} onChange={e => { setAuth(e.target.value); setErrors(p => ({ ...p, auth: '' })); }}>
@@ -210,10 +223,9 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
             <div className="clm-field-hint">Pulls from Authority Master.</div>
             {errors.auth && <div className="clm-err">{errors.auth}</div>}
           </div>
-
           <div className="clm-field">
             <label className="clm-field-label">Expiry</label>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <button type="button" onClick={() => setExpiryMode('N/A')}    className={`clm-tab ${expiryMode === 'N/A'    ? 'active' : ''}`}>N/A</button>
               <button type="button" onClick={() => setExpiryMode('Varies')} className={`clm-tab ${expiryMode === 'Varies' ? 'active' : ''}`}>Varies</button>
               <button type="button" onClick={() => setExpiryMode('date')}   className={`clm-tab ${expiryMode === 'date'   ? 'active' : ''}`}>Specific (MM/YYYY)</button>
@@ -227,7 +239,7 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
         <div className="clm-modal-foot">
           <button className="clm-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="clm-btn-save" onClick={() => void handleSave()} disabled={saving}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             {saving ? 'Saving…' : (isEdit ? 'Update' : 'Save')}
           </button>
         </div>
