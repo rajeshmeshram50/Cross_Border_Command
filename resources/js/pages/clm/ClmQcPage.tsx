@@ -6,6 +6,7 @@ import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { MasterSelect } from '../../components/ui/MasterSelect';
 
 /* Central CLM → Quality & Compliance Documents Master. 3-card faithful port. */
 
@@ -247,19 +248,29 @@ function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCod
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <div className="clm-field">
               <label className="clm-field-label">Issued By (Authority) <span className="clm-req">*</span></label>
-              <select className={`clm-select ${errors.issuedBy ? 'clm-input-err' : ''}`} value={issuedBy} onChange={e => { setIssuedBy(e.target.value); setErrors(p => ({ ...p, issuedBy: '' })); }}>
-                <option value="">— Select —</option>
-                {authorities.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-                {issuedBy && !authorities.find(a => a.name === issuedBy) && <option value={issuedBy}>{issuedBy}</option>}
-              </select>
+              <MasterSelect
+                key={`qc-issuedBy-${authorities.length}`}
+                value={issuedBy}
+                invalid={!!errors.issuedBy}
+                placeholder="— Select —"
+                options={[
+                  ...authorities.map(a => ({ value: a.name, label: a.name })),
+                  ...(issuedBy && !authorities.find(a => a.name === issuedBy) ? [{ value: issuedBy, label: issuedBy }] : []),
+                ]}
+                onChange={(v) => { setIssuedBy(v); setErrors(p => ({ ...p, issuedBy: '' })); }}
+              />
               {errors.issuedBy && <div className="clm-err">{errors.issuedBy}</div>}
             </div>
             <div className="clm-field">
               <label className="clm-field-label">Type</label>
-              <select className="clm-select" value={type} onChange={e => setType(e.target.value as 'cert'|'comp')}>
-                <option value="cert">Certificate</option>
-                <option value="comp">Compliance Document</option>
-              </select>
+              <MasterSelect
+                value={type}
+                options={[
+                  { value: 'cert', label: 'Certificate' },
+                  { value: 'comp', label: 'Compliance Document' },
+                ]}
+                onChange={(v) => setType(v as 'cert'|'comp')}
+              />
             </div>
           </div>
           <div className="clm-field">

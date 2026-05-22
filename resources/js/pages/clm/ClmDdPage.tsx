@@ -6,6 +6,7 @@ import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { MasterSelect } from '../../components/ui/MasterSelect';
 
 /* Central CLM → Due Diligence Master. 3-card faithful port. */
 
@@ -206,11 +207,17 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Issuing Authority <span className="clm-req">*</span></label>
-            <select className={`clm-select ${errors.auth ? 'clm-input-err' : ''}`} value={auth} onChange={e => { setAuth(e.target.value); setErrors(p => ({ ...p, auth: '' })); }}>
-              <option value="">— Select Authority —</option>
-              {authorities.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-              {auth && !authorities.find(a => a.name === auth) && <option value={auth}>{auth}</option>}
-            </select>
+            <MasterSelect
+              key={`dd-auth-${authorities.length}`}
+              value={auth}
+              invalid={!!errors.auth}
+              placeholder="— Select Authority —"
+              options={[
+                ...authorities.map(a => ({ value: a.name, label: a.name })),
+                ...(auth && !authorities.find(a => a.name === auth) ? [{ value: auth, label: auth }] : []),
+              ]}
+              onChange={(v) => { setAuth(v); setErrors(p => ({ ...p, auth: '' })); }}
+            />
             <div className="clm-field-hint">Pulls from Authority Master.</div>
             {errors.auth && <div className="clm-err">{errors.auth}</div>}
           </div>
