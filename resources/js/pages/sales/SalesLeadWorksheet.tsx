@@ -405,6 +405,13 @@ export default function SalesLeadWorksheet() {
       } else {
         toast.success('Synced', summary);
       }
+      /* Invalidate the count signature BEFORE refetching so the next
+       * /sales/leads request runs with with_counts=1. Without this,
+       * fetchLeads only re-requests counts when tab / search / filters
+       * change; a sync that pulls 30 new rows on the same tab landed
+       * the new rows in the table but left the tab badges stale until
+       * the user navigated or refreshed the page. */
+      countSigRef.current = '';
       fetchLeads();
     } catch (e: any) {
       toast.error('Sync failed', e?.response?.data?.message ?? 'IndiaMart sync request failed');
@@ -619,7 +626,13 @@ export default function SalesLeadWorksheet() {
           </svg>
           <input
             type="text"
-            placeholder="Search ID / Product / Assignee…"
+            /* Placeholder lists the most common targets, but the
+             * backend now searches every column on the My Workplace
+             * table (opp id, type, source, customer name / number /
+             * email / company, product, country, remark, assigned
+             * salesperson, etc.) so "anything you can see, you can
+             * search". */
+            placeholder="Search anything — ID, name, phone, email, product, country…"
             value={q}
             onChange={e => { setQ(e.target.value); setPage(1); }}
           />
@@ -1150,12 +1163,17 @@ const SCOPED_CSS = `
   flex-shrink: 0; z-index: 1;
 }
 .lwp-root .lwp-bact {
+  /* Trimmed by ~25% on every axis — the original 11/20px padding +
+   * 42px min-height pushed all four CTAs into a chunky row that
+   * dwarfed the tab pills below. Compact sizing now matches a
+   * standard toolbar button height while keeping the same gradient
+   * + shadow language. */
   position: relative; overflow: hidden;
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 11px 20px; border-radius: 12px;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border-radius: 10px;
+  font-family: inherit; font-size: 12px; font-weight: 700;
   cursor: pointer; white-space: nowrap; transition: all .22s;
-  letter-spacing: .02em; min-height: 42px; border: none;
+  letter-spacing: .02em; min-height: 34px; border: none;
 }
 .lwp-root .lwp-bact-primary {
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
@@ -1273,39 +1291,50 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .lwp-root .lwp-chip-x { background: rgba(34,211,238,.18); color: #67e8f9; }
 
-/* ─── Pre-table: pills + search ─── */
+/* ─── Pre-table: pills + search ───
+ * justify-content was space-between so the search bar was pinned
+ * to the far right with a big empty band between it and the tab
+ * pills. Changed to flex-start with a small gap so the search bar
+ * sits immediately after the pills, and the bar gets flex 1 to
+ * take the remaining width up to a sensible max so the layout
+ * still feels balanced on wider viewports. */
 .lwp-root .lwp-pre-table {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; margin-bottom: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: flex-start;
+  gap: 12px; margin-bottom: 8px; flex-shrink: 0;
 }
 .lwp-root .lwp-pills {
   display: flex; align-items: center; gap: 4px;
   background: linear-gradient(110deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%);
-  padding: 5px; border-radius: 14px;
+  padding: 4px; border-radius: 12px;
   border: 1.5px solid #a5f3fc;
   box-shadow: 0 2px 10px rgba(8,145,178,.12), 0 1px 0 rgba(255,255,255,.9) inset;
-  min-height: 50px;
+  min-height: 42px;
+  flex-shrink: 0;
 }
 .lwp-root .lwp-pill {
-  padding: 9px 20px; border-radius: 10px;
-  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  padding: 7px 16px; border-radius: 8px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
   background: transparent; color: #0e7490;
   border: none; transition: all .18s; white-space: nowrap;
-  min-height: 40px; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px; display: inline-flex; align-items: center; gap: 6px;
 }
 .lwp-root .lwp-pill:hover { color: #0891b2; background: rgba(255,255,255,.6); }
 .lwp-root .lwp-pill.active {
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
   color: #fff;
   box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 .lwp-root .lwp-search {
   display: flex; align-items: center;
   background: #ffffff;
   border: 1.5px solid #a5f3fc;
-  border-radius: 14px; padding: 0 18px; gap: 10px;
-  width: 380px; max-width: 100%; height: 50px;
+  border-radius: 12px; padding: 0 14px; gap: 8px;
+  /* Sits adjacent to the pills now and stretches to use whatever
+   * width is left; capped at 480px so it doesn't dominate on wide
+   * desktops. height matches the trimmed pill height for a clean
+   * single-row toolbar. */
+  flex: 1 1 auto; min-width: 220px; height: 42px;
   box-shadow: 0 2px 10px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
   transition: all .2s;
 }
@@ -1767,8 +1796,63 @@ const SCOPED_CSS = `
   box-shadow: 0 6px 24px rgba(0,0,0,0.35);
 }
 [data-bs-theme="dark"] .lwp-root .lwp-banner-title { color: #f0f9ff; }
-[data-bs-theme="dark"] .lwp-root .lwp-banner-entity > span { color: #67e8f9; }
+/* The "SALES MATRIX" entity badge was illegible in dark mode — its
+ * wrapper bg stayed at rgba(255,255,255,.6) (milky white) while the
+ * dark-mode rule only flipped the text colour to light cyan. Light
+ * cyan on milky white = near-zero contrast. Flip the whole pill to
+ * a translucent cyan tint with a stronger border so the badge reads
+ * cleanly on the dark banner. */
+[data-bs-theme="dark"] .lwp-root .lwp-banner-entity {
+  background: rgba(34, 211, 238, 0.14);
+  border-color: rgba(103, 232, 249, 0.45);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-banner-entity::before { background: #67e8f9; }
+[data-bs-theme="dark"] .lwp-root .lwp-banner-entity > span { color: #cffafe; }
 [data-bs-theme="dark"] .lwp-root .lwp-banner-divider { background: rgba(148,163,184,0.25); }
+
+/* CTQ action button — was a saturated amber gradient on every theme
+ * which screamed at the user against the dark table row. In dark
+ * mode we drop it to a muted amber chip with a thin border so the
+ * affordance is still tagged-amber but doesn't dominate the row. */
+[data-bs-theme="dark"] .lwp-root .lwp-ab-ctq {
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ab-ctq:hover {
+  background: rgba(245, 158, 11, 0.28);
+  border-color: rgba(251, 191, 36, 0.7);
+  color: #fde68a;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.28);
+}
+
+/* Pagination footer — light cyan gradient + cyan-on-white pills
+ * stayed visible on the light theme but produced a glaring teal
+ * stripe in dark mode that didn't match the rest of the dark table.
+ * Flip to a slate canvas with translucent cyan accents. */
+[data-bs-theme="dark"] .lwp-root .lwp-pagination {
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.55) 0%, rgba(15, 23, 42, 0.35) 50%, rgba(15, 23, 42, 0.55) 100%);
+  border-top-color: rgba(34, 211, 238, 0.18);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-pag-info,
+[data-bs-theme="dark"] .lwp-root .lwp-rows-sel {
+  background: rgba(15, 23, 42, 0.55);
+  border-color: rgba(34, 211, 238, 0.20);
+  color: #cffafe;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-pag-info .lwp-hl,
+[data-bs-theme="dark"] .lwp-root .lwp-rows-sel select { color: #67e8f9; }
+[data-bs-theme="dark"] .lwp-root .lwp-pg-btn {
+  background: rgba(15, 23, 42, 0.55);
+  border-color: rgba(34, 211, 238, 0.22);
+  color: #67e8f9;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-pg-btn:hover:not(:disabled) {
+  background: rgba(34, 211, 238, 0.16);
+  border-color: rgba(103, 232, 249, 0.55);
+}
 
 /* Banner action buttons — translucent glass against the dark banner. */
 [data-bs-theme="dark"] .lwp-root .lwp-bact {
@@ -1894,10 +1978,65 @@ const SCOPED_CSS = `
   border: 1px solid rgba(34,211,238,0.22);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
 }
+/* CTQ ("Convert to Qualified") confirmation modal — dark-mode coverage.
+ * Previously only the title / sub / cancel button had dark overrides,
+ * so the modal card itself stayed white, the close button stayed light
+ * grey, the lead-summary card stayed pale cyan, and the OPP pill stayed
+ * a near-white tint. The whole dialog now follows the dark canvas. */
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-modal {
+  background:
+    radial-gradient(ellipse at top, rgba(34,197,94,0.08), transparent 60%),
+    linear-gradient(135deg, #0e2940 0%, #102a3a 50%, #0c1f2e 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-close {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-close:hover {
+  background: rgba(255, 255, 255, 0.16); color: #f1f5f9;
+}
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-title { color: #f0f9ff; }
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-sub   { color: #94a3b8; }
+/* OPP code chip — light cyan in light theme; tinted cyan-on-dark here
+ * so it stays readable but doesn't punch through the dark canvas. */
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-opp {
+  background: rgba(34, 211, 238, 0.16);
+  color: #67e8f9;
+}
+/* From / To status pills — the light-mode pastel fills (#fef2f2 /
+ * #f0fdf4) look like white blocks on a dark canvas. Drop them onto
+ * tinted backgrounds with brighter text so the colour coding still
+ * reads (red→green). */
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-pill-from {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fca5a5; border-color: rgba(239, 68, 68, 0.42);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-pill-to {
+  background: rgba(34, 197, 94, 0.16);
+  color: #86efac; border-color: rgba(34, 197, 94, 0.45);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-arrow { color: #67e8f9; }
+/* Lead summary card — was the milky cyan gradient that read as
+ * white on dark canvas. Switch to a translucent cyan-on-dark with a
+ * lifted border + readable text. */
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-lead-card {
+  background: linear-gradient(135deg, rgba(34,211,238,0.10), rgba(34,211,238,0.05));
+  border-color: rgba(34, 211, 238, 0.28);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-lead-name { color: #f0f9ff; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-lead-row  { color: #cbd5e1; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-lead-dot  { background: #64748b; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-hint      { color: #94a3b8; }
 [data-bs-theme="dark"] .lwp-root .lwp-ctq-btn-cancel {
-  background: transparent; color: #cbd5e1; border-color: #334155;
+  background: transparent; color: #cbd5e1; border-color: rgba(34, 211, 238, 0.22);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-btn-cancel:hover {
+  background: rgba(15, 23, 42, 0.55); border-color: rgba(34, 211, 238, 0.45);
+}
+/* Confirm button stays green — only soften the shadow against dark bg. */
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-btn-confirm {
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.45);
 }
 
 /* ════════════════════════════════════════════════════════════════════

@@ -101,7 +101,7 @@ const AddEditJobCandidateList = ({ show, handleClose, handleShow, editItem }: mo
 
     return (
         <React.Fragment>
-            <Modal id="showModal" isOpen={show} toggle={handleClose} centered>
+            <Modal id="showModal" isOpen={show} toggle={handleClose} centered backdrop="static">
                 <ModalHeader className="bg-light p-3" toggle={handleClose}>
                     {/* {!!isEdit ? "Edit Order" : "Add Order"} */}
                     Add Customer

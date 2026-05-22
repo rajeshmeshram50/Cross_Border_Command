@@ -228,7 +228,11 @@ export default function AddNewLeadModal(props: {
   if (!open) return null;
 
   return createPortal((
-    <div className="anl-backdrop master-modal" onClick={onClose}>
+    /* Backdrop click intentionally does NOT call onClose — losing a
+     * half-filled lead because the user clicked off-canvas was a
+     * recurring papercut. The header ✕ and footer Cancel buttons are
+     * the only dismissal paths now. */
+    <div className="anl-backdrop master-modal">
       <style>{SCOPED_CSS}</style>
       <MasterFormStyles />
       <div className="anl-modal" onClick={(e) => e.stopPropagation()}>
@@ -380,6 +384,10 @@ export default function AddNewLeadModal(props: {
                 maxLength={6}
               />
             </Field>
+            {/* invalid prop tints the MasterSelect trigger's border red
+                — same affordance the City TextInput already had so all
+                four required Location-Details fields look consistent
+                when the form is submitted with gaps. */}
             <Field label="Country" required error={errors.country}>
               <div className="master-field">
                 <i className="ri-earth-line master-field-icon" />
@@ -393,6 +401,7 @@ export default function AddNewLeadModal(props: {
                   }}
                   placeholder="Select country"
                   options={countryOpts.map(c => ({ value: c, label: c }))}
+                  invalid={!!errors.country}
                 />
               </div>
             </Field>
@@ -405,6 +414,7 @@ export default function AddNewLeadModal(props: {
                   placeholder={values.country ? 'Select state' : 'Select country first'}
                   options={stateOpts.map(s => ({ value: s, label: s }))}
                   disabled={!values.country}
+                  invalid={!!errors.state}
                 />
               </div>
             </Field>
@@ -526,11 +536,13 @@ const SCOPED_CSS = `
 }
 .anl-modal *, .anl-modal *::before, .anl-modal *::after { box-sizing: border-box; }
 
-/* Header — blue → purple gradient strip matching the screenshot */
+/* Header — teal/cyan gradient matching the Assign Leads modal so the
+ * two sibling popups (both fired from the same My Workplace toolbar)
+ * share one visual identity. */
 .anl-head {
   position: relative;
   padding: 18px 22px;
-  background: linear-gradient(115deg, #2563eb 0%, #4f46e5 50%, #7c3aed 100%);
+  background: linear-gradient(135deg, #0e7490 0%, #0891b2 60%, #06b6d4 100%);
   color: #fff;
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   overflow: hidden;
@@ -569,7 +581,7 @@ const SCOPED_CSS = `
 .anl-body {
   padding: 22px;
   display: flex; flex-direction: column; gap: 18px;
-  background: linear-gradient(180deg, #fafbff 0%, #ffffff 100%);
+  background: linear-gradient(180deg, #f0fdff 0%, #ffffff 100%);
   overflow-y: auto;
 }
 
@@ -577,27 +589,27 @@ const SCOPED_CSS = `
 .anl-existing-toggle {
   display: flex; align-items: center; gap: 14px;
   padding: 14px 18px;
-  border: 1.5px solid #dbeafe;
+  border: 1.5px solid #cffafe;
   border-radius: 12px;
-  background: #f5faff;
+  background: #f0fdfa;
   cursor: pointer;
   transition: border-color .15s, background .15s;
 }
-.anl-existing-toggle:hover { border-color: #93c5fd; background: #eff6ff; }
+.anl-existing-toggle:hover { border-color: #67e8f9; background: #ecfeff; }
 .anl-existing-toggle input[type="checkbox"] {
   width: 18px; height: 18px;
-  accent-color: #2563eb;
+  accent-color: #0891b2;
   cursor: pointer; flex-shrink: 0;
 }
 .anl-existing-icon {
   width: 32px; height: 32px; border-radius: 9px;
-  background: #dbeafe; color: #2563eb;
+  background: #cffafe; color: #0891b2;
   display: inline-flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
 .anl-existing-title {
   display: block;
-  font-size: 13px; font-weight: 600; color: #1e3a8a;
+  font-size: 13px; font-weight: 600; color: #155e75;
   letter-spacing: -0.01em;
 }
 .anl-existing-sub {
@@ -610,13 +622,13 @@ const SCOPED_CSS = `
 .anl-section-label {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 10.5px; font-weight: 600;
-  color: #2563eb;
+  color: #0891b2;
   text-transform: uppercase; letter-spacing: 0.08em;
   margin-top: 4px; margin-bottom: -6px;
 }
 .anl-section-icon {
   width: 22px; height: 22px; border-radius: 7px;
-  background: #dbeafe; color: #2563eb;
+  background: #cffafe; color: #0891b2;
   display: inline-flex; align-items: center; justify-content: center;
 }
 
@@ -639,7 +651,7 @@ const SCOPED_CSS = `
 .anl-label {
   font-size: 10.5px; font-weight: 500;
   letter-spacing: 0.06em; text-transform: uppercase;
-  color: #405189;
+  color: #0e7490;
   margin-bottom: 3px;
 }
 .anl-req { color: #f06548; font-weight: 600; }
@@ -701,7 +713,7 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 22px;
   background: #fff;
-  border-top: 1px solid #ede9fe;
+  border-top: 1px solid #cffafe;
 }
 .anl-foot-hint {
   display: inline-flex; align-items: center; gap: 6px;
@@ -729,33 +741,33 @@ const SCOPED_CSS = `
 .anl-btn-ghost:hover { background: #f1f5f9; border-color: #cbd5e1; }
 .anl-btn-primary {
   border: none;
-  background: linear-gradient(120deg, #2563eb 0%, #4f46e5 100%);
+  background: linear-gradient(135deg, #0891b2, #0e7490);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.30);
+  box-shadow: 0 4px 12px rgba(8, 145, 178, 0.30);
 }
-.anl-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(37, 99, 235, 0.40); }
+.anl-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(8, 145, 178, 0.40); }
 
-[data-bs-theme="dark"] .anl-modal { background: #14102a; color: #ede9fe; box-shadow: 0 30px 80px rgba(0,0,0,0.75); }
-[data-bs-theme="dark"] .anl-body  { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); }
-[data-bs-theme="dark"] .anl-foot  { background: #1a1538; border-top-color: #2a2150; }
-[data-bs-theme="dark"] .anl-input { background: #2a2150; border-color: #3b2a6b; color: #ede9fe; }
-[data-bs-theme="dark"] .anl-input:focus { background: #14102a; }
+[data-bs-theme="dark"] .anl-modal { background: #0c1f2e; color: #cffafe; box-shadow: 0 30px 80px rgba(0,0,0,0.75); }
+[data-bs-theme="dark"] .anl-body  { background: linear-gradient(180deg, #0e2940 0%, #0c1f2e 100%); }
+[data-bs-theme="dark"] .anl-foot  { background: #0e2940; border-top-color: #102a3a; }
+[data-bs-theme="dark"] .anl-input { background: #102a3a; border-color: rgba(34, 211, 238, 0.22); color: #cffafe; }
+[data-bs-theme="dark"] .anl-input:focus { background: #0c1f2e; }
 [data-bs-theme="dark"] .anl-input::placeholder { color: #6b7280; }
-[data-bs-theme="dark"] .anl-input:disabled { background: #1a1538; color: #6b7280; }
+[data-bs-theme="dark"] .anl-input:disabled { background: #0e2940; color: #6b7280; }
 [data-bs-theme="dark"] .anl-input-icon { color: #6b7280; }
-[data-bs-theme="dark"] .anl-input-wrap:focus-within .anl-input-icon { color: #93c5fd; }
+[data-bs-theme="dark"] .anl-input-wrap:focus-within .anl-input-icon { color: #67e8f9; }
 [data-bs-theme="dark"] .anl-select-arrow { color: #6b7280; }
 [data-bs-theme="dark"] .anl-label { color: #8aa1d9; }
-[data-bs-theme="dark"] .anl-section-label { color: #93c5fd; }
-[data-bs-theme="dark"] .anl-section-icon { background: rgba(37, 99, 235, 0.22); color: #93c5fd; }
-[data-bs-theme="dark"] .anl-existing-toggle { background: #1a1538; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .anl-existing-toggle:hover { background: #1f1845; border-color: #4338ca; }
-[data-bs-theme="dark"] .anl-existing-title { color: #93c5fd; }
+[data-bs-theme="dark"] .anl-section-label { color: #67e8f9; }
+[data-bs-theme="dark"] .anl-section-icon { background: rgba(8, 145, 178, 0.22); color: #67e8f9; }
+[data-bs-theme="dark"] .anl-existing-toggle { background: #0e2940; border-color: rgba(34, 211, 238, 0.22); }
+[data-bs-theme="dark"] .anl-existing-toggle:hover { background: #13354a; border-color: rgba(34, 211, 238, 0.45); }
+[data-bs-theme="dark"] .anl-existing-title { color: #67e8f9; }
 [data-bs-theme="dark"] .anl-existing-sub   { color: #94a3b8; }
-[data-bs-theme="dark"] .anl-existing-icon  { background: rgba(37, 99, 235, 0.22); color: #93c5fd; }
+[data-bs-theme="dark"] .anl-existing-icon  { background: rgba(8, 145, 178, 0.22); color: #67e8f9; }
 [data-bs-theme="dark"] .anl-foot-hint      { color: #94a3b8; }
-[data-bs-theme="dark"] .anl-btn-ghost      { background: transparent; color: #cbd5e1; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .anl-btn-ghost:hover{ background: #2a2150; border-color: #4338ca; }
+[data-bs-theme="dark"] .anl-btn-ghost      { background: transparent; color: #cbd5e1; border-color: rgba(34, 211, 238, 0.22); }
+[data-bs-theme="dark"] .anl-btn-ghost:hover{ background: #102a3a; border-color: rgba(34, 211, 238, 0.45); }
 [data-bs-theme="dark"] .anl-input-wrap.has-error .anl-input { background: rgba(239, 68, 68, 0.12); border-color: #ef4444; color: #fecaca; }
 [data-bs-theme="dark"] .anl-field-error    { color: #fca5a5; }
 
@@ -764,5 +776,5 @@ const SCOPED_CSS = `
    masterFormKit; here we only adjust the leading icon's tint so it
    stays visible against the dark input surface. */
 [data-bs-theme="dark"] .master-modal .anl-modal .master-field-icon { color: #6b7280; }
-[data-bs-theme="dark"] .master-modal .anl-modal .master-field:focus-within .master-field-icon { color: #93c5fd; }
+[data-bs-theme="dark"] .master-modal .anl-modal .master-field:focus-within .master-field-icon { color: #67e8f9; }
 `;

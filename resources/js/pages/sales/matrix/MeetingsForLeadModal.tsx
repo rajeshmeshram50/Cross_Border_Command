@@ -177,9 +177,11 @@ export default function MeetingsForLeadModal({
   };
 
   return createPortal((
-    <div className="mfl-backdrop" onClick={onClose}>
+    /* Backdrop is purely visual — closing only via the X / Cancel button
+     * so accidental outside-clicks don't wipe an in-progress entry. */
+    <div className="mfl-backdrop">
       <style>{CSS}</style>
-      <div className="mfl-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="mfl-modal">
         <div className="mfl-head">
           <div className="mfl-head-left">
             <div className="mfl-head-icon">

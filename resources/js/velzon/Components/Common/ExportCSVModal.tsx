@@ -11,7 +11,7 @@ interface ExportCSVModalProps {
 
 const ExportCSVModal = ({ show, onCloseClick, data }: ExportCSVModalProps) => {
   return (
-    <Modal isOpen={show} toggle={onCloseClick} centered={true}>
+    <Modal isOpen={show} toggle={onCloseClick} centered={true} backdrop="static">
       <ModalHeader toggle={onCloseClick}></ModalHeader>
       <ModalBody className="py-3 px-5">
         <div className="mt-2 text-center">

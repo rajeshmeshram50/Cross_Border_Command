@@ -427,8 +427,20 @@ export default function Inbox() {
                 >
                   <i className="ri-arrow-left-line" style={{ fontSize: 18 }} />
                 </button>
-                <span className="inbox-header-icon" style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#fef3c7,#fde68a)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <i className="ri-inbox-line" style={{ fontSize: 22, color: '#a16207' }} />
+                {/* Matches the saturated gradient + white-icon treatment
+                    the Master category tiles use (see MasterDashboard's
+                    CAT_META map). The previous pastel cream-on-brown
+                    combo read as washed-out next to the rest of the
+                    page; this lifts the icon to brand-equivalent
+                    presence. Drop shadow tied to the same amber so the
+                    chip floats off the card surface. */}
+                <span className="inbox-header-icon" style={{
+                  width: 44, height: 44, borderRadius: 10,
+                  background: 'linear-gradient(135deg,#f7b84b,#fad07e)',
+                  boxShadow: '0 4px 12px rgba(247, 184, 75, 0.32)',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <i className="ri-inbox-line" style={{ fontSize: 22, color: '#ffffff' }} />
                 </span>
                 <div>
                   <h4 className="mb-0 fw-bold">Inbox</h4>
@@ -1116,7 +1128,12 @@ function InboxDarkStyles() {
   return (
     <style>{`
       [data-bs-theme="dark"] .inbox-page .inbox-header-icon {
-        background: linear-gradient(135deg, rgba(251,191,36,0.25), rgba(245,158,11,0.25)) !important;
+        /* Stay on the same saturated amber gradient as light mode so the
+         * icon chip matches the Master-tile treatment in both themes,
+         * rather than the older translucent variant that washed out
+         * against the dark canvas. */
+        background: linear-gradient(135deg, #f7b84b, #fad07e) !important;
+        box-shadow: 0 4px 14px rgba(247, 184, 75, 0.38) !important;
       }
       [data-bs-theme="dark"] .inbox-page .inbox-thead {
         background: rgba(251,191,36,0.10) !important;

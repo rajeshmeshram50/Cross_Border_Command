@@ -69,7 +69,14 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
     )
       .then(({ data }) => {
         setRows(data.data ?? []);
-        setSummary(data.summary);
+        /* Preserve the safe initial summary when the server response
+         * doesn't include the `summary` field (or returns it as null).
+         * Previously `setSummary(data.summary)` overwrote the seed with
+         * `undefined`, and the header pill at line 117 crashed reading
+         * `.total_sales_persons` on undefined. */
+        if (data.summary && typeof data.summary === 'object') {
+          setSummary(data.summary);
+        }
       })
       .catch(() => toast.error('Load failed', 'Could not load assigned-leads summary'))
       .finally(() => setLoading(false));
@@ -112,13 +119,17 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
           </div>
 
           <div className="ldp-header-right">
+            {/* Optional-chained so the pills never crash if `summary` is
+             * unexpectedly null/undefined from a future API change.
+             * Falls back to 0 so the layout still renders with a clear
+             * "no data" reading instead of an error boundary. */}
             <span className="ldp-header-pill">
               <span className="ldp-header-pill-dot" />
-              {summary.total_sales_persons} Sales Members
+              {summary?.total_sales_persons ?? 0} Sales Members
             </span>
             <span className="ldp-header-pill">
               <span className="ldp-header-pill-dot" />
-              {summary.total_leads} Total Leads
+              {summary?.total_leads ?? 0} Total Leads
             </span>
             <button className="ldp-back-btn" onClick={onClose}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -133,7 +144,7 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
         <div className="ldp-stats">
           <StatCard
             label="TOTAL SALES PERSONS"
-            value={summary.total_sales_persons}
+            value={summary?.total_sales_persons ?? 0}
             sub="Active members"
             tone="slate"
             icon={
@@ -146,7 +157,7 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
           />
           <StatCard
             label="TOTAL LEADS"
-            value={summary.total_leads}
+            value={summary?.total_leads ?? 0}
             sub="All leads"
             tone="amber"
             icon={
@@ -158,7 +169,7 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
           />
           <StatCard
             label="ASSIGNED LEADS"
-            value={summary.assigned_leads}
+            value={summary?.assigned_leads ?? 0}
             sub="Salesperson assigned"
             tone="green"
             icon={
@@ -169,7 +180,7 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
           />
           <StatCard
             label="UNASSIGNED LEADS"
-            value={summary.unassigned_leads}
+            value={summary?.unassigned_leads ?? 0}
             sub="Needs assignment"
             tone="red"
             icon={
@@ -363,11 +374,12 @@ const LDP_CSS = `
   overflow-y: auto;
   animation: ldp-fade .18s ease-out;
   padding: 24px;
+  display: flex; align-items: center; justify-content: center;
 }
 @keyframes ldp-fade { from { opacity: 0; } to { opacity: 1; } }
 
 .ldp-shell {
-  width: min(1280px, 100%); margin: 0 auto;
+  width: min(1280px, 100%); margin: auto;
   background: #fff7ed;
   border-radius: 18px;
   box-shadow: 0 22px 60px rgba(15,23,42,.32);

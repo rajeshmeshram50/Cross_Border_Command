@@ -16,7 +16,7 @@ interface DeleteModalProps {
 
 const DeleteModal: React.FC<DeleteModalProps> = ({ show, onDeleteClick, onCloseClick, recordId }) => {
   return (
-    <Modal fade={true} isOpen={show} toggle={onCloseClick} centered={true}>
+    <Modal fade={true} isOpen={show} toggle={onCloseClick} centered={true} backdrop="static">
       <ModalBody className="py-3 px-5">
         <div className="mt-2 text-center">
           <i className="ri-delete-bin-line display-5 text-danger"></i>

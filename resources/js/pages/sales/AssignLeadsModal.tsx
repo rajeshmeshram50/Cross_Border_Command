@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Assign Leads modal.
@@ -94,8 +96,9 @@ export default function AssignLeadsModal({
   const spOptions = useMemo(
     () => salespeople.map(sp => ({
       value: String(sp.id),
-      label: `${sp.code} · ${sp.name}`,
-      sub:   sp.subtitle,
+      label: sp.subtitle
+        ? `${sp.code} · ${sp.name} — ${sp.subtitle}`
+        : `${sp.code} · ${sp.name}`,
     })),
     [salespeople],
   );
@@ -175,7 +178,10 @@ export default function AssignLeadsModal({
   const headerCount = mode === 'single' ? 1 : mode === 'selection' ? (leadIds?.length ?? 0) : null;
 
   return createPortal((
-    <div className="alm-backdrop" onClick={onClose}>
+    /* Backdrop click does NOT close the dialog — the user might be
+     * mid-assignment when they brush off-canvas, and losing the picked
+     * salesperson / lead selection felt unsafe. ✕ and Cancel only. */
+    <div className="alm-backdrop">
       <style>{ALM_CSS}</style>
       <div className="alm-modal" onClick={(e) => e.stopPropagation()}>
         <div className="alm-head">
@@ -209,12 +215,12 @@ export default function AssignLeadsModal({
           {mode === 'filters' && accountAvailable && (
             <div className="alm-field">
               <label className="alm-label">Select Account <span className="alm-req">*</span></label>
-              <SearchableSelect
+              <MasterSelect
                 value={account}
                 onChange={setAccount}
                 options={accountOptions}
                 placeholder="Select account"
-                error={!!errors.account}
+                invalid={!!errors.account}
               />
               {errors.account && <div className="alm-err">{errors.account}</div>}
             </div>
@@ -224,22 +230,24 @@ export default function AssignLeadsModal({
             <div className="alm-grid-2">
               <div className="alm-field">
                 <label className="alm-label">Start Date <span className="alm-req">*</span></label>
-                <DateInput
+                <MasterDatePicker
                   value={startDate}
-                  max={todayStr}
+                  maxDate={endDate || todayStr}
                   onChange={setStartDate}
-                  error={!!errors.startDate}
+                  placeholder="Select start date"
+                  invalid={!!errors.startDate}
                 />
                 {errors.startDate && <div className="alm-err">{errors.startDate}</div>}
               </div>
               <div className="alm-field">
                 <label className="alm-label">End Date <span className="alm-req">*</span></label>
-                <DateInput
+                <MasterDatePicker
                   value={endDate}
-                  min={startDate || undefined}
-                  max={todayStr}
+                  minDate={startDate || undefined}
+                  maxDate={todayStr}
                   onChange={setEndDate}
-                  error={!!errors.endDate}
+                  placeholder="Select end date"
+                  invalid={!!errors.endDate}
                 />
                 {errors.endDate && <div className="alm-err">{errors.endDate}</div>}
               </div>
@@ -248,13 +256,13 @@ export default function AssignLeadsModal({
 
           <div className="alm-field">
             <label className="alm-label">Select Salesperson <span className="alm-req">*</span></label>
-            <SearchableSelect
+            <MasterSelect
               value={spId}
               onChange={setSpId}
               options={spOptions}
               placeholder={loadingSp ? 'Loading…' : 'Search by name or EMP code…'}
               disabled={loadingSp}
-              error={!!errors.spId}
+              invalid={!!errors.spId}
             />
             {errors.spId && <div className="alm-err">{errors.spId}</div>}
           </div>
@@ -275,135 +283,6 @@ export default function AssignLeadsModal({
       </div>
     </div>
   ), document.body);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
- *  SearchableSelect — minimal combobox dropdown with type-to-filter.
- *  Used by the Account + Salesperson fields. Keeps the AssignLeadsModal
- *  self-contained (no extra deps) and styled to match the rest of the UI.
- * ───────────────────────────────────────────────────────────────────────── */
-
-type SSOption = { value: string; label: string; sub?: string };
-
-function SearchableSelect(props: {
-  value: string;
-  onChange: (v: string) => void;
-  options: SSOption[];
-  placeholder?: string;
-  disabled?: boolean;
-  error?: boolean;
-}) {
-  const { value, onChange, options, placeholder, disabled, error } = props;
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  const selected = options.find(o => o.value === value);
-
-  // Outside click closes
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
-
-  // Focus the search input when opening
-  useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 0);
-  }, [open]);
-
-  const filtered = useMemo(() => {
-    if (!query.trim()) return options;
-    const s = query.toLowerCase();
-    return options.filter(o =>
-      o.label.toLowerCase().includes(s) ||
-      (o.sub ?? '').toLowerCase().includes(s),
-    );
-  }, [options, query]);
-
-  return (
-    <div className={`alm-ss ${error ? 'alm-ss-err' : ''}`} ref={rootRef}>
-      <button
-        type="button"
-        className="alm-ss-trigger"
-        disabled={disabled}
-        onClick={() => setOpen(o => !o)}
-      >
-        <span className={selected ? 'alm-ss-val' : 'alm-ss-placeholder'}>
-          {selected ? selected.label : (placeholder ?? 'Select…')}
-        </span>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-      {open && (
-        <div className="alm-ss-pop">
-          <div className="alm-ss-search">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2">
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-            </svg>
-            <input
-              ref={inputRef}
-              type="text"
-              placeholder="Search…"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-            />
-          </div>
-          <div className="alm-ss-list">
-            {filtered.length === 0 && <div className="alm-ss-empty">No matches</div>}
-            {filtered.map(o => (
-              <div
-                key={o.value}
-                className={`alm-ss-item ${o.value === value ? 'on' : ''}`}
-                onClick={() => { onChange(o.value); setOpen(false); setQuery(''); }}
-              >
-                <div className="alm-ss-item-label">{o.label}</div>
-                {o.sub && <div className="alm-ss-item-sub">{o.sub}</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
- *  DateInput — `type="date"` wrapper with a leading calendar icon and a
- *  visual style matching the rest of the modal. The native picker still
- *  drives the calendar so we keep keyboard/touch support intact.
- * ───────────────────────────────────────────────────────────────────────── */
-function DateInput(props: {
-  value: string;
-  onChange: (v: string) => void;
-  min?: string;
-  max?: string;
-  error?: boolean;
-}) {
-  const { value, onChange, min, max, error } = props;
-  return (
-    <div className={`alm-date ${error ? 'alm-date-err' : ''}`}>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.2">
-        <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-        <line x1="16" y1="2" x2="16" y2="6" />
-        <line x1="8"  y1="2" x2="8"  y2="6" />
-        <line x1="3"  y1="10" x2="21" y2="10" />
-      </svg>
-      <input
-        type="date"
-        value={value}
-        min={min}
-        max={max}
-        onChange={e => onChange(e.target.value)}
-      />
-    </div>
-  );
 }
 
 const ALM_CSS = `
@@ -466,77 +345,11 @@ const ALM_CSS = `
 }
 .alm-btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
 
-/* SearchableSelect */
-.alm-ss { position: relative; }
-.alm-ss-trigger {
-  width: 100%; height: 38px; padding: 0 12px;
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  border: 1.5px solid #cbd5e1; border-radius: 8px; background: #fff;
-  font-size: 12.5px; color: #0f172a; cursor: pointer; outline: none;
-  transition: border-color .15s, box-shadow .15s;
-}
-.alm-ss-trigger:hover { border-color: #94a3b8; }
-.alm-ss-trigger:focus { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.15); }
-.alm-ss-trigger:disabled { opacity: .55; cursor: not-allowed; background: #f8fafc; }
-.alm-ss-err .alm-ss-trigger { border-color: #ef4444; }
-.alm-ss-val { font-weight: 500; }
-.alm-ss-placeholder { color: #94a3b8; }
-.alm-ss-pop {
-  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30;
-  background: #fff; border: 1.5px solid #cbd5e1; border-radius: 10px;
-  box-shadow: 0 10px 28px rgba(15,23,42,.18);
-  overflow: hidden; max-height: 280px; display: flex; flex-direction: column;
-}
-.alm-ss-search {
-  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
-  border-bottom: 1px solid #e2e8f0; background: #f8fafc;
-}
-.alm-ss-search input {
-  flex: 1; border: none; outline: none; background: transparent;
-  font-size: 12.5px; color: #0f172a;
-}
-.alm-ss-list { flex: 1; overflow-y: auto; padding: 4px; }
-.alm-ss-empty { text-align: center; color: #94a3b8; font-style: italic; padding: 14px 8px; font-size: 12px; }
-.alm-ss-item {
-  padding: 7px 10px; border-radius: 6px; cursor: pointer;
-  transition: background .12s;
-}
-.alm-ss-item:hover { background: #f1f5f9; }
-.alm-ss-item.on { background: #ecfeff; }
-.alm-ss-item-label { font-size: 12.5px; color: #0f172a; font-weight: 500; }
-.alm-ss-item-sub { font-size: 10.5px; color: #94a3b8; margin-top: 2px; }
-
-/* DateInput */
-.alm-date {
-  height: 38px; padding: 0 12px; display: flex; align-items: center; gap: 8px;
-  border: 1.5px solid #cbd5e1; border-radius: 8px; background: #fff;
-  transition: border-color .15s, box-shadow .15s;
-}
-.alm-date:focus-within { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.15); }
-.alm-date-err { border-color: #ef4444; }
-.alm-date input {
-  flex: 1; border: none; outline: none; background: transparent;
-  font-size: 12.5px; color: #0f172a; font-family: inherit;
-}
-.alm-date input::-webkit-calendar-picker-indicator {
-  filter: invert(38%) sepia(95%) saturate(602%) hue-rotate(155deg);
-  cursor: pointer;
-}
-
 [data-bs-theme="dark"] .alm-modal { background: #0f172a; color: #e2e8f0; }
 [data-bs-theme="dark"] .alm-label { color: #cbd5e1; }
 [data-bs-theme="dark"] .alm-foot { background: #1e293b; border-color: #334155; }
 [data-bs-theme="dark"] .alm-btn-ghost { background: #1e293b; border-color: #334155; color: #cbd5e1; }
 [data-bs-theme="dark"] .alm-note { background: rgba(8,145,178,.18); border-color: rgba(34,211,238,.3); color: #67e8f9; }
-[data-bs-theme="dark"] .alm-ss-trigger,
-[data-bs-theme="dark"] .alm-date { background: #1e293b; border-color: #334155; color: #e2e8f0; }
-[data-bs-theme="dark"] .alm-ss-pop { background: #0f172a; border-color: #334155; }
-[data-bs-theme="dark"] .alm-ss-search { background: #1e293b; border-color: #334155; }
-[data-bs-theme="dark"] .alm-ss-search input,
-[data-bs-theme="dark"] .alm-date input { color: #e2e8f0; }
-[data-bs-theme="dark"] .alm-ss-item:hover { background: #1e293b; }
-[data-bs-theme="dark"] .alm-ss-item.on { background: rgba(8,145,178,.20); }
-[data-bs-theme="dark"] .alm-ss-item-label { color: #e2e8f0; }
 
 /* Phone — single-column date range, fewer side paddings, full-width buttons */
 @media (max-width: 520px) {

@@ -2172,7 +2172,7 @@ function VaultModal({
       </Modal>
 
       {/* Audit trail modal */}
-      <Modal isOpen={!!auditRun} toggle={() => setAuditRun(null)} size="lg" centered contentClassName="border-0">
+      <Modal isOpen={!!auditRun} toggle={() => setAuditRun(null)} size="lg" centered contentClassName="border-0" backdrop="static">
         <ModalBody className="p-0">
           <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', borderRadius: '6px 6px 0 0' }}>
             <div className="d-flex align-items-center justify-content-between">

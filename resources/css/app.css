@@ -160,6 +160,31 @@ body {
   box-shadow: 0 8px 20px rgba(90, 81, 232, 0.4);
 }
 
+/* ═══ TopNav active menu pill ═══
+ *
+ * The "Dashboard" / "Master" etc. pills on the top navbar were a flat
+ * `bg-primary` colour with just a soft shadow — against the dark
+ * topbar canvas it read as a dull purple rectangle, especially the
+ * active "Dashboard" tile the user pointed out. This pill replaces
+ * the flat fill with a two-stop indigo→violet gradient + an inset
+ * highlight + a softer outer ring so the active tab pops without
+ * looking like a stray UI element. Hover lift on the parent makes
+ * the affordance match the dashboard's other interactive elements. */
+.topnav-active-pill {
+  background: linear-gradient(135deg, #5A51E8 0%, #8b5cf6 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 6px 16px rgba(90, 81, 232, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.topnav-active-pill:hover {
+  background: linear-gradient(135deg, #6e63ed 0%, #9b72f8 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 8px 20px rgba(90, 81, 232, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.10);
+}
+
 /* ═══ Keyframes ═══ */
 @keyframes fadeUp {
   from {

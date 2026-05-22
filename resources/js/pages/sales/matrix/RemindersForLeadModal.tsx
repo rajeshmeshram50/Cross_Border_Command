@@ -145,9 +145,11 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
   };
 
   return createPortal((
-    <div className="rfl-backdrop" onClick={onClose}>
+    /* Backdrop is purely visual — closing only via the X / Cancel button
+     * so accidental outside-clicks don't wipe an in-progress entry. */
+    <div className="rfl-backdrop">
       <style>{CSS}</style>
-      <div className="rfl-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="rfl-modal">
         <div className="rfl-head">
           <div className="rfl-head-left">
             <div className="rfl-head-icon">

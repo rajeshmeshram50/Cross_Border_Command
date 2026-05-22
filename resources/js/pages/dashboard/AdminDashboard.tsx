@@ -116,9 +116,15 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
           }}>{value}</h3>
           {(change || changeText) && (
             <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: trendColor + '18', color: trendColor, borderRadius: 6, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>
-                <i className={arrow} style={{ fontSize: 11 }}></i> {change}
-              </span>
+              {/* Hide the trend pill entirely when we don't have a
+                  number to show — a lone arrow with no value looked
+                  broken. The change-text label still renders so the
+                  card describes what the count represents. */}
+              {change && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: trendColor + '18', color: trendColor, borderRadius: 6, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>
+                  <i className={arrow} style={{ fontSize: 11 }}></i> {change}
+                </span>
+              )}
               {changeText && <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)' }}>{changeText}</span>}
             </div>
           )}
@@ -178,6 +184,34 @@ export default function AdminDashboard() {
   const activeRate = counts.total_clients > 0
     ? Math.round((counts.active_clients / counts.total_clients) * 100) : 0;
 
+  /* Month-over-month deltas — computed from the trend datasets the
+   * backend already ships. Previously the KPI cards showed hardcoded
+   * "+12%" / "+8%" / "+5%" / "+24%" labels that never changed, which
+   * misrepresented growth to anyone reading the dashboard.
+   *
+   *  - revenueChangePct: latest month's revenue vs the month before
+   *    it (from data.revenue_trend, last two buckets).
+   *  - clientChangePct: same shape on data.client_growth — new-client
+   *    count current month vs previous month.
+   * Both fall back to null when there isn't enough history (e.g. a
+   * tenant in its first month), in which case the card simply hides
+   * the change badge instead of showing a misleading 100%. */
+  const pctDelta = (curr: number, prev: number): number | null => {
+    if (!Number.isFinite(curr) || !Number.isFinite(prev)) return null;
+    if (prev === 0) return curr > 0 ? 100 : null;
+    return Math.round(((curr - prev) / prev) * 100);
+  };
+  const trend = Array.isArray(data.revenue_trend) ? data.revenue_trend : [];
+  const growth = Array.isArray(data.client_growth) ? data.client_growth : [];
+  const revenueChangePct = trend.length >= 2
+    ? pctDelta(Number(trend[trend.length - 1]?.revenue ?? 0), Number(trend[trend.length - 2]?.revenue ?? 0))
+    : null;
+  const clientChangePct = growth.length >= 2
+    ? pctDelta(Number(growth[growth.length - 1]?.count ?? 0), Number(growth[growth.length - 2]?.count ?? 0))
+    : null;
+  const fmtPct = (n: number | null) => n == null ? '—' : (n >= 0 ? `+${n}%` : `${n}%`);
+  const pctTrend = (n: number | null): 'up' | 'down' => (n != null && n < 0) ? 'down' : 'up';
+
   return (
     <>
       <style>{`
@@ -231,42 +265,31 @@ export default function AdminDashboard() {
         [data-bs-theme="dark"] .ad-list-row + .ad-list-row,
         [data-layout-mode="dark"] .ad-list-row + .ad-list-row { border-top-color: rgba(255,255,255,0.06); }
 
-        /* "View All" outline pill — used on Recent Clients / Recent
-         * Payments card headers. Dark, prominent border so the button
-         * reads as an actionable affordance in both themes, with a
-         * hover lift that matches the rest of the dashboard's
-         * interactive elements. */
+        /* "View All" pill — styled to match the "Report" button next to
+         * Revenue Analytics on this same dashboard, so every card-
+         * header action chip on the page looks the same: indigo
+         * gradient fill, white text, no border. Hover lifts the
+         * button with the gradient's brand-shadow so the affordance
+         * stays consistent with the page's other CTAs. Identical in
+         * light and dark themes since the gradient is brand-coloured
+         * not theme-coloured. */
         .ad-view-all-btn {
-          background: transparent;
-          border: 1.5px solid #334155;
+          background: linear-gradient(135deg, #405189, #6691e7);
+          border: none;
           border-radius: 8px;
-          padding: 5px 14px;
+          padding: 6px 14px;
           font-size: 12px;
           font-weight: 600;
-          color: #1e293b;
+          color: #ffffff;
           cursor: pointer;
-          transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease, box-shadow .15s ease;
+          transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
         }
         .ad-view-all-btn:hover {
-          background: #334155;
-          border-color: #1e293b;
-          color: #ffffff;
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+          filter: brightness(1.06);
+          box-shadow: 0 6px 16px rgba(64, 81, 137, 0.34);
         }
-        .ad-view-all-btn:active { transform: translateY(0); }
-        [data-bs-theme="dark"] .ad-view-all-btn,
-        [data-layout-mode="dark"] .ad-view-all-btn {
-          border-color: #cbd5e1;
-          color: #e2e8f0;
-        }
-        [data-bs-theme="dark"] .ad-view-all-btn:hover,
-        [data-layout-mode="dark"] .ad-view-all-btn:hover {
-          background: #e2e8f0;
-          border-color: #f1f5f9;
-          color: #0f172a;
-          box-shadow: 0 4px 12px rgba(226, 232, 240, 0.22);
-        }
+        .ad-view-all-btn:active { transform: translateY(0); filter: brightness(0.98); }
 
         /* Generic hover lift for the small standalone buttons across the
          * dashboard (refresh / quick action chips). Picks up any button
@@ -339,36 +362,47 @@ export default function AdminDashboard() {
         </Col>
       </Row>
 
-      {/* KPI Cards */}
+      {/* KPI Cards — each gradient stays within a single hue family so
+          adjacent cards read as a harmonious palette instead of muddy
+          colour clashes (the old Revenue gradient went teal → navy,
+          which mixed two unrelated hues and looked broken in the
+          middle). Change badges are derived from real data where the
+          backend ships the source (revenue_trend, client_growth);
+          tiles without a real source just show the count without a
+          fake percentage. */}
       <Row className="g-3 mb-3">
         <Col xl={2} md={4} xs={6}>
           <KpiCard label="Total Clients" value={<AnimatedNumber value={counts.total_clients} />}
-            iconClass="ri-building-line" color="#405189" gradient="linear-gradient(135deg,#405189,#6691e7)"
-            trend="up" change="+12%" changeText="vs last month" />
+            iconClass="ri-building-line" color="#405189" gradient="linear-gradient(135deg,#3a4b85,#6691e7)"
+            trend={pctTrend(clientChangePct)}
+            change={clientChangePct == null ? '' : fmtPct(clientChangePct)}
+            changeText={clientChangePct == null ? `${counts.total_clients} total` : 'new clients · mom'} />
         </Col>
         <Col xl={2} md={4} xs={6}>
           <KpiCard label="Active Clients" value={<AnimatedNumber value={counts.active_clients} />}
-            iconClass="ri-checkbox-circle-line" color="#0ab39c" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
+            iconClass="ri-checkbox-circle-line" color="#0ab39c" gradient="linear-gradient(135deg,#0a8f7e,#16d3b8)"
             trend="up" change={`${activeRate}%`} changeText="active rate" />
         </Col>
         <Col xl={2} md={4} xs={6}>
           <KpiCard label="Total Users" value={<AnimatedNumber value={counts.total_users} />}
-            iconClass="ri-user-3-line" color="#299cdb" gradient="linear-gradient(135deg,#299cdb,#50c3e6)"
-            trend="up" change="+8%" changeText="vs last month" />
+            iconClass="ri-user-3-line" color="#299cdb" gradient="linear-gradient(135deg,#2186c2,#5fc8ff)"
+            trend="up" change={`${counts.total_users}`} changeText="users on platform" />
         </Col>
         <Col xl={2} md={4} xs={6}>
           <KpiCard label="Branches" value={<AnimatedNumber value={counts.total_branches} />}
-            iconClass="ri-git-branch-line" color="#f7b84b" gradient="linear-gradient(135deg,#f7b84b,#f1963b)"
-            trend="up" change="+5%" changeText="vs last month" />
+            iconClass="ri-git-branch-line" color="#f7b84b" gradient="linear-gradient(135deg,#e89a2e,#ffce6e)"
+            trend="up" change={`${counts.total_branches}`} changeText="across clients" />
         </Col>
         <Col xl={2} md={4} xs={6}>
           <KpiCard label="Revenue" value={<>₹{formatCompact(revenue.total)}</>}
-            iconClass="ri-money-dollar-circle-line" color="#0ab39c" gradient="linear-gradient(135deg,#0ab39c,#405189)"
-            trend="up" change="+24%" changeText="vs last period" />
+            iconClass="ri-money-dollar-circle-line" color="#22c55e" gradient="linear-gradient(135deg,#16a34a,#4ade80)"
+            trend={pctTrend(revenueChangePct)}
+            change={revenueChangePct == null ? '' : fmtPct(revenueChangePct)}
+            changeText={revenueChangePct == null ? 'total revenue' : 'vs last month'} />
         </Col>
         <Col xl={2} md={4} xs={6}>
           <KpiCard label="Payments" value={<AnimatedNumber value={counts.total_payments} />}
-            iconClass="ri-bank-card-line" color="#9b72cf" gradient="linear-gradient(135deg,#9b72cf,#865ce2)"
+            iconClass="ri-bank-card-line" color="#9b72cf" gradient="linear-gradient(135deg,#7c4dd1,#b794f6)"
             trend={successRate > 80 ? 'up' : 'down'} change={`${successRate}%`} changeText="success rate" />
         </Col>
       </Row>
