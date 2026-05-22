@@ -13,35 +13,41 @@ use Illuminate\Database\Eloquent\Builder;
  * Tenant tree (per client):
  *   Client
  *     └── Main Branch (is_main = true)
- *            ├── Main-branch branch_user (admin tier)
- *            ├── Main-branch employees   (peer-isolated)
+ *            ├── Main-branch branch_user (admin — shared reference data)
+ *            ├── Main-branch employees   (private — peer-isolated)
  *            └── Sub Branches (is_main = false)
  *                   ├── Sub-branch branch_user (branch admin)
  *                   └── Sub-branch employees   (peer-isolated)
+ *
+ * Key idea: rows are visible based on *who created them*, not just where
+ * the row is stamped. Main-branch ADMIN rows are reference data that
+ * cascades down; main-branch EMPLOYEE rows are personal and stay
+ * private even from sub-branches.
  *
  * READ visibility — every row is visible to:
  *   - super_admin                         : all rows
  *   - client_admin / client_user          : their client's rows + globals
  *   - main-branch branch_user             : their client's rows + globals
+ *                                           (sees every sub-branch + every
+ *                                           main-branch employee's data)
  *   - sub-branch branch_user              : globals + client-level rows
- *                                           + main-branch rows
  *                                           + own sub-branch rows
- *                                           (sibling sub-branches blocked)
+ *                                           + rows created by main-branch
+ *                                             ADMIN (branch_user) — but
+ *                                             NOT rows created by main-
+ *                                             branch employees
  *   - employee (any branch)               : globals + client-level rows
- *                                           + main-branch rows
  *                                           + ONLY OWN rows (created_by = self)
+ *                                           + rows created by main-branch
+ *                                             ADMIN (shared reference data)
  *                                           — peer employees in the same
  *                                           branch are HIDDEN from each
- *                                           other so each employee operates
- *                                           in their own data sandbox.
+ *                                           other.
  *
  * MUTATE (edit/delete) — only the creator + ancestor branches can modify:
  *   - super_admin                         : any row
  *   - own row (created_by == auth)        : always allowed
- *   - employee viewer (peer-isolated)     : ONLY own rows (created_by must
- *                                           equal the viewer); cannot edit
- *                                           even rows their own branch
- *                                           admin created.
+ *   - employee viewer                     : ONLY own rows (peer-isolated)
  *   - else: viewer's tier must be >= creator's tier on the ladder
  *           super_admin > client > main-branch > sub-branch
  */
@@ -81,27 +87,42 @@ class MasterVisibility
             return;
         }
 
-        // Employees are PEER-ISOLATED — they see only their own rows plus
-        // ancestor-tier reference data (globals + client-level + main
-        // branch). Two employees in the same branch can never see each
-        // other's data. This is checked FIRST so it covers employees in
-        // both main and sub branches uniformly.
-        if (($user->user_type ?? null) === 'employee') {
-            $userId       = (int) $user->id;
+        // Resolve the main-branch admin (branch_user) ids for the
+        // current tenant — used by both the employee and sub-branch
+        // read scopes below to surface "reference data" (rows created
+        // by the main branch admin) while still hiding main-branch
+        // EMPLOYEE rows from everyone below.
+        $resolveMainAdminIds = function () use ($clientId): array {
             $mainBranchId = Branch::where('client_id', $clientId)
                 ->where('is_main', true)
                 ->value('id');
+            if (!$mainBranchId) return [];
+            return \App\Models\User::where('branch_id', $mainBranchId)
+                ->where('user_type', 'branch_user')
+                ->pluck('id')
+                ->all();
+        };
 
-            $q->where(function ($w) use ($clientId, $userId, $mainBranchId) {
+        // Employees are PEER-ISOLATED — they see only their own rows
+        // plus ancestor-tier reference data (globals + client-level +
+        // anything the MAIN-BRANCH ADMIN created). Main-branch employee
+        // rows are NOT considered reference data and stay hidden.
+        if (($user->user_type ?? null) === 'employee') {
+            $userId        = (int) $user->id;
+            $mainAdminIds  = $resolveMainAdminIds();
+
+            $q->where(function ($w) use ($clientId, $userId, $mainAdminIds) {
                 $w->whereNull('client_id')                      // globals
-                  ->orWhere(function ($ww) use ($clientId, $userId, $mainBranchId) {
+                  ->orWhere(function ($ww) use ($clientId, $userId, $mainAdminIds) {
                       $ww->where('client_id', $clientId)
-                         ->where(function ($wb) use ($userId, $mainBranchId) {
+                         ->where(function ($wb) use ($userId, $mainAdminIds) {
                              $wb->whereNull('branch_id')        // client-level rows
                                 ->orWhere('created_by', $userId); // own rows
-                             if ($mainBranchId) {
-                                 // Main-branch rows (read-only reference data)
-                                 $wb->orWhere('branch_id', $mainBranchId);
+                             if (!empty($mainAdminIds)) {
+                                 // Main-branch ADMIN rows (reference data
+                                 // cascades down). Employee rows in main
+                                 // branch stay private.
+                                 $wb->orWhereIn('created_by', $mainAdminIds);
                              }
                          });
                   });
@@ -122,22 +143,23 @@ class MasterVisibility
                 return;
             }
 
-            // Sub-branch admin: globals + client-level + main-branch + own
-            // branch. Sibling sub-branches stay blocked.
-            $branchId = $user->branch_id;
-            $mainBranchId = Branch::where('client_id', $clientId)
-                ->where('is_main', true)
-                ->value('id');
+            // Sub-branch admin: globals + client-level + own branch
+            // + ONLY rows created by the main-branch admin (reference
+            // data). Main-branch EMPLOYEE rows are hidden — they're
+            // personal data scoped to that employee. Sibling sub-
+            // branches stay blocked.
+            $branchId     = $user->branch_id;
+            $mainAdminIds = $resolveMainAdminIds();
 
-            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId) {
+            $q->where(function ($w) use ($clientId, $branchId, $mainAdminIds) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId) {
+                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainAdminIds) {
                       $ww->where('client_id', $clientId)
-                         ->where(function ($wb) use ($branchId, $mainBranchId) {
+                         ->where(function ($wb) use ($branchId, $mainAdminIds) {
                              $wb->whereNull('branch_id')
                                 ->orWhere('branch_id', $branchId);
-                             if ($mainBranchId) {
-                                 $wb->orWhere('branch_id', $mainBranchId);
+                             if (!empty($mainAdminIds)) {
+                                 $wb->orWhereIn('created_by', $mainAdminIds);
                              }
                          });
                   });

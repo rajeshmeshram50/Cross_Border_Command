@@ -842,7 +842,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setErrors1(e);
       if (Object.keys(e).length > 0) {
         const firstKey = Object.keys(e)[0];
-        toast.error('Please complete required fields', e[firstKey]);
+        // Toast suppressed — the inline red error + auto-scroll below
+        // already surface the rejection without a second popup layer.
         setIdTab('identification');
         // Scroll the first offending field into view so the red
         // border is visible even when the body has scrolled past it.
@@ -965,8 +966,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setErrors1(e);
       setStage(1);
       setIdTab('identification');
-      const firstKey = Object.keys(e)[0];
-      toast.error('Please complete required fields', e[firstKey]);
+      // Toast suppressed — inline red errors handle this.
       return;
     }
 
@@ -1250,18 +1250,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         {/* Scrolling body — only the stage-specific form / tables /
             banners scroll. The pinned section above stays put. */}
         <div className="acm-wiz-body">
-          {/* Edit-mode hydration UX — render the form immediately
-              with whatever the consignee row already carried, and
-              overlay a thin progress strip while /consignees/:id
-              fetches the rest. Previously the full Stage1FormShimmer
-              hid the form for the entire fetch which felt slow. */}
-          {stage === 1 && hydrating && (
-            <div className="acg-hydrate-strip" aria-live="polite">
-              <div className="acg-hydrate-strip-bar" />
-              <span className="acg-hydrate-strip-text">Loading saved details…</span>
-            </div>
-          )}
-          {stage === 1 && (
+          {/* Edit-mode hydration UX — show the full-form shimmer
+              while /consignees/:id resolves so the user sees
+              structured skeleton blocks instead of a half-empty
+              form that fills in mid-load. The skeleton swaps to
+              the populated form in one frame once the fetch lands. */}
+          {stage === 1 && hydrating && <Stage1FormShimmer />}
+          {stage === 1 && !hydrating && (
             <Stage1
               tab={idTab}
               setTab={setIdTab}
@@ -3272,8 +3267,7 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
           next2[k] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
         }
         setErrs(next2);
-        const firstKey = Object.keys(next2)[0];
-        if (firstKey) toast.error('Please review the highlighted fields', next2[firstKey]);
+        // Toast suppressed — inline red errors handle this.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the document type. Try again.');
       }
@@ -3696,8 +3690,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
     if (!d.cpWhatsapp)                                 next.cpWhatsapp    = 'Select WhatsApp preference';
     setErrs(next);
     if (Object.keys(next).length === 0) { onSave(d); return; }
-    const firstKey = Object.keys(next)[0];
-    toast.error('Please complete required fields', next[firstKey]);
+    // Toast suppressed — inline red errors handle this.
   };
 
   return (

@@ -442,6 +442,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       { id:'td2', name:'Phytosanitary Certificate', selected:true, sent:false },
     ]);
     setLocModal({ open:false, editing:null });
+    // Flip the shimmer ON immediately when an edit-mode modal opens.
+    // Without this, the first render after `open` flips sees
+    // `hydrating = false` (stale state from a previous close), so the
+    // body shows neither shimmer nor data for a brief flash. The
+    // hydration effect below still drives the actual fetch and the
+    // setHydrating(false) on completion, but the shimmer is now
+    // guaranteed from frame 1. Create mode keeps it off — there's
+    // nothing to load.
+    setHydrating(!!customer?.db_id);
     // Deps deliberately use a stable identifier (the customer's primary
     // key) instead of the customer object itself. Otherwise any parent
     // re-render that produces a new `customer` reference — even with
@@ -612,11 +621,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     // Surface the first field with an error to the user. The body
     // is scrollable so an off-screen field can be missed otherwise.
     // Also fire a toast — inline reds can be off-screen on small
-    // viewports, and the toast guarantees the user sees the rejection.
+    // viewports — auto-scroll surfaces the offending field. Toast
+    // suppressed: the inline red error + scroll-into-view already
+    // communicates the rejection without a second popup layer.
     const firstKey = Object.keys(next)[0];
     const el = document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    toast.error('Please complete required fields', next[firstKey]);
     return false;
   };
 
@@ -724,7 +734,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         const firstKey = Object.keys(next)[0];
         const el = document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`);
         el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        toast.error('Please review the highlighted fields', next[firstKey]);
+        // Toast suppressed — inline red errors + scroll already
+        // communicate the rejection.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
       }
@@ -787,7 +798,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         setTab('identification');
         const firstKey = Object.keys(next)[0];
         document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        toast.error('Please review the highlighted fields', next[firstKey]);
+        // Toast suppressed — inline red errors + scroll handle this.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
       }
@@ -818,7 +829,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       const id = await persistStage1();
       if (!id) return;
       setStage(2); setMaxStage(m => Math.max(m, 2) as Stage);
-      onSaved?.();
+      // onSaved intentionally NOT fired here — Stage 1 → 2 is an
+      // intermediate auto-save, not the user's explicit "I'm done"
+      // action. Calling it triggered the parent's "Customer updated"
+      // toast twice (once here, once again after final Stage 3 save).
+      // The parent refreshes its list when the modal actually closes.
     } else if (stage === 2) {
       /* Stage 2 gate: KYC compliance needs at least one Owner KYC
        * entry AND at least one Company DD document. Trade Licence
@@ -896,8 +911,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           </button>
         </div>
 
-        {/* STEPPER */}
-        <Stepper stage={stage} maxStage={maxStage} onGoto={gotoStage} />
+        {/* STEPPER — swap to skeleton during edit-mode hydration so
+            the whole top of the modal reads as "loading" instead of
+            showing a partially-active stepper above an empty body. */}
+        {hydrating
+          ? <StepperShimmer />
+          : <Stepper stage={stage} maxStage={maxStage} onGoto={gotoStage} />}
 
         {/* HISTORY PANEL */}
         {stage > 1 && (
@@ -934,8 +953,16 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           </div>
         )}
 
-        {/* STAGE 1 TABS */}
-        {stage === 1 && (
+        {/* STAGE 1 TABS — swap to shimmer pills during edit-mode
+            hydration so the tab row matches the loading state of the
+            stepper above and the body below. */}
+        {stage === 1 && hydrating && (
+          <div className="acm-tabs acm-tabs-shimmer">
+            <Shimmer height={36} width={180} radius={999} />
+            <Shimmer height={36} width={200} radius={999} />
+          </div>
+        )}
+        {stage === 1 && !hydrating && (
           <div className="acm-tabs">
             <button type="button" className={`acm-tab ${tab === 'identification' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => setTab('identification')}>Customer Identification</button>
             <button type="button" className={`acm-tab ${tab === 'address-contact' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => setTab('address-contact')}>Address &amp; Contact Details</button>
@@ -952,25 +979,19 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 
         {/* BODY */}
         <div className="acm-body">
-          {/* Edit-mode hydration UX — the form is pre-filled with the
-              list-row data (company, type, segment, country, contact,
-              phone, email, whatsapp) the moment the modal opens, so
-              there's no value to a full-form skeleton. We render the
-              form immediately and overlay a thin progress strip while
-              the /customers/:id GET resolves with the remaining
-              fields (legal name, classification, risk, full address,
-              additional locations). User can start interacting with
-              the visible fields without waiting. */}
-          {stage === 1 && hydrating && (
-            <div className="acm-hydrate-strip" aria-live="polite">
-              <div className="acm-hydrate-strip-bar" />
-              <span className="acm-hydrate-strip-text">Loading saved details…</span>
-            </div>
-          )}
-          {stage === 1 && tab === 'identification' && (
+          {/* Edit-mode hydration UX — show a full-form shimmer while
+              /customers/:id is in flight so the user sees structured
+              skeleton blocks (matching the actual section layout)
+              instead of a half-empty form. When the GET resolves the
+              shimmer swaps to the populated form in one frame. This
+              feels faster than the previous "form with thin progress
+              strip" because there's no jarring mid-load repaint as
+              additional fields populate. */}
+          {stage === 1 && hydrating && <Stage1FormShimmer />}
+          {stage === 1 && !hydrating && tab === 'identification' && (
             <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} />
           )}
-          {stage === 1 && tab === 'address-contact' && (
+          {stage === 1 && !hydrating && tab === 'address-contact' && (
             <Stage1AdditionalLocations
               primary={{
                 type:          form.addrType,
@@ -992,7 +1013,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               onEditPrimary={() => setTab('identification')}
             />
           )}
-          {stage === 2 && (
+          {stage === 2 && hydrating && <Stage2Shimmer />}
+          {stage === 2 && !hydrating && (
             <Stage2KYC
               sub={kycSub} setSub={(s) => { setKycSub(s); setKycSearch(''); }}
               page={kycPage} setPage={(s, p) => setKycPage(prev => ({ ...prev, [s]: p }))}
@@ -1021,10 +1043,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               }}
             />
           )}
-          {stage === 3 && evTab === 'kyc-documents' && (
+          {stage === 3 && hydrating && <Stage3Shimmer />}
+          {stage === 3 && !hydrating && evTab === 'kyc-documents' && (
             <Stage3KycDocs sub={evSub} setSub={setEvSub} />
           )}
-          {stage === 3 && evTab === 'trade-documents' && (
+          {stage === 3 && !hydrating && evTab === 'trade-documents' && (
             <Stage3TradeDocs
               docs={tdDocs}
               onToggle={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, selected: !d.selected } : d))}
@@ -1267,6 +1290,36 @@ function Stepper({ stage, maxStage, onGoto }: { stage: Stage; maxStage: Stage; o
   );
 }
 
+/* ───── Stepper shimmer ─────
+ * Skeleton variant rendered while the edit-mode hydration GET is in
+ * flight. Mirrors the 3-stage layout (icon + 2 text rows + connector)
+ * so the swap to the real Stepper once data lands is structurally
+ * identical — no layout shift. */
+function StepperShimmer() {
+  return (
+    <div className="acm-stepper acm-stepper-shimmer">
+      {[0, 1, 2].map((i) => (
+        <Fragment key={i}>
+          <div className="acm-step acm-step-pending" style={{ pointerEvents: 'none' }}>
+            <div className="acm-step-badge-wrap">
+              <Shimmer width={40} height={40} radius={10} />
+            </div>
+            <div className="acm-step-text" style={{ flex: 1 }}>
+              <Shimmer height={11} width="70%" radius={4} style={{ marginBottom: 6 }} />
+              <Shimmer height={9}  width="55%" radius={4} />
+            </div>
+          </div>
+          {i < 2 && (
+            <div className="acm-step-connector">
+              <Shimmer height={2} width="100%" radius={2} />
+            </div>
+          )}
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
 /* ───── Stage 1 form skeleton ─────
  * Rendered while the edit-mode hydration fetch is in flight so the
  * user sees the section + field shape immediately instead of empty
@@ -1300,6 +1353,74 @@ function Stage1FormShimmer() {
     <div>
       <Section rows={[{ cols: 3 }, { cols: 4 }]} />
       <Section rows={[{ cols: 2 }, { cols: 4 }, { cols: 4 }, { cols: 1 }]} />
+    </div>
+  );
+}
+
+/* ───── Stage 2 KYC shimmer — mimics the sub-tabs + toolbar + table
+ * header strip so the swap to the real Stage2KYC after hydration is
+ * structurally identical (no layout shift). */
+function Stage2Shimmer() {
+  return (
+    <div>
+      {/* Sub-tab row (Company DD / Owner KYC / Trade Licence) */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        <Shimmer height={34} width={150} radius={999} />
+        <Shimmer height={34} width={120} radius={999} />
+        <Shimmer height={34} width={140} radius={999} />
+      </div>
+      {/* Toolbar (search + add) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <Shimmer height={36} width="60%" radius={8} />
+        <Shimmer height={36} width={170} radius={8} />
+      </div>
+      {/* Table header strip + 3 body rows */}
+      <div style={{ border: '1px solid var(--vz-border-color)', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ padding: '12px 14px', background: 'rgba(124,58,237,0.04)' }}>
+          <Shimmer height={11} width="40%" radius={4} />
+        </div>
+        {[0, 1, 2].map((i) => (
+          <div key={i} style={{ display: 'flex', gap: 14, padding: '14px', borderTop: '1px solid var(--vz-border-color)' }}>
+            <Shimmer height={14} width={28} radius={4} />
+            <Shimmer height={14} width="22%" radius={4} />
+            <Shimmer height={14} width="18%" radius={4} />
+            <Shimmer height={14} width="18%" radius={4} />
+            <Shimmer height={14} width="14%" radius={4} />
+            <Shimmer height={14} width={70} radius={4} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ───── Stage 3 Evidence Vault shimmer ─────
+ * Mirrors the document-grid layout users land on for the final stage,
+ * so the populated view appears in the same footprint. */
+function Stage3Shimmer() {
+  return (
+    <div>
+      {/* Sub-tab row (DD / TL / Owner KYC) */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        <Shimmer height={34} width={140} radius={999} />
+        <Shimmer height={34} width={120} radius={999} />
+        <Shimmer height={34} width={150} radius={999} />
+      </div>
+      {/* 2-col card grid of doc previews */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} style={{ padding: 14, border: '1px solid var(--vz-border-color)', borderRadius: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <Shimmer width={36} height={36} radius={8} />
+              <div style={{ flex: 1 }}>
+                <Shimmer height={11} width="60%" radius={4} style={{ marginBottom: 6 }} />
+                <Shimmer height={9} width="40%" radius={4} />
+              </div>
+            </div>
+            <Shimmer height={56} width="100%" radius={8} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -2302,8 +2423,7 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
           next2[localKey] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
         }
         setErrs(next2);
-        const firstKey = Object.keys(next2)[0];
-        if (firstKey) toast.error('Please review the highlighted fields', next2[firstKey]);
+        // Toast suppressed — inline red errors handle this.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the document. Try again.');
       }
@@ -2496,8 +2616,7 @@ function AddDocumentTypeMasterModal({ onClose, onSaved }:
           next2[k] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
         }
         setErrs(next2);
-        const firstKey = Object.keys(next2)[0];
-        if (firstKey) toast.error('Please review the highlighted fields', next2[firstKey]);
+        // Toast suppressed — inline red errors handle this.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the document type. Try again.');
       }
@@ -2659,8 +2778,7 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
     if (!has(d.photograph,   editing?.photograph_url,    removePhotograph))   next.photograph   = 'Photograph is required';
     setErrs(next);
     if (Object.keys(next).length > 0) {
-      const firstKey = Object.keys(next)[0];
-      toast.error('Please complete required fields', next[firstKey]);
+      // Toast suppressed — inline red errors mark each offending field.
       return;
     }
 
@@ -2707,8 +2825,7 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
           next2[localKey] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
         }
         setErrs(next2);
-        const firstKey = Object.keys(next2)[0];
-        if (firstKey) toast.error('Please review the highlighted fields', next2[firstKey]);
+        // Toast suppressed — inline red errors handle this.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the owner. Try again.');
       }
@@ -2906,8 +3023,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
     if (!d.cpWhatsapp)                                 next.cpWhatsapp    = 'Select WhatsApp preference';
     setErrs(next);
     if (Object.keys(next).length === 0) { onSave(d); return; }
-    const firstKey = Object.keys(next)[0];
-    toast.error('Please complete required fields', next[firstKey]);
+    // Toast suppressed — inline red errors handle this.
   };
   return (
     <div className="acm-sub-modal">
