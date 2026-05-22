@@ -59,13 +59,54 @@
         $grandTotal = $taxableValue + $gstAmount - (float)($payment->discount ?? 0);
     }
 
+    /* "Total Value (in words)" — Indian English spell-out (lakhs / crores).
+     * Tries ext-intl first (\NumberFormatter::SPELLOUT). When ext-intl
+     * isn't installed on the prod server, the fallback used to just echo
+     * the digits back ("59000.00 Only"), which defeated the entire
+     * purpose of the field. The new fallback is a small in-line spell-
+     * out routine that handles paise + the Indian numbering system,
+     * so the invoice always shows readable words. */
+    $rupees = (int) floor($grandTotal);
+    $paise  = (int) round(($grandTotal - $rupees) * 100);
+
+    $spellInr = function (int $n): string {
+        if ($n === 0) return 'Zero';
+        $ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+        $tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+        $twoDigit = function (int $n) use ($ones, $tens): string {
+            if ($n < 20) return $ones[$n];
+            return trim($tens[intdiv($n, 10)] . ' ' . ($n % 10 ? $ones[$n % 10] : ''));
+        };
+        $threeDigit = function (int $n) use ($ones, $twoDigit): string {
+            $h = intdiv($n, 100); $r = $n % 100;
+            $out = '';
+            if ($h) $out .= $ones[$h] . ' Hundred';
+            if ($r) $out .= ($h ? ' ' : '') . $twoDigit($r);
+            return $out;
+        };
+        $crore = intdiv($n, 10000000); $n %= 10000000;
+        $lakh  = intdiv($n, 100000);   $n %= 100000;
+        $thou  = intdiv($n, 1000);     $n %= 1000;
+        $hund  = $n;
+        $parts = [];
+        if ($crore) $parts[] = $threeDigit($crore) . ' Crore';
+        if ($lakh)  $parts[] = $twoDigit($lakh)    . ' Lakh';
+        if ($thou)  $parts[] = $twoDigit($thou)    . ' Thousand';
+        if ($hund)  $parts[] = $threeDigit($hund);
+        return implode(' ', $parts);
+    };
+
     try {
         $formatter = new \NumberFormatter('en_IN', \NumberFormatter::SPELLOUT);
-        $rupees = floor($grandTotal);
-        $amountInWords = ucwords($formatter->format($rupees)) . ' Only';
+        $rupeeWords = ucwords($formatter->format($rupees));
+        $paiseWords = $paise > 0 ? ucwords($formatter->format($paise)) : '';
     } catch (\Throwable $e) {
-        $amountInWords = number_format($grandTotal, 2) . ' Only';
+        $rupeeWords = $spellInr($rupees);
+        $paiseWords = $paise > 0 ? $spellInr($paise) : '';
     }
+    $amountInWords = 'Indian Rupees ' . $rupeeWords
+        . ($paiseWords !== '' ? ' and ' . $paiseWords . ' Paise' : '')
+        . ' Only';
 
     $upiUri = 'upi://pay?pa=' . rawurlencode($bank['upi_id'])
         . '&pn=' . rawurlencode($company['name'])
@@ -450,7 +491,8 @@
                     </tr>
                     <tr>
                         <td class="lbl" style="vertical-align: top; padding-top: 6px;">Total Value (in words)</td>
-                        <td class="words" style="padding-top: 6px;">₹ {{ $amountInWords }}</td>
+                        {{-- $amountInWords already starts with "Indian Rupees …", so the leading ₹ symbol that used to sit here would have produced "₹ Indian Rupees …". --}}
+                        <td class="words" style="padding-top: 6px;">{{ $amountInWords }}</td>
                     </tr>
                 </table>
             </td>

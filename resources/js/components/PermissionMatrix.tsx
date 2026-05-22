@@ -490,10 +490,49 @@ export default function PermissionMatrix({
           style={{ border: '1px solid var(--vz-border-color)', overflow: 'hidden' }}
         >
           {loading ? (
-            <div className="text-center py-5">
-              <Spinner color="primary" />
-              <span className="ms-2 text-muted">Loading permissions...</span>
-            </div>
+            /* Permission matrix shimmer — mirrors the table's actual
+             * column layout (Module / All / Add / Read / Edit / Delete
+             * / Approve / Reject / Export) so the user gets a clear
+             * preview of the grid that's about to render. Previously
+             * this showed a small centered spinner that gave no hint
+             * of the data structure — the page felt blank during the
+             * ~300ms fetch after picking a branch/user. */
+            <table className="table align-middle table-nowrap mb-0">
+              <thead>
+                <tr style={{ background: 'var(--vz-secondary-bg)' }}>
+                  {Array.from({ length: 9 }).map((_, i) => (
+                    <th key={i} className="py-3" style={{ width: i === 0 ? '34%' : '8%' }}>
+                      <div
+                        className="shimmer"
+                        style={{
+                          height: 12,
+                          width: i === 0 ? '60%' : '40%',
+                          borderRadius: 6,
+                          marginInline: i === 0 ? 12 : 'auto',
+                        }}
+                      />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 6 }).map((_, rowIdx) => (
+                  <tr key={rowIdx} style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+                    <td className="ps-3 py-3">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div className="shimmer" style={{ width: 28, height: 28, borderRadius: 8 }} />
+                        <div className="shimmer" style={{ width: 140, height: 12, borderRadius: 6 }} />
+                      </div>
+                    </td>
+                    {Array.from({ length: 8 }).map((__, cellIdx) => (
+                      <td key={cellIdx} className="text-center py-3">
+                        <div className="shimmer mx-auto" style={{ width: 16, height: 16, borderRadius: 4 }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : (
             <table className="table align-middle table-nowrap table-hover mb-0">
               <thead>

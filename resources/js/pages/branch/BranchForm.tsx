@@ -7,7 +7,10 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
+import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import { validatePhone } from '../../utils/validatePhone';
+import { Shimmer } from '../../components/ui/Shimmer';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 
 interface Props {
   onBack: () => void;
@@ -272,6 +275,13 @@ export default function BranchForm({ onBack, editId }: Props) {
   const [loadingData, setLoadingData] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  /* Confirmation gate when the user picks "Inactive" on the Status
+   * dropdown. Deactivating a branch cascades — its login users get
+   * disabled, its data hides from rollups, and sub-branch employees
+   * lose access. The confirmation popup forces a deliberate click
+   * before that happens, instead of a stray dropdown change wiping
+   * out the branch silently on Save. */
+  const [showInactiveConfirm, setShowInactiveConfirm] = useState(false);
   // Snapshot of the password as loaded from the server. If unchanged on
   // save we skip sending user_password so the backend won't re-hash and
   // won't fire the password-changed email.
@@ -582,10 +592,62 @@ export default function BranchForm({ onBack, editId }: Props) {
     setLogoFile(null); setLogoPreview(null);
   };
 
+  /* Edit-mode preload — previously a small centered spinner that
+   * gave no preview of the form shape, so the page felt blank for
+   * the ~500ms hydration window. Replaced with a form-shaped
+   * shimmer (banner + four sections × six field cells) so the user
+   * sees the structure they're about to fill in while the data
+   * loads. Matches the ClientForm shimmer pattern. */
   if (loadingData) return (
-    <div className="text-center py-5">
-      <Spinner color="primary" />
-      <p className="text-muted mt-2" style={{ fontSize: '12px' }}>Loading branch data...</p>
+    <div className="p-3">
+      <div
+        style={{
+          background: 'var(--vz-card-bg, #fff)',
+          border: '1px solid var(--vz-border-color)',
+          borderRadius: 16,
+          padding: 24,
+          marginBottom: 16,
+          display: 'flex', alignItems: 'center', gap: 18,
+        }}
+      >
+        <Shimmer width={64} height={64} radius={14} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Shimmer width={220} height={18} />
+          <Shimmer width={320} height={12} />
+        </div>
+        <Shimmer width={120} height={36} radius={10} />
+      </div>
+      {Array.from({ length: 4 }).map((_, sectionIdx) => (
+        <div
+          key={sectionIdx}
+          style={{
+            background: 'var(--vz-card-bg, #fff)',
+            border: '1px solid var(--vz-border-color)',
+            borderRadius: 16,
+            padding: 20,
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <Shimmer width={32} height={32} radius={8} />
+            <Shimmer width={180} height={14} />
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gap: 14,
+            }}
+          >
+            {Array.from({ length: 6 }).map((__, fieldIdx) => (
+              <div key={fieldIdx} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Shimmer width={`${50 + (fieldIdx % 4) * 10}%`} height={10} />
+                <Shimmer width="100%" height={38} radius={8} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 
@@ -1222,14 +1284,37 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Status</Lbl>
-                <SelectDD
-                  isOpen={ddStatus} toggle={() => setDdStatus(o => !o)}
-                  value={form.status} fieldKey="status" dotColor
+                {/* Status uses MasterSelect directly (not the SelectDD
+                    wrapper) so we can intercept the value change. When
+                    the user picks "Inactive" from an "Active" branch we
+                    open a confirmation popup instead of writing the
+                    change straight into form state — deactivating a
+                    branch is a heavy side-effect operation (cascades
+                    to users + data visibility), and the previous
+                    silent dropdown made it too easy to flip
+                    accidentally. */}
+                <MasterSelect
+                  value={form.status}
+                  placeholder="Select"
+                  invalid={fieldInvalid('status')}
                   options={[
                     { label: 'Active',   value: 'active' },
                     { label: 'Inactive', value: 'inactive' },
                   ]}
+                  onChange={val => {
+                    if (val === 'inactive' && form.status === 'active') {
+                      setShowInactiveConfirm(true);
+                      return;
+                    }
+                    set('status', val);
+                    touch('status');
+                  }}
                 />
+                {fieldInvalid('status') && (
+                  <div style={{ fontSize: '10.5px', color: '#f06548', marginTop: '2px' }}>
+                    {fieldError('status')}
+                  </div>
+                )}
               </Col>
               <Col md={4}>
                 <Lbl>Email</Lbl>
@@ -1247,7 +1332,13 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Website</Lbl>
-                <Input name="website" style={css.input} type="url" value={form.website}
+                {/* type="text" not "url" — the browser's url validation
+                    rejects bare-domain inputs like "www.branch.com" and
+                    forces the user to type "http://..." even though our
+                    own validateWebsite() (and the placeholder) accepts
+                    the www. form. Keep our regex as the gate so the
+                    UX stays consistent with the hint text. */}
+                <Input name="website" style={css.input} type="text" value={form.website}
                   invalid={fieldInvalid('website')}
                   onChange={e => set('website', e.target.value)} onBlur={() => touch('website')}
                   placeholder="www.branch.com or https://branch.com" />
@@ -1317,10 +1408,18 @@ export default function BranchForm({ onBack, editId }: Props) {
               <Col md={4}>
                 <Lbl>Established Date</Lbl>
                 <div style={{ maxWidth: 240 }}>
-                  <ThemedDatePicker
+                  {/* Swapped from the in-file ThemedDatePicker to the
+                      shared MasterDatePicker so this calendar matches
+                      every other date control across the app
+                      (master forms, recruitment, products). The old
+                      one had its own month/year drill-down that
+                      diverged from the rest, so users said the calendar
+                      "looked wrong" only on this page. */}
+                  <MasterDatePicker
                     value={form.established_at}
                     onChange={v => set('established_at', v)}
                     placeholder="Select date"
+                    maxDate={new Date().toISOString().slice(0, 10)}
                   />
                 </div>
               </Col>
@@ -1683,6 +1782,23 @@ export default function BranchForm({ onBack, editId }: Props) {
         </Card>
       </Form>
       </div>
+
+      {/* Confirmation popup for "Active → Inactive" status change.
+          Confirming commits the change to local form state — the
+          actual server-side cascade still fires from the normal Save
+          flow at the bottom of the form, not from this dialog. */}
+      <DeleteConfirmModal
+        open={showInactiveConfirm}
+        itemName={form.name || 'this branch'}
+        title="Set Branch Inactive?"
+        subMessage="Inactive branches disappear from rollups, their login users are disabled, and sub-branch employees lose access. You can re-activate later from the Branches list."
+        onClose={() => setShowInactiveConfirm(false)}
+        onConfirm={() => {
+          set('status', 'inactive');
+          touch('status');
+          setShowInactiveConfirm(false);
+        }}
+      />
     </>
   );
 }

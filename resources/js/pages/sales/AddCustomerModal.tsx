@@ -952,15 +952,25 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 
         {/* BODY */}
         <div className="acm-body">
-          {/* While the edit-mode hydration fetch is in flight, render a
-              skeleton that mirrors the actual Stage 1 form structure
-              (Basic Company + Primary Address & Contact sections) so
-              the user sees content shape immediately. */}
-          {stage === 1 && hydrating && <Stage1FormShimmer />}
-          {stage === 1 && !hydrating && tab === 'identification' && (
+          {/* Edit-mode hydration UX — the form is pre-filled with the
+              list-row data (company, type, segment, country, contact,
+              phone, email, whatsapp) the moment the modal opens, so
+              there's no value to a full-form skeleton. We render the
+              form immediately and overlay a thin progress strip while
+              the /customers/:id GET resolves with the remaining
+              fields (legal name, classification, risk, full address,
+              additional locations). User can start interacting with
+              the visible fields without waiting. */}
+          {stage === 1 && hydrating && (
+            <div className="acm-hydrate-strip" aria-live="polite">
+              <div className="acm-hydrate-strip-bar" />
+              <span className="acm-hydrate-strip-text">Loading saved details…</span>
+            </div>
+          )}
+          {stage === 1 && tab === 'identification' && (
             <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} />
           )}
-          {stage === 1 && !hydrating && tab === 'address-contact' && (
+          {stage === 1 && tab === 'address-contact' && (
             <Stage1AdditionalLocations
               primary={{
                 type:          form.addrType,
@@ -3112,6 +3122,36 @@ const SCOPED_CSS = `
 @keyframes acmFadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes acm-cust-spin { to { transform: rotate(360deg); } }
 .acm-cust-spin { animation: acm-cust-spin .9s linear infinite; transform-origin: 50% 50%; }
+
+/* Edit-mode hydration progress strip — thin indeterminate bar that
+   sits above the Stage 1 form while /customers/:id resolves with
+   the full record. Replaces the previous full-form skeleton which
+   blocked the user from seeing the pre-filled list-row data. */
+.acm-hydrate-strip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px;
+  background: #faf7ff;
+  border: 1px solid #e9e6f5;
+  border-radius: 10px;
+}
+.acm-hydrate-strip-text {
+  font-size: 11.5px; font-weight: 600; color: #6d28d9; letter-spacing: .02em;
+}
+.acm-hydrate-strip-bar {
+  flex: 1; height: 4px; border-radius: 999px;
+  background: linear-gradient(90deg,
+    rgba(124,58,237,.10) 0%, rgba(124,58,237,.10) 30%,
+    rgba(124,58,237,.55) 50%,
+    rgba(124,58,237,.10) 70%, rgba(124,58,237,.10) 100%);
+  background-size: 200% 100%;
+  animation: acm-hydrate-slide 1.2s linear infinite;
+}
+@keyframes acm-hydrate-slide {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+[data-bs-theme="dark"] .acm-hydrate-strip { background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .acm-hydrate-strip-text { color: #c4b5fd; }
 
 .acm-root *, .acm-root *::before, .acm-root *::after { box-sizing: border-box; }
 
