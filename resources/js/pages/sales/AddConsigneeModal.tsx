@@ -3283,7 +3283,9 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
   };
 
   return (
-    <div className="acm-loc-sub-overlay" style={{ zIndex: 10002 }} onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}>
+    // Backdrop is purely visual — closing only via the X / Cancel button
+    // so accidental outside-clicks don't wipe an in-progress entry.
+    <div className="acm-loc-sub-overlay" style={{ zIndex: 10002 }}>
       <div className="acm-loc-sub-card" style={{ maxWidth: 480 }}>
         <div className="acm-loc-sub-header">
           <div className="acm-loc-sub-title">Add Document Type</div>

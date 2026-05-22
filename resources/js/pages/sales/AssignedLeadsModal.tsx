@@ -374,11 +374,12 @@ const LDP_CSS = `
   overflow-y: auto;
   animation: ldp-fade .18s ease-out;
   padding: 24px;
+  display: flex; align-items: center; justify-content: center;
 }
 @keyframes ldp-fade { from { opacity: 0; } to { opacity: 1; } }
 
 .ldp-shell {
-  width: min(1280px, 100%); margin: 0 auto;
+  width: min(1280px, 100%); margin: auto;
   background: #fff7ed;
   border-radius: 18px;
   box-shadow: 0 22px 60px rgba(15,23,42,.32);

@@ -87,9 +87,11 @@ export default function WhatsAppStatusModal({
   };
 
   return createPortal((
-    <div className="was-backdrop" onClick={onClose}>
+    /* Backdrop is purely visual — closing only via the X / Cancel button
+     * so accidental outside-clicks don't wipe an in-progress entry. */
+    <div className="was-backdrop">
       <style>{WAS_CSS}</style>
-      <div className="was-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="was-modal">
         <div className="was-head">
           <div className="was-head-left">
             <div className="was-head-icon">

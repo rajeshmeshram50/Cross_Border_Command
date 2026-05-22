@@ -49,9 +49,10 @@ export default function Stage1InquiryReceived({ header, onNext }: StageProps) {
           </div>
         </div>
         <span className={`smd-stg-head-badge s1-badge s1-badge-${status}`}>
-          {status === 'qualified'    && '● QUALIFIED'}
-          {status === 'disqualified' && '● DISQUALIFIED'}
-          {status === 'pending'      && '● PENDING'}
+          <span className="s1-badge-dot" />
+          {status === 'qualified'    && 'QUALIFIED'}
+          {status === 'disqualified' && 'DISQUALIFIED'}
+          {status === 'pending'      && 'PENDING'}
         </span>
       </div>
 
@@ -148,12 +149,20 @@ function formatINR(n: number): string {
 }
 
 const STAGE1_CSS = `
-.s1-grid-1 { display: grid; grid-template-columns: 1fr; gap: 10px 14px; margin-top: 10px; }
+/* Single full-width row that visually continues the .smd-sect-grid above
+ * it — same cell tinting, same horizontal divider, no side gutter. */
+.s1-grid-1 { display: grid; grid-template-columns: 1fr; gap: 0; }
+.s1-grid-1 .smd-sect-field { border-right: none; background: #f5f3ff; }
 
-.s1-badge { border: 1px solid transparent; }
-.s1-badge-qualified    { background: rgba(34,197,94,.22);  color: #bbf7d0; border-color: rgba(74,222,128,.35); }
-.s1-badge-disqualified { background: rgba(239,68,68,.22);  color: #fecaca; border-color: rgba(248,113,113,.35); }
-.s1-badge-pending      { background: rgba(245,158,11,.22); color: #fde68a; border-color: rgba(252,211,77,.35); }
+/* Badge sits on the shared dark-purple pill (.smd-stg-head-badge) and
+ * paints just the leading dot in the status colour. */
+.s1-badge-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  display: inline-block; flex-shrink: 0;
+}
+.s1-badge-qualified    .s1-badge-dot { background: #4ade80; box-shadow: 0 0 0 2px rgba(74,222,128,.22); }
+.s1-badge-disqualified .s1-badge-dot { background: #f87171; box-shadow: 0 0 0 2px rgba(248,113,113,.22); }
+.s1-badge-pending      .s1-badge-dot { background: #fbbf24; box-shadow: 0 0 0 2px rgba(252,211,77,.22); }
 
 .s1-empty-hint {
   display: flex; align-items: flex-start; gap: 10px;
