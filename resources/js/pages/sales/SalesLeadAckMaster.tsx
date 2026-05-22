@@ -4,6 +4,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Lead Acknowledgement Master
@@ -16,7 +17,12 @@ import Tooltip from '../../components/ui/Tooltip';
  *
  * Perm-gated on sales.lead_ack_master per the Sales Matrix permission sheet.
  * The trash icon flips status to inactive (PUT) rather than deleting — same
- * semantics as the source design.
+ * semantics as the source design. The mark-inactive action is routed through
+ * the project's DeleteConfirmModal (with a "Mark Inactive" verb) so a stray
+ * click can't silently disable a reason.
+ *
+ * Visual recipe matches the wider Sales module — violet hero strip, KPI
+ * ribbon, pill-style tabs, sticky lavender table header, dark-mode aware.
  * ──────────────────────────────────────────────────────────────────────── */
 
 type OppType = 'qualified' | 'disqualified' | 'clarity_pending';
@@ -42,6 +48,16 @@ const TAB_LABELS: Record<OppType, string> = {
   qualified: 'Qualified Opportunity',
   disqualified: 'Disqualified Opportunity',
   clarity_pending: 'Clarity Pending Opportunity',
+};
+const TAB_SHORT: Record<OppType, string> = {
+  qualified: 'Qualified',
+  disqualified: 'Disqualified',
+  clarity_pending: 'Clarity Pending',
+};
+const TAB_ICON: Record<OppType, string> = {
+  qualified: 'ri-checkbox-circle-line',
+  disqualified: 'ri-close-circle-line',
+  clarity_pending: 'ri-question-line',
 };
 const COLUMN_HEADERS: Record<OppType, string> = {
   qualified: 'Reason For Qualified Opportunity',
@@ -74,14 +90,19 @@ export default function SalesLeadAckMaster() {
   const [oppSelectorOpen, setOppSelectorOpen] = useState(false);
   const [formOpen, setFormOpen]               = useState(false);
   const [editingId, setEditingId]             = useState<number | null>(null);
-  const [pendingType, setPendingType]         = useState<OppType | null>(null); // type for a fresh add
+  const [pendingType, setPendingType]         = useState<OppType | null>(null);
 
   // Form state
-  const [formReason, setFormReason]     = useState('');
-  const [formStatus, setFormStatus]     = useState<Status>('active');
-  const [formDQ, setFormDQ]             = useState<DQ>('positive');
-  const [formError, setFormError]       = useState('');
-  const [saving, setSaving]             = useState(false);
+  const [formReason, setFormReason] = useState('');
+  const [formStatus, setFormStatus] = useState<Status>('active');
+  const [formDQ,     setFormDQ]     = useState<DQ>('positive');
+  const [formError,  setFormError]  = useState('');
+  const [saving,     setSaving]     = useState(false);
+
+  // Mark-inactive confirmation. Routes the trash button through
+  // DeleteConfirmModal so a stray click can't silently disable a reason.
+  const [inactivateTarget, setInactivateTarget] = useState<Reason | null>(null);
+  const [inactivating, setInactivating]         = useState(false);
 
   // Inject Google Fonts (DM Sans) once on mount.
   useEffect(() => {
@@ -108,9 +129,7 @@ export default function SalesLeadAckMaster() {
     return () => window.removeEventListener('keydown', onKey);
   }, [oppSelectorOpen, formOpen, saving]);
 
-  // Lock body scroll while any modal is open so the underlying page
-  // doesn't scroll behind the dim overlay (the customizer in this app
-  // sometimes pushes the body up otherwise).
+  // Lock body scroll while any modal is open.
   useEffect(() => {
     const open = oppSelectorOpen || formOpen;
     if (!open) return;
@@ -136,7 +155,6 @@ export default function SalesLeadAckMaster() {
       .catch(() => { if (!cancelled) toast.error('Failed to load', 'Could not fetch lead acknowledgement reasons'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-    // toast is stable from the provider; canView depends on user (fetched once on login)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canView]);
 
@@ -154,14 +172,29 @@ export default function SalesLeadAckMaster() {
   const startIdx = (safePage - 1) * rpp;
   const rows = filtered.slice(startIdx, startIdx + rpp);
 
-  // If a row got marked inactive / deleted and shrank the result set below
-  // the current page, reconcile state so the pagination pill doesn't read
-  // "3 / 1" until the next user action.
   useEffect(() => {
     if (page !== safePage) setPage(safePage);
   }, [page, safePage]);
 
-  // Tab switch resets page + clears search (matches HTML behaviour).
+  // KPI counts — total reasons per tab plus a grand "active" count.
+  // Memoised so the strip doesn't recompute on every keystroke.
+  const stats = useMemo(() => {
+    const count = (arr: Reason[]) => ({
+      total:  arr.length,
+      active: arr.filter(r => r.status === 'active').length,
+    });
+    const qS = count(data.qualified);
+    const dS = count(data.disqualified);
+    const cS = count(data.clarity_pending);
+    return {
+      qualified:       qS,
+      disqualified:    dS,
+      clarity_pending: cS,
+      totalActive:     qS.active + dS.active + cS.active,
+    };
+  }, [data]);
+
+  // Tab switch resets page + clears search.
   const switchTab = (next: OppType) => { setTab(next); setPage(1); setQ(''); };
 
   // ── Modal actions ──
@@ -202,8 +235,6 @@ export default function SalesLeadAckMaster() {
   const save = async () => {
     const reason = formReason.trim();
     if (!reason) { setFormError('⚠  Reason is required.'); return; }
-    // Reject input that is only special characters / whitespace — must include
-    // at least one letter or digit to be a meaningful reason.
     if (!/[\p{L}\p{N}]/u.test(reason)) {
       setFormError('⚠  Reason must contain letters or numbers, not only special characters.');
       return;
@@ -213,7 +244,6 @@ export default function SalesLeadAckMaster() {
     setSaving(true);
     try {
       if (editingId !== null) {
-        // Edit
         const payload: any = { reason, status: formStatus };
         if (pendingType === 'disqualified') payload.dq_status = formDQ;
         const res = await api.put(`/sales/lead-ack-reasons/${editingId}`, payload);
@@ -223,7 +253,6 @@ export default function SalesLeadAckMaster() {
         }));
         toast.success('Saved', 'Reason updated successfully');
       } else {
-        // Create
         const payload: any = {
           opportunity_type: pendingType,
           reason,
@@ -246,12 +275,19 @@ export default function SalesLeadAckMaster() {
     }
   };
 
-  // Trash button — flips status to inactive (matches HTML "Mark Inactive").
-  const markInactive = async (row: Reason) => {
+  /* Trash button now opens a confirmation modal first. The actual
+   * PUT (status → inactive) runs in confirmInactivate so the user
+   * has a clear "Cancel" path before flipping a reason out of view. */
+  const requestInactivate = (row: Reason) => {
     if (!canDelete) return;
-    // The button is rendered with aria-disabled when the row is already
-    // inactive; clicks are silently ignored to avoid a noisy toast.
     if (row.status === 'inactive') return;
+    setInactivateTarget(row);
+  };
+
+  const confirmInactivate = async () => {
+    const row = inactivateTarget;
+    if (!row) return;
+    setInactivating(true);
     try {
       const res = await api.put(`/sales/lead-ack-reasons/${row.id}`, { status: 'inactive' });
       setData(prev => ({
@@ -259,8 +295,11 @@ export default function SalesLeadAckMaster() {
         [row.opportunity_type]: prev[row.opportunity_type].map(r => r.id === row.id ? res.data : r),
       }));
       toast.info('Marked as Inactive', row.reason);
+      setInactivateTarget(null);
     } catch (err: any) {
       toast.error('Update failed', err?.response?.data?.message || 'Could not mark inactive');
+    } finally {
+      setInactivating(false);
     }
   };
 
@@ -270,6 +309,7 @@ export default function SalesLeadAckMaster() {
       <div className="lam-root">
         <style>{SCOPED_CSS}</style>
         <div className="lam-no-access">
+          <i className="ri-lock-2-line lam-no-access-icon" />
           <div className="lam-no-access-title">No access</div>
           <div className="lam-no-access-sub">You don't have permission to view Lead Acknowledgement Master. Ask your branch admin to grant <strong>can_view</strong> on Sales Matrix → Lead Acknowledgement Master.</div>
         </div>
@@ -281,66 +321,105 @@ export default function SalesLeadAckMaster() {
     <div className="lam-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* Header */}
-      <div className="lam-header">
-        <span className="lam-header-glow1" />
-        <span className="lam-header-glow2" />
-        <button
-          type="button"
-          className="lam-back-btn"
-          onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/sales'); }}
-          aria-label="Back"
-          title="Back"
-        >
-          <i className="ri-arrow-left-line" style={{ fontSize: 17 }} />
-        </button>
-        <div className="lam-header-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.3">
-            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
-          </svg>
+      {/* ── Hero strip — clean white card with dark icon tile +
+              dark title (mirrors the HR Employee page recipe used
+              across the project, instead of the violet gradient
+              hero used elsewhere on Sales). ── */}
+      <div className="lam-hero">
+        <div className="lam-hero-icon">
+          <i className="ri-shield-check-line" />
         </div>
-        <div className="lam-header-text">
-          <div className="lam-header-title">Lead Acknowledgement Master</div>
-          <div className="lam-header-sub">Manage qualification, disqualification, and clarity pending reasons for the sales pipeline</div>
+        <div className="lam-hero-text">
+          <div className="lam-hero-title">Lead Acknowledgement Master</div>
+          <div className="lam-hero-sub">Manage qualification, disqualification, and clarity-pending reasons for the sales pipeline</div>
         </div>
-        {canAdd && (
-          <button className="lam-add-btn" onClick={openAdd}>
-            <IconPlus />
-            Add New Reason
+        <div className="lam-hero-actions">
+          <button
+            type="button"
+            className="lam-back-btn"
+            onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/sales'); }}
+          >
+            <i className="ri-arrow-left-line" />
+            Back to Sales Matrix
           </button>
-        )}
+          {canAdd && (
+            <button type="button" className="lam-add-btn" onClick={openAdd}>
+              <i className="ri-add-line" />
+              Add New Reason
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Tabs + Search */}
+      {/* ── KPI strip ── */}
+      <div className="lam-kpi-grid">
+        <KpiTile
+          label="Qualified Reasons"
+          value={stats.qualified.total}
+          icon="ri-checkbox-circle-line"
+          gradient="linear-gradient(135deg, #16a34a 0%, #4ade80 100%)"
+          onClick={() => switchTab('qualified')}
+        />
+        <KpiTile
+          label="Disqualified Reasons"
+          value={stats.disqualified.total}
+          icon="ri-close-circle-line"
+          gradient="linear-gradient(135deg, #ea580c 0%, #fb923c 100%)"
+          onClick={() => switchTab('disqualified')}
+        />
+        <KpiTile
+          label="Clarity Pending"
+          value={stats.clarity_pending.total}
+          icon="ri-question-line"
+          gradient="linear-gradient(135deg, #2563eb 0%, #60a5fa 100%)"
+          onClick={() => switchTab('clarity_pending')}
+        />
+        <KpiTile
+          label="Total Active"
+          value={stats.totalActive}
+          icon="ri-flashlight-line"
+          gradient="linear-gradient(135deg, #6d28d9 0%, #a78bfa 100%)"
+        />
+      </div>
+
+      {/* ── Tabs + Search row — tabs sit inside a single segmented
+              pill container so the row reads as one control with the
+              active tab "selected" inside, matching the rest of the
+              sales surfaces. ── */}
       <div className="lam-tabs-row">
-        <div className="lam-tabs">
+        <div className="lam-tabs" role="tablist">
           {TAB_KEYS.map(t => (
             <button
               key={t}
-              className={`lam-tab ${tab === t ? 'lam-tab-active' : ''}`}
+              type="button"
+              role="tab"
+              aria-selected={tab === t}
+              className={`lam-tab ${tab === t ? 'is-active' : ''}`}
               onClick={() => switchTab(t)}
             >
-              {t === 'qualified'       && <IconCheckCircle />}
-              {t === 'disqualified'    && <IconXCircle />}
-              {t === 'clarity_pending' && <IconInfoCircle />}
-              {TAB_LABELS[t]}
+              <i className={`${TAB_ICON[t]} lam-tab-icon`} aria-hidden />
+              <span className="lam-tab-label">{TAB_SHORT[t]}</span>
+              <span className="lam-tab-count">{(data[t] || []).length}</span>
             </button>
           ))}
         </div>
         <div className="lam-search">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2.2">
-            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-          </svg>
+          <i className="ri-search-line lam-search-icon" />
           <input
             type="text"
             placeholder="Search by reason…"
             value={q}
             onChange={e => { setQ(e.target.value); setPage(1); }}
           />
+          {q && (
+            <button type="button" className="lam-search-clear" onClick={() => { setQ(''); setPage(1); }} aria-label="Clear search">
+              <i className="ri-close-line" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Table card */}
+      {/* ── Table card ── */}
       <div className="lam-table-card">
         <div className="lam-table-wrap">
           <table className="lam-table" style={{ tableLayout: 'fixed', minWidth: 560 }}>
@@ -348,55 +427,59 @@ export default function SalesLeadAckMaster() {
               <tr>
                 <th style={{ width: 56 }}>Sr No</th>
                 <th>{COLUMN_HEADERS[tab]}</th>
-                {tab === 'disqualified' && <th style={{ width: 110 }}>DQ Status</th>}
-                <th style={{ width: 120 }}>Status</th>
-                <th style={{ width: 90, textAlign: 'center' }}>Action</th>
+                {tab === 'disqualified' && <th style={{ width: 130 }}>DQ Status</th>}
+                <th style={{ width: 130 }}>Status</th>
+                <th style={{ width: 100, textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={tab === 'disqualified' ? 5 : 4} className="lam-empty">Loading…</td></tr>
+                <tr><td colSpan={tab === 'disqualified' ? 5 : 4} className="lam-empty">
+                  <span className="lam-spinner lam-spinner-violet" />
+                  Loading reasons…
+                </td></tr>
               )}
               {!loading && rows.length === 0 && (
-                <tr><td colSpan={tab === 'disqualified' ? 5 : 4} className="lam-empty">No reasons found</td></tr>
+                <tr><td colSpan={tab === 'disqualified' ? 5 : 4} className="lam-empty">
+                  <i className="ri-inbox-line lam-empty-icon" />
+                  No reasons found
+                </td></tr>
               )}
               {!loading && rows.map((r, i) => (
                 <tr key={r.id}>
-                  <td className="lam-td-sr">
-                    <span className="lam-sr-pill">{startIdx + i + 1}</span>
-                  </td>
-                  <td className="lam-td-reason">{r.reason}</td>
+                  <td className="lam-td-sr">{startIdx + i + 1}</td>
+                  <td className="lam-td-reason"><ReasonCell text={r.reason} /></td>
                   {tab === 'disqualified' && (
                     <td>
                       {r.dq_status === 'positive'
-                        ? <span className="lam-badge lam-positive">↑ Positive</span>
-                        : <span className="lam-badge lam-negative">↓ Negative</span>}
+                        ? <span className="lam-badge lam-positive">Positive</span>
+                        : <span className="lam-badge lam-negative">Negative</span>}
                     </td>
                   )}
                   <td>
                     {r.status === 'active'
-                      ? <span className="lam-badge lam-active"><span className="lam-dot" style={{ background:'#16a34a' }} />Active</span>
-                      : <span className="lam-badge lam-inactive"><span className="lam-dot" style={{ background:'#64748b' }} />Inactive</span>}
+                      ? <span className="lam-badge lam-active">Active</span>
+                      : <span className="lam-badge lam-inactive">Inactive</span>}
                   </td>
                   <td>
                     <div className="lam-actions">
                       {canEdit && (
-                        <Tooltip label="Edit">
-                          <button aria-label="Edit" className="lam-ab lam-edit" onClick={() => openEdit(r)}>
-                            <IconEdit />
+                        <Tooltip label="Edit reason">
+                          <button type="button" aria-label="Edit" className="lam-ab lam-edit" onClick={() => openEdit(r)}>
+                            <i className="ri-pencil-line" />
                           </button>
                         </Tooltip>
                       )}
                       {canDelete && (
-                        <Tooltip label={r.status === 'inactive' ? 'Already inactive' : 'Mark Inactive'}>
+                        <Tooltip label={r.status === 'inactive' ? 'Already inactive' : 'Mark inactive'}>
                           <button
                             type="button"
-                            aria-label={r.status === 'inactive' ? 'Already inactive' : 'Mark Inactive'}
+                            aria-label={r.status === 'inactive' ? 'Already inactive' : 'Mark inactive'}
                             aria-disabled={r.status === 'inactive'}
                             className={`lam-ab lam-archive ${r.status === 'inactive' ? 'lam-ab-muted' : ''}`}
-                            onClick={() => markInactive(r)}
+                            onClick={() => requestInactivate(r)}
                           >
-                            <IconArchive />
+                            <i className="ri-delete-bin-6-line" />
                           </button>
                         </Tooltip>
                       )}
@@ -408,75 +491,94 @@ export default function SalesLeadAckMaster() {
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination — matches the project's master-page footer:
+            plain "Showing N of M Results" on the left, numbered page
+            buttons with prev/next arrows on the right. Rows-per-page
+            selector dropped per design parity (rpp stays at 10 by
+            default; the underlying state + math are preserved). */}
         <div className="lam-pagination">
           <span className="lam-pag-info">
             {total === 0
               ? 'No records found'
-              : <>Showing <strong>{startIdx + 1}–{Math.min(startIdx + rpp, total)}</strong> of <strong>{total}</strong></>}
+              : <>Showing <strong>{rows.length}</strong> of <strong>{total}</strong> Results</>}
           </span>
-          <div className="lam-pag-right">
-            <div className="lam-rpp">
-              Rows:
-              <select value={rpp} onChange={e => { setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-              </select>
-            </div>
-            <span className="lam-pag-range">{safePage} / {pages}</span>
-            <div className="lam-pag-btns">
-              <button className="lam-pag-btn" disabled={safePage <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
-              </button>
-              <button className="lam-pag-btn" disabled={safePage >= pages || total === 0} onClick={() => setPage(p => Math.min(pages, p + 1))}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
-              </button>
-            </div>
+          <div className="lam-pag-btns">
+            <button
+              type="button"
+              className="lam-pag-btn"
+              disabled={safePage <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              aria-label="Previous page"
+            >
+              <i className="ri-arrow-left-s-line" />
+            </button>
+            {buildPageList(safePage, pages).map((p, idx) => (
+              p === '…'
+                ? <span key={`gap-${idx}`} className="lam-pag-gap">…</span>
+                : <button
+                    key={p}
+                    type="button"
+                    className={`lam-pag-num ${p === safePage ? 'is-active' : ''}`}
+                    onClick={() => setPage(p)}
+                    aria-current={p === safePage ? 'page' : undefined}
+                    aria-label={`Page ${p}`}
+                  >
+                    {p}
+                  </button>
+            ))}
+            <button
+              type="button"
+              className="lam-pag-btn"
+              disabled={safePage >= pages || total === 0}
+              onClick={() => setPage(p => Math.min(pages, p + 1))}
+              aria-label="Next page"
+            >
+              <i className="ri-arrow-right-s-line" />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Opportunity-type selector modal */}
+      {/* ── Opportunity-type selector modal ── */}
       {oppSelectorOpen && (
         <div className="lam-overlay" onMouseDown={() => setOppSelectorOpen(false)}>
           <div className="lam-modal lam-modal-md" onMouseDown={e => e.stopPropagation()}>
             <div className="lam-modal-header">
-              <div className="lam-modal-hicon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-              </div>
+              <div className="lam-modal-hicon"><i className="ri-folder-add-line" /></div>
               <div className="lam-modal-htext">
                 <div className="lam-modal-title">Select Opportunity Type</div>
                 <div className="lam-modal-sub">Choose where to store this reason</div>
               </div>
-              <button type="button" className="lam-modal-close" onClick={() => setOppSelectorOpen(false)}><IconX /></button>
+              <button type="button" className="lam-modal-close" onClick={() => setOppSelectorOpen(false)} aria-label="Close">
+                <i className="ri-close-line" />
+              </button>
             </div>
             <div className="lam-modal-body">
               <p className="lam-modal-helper">Select the opportunity type for which you want to add a new reason:</p>
               <div className="lam-opp-options">
                 <button type="button" className="lam-opp lam-opp-qualified" onClick={() => selectOpp('qualified')}>
-                  <div className="lam-opp-icon"><IconCheckCircle large /></div>
+                  <div className="lam-opp-icon"><i className="ri-checkbox-circle-line" /></div>
                   <div className="lam-opp-text">
                     <div className="lam-opp-title">Qualified Opportunity</div>
                     <div className="lam-opp-sub">Add reason for qualifying a lead</div>
                   </div>
-                  <IconChevronRight />
+                  <i className="ri-arrow-right-s-line lam-opp-chev" />
                 </button>
                 <button type="button" className="lam-opp lam-opp-disqualified" onClick={() => selectOpp('disqualified')}>
-                  <div className="lam-opp-icon"><IconXCircle large /></div>
+                  <div className="lam-opp-icon"><i className="ri-close-circle-line" /></div>
                   <div className="lam-opp-text">
                     <div className="lam-opp-title">Disqualified Opportunity</div>
                     <div className="lam-opp-sub">Add reason for disqualifying a lead</div>
                   </div>
-                  <IconChevronRight />
+                  <i className="ri-arrow-right-s-line lam-opp-chev" />
                 </button>
                 <button type="button" className="lam-opp lam-opp-clarity" onClick={() => selectOpp('clarity_pending')}>
-                  <div className="lam-opp-icon"><IconInfoCircle large /></div>
+                  <div className="lam-opp-icon"><i className="ri-question-line" /></div>
                   <div className="lam-opp-text">
                     <div className="lam-opp-title">Clarity Pending Opportunity</div>
                     <div className="lam-opp-sub">Add reason for pending clarification</div>
                   </div>
-                  <IconChevronRight />
+                  <i className="ri-arrow-right-s-line lam-opp-chev" />
                 </button>
               </div>
             </div>
@@ -484,22 +586,31 @@ export default function SalesLeadAckMaster() {
         </div>
       )}
 
-      {/* Add / Edit modal */}
+      {/* ── Add / Edit modal — no top-right X. The footer's Cancel
+              button is the single dismissal path; two affordances on
+              the same modal felt redundant (same recipe as the
+              project's DeleteConfirmModal and MasterPage modal).
+              Header mirrors MasterPage's layered-orb recipe: rich
+              gradient base + warm/cool radial glows + diagonal
+              sheen, so the title surface reads as a real material
+              rather than a flat band. ── */}
       {formOpen && pendingType && (
-        <div className="lam-overlay" onMouseDown={() => { if (!saving) closeForm(); }}>
-          <div className="lam-modal lam-modal-lg" onMouseDown={e => e.stopPropagation()}>
-            <div className="lam-modal-header">
+        <div className="lam-overlay lam-overlay-strong" onMouseDown={() => { if (!saving) closeForm(); }}>
+          <div className="lam-modal lam-modal-lg lam-modal-noclose" onMouseDown={e => e.stopPropagation()}>
+            <div className="lam-modal-header lam-modal-header-rich">
+              <span className="lam-mh-orb lam-mh-orb-tr" aria-hidden />
+              <span className="lam-mh-orb lam-mh-orb-br" aria-hidden />
+              <span className="lam-mh-orb lam-mh-orb-bl" aria-hidden />
+              <span className="lam-mh-sheen" aria-hidden />
               <div className="lam-modal-hicon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+                <i className={editingId !== null ? 'ri-edit-line' : 'ri-add-circle-line'} />
               </div>
               <div className="lam-modal-htext">
-                <div className="lam-modal-title">{editingId !== null ? 'Edit Reason' : `Add ${pendingType === 'qualified' ? 'Qualified' : pendingType === 'disqualified' ? 'Disqualified' : 'Clarity Pending'} Reason`}</div>
+                <div className="lam-modal-title">{editingId !== null ? 'Edit Reason' : `Add ${TAB_SHORT[pendingType]} Reason`}</div>
                 <div className="lam-modal-sub">{TAB_LABELS[pendingType]}</div>
               </div>
-              <button type="button" className="lam-modal-close" onClick={closeForm}><IconX /></button>
             </div>
             <div className="lam-modal-body">
-              {/* Reason */}
               <div className="lam-field">
                 <label className="lam-label">Reason <span className="lam-req">*</span></label>
                 <textarea
@@ -516,7 +627,6 @@ export default function SalesLeadAckMaster() {
                 </div>
               </div>
 
-              {/* Status + DQ */}
               <div className={`lam-form-grid ${pendingType === 'disqualified' ? 'two' : 'one'}`}>
                 <div className="lam-field">
                   <label className="lam-label">Status <span className="lam-req">*</span></label>
@@ -525,7 +635,7 @@ export default function SalesLeadAckMaster() {
                       <option value="active">Active</option>
                       <option value="inactive">Inactive</option>
                     </select>
-                    <svg className="lam-select-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5"><polyline points="6 9 12 15 18 9" /></svg>
+                    <i className="ri-arrow-down-s-line lam-select-caret" />
                   </div>
                 </div>
                 {pendingType === 'disqualified' && (
@@ -533,31 +643,27 @@ export default function SalesLeadAckMaster() {
                     <label className="lam-label">DQ Status <span className="lam-req">*</span></label>
                     <div className="lam-select-wrap">
                       <select className="lam-select" value={formDQ} onChange={e => setFormDQ(e.target.value as DQ)}>
-                        <option value="positive">↑ Positive</option>
-                        <option value="negative">↓ Negative</option>
+                        <option value="positive">Positive</option>
+                        <option value="negative">Negative</option>
                       </select>
-                      <svg className="lam-select-caret" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5"><polyline points="6 9 12 15 18 9" /></svg>
+                      <i className="ri-arrow-down-s-line lam-select-caret" />
                     </div>
                   </div>
                 )}
               </div>
 
-              {formError && <div className="lam-error">{formError}</div>}
+              {formError && <div className="lam-error"><i className="ri-error-warning-line" /> {formError}</div>}
             </div>
 
-            <div className="lam-modal-footer">
-              <div className="lam-footer-hint">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-                Fields marked <span className="lam-req">*</span> are required
-              </div>
+            <div className="lam-modal-footer lam-modal-footer-right">
               <div className="lam-footer-actions">
                 <button type="button" className="lam-btn lam-btn-light" onClick={closeForm} disabled={saving}>Cancel</button>
                 <button type="button" className="lam-btn lam-btn-primary" onClick={save} disabled={saving}>
                   {saving ? <>
-                    <span className="lam-spinner" aria-hidden="true" />
+                    <span className="lam-spinner" aria-hidden />
                     Saving…
                   </> : <>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                    <i className="ri-save-3-line" />
                     Save Reason
                   </>}
                 </button>
@@ -566,410 +672,628 @@ export default function SalesLeadAckMaster() {
           </div>
         </div>
       )}
+
+      {/* ── Mark Inactive confirmation — reuses the project's
+          destructive-confirmation modal so the styling and dark-mode
+          coverage stay consistent with Delete flows elsewhere. ── */}
+      <DeleteConfirmModal
+        open={!!inactivateTarget}
+        title="Mark Reason Inactive"
+        itemName={inactivateTarget?.reason}
+        subMessage="This reason will be hidden from the active dropdowns across the sales pipeline. You can re-activate it later from the edit screen."
+        actionVerb="Mark inactive"
+        confirmLabel="Mark Inactive"
+        confirmingLabel="Marking…"
+        confirmIcon="ri-archive-line"
+        loading={inactivating}
+        onClose={() => { if (!inactivating) setInactivateTarget(null); }}
+        onConfirm={confirmInactivate}
+      />
     </div>
   );
 }
 
-/* ─── Icons ─── */
-const IconPlus = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-);
-const IconCheckCircle = ({ large = false }: { large?: boolean }) => (
-  <svg width={large ? 18 : 11} height={large ? 18 : 11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
-);
-const IconXCircle = ({ large = false }: { large?: boolean }) => (
-  <svg width={large ? 18 : 11} height={large ? 18 : 11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
-);
-const IconInfoCircle = ({ large = false }: { large?: boolean }) => (
-  <svg width={large ? 18 : 11} height={large ? 18 : 11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-);
-const IconChevronRight = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
-);
-const IconX = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-);
-const IconEdit = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
-);
-const IconArchive = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" /></svg>
-);
+/* ─── Page-button list builder — returns the sequence to render in
+ *      the pagination strip. Compact algorithm with ellipsis when
+ *      there are too many pages to show all (always shows first,
+ *      last, and a window of ±1 around the current page). */
+function buildPageList(current: number, totalPages: number): (number | '…')[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  const pages: (number | '…')[] = [1];
+  const left  = Math.max(2, current - 1);
+  const right = Math.min(totalPages - 1, current + 1);
+  if (left > 2) pages.push('…');
+  for (let p = left; p <= right; p++) pages.push(p);
+  if (right < totalPages - 1) pages.push('…');
+  pages.push(totalPages);
+  return pages;
+}
 
-/* ─── Scoped CSS ─── */
+/* ─── Reason cell — caps the visible text at 30 chars and wraps a
+ *      Tooltip so the full reason is available on hover. Short
+ *      reasons render as plain text without the tooltip overhead. */
+const REASON_MAX_CHARS = 60;
+function ReasonCell({ text }: { text: string }) {
+  const raw = text ?? '';
+  if (raw.length <= REASON_MAX_CHARS) return <>{raw}</>;
+  return (
+    <Tooltip label={raw} maxWidth={420}>
+      <span className="lam-reason-trunc">{raw.slice(0, REASON_MAX_CHARS).trimEnd()}…</span>
+    </Tooltip>
+  );
+}
+
+/* ─── KPI tile — project-standard card pattern (mirrors the master
+ *      pages' .mp-kpi-tile). Top gradient accent strip, label + value
+ *      on the left, gradient icon square on the right. No subtext —
+ *      label and big number only, matching the rest of the masters. */
+function KpiTile({ label, value, icon, gradient, onClick }: {
+  label: string; value: number; icon: string; gradient: string; onClick?: () => void;
+}) {
+  return (
+    <button type="button" className={`lam-kpi-tile ${onClick ? 'is-clickable' : ''}`} onClick={onClick} disabled={!onClick}>
+      <span className="lam-kpi-strip-top" style={{ background: gradient }} aria-hidden />
+      <div className="lam-kpi-body">
+        <div className="lam-kpi-text">
+          <div className="lam-kpi-label">{label.toUpperCase()}</div>
+          <div className="lam-kpi-value">{value.toLocaleString()}</div>
+        </div>
+        <div className="lam-kpi-icon" style={{ background: gradient }}>
+          <i className={icon} aria-hidden />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/* ─── Scoped CSS — violet palette matching the Sales module. Every
+ *      rule lives under `.lam-*` so this surface can't leak into
+ *      sibling pages. Dark-mode coverage mirrors light-mode pixel
+ *      for pixel — every rule has a `[data-bs-theme="dark"]`
+ *      counterpart further down. */
 const SCOPED_CSS = `
 .lam-root {
-  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
-  background: #f5f3ff;
-  padding: 14px 18px 20px;
+  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  background: linear-gradient(180deg, #faf7ff 0%, #f5f3ff 100%);
+  padding: 14px 18px 22px;
   margin: -1rem -0.75rem;
   min-height: calc(100vh - 70px);
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 12px;
   color: #111827;
   font-size: 13.5px;
 }
 .lam-root *, .lam-root *::before, .lam-root *::after { box-sizing: border-box; }
 
+/* ─── No-access placeholder ─── */
 .lam-no-access {
-  background: #fff; border: 1.5px solid #e9e3ff; border-radius: 12px;
-  padding: 28px 24px; text-align: center;
-  box-shadow: 0 2px 10px rgba(124,58,237,.07);
+  background: #fff; border: 1.5px solid #e9e3ff; border-radius: 16px;
+  padding: 36px 28px; text-align: center;
+  box-shadow: 0 4px 18px rgba(124,58,237,.10);
+  max-width: 640px; margin: 24px auto;
 }
-.lam-no-access-title { font-size: 16px; font-weight: 800; color: #6d28d9; }
-.lam-no-access-sub   { font-size: 12px; color: #6b7280; margin-top: 8px; line-height: 1.55; max-width: 540px; margin-left: auto; margin-right: auto; }
+.lam-no-access-icon {
+  display: inline-flex; width: 56px; height: 56px; border-radius: 50%;
+  align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  color: #6d28d9; font-size: 26px; margin-bottom: 12px;
+}
+.lam-no-access-title { font-size: 18px; font-weight: 800; color: #4c1d95; letter-spacing: -0.01em; }
+.lam-no-access-sub   { font-size: 12.5px; color: #6b7280; margin-top: 8px; line-height: 1.65; max-width: 520px; margin-left: auto; margin-right: auto; }
 
-/* ─── Header ─── */
-.lam-header {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  background: linear-gradient(100deg, #f5f3ff 0%, #ede9fe 55%, #ddd6fe 100%);
-  border: 1px solid #c4b5fd; border-radius: 12px;
-  padding: 12px 16px 12px 20px;
-  box-shadow: 0 2px 10px rgba(139,92,246,.12);
+/* ─── HERO — soft lavender gradient strip with a violet icon tile
+   and matching dark-violet title. Brings the page identity back to
+   the Sales-module palette while keeping the layout flat (no large
+   gradient hero card, no orbs). */
+.lam-hero {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: linear-gradient(90deg, #ede9fe 0%, #f5f3ff 60%, #faf5ff 100%);
+  border: 1px solid #ddd6fe;
+  border-radius: 14px;
+  padding: 16px 20px;
+  box-shadow: 0 2px 10px rgba(124,58,237,0.06);
 }
-.lam-header-glow1 {
-  position: absolute; right: -10px; top: -10px;
-  width: 90px; height: 90px; border-radius: 50%;
-  background: rgba(139,92,246,.08); pointer-events: none;
+.lam-hero-icon {
+  width: 46px; height: 46px; border-radius: 12px;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #ffffff; font-size: 22px; flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(124,58,237,0.30);
 }
-.lam-header-glow2 {
-  position: absolute; left: 30%; bottom: -20px;
-  width: 120px; height: 120px; border-radius: 50%;
-  background: rgba(109,40,217,.05); pointer-events: none;
-}
-.lam-header-icon {
-  width: 38px; height: 38px; border-radius: 11px;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; z-index: 1;
-  box-shadow: 0 4px 12px rgba(124,58,237,.35);
+.lam-hero-text { flex: 1 1 240px; min-width: 0; }
+.lam-hero-title { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; color: #4c1d95; }
+.lam-hero-sub   { font-size: 12.5px; color: #6d28d9; margin-top: 3px; font-weight: 500; line-height: 1.4; opacity: 0.85; }
+
+.lam-hero-actions {
+  display: inline-flex; align-items: center; gap: 10px;
+  flex-shrink: 0; flex-wrap: wrap;
 }
 .lam-back-btn {
-  width: 36px; height: 36px; border-radius: 10px;
-  background: #fff;
-  border: 1.5px solid #c4b5fd;
-  color: #6d28d9;
-  cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
-  margin-right: 6px; z-index: 1;
-  box-shadow: 0 2px 6px rgba(124,58,237,.18);
-  transition: background .15s, transform .15s, box-shadow .15s, border-color .15s, color .15s;
-}
-.lam-back-btn:hover {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  border-color: transparent;
-  color: #fff;
-  transform: translateX(-2px);
-  box-shadow: 0 4px 12px rgba(124,58,237,.35);
-}
-[data-bs-theme="dark"] .lam-back-btn {
-  background: rgba(255,255,255,.12);
-  border-color: rgba(167,139,250,.45);
-  color: #e9d5ff;
-  box-shadow: 0 2px 6px rgba(0,0,0,.30);
-}
-[data-bs-theme="dark"] .lam-back-btn:hover {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(139,92,246,.45);
-}
-.lam-header-text { flex: 1 1 220px; min-width: 0; z-index: 1; }
-.lam-header-title { font-size: 15px; font-weight: 800; color: #4c1d95; letter-spacing: -.3px; line-height: 1.2; }
-.lam-header-sub   { font-size: 11px; color: #7c3aed; margin-top: 2px; font-weight: 500; opacity: .85; }
-.lam-add-btn {
-  position: relative;
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 18px; border-radius: 9px; border: none;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700;
-  cursor: pointer; flex-shrink: 0; z-index: 1; white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(124,58,237,.45), 0 0 0 0 rgba(139,92,246,.55);
-  transition: transform .15s, box-shadow .25s;
+  padding: 9px 16px; border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; flex-shrink: 0; white-space: nowrap;
+  transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease;
 }
+.lam-back-btn i { font-size: 15px; }
+.lam-back-btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+  transform: translateX(-2px);
+}
+.lam-add-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 10px 18px; border-radius: 999px; border: none;
+  background: linear-gradient(135deg, #6d28d9, #7c3aed);
+  color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; flex-shrink: 0; white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(124,58,237,.40);
+  transition: transform .18s ease, box-shadow .22s ease;
+}
+.lam-add-btn i { font-size: 15px; }
 .lam-add-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 22px rgba(124,58,237,.55), 0 0 0 4px rgba(139,92,246,.20);
-}
-[data-bs-theme="dark"] .lam-add-btn {
-  box-shadow: 0 4px 14px rgba(139,92,246,.55), 0 0 18px rgba(167,139,250,.35);
-}
-[data-bs-theme="dark"] .lam-add-btn:hover {
-  box-shadow: 0 8px 22px rgba(139,92,246,.70), 0 0 24px rgba(167,139,250,.55);
+  box-shadow: 0 8px 22px rgba(124,58,237,.55);
 }
 
-/* ─── Tabs + Search ─── */
-.lam-tabs-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+/* ─── KPI grid ─── */
+.lam-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.lam-kpi-tile {
+  position: relative;
+  background: #fff;
+  border: 1px solid rgba(124,58,237,0.14);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 10px rgba(40,18,80,0.05);
+  overflow: hidden;
+  text-align: left;
+  font: inherit; color: inherit;
+  transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease;
+}
+.lam-kpi-tile:disabled { cursor: default; }
+.lam-kpi-tile.is-clickable { cursor: pointer; }
+.lam-kpi-tile.is-clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(124,58,237,0.14), 0 4px 10px rgba(15,23,42,0.05);
+  border-color: rgba(124,58,237,0.40);
+}
+.lam-kpi-strip-top { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+.lam-kpi-body { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.lam-kpi-text { min-width: 0; flex: 1; }
+.lam-kpi-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+  color: #6b7280; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lam-kpi-value {
+  font-size: 28px; font-weight: 800; line-height: 1.05; color: #1f2937;
+  margin-top: 6px; letter-spacing: -0.01em;
+}
+.lam-kpi-icon {
+  width: 40px; height: 40px; border-radius: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 19px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.10);
+  flex-shrink: 0;
+}
+
+/* ─── Tabs + search row — segmented pill container with all three
+   tabs inside. Active tab paints as a violet gradient pill within
+   the white shell; inactive tabs stay flat with a soft count chip. */
+.lam-tabs-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .lam-tabs {
-  display: flex; align-items: center; gap: 3px; flex-wrap: wrap;
-  background: #f5f3ff; padding: 4px; border-radius: 10px; border: 1.5px solid #ddd6fe;
+  display: inline-flex; align-items: center; gap: 4px;
+  background: #ffffff;
+  border: 1px solid rgba(124,58,237,0.18);
+  border-radius: 999px;
+  padding: 4px;
+  box-shadow: 0 1px 3px rgba(40,18,80,0.05);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.lam-tabs::-webkit-scrollbar { display: none; }
 .lam-tab {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: transparent; border: none;
-  padding: 6px 14px; border-radius: 7px;
-  font-family: inherit; font-size: 12px; font-weight: 600;
-  color: #7c3aed; cursor: pointer; transition: all .15s; white-space: nowrap;
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  color: #6b7280;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
+  transition: color .18s ease, background .18s ease, box-shadow .22s ease;
 }
-.lam-tab:hover { background: rgba(124,58,237,.06); }
-.lam-tab-active {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed) !important;
-  color: #fff !important;
-  box-shadow: 0 2px 8px rgba(124,58,237,.35);
+.lam-tab-icon { font-size: 15px; opacity: 0.85; }
+.lam-tab:hover { color: #4c1d95; background: rgba(124,58,237,0.06); }
+.lam-tab.is-active {
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(79,70,229,0.40);
 }
+.lam-tab.is-active .lam-tab-icon { opacity: 1; }
+.lam-tab-count {
+  background: #f1f5f9; color: #475569;
+  font-size: 10.5px; font-weight: 800;
+  padding: 1px 8px; border-radius: 999px;
+  min-width: 22px; text-align: center;
+  transition: all .18s ease;
+}
+.lam-tab.is-active .lam-tab-count {
+  background: rgba(15,23,42,0.45);
+  color: #fff;
+}
+
+/* ─── Search bar — project-standard neutral recipe. Matches the
+   .search-box pattern used in HR Employees and master pages: white
+   card bg, slate icon/placeholder, theme-token border. Picks up the
+   violet ring only on focus. */
 .lam-search {
+  position: relative;
   display: flex; align-items: center; gap: 8px;
-  background: #fff; border: 1.5px solid #c4b5fd; border-radius: 9px;
-  padding: 8px 14px;
-  flex: 1 1 320px; max-width: 360px; min-width: 220px;
-  box-shadow: 0 1px 4px rgba(124,58,237,.06);
+  background: var(--vz-card-bg, #ffffff);
+  border: 1px solid var(--vz-border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 9px 14px;
+  flex: 1 1 320px; max-width: 380px; min-width: 220px;
+  transition: border-color .15s, box-shadow .15s;
 }
-.lam-search:hover { border-color: #a78bfa; }
-.lam-search:focus-within { border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139,92,246,.15); }
+.lam-search:hover { border-color: #cbd5e1; }
+.lam-search:focus-within { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
+.lam-search-icon { color: var(--vz-secondary-color, #6b7280); font-size: 15px; flex-shrink: 0; }
 .lam-search input {
   border: none; background: transparent; outline: none;
-  font-family: inherit; font-size: 11.5px; color: #1e293b; width: 100%;
+  font-family: inherit; font-size: 13px; color: #1e293b; width: 100%;
 }
-.lam-search input::placeholder { color: #c4b5fd; font-weight: 400; }
+.lam-search input::placeholder { color: var(--vz-secondary-color, #94a3b8); font-weight: 400; opacity: 0.75; }
+.lam-search-clear {
+  background: transparent; border: none; cursor: pointer;
+  color: #94a3b8; padding: 0; width: 20px; height: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  transition: all .15s;
+}
+.lam-search-clear:hover { background: #f1f5f9; color: #475569; }
 
 /* ─── Table card ─── */
 .lam-table-card {
-  background: #fff; border: 1.5px solid #e9e3ff; border-radius: 10px;
-  overflow: hidden; box-shadow: 0 2px 10px rgba(124,58,237,.07);
+  background: #fff;
+  border: 1px solid rgba(124,58,237,0.16);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 2px 14px rgba(40,18,80,0.07);
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
 }
 .lam-table-wrap { flex: 1; overflow: auto; }
-.lam-table { width: 100%; border-collapse: collapse; }
-.lam-table thead tr {
-  background: linear-gradient(120deg, #4c1d95 0%, #7c3aed 55%, #8b5cf6 100%);
-}
+.lam-table { width: 100%; border-collapse: separate; border-spacing: 0; }
 .lam-table thead th {
-  padding: 10px 12px; text-align: left; white-space: nowrap;
-  color: rgba(255,255,255,.92);
-  font-size: 10px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: .08em;
-}
-.lam-table thead th:first-child { padding-left: 16px; }
-.lam-table tbody tr {
-  border-bottom: 1px solid #e9e3ff;
-  background: #fff;
-  transition: background .1s;
-}
-.lam-table tbody tr:nth-child(even) { background: #f7f4ff; }
-.lam-table tbody tr:hover { background: #ede9fe; }
-.lam-table tbody tr:last-child { border-bottom: none; }
-.lam-table tbody td {
-  padding: 10px 12px; font-size: 11.5px; vertical-align: middle;
+  position: sticky; top: 0; z-index: 3;
+  padding: 14px 14px; text-align: left; white-space: nowrap;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 13px; font-weight: 700;
   color: #334155;
+}
+.lam-table thead th:first-child { padding-left: 18px; }
+.lam-table tbody tr { transition: background .12s ease; }
+.lam-table tbody tr:nth-child(even) td { background: #faf7ff; }
+.lam-table tbody tr:hover td { background: #ede9fe !important; }
+.lam-table tbody td {
+  padding: 12px 14px;
+  font-size: 12.5px;
+  color: #334155;
+  border-bottom: 1px solid #f5f3ff;
+  vertical-align: middle;
   word-wrap: break-word;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
-.lam-table tbody td:first-child { padding-left: 16px; }
-.lam-td-reason {
-  font-weight: 500; color: #334155; line-height: 1.5;
-  white-space: normal;
-  word-wrap: break-word;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+.lam-table tbody td:first-child { padding-left: 18px; }
+.lam-table tbody tr:last-child td { border-bottom: none; }
+.lam-td-reason { font-weight: 500; color: #1f2937; line-height: 1.55; white-space: normal; }
+.lam-reason-trunc {
+  display: inline-block; max-width: 100%;
+  cursor: help;
 }
-.lam-empty { text-align: center; padding: 32px !important; color: #94a3b8; font-style: italic; }
-
-.lam-sr-pill {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px; border-radius: 7px;
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  color: #7c3aed; font-size: 10px; font-weight: 800;
-  border: 1px solid #c4b5fd;
+.lam-empty {
+  text-align: center; padding: 38px 16px !important;
+  color: #94a3b8; font-style: italic; font-size: 13px;
+}
+.lam-empty-icon {
+  display: inline-flex; width: 42px; height: 42px; border-radius: 50%;
+  align-items: center; justify-content: center;
+  background: #f5f3ff; color: #a78bfa; font-size: 22px;
+  margin-bottom: 8px;
+}
+.lam-empty .lam-spinner-violet {
+  display: inline-block; width: 14px; height: 14px; margin-right: 8px;
+  border: 2px solid #ddd6fe; border-top-color: #7c3aed; border-radius: 50%;
+  vertical-align: -3px;
+  animation: lam-spin .7s linear infinite;
 }
 
-/* Badges */
+.lam-td-sr { font-weight: 700; color: #1e293b; }
+
+/* Status badges — flat pill, no dot. Matches the project-wide
+   master pages where the dot indicator was dropped per UX request. */
 .lam-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  border-radius: 20px; padding: 3px 9px;
-  font-size: 10.5px; font-weight: 700;
+  display: inline-block;
+  border-radius: 999px; padding: 3px 12px;
+  font-size: 11.5px; font-weight: 700;
+  line-height: 1.3; white-space: nowrap;
 }
-.lam-active   { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
-.lam-inactive { background: #e2e8f0; color: #475569; border: 1px solid #cbd5e1; }
-.lam-positive { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
-.lam-negative { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
-.lam-dot { width: 5px; height: 5px; border-radius: 50%; }
+.lam-active   { background: #dcfce7; color: #15803d; }
+.lam-inactive { background: #fee2e2; color: #b91c1c; }
+.lam-positive { background: #dbeafe; color: #1e40af; }
+.lam-negative { background: #fee2e2; color: #b91c1c; }
+.lam-badge.lam-positive,
+.lam-badge.lam-negative { display: inline-flex; align-items: center; gap: 4px; }
+.lam-badge i { font-size: 12px; }
 
-.lam-actions { display: flex; gap: 4px; justify-content: center; }
+/* Action buttons — project-standard recipe (mirrors MasterPage's
+   ActionBtn). Neutral 30×30 chip using theme tokens; on hover the
+   border + text + bg tint to the action color (primary/danger/info).
+   Theme tokens auto-adapt to dark mode so we don't need a separate
+   override block. */
+.lam-actions { display: inline-flex; gap: 4px; justify-content: center; }
 .lam-ab {
-  width: 26px; height: 26px; border-radius: 7px;
+  width: 30px; height: 30px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
-  border: none; cursor: pointer; transition: all .15s;
+  background: var(--vz-secondary-bg);
+  border: 1px solid var(--vz-border-color);
+  color: var(--vz-secondary-color);
+  cursor: pointer;
+  font-size: 14px; padding: 0;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
-.lam-edit { background: #eef2ff; color: #6366f1; }
-.lam-edit:hover { background: #6366f1; color: #fff; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(99,102,241,.30); }
-.lam-archive  { background: #fef3c7; color: #b45309; }
-.lam-archive:hover:not([aria-disabled="true"])  { background: #d97706; color: #fff; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(217,119,6,.32); }
-.lam-ab[aria-disabled="true"] { cursor: not-allowed; }
-.lam-ab-muted { opacity: .50; background: #f1f5f9 !important; color: #94a3b8 !important; }
-.lam-ab-muted:hover { transform: none !important; box-shadow: none !important; background: #f1f5f9 !important; color: #94a3b8 !important; }
+.lam-edit:hover:not([aria-disabled="true"]) {
+  background: rgba(41,156,219,0.10);
+  border-color: var(--vz-info, #299cdb);
+  color: var(--vz-info, #299cdb);
+}
+.lam-archive:hover:not([aria-disabled="true"]) {
+  background: rgba(240,101,72,0.10);
+  border-color: var(--vz-danger, #f06548);
+  color: var(--vz-danger, #f06548);
+}
+.lam-ab[aria-disabled="true"] {
+  opacity: 0.55; cursor: not-allowed;
+}
+.lam-ab-muted {
+  opacity: 0.55;
+}
+.lam-ab-muted:hover { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); color: var(--vz-secondary-color); }
 
-/* ─── Pagination ─── */
+/* ─── Pagination — project-standard footer. Plain "Showing N of M
+   Results" on the left, numbered page chips (active = violet
+   gradient) with prev/next arrows on the right. No rows-per-page
+   selector; the rpp state stays in the component at the default 10. */
 .lam-pagination {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 9px 16px; border-top: 2px solid #ede9fe;
-  background: linear-gradient(90deg, #faf5ff, #f5f3ff);
-  flex-wrap: wrap; gap: 8px;
+  padding: 12px 18px;
+  background: #fff;
+  border-top: 1px solid #ede9fe;
+  flex-wrap: wrap; gap: 10px;
 }
 .lam-pag-info {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11.5px; font-weight: 500; color: #6d28d9;
-  background: #fff; border: 1.5px solid #ddd6fe;
-  padding: 4px 13px; border-radius: 20px;
-  box-shadow: 0 1px 4px rgba(139,92,246,.08);
+  font-size: 12.5px; font-weight: 500; color: #475569;
 }
-.lam-pag-info strong { color: #7c3aed; font-weight: 800; }
-.lam-pag-right { display: flex; align-items: center; gap: 8px; }
-.lam-rpp {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 11.5px; color: #6d28d9; font-weight: 500;
-  background: #fff; border: 1.5px solid #ddd6fe;
-  padding: 3px 12px; border-radius: 20px;
+.lam-pag-info strong { color: #1f2937; font-weight: 800; }
+.lam-pag-btns { display: inline-flex; align-items: center; gap: 6px; }
+.lam-pag-btn,
+.lam-pag-num {
+  min-width: 30px; height: 30px; padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--vz-border-color, #e2e8f0);
+  background: #fff;
+  cursor: pointer;
+  color: #475569; font-size: 13px; font-weight: 600;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+  font-family: inherit;
 }
-.lam-rpp select {
-  border: none; background: transparent;
-  font-family: inherit; font-size: 11.5px; color: #7c3aed; font-weight: 700;
-  cursor: pointer; outline: none;
+.lam-pag-btn { color: #6b7280; font-size: 16px; }
+.lam-pag-btn:hover:not(:disabled),
+.lam-pag-num:hover:not(.is-active) {
+  background: #f5f3ff;
+  border-color: #c4b5fd;
+  color: #6d28d9;
 }
-.lam-pag-range {
-  font-size: 11.5px; font-weight: 700; color: #0f172a;
-  background: linear-gradient(135deg, #ede9fe, #f5f3ff);
-  border: 1.5px solid #c4b5fd;
-  padding: 4px 14px; border-radius: 20px; white-space: nowrap;
+.lam-pag-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.lam-pag-num.is-active {
+  background: linear-gradient(135deg, #6d28d9, #7c3aed);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 3px 10px rgba(124,58,237,0.32);
+  cursor: default;
 }
-.lam-pag-btns { display: flex; gap: 4px; }
-.lam-pag-btn {
-  width: 30px; height: 30px; border-radius: 50%;
-  border: 1.5px solid #ddd6fe; background: #fff;
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  color: #7c3aed; transition: all .2s;
+.lam-pag-gap {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; color: #94a3b8; font-size: 13px; font-weight: 700;
+  user-select: none;
 }
-.lam-pag-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed) !important;
-  color: #fff !important; border-color: transparent !important;
-}
-.lam-pag-btn:disabled { opacity: .4; cursor: default; }
 
-/* ─── Modals ─── */
+/* ─── Modals (opp selector + form) — overlay scrolls when the
+   modal body taller than the viewport (long forms on small
+   screens) so the user can always reach the footer Cancel/Save.
+   Padding adds safe-area on every edge; flex centring keeps the
+   card aligned to viewport center on every screen size. */
 .lam-overlay {
   position: fixed; inset: 0;
-  background: rgba(15,23,42,.55); backdrop-filter: blur(6px);
+  background: rgba(15,23,42,0.55);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   z-index: 9200;
   display: flex; align-items: center; justify-content: center;
   padding: 20px;
-  animation: lam-fade-in .20s ease;
+  overflow-y: auto;
+  animation: lam-fade .20s ease;
 }
-@keyframes lam-fade-in { from { opacity: 0; } to { opacity: 1; } }
+/* Stronger dim variant — used for the Add/Edit form so the modal
+   pops cleanly off the page (the lighter default suits the
+   opp-type picker which is more "menu" than "form"). */
+.lam-overlay-strong { background: rgba(15,23,42,0.72); }
+@keyframes lam-fade { from { opacity: 0; } to { opacity: 1; } }
 .lam-modal {
-  background: #fff; border-radius: 16px; overflow: hidden;
-  box-shadow: 0 4px 24px rgba(124,58,237,.18), 0 24px 60px rgba(15,23,42,.16);
+  background: #fff; border-radius: 18px; overflow: hidden;
+  box-shadow:
+    0 28px 70px rgba(15,23,42,0.45),
+    0 10px 26px rgba(76,29,149,0.22),
+    0 0 0 1px rgba(255,255,255,0.06);
   display: flex; flex-direction: column;
-  max-height: 90vh;
+  max-height: calc(100vh - 40px);
+  margin: auto;
+  animation: lam-pop .22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.lam-modal-md { width: min(92vw, 440px); }
-.lam-modal-lg { width: min(92vw, 500px); }
+@keyframes lam-pop {
+  0%   { opacity: 0; transform: scale(0.94) translateY(8px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.lam-modal-md { width: min(92vw, 460px); }
+.lam-modal-lg { width: min(94vw, 580px); }
 .lam-modal-header {
   position: relative; overflow: hidden;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 60%, #6d28d9 100%);
+  background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 50%, #7c3aed 100%);
   padding: 20px 22px;
-  display: flex; align-items: center; gap: 13px;
+  display: flex; align-items: center; gap: 14px;
   flex-shrink: 0;
 }
 .lam-modal-header::before {
   content: ''; position: absolute; inset: 0;
-  background-image: radial-gradient(circle, rgba(255,255,255,.08) 1px, transparent 0);
+  background-image: radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px);
   background-size: 18px 18px; pointer-events: none;
 }
-.lam-modal-hicon {
-  position: relative; z-index: 1;
-  width: 42px; height: 42px; border-radius: 12px;
-  background: rgba(255,255,255,.18); border: 1.5px solid rgba(255,255,255,.30);
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; box-shadow: 0 4px 12px rgba(0,0,0,.12);
+
+/* ── Rich header variant — layered radial glows + diagonal sheen
+   (same recipe as the project's MasterPage modal). Applied to the
+   Add/Edit form modal so it reads as a real material with depth,
+   not a flat purple band. ── */
+.lam-modal-header-rich {
+  background:
+    linear-gradient(135deg, #2b1d6b 0%, #4c1d95 28%, #6d28d9 55%, #7c3aed 78%, #a78bfa 100%);
+  padding: 24px 24px;
 }
-.lam-modal-htext { flex: 1; min-width: 0; padding-right: 36px; position: relative; z-index: 1; }
-.lam-modal-title { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -.3px; position: relative; z-index: 1; }
-.lam-modal-sub   { font-size: 11px; color: rgba(255,255,255,.75); margin-top: 3px; position: relative; z-index: 1; }
+.lam-mh-orb {
+  position: absolute; border-radius: 50%;
+  pointer-events: none;
+}
+.lam-mh-orb-tr {
+  top: -50px; right: -30px; width: 200px; height: 200px;
+  background: radial-gradient(circle, rgba(255,255,255,0.28) 0%, rgba(167,139,250,0.18) 35%, transparent 70%);
+}
+.lam-mh-orb-br {
+  bottom: -60px; right: 80px; width: 180px; height: 180px;
+  background: radial-gradient(circle, rgba(196,181,253,0.45) 0%, transparent 70%);
+}
+.lam-mh-orb-bl {
+  bottom: -50px; left: -30px; width: 160px; height: 160px;
+  background: radial-gradient(circle, rgba(139,111,232,0.36) 0%, transparent 70%);
+}
+.lam-mh-sheen {
+  position: absolute; inset: 0;
+  background: linear-gradient(115deg, rgba(255,255,255,0.10) 0%, transparent 35%, transparent 65%, rgba(0,0,0,0.10) 100%);
+  pointer-events: none;
+}
+.lam-modal-hicon {
+  position: relative; z-index: 2;
+  width: 44px; height: 44px; border-radius: 12px;
+  background: rgba(255,255,255,0.18);
+  border: 1.5px solid rgba(255,255,255,0.30);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 22px; flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.22);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.lam-modal-htext { flex: 1; min-width: 0; padding-right: 40px; position: relative; z-index: 2; }
+/* When the modal is rendered without a top-right X (lam-modal-noclose),
+   drop the reserved padding so the title block breathes evenly across
+   the header instead of looking left-shifted. */
+.lam-modal-noclose .lam-modal-htext { padding-right: 0; }
+.lam-modal-title { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -0.01em; }
+.lam-modal-sub   { font-size: 12px; color: rgba(255,255,255,0.82); margin-top: 4px; }
 .lam-modal-close {
-  position: absolute; right: 22px; top: 50%; transform: translateY(-50%);
+  position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
   z-index: 2;
-  width: 30px; height: 30px; border-radius: 8px;
-  background: rgba(255,255,255,.18); color: #fff; border: 1px solid rgba(255,255,255,.20);
+  width: 30px; height: 30px; border-radius: 50%;
+  background: rgba(255,255,255,0.18); color: #fff;
+  border: 1px solid rgba(255,255,255,0.24);
   cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background .15s, transform .15s, box-shadow .15s, border-color .15s;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  transition: all .18s ease;
 }
 .lam-modal-close:hover {
-  background: rgba(244,63,94,.85);
-  border-color: rgba(255,255,255,.40);
-  transform: translateY(-50%) rotate(90deg) scale(1.06);
-  box-shadow: 0 4px 12px rgba(0,0,0,.25);
+  background: rgba(244,63,94,0.85);
+  border-color: rgba(255,255,255,0.40);
+  transform: translateY(-50%) rotate(90deg);
 }
 
-.lam-modal-body { padding: 22px 22px 16px; background: #f8f7ff; overflow-y: auto; flex: 1; }
-.lam-modal-helper { font-size: 12px; color: #64748b; margin-bottom: 16px; line-height: 1.7; }
+.lam-modal-body { padding: 24px 24px 20px; background: #faf7ff; overflow-y: auto; flex: 1; }
+.lam-modal-helper { font-size: 12.5px; color: #6b7280; margin-bottom: 14px; line-height: 1.6; }
 
 /* Opportunity-type selector buttons */
-.lam-opp-options { display: flex; flex-direction: column; gap: 14px; }
+.lam-opp-options { display: flex; flex-direction: column; gap: 12px; }
 .lam-opp {
-  display: flex; align-items: center; gap: 13px;
-  padding: 16px 18px; border-radius: 12px;
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; border-radius: 14px;
   cursor: pointer; text-align: left; width: 100%;
   font-family: inherit;
-  box-shadow: 0 2px 6px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
-  transition: transform .18s ease, background .18s ease, box-shadow .18s ease, border-color .18s ease;
+  border: 1.5px solid;
+  background: #fff;
+  transition: transform .18s ease, box-shadow .22s ease, border-color .18s ease, background .18s ease;
+  box-shadow: 0 2px 8px rgba(15,23,42,0.06);
 }
-.lam-opp:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(124,58,237,.22), 0 2px 4px rgba(15,23,42,.06); }
+.lam-opp:hover { transform: translateY(-2px); }
 .lam-opp:active { transform: translateY(0); }
-[data-bs-theme="dark"] .lam-opp {
-  box-shadow: 0 3px 10px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.30);
-}
-[data-bs-theme="dark"] .lam-opp:hover {
-  box-shadow: 0 10px 24px rgba(0,0,0,.55), 0 0 0 1px rgba(167,139,250,.20);
-}
 .lam-opp-icon {
-  width: 40px; height: 40px; border-radius: 11px;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; border: 1.5px solid;
+  width: 42px; height: 42px; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 22px; flex-shrink: 0;
+  border: 1.5px solid;
 }
 .lam-opp-text { flex: 1; min-width: 0; }
-.lam-opp-title { font-size: 13px; font-weight: 700; line-height: 1.3; }
-.lam-opp-sub   { font-size: 11px; margin-top: 3px; font-weight: 500; }
+.lam-opp-title { font-size: 13.5px; font-weight: 800; line-height: 1.25; }
+.lam-opp-sub   { font-size: 11.5px; margin-top: 3px; font-weight: 500; }
+.lam-opp-chev  { font-size: 18px; opacity: 0.65; transition: transform .18s ease; }
+.lam-opp:hover .lam-opp-chev { transform: translateX(3px); opacity: 1; }
 
-.lam-opp-qualified    { background: #f0fdf4; border: 1.5px solid #86efac; }
-.lam-opp-qualified:hover { background: #dcfce7; border-color: #4ade80; box-shadow: 0 8px 18px rgba(34,197,94,.22); }
+.lam-opp-qualified    { background: #f0fdf4; border-color: #86efac; }
+.lam-opp-qualified:hover { background: #dcfce7; border-color: #4ade80; box-shadow: 0 10px 22px rgba(34,197,94,.20); }
 .lam-opp-qualified .lam-opp-icon { background: #dcfce7; border-color: #bbf7d0; color: #16a34a; }
-.lam-opp-qualified .lam-opp-title { color: #15803d; }
-.lam-opp-qualified .lam-opp-sub   { color: #4ade80; }
-.lam-opp-qualified > svg { stroke: #15803d; }
+.lam-opp-qualified .lam-opp-title,
+.lam-opp-qualified .lam-opp-chev { color: #15803d; }
+.lam-opp-qualified .lam-opp-sub  { color: #16a34a; }
 
-.lam-opp-disqualified    { background: #fff7ed; border: 1.5px solid #fdba74; }
-.lam-opp-disqualified:hover { background: #ffedd5; border-color: #fb923c; box-shadow: 0 8px 18px rgba(234,88,12,.22); }
+.lam-opp-disqualified    { background: #fff7ed; border-color: #fdba74; }
+.lam-opp-disqualified:hover { background: #ffedd5; border-color: #fb923c; box-shadow: 0 10px 22px rgba(234,88,12,.20); }
 .lam-opp-disqualified .lam-opp-icon { background: #ffedd5; border-color: #fed7aa; color: #ea580c; }
-.lam-opp-disqualified .lam-opp-title { color: #c2410c; }
-.lam-opp-disqualified .lam-opp-sub   { color: #fb923c; }
-.lam-opp-disqualified > svg { stroke: #c2410c; }
+.lam-opp-disqualified .lam-opp-title,
+.lam-opp-disqualified .lam-opp-chev { color: #c2410c; }
+.lam-opp-disqualified .lam-opp-sub  { color: #ea580c; }
 
-.lam-opp-clarity    { background: #eff6ff; border: 1.5px solid #93c5fd; }
-.lam-opp-clarity:hover { background: #dbeafe; border-color: #60a5fa; box-shadow: 0 8px 18px rgba(37,99,235,.22); }
+.lam-opp-clarity    { background: #eff6ff; border-color: #93c5fd; }
+.lam-opp-clarity:hover { background: #dbeafe; border-color: #60a5fa; box-shadow: 0 10px 22px rgba(37,99,235,.20); }
 .lam-opp-clarity .lam-opp-icon { background: #dbeafe; border-color: #bfdbfe; color: #2563eb; }
-.lam-opp-clarity .lam-opp-title { color: #1d4ed8; }
-.lam-opp-clarity .lam-opp-sub   { color: #60a5fa; }
-.lam-opp-clarity > svg { stroke: #1d4ed8; }
+.lam-opp-clarity .lam-opp-title,
+.lam-opp-clarity .lam-opp-chev { color: #1d4ed8; }
+.lam-opp-clarity .lam-opp-sub  { color: #2563eb; }
 
 /* Form fields */
 .lam-field { display: flex; flex-direction: column; }
 .lam-field + .lam-field { margin-top: 14px; }
 .lam-label {
   display: block;
-  font-size: 10px; font-weight: 800; color: #7c3aed;
-  letter-spacing: .08em; text-transform: uppercase;
+  font-size: 10px; font-weight: 800; color: #6d28d9;
+  letter-spacing: 0.08em; text-transform: uppercase;
   margin-bottom: 7px;
 }
 .lam-req { color: #e11d48; }
@@ -979,243 +1303,311 @@ const SCOPED_CSS = `
   padding: 11px 13px;
   font-family: inherit; font-size: 12.5px; color: #1e293b;
   background: #fff; outline: none; resize: vertical;
-  min-height: 90px; line-height: 1.6;
+  min-height: 92px; line-height: 1.55;
   transition: border-color .15s, box-shadow .15s;
 }
-.lam-textarea:focus { border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139,92,246,.12); }
-.lam-char-count { font-size: 10.5px; color: #94a3b8; text-align: right; margin-top: 3px; transition: color .15s; }
-.lam-char-max   { color: #ddd6fe; }
+.lam-textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 4px rgba(124,58,237,.15); }
+.lam-textarea::placeholder { color: #a78bfa; font-weight: 500; }
+.lam-char-count { font-size: 10.5px; color: #94a3b8; text-align: right; margin-top: 4px; transition: color .15s; }
+.lam-char-max   { color: #c4b5fd; }
 .lam-cc-warn    { color: #ea580c; font-weight: 700; }
 .lam-cc-warn .lam-char-max { color: #fdba74; }
 .lam-cc-max     { color: #dc2626; font-weight: 800; }
 .lam-cc-max .lam-char-max  { color: #f87171; }
+
 .lam-form-grid { display: grid; gap: 14px; margin-top: 14px; }
 .lam-form-grid.one { grid-template-columns: 1fr; }
 .lam-form-grid.two { grid-template-columns: 1fr 1fr; }
 .lam-select-wrap { position: relative; }
 .lam-select {
   width: 100%; box-sizing: border-box;
-  border: 1.5px solid #ddd6fe; border-radius: 9px;
-  padding: 9px 32px 9px 12px;
+  border: 1.5px solid #ddd6fe; border-radius: 10px;
+  padding: 10px 32px 10px 13px;
   font-family: inherit; font-size: 12.5px; color: #334155;
   background: #fff; outline: none; cursor: pointer;
   appearance: none; -webkit-appearance: none;
-  transition: border-color .15s;
+  transition: border-color .15s, box-shadow .15s;
 }
-.lam-select:focus { border-color: #8b5cf6; }
+.lam-select:focus { border-color: #7c3aed; box-shadow: 0 0 0 4px rgba(124,58,237,.15); }
 .lam-select-caret {
-  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-  pointer-events: none;
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  pointer-events: none; color: #7c3aed; font-size: 16px;
 }
-.lam-error { font-size: 11.5px; color: #e11d48; margin-top: 10px; font-weight: 600; }
+.lam-error {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: #b91c1c; margin-top: 12px; font-weight: 600;
+  background: #fee2e2; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid rgba(239,68,68,0.30);
+}
+.lam-error i { font-size: 14px; }
 
 .lam-modal-footer {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 22px; border-top: 1.5px solid #ede9fe;
-  background: #fff; flex-shrink: 0;
+  padding: 16px 24px;
+  background: #fff;
+  border-top: 1px solid #ede9fe;
+  flex-shrink: 0;
 }
-.lam-footer-hint {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 11px; color: #94a3b8;
-}
+/* Drop-in variant for footers that only contain the action group —
+   actions hug the right edge instead of being justified to both sides. */
+.lam-modal-footer-right { justify-content: flex-end; }
 .lam-footer-actions { display: flex; gap: 8px; }
 .lam-btn {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 20px; border-radius: 8px;
+  padding: 9px 18px; border-radius: 10px;
   font-family: inherit; font-size: 12.5px; font-weight: 700;
-  cursor: pointer; transition: all .15s;
+  cursor: pointer;
   border: 1.5px solid transparent;
+  transition: all .18s ease;
 }
-.lam-btn-light {
-  background: #fff; color: #64748b; border-color: #e2e8f0;
-}
+.lam-btn i { font-size: 14px; }
+.lam-btn-light { background: #fff; color: #6d28d9; border-color: #ddd6fe; }
 .lam-btn-light:hover:not(:disabled) {
-  background: #f5f3ff;
-  border-color: #c4b5fd;
-  color: #6d28d9;
-  transform: translateY(-1px);
-  box-shadow: 0 3px 10px rgba(139,92,246,.18);
+  background: #f5f3ff; border-color: #c4b5fd;
+  transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.18);
 }
 .lam-btn-primary {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; border: none;
-  box-shadow: 0 3px 10px rgba(139,92,246,.40);
+  background: linear-gradient(135deg, #6d28d9, #7c3aed); color: #fff;
+  border: none;
+  box-shadow: 0 4px 14px rgba(124,58,237,.40);
 }
-.lam-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 5px 16px rgba(139,92,246,.50); }
-.lam-btn:disabled { opacity: .85; cursor: not-allowed; }
-.lam-btn-primary:disabled { opacity: 1; box-shadow: 0 3px 10px rgba(139,92,246,.30); }
+.lam-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(124,58,237,.50);
+}
+.lam-btn:disabled { opacity: 0.65; cursor: not-allowed; }
 .lam-spinner {
   width: 13px; height: 13px; border-radius: 50%;
-  border: 2px solid rgba(255,255,255,.35);
-  border-top-color: #fff;
-  animation: lam-spin .7s linear infinite;
+  border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff;
   display: inline-block;
+  animation: lam-spin .7s linear infinite;
 }
 @keyframes lam-spin { to { transform: rotate(360deg); } }
 
-/* ─── Dark mode ─── */
-[data-bs-theme="dark"] .lam-root { background: #14101d; color: #d4d1de; }
+/* ─── DARK MODE ─── */
+[data-bs-theme="dark"] .lam-root { background: linear-gradient(180deg, #14101d 0%, #1a1530 100%); color: #d4d1de; }
+
 [data-bs-theme="dark"] .lam-no-access {
   background: #1a1530; border-color: rgba(167,139,250,.30);
-  box-shadow: 0 2px 10px rgba(0,0,0,.40);
+  box-shadow: 0 4px 18px rgba(0,0,0,.40);
 }
-[data-bs-theme="dark"] .lam-no-access-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-no-access-icon { background: rgba(124,58,237,.18); color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-no-access-title { color: #ede9fe; }
 [data-bs-theme="dark"] .lam-no-access-sub   { color: #9aa0b4; }
-[data-bs-theme="dark"] .lam-header {
-  background: linear-gradient(100deg, #1c1432 0%, #221839 55%, #2a1d49 100%);
-  border-color: rgba(167,139,250,.30);
-}
-[data-bs-theme="dark"] .lam-header-title { color: #e9d5ff; }
-[data-bs-theme="dark"] .lam-header-sub   { color: #c4b5fd; }
 
-[data-bs-theme="dark"] .lam-tabs   { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.25); }
-[data-bs-theme="dark"] .lam-tab    { color: #c4b5fd; }
-[data-bs-theme="dark"] .lam-tab:hover { background: rgba(167,139,250,.10); }
-[data-bs-theme="dark"] .lam-search { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.25); }
-[data-bs-theme="dark"] .lam-search input        { color: #e9d5ff; }
-[data-bs-theme="dark"] .lam-search input::placeholder { color: #7a6b9a; }
+[data-bs-theme="dark"] .lam-hero {
+  background: linear-gradient(90deg, rgba(124,58,237,0.18) 0%, rgba(76,29,149,0.14) 60%, rgba(26,21,48,0.30) 100%);
+  border-color: rgba(167,139,250,.28);
+  box-shadow: 0 4px 14px rgba(0,0,0,.30);
+}
+[data-bs-theme="dark"] .lam-hero-icon { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+[data-bs-theme="dark"] .lam-hero-title { color: #ede9fe; }
+[data-bs-theme="dark"] .lam-hero-sub   { color: #c4b5fd; opacity: 1; }
+[data-bs-theme="dark"] .lam-back-btn {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(167,139,250,.28);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .lam-back-btn:hover {
+  background: rgba(167,139,250,.10);
+  border-color: rgba(167,139,250,.50);
+  color: #ede9fe;
+}
+
+[data-bs-theme="dark"] .lam-kpi-tile {
+  background: #1a1530; border-color: rgba(167,139,250,.28);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.30);
+}
+[data-bs-theme="dark"] .lam-kpi-tile.is-clickable:hover {
+  border-color: rgba(167,139,250,.55);
+  box-shadow: 0 14px 32px rgba(0,0,0,0.50), 0 4px 10px rgba(0,0,0,0.30);
+}
+[data-bs-theme="dark"] .lam-kpi-label { color: #9aa0b4; }
+[data-bs-theme="dark"] .lam-kpi-value { color: #ede9fe; }
+
+[data-bs-theme="dark"] .lam-tabs {
+  background: #1a1530;
+  border-color: rgba(167,139,250,.22);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.30);
+}
+[data-bs-theme="dark"] .lam-tab {
+  background: transparent;
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .lam-tab:hover { color: #ede9fe; background: rgba(167,139,250,.10); }
+[data-bs-theme="dark"] .lam-tab.is-active { background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); color: #fff; }
+[data-bs-theme="dark"] .lam-tab-count { background: rgba(255,255,255,.06); color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-tab.is-active .lam-tab-count { background: rgba(0,0,0,.32); color: #fff; }
+
+[data-bs-theme="dark"] .lam-search:hover { border-color: rgba(167,139,250,0.40); }
+[data-bs-theme="dark"] .lam-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
+[data-bs-theme="dark"] .lam-search input { color: #e6e8ec; }
+[data-bs-theme="dark"] .lam-search input::placeholder { color: #b0b4bd; opacity: 1; }
+[data-bs-theme="dark"] .lam-search-icon { color: #b0b4bd; }
+[data-bs-theme="dark"] .lam-search-clear:hover { background: rgba(255,255,255,0.06); color: #ede9fe; }
 
 [data-bs-theme="dark"] .lam-table-card {
   background: #1a1530; border-color: rgba(167,139,250,.25);
   box-shadow: 0 8px 32px rgba(0,0,0,.45);
 }
-[data-bs-theme="dark"] .lam-table thead tr {
-  background: linear-gradient(120deg, #4c2d8a 0%, #5b21b6 55%, #6d28d9 100%);
+[data-bs-theme="dark"] .lam-table thead th {
+  background: rgba(255,255,255,0.05);
+  color: #ede9fe;
+  border-bottom-color: rgba(167,139,250,.25);
 }
-[data-bs-theme="dark"] .lam-table tbody tr           { background: #1a1530; border-bottom-color: rgba(167,139,250,.15); }
-[data-bs-theme="dark"] .lam-table tbody tr:nth-child(even) { background: rgba(28,20,50,.50); }
-[data-bs-theme="dark"] .lam-table tbody tr:hover     { background: rgba(76,45,138,.25); }
-[data-bs-theme="dark"] .lam-table tbody td           { color: #d4d1de; }
-[data-bs-theme="dark"] .lam-td-reason                { color: #e9d5ff; }
-[data-bs-theme="dark"] .lam-sr-pill {
-  background: linear-gradient(135deg, rgba(76,45,138,.40), rgba(45,27,86,.50));
-  color: #c4b5fd; border-color: rgba(167,139,250,.40);
-}
-[data-bs-theme="dark"] .lam-active   { background: rgba(34,197,94,.25); color: #4ade80; border-color: rgba(34,197,94,.55); }
-[data-bs-theme="dark"] .lam-inactive { background: rgba(148,163,184,.28); color: #e2e8f0; border-color: rgba(148,163,184,.50); }
-[data-bs-theme="dark"] .lam-positive { background: rgba(59,130,246,.28); color: #bfdbfe; border-color: rgba(59,130,246,.55); }
-[data-bs-theme="dark"] .lam-negative { background: rgba(239,68,68,.25); color: #fecaca; border-color: rgba(239,68,68,.55); }
-[data-bs-theme="dark"] .lam-empty    { color: #7a6b9a; }
-[data-bs-theme="dark"] .lam-edit     { background: rgba(99,102,241,.18); color: #a5b4fc; }
-[data-bs-theme="dark"] .lam-archive  { background: rgba(217,119,6,.20); color: #fcd34d; }
+[data-bs-theme="dark"] .lam-table tbody td { color: #d4d1de; border-bottom-color: rgba(167,139,250,.10); }
+[data-bs-theme="dark"] .lam-table tbody tr:nth-child(even) td { background: rgba(28,20,50,0.50); }
+[data-bs-theme="dark"] .lam-table tbody tr:hover td { background: rgba(124,58,237,.10) !important; }
+[data-bs-theme="dark"] .lam-td-sr     { color: #ede9fe; }
+[data-bs-theme="dark"] .lam-td-reason { color: #ede9fe; }
+[data-bs-theme="dark"] .lam-empty { color: #7a6b9a; }
+[data-bs-theme="dark"] .lam-empty-icon { background: rgba(124,58,237,.16); color: #a78bfa; }
+
+/* Dark-mode status pills — softer tints so they don't burn out on
+   the deep purple table. Action buttons (.lam-ab) already auto-adapt
+   via the vz-* CSS variables; no override needed. */
+[data-bs-theme="dark"] .lam-active   { background: rgba(34,197,94,.20);  color: #86efac; }
+[data-bs-theme="dark"] .lam-inactive { background: rgba(239,68,68,.20);  color: #fca5a5; }
+[data-bs-theme="dark"] .lam-positive { background: rgba(59,130,246,.22); color: #93c5fd; }
+[data-bs-theme="dark"] .lam-negative { background: rgba(239,68,68,.20);  color: #fca5a5; }
+
 [data-bs-theme="dark"] .lam-pagination {
-  background: linear-gradient(90deg, #14101d, #1a1530);
+  background: #1a1530;
   border-top-color: rgba(167,139,250,.20);
 }
-[data-bs-theme="dark"] .lam-pag-info,
-[data-bs-theme="dark"] .lam-rpp {
-  background: rgba(255,255,255,.04);
-  border-color: rgba(167,139,250,.25);
+[data-bs-theme="dark"] .lam-pag-info { color: #9aa0b4; }
+[data-bs-theme="dark"] .lam-pag-info strong { color: #ede9fe; }
+[data-bs-theme="dark"] .lam-select option { background: #1a1530; color: #ede9fe; }
+[data-bs-theme="dark"] .lam-pag-btn,
+[data-bs-theme="dark"] .lam-pag-num {
+  background: rgba(255,255,255,.03);
+  border-color: rgba(167,139,250,.28);
   color: #c4b5fd;
 }
-[data-bs-theme="dark"] .lam-rpp select        { color: #e9d5ff; }
-[data-bs-theme="dark"] .lam-rpp select option,
-[data-bs-theme="dark"] .lam-select option {
-  background: #1a1530;
-  color: #e9d5ff;
+[data-bs-theme="dark"] .lam-pag-btn:hover:not(:disabled),
+[data-bs-theme="dark"] .lam-pag-num:hover:not(.is-active) {
+  background: rgba(124,58,237,.14);
+  border-color: rgba(167,139,250,.50);
+  color: #ede9fe;
 }
-[data-bs-theme="dark"] .lam-pag-info strong   { color: #e9d5ff; }
-[data-bs-theme="dark"] .lam-pag-range {
-  background: linear-gradient(135deg, rgba(76,45,138,.40), rgba(45,27,86,.55));
-  border-color: rgba(167,139,250,.35);
-  color: #e9d5ff;
+[data-bs-theme="dark"] .lam-pag-num.is-active {
+  background: linear-gradient(135deg, #6d28d9, #7c3aed);
+  color: #fff; border-color: transparent;
 }
-[data-bs-theme="dark"] .lam-pag-btn { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.25); color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-pag-gap { color: #6b6480; }
 
-[data-bs-theme="dark"] .lam-modal           { background: #1a1530; }
-[data-bs-theme="dark"] .lam-modal-body      { background: #221a3a; }
-[data-bs-theme="dark"] .lam-modal-helper    { color: #9aa0b4; }
+[data-bs-theme="dark"] .lam-modal { background: #1a1530; box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 4px 24px rgba(0,0,0,.30); }
+[data-bs-theme="dark"] .lam-modal-body { background: #221a3a; }
+[data-bs-theme="dark"] .lam-modal-helper { color: #9aa0b4; }
+[data-bs-theme="dark"] .lam-modal-footer { background: #1a1530; border-top-color: rgba(167,139,250,.20); }
+
 [data-bs-theme="dark"] .lam-textarea,
 [data-bs-theme="dark"] .lam-select {
-  background: #0f0c19; color: #e9d5ff; border-color: rgba(167,139,250,.25);
+  background: #0f0c19; color: #ede9fe;
+  border-color: rgba(167,139,250,.28);
 }
 [data-bs-theme="dark"] .lam-textarea::placeholder { color: #7a6b9a; }
-[data-bs-theme="dark"] .lam-char-count   { color: #7a6b9a; }
-[data-bs-theme="dark"] .lam-char-max     { color: #4a4663; }
-[data-bs-theme="dark"] .lam-modal-footer { background: #1a1530; border-top-color: rgba(167,139,250,.20); }
-[data-bs-theme="dark"] .lam-footer-hint  { color: #7a6b9a; }
-[data-bs-theme="dark"] .lam-btn-light    { background: rgba(255,255,255,.05); color: #e9d5ff; border-width: 1.5px; border-color: rgba(167,139,250,.55); }
+[data-bs-theme="dark"] .lam-textarea:focus,
+[data-bs-theme="dark"] .lam-select:focus { border-color: #a78bfa; box-shadow: 0 0 0 4px rgba(167,139,250,.18); }
+[data-bs-theme="dark"] .lam-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-char-count { color: #7a6b9a; }
+[data-bs-theme="dark"] .lam-char-max { color: #4a4663; }
+[data-bs-theme="dark"] .lam-error { background: rgba(239,68,68,.16); color: #fca5a5; border-color: rgba(239,68,68,.40); }
+
+[data-bs-theme="dark"] .lam-btn-light {
+  background: rgba(255,255,255,.04); color: #c4b5fd; border-color: rgba(167,139,250,.30);
+}
 [data-bs-theme="dark"] .lam-btn-light:hover:not(:disabled) {
-  background: rgba(167,139,250,.12);
-  border-color: rgba(167,139,250,.60);
-  color: #e9d5ff;
-  box-shadow: 0 3px 10px rgba(0,0,0,.45);
-}
-[data-bs-theme="dark"] .lam-ab-muted {
-  background: rgba(148,163,184,.12) !important;
-  color: #6b7280 !important;
-}
-/* Dark-mode override for the small-screen scroll-shadow gradient (defined
-   in the 520px media query). Plain solid bg matching the table card. */
-@media (max-width: 520px) {
-  [data-bs-theme="dark"] .lam-table-wrap {
-    background: #1a1530;
-  }
-}
-[data-bs-theme="dark"] .lam-ab-muted:hover {
-  background: rgba(148,163,184,.12) !important;
-  color: #6b7280 !important;
+  background: rgba(124,58,237,.14); border-color: rgba(167,139,250,.50); color: #ede9fe;
+  box-shadow: 0 4px 12px rgba(0,0,0,.40);
 }
 
-/* ─── Responsive ─── */
-@media (max-width: 720px) {
-  .lam-root { padding: 12px 12px 16px; font-size: 13px; }
-  .lam-header { padding: 12px 14px; gap: 10px; }
-  .lam-header-title { font-size: 14px; }
-  .lam-header-sub   { font-size: 10.5px; }
-  .lam-add-btn { width: 100%; justify-content: center; }
+/* Opp-type selector tiles — gentler tints in dark mode so the high
+   saturation doesn't fight the dark backdrop. */
+[data-bs-theme="dark"] .lam-opp { background: rgba(255,255,255,0.03); box-shadow: 0 3px 10px rgba(0,0,0,.45); }
+[data-bs-theme="dark"] .lam-opp-qualified    { border-color: rgba(34,197,94,.45); }
+[data-bs-theme="dark"] .lam-opp-qualified:hover { background: rgba(34,197,94,.10); border-color: rgba(34,197,94,.60); box-shadow: 0 10px 24px rgba(0,0,0,.50); }
+[data-bs-theme="dark"] .lam-opp-qualified .lam-opp-icon { background: rgba(34,197,94,.18); border-color: rgba(34,197,94,.40); color: #6ee7b7; }
+[data-bs-theme="dark"] .lam-opp-qualified .lam-opp-title,
+[data-bs-theme="dark"] .lam-opp-qualified .lam-opp-chev { color: #86efac; }
+[data-bs-theme="dark"] .lam-opp-qualified .lam-opp-sub  { color: #4ade80; }
+
+[data-bs-theme="dark"] .lam-opp-disqualified    { border-color: rgba(234,88,12,.50); }
+[data-bs-theme="dark"] .lam-opp-disqualified:hover { background: rgba(234,88,12,.10); border-color: rgba(234,88,12,.65); box-shadow: 0 10px 24px rgba(0,0,0,.50); }
+[data-bs-theme="dark"] .lam-opp-disqualified .lam-opp-icon { background: rgba(234,88,12,.18); border-color: rgba(234,88,12,.40); color: #fdba74; }
+[data-bs-theme="dark"] .lam-opp-disqualified .lam-opp-title,
+[data-bs-theme="dark"] .lam-opp-disqualified .lam-opp-chev { color: #fdba74; }
+[data-bs-theme="dark"] .lam-opp-disqualified .lam-opp-sub  { color: #fb923c; }
+
+[data-bs-theme="dark"] .lam-opp-clarity    { border-color: rgba(37,99,235,.50); }
+[data-bs-theme="dark"] .lam-opp-clarity:hover { background: rgba(37,99,235,.10); border-color: rgba(37,99,235,.65); box-shadow: 0 10px 24px rgba(0,0,0,.50); }
+[data-bs-theme="dark"] .lam-opp-clarity .lam-opp-icon { background: rgba(37,99,235,.18); border-color: rgba(37,99,235,.40); color: #93c5fd; }
+[data-bs-theme="dark"] .lam-opp-clarity .lam-opp-title,
+[data-bs-theme="dark"] .lam-opp-clarity .lam-opp-chev { color: #93c5fd; }
+[data-bs-theme="dark"] .lam-opp-clarity .lam-opp-sub  { color: #60a5fa; }
+
+/* ─── RESPONSIVE ─── */
+@media (max-width: 1100px) {
+  .lam-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 860px) {
+  .lam-hero-actions { width: 100%; justify-content: flex-end; }
   .lam-tabs-row { flex-direction: column; align-items: stretch; }
-  .lam-tabs { width: 100%; justify-content: flex-start; overflow-x: auto; }
-  .lam-tab { padding: 6px 11px; }
+  .lam-tabs { width: 100%; overflow-x: auto; }
   .lam-search { max-width: 100%; }
-  .lam-pagination { padding: 9px 12px; }
-  .lam-pag-info, .lam-pag-range, .lam-rpp { padding-left: 10px; padding-right: 10px; }
+}
+@media (max-width: 720px) {
+  .lam-root { padding: 12px 12px 18px; font-size: 13px; }
+  .lam-hero { padding: 14px 16px; gap: 12px; }
+  .lam-hero-title { font-size: 16px; }
+  .lam-hero-sub   { font-size: 11.5px; }
+  .lam-hero-icon  { width: 42px; height: 42px; font-size: 20px; }
+  .lam-hero-text  { flex: 1 1 100%; }
+  .lam-back-btn,
+  .lam-add-btn { flex: 1; justify-content: center; }
+  .lam-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .lam-kpi-tile { padding: 12px 14px; }
+  .lam-kpi-value { font-size: 24px; }
+  .lam-kpi-icon  { width: 36px; height: 36px; font-size: 17px; }
+  .lam-pagination { padding: 10px 12px; flex-direction: column; align-items: stretch; gap: 8px; }
+  .lam-pag-btns   { justify-content: center; flex-wrap: wrap; }
 }
 @media (max-width: 520px) {
+  .lam-overlay { padding: 12px; }
+  .lam-kpi-grid { grid-template-columns: 1fr; }
   .lam-form-grid.two { grid-template-columns: 1fr; }
-  .lam-modal-header { padding: 16px 18px; }
+  .lam-modal { border-radius: 16px; max-height: calc(100vh - 24px); }
+  .lam-modal-md, .lam-modal-lg { width: 100%; }
+  .lam-modal-header { padding: 16px 18px; gap: 12px; }
+  .lam-modal-header-rich { padding: 18px 18px; }
+  .lam-modal-hicon { width: 40px; height: 40px; font-size: 20px; }
+  .lam-modal-title { font-size: 15px; }
+  .lam-modal-sub   { font-size: 11px; }
   .lam-modal-body   { padding: 18px 16px 14px; }
   .lam-modal-footer { padding: 12px 16px; flex-direction: column-reverse; align-items: stretch; gap: 8px; }
   .lam-modal-close  { right: 14px; }
   .lam-modal-htext  { padding-right: 30px; }
-  .lam-footer-actions { width: 100%; justify-content: flex-end; }
-  .lam-footer-hint { font-size: 10.5px; }
-  .lam-pag-right { flex-wrap: wrap; }
-  /* Table starts horizontally scrolling; give the wrap a clear edge so
-     it reads as "scrollable" rather than "broken". */
-  .lam-table-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    border-bottom: 1px solid transparent;
-    background:
-      linear-gradient(to right, #fff 30%, rgba(255,255,255,0)),
-      linear-gradient(to right, rgba(15,23,42,0.06), #fff 70%) 0 100%,
-      radial-gradient(farthest-side at 0 50%, rgba(15,23,42,0.10), transparent),
-      radial-gradient(farthest-side at 100% 50%, rgba(15,23,42,0.10), transparent) 0 100%;
-    background-repeat: no-repeat;
-    background-color: #fff;
-    background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
-    background-attachment: local, local, scroll, scroll;
-  }
+  .lam-footer-actions { width: 100%; justify-content: stretch; }
+  .lam-footer-actions .lam-btn { flex: 1; justify-content: center; }
+  .lam-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .lam-opp { padding: 12px 14px; gap: 10px; }
+  .lam-opp-icon { width: 38px; height: 38px; font-size: 20px; }
+  .lam-opp-title { font-size: 12.5px; }
+  .lam-opp-sub   { font-size: 10.5px; }
 }
 @media (max-width: 400px) {
   .lam-root { padding: 10px 8px 14px; font-size: 12.5px; }
-  .lam-header { padding: 10px 12px; gap: 8px; }
-  .lam-header-icon { width: 34px; height: 34px; }
-  .lam-header-title { font-size: 13px; }
-  .lam-header-sub   { font-size: 10px; }
-  .lam-back-btn { width: 32px; height: 32px; }
-  .lam-tab { padding: 5px 9px; font-size: 11px; }
-  .lam-tab-active svg, .lam-tab svg { width: 10px; height: 10px; }
-  /* Pagination chips lose horizontal padding so they fit narrow screens */
-  .lam-pag-info, .lam-pag-range, .lam-rpp { padding: 3px 8px; font-size: 11px; }
-  .lam-pag-btn { width: 26px; height: 26px; }
-  /* Badge / action chips shrink */
-  .lam-badge { font-size: 9.5px; padding: 2px 7px; }
-  .lam-ab { width: 24px; height: 24px; }
-  /* Modal header pill / title shrink so 3 elements + close fit */
-  .lam-modal-title { font-size: 14px; }
-  .lam-modal-sub   { font-size: 10px; }
-  .lam-modal-hicon { width: 36px; height: 36px; }
-  .lam-modal-htext { padding-right: 28px; }
+  .lam-hero { padding: 12px 12px; gap: 10px; }
+  .lam-hero-title { font-size: 14.5px; }
+  .lam-hero-sub   { font-size: 10.5px; }
+  .lam-hero-icon  { width: 38px; height: 38px; font-size: 18px; }
+  .lam-hero-actions { flex-direction: column; gap: 8px; }
+  .lam-back-btn,
+  .lam-add-btn { width: 100%; }
+  .lam-tab { padding: 6px 10px; font-size: 11.5px; gap: 5px; }
+  .lam-tab-icon { font-size: 12px; }
+  .lam-pag-info { font-size: 11.5px; }
+  .lam-pag-btn { min-width: 28px; height: 28px; font-size: 14px; }
+  .lam-pag-num { min-width: 28px; height: 28px; font-size: 12px; }
 }
 `;

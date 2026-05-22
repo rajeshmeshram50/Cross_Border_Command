@@ -19,6 +19,14 @@ export default defineConfig({
             // bundled as part of the app.tsx graph — don't declare it here.
             input: ['resources/css/app.css', 'resources/js/app.tsx'],
             refresh: true,
+            // Disable laravel-vite-plugin's chunk auto-prefetch (v1.0+).
+            // It injects <link rel="prefetch"> for every build chunk so
+            // navigations feel instant, but in this app there are 100+
+            // route-level chunks — Chrome flags each one as "preloaded
+            // but not used" because most belong to pages the visitor
+            // never opens in that session. Lazy-loaded routes will still
+            // fetch on demand; we just lose the eager warm-up.
+            prefetch: false,
         }),
         tailwindcss(),
         react(),

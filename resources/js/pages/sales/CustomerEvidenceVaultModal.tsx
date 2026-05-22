@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from '../../components/ui/Tooltip';
 
@@ -166,6 +166,8 @@ function buildDemoVault(customer: CustomerVaultTarget): VaultData {
 export default function CustomerEvidenceVaultModal({ open, customer, onClose, data }: Props) {
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');
+  const kpiStripRef = useRef<HTMLDivElement | null>(null);
+  const [kpiPaused, setKpiPaused] = useState(false);
 
   /* Close on Escape — destructive shortcut is fine for a read-only
    * panel since there's no in-flight edit to lose. */
@@ -178,6 +180,30 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     setShipmentFilter('all');
     return () => window.removeEventListener('keydown', onKey);
   }, [open, customer?.db_id, onClose]);
+
+  /* Auto-scroll the KPI ribbon — continuous one-way drift. Tiles are
+   * rendered twice (see render below), so when scrollLeft reaches the
+   * halfway mark we snap back to 0 — invisible because the second
+   * half is byte-identical to the first. Pauses on hover/touch. */
+  useEffect(() => {
+    if (!open || kpiPaused) return;
+    const strip = kpiStripRef.current;
+    if (!strip) return;
+    let raf = 0;
+    const tick = () => {
+      if (!strip) return;
+      const half = strip.scrollWidth / 2;
+      if (half <= 4) return;
+      strip.scrollLeft += 0.6;
+      if (strip.scrollLeft >= half) {
+        // Seamless wrap — jump back by exactly one cycle.
+        strip.scrollLeft -= half;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [open, kpiPaused, tab]);
 
   const vault: VaultData | null = useMemo(() => {
     if (!customer) return null;
@@ -265,45 +291,79 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           </div>
         </div>
 
-        {/* ─── KPI STRIP — horizontal scroll marquee (HR Employees
-             pattern). Wheel-to-horizontal handler converts vertical
-             mouse-wheel into horizontal scroll so the user can pan
-             through tiles without grabbing a scrollbar. */}
+        {/* ─── KPI STRIP — auto-scrolling ribbon. Drifts continuously,
+             pauses on hover/touch, with manual prev/next arrows for
+             accessible control. Edge fade-masks soften the boundary
+             where tiles meet the arrow buttons. */}
         <div
-          className="cev-kpi-strip"
-          onWheel={(e) => {
-            // Forward only vertical wheel motion; trackpad horizontal
-            // scrolls are already handled natively (deltaX) so we
-            // skip those to avoid doubling the scroll.
-            if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-              e.currentTarget.scrollLeft += e.deltaY;
-            }
-          }}
+          className="cev-kpi-outer"
+          onMouseEnter={() => setKpiPaused(true)}
+          onMouseLeave={() => setKpiPaused(false)}
+          onTouchStart={() => setKpiPaused(true)}
+          onTouchEnd={() => setKpiPaused(false)}
         >
-          <KpiTile label="Total Documents"        value={vault.total_documents}        icon="ri-file-list-3-line"        gradient="linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%)" />
-          <KpiTile label="Verified / Signed"      value={vault.verified_signed}        icon="ri-shield-check-line"       gradient="linear-gradient(135deg, #16a34a 0%, #4ade80 100%)" />
-          <KpiTile label="Pending"                value={vault.pending}                icon="ri-time-line"               gradient="linear-gradient(135deg, #d97706 0%, #f59e0b 100%)" />
-          <KpiTile label="Company Due Diligence"  value={vault.company_dd_count}       icon="ri-building-line"           gradient="linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)" />
-          <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        icon="ri-user-3-line"             gradient="linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%)" />
-          <KpiTile label="Trade License"          value={vault.trade_license_count}    icon="ri-government-line"         gradient="linear-gradient(135deg, #8b5cf6 0%, #c4b5fd 100%)" />
-          <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  icon="ri-article-line"            gradient="linear-gradient(135deg, #6366f1 0%, #a5b4fc 100%)" />
-          <KpiTile label="Total Shipments"        value={vault.total_shipments}        icon="ri-truck-line"              gradient="linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%)" />
+          <span className="cev-kpi-fade cev-kpi-fade-l" aria-hidden />
+          <span className="cev-kpi-fade cev-kpi-fade-r" aria-hidden />
+          <button
+            type="button"
+            className="cev-kpi-nav cev-kpi-nav-prev"
+            aria-label="Scroll KPIs left"
+            onClick={() => kpiStripRef.current?.scrollBy({ left: -260, behavior: 'smooth' })}
+          >
+            <i className="ri-arrow-left-s-line" />
+          </button>
+          <button
+            type="button"
+            className="cev-kpi-nav cev-kpi-nav-next"
+            aria-label="Scroll KPIs right"
+            onClick={() => kpiStripRef.current?.scrollBy({ left: 260, behavior: 'smooth' })}
+          >
+            <i className="ri-arrow-right-s-line" />
+          </button>
+          <div
+            ref={kpiStripRef}
+            className="cev-kpi-strip"
+            onWheel={(e) => {
+              if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
+          >
+          {/* Tiles rendered twice — the duplicate set powers the
+              seamless infinite loop. The auto-scroll effect snaps
+              scrollLeft back by exactly one cycle when it crosses
+              the halfway mark, so the wrap is invisible. */}
+          {[0, 1].map((cycle) => (
+            <div key={cycle} className="cev-kpi-cycle" aria-hidden={cycle === 1 ? true : undefined}>
+              <KpiTile label="Total Documents"        value={vault.total_documents}        icon="ri-file-list-3-line"        gradient="linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%)" />
+              <KpiTile label="Verified / Signed"      value={vault.verified_signed}        icon="ri-shield-check-line"       gradient="linear-gradient(135deg, #16a34a 0%, #4ade80 100%)" />
+              <KpiTile label="Pending"                value={vault.pending}                icon="ri-time-line"               gradient="linear-gradient(135deg, #d97706 0%, #f59e0b 100%)" />
+              <KpiTile label="Company Due Diligence"  value={vault.company_dd_count}       icon="ri-building-line"           gradient="linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%)" />
+              <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        icon="ri-user-3-line"             gradient="linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%)" />
+              <KpiTile label="Trade License"          value={vault.trade_license_count}    icon="ri-government-line"         gradient="linear-gradient(135deg, #8b5cf6 0%, #c4b5fd 100%)" />
+              <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  icon="ri-article-line"            gradient="linear-gradient(135deg, #6366f1 0%, #a5b4fc 100%)" />
+              <KpiTile label="Total Shipments"        value={vault.total_shipments}        icon="ri-truck-line"              gradient="linear-gradient(135deg, #4c1d95 0%, #7c3aed 100%)" />
+            </div>
+          ))}
+          </div>
         </div>
 
-        {/* ─── TABS ─── */}
-        <div className="cev-tabs">
-          {TABS.map(t => (
-            <button
-              key={t.key}
-              type="button"
-              className={`cev-tab ${tab === t.key ? 'is-active' : ''}`}
-              onClick={() => setTab(t.key)}
-            >
-              <i className={t.icon} aria-hidden />
-              <span>{t.label}</span>
-              <span className="cev-tab-count">{vault[t.countKey] as number}</span>
-            </button>
-          ))}
+        {/* ─── TABS — pill ribbon, gradient active state. */}
+        <div className="cev-tabs-wrap">
+          <div className="cev-tabs">
+            {TABS.map(t => (
+              <button
+                key={t.key}
+                type="button"
+                className={`cev-tab ${tab === t.key ? 'is-active' : ''}`}
+                onClick={() => setTab(t.key)}
+              >
+                <span className="cev-tab-icon"><i className={t.icon} aria-hidden /></span>
+                <span className="cev-tab-label">{t.label}</span>
+                <span className="cev-tab-count">{vault[t.countKey] as number}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ─── BODY ─── */}
@@ -379,7 +439,7 @@ function KpiTile({ label, value, icon, gradient }: { label: string; value: numbe
 }
 
 /* ─── Docs table — used by 4 of the 5 tabs. */
-function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; StatusPill: (p: { s: VaultStatus }) => JSX.Element }) {
+function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; StatusPill: (p: { s: VaultStatus }) => ReactElement }) {
   const numberHeader = tab === 'company-dd' ? 'License / Number' : tab === 'owner-kyc' ? 'Document Number' : tab === 'trade-licenses' ? 'License Number' : 'Reference No';
   const issueLabel   = tab === 'trade-documents' ? 'Signed Date' : 'Issue Date';
   const expiryLabel  = tab === 'trade-documents' ? 'Valid Till'  : 'Expiry';
@@ -504,11 +564,72 @@ function ShipmentTable({ rows, filter, setFilter }: {
 }
 
 function Ratio({ r }: { r: { ratio: string; pct: number } }) {
+  /* Compact SVG donut — 38px circle, ratio inside, hover-portal
+   * tooltip with completion percentage and a status word.
+   *
+   * Self-contained tooltip (not the project Tooltip component) so it
+   * is guaranteed to render above the modal overlay (z-index 11200)
+   * regardless of any other stacking gotchas. Position is computed
+   * from the trigger's getBoundingClientRect and clamped to the
+   * viewport so it never falls offscreen. */
+  const tone = r.pct >= 100 ? 'good' : r.pct >= 50 ? 'mid' : 'bad';
+  const status = tone === 'good' ? 'Complete' : tone === 'mid' ? 'Partial' : 'Missing';
+  const radius = 15;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (Math.min(100, Math.max(0, r.pct)) / 100) * circumference;
+
+  const triggerRef = useRef<HTMLSpanElement | null>(null);
+  const [tip, setTip] = useState<{ top: number; left: number } | null>(null);
+
+  const showTip = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    // Tooltip is ~80×46px; centre horizontally above the donut.
+    const W = 86, H = 50, gap = 8;
+    let left = rect.left + rect.width / 2 - W / 2;
+    let top  = rect.top - H - gap;
+    // Flip below the donut if there isn't room above.
+    if (top < 6) top = rect.bottom + gap;
+    // Clamp to viewport.
+    left = Math.max(6, Math.min(left, window.innerWidth - W - 6));
+    setTip({ top, left });
+  };
+  const hideTip = () => setTip(null);
+
   return (
-    <span className="cev-ratio" data-tone={r.pct >= 100 ? 'good' : r.pct >= 50 ? 'mid' : 'bad'}>
-      <span className="cev-ratio-num">{r.ratio}</span>
-      <span className="cev-ratio-pct">{r.pct}%</span>
-    </span>
+    <>
+      <span
+        ref={triggerRef}
+        className="cev-ratio"
+        data-tone={tone}
+        onMouseEnter={showTip}
+        onMouseLeave={hideTip}
+        onFocus={showTip}
+        onBlur={hideTip}
+        tabIndex={0}
+      >
+        <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden>
+          <circle className="cev-ratio-track" cx="19" cy="19" r={radius} fill="none" strokeWidth="3.5" />
+          <circle
+            className="cev-ratio-arc"
+            cx="19" cy="19" r={radius}
+            fill="none" strokeWidth="3.5"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            transform="rotate(-90 19 19)"
+          />
+        </svg>
+        <span className="cev-ratio-label">{r.ratio}</span>
+      </span>
+      {tip && createPortal(
+        <div className="cev-ratio-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">
+          <b className="cev-ratio-tip-pct" data-tone={tone}>{r.pct}%</b>
+          <span className="cev-ratio-tip-meta">{r.ratio} · {status}</span>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -642,25 +763,78 @@ const CEV_CSS = `
 }
 .cev-close:hover { background: rgba(255,255,255,0.30); transform: rotate(90deg); }
 
-/* ─── KPI STRIP — horizontal scroll marquee. Same affordance as the
-   HR Employees KPI strip: tiles stay at their natural width and the
-   user wheels/drags horizontally to see them all. Mouse-wheel
-   vertical → horizontal scroll via the JSX onWheel handler. */
-.cev-kpi-strip {
+/* ─── KPI STRIP — auto-scrolling ribbon with edge fades. Tiles
+   stay at fixed width; the strip drifts continuously and pauses on
+   hover. Manual arrows remain for accessibility. Edge fade-masks
+   soften the boundary so tiles dissolve into the arrow buttons
+   instead of getting clipped under them. */
+.cev-kpi-outer {
+  position: relative;
   flex-shrink: 0;
-  display: flex; gap: 10px; align-items: stretch;
-  padding: 12px 24px;
-  background: #faf7ff;
+  background: linear-gradient(180deg, #faf7ff 0%, #f5f3ff 100%);
   border-bottom: 1px solid #ede9fe;
+}
+.cev-kpi-strip {
+  display: flex; gap: 12px; align-items: stretch;
+  padding: 14px 64px;          /* room for the absolute arrow buttons */
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: none;       /* Firefox */
+  -ms-overflow-style: none;    /* Edge legacy */
   scroll-behavior: smooth;
-  scroll-snap-type: x proximity;
 }
-.cev-kpi-strip::-webkit-scrollbar { height: 6px; }
-.cev-kpi-strip::-webkit-scrollbar-thumb { background: rgba(124,58,237,.30); border-radius: 999px; }
-.cev-kpi-strip::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.55); }
+.cev-kpi-strip::-webkit-scrollbar { display: none; }
+.cev-kpi-cycle {
+  display: flex; gap: 12px; align-items: stretch;
+  flex-shrink: 0;
+  margin-right: 12px;        /* match strip gap between the two cycles */
+}
+.cev-kpi-cycle:last-child { margin-right: 0; }
+.cev-kpi-fade {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 70px;
+  pointer-events: none;
+  z-index: 3;
+}
+.cev-kpi-fade-l {
+  left: 0;
+  background: linear-gradient(90deg, #faf7ff 0%, #faf7ff 25%, rgba(250,247,255,0) 100%);
+}
+.cev-kpi-fade-r {
+  right: 0;
+  background: linear-gradient(270deg, #f5f3ff 0%, #f5f3ff 25%, rgba(245,243,255,0) 100%);
+}
+.cev-kpi-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%);
+  color: #6d28d9;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow:
+    0 2px 6px rgba(124,58,237,0.18),
+    0 8px 22px rgba(40,18,80,0.18),
+    inset 0 0 0 1px rgba(124,58,237,0.20);
+  transition: all .18s ease;
+  font-size: 18px;
+}
+.cev-kpi-nav:hover {
+  background: linear-gradient(135deg, #6d28d9, #7c3aed);
+  color: #fff;
+  transform: translateY(-50%) scale(1.10);
+  box-shadow:
+    0 4px 10px rgba(124,58,237,0.30),
+    0 10px 26px rgba(124,58,237,0.45);
+}
+.cev-kpi-nav:active { transform: translateY(-50%) scale(0.96); }
+.cev-kpi-nav-prev { left: 14px; }
+.cev-kpi-nav-next { right: 14px; }
 .cev-kpi-tile {
   position: relative;
   flex: 0 0 220px;            /* fixed width — strip scrolls when many */
@@ -706,38 +880,82 @@ const CEV_CSS = `
   box-shadow: 0 4px 10px rgba(0,0,0,0.10);
 }
 
-/* ─── TABS ─── */
-.cev-tabs {
+/* ─── TABS — pill ribbon. Inactive tabs read as soft chips,
+   active tab gets a violet gradient + lifted shadow. Animated icon
+   square and pill count badge keep the row visually rich. */
+.cev-tabs-wrap {
   flex-shrink: 0;
-  display: flex; gap: 2px;
-  padding: 14px 24px 0;
-  background: #faf7ff;
+  background: linear-gradient(180deg, #faf7ff 0%, #f5f3ff 100%);
   border-bottom: 1px solid #ede9fe;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  padding: 12px 18px;
 }
+.cev-tabs {
+  display: flex; gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.cev-tabs::-webkit-scrollbar { display: none; }
 .cev-tab {
   flex: 0 0 auto;
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 10px 16px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: #6b7280;
-  font-size: 13px; font-weight: 600;
-  cursor: pointer; transition: all .15s;
-  margin-bottom: -1px;
+  position: relative;
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 9px 16px 9px 9px;
+  background: #ffffff;
+  border: 1px solid rgba(124,58,237,0.18);
+  border-radius: 999px;
+  color: #5b21b6;
+  font-size: 13px; font-weight: 700;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .22s ease, border-color .18s ease, background .18s ease, color .18s ease;
+  box-shadow: 0 1px 2px rgba(40,18,80,0.04);
 }
-.cev-tab i { font-size: 14px; opacity: 0.7; }
-.cev-tab:hover { color: #6d28d9; }
-.cev-tab.is-active { color: #6d28d9; border-bottom-color: #7c3aed; }
+.cev-tab-icon {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  color: #6d28d9;
+  font-size: 15px;
+  transition: all .18s ease;
+  flex-shrink: 0;
+}
+.cev-tab-label { white-space: nowrap; }
+.cev-tab:hover {
+  transform: translateY(-1px);
+  border-color: rgba(124,58,237,0.42);
+  box-shadow: 0 6px 16px rgba(124,58,237,0.16);
+  color: #4c1d95;
+}
+.cev-tab:hover .cev-tab-icon {
+  background: linear-gradient(135deg, #ddd6fe, #c4b5fd);
+}
+.cev-tab.is-active {
+  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 55%, #a78bfa 100%);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow:
+    0 4px 12px rgba(124,58,237,0.32),
+    0 10px 26px rgba(76,29,149,0.28);
+  transform: translateY(-1px);
+}
+.cev-tab.is-active .cev-tab-icon {
+  background: rgba(255,255,255,0.22);
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.30);
+}
 .cev-tab-count {
   background: #ede9fe; color: #5b21b6;
-  font-size: 10.5px; font-weight: 700;
-  padding: 2px 7px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.02em;
+  padding: 2px 8px; border-radius: 999px;
   min-width: 22px; text-align: center;
+  transition: all .18s ease;
 }
-.cev-tab.is-active .cev-tab-count { background: #7c3aed; color: #fff; }
+.cev-tab.is-active .cev-tab-count {
+  background: rgba(255,255,255,0.28);
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.30);
+}
 
 /* ─── BODY ─── */
 .cev-body {
@@ -869,12 +1087,69 @@ const CEV_CSS = `
   font-size: 11.5px; font-weight: 800;
   flex-shrink: 0;
 }
-.cev-ratio { display: inline-flex; flex-direction: column; gap: 1px; line-height: 1.1; }
-.cev-ratio-num { font-weight: 800; font-size: 13px; }
-.cev-ratio-pct { font-size: 10px; font-weight: 700; color: #6b7280; }
-.cev-ratio[data-tone="good"] .cev-ratio-num { color: #047857; }
-.cev-ratio[data-tone="mid"]  .cev-ratio-num { color: #b45309; }
-.cev-ratio[data-tone="bad"]  .cev-ratio-num { color: #b91c1c; }
+.cev-ratio {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px;
+  line-height: 1;
+}
+.cev-ratio svg { display: block; transition: filter .2s ease; }
+.cev-ratio:hover svg { filter: drop-shadow(0 2px 6px rgba(76,29,149,0.20)); }
+.cev-ratio-track { stroke: #ede9fe; }
+.cev-ratio-arc {
+  transition: stroke-dashoffset .6s cubic-bezier(.22,1,.36,1), stroke .2s ease;
+}
+.cev-ratio[data-tone="good"] .cev-ratio-arc { stroke: #16a34a; }
+.cev-ratio[data-tone="mid"]  .cev-ratio-arc { stroke: #f59e0b; }
+.cev-ratio[data-tone="bad"]  .cev-ratio-arc { stroke: #dc2626; }
+.cev-ratio-label {
+  position: absolute; inset: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10.5px; font-weight: 800; letter-spacing: -0.02em;
+  color: #4c1d95;
+  font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
+}
+.cev-ratio[data-tone="good"] .cev-ratio-label { color: #047857; }
+.cev-ratio[data-tone="mid"]  .cev-ratio-label { color: #b45309; }
+.cev-ratio[data-tone="bad"]  .cev-ratio-label { color: #b91c1c; }
+
+/* Self-contained portal tooltip for the donut. Dark glossy pill,
+   centred above (or flipped below) the donut, z-index above every
+   modal in this project (highest known overlay is 11200). */
+.cev-ratio-tip {
+  position: fixed;
+  z-index: 12500;
+  display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 6px 12px;
+  border-radius: 9px;
+  background: linear-gradient(180deg, #2a3444 0%, #1f2937 100%);
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow:
+    0 12px 26px -6px rgba(15,23,42,0.45),
+    0 4px 10px rgba(15,23,42,0.22);
+  color: #fff;
+  line-height: 1.15;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: cevTipPop .18s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes cevTipPop {
+  0%   { opacity: 0; transform: translateY(4px) scale(0.92); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.cev-ratio-tip-pct {
+  font-size: 15px; font-weight: 800; letter-spacing: -0.01em;
+  font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
+  color: #ffffff;
+}
+.cev-ratio-tip-pct[data-tone="good"] { color: #6ee7b7; }
+.cev-ratio-tip-pct[data-tone="mid"]  { color: #fcd34d; }
+.cev-ratio-tip-pct[data-tone="bad"]  { color: #fca5a5; }
+.cev-ratio-tip-meta {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
 
 .cev-ship-filter { display: flex; gap: 8px; flex-wrap: wrap; }
 .cev-ship-fbtn {
@@ -919,13 +1194,20 @@ const CEV_CSS = `
 
 /* ─── DARK MODE — violet palette mapped to lavender-on-deep-purple ─── */
 [data-bs-theme="dark"] .cev-card { background: #1a1430; }
-[data-bs-theme="dark"] .cev-tabs { background: #1a1430; border-bottom-color: rgba(124,58,237,.22); }
-[data-bs-theme="dark"] .cev-tab { color: #94a3b8; }
-[data-bs-theme="dark"] .cev-tab:hover { color: #c4b5fd; }
-[data-bs-theme="dark"] .cev-tab.is-active { color: #c4b5fd; border-bottom-color: #a78bfa; }
+[data-bs-theme="dark"] .cev-tabs-wrap { background: linear-gradient(180deg, #1a1430 0%, #211a3d 100%); border-bottom-color: rgba(124,58,237,.22); }
+[data-bs-theme="dark"] .cev-tab { background: #211a3d; border-color: rgba(124,58,237,.28); color: #c4b5fd; box-shadow: 0 1px 2px rgba(0,0,0,0.30); }
+[data-bs-theme="dark"] .cev-tab-icon { background: rgba(124,58,237,.18); color: #c4b5fd; }
+[data-bs-theme="dark"] .cev-tab:hover { border-color: rgba(167,139,250,.50); color: #ede9fe; box-shadow: 0 6px 16px rgba(0,0,0,.30); }
+[data-bs-theme="dark"] .cev-tab:hover .cev-tab-icon { background: rgba(124,58,237,.32); color: #ede9fe; }
+[data-bs-theme="dark"] .cev-tab.is-active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 55%, #a78bfa 100%); color: #fff; border-color: transparent; }
+[data-bs-theme="dark"] .cev-tab.is-active .cev-tab-icon { background: rgba(255,255,255,0.22); color: #fff; }
 [data-bs-theme="dark"] .cev-tab-count { background: rgba(124,58,237,.22); color: #c4b5fd; }
-[data-bs-theme="dark"] .cev-tab.is-active .cev-tab-count { background: #7c3aed; color: #fff; }
-[data-bs-theme="dark"] .cev-kpi-strip { background: #1a1430; border-bottom-color: rgba(124,58,237,.22); }
+[data-bs-theme="dark"] .cev-tab.is-active .cev-tab-count { background: rgba(255,255,255,.28); color: #fff; }
+[data-bs-theme="dark"] .cev-kpi-outer { background: linear-gradient(180deg, #1a1430 0%, #211a3d 100%); border-bottom-color: rgba(124,58,237,.22); }
+[data-bs-theme="dark"] .cev-kpi-fade-l { background: linear-gradient(90deg, #1a1430 0%, #1a1430 25%, rgba(26,20,48,0) 100%); }
+[data-bs-theme="dark"] .cev-kpi-fade-r { background: linear-gradient(270deg, #211a3d 0%, #211a3d 25%, rgba(33,26,61,0) 100%); }
+[data-bs-theme="dark"] .cev-kpi-nav { background: linear-gradient(135deg, #2a2150 0%, #1f1840 100%); color: #c4b5fd; box-shadow: 0 2px 6px rgba(0,0,0,.40), 0 8px 22px rgba(0,0,0,.50), inset 0 0 0 1px rgba(124,58,237,.30); }
+[data-bs-theme="dark"] .cev-kpi-nav:hover { background: linear-gradient(135deg, #6d28d9, #7c3aed); color: #fff; }
 [data-bs-theme="dark"] .cev-kpi-tile { background: #211a3d; border-color: rgba(124,58,237,.28); box-shadow: 0 2px 10px rgba(0,0,0,0.30); }
 [data-bs-theme="dark"] .cev-kpi-tile:hover { border-color: rgba(124,58,237,.45); box-shadow: 0 6px 18px rgba(0,0,0,0.40); }
 [data-bs-theme="dark"] .cev-kpi-label { color: #94a3b8; }
@@ -954,6 +1236,11 @@ const CEV_CSS = `
 [data-bs-theme="dark"] .cev-date-expiry[data-status="expiring"] { background: rgba(245,158,11,.18); color: #fcd34d; }
 [data-bs-theme="dark"] .cev-date-expiry[data-status="pending"]  { background: rgba(239,68,68,.18); color: #fca5a5; }
 [data-bs-theme="dark"] .cev-attach { background: rgba(124,58,237,.16); color: #c4b5fd; border-color: rgba(124,58,237,.30); }
+[data-bs-theme="dark"] .cev-ratio-track { stroke: rgba(124,58,237,.22); }
+[data-bs-theme="dark"] .cev-ratio-label { color: #ede9fe; }
+[data-bs-theme="dark"] .cev-ratio[data-tone="good"] .cev-ratio-label { color: #6ee7b7; }
+[data-bs-theme="dark"] .cev-ratio[data-tone="mid"]  .cev-ratio-label { color: #fcd34d; }
+[data-bs-theme="dark"] .cev-ratio[data-tone="bad"]  .cev-ratio-label { color: #fca5a5; }
 [data-bs-theme="dark"] .cev-chip-pill { background: rgba(124,58,237,.16); color: #c4b5fd; }
 [data-bs-theme="dark"] .cev-chip-pill-warm { background: rgba(217,119,6,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
 [data-bs-theme="dark"] .cev-footer { background: #1a1430; border-top-color: rgba(124,58,237,.22); }
@@ -980,11 +1267,17 @@ const CEV_CSS = `
   .cev-vault-icon { width: 38px; height: 38px; border-radius: 10px; }
   .cev-header-content { flex-direction: column; align-items: flex-start; gap: 10px; }
   .cev-header-right { width: 100%; justify-content: space-between; }
-  .cev-kpi-strip { padding: 10px 14px; gap: 8px; }
+  .cev-kpi-strip { padding: 12px 52px; gap: 8px; }
   .cev-kpi-tile { flex: 0 0 190px; padding: 10px 12px; }
   .cev-kpi-value { font-size: 20px; }
   .cev-kpi-icon { width: 32px; height: 32px; font-size: 15px; }
-  .cev-tabs { padding: 8px 14px 0; }
+  .cev-kpi-fade { width: 50px; }
+  .cev-kpi-nav { width: 30px; height: 30px; font-size: 16px; }
+  .cev-kpi-nav-prev { left: 10px; }
+  .cev-kpi-nav-next { right: 10px; }
+  .cev-tabs-wrap { padding: 10px 14px; }
+  .cev-tab { padding: 7px 14px 7px 7px; font-size: 12.5px; gap: 7px; }
+  .cev-tab-icon { width: 24px; height: 24px; font-size: 13px; }
   .cev-body { padding: 14px 16px 18px; gap: 12px; }
   .cev-section { padding: 12px 14px; }
   .cev-section-count { font-size: 22px; }
@@ -997,7 +1290,8 @@ const CEV_CSS = `
 @media (max-width: 640px) {
   .cev-card { width: 100vw; }
   .cev-kpi-tile { flex: 0 0 170px; }
-  .cev-tab { padding: 8px 12px; font-size: 12px; }
+  .cev-tab { padding: 6px 12px 6px 6px; font-size: 11.5px; }
+  .cev-tab-icon { width: 22px; height: 22px; font-size: 12px; }
   .cev-tab-count { font-size: 9.5px; padding: 1px 6px; }
 }
 `;

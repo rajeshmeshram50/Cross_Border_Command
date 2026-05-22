@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import AddConsigneeModal, { type ConsigneeRow } from './AddConsigneeModal';
+import ConsigneeEvidenceVaultModal, { type ConsigneeVaultTarget } from './ConsigneeEvidenceVaultModal';
 import { ShimmerTable } from '../../components/ui/Shimmer';
 import api from '../../api';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
@@ -82,6 +83,10 @@ export default function SalesConsignee() {
    * to start at true to avoid an empty-state flash before mount. */
   const [loading, setLoading] = useState(true);
   const [delTarget, setDelTarget] = useState<ConsigneeRow | null>(null);
+  /* Evidence Vault — read-only compliance archive for a single
+   * consignee. Opens via the row's vault button. Backend wiring
+   * lands later; the modal renders the demo dataset until then. */
+  const [vaultTarget, setVaultTarget] = useState<ConsigneeVaultTarget | null>(null);
   /* In-flight flag for the delete confirm — drives the spinner +
    * disabled state on the confirm dialog so the user has a visual
    * cue that the DELETE request is still going. */
@@ -282,7 +287,17 @@ export default function SalesConsignee() {
         return (
           <div className="d-inline-flex align-items-center gap-1">
             {canEdit && <ActionBtn title="Edit Consignee"          icon="ri-pencil-line"      color="primary" onClick={() => { setEditing(c); setAddOpen(true); }} />}
-                       <ActionBtn title="Evidence Vault"           icon="ri-file-shield-line" color="info"    onClick={() => soon('Evidence Vault')} />
+                       <ActionBtn title="Evidence Vault"           icon="ri-file-shield-line" color="info"    onClick={() => setVaultTarget({
+                         id: c.id,
+                         db_id: c.db_id,
+                         company: c.company,
+                         risk: c.risk,
+                         segment: c.segment,
+                         country: c.country,
+                         contact: c.contact,
+                         contactCity: c.countryDetail,
+                         customerId: c.customerId,
+                       })} />
             {canEdit && <ActionBtn title="Delete Consignee"        icon="ri-delete-bin-line"  color="danger"  onClick={() => setDelTarget(c)} />}
           </div>
         );
@@ -460,6 +475,12 @@ export default function SalesConsignee() {
         onClose={() => { if (!deleting) setDelTarget(null); }}
         onConfirm={handleDelete}
         loading={deleting}
+      />
+
+      <ConsigneeEvidenceVaultModal
+        open={!!vaultTarget}
+        consignee={vaultTarget}
+        onClose={() => setVaultTarget(null)}
       />
     </div>
   );

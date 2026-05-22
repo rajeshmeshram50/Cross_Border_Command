@@ -40,6 +40,10 @@ interface TooltipProps {
   offset?: number;
   /** Optional max width in px. Default no cap. */
   maxWidth?: number;
+  /** Stacking layer. Default 12000 — above every modal in this
+   *  project (highest known overlay is 11200). Bump higher if you
+   *  ever introduce a deeper layer. */
+  zIndex?: number;
 }
 
 export default function Tooltip({
@@ -50,6 +54,7 @@ export default function Tooltip({
   disabled = false,
   offset = 8,
   maxWidth,
+  zIndex = 12000,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
@@ -211,7 +216,7 @@ export default function Tooltip({
             backgroundClip: 'padding-box',
             whiteSpace: maxWidth ? 'normal' : 'nowrap',
             maxWidth,
-            zIndex: 10000,
+            zIndex,
             pointerEvents: 'none',
             animation: 'cbcTooltipSpring 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',
             transformOrigin:
