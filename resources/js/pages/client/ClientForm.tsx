@@ -7,6 +7,7 @@ import {
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
+import { Shimmer } from '../../components/ui/Shimmer';
 
 interface Props {
   onBack: () => void;
@@ -473,10 +474,61 @@ export default function ClientForm({ onBack, editId }: Props) {
     setLogoFile(null); setLogoPreview(null); setFaviconFile(null); setFaviconPreview(null);
   };
 
+  /* Edit-mode preload — was a single centered spinner that gave no
+   * preview of the form shape; the page felt like a dead screen for
+   * the ~500ms fetch. Replaced with a form-shaped shimmer (header
+   * banner + four sections × three field rows) so the user sees the
+   * structure they're about to fill in while the data hydrates. */
   if (loadingData) return (
-    <div className="text-center py-5">
-      <Spinner color="primary" />
-      <p className="text-muted mt-2" style={{ fontSize: '12px' }}>Loading client data...</p>
+    <div className="p-3">
+      <div
+        style={{
+          background: 'var(--vz-card-bg, #fff)',
+          border: '1px solid var(--vz-border-color)',
+          borderRadius: 16,
+          padding: 24,
+          marginBottom: 16,
+          display: 'flex', alignItems: 'center', gap: 18,
+        }}
+      >
+        <Shimmer width={64} height={64} radius={14} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Shimmer width={220} height={18} />
+          <Shimmer width={320} height={12} />
+        </div>
+        <Shimmer width={120} height={36} radius={10} />
+      </div>
+      {Array.from({ length: 4 }).map((_, sectionIdx) => (
+        <div
+          key={sectionIdx}
+          style={{
+            background: 'var(--vz-card-bg, #fff)',
+            border: '1px solid var(--vz-border-color)',
+            borderRadius: 16,
+            padding: 20,
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <Shimmer width={32} height={32} radius={8} />
+            <Shimmer width={180} height={14} />
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gap: 14,
+            }}
+          >
+            {Array.from({ length: 6 }).map((__, fieldIdx) => (
+              <div key={fieldIdx} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Shimmer width={`${50 + (fieldIdx % 4) * 10}%`} height={10} />
+                <Shimmer width="100%" height={38} radius={8} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 
@@ -1088,17 +1140,12 @@ export default function ClientForm({ onBack, editId }: Props) {
                   onChange={val => { set('plan_type', val); touch('plan_type'); }}
                 />
               </Col>
-              <Col md={4}>
-                <Lbl>Expires At</Lbl>
-                <div style={{ maxWidth: 240 }}>
-                  <ThemedDatePicker
-                    value={form.plan_expires_at}
-                    onChange={v => set('plan_expires_at', v)}
-                    placeholder="Select date"
-                    minDate={new Date().toISOString().slice(0, 10)}
-                  />
-                </div>
-              </Col>
+              {/* "Expires At" field removed per product call — expiry is
+                  now driven server-side by the selected Plan's duration,
+                  not by a manually-picked date. The form state still
+                  carries plan_expires_at as an empty string so the
+                  payload shape stays unchanged and any existing rows
+                  with a stored expiry continue to round-trip. */}
             </Row>
 
             {/* ══ E: Admin ══ */}

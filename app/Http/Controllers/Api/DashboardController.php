@@ -24,7 +24,18 @@ class DashboardController extends Controller
         $activeClients = Client::where('status', 'active')->count();
         $inactiveClients = Client::where('status', '!=', 'active')->count();
         $totalUsers = User::count();
-        $totalBranches = Branch::count();
+        /* Exclude the auto-provisioned "Head Office" placeholder (code='HO')
+         * from the branches KPI — every Client is seeded with one HO row
+         * on creation that doesn't represent a real operational branch.
+         * Counting it inflated the KPI by one per client and contradicted
+         * the Branches page (which already filters HO out). Mirrors the
+         * branches_count subquery used for the Recent Clients block. */
+        $totalBranches = Branch::query()
+            ->where(function ($q) {
+                $q->where('code', '!=', 'HO')
+                  ->orWhere('name', 'not ilike', '% — Head Office');
+            })
+            ->count();
 
         // Revenue
         $totalRevenue = (float) Payment::where('status', 'success')->sum('total');
@@ -32,8 +43,14 @@ class DashboardController extends Controller
             ->where('created_at', '>=', now()->startOfMonth())
             ->sum('total');
 
-        // Payments
-        $totalPayments = Payment::count();
+        // Payments — "Transactions" KPI excludes failed rows so it reads
+        // as "completed-or-in-flight transactions" and lines up with the
+        // revenue figures next to it. Previously this counted every
+        // Payment row regardless of status, so a tenant with several
+        // failed retries saw the Transactions tile inflate while
+        // revenue stayed flat. failedPayments stays surfaced separately
+        // for the dedicated Failed tile.
+        $totalPayments = Payment::whereIn('status', ['success', 'pending'])->count();
         $successPayments = Payment::where('status', 'success')->count();
         $pendingPayments = Payment::where('status', 'pending')->count();
         $failedPayments = Payment::where('status', 'failed')->count();
@@ -107,7 +124,13 @@ class DashboardController extends Controller
             ])
             ->orderByDesc('created_at')
             ->limit(5)
-            ->get(['id', 'org_name', 'email', 'status', 'plan_id', 'plan_type', 'created_at']);
+            /* `profile_photo` selected so the appended `profile_photo_url`
+             * accessor resolves to a real URL — that drives the new logo
+             * thumb on the Super Admin → Recent Clients card. Without
+             * this the accessor only saw a null and the dashboard kept
+             * falling back to gradient initials even when a client had
+             * uploaded a logo. */
+            ->get(['id', 'org_name', 'email', 'status', 'plan_id', 'plan_type', 'created_at', 'profile_photo']);
 
         // Recent payments (top 5)
         $recentPayments = Payment::with(['client:id,org_name', 'plan:id,name'])
@@ -255,8 +278,15 @@ class DashboardController extends Controller
                 ->get(['id', 'plan_id', 'total', 'status', 'method', 'invoice_number', 'valid_from', 'valid_until', 'created_at'])
             : collect();
 
-        // Branches list — full list when no filter, single-branch when filtered
+        // Branches list — full list when no filter, single-branch when filtered.
+        // Excludes the auto-provisioned Head Office placeholder (code='HO')
+        // so the Client Admin's dashboard list stays in sync with the
+        // KPI count + the Branches page (both already filter HO out).
+        // Previously this query returned HO so the list showed an extra
+        // "— Head Office" row that didn't correspond to a real branch
+        // anyone could open.
         $branches = Branch::where('client_id', $clientId)
+            ->where('code', '!=', 'HO')
             ->when($branchId, fn($q) => $q->where('id', $branchId))
             ->withCount('users')
             ->orderByDesc('is_main')

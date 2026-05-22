@@ -160,10 +160,6 @@ export default function SalesMatrixDetail() {
       .catch(() => toast.error('Load failed', 'Could not load salespeople'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [changeOwnerOpen]);
-  /* Persists the "marked as key" flag for the session. Once the
-     backend ships a `leads.is_key_opportunity` column, hydrate this
-     from the header payload and PATCH on confirm. */
-  const [isKeyOpportunity, setIsKeyOpportunity] = useState(false);
 
   const fetchCustomers = async () => {
     if (customerOpts.length > 0) return;
@@ -189,11 +185,20 @@ export default function SalesMatrixDetail() {
   };
 
   const fetchConsignees = async () => {
-    if (consigneeOpts.length > 0) return;
+    // Always refetch — the picker is scoped by the lead's mapped
+    // customer, so a session cache from one lead would leak rows to
+    // the next.
     setConsigneeLoading(true);
     try {
+      // Scope the picker to this lead's mapped customer when one
+      // exists so the dropdown only shows relevant rows. The /consignees
+      // index accepts ?customer_id=N for the same filter the legacy
+      // ConsigneeDirectory used.
+      const params: Record<string, unknown> = {};
+      if (serverHeader.customerId) params.customer_id = serverHeader.customerId;
+
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-      const res = await api.get<{ data?: any[] } | any[]>('/consignees');
+      const res = await api.get<{ data?: any[] } | any[]>('/consignees', { params });
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
       const rows: any[] = Array.isArray(res.data) ? res.data : ((res.data as { data?: any[] })?.data ?? []);
       /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -242,6 +247,7 @@ export default function SalesMatrixDetail() {
   const [serverHeader, setServerHeader] = useState<{
     qualified?:           boolean;
     disqualified?:        boolean;
+    keyOpportunity?:      boolean;
     taskManager?:         StageTaskManager | null;
     acknowledgements?:    StageAcknowledgement[];
     salespersonId?:       number | null;
@@ -288,6 +294,7 @@ export default function SalesMatrixDetail() {
     return api.get<{ status: boolean; data: {
       qualified: boolean;
       disqualified: boolean;
+      key_opportunity: boolean;
       lead_stage_id: number;
       salesperson_id: number | null;
       salesperson: { id: number; name: string } | null;
@@ -308,6 +315,7 @@ export default function SalesMatrixDetail() {
         setServerHeader({
           qualified:           d.qualified,
           disqualified:        d.disqualified,
+          keyOpportunity:      !!d.key_opportunity,
           taskManager:         d.task_manager,
           acknowledgements:    d.acknowledgements ?? [],
           salespersonId:       d.salesperson_id,
@@ -327,6 +335,12 @@ export default function SalesMatrixDetail() {
   }, [resolvedLeadId, toast]);
 
   useEffect(() => { reloadLead(); }, [reloadLead]);
+
+  /* "Marked as key" is sourced live from the server (leads.key_opportunity)
+   * so it survives navigation / refresh. Toggling fires a PUT and the
+   * follow-up reloadLead() refreshes the toolbar from authoritative
+   * server state instead of optimistic-toggling. */
+  const isKeyOpportunity = !!serverHeader.keyOpportunity;
 
   const header: OppHeaderData = {
     ...seedHeader,
@@ -392,7 +406,35 @@ export default function SalesMatrixDetail() {
       return;
     }
     if (serverHeader.consigneeId && serverHeader.consigneeRow) {
-      setConsigneeEditing(serverHeader.consigneeRow);
+      // The eager-loaded consignee row is the raw Eloquent shape
+      // (snake_case keys, numeric ids). AddConsigneeModal expects the
+      // /consignees-index shape with camelCase fields + `db_id` + a
+      // string `customerId` matching the customer's display code.
+      // Re-key here so the modal's lookups (linked customer, doc fetch)
+      // all hit. Falls back to a computed customer_code when the
+      // server didn't surface it.
+      const raw = serverHeader.consigneeRow as Record<string, unknown>;
+      const customerCode =
+        (serverHeader.customerRow as Record<string, unknown> | null | undefined)?.customer_code as string | undefined
+        ?? (serverHeader.customerId ? `C-${String(serverHeader.customerId).padStart(3, '0')}` : undefined);
+      const consigneeCode =
+        (raw.consignee_code as string | undefined)
+        ?? (typeof raw.id === 'number' ? `CN-${String(raw.id).padStart(3, '0')}` : '');
+      // Cast through unknown because the modal's ConsigneeRow type is
+      // strict and we're hydrating from a different shape; the modal
+      // only consumes db_id + customerId + a few labels for the bar.
+      setConsigneeEditing({
+        id:             consigneeCode,
+        db_id:          serverHeader.consigneeId,
+        customerId:     customerCode ?? '',
+        customer_db_id: serverHeader.customerId ?? undefined,
+        initials:       String(raw.company_name ?? '?').slice(0, 2).toUpperCase(),
+        name:           (raw.company_name as string | undefined) ?? '',
+        legalName:      (raw.legal_name   as string | undefined) ?? '',
+        segment:        (raw.segment      as string | undefined) ?? '',
+        type:           (raw.type         as string | undefined) ?? '',
+        classification: (raw.classification as string | undefined) ?? '',
+      } as unknown as Parameters<typeof setConsigneeEditing>[0]);
       setConsigneeAddOpen(true);
       return;
     }
@@ -502,7 +544,8 @@ export default function SalesMatrixDetail() {
           onClick={() => setRemindersOpen(true)} />
         <ActionBtn icon={<IconCalSmall />} label="Meetings"
           onClick={() => setMeetingsOpen(true)} />
-        <ActionBtn icon={<IconDollar />}   label="Share Prices" />
+        <ActionBtn icon={<IconDollar />}   label="Share Prices"
+          onClick={() => toast.info('Coming next', 'Share Prices flow ships in the Stage 4 (Price Shared) build')} />
         <ActionBtn icon={<IconWhats />}    label="WhatsApp Status"
           className={`smd-act-wa ${serverHeader.whatsappStatus === 'connected' ? 'smd-act-wa-on' : ''}`}
           onClick={() => setWhatsappOpen(true)} />
@@ -732,6 +775,21 @@ export default function SalesMatrixDetail() {
       <AddConsigneeModal
         open={consigneeAddOpen}
         consignee={consigneeEditing}
+        /* When the lead already has a mapped customer, pre-select it so
+         * the Add Consignee picker is skipped (and disabled). We pass
+         * BOTH the display code (customer_code, e.g. C-001) and the
+         * numeric DB id — the modal tries them in that order against
+         * its loaded /customers list. The db_id fallback covers cases
+         * where the eager-loaded customer is missing customer_code or
+         * the field is stored in a non-default format. */
+        preselectedCustomerId={
+          !consigneeEditing && serverHeader.customerRow
+            ? (((serverHeader.customerRow as Record<string, unknown>).customer_code as string | undefined) ?? undefined)
+            : undefined
+        }
+        preselectedCustomerDbId={
+          !consigneeEditing ? (serverHeader.customerId ?? undefined) : undefined
+        }
         onClose={() => { setConsigneeAddOpen(false); setConsigneeEditing(null); }}
         onSaved={() => {
           setConsigneeOpts([]); setConsigneeRows({});
@@ -801,13 +859,22 @@ export default function SalesMatrixDetail() {
       {/* ── Remarks popup ── */}
       <RemarksModal
         open={remarksOpen}
+        currentRemark={serverHeader.remark ?? ''}
         onClose={() => setRemarksOpen(false)}
         onSave={async (text) => {
           if (!resolvedLeadId) return;
+          // Empty string is the explicit "Clear" path from the modal —
+          // server treats null as the wipe value so we pass null instead
+          // of "".
+          const payload = { remark: text.length > 0 ? text : null };
           try {
-            await api.put(`/sales/leads/${resolvedLeadId}`, { remark: text });
-            toast.success('Remark saved', 'Note attached to this opportunity');
+            await api.put(`/sales/leads/${resolvedLeadId}`, payload);
+            toast.success(
+              text.length > 0 ? 'Remark saved' : 'Remark cleared',
+              text.length > 0 ? 'Note attached to this opportunity' : 'Note removed from this opportunity',
+            );
             await reloadLead();
+            setRemarksOpen(false);
           } catch {
             toast.error('Save failed', 'Could not save the remark');
           }
@@ -847,12 +914,31 @@ export default function SalesMatrixDetail() {
         }}
       />
 
-      {/* ── Key Opportunity confirm popup ── */}
+      {/* ── Key Opportunity confirm popup ──
+          Persists to `leads.key_opportunity` via the existing PUT
+          endpoint. The toolbar pill's `smd-act-key` highlight is
+          driven by serverHeader, so the flag survives close+reopen. */}
       <KeyOpportunityModal
         open={keyOppOpen}
         isKey={isKeyOpportunity}
         onClose={() => setKeyOppOpen(false)}
-        onConfirm={() => setIsKeyOpportunity(prev => !prev)}
+        onConfirm={async () => {
+          if (!resolvedLeadId) {
+            toast.warning('No lead in context', 'Open this opportunity from the Lead Worksheet to mark it');
+            return;
+          }
+          const next = !isKeyOpportunity;
+          try {
+            await api.put(`/sales/leads/${resolvedLeadId}`, { key_opportunity: next });
+            toast.success(
+              next ? 'Marked as Key Opportunity' : 'Unmarked Key Opportunity',
+              next ? 'This deal is now flagged as high-priority' : 'Removed the key-opportunity flag',
+            );
+            await reloadLead();
+          } catch {
+            toast.error('Save failed', 'Could not update the key-opportunity flag');
+          }
+        }}
       />
     </div>
   );

@@ -197,6 +197,17 @@ export const SALES_MATRIX_DETAIL_CSS = `
   transition: all .15s;
 }
 .smd-act:hover { border-color: #c4b5fd; background: #faf5ff; }
+.smd-act-disabled {
+  opacity: .45; cursor: not-allowed; pointer-events: none;
+  background: #f8fafc; color: #94a3b8; border-color: #e2e8f0;
+}
+.smd-act-disabled .smd-act-icon,
+.smd-act-disabled .smd-act-trail { color: #cbd5e1; }
+[data-bs-theme="dark"] .smd-act-disabled {
+  background: rgba(148,163,184,.08); color: #64748b; border-color: rgba(148,163,184,.20);
+}
+[data-bs-theme="dark"] .smd-act-disabled .smd-act-icon,
+[data-bs-theme="dark"] .smd-act-disabled .smd-act-trail { color: #64748b; }
 .smd-act-icon { display: inline-flex; align-items: center; color: #7c3aed; }
 .smd-act-icon svg { width: 12px; height: 12px; }
 .smd-act-label { line-height: 1; }

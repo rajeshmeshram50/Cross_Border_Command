@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Support\Settings;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -459,6 +460,13 @@ class EmployeeController extends Controller
                     'name'          => Employee::composeDisplayName($data['first_name'], $data['middle_name'] ?? null, $data['last_name'] ?? null),
                     'email'         => $data['email'],
                     'password'      => Hash::make($rawPassword),
+                    /* Reversibly-encrypted copy of the generated password so
+                     * the welcome / credentials email can be sent later from
+                     * update() (after the admin completes ALL four wizard
+                     * steps), not eagerly from store() at Step 1. The
+                     * BranchController uses the same pattern for branch
+                     * users. Decrypted in update() via Crypt::decryptString. */
+                    'password_encrypted' => Crypt::encryptString($rawPassword),
                     'phone'         => $data['mobile'] ?? null,
                     'user_type'     => 'employee',
                     'client_id'     => $clientId,
@@ -514,29 +522,19 @@ class EmployeeController extends Controller
 
                 $employee->load(self::WITH);
 
-                // Welcome email with credentials — gated by Settings →
-                // Notifications → newUser. Non-fatal on failure so the
-                // employee record still saves if SMTP is down.
-                if (Settings::shouldSendMail('newUser')) try {
-                    $clientName = \App\Models\Client::find($clientId)?->org_name ?? 'Your Organization';
-                    Mail::to($data['email'])->send(new WelcomeCredentialsMail(
-                        $loginUser->name,
-                        $data['email'],
-                        $rawPassword,
-                        'employee',
-                        $clientName,
-                        PasswordChangedMail::resolveLoginUrl($request),
-                    ));
-                } catch (\Throwable $e) {
-                    Log::warning('Employee welcome mail failed', [
-                        'employee_id' => $employee->id,
-                        'email'       => $data['email'],
-                        'error'       => $e->getMessage(),
-                    ]);
-                }
+                /* Welcome email is intentionally NOT sent here. Step 1
+                 * only captures basic identity — sending credentials
+                 * before the admin has finished assets / payroll / KYC
+                 * meant the employee logged in to a half-built profile
+                 * and asked HR what was happening. The mail is now
+                 * triggered from update() the moment the wizard's
+                 * watermark crosses Step 4 (see the
+                 * `wizard_step_completed` transition block there). The
+                 * raw password is preserved via password_encrypted on
+                 * the user row so update() can decrypt + send. */
 
                 return response()->json([
-                    'message'  => 'Employee created. Welcome email sent with login credentials.',
+                    'message'  => 'Employee created. Welcome email will be sent once the full wizard is complete.',
                     'employee' => $employee,
                 ], 201);
             });
@@ -592,7 +590,13 @@ class EmployeeController extends Controller
         // the maximum so a user editing an already-finished employee
         // can't accidentally roll the progress meter backwards.
         $stepFromRequest = (int) $request->input('wizard_step_completed', 0);
-        $newStep = max((int) $row->wizard_step_completed, $stepFromRequest);
+        $oldStep = (int) $row->wizard_step_completed;
+        $newStep = max($oldStep, $stepFromRequest);
+        // Detect the moment the wizard transitions from "incomplete"
+        // (<4) to "complete" (≥4). We fire the welcome / credentials
+        // email exactly once on this transition — see the post-commit
+        // send block below.
+        $justCompletedWizard = $oldStep < 4 && $newStep >= 4;
 
         // Same high-watermark rule for the macro 6-stage tracker.
         $macroFromRequest = (int) $request->input('onboarding_stage_completed', 0);
@@ -650,6 +654,40 @@ class EmployeeController extends Controller
         });
 
         $row->load(self::WITH);
+
+        /* Send the welcome / credentials email when the wizard is
+         * actually finished — i.e. the watermark just crossed from <4
+         * to ≥4 on this PUT. password_encrypted on the user row
+         * preserves the original random password generated in store();
+         * we decrypt it here so the body of the mail can show it. The
+         * whole block is wrapped in try/catch + gated by the global
+         * notification setting so a mail outage never blocks the
+         * "wizard saved" response. */
+        if ($justCompletedWizard && Settings::shouldSendMail('newUser') && $row->user) {
+            try {
+                $rawPassword = $row->user->password_encrypted
+                    ? Crypt::decryptString($row->user->password_encrypted)
+                    : null;
+                if ($rawPassword) {
+                    $clientName = \App\Models\Client::find($row->client_id)?->org_name ?? 'Your Organization';
+                    Mail::to($row->user->email)->send(new WelcomeCredentialsMail(
+                        $row->user->name,
+                        $row->user->email,
+                        $rawPassword,
+                        'employee',
+                        $clientName,
+                        PasswordChangedMail::resolveLoginUrl($request),
+                    ));
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Employee welcome mail (deferred) failed', [
+                    'employee_id' => $row->id,
+                    'email'       => $row->user->email ?? null,
+                    'error'       => $e->getMessage(),
+                ]);
+            }
+        }
+
         return response()->json(['message' => 'Updated', 'employee' => $row]);
     }
 
