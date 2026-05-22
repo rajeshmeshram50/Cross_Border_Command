@@ -10,6 +10,7 @@ import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import { validatePhone } from '../../utils/validatePhone';
 import { Shimmer } from '../../components/ui/Shimmer';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 
 interface Props {
   onBack: () => void;
@@ -274,6 +275,13 @@ export default function BranchForm({ onBack, editId }: Props) {
   const [loadingData, setLoadingData] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  /* Confirmation gate when the user picks "Inactive" on the Status
+   * dropdown. Deactivating a branch cascades — its login users get
+   * disabled, its data hides from rollups, and sub-branch employees
+   * lose access. The confirmation popup forces a deliberate click
+   * before that happens, instead of a stray dropdown change wiping
+   * out the branch silently on Save. */
+  const [showInactiveConfirm, setShowInactiveConfirm] = useState(false);
   // Snapshot of the password as loaded from the server. If unchanged on
   // save we skip sending user_password so the backend won't re-hash and
   // won't fire the password-changed email.
@@ -1276,14 +1284,37 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Status</Lbl>
-                <SelectDD
-                  isOpen={ddStatus} toggle={() => setDdStatus(o => !o)}
-                  value={form.status} fieldKey="status" dotColor
+                {/* Status uses MasterSelect directly (not the SelectDD
+                    wrapper) so we can intercept the value change. When
+                    the user picks "Inactive" from an "Active" branch we
+                    open a confirmation popup instead of writing the
+                    change straight into form state — deactivating a
+                    branch is a heavy side-effect operation (cascades
+                    to users + data visibility), and the previous
+                    silent dropdown made it too easy to flip
+                    accidentally. */}
+                <MasterSelect
+                  value={form.status}
+                  placeholder="Select"
+                  invalid={fieldInvalid('status')}
                   options={[
                     { label: 'Active',   value: 'active' },
                     { label: 'Inactive', value: 'inactive' },
                   ]}
+                  onChange={val => {
+                    if (val === 'inactive' && form.status === 'active') {
+                      setShowInactiveConfirm(true);
+                      return;
+                    }
+                    set('status', val);
+                    touch('status');
+                  }}
                 />
+                {fieldInvalid('status') && (
+                  <div style={{ fontSize: '10.5px', color: '#f06548', marginTop: '2px' }}>
+                    {fieldError('status')}
+                  </div>
+                )}
               </Col>
               <Col md={4}>
                 <Lbl>Email</Lbl>
@@ -1751,6 +1782,23 @@ export default function BranchForm({ onBack, editId }: Props) {
         </Card>
       </Form>
       </div>
+
+      {/* Confirmation popup for "Active → Inactive" status change.
+          Confirming commits the change to local form state — the
+          actual server-side cascade still fires from the normal Save
+          flow at the bottom of the form, not from this dialog. */}
+      <DeleteConfirmModal
+        open={showInactiveConfirm}
+        itemName={form.name || 'this branch'}
+        title="Set Branch Inactive?"
+        subMessage="Inactive branches disappear from rollups, their login users are disabled, and sub-branch employees lose access. You can re-activate later from the Branches list."
+        onClose={() => setShowInactiveConfirm(false)}
+        onConfirm={() => {
+          set('status', 'inactive');
+          touch('status');
+          setShowInactiveConfirm(false);
+        }}
+      />
     </>
   );
 }
