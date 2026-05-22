@@ -68,11 +68,11 @@ export const CLM_CSS = `
 .clm-head-strip-left { display: flex; align-items: center; gap: 14px; padding-left: 10px; min-width: 0; }
 .clm-head-strip-ico-wrap { position: relative; flex-shrink: 0; }
 .clm-head-strip-ico {
-  width: 42px; height: 42px; border-radius: 12px;
+  width: 46px; height: 46px; border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
   background: linear-gradient(135deg, #06b6d4, #0891b2, #0e7490);
   color: #fff;
-  box-shadow: 0 0 0 3px rgba(6,182,212,.22), 0 4px 12px rgba(8,145,178,.4);
+  box-shadow: 0 0 0 3px rgba(6,182,212,.22), 0 4px 12px rgba(8,145,178,.40);
 }
 .clm-head-strip-dot {
   position: absolute; bottom: -1px; right: -1px;
@@ -83,24 +83,24 @@ export const CLM_CSS = `
 }
 .clm-head-strip-text { min-width: 0; }
 .clm-head-strip-title {
-  font-size: 16px; font-weight: 800; color: #0c4a6e;
-  letter-spacing: -.4px; line-height: 1.15;
+  font-size: 19px; font-weight: 800; color: #0c4a6e;
+  letter-spacing: -.01em; line-height: 1.2;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .clm-head-strip-sub {
-  font-size: 11px; font-weight: 500; color: #0e7490;
-  opacity: .9; margin-top: 3px;
+  font-size: 12.5px; font-weight: 500; color: #0e7490;
+  opacity: 1; margin-top: 4px; line-height: 1.4;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .clm-add-btn {
   position: relative; overflow: hidden; flex-shrink: 0;
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 18px; border: none; cursor: pointer;
+  padding: 10px 20px; border: none; cursor: pointer;
   border-radius: 10px; font-family: inherit;
-  font-size: 12px; font-weight: 700; color: #fff;
+  font-size: 13px; font-weight: 700; color: #fff;
   background: linear-gradient(135deg, #06b6d4, #0891b2, #0e7490);
   box-shadow: 0 4px 14px rgba(8,145,178,.44), inset 0 1px 0 rgba(255,255,255,.18);
-  transition: all .18s;
+  transition: transform .18s ease, box-shadow .22s ease;
 }
 .clm-add-btn::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
@@ -676,7 +676,17 @@ export const CLM_CSS = `
 /* ── Dark mode ── */
 [data-bs-theme="dark"] .clm-root { color: #e2e8f0; background: #0a0f1c; }
 [data-bs-theme="dark"] .clm-page-card { background: #0f172a; border-color: rgba(6,182,212,.18); }
-[data-bs-theme="dark"] .clm-head-strip { background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(6,182,212,.10)); border-color: rgba(6,182,212,.22); }
+/* Dark mode: solid dark teal-tinted bg (was light gradient that
+   carried a glossy feel through). The ::after overlay (50% white
+   sheen for the glossy "lit from top" look) is dimmed too — the
+   bright sheen was making the surface look light/bleached. */
+[data-bs-theme="dark"] .clm-head-strip {
+  background: #102234;
+  border-color: rgba(6,182,212,.25);
+}
+[data-bs-theme="dark"] .clm-head-strip::after {
+  background: linear-gradient(180deg, rgba(255,255,255,.04), transparent);
+}
 [data-bs-theme="dark"] .clm-head-strip-title { color: #67e8f9; }
 [data-bs-theme="dark"] .clm-head-strip-sub   { color: #7dd3fc; }
 /* Dark mode: solid dark bg instead of cyan gradient. The previous
