@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../api';
 import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
+import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
@@ -261,7 +262,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 
   // Form: company + primary address + primary contact
   const [form, setForm] = useState({
-    coName:'', coLegal:'', coType:'', coWeb:'', coSeg:'', coClass:'', coRisk:'',
+    coName:'', coLegal:'', coType:'', coWeb:'', coSeg:[] as string[], coClass:'', coRisk:'',
     /* Primary address type is locked to "Registered Office" in the UI
        — other types live on the Address & Contact Details tab. */
     addrType: DEFAULT_ADDRESS_TYPE, addr:'', country:'', state:'', city:'', pin:'',
@@ -435,7 +436,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       coLegal:  customer?.company ?? '',
       coType:   customer?.type ?? '',
       coWeb:    '',
-      coSeg:    customer?.segment ?? '',
+      /* Segment is now multi-valued. The list row only carries a
+       * single comma-separated string (legacy), so split on comma and
+       * trim — empty pieces drop out. */
+      coSeg:    (customer?.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
       coClass:  '',
       coRisk:   '',
       addrType: DEFAULT_ADDRESS_TYPE,
@@ -520,7 +524,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           coLegal:  d.legalName     ?? d.company ?? '',
           coType:   d.type          ?? '',
           coWeb:    d.website       ?? '',
-          coSeg:    d.segment       ?? '',
+          /* Server still ships a single comma-joined `segment` string
+           * (the column is scalar) — split + trim back into an array
+           * for the multi-select. Array shapes from a future PATCH
+           * also land here once the backend column is widened. */
+          coSeg:    Array.isArray(d.segment)
+                      ? d.segment.filter(Boolean)
+                      : String(d.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
           coClass:  d.classification ?? '',
           coRisk:   d.riskLevel     ?? '',
           // Primary address type is locked to "Registered Office" — even
@@ -573,53 +583,75 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 
   /* ── Segment-rule template fetch ───────────────────────────────────
    * Whenever the user picks (or hydration sets) a segment in Stage 1,
-   * resolve the segment's id from the segments master and pull the
-   * KYC / DD / TL / TD / QC documents the rule references. The Trade
-   * Licence sub-tab on Stage 2 and the Trade Documents tab on Stage 3
-   * render from this state — so picking a segment with a configured
-   * rule pre-populates Stage 2/3 without further user action.
+   * resolve each chosen segment's id from the segments master and pull
+   * its KYC / DD / TL / TD / QC documents in parallel. The category
+   * arrays are then merged and deduped by `code` so a doc that's
+   * required by multiple segments only renders once in Stage 2 + Stage
+   * 3. Mandatory wins on dedupe: if ANY selected segment marks a code
+   * as 'M', the merged row inherits 'M' even when another segment had
+   * it as 'O'.
    *
-   * Bailout cases (all reset segmentDocs to empty):
-   *   • Modal closed.
-   *   • No segment selected.
-   *   • Segments master not yet loaded.
-   *   • Segment name has no matching master row (typo / deleted).
-   *   • API returns no rule for the segment (returns 200 with rule:null).
+   * Bailout (resets segmentDocs to empty) when nothing's selected, the
+   * masters list hasn't loaded yet, or no chosen name resolves to a
+   * master row.
    */
   useEffect(() => {
     if (!open) return;
-    if (!form.coSeg) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
-    const segRow = masters.segments.find(s => s.name === form.coSeg);
-    if (!segRow) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    const names = (form.coSeg ?? []).filter(Boolean);
+    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    const segRows = names
+      .map(n => masters.segments.find(s => s.name === n))
+      .filter((r): r is { id:number; name:string } => !!r);
+    if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
 
     let cancelled = false;
-    api.get(`/clm/segment-rules/for-segment/${segRow.id}`)
-      .then(r => {
-        if (cancelled) return;
-        const data = r.data?.data ?? {};
-        setSegmentDocs({
-          kyc: Array.isArray(data.kyc) ? data.kyc : [],
-          dd:  Array.isArray(data.dd)  ? data.dd  : [],
-          tl:  Array.isArray(data.tl)  ? data.tl  : [],
-          td:  Array.isArray(data.td)  ? data.td  : [],
-          qc:  Array.isArray(data.qc)  ? data.qc  : [],
-        });
-        // Pre-populate Stage 3 Trade Documents from the segment rule's
-        // td selections. Mandatory rows arrive pre-checked; optional rows
-        // come unchecked so the user opts them in explicitly. The legacy
-        // two-row placeholder only kicks in when the rule has no td
-        // selections at all (preserved for backward compatibility).
-        const tdRows = Array.isArray(data.td) ? data.td : [];
-        if (tdRows.length > 0) {
-          setTdDocs(tdRows.map((d: SegDocRow) => ({
-            id: `td_${d.code}`,
-            name: d.name,
-            selected: d.requirement === 'M',
-            sent: false,
-          })));
+    Promise.all(
+      segRows.map(s =>
+        api.get(`/clm/segment-rules/for-segment/${s.id}`)
+          .then(r => r.data?.data ?? {})
+          .catch(() => ({}))
+      )
+    ).then(results => {
+      if (cancelled) return;
+      /* Per-category merge + dedupe. Key = code; Mandatory > Optional
+       * so a doc that's mandatory in any rule stays mandatory in the
+       * union. Order is "first-seen wins" otherwise so the Stage 2
+       * table doesn't reshuffle every render. */
+      const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc') => {
+        const map = new Map<string, SegDocRow>();
+        for (const r of results) {
+          const rows: SegDocRow[] = Array.isArray(r?.[cat]) ? r[cat] : [];
+          for (const d of rows) {
+            const existing = map.get(d.code);
+            if (!existing) { map.set(d.code, d); continue; }
+            if (existing.requirement !== 'M' && d.requirement === 'M') {
+              map.set(d.code, { ...existing, requirement: 'M' });
+            }
+          }
         }
-      })
-      .catch(() => { if (!cancelled) setSegmentDocs(EMPTY_SEG_DOCS); });
+        return Array.from(map.values());
+      };
+      const merged: SegmentDocs = {
+        kyc: mergeCat('kyc'),
+        dd:  mergeCat('dd'),
+        tl:  mergeCat('tl'),
+        td:  mergeCat('td'),
+        qc:  mergeCat('qc'),
+      };
+      setSegmentDocs(merged);
+      /* Pre-populate Stage 3 Trade Documents from the merged td
+       * selections. Mandatory rows arrive pre-checked. The legacy
+       * two-row placeholder only kicks in when the merged set is
+       * empty (preserved for backward compatibility). */
+      if (merged.td.length > 0) {
+        setTdDocs(merged.td.map(d => ({
+          id: `td_${d.code}`,
+          name: d.name,
+          selected: d.requirement === 'M',
+          sent: false,
+        })));
+      }
+    });
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -675,7 +707,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     else if (form.coName.trim().length > 30)            next.coName  = 'Company name must be 30 characters or fewer';
     if (!form.coLegal.trim())                           next.coLegal = 'Legal name is required';
     if (!form.coType)                                   next.coType  = 'Select a customer type';
-    if (!form.coSeg)                                    next.coSeg   = 'Select a segment';
+    if (!form.coSeg || form.coSeg.length === 0)         next.coSeg   = 'Select at least one segment';
     if (!form.coClass)                                  next.coClass = 'Select a classification';
     if (!form.coRisk)                                   next.coRisk  = 'Select a risk level';
     if (!form.addrType)                                 next.addrType = 'Select an address type';
@@ -726,7 +758,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     company_name:   form.coName,
     legal_name:     form.coLegal,
     type:           form.coType,
-    segment:        form.coSeg,
+    /* Multi-segment is stored as a comma-joined string for now — the
+     * legacy `customers.segment` column is scalar (string). Order is
+     * preserved so the first entry stays the "primary" segment for
+     * existing list-row callers that only read the first label. */
+    segment:        (form.coSeg ?? []).join(', '),
     classification: form.coClass,
     risk_level:     form.coRisk,
     website:        form.coWeb,
@@ -917,22 +953,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       // toast twice (once here, once again after final Stage 3 save).
       // The parent refreshes its list when the modal actually closes.
     } else if (stage === 2) {
-      /* Stage 2 gate: KYC compliance needs at least one Owner KYC
-       * entry AND at least one Company DD document. Trade Licence
-       * stays optional (not every business has one). Each missing
-       * piece flips the offending sub-tab so the user lands on the
-       * exact place they need to fill in. */
-      const hasOwner = kycOwners.length > 0;
-      const hasDD = kycDocs.some(d => d.kind === 'dd');
-      if (!hasOwner || !hasDD) {
-        if (!hasOwner) setKycSub('owner-kyc');
-        else if (!hasDD) setKycSub('company-dd');
-        const missing = !hasOwner && !hasDD
-          ? 'at least one Owner KYC entry and one Company DD document'
-          : !hasOwner ? 'at least one Owner KYC entry' : 'at least one Company Due Diligence document';
-        toast.warning('KYC required', `Add ${missing} before continuing.`);
-        return;
-      }
+      /* Stage 2 advance: no validation gate. Stage 2 is now a
+       * segment-rule-driven reference view — the manual Add flow that
+       * the old DD/Owner KYC gate enforced has been removed, so the
+       * user can move to Stage 3 without uploading anything. */
       setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
     } else {
       if (!validateStage1()) { setStage(1); setTab('identification'); return; }
@@ -951,18 +975,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     ? (isEdit ? 'Update Customer' : 'Submit Customer')
     : 'Save & Next';
 
-  /* Stage 2 → 3 hard gate. The button stays visibly disabled until the
-   * user has captured at least one Company DD document AND at least
-   * one Owner KYC entry — tab switching still works, but Save & Next
-   * is locked so the user can't slip past with a half-filled stage. */
-  const stage2HasDD    = kycDocs.some(d => d.kind === 'dd');
-  const stage2HasOwner = kycOwners.length > 0;
-  const stage2Missing =
-    !stage2HasDD && !stage2HasOwner ? 'Add at least one Company DD document and one Owner KYC entry to continue.'
-    : !stage2HasDD                  ? 'Add at least one Company Due Diligence document to continue.'
-    : !stage2HasOwner               ? 'Add at least one Owner KYC entry to continue.'
-    : '';
-  const nextLocked = stage === 2 && !!stage2Missing;
+  /* Stage 2/3 advance: no gates. The form moves freely between stages
+   * 1 → 2 → 3 — only Stage 1's required fields are enforced. */
+  const stage2Missing = '';
+  const nextLocked = false;
 
   return (
     /* No backdrop-click-to-close — users were losing partially filled
@@ -1104,7 +1120,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               onAdd={(s) => { setEditDocId(null); setEditOwnerId(null); setDocModal({ open: true, sub: s }); }}
               docs={kycDocs}
               owners={kycOwners}
-              segmentName={form.coSeg}
+              segmentName={(form.coSeg ?? []).join(', ')}
               segmentDocs={segmentDocs}
               segmentRefUploads={segmentRefUploads}
               setSegmentRefUploads={setSegmentRefUploads}
@@ -1131,7 +1147,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           )}
           {stage === 3 && hydrating && <Stage3Shimmer />}
           {stage === 3 && !hydrating && evTab === 'kyc-documents' && (
-            <Stage3KycDocs sub={evSub} setSub={setEvSub} />
+            <Stage3KycDocs sub={evSub} setSub={setEvSub} segmentDocs={segmentDocs} segmentRefUploads={segmentRefUploads} />
           )}
           {stage === 3 && !hydrating && evTab === 'trade-documents' && (
             <Stage3TradeDocs
@@ -1544,7 +1560,14 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
           <div className="acm-row acm-row-4">
             <Field label="Company Website"><input value={form.coWeb} onChange={e => setF('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
             <Field label="Customer Segment" required error={errors.coSeg} fieldKey="coSeg">
-              <MasterSelect value={form.coSeg} options={optsWith(masters.segments, form.coSeg)} placeholder="Select segment" invalid={!!errors.coSeg} onChange={v => set('coSeg', v)} />
+              <MasterMultiSelect
+                values={form.coSeg}
+                options={toSelectOpts(masters.segments)}
+                placeholder="Select segment"
+                addMorePlaceholder="+ Add another segment"
+                invalid={!!errors.coSeg}
+                onChange={vs => set('coSeg', vs)}
+              />
             </Field>
             <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">
               <MasterSelect value={form.coClass} options={optsWith(masters.classifications, form.coClass)} placeholder="Select classification" invalid={!!errors.coClass} onChange={v => set('coClass', v)} />
@@ -2145,8 +2168,21 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
    once Stage 2 became data-driven and inlined its row rendering. */
 
 /* ───── Stage 3 — Evidence Vault KYC Documents ───── */
-function Stage3KycDocs({ sub, setSub }: { sub: EvSubTab; setSub: (s: EvSubTab) => void }) {
+function Stage3KycDocs({ sub, setSub, segmentDocs, segmentRefUploads }: {
+  sub: EvSubTab;
+  setSub: (s: EvSubTab) => void;
+  segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
+  segmentRefUploads: Record<string, { file: File; url: string; name: string }>;
+}) {
   const meta = EV_SUB_META[sub];
+  /* Stage 3 KYC vault is a read-only roll-up of the Stage 2
+   * segment-rule uploads. Map each EvSubTab to the matching Stage 2
+   * sub-tab (the refKey prefix that the uploader stored uploads
+   * under) and the segmentDocs category that drives the row list. */
+  const stage2Key = sub === 'dd' ? 'company-dd' : sub === 'kyc' ? 'owner-kyc' : 'trade-licence';
+  const sourceRows = sub === 'dd' ? segmentDocs.dd
+                    : sub === 'kyc' ? segmentDocs.kyc
+                    : segmentDocs.tl;
   return (
     <div>
       <div className="acm-nested-tabs">
@@ -2172,27 +2208,35 @@ function Stage3KycDocs({ sub, setSub }: { sub: EvSubTab; setSub: (s: EvSubTab) =
             <table className="acm-table">
               <thead><tr><th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>Issuing Authority</th><th>Expiry</th><th>Status</th><th>Attachment</th></tr></thead>
               <tbody>
-                {meta.data.map((d, i) => {
-                  let st: React.ReactNode;
-                  if (d.status === 'active') st = <span className="acm-status-active">✓ Active</span>;
-                  else if (d.status === 'mandatory') st = <span className="acm-status-mandatory is-on">✓ Mandatory</span>;
-                  else st = <span className="acm-status-optional is-on">Optional</span>;
-                  const expCls = d.expiry === 'N/A' ? 'acm-expiry-na' : d.expiry === 'Varies' ? 'acm-expiry-varies' : 'acm-expiry-date';
+                {sourceRows.length === 0 ? (
+                  <tr className="acm-empty-row"><td colSpan={7}>No segment rule loaded for this category yet — pick a segment on Stage 1.</td></tr>
+                ) : sourceRows.map((d: any, i: number) => {
+                  const refKey = `${stage2Key}::${d.code}`;
+                  const uploaded = segmentRefUploads[refKey];
+                  const expCls = !d.expiry || d.expiry === 'N/A' ? 'acm-expiry-na' : 'acm-expiry-date';
                   return (
                     <tr key={d.code}>
                       <td>{i + 1}</td>
                       <td><span className="acm-doc-code">{d.code}</span></td>
                       <td style={{ fontWeight: 700, color: '#1f2937' }}>{d.name}</td>
-                      <td style={{ color: '#6b7280' }}>{d.authority}</td>
-                      <td><span className={expCls}>{d.expiry}</span></td>
-                      <td>{st}</td>
+                      <td style={{ color: '#6b7280' }}>{d.authority || '—'}</td>
+                      <td><span className={expCls}>{d.expiry || 'N/A'}</span></td>
                       <td>
-                        <Tooltip label="Preview the uploaded attachment">
-                          <button type="button" className="acm-attach-link" aria-label="View attachment">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                            View Attachment
-                          </button>
-                        </Tooltip>
+                        {d.requirement === 'M'
+                          ? <span className="acm-status-mandatory is-on">✓ Mandatory</span>
+                          : <span className="acm-status-optional is-on">Optional</span>}
+                      </td>
+                      <td>
+                        {uploaded ? (
+                          <Tooltip label={`Open ${uploaded.name}`}>
+                            <a href={uploaded.url} target="_blank" rel="noreferrer" className="acm-attach-link" aria-label="View attachment">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                              {uploaded.name}
+                            </a>
+                          </Tooltip>
+                        ) : (
+                          <span style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: 11 }}>Not uploaded in Stage 2</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -3328,7 +3372,7 @@ function HistoryStage1({ form, locations, customerId }: { form: any; locations: 
         <ReadInline label="Customer Type"             value={form.coType} />
 
         <ReadInline label="Company Website"           value={form.coWeb} />
-        <ReadInline label="Customer Segment"          value={form.coSeg} />
+        <ReadInline label="Customer Segment"          value={(form.coSeg ?? []).join(', ')} />
         <ReadInline label="Classification"            value={form.coClass} />
         <ReadInline label="Risk Level"                value={form.coRisk} />
 

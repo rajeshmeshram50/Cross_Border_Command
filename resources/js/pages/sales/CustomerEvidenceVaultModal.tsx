@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
+import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -40,6 +41,10 @@ export interface VaultDoc {
   issue_date?: string | null;      // DD/MM/YYYY for display
   expiry?: string | null;          // DD/MM/YYYY or "Lifetime" or "—"
   attachment?: string | null;      // filename only — URL resolved by parent
+  /** Live storage URL for the uploaded file. Server-resolved so the
+   *  modal doesn't need to know about the disk layout. When present
+   *  the attachment cell renders as a clickable link. */
+  attachment_url?: string | null;
   status: VaultStatus;
 }
 
@@ -168,6 +173,11 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');
   const kpiStripRef = useRef<HTMLDivElement | null>(null);
   const [kpiPaused, setKpiPaused] = useState(false);
+  /* Live vault payload from GET /segment-uploads/customer/{id}/vault.
+   * Stays null until the fetch resolves; null + loading lets the modal
+   * render a skeleton instead of demo numbers. */
+  const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
+  const [loading, setLoading] = useState(false);
 
   /* Close on Escape — destructive shortcut is fine for a read-only
    * panel since there's no in-flight edit to lose. */
@@ -180,6 +190,25 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     setShipmentFilter('all');
     return () => window.removeEventListener('keydown', onKey);
   }, [open, customer?.db_id, onClose]);
+
+  /* Fetch the vault payload when the modal opens for a new customer.
+   * Skips the fetch when (a) the parent passed an override via `data`
+   * or (b) customer has no db_id (unsaved record). On failure the
+   * `vaultLive` stays null and the demo builder takes over so the
+   * design review still has something to render. */
+  useEffect(() => {
+    if (!open || !customer?.db_id || data) {
+      setVaultLive(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    api.get(`/segment-uploads/customer/${customer.db_id}/vault`)
+      .then(r => { if (!cancelled) setVaultLive((r.data?.data ?? null) as VaultData | null); })
+      .catch(() => { if (!cancelled) setVaultLive(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, customer?.db_id, data]);
 
   /* Auto-scroll the KPI ribbon — continuous one-way drift. Tiles are
    * rendered twice (see render below), so when scrollLeft reaches the
@@ -207,8 +236,11 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
   const vault: VaultData | null = useMemo(() => {
     if (!customer) return null;
-    return data ?? buildDemoVault(customer);
-  }, [customer, data]);
+    /* Source priority: explicit `data` prop > live API > demo. The
+     * demo path stays as a graceful fallback when the API hasn't run
+     * yet, errors out, or the customer has no db_id. */
+    return data ?? vaultLive ?? buildDemoVault(customer);
+  }, [customer, data, vaultLive]);
 
   if (!open || !customer || !vault) return null;
 
@@ -473,12 +505,24 @@ function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; S
               <td><span className="cev-date cev-date-expiry" data-status={d.status.toLowerCase()}>{d.expiry || '—'}</span></td>
               <td>
                 {d.attachment ? (
-                  <Tooltip label={d.attachment}>
-                    <span className="cev-attach">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                      {d.attachment}
-                    </span>
-                  </Tooltip>
+                  d.attachment_url ? (
+                    /* Clickable when the server resolved a URL — opens
+                     * the file in a new tab so the user can preview
+                     * without leaving the vault. */
+                    <Tooltip label={`Open ${d.attachment}`}>
+                      <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach" style={{ textDecoration: 'none' }}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        {d.attachment}
+                      </a>
+                    </Tooltip>
+                  ) : (
+                    <Tooltip label={d.attachment}>
+                      <span className="cev-attach">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        {d.attachment}
+                      </span>
+                    </Tooltip>
+                  )
                 ) : <span className="cev-muted">Not uploaded</span>}
               </td>
               <td><StatusPill s={d.status} /></td>

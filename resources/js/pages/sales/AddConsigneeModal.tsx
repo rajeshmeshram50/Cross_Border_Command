@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
+import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
@@ -269,8 +270,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * resolving in rather than empty inputs flashing into populated. */
   const [hydrating, setHydrating] = useState(false);
   const [form1, setForm1] = useState({
-    /* Basic company */
-    companyName: '', legalName: '', website: '', segment: '', classification: '', risk: '',
+    /* Basic company. `segment` is multi-valued — array of segment
+     * names — so a consignee can be tagged with several segments and
+     * the rule-resolver unions all their KYC/DD/TL/TD/QC docs. */
+    companyName: '', legalName: '', website: '', segment: [] as string[], classification: '', risk: '',
     /* Primary address (registered office) */
     addressType: 'Registered Office', address: '', country: '', state: '', city: '', pin: '',
     /* Primary contact at the registered office */
@@ -395,7 +398,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * mirror copy only happens after the user ticks Same-as-Customer. */
     if (!consignee?.db_id) {
       setForm1({
-        companyName: '', legalName: '', website: '', segment: '', classification: '', risk: '',
+        companyName: '', legalName: '', website: '', segment: [] as string[], classification: '', risk: '',
         addressType: 'Registered Office', address: '', country: '', state: '', city: '', pin: '',
         contactName: '', designation: '', contactNo: '', email: '', whatsapp: 'Yes',
       });
@@ -507,7 +510,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       companyName:    customer.name ?? '',
       legalName:      customer.legalName ?? '',
       website:        customer.website ?? '',
-      segment:        customer.segment ?? '',
+      /* Customer's segment is a single comma-joined string (legacy
+       * scalar column); split back into an array for the consignee's
+       * multi-select. Empty pieces drop out. */
+      segment:        String(customer.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
       classification: customer.classification ?? '',
       risk:           customer.risk ?? '',
       // Primary address type is locked to "Registered Office" in the UI
@@ -578,7 +584,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           companyName:    d.company       ?? '',
           legalName:      d.legalName     ?? '',
           website:        d.website       ?? '',
-          segment:        d.segment       ?? '',
+          /* Server still stores `segment` as a comma-joined string;
+           * split back into the multi-select's array shape. Arrays
+           * from a future PATCH also land here. */
+          segment:        Array.isArray(d.segment)
+                            ? d.segment.filter(Boolean)
+                            : String(d.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
           classification: d.classification ?? '',
           risk:           d.riskLevel     ?? '',
           // Locked to "Registered Office" in the UI — see the disabled
@@ -671,33 +682,53 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     return () => { cancelled = true; };
   }, [open]);
 
-  /* Segment-rule template fetch. Whenever the Stage 1 segment is set
-   * (by user selection, hydration, or Same-as-Customer mirror), look
-   * up its DB id from mSegmentIds and pull the rule's resolved KYC /
-   * DD / TL / TD / QC master rows. The Stage 2 Trade Licence sub-tab
-   * and Company DD reference banner render off these. No-op if the
-   * segment isn't known or has no configured rule. */
+  /* Segment-rule template fetch (multi-segment). For each chosen
+   * segment, resolve its DB id from mSegmentIds and pull the rule's
+   * KYC / DD / TL / TD / QC docs in parallel. Category arrays are
+   * merged and deduped by `code` so a doc that's required by multiple
+   * segments only renders once in Stage 2 + Stage 3. Mandatory wins
+   * on dedupe — if any selected segment marks a code as 'M', the
+   * merged row stays 'M'. */
   useEffect(() => {
     if (!open) return;
-    const segName = form1.segment;
-    if (!segName) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
-    const segRow = mSegmentIds.find(s => s.name === segName);
-    if (!segRow) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    const names = (form1.segment ?? []).filter(Boolean);
+    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    const segRows = names
+      .map(n => mSegmentIds.find(s => s.name === n))
+      .filter((r): r is { id:number; name:string } => !!r);
+    if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
 
     let cancelled = false;
-    api.get(`/clm/segment-rules/for-segment/${segRow.id}`)
-      .then(r => {
-        if (cancelled) return;
-        const data = r.data?.data ?? {};
-        setSegmentDocs({
-          kyc: Array.isArray(data.kyc) ? data.kyc : [],
-          dd:  Array.isArray(data.dd)  ? data.dd  : [],
-          tl:  Array.isArray(data.tl)  ? data.tl  : [],
-          td:  Array.isArray(data.td)  ? data.td  : [],
-          qc:  Array.isArray(data.qc)  ? data.qc  : [],
-        });
-      })
-      .catch(() => { if (!cancelled) setSegmentDocs(EMPTY_SEG_DOCS); });
+    Promise.all(
+      segRows.map(s =>
+        api.get(`/clm/segment-rules/for-segment/${s.id}`)
+          .then(r => r.data?.data ?? {})
+          .catch(() => ({}))
+      )
+    ).then(results => {
+      if (cancelled) return;
+      const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc'): SegDocRow[] => {
+        const map = new Map<string, SegDocRow>();
+        for (const r of results) {
+          const rows: SegDocRow[] = Array.isArray(r?.[cat]) ? r[cat] : [];
+          for (const d of rows) {
+            const existing = map.get(d.code);
+            if (!existing) { map.set(d.code, d); continue; }
+            if (existing.requirement !== 'M' && d.requirement === 'M') {
+              map.set(d.code, { ...existing, requirement: 'M' });
+            }
+          }
+        }
+        return Array.from(map.values());
+      };
+      setSegmentDocs({
+        kyc: mergeCat('kyc'),
+        dd:  mergeCat('dd'),
+        tl:  mergeCat('tl'),
+        td:  mergeCat('td'),
+        qc:  mergeCat('qc'),
+      });
+    });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, form1.segment, mSegmentIds]);
@@ -738,7 +769,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     if (!f.companyName.trim())                                e.companyName = 'Company name is required';
     else if (f.companyName.trim().length > 30)                e.companyName = 'Company name must be 30 characters or fewer';
     if (!f.legalName.trim())                                  e.legalName   = 'Company legal name is required';
-    if (!f.segment)                                           e.segment     = 'Select a segment';
+    if (!Array.isArray(f.segment) || f.segment.length === 0)  e.segment     = 'Select at least one segment';
     if (!f.risk)                                              e.risk        = 'Select a risk level';
     if (!f.addressType)                                       e.addressType = 'Select address type';
     if (!f.address.trim())                                    e.address     = 'Address is required';
@@ -936,23 +967,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setStage(2);
       return;
     }
-    if (stage === 2) {
-      /* Stage 2 gate — KYC compliance needs at least one Owner KYC
-       * entry AND at least one Company DD document before moving on.
-       * Trade Licence stays optional. The missing sub-tab gets
-       * focused so the user lands on the exact place to fill in. */
-      const hasOwner = kycOwners.length > 0;
-      const hasDD = kycDocs.some(d => d.kind === 'dd');
-      if (!hasOwner || !hasDD) {
-        if (!hasOwner) setKycSub('owner-kyc');
-        else if (!hasDD) setKycSub('company-dd');
-        const missing = !hasOwner && !hasDD
-          ? 'at least one Owner KYC entry and one Company DD document'
-          : !hasOwner ? 'at least one Owner KYC entry' : 'at least one Company Due Diligence document';
-        toast.error('KYC required', `Add ${missing} before continuing to Evidence Vault.`);
-        return;
-      }
-    }
+    /* No Stage 2 gate. The KYC tab is segment-rule-driven now — manual
+     * Owner/DD entry was removed, so blocking the advance on those
+     * counts would trap the user. Stage 1's required fields are still
+     * the only gate; Stage 2 and Stage 3 move freely. */
     setStage(s => (s < 3 ? (s + 1) as Stage : s));
   };
   const goBack = () => setStage(s => (s > 1 ? (s - 1) as Stage : s));
@@ -974,7 +992,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     customer_id:      customer?.db_id ?? (Number(customer?.id?.replace(/[^0-9]/g, '')) || null),
     company_name:     form1.companyName,
     legal_name:       form1.legalName || null,
-    segment:          form1.segment || null,
+    /* Multi-segment is comma-joined for the legacy scalar column. The
+     * first entry stays the "primary" segment so existing list-row
+     * callers keep working. */
+    segment:          (form1.segment ?? []).length > 0 ? (form1.segment ?? []).join(', ') : null,
     classification:   form1.classification || null,
     risk_level:       form1.risk || null,
     website:          form1.website || null,
@@ -1430,7 +1451,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               locations={locations}
               consigneeCode={consignee?.id}
               sameAsCustomer={sameAsCustomer}
-              segmentName={form1.segment}
+              segmentName={(form1.segment ?? []).join(', ')}
               segmentDocs={segmentDocs}
               segmentRefUploads={segmentRefUploads}
               setSegmentRefUploads={setSegmentRefUploads}
@@ -1447,6 +1468,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               kycOwners={kycOwners}
               locations={locations}
               sameAsCustomer={sameAsCustomer}
+              segmentDocs={segmentDocs}
+              segmentRefUploads={segmentRefUploads}
             />
           )}
         </div>
@@ -1460,32 +1483,21 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 <IconChevronLeft /> Previous
               </button>
             )}
-            {stage < 3 && (() => {
-              /* Stage 2 gate visualised — disable Save & Next when the
-               * user hasn't captured the required KYC rows yet (at
-               * least one Company DD doc + one Owner KYC entry). The
-               * goNext handler still re-runs the same check, but
-               * disabling the button up-front makes the requirement
-               * obvious without needing to click and read a toast. */
-              const stage2Gate = stage === 2 && (kycOwners.length === 0 || !kycDocs.some(d => d.kind === 'dd'));
-              const blocked = saving || stage2Gate;
-              const title = stage2Gate
-                ? 'Add at least one Company Due Diligence document and one Owner KYC entry to continue.'
-                : undefined;
-              return (
-                <button
-                  className="acm-btn acm-btn-primary"
-                  onClick={goNext}
-                  disabled={blocked}
-                  title={title}
-                  style={blocked ? { opacity: 0.55, cursor: stage2Gate ? 'not-allowed' : 'wait' } : undefined}
-                >
-                  {saving
-                    ? <><IconSpinner /> Saving…</>
-                    : <>Save &amp; Next <IconChevronRight /></>}
-                </button>
-              );
-            })()}
+            {stage < 3 && (
+              /* Save & Next: only `saving` disables the button now —
+               * the prior KYC-row gate was removed alongside the
+               * Stage 2 manual Add flow. */
+              <button
+                className="acm-btn acm-btn-primary"
+                onClick={goNext}
+                disabled={saving}
+                style={saving ? { opacity: 0.55, cursor: 'wait' } : undefined}
+              >
+                {saving
+                  ? <><IconSpinner /> Saving…</>
+                  : <>Save &amp; Next <IconChevronRight /></>}
+              </button>
+            )}
             {stage === 3 && (
               <button
                 className="acm-btn acm-btn-primary"
@@ -1937,13 +1949,14 @@ const Stage1 = ({
               <input className="acm-input" placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
             </Field>
             <Field label="Consignee Segment" required error={errors.segment} fieldKey="segment">
-              <MasterSelect
-                value={form.segment}
-                options={optsWith(masters.segments, form.segment)}
+              <MasterMultiSelect
+                values={Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : [])}
+                options={masters.segments.map(o => ({ value: o.value, label: o.label }))}
                 placeholder="Select Segment"
+                addMorePlaceholder="+ Add another segment"
                 invalid={!!errors.segment}
                 disabled={lock}
-                onChange={v => set('segment', v)}
+                onChange={vs => set('segment', vs)}
               />
             </Field>
             <Field label="Classification &amp; Flags">
@@ -2355,7 +2368,7 @@ const Stage2 = ({
   onAddOwner: () => void;
   onEditOwner: (id: string) => void;
   onDeleteOwner: (id: string) => void;
-  form1: { companyName: string; legalName: string; website: string; segment: string; classification: string; risk: string; addressType: string; address: string; country: string; state: string; city: string; pin: string; contactName: string; designation: string; contactNo: string; email: string; whatsapp: string };
+  form1: { companyName: string; legalName: string; website: string; segment: string[]; classification: string; risk: string; addressType: string; address: string; country: string; state: string; city: string; pin: string; contactName: string; designation: string; contactNo: string; email: string; whatsapp: string };
   locations: LocationRow[];
   consigneeCode?: string;
   sameAsCustomer: boolean;
@@ -2684,7 +2697,7 @@ const Stage2 = ({
 };
 
 /* ─── Stage 3 — Evidence Vault ─── */
-const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwners, locations, sameAsCustomer }: {
+const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwners, locations, sameAsCustomer, segmentDocs, segmentRefUploads }: {
   locations: LocationRow[];
   vaultTab: VaultTab;
   setVaultTab: (t: VaultTab) => void;
@@ -2694,6 +2707,8 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
   kycDocs: KycDocRow[];
   kycOwners: KycOwnerRow[];
   sameAsCustomer: boolean;
+  segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
+  segmentRefUploads: Record<string, { file: File; url: string; name: string }>;
 }) => {
   const ddCount = kycDocs.filter(d => d.kind === 'dd').length;
   const tlCount = kycDocs.filter(d => d.kind === 'tl').length;
@@ -2743,11 +2758,76 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
             ))}
           </div>
 
-          {evSub === 'kyc' ? (
-            <VaultOwnersTable owners={kycOwners} />
-          ) : (
-            <VaultDocsTable docs={kycDocs.filter(d => d.kind === (evSub === 'dd' ? 'dd' : 'tl'))} kind={evSub === 'dd' ? 'dd' : 'tl'} />
-          )}
+          {(() => {
+            /* Stage 3 KYC vault now rolls up Stage 2's segment-rule
+             * uploads (the source of truth post-rule consolidation).
+             * Map each EvSubTab to the matching Stage 2 ref-key prefix
+             * + the segmentDocs category that drives the row list. */
+            const stage2Key = evSub === 'dd' ? 'company-dd'
+                            : evSub === 'kyc' ? 'owner-kyc'
+                            : 'trade-licence';
+            const sourceRows = evSub === 'dd' ? (segmentDocs.dd || [])
+                              : evSub === 'kyc' ? (segmentDocs.kyc || [])
+                              : (segmentDocs.tl || []);
+            if (sourceRows.length === 0) {
+              return (
+                <div className="acm-kyc-card" style={{ marginTop: 12 }}>
+                  <div className="acm-loc-empty" style={{ padding: 24, textAlign: 'center', color: '#6b7280' }}>
+                    No segment rule loaded for this category. Pick a segment on Stage 1 to populate the vault.
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div className="acm-kyc-card" style={{ marginTop: 12 }}>
+                <div className="acm-loc-table-wrap">
+                  <table className="acm-loc-table">
+                    <thead>
+                      <tr>
+                        <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
+                        <th>ISSUING AUTHORITY</th><th>EXPIRY</th><th>STATUS</th><th>ATTACHMENT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sourceRows.map((d: any, i: number) => {
+                        const refKey = `${stage2Key}::${d.code}`;
+                        const uploaded = segmentRefUploads[refKey];
+                        return (
+                          <tr key={d.code} className="acm-loc-placeholder-row">
+                            <td>{String(i + 1).padStart(2, '0')}</td>
+                            <td><span className="acm-kyc-code">{d.code}</span></td>
+                            <td style={{ fontWeight: 700 }}>
+                              {d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
+                            </td>
+                            <td>{d.authority || '—'}</td>
+                            <td><span className={(!d.expiry || d.expiry === 'N/A') ? 'acm-kyc-exp na' : 'acm-kyc-exp'}>{d.expiry || 'N/A'}</span></td>
+                            <td>
+                              <span style={{
+                                padding:'2px 8px', borderRadius:999, fontSize:10.5, fontWeight:600,
+                                background: d.requirement === 'M' ? '#0d9488' : '#e5e7eb',
+                                color:      d.requirement === 'M' ? '#ffffff' : '#374151',
+                              }}>
+                                {d.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
+                              </span>
+                            </td>
+                            <td>
+                              {uploaded ? (
+                                <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, textDecoration:'underline' }}>
+                                  {uploaded.name}
+                                </a>
+                              ) : (
+                                <span style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: 11 }}>Not uploaded in Stage 2</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
         </>
       )}
 
@@ -2823,7 +2903,7 @@ const ReadInlineG = ({ label, value, span }: { label: string; value?: string | n
  * Stage 1 field the user filled. Same compact layout the Customer
  * modal uses, just emerald-themed via .acg-hs-* classes. */
 function ConsigneeHistoryStage1({ form, locations, consigneeCode }: {
-  form: { companyName: string; legalName: string; website: string; segment: string; classification: string; risk: string; addressType: string; address: string; country: string; state: string; city: string; pin: string; contactName: string; designation: string; contactNo: string; email: string; whatsapp: string };
+  form: { companyName: string; legalName: string; website: string; segment: string[]; classification: string; risk: string; addressType: string; address: string; country: string; state: string; city: string; pin: string; contactName: string; designation: string; contactNo: string; email: string; whatsapp: string };
   locations: LocationRow[];
   consigneeCode?: string;
 }) {
@@ -2833,7 +2913,7 @@ function ConsigneeHistoryStage1({ form, locations, consigneeCode }: {
         {consigneeCode && <ReadInlineG label="Consignee ID" value={consigneeCode} />}
         <ReadInlineG label="Company Name"        value={form.companyName} />
         <ReadInlineG label="Company Legal Name"  value={form.legalName} />
-        <ReadInlineG label="Customer Segment"    value={form.segment} />
+        <ReadInlineG label="Customer Segment"    value={(form.segment ?? []).join(', ')} />
 
         <ReadInlineG label="Classification"      value={form.classification} />
         <ReadInlineG label="Risk Level"          value={form.risk} />

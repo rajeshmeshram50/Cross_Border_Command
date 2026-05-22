@@ -6,6 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
 import AddVendorModal from './AddVendorModal';
+import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from './SupplierEvidenceVaultModal';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import { ShimmerTable } from '../../components/ui/Shimmer';
 
@@ -102,6 +103,10 @@ export default function Vendors() {
      "Map Products" so the user doesn't have to re-walk Steps 1-3
      just to add a product mapping. */
   const [editingStep, setEditingStep] = useState<1 | 2 | 3 | 4 | null>(null);
+  /* Standalone Evidence Vault modal target — clicking the Vault action
+   * on a row sets this; the modal pulls a fresh /vault payload from
+   * the API and renders KPI cards + per-bucket tables read-only. */
+  const [vaultTarget, setVaultTarget] = useState<SupplierVaultTarget | null>(null);
   const [loading, setLoading] = useState(true);
 
   /* Map a paginated API row to the local list-page shape. Anything the
@@ -346,7 +351,21 @@ export default function Vendors() {
             <ActionBtn title="View"         icon="ri-eye-line"            color="primary"   onClick={() => toast.info('View', `Viewing ${v.companyName}`)} />
             <ActionBtn title="Edit"         icon="ri-pencil-line"         color="info"      onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }} />
             <ActionBtn title="Map Products" icon="ri-links-line"          color="success"   onClick={() => navigate(`/products?vendor_id=${v.id}&vendor_code=${encodeURIComponent(v.code || '')}&vendor_name=${encodeURIComponent(v.companyName || '')}`)} />
-            <ActionBtn title="Vault"        icon="ri-folder-3-line"       color="secondary" onClick={() => toast.info('Vault', 'Supplier vault coming soon')} />
+            <ActionBtn
+              title="Supplier Evidence Vault"
+              icon="ri-file-shield-line"
+              color="secondary"
+              onClick={() => setVaultTarget({
+                id: v.code,
+                db_id: v.id,
+                company: v.companyName,
+                risk: v.risk,
+                segment: v.segment,
+                country: v.country,
+                contact: v.contactName,
+                contactCity: v.city,
+              })}
+            />
           </div>
         );
       },
@@ -577,6 +596,18 @@ export default function Vendors() {
           onSubmit={handleSave}
         />
       )}
+
+      {/* Read-only Supplier Evidence Vault popup — pulls
+          /api/segment-uploads/supplier/{id}/vault to render KPI cards +
+          per-bucket tables (Company DD, Owner KYC, Trade Licenses,
+          Trade Documents, Shipment Agreements). Rows are the union of
+          the supplier's segment-rule docs and any files uploaded
+          against them in Stage 2. */}
+      <SupplierEvidenceVaultModal
+        open={!!vaultTarget}
+        supplier={vaultTarget}
+        onClose={() => setVaultTarget(null)}
+      />
     </>
   );
 }
