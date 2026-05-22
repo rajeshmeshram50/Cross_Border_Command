@@ -157,6 +157,78 @@ class ClmSegmentRuleController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
+    /**
+     * GET /clm/segment-rules/for-segment/{segmentId}
+     *
+     * Resolve the segment-rule for a given segment plus the FULL document
+     * master rows referenced by its doc_selections payload, so the consumer
+     * forms (AddCustomer, AddConsignee, AddVendor) can pre-populate their
+     * Stage-2 KYC / DD / Trade-Document lists without three extra fetches.
+     *
+     * Response shape — always 200 even when no rule exists, so the caller
+     * can render an empty Stage 2 instead of having to swallow a 404:
+     *   {
+     *     "rule": null | { … },
+     *     "kyc": [ { code, name, authority, requirement: 'M'|'O', … } ],
+     *     "dd":  [ … ],
+     *     "tl":  [ … ],
+     *     "td":  [ … ],
+     *     "qc":  [ … ]
+     *   }
+     */
+    public function forSegment(Request $request, $segmentId)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $cid  = $user->client_id;
+        if (!$cid) {
+            return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
+        }
+
+        $rule = ClmSegmentRule::where('client_id', $cid)
+            ->where('segment_id', $segmentId)
+            ->first();
+
+        // Resolve a category's codes (from doc_selections) to the actual
+        // master rows + stamp the M|O requirement so the frontend can render
+        // each row as Mandatory / Optional in one pass.
+        $resolveCat = function (string $cat, string $modelClass) use ($rule, $cid) {
+            $sel = $rule?->doc_selections ?? [];
+            $entries = $sel[$cat] ?? [];
+            if (empty($entries) || !is_array($entries)) return [];
+            $codes = array_keys($entries);
+            $rows = $modelClass::query()
+                ->where('client_id', $cid)
+                ->whereIn('code', $codes)
+                ->get();
+            return $rows->map(function ($r) use ($entries) {
+                // Each model has a slightly different shape — surface the
+                // intersection plus everything from the row's attributes
+                // so the frontend can pick whatever fields it wants.
+                $base = $r->only(['id', 'code', 'name', 'status']);
+                // Optional fields — present on some models only.
+                foreach (['authority', 'expiry', 'validity', 'title', 'doc_type', 'purpose', 'party'] as $opt) {
+                    if (array_key_exists($opt, $r->getAttributes())) {
+                        $base[$opt] = $r->getAttribute($opt);
+                    }
+                }
+                $base['requirement'] = $entries[$r->code] ?? 'O';
+                return $base;
+            })->values();
+        };
+
+        return response()->json([
+            'status' => true,
+            'data'   => [
+                'rule' => $rule,
+                'kyc'  => $resolveCat('kyc', ClmKycDocument::class),
+                'dd'   => $resolveCat('dd',  ClmDdDocument::class),
+                'tl'   => $resolveCat('tl',  ClmTradeLicense::class),
+                'td'   => $resolveCat('td',  ClmTradeDocLibrary::class),
+                'qc'   => $resolveCat('qc',  ClmQcDocument::class),
+            ],
+        ]);
+    }
+
     private function validatePayload(Request $request): array
     {
         return $request->validate([

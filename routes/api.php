@@ -254,6 +254,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // one round-trip. Declared BEFORE /clm/segment-rules/{id} so it isn't
     // captured as an id parameter.
     Route::get   ('/clm/segment-rules/bootstrap', [ClmSegmentRuleController::class, 'bootstrap']);
+    // Resolve a segment's rule + the full KYC/DD/TL/TD/QC master rows the rule
+    // references, so Customer/Consignee/Supplier Stage 2 forms can pre-populate
+    // their document tables in one fetch when the user picks a segment.
+    Route::get   ('/clm/segment-rules/for-segment/{segmentId}', [ClmSegmentRuleController::class, 'forSegment'])->whereNumber('segmentId');
     Route::get   ('/clm/segment-rules',           [ClmSegmentRuleController::class, 'index']);
     Route::post  ('/clm/segment-rules',           [ClmSegmentRuleController::class, 'store']);
     Route::put   ('/clm/segment-rules/{id}',      [ClmSegmentRuleController::class, 'update']);

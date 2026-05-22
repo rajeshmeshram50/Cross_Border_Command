@@ -266,16 +266,25 @@ export default function AddVendorModal(props: {
   const [complianceOpts, setComplianceOpts]     = useState<Opt[]>([]);
   const [behaviourOpts,  setBehaviourOpts]      = useState<Opt[]>([]);
   const [countryOpts,    setCountryOpts]        = useState<Opt[]>([]);
-  /* state_codes master rows (eager-loaded with state.name) drive the
-     State dropdown AND the State Code auto-fill. */
+  /* master_states drives the State dropdown — full per-country list
+     (1800+ rows across 90+ countries). Loaded once on mount and
+     cascaded off the selected Country via the `country_id` field. */
+  const [stateRows, setStateRows] = useState<Array<{
+    id: string;
+    name: string;
+    country_id: string;
+  }>>([]);
+  /* master_state_codes — only used for the State Code auto-fill once
+     a state is picked. Most countries have no entries here (it was
+     seeded for India only at boot); the State dropdown must not be
+     gated by it or non-Indian countries would show zero options.
+     Each row carries `state_id` (the FK into master_states) and
+     `state_code` (the value we auto-fill into the State Code field). */
   const [stateCodeRows, setStateCodeRows] = useState<Array<{
     id: string;
     state_id: string;
     state_code: string;
     state_name: string;
-    /* country_id rides along the state_codes payload so the State
-       dropdown can be filtered by the currently-selected Country —
-       picking India narrows the list to Indian states, etc. */
     country_id: string;
   }>>([]);
   /* The State dropdown is now declared further down (after `country`
@@ -319,6 +328,24 @@ export default function AddVendorModal(props: {
   const [segment,     setSegment]     = useState('');
   const [complianceBehaviour, setComplianceBehaviour] = useState('');
 
+  /* Segment-rule template — resolved KYC/DD/TL/TD/QC master rows for the
+   * currently-selected supplier segment. Renders as a reference banner
+   * above the Step 2 Company DD and Trade License tables so onboarders
+   * see the segment's required uploads at a glance. Stays empty when no
+   * segment is picked or the segment has no rule configured. */
+  type SegDocRow = { id:number; code:string; name:string; authority?:string|null; expiry?:string|null; status?:string; requirement:'M'|'O' };
+  type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
+  const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
+  const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
+
+  /* Per-row file uploads against the segment-rule reference rows in
+   * Step 2 (Company DD / Owner KYC / Trade License). Key:
+   * `${kycTab}::${doc.code}`. Value: File + blob URL. Reset on modal
+   * close — held at this level (not inside SupplierSegmentRefTable)
+   * so switching sub-tabs doesn't drop uploads. */
+  type SegRefUpload = { file: File; url: string; name: string };
+  const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
+
   /* ─── Step 1: Address + primary contact ─── */
   const [registeredOffice, setRegisteredOffice] = useState('');
   const [country,   setCountry]   = useState('');
@@ -327,23 +354,20 @@ export default function AddVendorModal(props: {
   const [city,      setCity]      = useState('');
   const [pincode,   setPincode]   = useState('');
 
-  /* State dropdown is ID-based — `value` is state_id, `label` is the
-     state's name. We cascade off the selected Country (when one is
-     picked) so the list narrows to that country's states; the state
-     code auto-fills once a state is picked. De-duped by state_id
-     because the state_codes master can carry multiple codes per state
-     in theory, and we only want one entry per state on the picker. */
+  /* State dropdown options. Source is master_states (the full per-
+     country list), filtered by the selected Country. Country is the
+     master_countries id stored as a string, so the comparison matches
+     `country_id` (also stringified) directly. When no country is
+     picked yet we show every state — the cascade narrows it as soon
+     as the user chooses one. */
   const stateOpts = useMemo<Opt[]>(() => {
-    const seen = new Set<string>();
-    const filtered = stateCodeRows.filter(r => {
-      if (!r.state_id) return false;
-      if (country && r.country_id && r.country_id !== country) return false;
-      if (seen.has(r.state_id)) return false;
-      seen.add(r.state_id);
-      return true;
-    });
-    return filtered.map(r => ({ value: r.state_id, label: r.state_name }));
-  }, [stateCodeRows, country]);
+    const filtered = country
+      ? stateRows.filter(r => r.country_id === country)
+      : stateRows;
+    return filtered
+      .map(r => ({ value: r.id, label: r.name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [stateRows, country]);
   const [contactName, setContactName] = useState('');
   const [designation, setDesignation] = useState('');
   const [contactNo,   setContactNo]   = useState('');
@@ -517,8 +541,30 @@ export default function AddVendorModal(props: {
         return [] as Array<{ id: string; state_id: string; state_code: string; state_name: string; country_id: string }>;
       }
     };
+    /* master_states is the full per-country state list. Pulled
+       directly here (instead of relying on state_codes' eager-loaded
+       relation) because state_codes only carries ~10 Indian rows —
+       picking any other country was returning an empty State dropdown
+       before this. country_id rides along so the dropdown can cascade
+       off the chosen Country. */
+    const fetchStates = async () => {
+      try {
+        type S = { id: number | string; name?: string; country_id?: number | string; status?: string };
+        const res = await api.get<S[]>(`/master/states`);
+        return (res.data || [])
+          .filter(r => String(r.status ?? '').toLowerCase() !== 'inactive')
+          .map(r => ({
+            id: String(r.id),
+            name: String(r.name ?? ''),
+            country_id: String(r.country_id ?? ''),
+          }))
+          .filter(r => r.name !== '');
+      } catch {
+        return [] as Array<{ id: string; name: string; country_id: string }>;
+      }
+    };
     (async () => {
-      const [vt, rl, bh, sg, cb, co, sc] = await Promise.all([
+      const [vt, rl, bh, sg, cb, co, sc, st] = await Promise.all([
         fetchMaster('vendor_types',          'name'),
         fetchMaster('risk_levels',           'name'),
         fetchMaster('vendor_behaviour',      'name'),
@@ -526,6 +572,7 @@ export default function AddVendorModal(props: {
         fetchMaster('compliance_behaviours', 'name'),
         fetchMaster('countries',             'name'),
         fetchStateCodes(),
+        fetchStates(),
       ]);
       setVendorTypeOpts(vt);
       setRiskLevelOpts(rl);
@@ -534,8 +581,45 @@ export default function AddVendorModal(props: {
       setComplianceOpts(cb);
       setCountryOpts(co);
       setStateCodeRows(sc);
+      setStateRows(st);
     })();
   }, []);
+
+  /* Segment-rule template fetch. The supplier `segment` state stores
+   * the segment's DB id directly (unlike Customer/Consignee which hold
+   * the name) — feed it straight into the resolver endpoint. Bails out
+   * to an empty template when no segment is chosen or the API doesn't
+   * find a rule for it. */
+  useEffect(() => {
+    /* Segment changed → previously-attached reference-row uploads no
+     * longer match anything (the DCP rule's codes are different). Wipe
+     * them and revoke each blob URL so the GC can reclaim them. */
+    setSegmentRefUploads(prev => {
+      Object.values(prev).forEach(u => { try { URL.revokeObjectURL(u.url); } catch {} });
+      return {};
+    });
+
+    if (!segment) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    const id = Number(segment);
+    if (!Number.isFinite(id) || id <= 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+
+    let cancelled = false;
+    api.get(`/clm/segment-rules/for-segment/${id}`)
+      .then(r => {
+        if (cancelled) return;
+        const data = r.data?.data ?? {};
+        setSegmentDocs({
+          kyc: Array.isArray(data.kyc) ? data.kyc : [],
+          dd:  Array.isArray(data.dd)  ? data.dd  : [],
+          tl:  Array.isArray(data.tl)  ? data.tl  : [],
+          td:  Array.isArray(data.td)  ? data.td  : [],
+          qc:  Array.isArray(data.qc)  ? data.qc  : [],
+        });
+      })
+      .catch(() => { if (!cancelled) setSegmentDocs(EMPTY_SEG_DOCS); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segment]);
 
   /* ──────────────────────────────────────────────────────────────────
    * Edit-mode prefill — fires once on mount when the parent passed an
@@ -1823,11 +1907,17 @@ export default function AddVendorModal(props: {
           )}
 
           {/* ─── STEP 2 ─── */}
+          {/* The "+ Add" header pill is hidden for the three KYC sub-tabs
+              (company / owner / license) — rows there are sourced from
+              the segment-rule reference tables now. Bank Details and GST
+              Scrutiny still need the add button for manual entries. */}
           {step === 2 && (
             <SectionCard tone="teal" icon={<i className="ri-shield-check-line" />} title="KYC / Due Diligence Details" subtitle="Upload statutory & identity proofs" headerAction={
-              <button className="avm-section-add-btn" onClick={kycTabAddMeta[kycTab].onClick}>
-                {kycTabAddMeta[kycTab].label}
-              </button>
+              (kycTab === 'bank' || kycTab === 'gst') ? (
+                <button className="avm-section-add-btn" onClick={kycTabAddMeta[kycTab].onClick}>
+                  {kycTabAddMeta[kycTab].label}
+                </button>
+              ) : null
             }>
               <div className="avm-pill-tabs">
                 <button className={`avm-pill ${kycTab === 'company' ? 'on' : ''}`} onClick={() => setKycTab('company')}>Company Due Diligence Details</button>
@@ -1838,26 +1928,56 @@ export default function AddVendorModal(props: {
               </div>
 
               {kycTab === 'company' && (
-                <DdTable
-                  rows={ddRows}
-                  onRemove={removeDdRow}
-                  onAttach={attachFileToDd}
-                  onClearFile={(id) => setDdRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
-                />
+                ddRows.length === 0 && segmentDocs.dd.length > 0 ? (
+                  <SupplierSegmentRefTable
+                    title="DD DOCUMENT NAME"
+                    rows={segmentDocs.dd}
+                    tabKey="company"
+                    uploads={segmentRefUploads}
+                    setUploads={setSegmentRefUploads}
+                  />
+                ) : (
+                  <DdTable
+                    rows={ddRows}
+                    onRemove={removeDdRow}
+                    onAttach={attachFileToDd}
+                    onClearFile={(id) => setDdRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
+                  />
+                )
               )}
               {kycTab === 'owner' && (
-                <OwnerKycTable
-                  rows={ownerRows}
-                  onRemove={removeOwnerRow}
-                />
+                ownerRows.length === 0 && segmentDocs.kyc.length > 0 ? (
+                  <SupplierSegmentRefTable
+                    title="KYC DOCUMENT NAME"
+                    rows={segmentDocs.kyc}
+                    tabKey="owner"
+                    uploads={segmentRefUploads}
+                    setUploads={setSegmentRefUploads}
+                  />
+                ) : (
+                  <OwnerKycTable
+                    rows={ownerRows}
+                    onRemove={removeOwnerRow}
+                  />
+                )
               )}
               {kycTab === 'license' && (
-                <TradeLicenseTable
-                  rows={licenseRows}
-                  onRemove={removeLicRow}
-                  onAttach={attachFileToLicense}
-                  onClearFile={(id) => setLicenseRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
-                />
+                licenseRows.length === 0 && segmentDocs.tl.length > 0 ? (
+                  <SupplierSegmentRefTable
+                    title="TRADE LICENSE NAME"
+                    rows={segmentDocs.tl}
+                    tabKey="license"
+                    uploads={segmentRefUploads}
+                    setUploads={setSegmentRefUploads}
+                  />
+                ) : (
+                  <TradeLicenseTable
+                    rows={licenseRows}
+                    onRemove={removeLicRow}
+                    onAttach={attachFileToLicense}
+                    onClearFile={(id) => setLicenseRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
+                  />
+                )
               )}
               {kycTab === 'bank' && (
                 <BankTable
@@ -2527,6 +2647,98 @@ function FileChooser(props: {
  * ────────────────────────────────────────────────────────────────────── */
 function EmptyTable(props: { label: string }) {
   return <div className="avm-empty">{props.label}</div>;
+}
+
+/* Segment-rule reference table — rendered in Step 2 sub-tabs (Company
+ * DD, Owner KYC, Trade License) when no live rows have been captured
+ * yet AND the selected supplier segment's rule defines required
+ * documents. Acts as a checklist of what the segment expects. Each
+ * row's Actions cell starts as a single Upload button; on file pick
+ * it flips to View / Download / Delete via a blob URL held in the
+ * parent's `uploads` map. */
+function SupplierSegmentRefTable(props: {
+  title: string;
+  tabKey: string;
+  rows: { code: string; name: string; authority?: string | null; expiry?: string | null; requirement: 'M' | 'O' }[];
+  uploads: Record<string, { file: File; url: string; name: string }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+}) {
+  const { title, tabKey, rows, uploads, setUploads } = props;
+  /* Single picker handler — drives both first-time Upload and the
+   * Re-upload action after the file is in. The setter swaps the blob
+   * URL atomically so we never leak the previous File object. */
+  const onPick = (refKey: string, f: File | undefined) => {
+    if (!f) return;
+    setUploads(prev => {
+      const existing = prev[refKey];
+      if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+      return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
+    });
+  };
+  return (
+    <div className="table-responsive table-card border rounded">
+      <table className="table align-middle table-nowrap mb-0">
+        <thead className="table-light">
+          <tr>
+            <th>SR NO</th>
+            <th>AUTO CODE</th>
+            <th>{title}</th>
+            <th>ISSUING AUTHORITY</th>
+            <th>EXPIRY</th>
+            <th>STATUS</th>
+            <th>FILE</th>
+            <th>ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => {
+            const refKey = `${tabKey}::${r.code}`;
+            const uploaded = uploads[refKey];
+            return (
+              <tr key={r.code} style={{ background: '#fafafa' }}>
+                <td>{String(i + 1).padStart(2, '0')}</td>
+                <td><span className="avm-auto-code">{r.code}</span></td>
+                <td><strong>{r.name}</strong></td>
+                <td>{r.authority || '—'}</td>
+                <td>{r.expiry || 'N/A'}</td>
+                <td>
+                  <span className={`avm-pill ${r.requirement === 'M' ? 'avm-pill-success' : 'avm-pill-muted'}`}>
+                    {r.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
+                  </span>
+                </td>
+                <td>
+                  {uploaded
+                    ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
+                    : <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span>}
+                </td>
+                <td>
+                  {!uploaded ? (
+                    <label className="btn btn-sm btn-soft-primary mb-0" title="Upload" style={{ cursor: 'pointer' }}>
+                      <i className="ri-upload-2-line" />
+                      <input type="file" hidden onChange={e => onPick(refKey, e.target.files?.[0])} />
+                    </label>
+                  ) : (
+                    <div className="hstack gap-1">
+                      <a href={uploaded.url} target="_blank" rel="noreferrer" className="btn btn-sm btn-soft-info" title={`View ${uploaded.name}`}>
+                        <i className="ri-eye-line" />
+                      </a>
+                      <a href={uploaded.url} download={uploaded.name} className="btn btn-sm btn-soft-secondary" title={`Download ${uploaded.name}`}>
+                        <i className="ri-download-2-line" />
+                      </a>
+                      <label className="btn btn-sm btn-soft-primary mb-0" title="Re-upload (replace file)" style={{ cursor: 'pointer' }}>
+                        <i className="ri-refresh-line" />
+                        <input type="file" hidden onChange={e => onPick(refKey, e.target.files?.[0])} />
+                      </label>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 /* Reusable FILE-cell renderer for the KYC tables — shows the filename

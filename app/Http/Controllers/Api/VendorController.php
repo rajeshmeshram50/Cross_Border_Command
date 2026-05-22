@@ -60,7 +60,7 @@ class VendorController extends Controller
         'vendorType:id,name',
         'riskLevel:id,name',
         'vendorBehaviour:id,name',
-        'segment:id,title',
+        'segment:id,name',
         'complianceBehaviour:id,name',
         'client:id,org_name',
         'branch:id,name',
@@ -80,7 +80,7 @@ class VendorController extends Controller
             ->with([
                 'primaryAddress:id,vendor_id,city,state_id,contact_name,email,contact_no,designation',
                 'vendorType:id,name',
-                'segment:id,title',
+                'segment:id,name',
                 'riskLevel:id,name',
             ])
             ->withCount('productMappings')
@@ -145,7 +145,7 @@ class VendorController extends Controller
             'vendor_type_id'           => 'nullable|integer|exists:master_vendor_types,id',
             'risk_level_id'            => 'nullable|integer|exists:master_risk_levels,id',
             'vendor_behaviour_id'      => 'nullable|integer|exists:master_vendor_behaviour,id',
-            'segment_id'               => 'nullable|integer|exists:master_segments,id',
+            'segment_id'               => 'nullable|integer|exists:clm_segments,id',
             'compliance_behaviour_id'  => 'nullable|integer|exists:master_compliance_behaviours,id',
         ]);
 
