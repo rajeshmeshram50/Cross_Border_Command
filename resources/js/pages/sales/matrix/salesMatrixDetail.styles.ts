@@ -1048,6 +1048,20 @@ export const SALES_MATRIX_DETAIL_CSS = `
   background: linear-gradient(135deg, #1f1845, #2a2150);
   color: #a78bfa;
 }
+
+/* Attach File button — uses .smd-input + .smd-input-file but it's a
+ * <button>, so the input-targeted dark overrides above don't catch it. */
+[data-bs-theme="dark"] .smd-root .smd-input-file {
+  background: #1f1845;
+  border-color: rgba(167, 139, 250, .30);
+  color: #d8b4fe;
+}
+[data-bs-theme="dark"] .smd-root .smd-input-file:hover {
+  background: #2a2150;
+  border-color: #a78bfa;
+  color: #ede9fe;
+}
+[data-bs-theme="dark"] .smd-root .smd-input-file svg { color: currentColor; }
 [data-bs-theme="dark"] .smd-root .smd-deal-section-title { color: #c4b5fd; }
 [data-bs-theme="dark"] .smd-root .smd-deal-label { color: #c4b5fd; }
 [data-bs-theme="dark"] .smd-root .smd-deal-input,
