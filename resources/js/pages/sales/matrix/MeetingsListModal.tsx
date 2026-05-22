@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import MeetingsForLeadModal from './MeetingsForLeadModal';
+import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Meetings Directory — list of every meeting against the current
@@ -48,6 +49,8 @@ export default function MeetingsListModal({
   const [rows, setRows]       = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<Meeting | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const refresh = () => {
     if (!oppId) return;
@@ -76,14 +79,19 @@ export default function MeetingsListModal({
     }
   };
 
-  const removeRow = async (m: Meeting) => {
-    if (!confirm(`Delete meeting with ${m.customer}?`)) return;
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    const m = pendingDelete;
+    setDeleting(true);
     try {
       await api.delete(`/sales/meetings/${m.id}`);
       setRows(prev => prev.filter(x => x.id !== m.id));
       toast.success('Deleted', 'Meeting removed');
+      setPendingDelete(null);
     } catch (e: any) {
       toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete meeting');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -201,7 +209,7 @@ export default function MeetingsListModal({
                               Done
                             </button>
                           )}
-                          <button className="mlm-row-btn mlm-row-btn-del" onClick={() => void removeRow(m)} title="Delete">
+                          <button className="mlm-row-btn mlm-row-btn-del" onClick={() => setPendingDelete(m)} title="Delete">
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                               <polyline points="3 6 5 6 21 6" />
                               <path d="M19 6l-1.5 14a2 2 0 0 1-2 2H8.5a2 2 0 0 1-2-2L5 6" />
@@ -228,6 +236,17 @@ export default function MeetingsListModal({
         defaultContact={defaultContact}
         defaultEmail={defaultEmail}
         onClose={() => { setAddOpen(false); refresh(); }}
+      />
+
+      {/* Themed delete confirmation */}
+      <DeleteConfirmModal
+        open={!!pendingDelete}
+        title="Delete Meeting"
+        itemName={pendingDelete?.customer ?? ''}
+        subMessage="This meeting will be permanently removed from this opportunity."
+        loading={deleting}
+        onClose={() => { if (!deleting) setPendingDelete(null); }}
+        onConfirm={() => void confirmDelete()}
       />
     </>
   ), document.body);

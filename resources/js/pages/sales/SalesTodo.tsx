@@ -3,6 +3,9 @@ import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import Tooltip from '../../components/ui/Tooltip';
+import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
+import { MasterTimePicker } from '../../components/ui/MasterTimePicker';
 import {
   remindersApi, meetingsApi,
   isoToDisplay, displayToIso, hmsToHm,
@@ -786,6 +789,21 @@ export default function SalesTodo() {
               </div>
             )}
           </div>
+          {/* Search sits right after the filters (and the inline view
+              toggle for the Meeting tab) so it lands next to the
+              List/Calendar control. The Add button is the only thing in
+              the right corner of the row. */}
+          <div className="td-search-wrap">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#99c9c4" strokeWidth="2.3">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search by subject, opportunity ID, date…"
+              value={q}
+              onChange={e => { setQ(e.target.value); setPage(1); }}
+            />
+          </div>
           <div className="td-toolbar-right">
             {canAdd && (
               <button className="td-add-btn" onClick={openAdd}>
@@ -793,17 +811,6 @@ export default function SalesTodo() {
                 {tab === 'reminder' ? 'Add Reminder' : 'Add Meeting'}
               </button>
             )}
-            <div className="td-search-wrap">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#99c9c4" strokeWidth="2.3">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search by subject, opportunity ID, date…"
-                value={q}
-                onChange={e => { setQ(e.target.value); setPage(1); }}
-              />
-            </div>
           </div>
         </div>
 
@@ -1133,23 +1140,24 @@ export default function SalesTodo() {
                   {/* Reminder form — matches prototype layout */}
                   <div className="td-form-row">
                     <Field label="Opportunity ID">
-                      <TdSelect
+                      <MasterSelect
                         value={form.oppId || ''}
                         placeholder="— Select opportunity —"
-                        options={[
-                          { value: '', label: '— Select opportunity —' },
-                          ...OPP_ID_OPTIONS.map(o => ({ value: o, label: o })),
-                        ]}
+                        options={OPP_ID_OPTIONS.map(o => ({ value: o, label: o }))}
                         onChange={v => setForm(p => ({ ...p, oppId: v }))}
                       />
                     </Field>
                     <Field label="Opportunity Date">
-                      <input className="td-inp" type="date" value={toInputDate(form.oppDate)} onChange={e => setForm(p => ({ ...p, oppDate: fromInputDate(e.target.value) }))} />
+                      <MasterDatePicker
+                        value={toInputDate(form.oppDate)}
+                        onChange={iso => setForm(p => ({ ...p, oppDate: fromInputDate(iso) }))}
+                        placeholder="dd-mm-yyyy"
+                      />
                     </Field>
                   </div>
                   <div className="td-form-row">
                     <Field label="Status">
-                      <TdSelect
+                      <MasterSelect
                         value={form.status || 'In Progress'}
                         options={[
                           { value: 'In Progress', label: 'In Progress' },
@@ -1181,16 +1189,17 @@ export default function SalesTodo() {
                   </div>
                   <div className="td-form-row">
                     <Field label="Reminder Set Date" required>
-                      <input className="td-inp" type="date" value={toInputDate(form.setDate)} onChange={e => setForm(p => ({ ...p, setDate: fromInputDate(e.target.value) }))} />
+                      <MasterDatePicker
+                        value={toInputDate(form.setDate)}
+                        onChange={iso => setForm(p => ({ ...p, setDate: fromInputDate(iso) }))}
+                        placeholder="dd-mm-yyyy"
+                      />
                     </Field>
                     <Field label="TAT" required>
-                      <TdSelect
+                      <MasterSelect
                         value={form.tat || ''}
                         placeholder="Select TAT"
-                        options={[
-                          { value: '', label: 'Select TAT' },
-                          ...TAT_OPTIONS.map(t => ({ value: t, label: t })),
-                        ]}
+                        options={TAT_OPTIONS.map(t => ({ value: t, label: t }))}
                         onChange={v => setForm(p => ({ ...p, tat: v }))}
                       />
                     </Field>
@@ -1323,13 +1332,10 @@ export default function SalesTodo() {
                       />
                     </Field>
                     <Field label={meetingSub === 'physical' ? 'Meeting Type' : 'Platform'} required>
-                      <TdSelect
+                      <MasterSelect
                         value={form.platform || ''}
                         placeholder={meetingSub === 'physical' ? 'Select type' : 'Select platform'}
-                        options={[
-                          { value: '', label: meetingSub === 'physical' ? 'Select type' : 'Select platform' },
-                          ...(meetingSub === 'physical' ? PHYSICAL_PLATFORMS : VIRTUAL_PLATFORMS).map(p => ({ value: p, label: p })),
-                        ]}
+                        options={(meetingSub === 'physical' ? PHYSICAL_PLATFORMS : VIRTUAL_PLATFORMS).map(p => ({ value: p, label: p }))}
                         onChange={v => setForm(p => ({ ...p, platform: v }))}
                       />
                     </Field>
@@ -1345,13 +1351,25 @@ export default function SalesTodo() {
                   )}
                   <div className="td-form-row td-form-row-3">
                     <Field label="Meeting Date" required>
-                      <input className="td-inp" type="date" value={toInputDate(form.date)} onChange={e => setForm(p => ({ ...p, date: fromInputDate(e.target.value) }))} />
+                      <MasterDatePicker
+                        value={toInputDate(form.date)}
+                        onChange={iso => setForm(p => ({ ...p, date: fromInputDate(iso) }))}
+                        placeholder="dd-mm-yyyy"
+                      />
                     </Field>
                     <Field label="Start Time" required>
-                      <input className="td-inp" type="time" value={form.startTime || ''} onChange={e => setForm(p => ({ ...p, startTime: e.target.value }))} />
+                      <MasterTimePicker
+                        value={form.startTime || ''}
+                        onChange={v => setForm(p => ({ ...p, startTime: v }))}
+                        placeholder="--:--"
+                      />
                     </Field>
                     <Field label="End Time" required>
-                      <input className="td-inp" type="time" value={form.endTime || ''} onChange={e => setForm(p => ({ ...p, endTime: e.target.value }))} />
+                      <MasterTimePicker
+                        value={form.endTime || ''}
+                        onChange={v => setForm(p => ({ ...p, endTime: v }))}
+                        placeholder="--:--"
+                      />
                     </Field>
                   </div>
                   <Field label="Meeting Agenda" required colSpan={2}>
@@ -1856,10 +1874,10 @@ const SCOPED_CSS = `
 }
 .td-root .td-header-title {
   font-size:15px; font-weight:800; letter-spacing:-.3px; line-height:1.2;
-  background: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%);
+  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%);
   -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent;
-  color: #7c3aed;
+  color: #0d9488;
 }
 .td-root .td-header-sub   { font-size:11px; color:#0d9488; margin-top:2px; font-weight:500; opacity:.85; }
 .td-root .td-header-text  { flex: 1; }
@@ -1882,11 +1900,14 @@ const SCOPED_CSS = `
    Calendar tabs on the left, Add + Search on the right. Wraps only on very
    small screens (<900px) to avoid horizontal scroll. */
 .td-root .td-toolbar-row {
-  display:flex; align-items:center; justify-content:space-between;
+  display:flex; align-items:center;
   gap:10px; flex-wrap: nowrap; min-width: 0;
 }
+/* Search sits next to the view toggle; Add button anchors to the right. */
+.td-root .td-toolbar-row .td-toolbar-right { margin-left: auto; }
 @media (max-width: 900px) {
   .td-root .td-toolbar-row { flex-wrap: wrap; }
+  .td-root .td-toolbar-row .td-toolbar-right { margin-left: 0; }
 }
 .td-root .td-filters { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; min-width: 0; }
 .td-root .td-sf {
