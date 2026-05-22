@@ -7,6 +7,17 @@ use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\FaceBiometricController;
 use App\Http\Controllers\Api\CandidateController;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\ClmAgreementController;
+use App\Http\Controllers\Api\ClmAuthorityController;
+use App\Http\Controllers\Api\ClmClauseController;
+use App\Http\Controllers\Api\ClmDdController;
+use App\Http\Controllers\Api\ClmKycController;
+use App\Http\Controllers\Api\ClmQcController;
+use App\Http\Controllers\Api\ClmSegmentController;
+use App\Http\Controllers\Api\ClmSegmentRuleController;
+use App\Http\Controllers\Api\ClmTncController;
+use App\Http\Controllers\Api\ClmTradeDocumentController;
+use App\Http\Controllers\Api\ClmTradeLicenseController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
@@ -159,6 +170,94 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/customers/{customer}/owners/{owner}',  [\App\Http\Controllers\Api\CustomerOwnerController::class, 'update']);  // POST for file uploads
     Route::put   ('/customers/{customer}/owners/{owner}',  [\App\Http\Controllers\Api\CustomerOwnerController::class, 'update']);  // PUT for json-only
     Route::delete('/customers/{customer}/owners/{owner}',  [\App\Http\Controllers\Api\CustomerOwnerController::class, 'destroy']);
+
+    // Central CLM → Segment master (Tobacco, Rice, Food Grade Ethanol …)
+    // with regulatory tier + buyer/consignee rule. Tenant-scoped via
+    // client_id; code follows the S-001 sequence per tenant.
+    Route::get   ('/clm/segments',      [ClmSegmentController::class, 'index']);
+    Route::post  ('/clm/segments',      [ClmSegmentController::class, 'store']);
+    Route::put   ('/clm/segments/{id}', [ClmSegmentController::class, 'update']);
+    Route::delete('/clm/segments/{id}', [ClmSegmentController::class, 'destroy']);
+
+    // Central CLM → Authority master (FSSAI, DGFT, BIS, …). Referenced by
+    // every downstream doc master as a free-text label.
+    Route::get   ('/clm/authorities',      [ClmAuthorityController::class, 'index']);
+    Route::post  ('/clm/authorities',      [ClmAuthorityController::class, 'store']);
+    Route::put   ('/clm/authorities/{id}', [ClmAuthorityController::class, 'update']);
+    Route::delete('/clm/authorities/{id}', [ClmAuthorityController::class, 'destroy']);
+
+    // Central CLM → KYC, DD, Trade Licences, Quality & Compliance — each is
+    // a standalone catalogue; the Document Control Panel later picks rows
+    // from all four to build segment-specific document rules.
+    Route::get   ('/clm/kyc-documents',      [ClmKycController::class, 'index']);
+    Route::post  ('/clm/kyc-documents',      [ClmKycController::class, 'store']);
+    Route::put   ('/clm/kyc-documents/{id}', [ClmKycController::class, 'update']);
+    Route::delete('/clm/kyc-documents/{id}', [ClmKycController::class, 'destroy']);
+
+    Route::get   ('/clm/dd-documents',      [ClmDdController::class, 'index']);
+    Route::post  ('/clm/dd-documents',      [ClmDdController::class, 'store']);
+    Route::put   ('/clm/dd-documents/{id}', [ClmDdController::class, 'update']);
+    Route::delete('/clm/dd-documents/{id}', [ClmDdController::class, 'destroy']);
+
+    Route::get   ('/clm/trade-licenses',      [ClmTradeLicenseController::class, 'index']);
+    Route::post  ('/clm/trade-licenses',      [ClmTradeLicenseController::class, 'store']);
+    Route::put   ('/clm/trade-licenses/{id}', [ClmTradeLicenseController::class, 'update']);
+    Route::delete('/clm/trade-licenses/{id}', [ClmTradeLicenseController::class, 'destroy']);
+
+    Route::get   ('/clm/qc-documents',      [ClmQcController::class, 'index']);
+    Route::post  ('/clm/qc-documents',      [ClmQcController::class, 'store']);
+    Route::put   ('/clm/qc-documents/{id}', [ClmQcController::class, 'update']);
+    Route::delete('/clm/qc-documents/{id}', [ClmQcController::class, 'destroy']);
+
+    // Central CLM → Trade Documents (two tabs: names catalogue + library).
+    Route::get   ('/clm/trade-doc-names',      [ClmTradeDocumentController::class, 'namesIndex']);
+    Route::post  ('/clm/trade-doc-names',      [ClmTradeDocumentController::class, 'namesStore']);
+    Route::put   ('/clm/trade-doc-names/{id}', [ClmTradeDocumentController::class, 'namesUpdate']);
+    Route::delete('/clm/trade-doc-names/{id}', [ClmTradeDocumentController::class, 'namesDestroy']);
+    Route::get   ('/clm/trade-doc-library',      [ClmTradeDocumentController::class, 'libraryIndex']);
+    Route::post  ('/clm/trade-doc-library',      [ClmTradeDocumentController::class, 'libraryStore']);
+    Route::put   ('/clm/trade-doc-library/{id}', [ClmTradeDocumentController::class, 'libraryUpdate']);
+    Route::delete('/clm/trade-doc-library/{id}', [ClmTradeDocumentController::class, 'libraryDestroy']);
+
+    // Central CLM → Terms & Conditions (two tabs: categories + library).
+    Route::get   ('/clm/tnc-categories',      [ClmTncController::class, 'categoriesIndex']);
+    Route::post  ('/clm/tnc-categories',      [ClmTncController::class, 'categoriesStore']);
+    Route::put   ('/clm/tnc-categories/{id}', [ClmTncController::class, 'categoriesUpdate']);
+    Route::delete('/clm/tnc-categories/{id}', [ClmTncController::class, 'categoriesDestroy']);
+    Route::get   ('/clm/tnc-library',      [ClmTncController::class, 'libraryIndex']);
+    Route::post  ('/clm/tnc-library',      [ClmTncController::class, 'libraryStore']);
+    Route::put   ('/clm/tnc-library/{id}', [ClmTncController::class, 'libraryUpdate']);
+    Route::delete('/clm/tnc-library/{id}', [ClmTncController::class, 'libraryDestroy']);
+
+    // Central CLM → Agreements (two tabs: types + library).
+    Route::get   ('/clm/agreement-types',      [ClmAgreementController::class, 'typesIndex']);
+    Route::post  ('/clm/agreement-types',      [ClmAgreementController::class, 'typesStore']);
+    Route::put   ('/clm/agreement-types/{id}', [ClmAgreementController::class, 'typesUpdate']);
+    Route::delete('/clm/agreement-types/{id}', [ClmAgreementController::class, 'typesDestroy']);
+    Route::get   ('/clm/agreement-library',      [ClmAgreementController::class, 'libraryIndex']);
+    Route::post  ('/clm/agreement-library',      [ClmAgreementController::class, 'libraryStore']);
+    Route::put   ('/clm/agreement-library/{id}', [ClmAgreementController::class, 'libraryUpdate']);
+    Route::delete('/clm/agreement-library/{id}', [ClmAgreementController::class, 'libraryDestroy']);
+
+    // Central CLM → Clause Library (two tabs: types + library).
+    Route::get   ('/clm/clause-types',      [ClmClauseController::class, 'typesIndex']);
+    Route::post  ('/clm/clause-types',      [ClmClauseController::class, 'typesStore']);
+    Route::put   ('/clm/clause-types/{id}', [ClmClauseController::class, 'typesUpdate']);
+    Route::delete('/clm/clause-types/{id}', [ClmClauseController::class, 'typesDestroy']);
+    Route::get   ('/clm/clause-library',      [ClmClauseController::class, 'libraryIndex']);
+    Route::post  ('/clm/clause-library',      [ClmClauseController::class, 'libraryStore']);
+    Route::put   ('/clm/clause-library/{id}', [ClmClauseController::class, 'libraryUpdate']);
+    Route::delete('/clm/clause-library/{id}', [ClmClauseController::class, 'libraryDestroy']);
+
+    // Central CLM → Document Control Panel · segment rules. /bootstrap
+    // returns every master collection the Add-Segment-Rule modal needs in
+    // one round-trip. Declared BEFORE /clm/segment-rules/{id} so it isn't
+    // captured as an id parameter.
+    Route::get   ('/clm/segment-rules/bootstrap', [ClmSegmentRuleController::class, 'bootstrap']);
+    Route::get   ('/clm/segment-rules',           [ClmSegmentRuleController::class, 'index']);
+    Route::post  ('/clm/segment-rules',           [ClmSegmentRuleController::class, 'store']);
+    Route::put   ('/clm/segment-rules/{id}',      [ClmSegmentRuleController::class, 'update']);
+    Route::delete('/clm/segment-rules/{id}',      [ClmSegmentRuleController::class, 'destroy']);
 
     // Sales Matrix → Lead Acknowledgement Master. Three opportunity buckets
     // (qualified / disqualified / clarity_pending) — controller returns them

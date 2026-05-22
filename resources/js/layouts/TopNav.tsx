@@ -48,6 +48,9 @@ export default function TopNav({ current, onNavigate }: Props) {
     // employee unconditionally so the menu shows during initial rollout. Once
     // per-leaf perms are wired up, delete this branch and revert to perms[id].
     if (id.startsWith('sales.') && (user?.user_type === 'branch_user' || user?.user_type === 'employee')) return true;
+    // Central CLM rollout — same temporary bypass as Sales above so the new
+    // top-level menu actually surfaces. Drop once per-leaf perms are wired.
+    if (id.startsWith('clm.') && (user?.user_type === 'branch_user' || user?.user_type === 'employee')) return true;
     if (planExpiredOrMissing) return false;
     return !!perms[id]?.can_view;
   };

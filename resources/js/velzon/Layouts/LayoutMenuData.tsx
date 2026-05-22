@@ -1,6 +1,6 @@
 import React from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import { MENU_ITEMS, HR_GROUPS, SALES_GROUPS } from "../../constants";
+import { MENU_ITEMS, HR_GROUPS, SALES_GROUPS, CLM_GROUPS } from "../../constants";
 import { isMenuOpen, toggleMenu } from "./menuState";
 
 /**
@@ -35,6 +35,7 @@ const iconMap: Record<string, string> = {
   TrendingUp: "ri-line-chart-line",
   Package: "ri-box-3-line",
   Store:   "ri-store-2-line",
+  FileText: "ri-file-text-line",
 };
 
 const resolveIcon = (name?: string) => (name && iconMap[name]) || "ri-circle-line";
@@ -119,6 +120,35 @@ const salesLeafLink = (leafId: string): string => {
   }
 };
 
+// Central CLM leaves — every leaf currently routes to the same stub page
+// (/clm/<dash-slug>). The slug after /clm/ is what ClmStubPage reads to
+// render the right title + breadcrumb. As real pages ship, swap each
+// case to its dedicated route.
+const clmLeafLink = (leafId: string): string => {
+  switch (leafId) {
+    case "clm.analytics":             return "/clm/analytics";
+    case "clm.diagnosis":             return "/clm/diagnosis";
+    case "clm.resolution_center":     return "/clm/resolution-center";
+    case "clm.buyer_profile":         return "/clm/buyer-profile";
+    case "clm.supplier_profile":      return "/clm/supplier-profile";
+    case "clm.case_to_case":          return "/clm/case-to-case";
+    case "clm.agreements_sent":       return "/clm/agreements-sent";
+    case "clm.agreements_to_approve": return "/clm/agreements-to-approve";
+    case "clm.segment":               return "/clm/segment";
+    case "clm.authority":             return "/clm/authority";
+    case "clm.quality_docs":          return "/clm/quality-docs";
+    case "clm.kyc":                   return "/clm/kyc";
+    case "clm.due_diligence":         return "/clm/due-diligence";
+    case "clm.trade_licenses":        return "/clm/trade-licenses";
+    case "clm.document_panel":        return "/clm/document-panel";
+    case "clm.trade_documents":       return "/clm/trade-documents";
+    case "clm.agreements":            return "/clm/agreements";
+    case "clm.terms_conditions":      return "/clm/terms-conditions";
+    case "clm.clause_library":        return "/clm/clause-library";
+    default:                          return "/clm";
+  }
+};
+
 const Navdata = () => {
   const { user } = useAuth();
 
@@ -163,6 +193,19 @@ const Navdata = () => {
     if (planExpiredOrMissing) return false;
     return Object.keys(perms).some(
       (slug) => slug.startsWith("sales.") && !!perms[slug]?.can_view
+    );
+  };
+
+  // Central CLM rollout — same temporary bypass as Sidebar / TopNav so the
+  // menu surfaces for branch_user + employee even before any clm.* perm
+  // rows are granted. Drop the user-type branch once per-leaf perms are
+  // wired and revert to the perms-only check used by the other modules.
+  const hasAnyClmView = () => {
+    if (isSuperAdmin) return true;
+    if (planExpiredOrMissing) return false;
+    if (user?.user_type === "branch_user" || user?.user_type === "employee") return true;
+    return Object.keys(perms).some(
+      (slug) => slug.startsWith("clm.") && !!perms[slug]?.can_view
     );
   };
 
@@ -222,6 +265,34 @@ const Navdata = () => {
             id: c.id,
             label: c.label,
             link: salesLeafLink(c.id),
+          }));
+        if (childItems.length === 0) return null;
+        return {
+          id: g.id,
+          label: g.label,
+          isChildItem: true,
+          stateVariables: isOpen(g.id),
+          click: (e: any) => { e.preventDefault(); toggle(g.id); },
+          childItems,
+        };
+      })
+      .filter(Boolean);
+  };
+
+  // Central CLM dropdown (3 levels): CLM → categories → leaves. Same shape
+  // as buildSalesSubItems. During rollout (no clm.* perms granted yet) we
+  // bypass the per-leaf perm check for branch_user + employee so the
+  // entire tree surfaces — matches the Sidebar / TopNav bypass.
+  const buildClmSubItems = () => {
+    const inClmRollout = user?.user_type === "branch_user" || user?.user_type === "employee";
+    return CLM_GROUPS
+      .map((g) => {
+        const childItems = g.children
+          .filter((c) => isSuperAdmin || inClmRollout || perms[c.id]?.can_view)
+          .map((c) => ({
+            id: c.id,
+            label: c.label,
+            link: clmLeafLink(c.id),
           }));
         if (childItems.length === 0) return null;
         return {
@@ -297,6 +368,34 @@ const Navdata = () => {
           // `link` here because the trigger is dropdown-only (clicking must
           // toggle, not navigate) — see the HR comment below.
           pathPrefix: slugToPath(m.id),
+          stateVariables: isOpen(m.id),
+          click: (e: any) => { e.preventDefault(); toggle(m.id); },
+          subItems,
+        });
+      }
+      continue;
+    }
+
+    // Central CLM → 3-level nested dropdown. Same trigger semantics as
+    // Sales Matrix: clicking the parent toggles the dropdown only (no
+    // navigation), and the active-route highlight is driven by the
+    // `pathPrefix` data-attribute so any /clm/* URL keeps the parent lit.
+    if (m.id === "clm") {
+      if (!hasAnyClmView()) continue;
+      const subItems = buildClmSubItems();
+      if (subItems.length === 0) {
+        menuItems.push({
+          id: m.id,
+          label: m.label,
+          icon: resolveIcon(m.icon),
+          link: "/clm",
+        });
+      } else {
+        menuItems.push({
+          id: m.id,
+          label: m.label,
+          icon: resolveIcon(m.icon),
+          pathPrefix: "/clm",
           stateVariables: isOpen(m.id),
           click: (e: any) => { e.preventDefault(); toggle(m.id); },
           subItems,
