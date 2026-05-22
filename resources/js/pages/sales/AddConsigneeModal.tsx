@@ -5306,7 +5306,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 /* Row that places the doc-type dropdown alongside a small "+"
    button — opens the inline Add Document Type master popup so the
    user can extend the master without leaving the in-progress
-   license entry. Mirrors AddCustomerModal's `.acm-doc-name-row`. */
+   license entry. Mirrors AddCustomerModal's .acm-doc-name-row class. */
 .acg-doc-name-row {
   display: flex; align-items: stretch; gap: 8px; width: 100%;
 }
