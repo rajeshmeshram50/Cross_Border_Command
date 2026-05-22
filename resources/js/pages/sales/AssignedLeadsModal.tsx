@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import { useNavigateContext } from '../../components/App';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Lead Distribution — full-screen "Assigned Leads" experience.
@@ -46,14 +46,9 @@ type Summary = {
   unassigned_leads:    number;
 };
 
-type Props = {
-  open: boolean;
-  onClose: () => void;
-  onViewLeads: (salesperson: { id: number; name: string }) => void;
-};
-
-export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props) {
+export default function AssignedLeadsModal() {
   const toast = useToast();
+  const { navigate } = useNavigateContext();
   const [rows, setRows] = useState<Row[]>([]);
   const [summary, setSummary] = useState<Summary>({
     total_sales_persons: 0, total_leads: 0, assigned_leads: 0, unassigned_leads: 0,
@@ -61,8 +56,12 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
 
+  const onClose = () => navigate('sales.workplace');
+  const onViewLeads = (sp: { id: number; name: string }) => {
+    navigate('sales.lead_worksheet', { salespersonId: sp.id, salespersonName: sp.name });
+  };
+
   useEffect(() => {
-    if (!open) { setSearch(''); return; }
     setLoading(true);
     api.get<{ status: boolean; summary: Summary; platforms: string[]; data: Row[] }>(
       '/sales/leads/salesperson-summary',
@@ -80,7 +79,7 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
       })
       .catch(() => toast.error('Load failed', 'Could not load assigned-leads summary'))
       .finally(() => setLoading(false));
-  }, [open, toast]);
+  }, [toast]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
@@ -95,10 +94,8 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
     );
   }, [rows, search]);
 
-  if (!open) return null;
-
-  return createPortal((
-    <div className="ldp-overlay">
+  return (
+    <div className="ldp-page">
       <style>{LDP_CSS}</style>
       <div className="ldp-shell">
         {/* ── Header ───────────────────────────────────────────────── */}
@@ -239,7 +236,12 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
                   </td>
                 </tr>
               )}
-              {!loading && filtered.map((r, i) => (
+              {!loading && filtered.map((r, i) => {
+                // Single hash key so all three role/department chips in
+                // a row share the same palette colour (matches the
+                // designed look — each row reads as one tonal family).
+                const rowKey = r.department || r.salesperson_name;
+                return (
                 <tr key={r.salesperson_id}>
                   <td className="ldp-td-num">{i + 1}</td>
                   <td>
@@ -255,7 +257,7 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
                   </td>
                   <td>
                     {r.department
-                      ? <span className="ldp-chip" style={chipStyle(r.department)}>{r.department}</span>
+                      ? <span className="ldp-chip" style={chipStyle(rowKey)}>{r.department}</span>
                       : <span className="ldp-muted">—</span>}
                   </td>
                   <td className="ldp-text">
@@ -263,12 +265,12 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
                   </td>
                   <td>
                     {r.primary_role
-                      ? <span className="ldp-chip ldp-chip-green">{r.primary_role}</span>
+                      ? <span className="ldp-chip" style={chipStyle(rowKey)}>{r.primary_role}</span>
                       : <span className="ldp-muted">—</span>}
                   </td>
                   <td>
                     {r.ancillary_role
-                      ? <span className="ldp-chip ldp-chip-outline">{r.ancillary_role}</span>
+                      ? <span className="ldp-chip" style={chipStyle(rowKey)}>{r.ancillary_role}</span>
                       : <span className="ldp-muted">—</span>}
                   </td>
                   <td className="ldp-text">
@@ -290,13 +292,14 @@ export default function AssignedLeadsModal({ open, onClose, onViewLeads }: Props
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
     </div>
-  ), document.body);
+  );
 }
 
 /* ─── Stat card primitive ─────────────────────────────────────────── */
@@ -368,64 +371,62 @@ const chipStyle = (label: string): React.CSSProperties => {
 };
 
 const LDP_CSS = `
-.ldp-overlay {
-  position: fixed; inset: 0; z-index: 1080;
-  background: rgba(15, 23, 42, .65); backdrop-filter: blur(4px);
-  overflow-y: auto;
+/* Page wrapper — fills the in-app content area edge-to-edge. */
+.ldp-page {
   animation: ldp-fade .18s ease-out;
-  padding: 24px;
-  display: flex; align-items: center; justify-content: center;
+  min-height: 100%;
+  /* Counter the parent layout's gutters so the shell hugs the side rails
+     like the rest of the matrix pages do. Adjust the negative margin if
+     the surrounding container's padding changes. */
+  margin: -1rem -0.75rem;
 }
 @keyframes ldp-fade { from { opacity: 0; } to { opacity: 1; } }
 
 .ldp-shell {
-  width: min(1280px, 100%); margin: auto;
+  width: 100%;
   background: #fff7ed;
-  border-radius: 18px;
-  box-shadow: 0 22px 60px rgba(15,23,42,.32);
+  border-radius: 14px;
+  border: 1px solid #fde68a;
+  box-shadow: 0 6px 22px rgba(217,119,6,.10);
   overflow: hidden;
-  animation: ldp-pop .22s cubic-bezier(.22,1,.36,1);
-}
-@keyframes ldp-pop {
-  from { transform: scale(.97); opacity: 0; }
-  to   { transform: scale(1);   opacity: 1; }
 }
 
 /* ── Header ─────────────────────────────────────────────────────── */
 .ldp-header {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 16px; padding: 18px 22px;
+  gap: 12px; padding: 13px 18px;
   background: linear-gradient(135deg, #fef3c7 0%, #fde68a 60%, #fcd34d 100%);
   border-bottom: 1px solid #fbbf24;
 }
-.ldp-header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.ldp-header-left { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .ldp-header-icon {
-  width: 44px; height: 44px; border-radius: 12px;
+  width: 34px; height: 34px; border-radius: 10px;
   background: linear-gradient(135deg, #f59e0b, #ea580c); color: #fff;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 6px 16px rgba(234,88,12,.30);
+  box-shadow: 0 4px 12px rgba(234,88,12,.30);
   flex-shrink: 0;
 }
-.ldp-header-title { font-size: 17px; font-weight: 700; color: #1f2937; letter-spacing: -.2px; }
-.ldp-header-sub   { font-size: 12px; color: #57534e; margin-top: 3px; }
+.ldp-header-icon svg { width: 16px; height: 16px; }
+.ldp-header-title { font-size: 14.5px; font-weight: 800; color: #1f2937; letter-spacing: -.2px; }
+.ldp-header-sub   { font-size: 10.5px; color: #57534e; margin-top: 2px; }
 
-.ldp-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.ldp-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .ldp-header-pill {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 7px 14px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 11px; border-radius: 999px;
   background: rgba(255,255,255,.65); border: 1.5px solid #fcd34d;
-  font-size: 12px; font-weight: 600; color: #b45309;
+  font-size: 10.5px; font-weight: 700; color: #b45309;
 }
 .ldp-header-pill-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: #f59e0b;
-  box-shadow: 0 0 0 3px rgba(245,158,11,.22);
+  width: 6px; height: 6px; border-radius: 50%; background: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245,158,11,.22);
 }
 .ldp-back-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 9px 18px; border-radius: 10px; border: none;
+  padding: 7px 16px; border-radius: 9px; border: none;
   background: linear-gradient(135deg, #f59e0b, #ea580c); color: #fff;
-  font-size: 12.5px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 6px 16px rgba(234,88,12,.32);
+  font-size: 11px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 4px 12px rgba(234,88,12,.32);
   transition: filter .15s, transform .12s;
 }
 .ldp-back-btn:hover  { filter: brightness(1.07); transform: translateY(-1px); }
@@ -433,28 +434,29 @@ const LDP_CSS = `
 
 /* ── Stats row ──────────────────────────────────────────────────── */
 .ldp-stats {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
-  padding: 18px 22px 4px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px;
+  padding: 14px 18px 4px;
 }
 .ldp-stat {
   background: #fff; border: 1.5px solid #f5e9d4;
-  border-radius: 14px; padding: 14px 16px;
+  border-radius: 12px; padding: 11px 13px;
   box-shadow: 0 2px 8px rgba(217,119,6,.05);
   transition: box-shadow .15s, transform .15s;
 }
 .ldp-stat:hover { box-shadow: 0 8px 22px rgba(217,119,6,.10); transform: translateY(-1px); }
 .ldp-stat-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .ldp-stat-label {
-  font-size: 10px; font-weight: 700; color: #78716c;
-  letter-spacing: .08em;
+  font-size: 9px; font-weight: 800; color: #78716c;
+  letter-spacing: .10em;
 }
 .ldp-stat-icon {
-  width: 30px; height: 30px; border-radius: 8px;
+  width: 26px; height: 26px; border-radius: 7px;
   display: flex; align-items: center; justify-content: center;
 }
-.ldp-stat-value { font-size: 28px; font-weight: 800; color: #1f2937; margin-top: 8px; line-height: 1.1; }
-.ldp-stat-sub   { font-size: 11.5px; margin-top: 6px; display: flex; align-items: center; gap: 5px; }
-.ldp-stat-sub::after { content: "›"; font-size: 13px; line-height: 1; opacity: .8; }
+.ldp-stat-icon svg { width: 13px; height: 13px; }
+.ldp-stat-value { font-size: 22px; font-weight: 800; color: #1f2937; margin-top: 6px; line-height: 1.1; }
+.ldp-stat-sub   { font-size: 10px; margin-top: 5px; display: flex; align-items: center; gap: 5px; }
+.ldp-stat-sub::after { content: "›"; font-size: 12px; line-height: 1; opacity: .8; }
 
 .ldp-stat-slate .ldp-stat-icon { background: #f1f5f9; color: #475569; }
 .ldp-stat-slate .ldp-stat-sub  { color: #475569; }
@@ -477,37 +479,37 @@ const LDP_CSS = `
 .ldp-stat-red .ldp-stat-sub  { color: #b91c1c; }
 
 /* ── Toolbar / search ───────────────────────────────────────────── */
-.ldp-toolbar { padding: 14px 22px 10px; }
+.ldp-toolbar { padding: 11px 18px 8px; }
 .ldp-search {
-  max-width: 400px;
-  display: flex; align-items: center; gap: 8px;
-  padding: 0 12px; height: 38px;
-  background: #fff; border: 1.5px solid #fde68a; border-radius: 10px;
+  max-width: 360px;
+  display: flex; align-items: center; gap: 7px;
+  padding: 0 11px; height: 34px;
+  background: #fff; border: 1.5px solid #fde68a; border-radius: 9px;
   transition: border-color .15s, box-shadow .15s;
 }
 .ldp-search:focus-within { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
 .ldp-search input {
   flex: 1; border: none; outline: none; background: transparent;
-  font-size: 12.5px; color: #1f2937;
+  font-size: 11px; color: #1f2937;
 }
 
 /* ── Table ──────────────────────────────────────────────────────── */
 .ldp-table-wrap {
-  margin: 0 22px 22px;
-  background: #fff; border: 1px solid #fde68a; border-radius: 12px;
+  margin: 0 18px 18px;
+  background: #fff; border: 1px solid #fde68a; border-radius: 10px;
   overflow: auto;
 }
-.ldp-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1100px; }
+.ldp-table { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 1050px; }
 .ldp-table thead tr {
   background: linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%);
 }
 .ldp-table thead th {
-  color: #fff7ed; font-size: 10.5px; font-weight: 700;
-  letter-spacing: .06em;
-  text-align: left; padding: 13px 16px; white-space: nowrap;
+  color: #fff7ed; font-size: 9.5px; font-weight: 800;
+  letter-spacing: .08em;
+  text-align: left; padding: 10px 13px; white-space: nowrap;
 }
 .ldp-th-num    { text-align: center !important; }
-.ldp-th-action { text-align: center !important; width: 130px; }
+.ldp-th-action { text-align: center !important; width: 120px; }
 
 .ldp-table tbody tr {
   border-bottom: 1px solid #fef3c7; transition: background .12s;
@@ -516,26 +518,26 @@ const LDP_CSS = `
 .ldp-table tbody tr:last-child      { border-bottom: none; }
 .ldp-table tbody tr:hover           { background: #fef3c7; }
 .ldp-table tbody td {
-  padding: 12px 16px; color: #1f2937; vertical-align: middle;
+  padding: 9px 13px; color: #1f2937; vertical-align: middle;
 }
 .ldp-td-num    { text-align: center; }
 .ldp-td-action { text-align: center; }
-.ldp-text  { color: #44403c; font-size: 12px; }
+.ldp-text  { color: #44403c; font-size: 11px; }
 .ldp-muted { color: #d6d3d1; font-style: italic; }
 
-.ldp-person { display: flex; align-items: center; gap: 12px; }
+.ldp-person { display: flex; align-items: center; gap: 10px; }
 .ldp-avatar {
-  width: 34px; height: 34px; border-radius: 50%;
-  color: #fff; font-size: 11.5px; font-weight: 700;
+  width: 28px; height: 28px; border-radius: 50%;
+  color: #fff; font-size: 10.5px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
   box-shadow: 0 3px 8px rgba(0,0,0,.10);
 }
-.ldp-person-name { font-size: 13px; font-weight: 700; color: #1f2937; }
+.ldp-person-name { font-size: 11.5px; font-weight: 700; color: #1f2937; }
 
 .ldp-chip {
-  display: inline-block; padding: 4px 12px; border-radius: 999px;
-  font-size: 11px; font-weight: 600; border: 1.5px solid;
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; border: 1.5px solid;
   white-space: nowrap;
 }
 .ldp-chip-green {
@@ -547,18 +549,19 @@ const LDP_CSS = `
 
 .ldp-total {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 36px; padding: 4px 12px;
+  min-width: 30px; padding: 3px 10px;
   background: linear-gradient(135deg, #f59e0b, #ea580c); color: #fff;
-  border-radius: 999px; font-size: 12px; font-weight: 700;
+  border-radius: 999px; font-size: 10.5px; font-weight: 800;
   box-shadow: 0 3px 8px rgba(234,88,12,.25);
 }
 
 .ldp-view-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 14px; border-radius: 8px;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 7px;
   background: #fff; border: 1.5px solid #fbbf24; color: #b45309;
-  font-size: 11.5px; font-weight: 600; cursor: pointer;
+  font-size: 10.5px; font-weight: 700; cursor: pointer;
   transition: background .15s, color .15s, transform .12s;
+  white-space: nowrap;
 }
 .ldp-view-btn:hover {
   background: linear-gradient(135deg, #fde68a, #fcd34d);
@@ -567,8 +570,8 @@ const LDP_CSS = `
 .ldp-view-btn:active { transform: translateY(0); }
 
 .ldp-status {
-  text-align: center; padding: 36px 14px;
-  color: #a8a29e; font-style: italic; font-size: 12.5px;
+  text-align: center; padding: 24px 14px;
+  color: #a8a29e; font-style: italic; font-size: 11px;
 }
 
 /* ── Dark mode adaptation ───────────────────────────────────────── */
@@ -610,12 +613,12 @@ const LDP_CSS = `
   .ldp-header-right { flex-wrap: wrap; justify-content: flex-end; width: 100%; }
 }
 
-/* Phone — full-width overlay (no margin), single-column stats, table
-   scrolls horizontally, header collapses to a tighter stack. */
+/* Phone — full-width page, single-column stats, table scrolls
+   horizontally, header collapses to a tighter stack. */
 @media (max-width: 640px) {
-  .ldp-overlay { padding: 0; }
+  .ldp-page { padding: 0; }
   .ldp-shell {
-    width: 100%; border-radius: 0; min-height: 100vh;
+    width: 100%; border-radius: 0; border-left: none; border-right: none;
   }
   .ldp-header {
     padding: 14px 16px; gap: 12px; flex-direction: column; align-items: flex-start;
