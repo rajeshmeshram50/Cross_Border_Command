@@ -11,9 +11,25 @@ interface Props {
   onClose: () => void;
   onConfirm: () => void;
   loading?: boolean;
+  /** Verb in the "Delete <strong>X</strong>?" line. Defaults to "Delete".
+   *  Use "Mark Inactive", "Archive", "Disable", etc. to reuse this
+   *  destructive-confirmation pattern for non-delete actions. */
+  actionVerb?: string;
+  /** Label on the confirm button (idle state). Defaults to "Delete". */
+  confirmLabel?: string;
+  /** Label on the confirm button while `loading` is true. Defaults to "Deleting...". */
+  confirmingLabel?: string;
+  /** Icon class for the confirm button glyph. Defaults to "ri-delete-bin-line". */
+  confirmIcon?: string;
 }
 
-export default function DeleteConfirmModal({ open, clientName, itemName: itemNameProp, title, subMessage, onClose, onConfirm, loading = false }: Props) {
+export default function DeleteConfirmModal({
+  open, clientName, itemName: itemNameProp, title, subMessage, onClose, onConfirm, loading = false,
+  actionVerb = 'Delete',
+  confirmLabel = 'Delete',
+  confirmingLabel = 'Deleting...',
+  confirmIcon = 'ri-delete-bin-line',
+}: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape' && !loading) onClose(); };
     if (open) document.addEventListener('keydown', handler);
@@ -205,7 +221,7 @@ export default function DeleteConfirmModal({ open, clientName, itemName: itemNam
             <h2 className="dcm-title">{resolvedTitle}</h2>
 
             <p className="dcm-message">
-              Delete <strong>{itemName}</strong>?
+              {actionVerb} <strong>{itemName}</strong>?
             </p>
             <p className="dcm-sub">
               {resolvedSub}
@@ -220,12 +236,12 @@ export default function DeleteConfirmModal({ open, clientName, itemName: itemNam
               {loading ? (
                 <>
                   <Loader2 size={14} className="animate-spin" />
-                  Deleting...
+                  {confirmingLabel}
                 </>
               ) : (
                 <>
-                  <i className="ri-delete-bin-line" style={{ fontSize: 13 }} />
-                  Delete
+                  <i className={confirmIcon} style={{ fontSize: 13 }} />
+                  {confirmLabel}
                 </>
               )}
             </button>

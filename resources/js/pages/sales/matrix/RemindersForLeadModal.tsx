@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
+import { MasterSelect } from '../../../components/ui/MasterSelect';
+import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Reminders for this lead — toolbar pill drawer.
@@ -188,14 +190,23 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
                 </div>
                 <div className="rfl-fld">
                   <label>DATE *</label>
-                  <input type="date" className="rfl-input" min={todayStr} value={setDate} onChange={e => setSetDate(e.target.value)} />
+                  <MasterDatePicker value={setDate} onChange={setSetDate} minDate={todayStr} placeholder="dd-mm-yyyy" />
                 </div>
                 <div className="rfl-fld">
                   <label>TAT</label>
-                  <select className="rfl-input" value={tat} onChange={e => setTat(e.target.value)}>
-                    <option>24 Hours</option><option>48 Hours</option><option>72 Hours</option>
-                    <option>1 Week</option><option>2 Weeks</option><option>1 Month</option>
-                  </select>
+                  <MasterSelect
+                    value={tat}
+                    onChange={setTat}
+                    options={[
+                      { value: '24 Hours', label: '24 Hours' },
+                      { value: '48 Hours', label: '48 Hours' },
+                      { value: '72 Hours', label: '72 Hours' },
+                      { value: '1 Week',   label: '1 Week'   },
+                      { value: '2 Weeks',  label: '2 Weeks'  },
+                      { value: '1 Month',  label: '1 Month'  },
+                    ]}
+                    placeholder="Select TAT"
+                  />
                 </div>
               </div>
               <div className="rfl-fld">
