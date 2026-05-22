@@ -492,13 +492,14 @@ export default function SalesMatrixDetail() {
           <span className="smd-cust-sep" aria-hidden="true"><i /><i /><i /></span>
           <Meta icon={<IconGlobe />}     label="COUNTRY"          value={header.country} />
           <span className="smd-cust-line" aria-hidden="true" />
-        </div>
         <button className="smd-back-btn" onClick={goBack}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <polyline points="15 18 9 12 15 6" />
           </svg>
           Back to My Workplace
         </button>
+                </div>
+
       </div>
 
       {/* ─── 6-step Tracker (own white card) ─── */}

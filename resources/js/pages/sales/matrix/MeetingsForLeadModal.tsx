@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
+import { MasterSelect } from '../../../components/ui/MasterSelect';
+import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
+import { MasterTimePicker } from '../../../components/ui/MasterTimePicker';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Meetings for this lead — toolbar pill drawer.
@@ -218,10 +221,15 @@ export default function MeetingsForLeadModal({
               <div className="mfl-draft-row mfl-row-3">
                 <div className="mfl-fld">
                   <label>TYPE *</label>
-                  <select className="mfl-input" value={type} onChange={e => setType(e.target.value as MeetingType)}>
-                    <option value="virtual">🔗 Virtual</option>
-                    <option value="physical">📍 Physical</option>
-                  </select>
+                  <MasterSelect
+                    value={type}
+                    onChange={(v) => setType(v as MeetingType)}
+                    options={[
+                      { value: 'virtual',  label: '🔗 Virtual'  },
+                      { value: 'physical', label: '📍 Physical' },
+                    ]}
+                    placeholder="Select type"
+                  />
                 </div>
                 <div className="mfl-fld mfl-fld-span-2">
                   <label>CUSTOMER *</label>
@@ -243,26 +251,27 @@ export default function MeetingsForLeadModal({
               <div className="mfl-draft-row mfl-row-3">
                 <div className="mfl-fld">
                   <label>DATE *</label>
-                  <input type="date" className="mfl-input" value={date} onChange={e => setDate(e.target.value)} />
+                  <MasterDatePicker value={date} onChange={setDate} placeholder="dd-mm-yyyy" />
                 </div>
                 <div className="mfl-fld">
                   <label>START *</label>
-                  <input type="time" className="mfl-input" value={startTime} onChange={e => setStartTime(e.target.value)} />
+                  <MasterTimePicker value={startTime} onChange={setStartTime} placeholder="--:--" />
                 </div>
                 <div className="mfl-fld">
                   <label>END *</label>
-                  <input type="time" className="mfl-input" value={endTime} onChange={e => setEndTime(e.target.value)} />
+                  <MasterTimePicker value={endTime} onChange={setEndTime} placeholder="--:--" />
                 </div>
               </div>
 
               <div className="mfl-draft-row mfl-row-2">
                 <div className="mfl-fld">
                   <label>PLATFORM *</label>
-                  <select className="mfl-input" value={platform} onChange={e => setPlatform(e.target.value)}>
-                    {(type === 'virtual' ? VIRTUAL_PLATFORMS : PHYSICAL_PLATFORMS).map(p => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
+                  <MasterSelect
+                    value={platform}
+                    onChange={setPlatform}
+                    options={(type === 'virtual' ? VIRTUAL_PLATFORMS : PHYSICAL_PLATFORMS).map(p => ({ value: p, label: p }))}
+                    placeholder="Select platform"
+                  />
                 </div>
                 <div className="mfl-fld">
                   {type === 'virtual'

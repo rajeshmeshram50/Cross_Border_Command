@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
+import { MasterSelect } from '../../../../components/ui/MasterSelect';
 
 /* Sales Matrix → Stage 3 — Product Sourcing
  * Toggle between Product Details / Sourcing Required / Sourcing Not Required
@@ -112,17 +113,17 @@ export default function Stage3ProductSourcing({ onPrev, onNext }: StageProps) {
                     <td>$ {p.price.toFixed(2)}</td>
                     <td><span className="smd-st3-currency">{p.currency}</span></td>
                     <td>
-                      <select
-                        className="smd-st3-select"
+                      <MasterSelect
                         value={sourcingStatus[p.code] || ''}
-                        onChange={e => setSourcingStatus(prev => ({ ...prev, [p.code]: e.target.value }))}
-                      >
-                        <option value="">— Select —</option>
-                        <option value="vendor_assigned">Vendor Assigned</option>
-                        <option value="awaiting_quote">Awaiting Quote</option>
-                        <option value="sourced">Sourced</option>
-                        <option value="not_required">Not Required</option>
-                      </select>
+                        onChange={(v) => setSourcingStatus(prev => ({ ...prev, [p.code]: v }))}
+                        options={[
+                          { value: 'vendor_assigned', label: 'Vendor Assigned' },
+                          { value: 'awaiting_quote',  label: 'Awaiting Quote'  },
+                          { value: 'sourced',         label: 'Sourced'         },
+                          { value: 'not_required',    label: 'Not Required'    },
+                        ]}
+                        placeholder="— Select —"
+                      />
                     </td>
                   </tr>
                 ))}

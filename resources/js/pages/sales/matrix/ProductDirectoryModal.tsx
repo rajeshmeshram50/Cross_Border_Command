@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
+import { MasterSelect } from '../../../components/ui/MasterSelect';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Product Directory — lists every product mapped to the current
@@ -258,25 +259,21 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   <tr className="pdm-draft-row">
                     <td>+</td>
                     <td>
-                      <select
-                        className="pdm-input"
-                        value={draft.product_id ?? ''}
-                        onChange={e => setDraft(p => ({ ...p, product_id: e.target.value ? Number(e.target.value) : null }))}
-                      >
-                        <option value="">{productsLoading ? 'Loading…' : 'Select product…'}</option>
-                        {availableProducts.map(p => (
-                          <option key={p.id} value={p.id}>{p.product_code} · {p.name}</option>
-                        ))}
-                      </select>
+                      <MasterSelect
+                        value={draft.product_id != null ? String(draft.product_id) : ''}
+                        onChange={(v) => setDraft(p => ({ ...p, product_id: v ? Number(v) : null }))}
+                        options={availableProducts.map(p => ({ value: String(p.id), label: `${p.product_code} · ${p.name}` }))}
+                        placeholder={productsLoading ? 'Loading…' : 'Select product…'}
+                        disabled={productsLoading}
+                      />
                     </td>
                     <td>
-                      <select
-                        className="pdm-input"
+                      <MasterSelect
                         value={draft.currency}
-                        onChange={e => setDraft(p => ({ ...p, currency: e.target.value }))}
-                      >
-                        {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
+                        onChange={(v) => setDraft(p => ({ ...p, currency: v }))}
+                        options={CURRENCIES.map(c => ({ value: c, label: c }))}
+                        placeholder="Currency"
+                      />
                     </td>
                     <td>
                       <input
@@ -331,13 +328,12 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                           </div>
                         </td>
                         <td>
-                          <select
-                            className="pdm-input"
+                          <MasterSelect
                             value={editDraft.currency}
-                            onChange={e => setEditDraft(p => ({ ...p, currency: e.target.value }))}
-                          >
-                            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
+                            onChange={(v) => setEditDraft(p => ({ ...p, currency: v }))}
+                            options={CURRENCIES.map(c => ({ value: c, label: c }))}
+                            placeholder="Currency"
+                          />
                         </td>
                         <td>
                           <input

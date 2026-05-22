@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../contexts/ToastContext';
+import { MasterSelect } from '../../components/ui/MasterSelect';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Generic entity-picker popup — used by the Lead Detail action row to
@@ -93,24 +94,19 @@ export default function EntityPickerModal(props: {
           {fieldLabel && <label className="epm-label">{fieldLabel}</label>}
           <div className="epm-row">
             <div className="epm-select-wrap">
-              <select
-                className="epm-select"
+              <MasterSelect
                 value={selected}
-                onChange={(e) => handlePick(e.target.value)}
-                disabled={loading || options.length === 0}
-              >
-                <option value="">
-                  {loading
+                onChange={handlePick}
+                options={options}
+                placeholder={
+                  loading
                     ? 'Loading…'
                     : options.length === 0
                       ? (emptyHint ?? 'No records available')
-                      : (placeholder ?? 'Select a record')}
-                </option>
-                {options.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <i className="ri-arrow-down-s-line epm-select-arrow" />
+                      : (placeholder ?? 'Select a record')
+                }
+                disabled={loading || options.length === 0}
+              />
             </div>
             <button
               type="button"
