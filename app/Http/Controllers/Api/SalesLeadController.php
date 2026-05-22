@@ -155,14 +155,69 @@ class SalesLeadController extends Controller
 
         if ($search = trim((string) $request->query('search', ''))) {
             $like = "%{$search}%";
-            $q->where(function ($w) use ($like) {
-                $w->where('opp_code',            'like', $like)
-                  ->orWhere('unique_query_id',   'like', $like)
-                  ->orWhere('sender_name',       'like', $like)
-                  ->orWhere('sender_mobile',     'like', $like)
-                  ->orWhere('sender_email',      'like', $like)
-                  ->orWhere('sender_company',    'like', $like)
-                  ->orWhere('query_product_name','like', $like);
+            /* Full-table search — every column the My Workplace table
+             * shows is now searchable from the single header search box.
+             * Coverage:
+             *   • Opportunity Id   → opp_code, unique_query_id
+             *   • Lead Type        → query_type ("W" / "B" / "BIZ")
+             *   • Lead Source      → platform ("Vortex" / "Purvee" …)
+             *   • Customer Name    → sender_name + customer.org_name
+             *   • Customer Number  → sender_mobile + sender_mobile_alt
+             *   • Customer Email   → sender_email + sender_email_alt
+             *   • Company          → sender_company + sender_address /
+             *                        sender_city / sender_state
+             *   • Product Name     → query_product_name + query_mcat_name
+             *   • Country          → sender_country_iso / sender_country_name
+             *   • Remark / message → remark + query_message
+             *   • Assigned To      → salesperson.name (relation lookup)
+             * The relation-based searches use whereHas so they stay
+             * indexed and don't pull every related row into PHP. */
+            $q->where(function ($w) use ($like, $search) {
+                $w->where('opp_code',              'like', $like)
+                  ->orWhere('unique_query_id',     'like', $like)
+                  ->orWhere('query_type',          'like', $like)
+                  ->orWhere('platform',            'like', $like)
+                  ->orWhere('source_account',      'like', $like)
+                  ->orWhere('sender_name',         'like', $like)
+                  ->orWhere('sender_mobile',       'like', $like)
+                  ->orWhere('sender_mobile_alt',   'like', $like)
+                  ->orWhere('sender_email',        'like', $like)
+                  ->orWhere('sender_email_alt',    'like', $like)
+                  ->orWhere('sender_company',      'like', $like)
+                  ->orWhere('sender_address',      'like', $like)
+                  ->orWhere('sender_city',         'like', $like)
+                  ->orWhere('sender_state',        'like', $like)
+                  ->orWhere('sender_pincode',      'like', $like)
+                  ->orWhere('sender_country_iso',  'like', $like)
+                  ->orWhere('sender_country_name', 'like', $like)
+                  ->orWhere('query_product_name',  'like', $like)
+                  ->orWhere('query_mcat_name',     'like', $like)
+                  ->orWhere('query_message',       'like', $like)
+                  ->orWhere('remark',              'like', $like)
+                  ->orWhere('whatsapp_status',     'like', $like)
+                  // Related lookups — salesperson and customer names.
+                  ->orWhereHas('salesperson', function ($s) use ($like) {
+                      $s->where('name',  'like', $like)
+                        ->orWhere('email','like', $like);
+                  })
+                  ->orWhereHas('customer', function ($c) use ($like) {
+                      // customers table uses company_name / legal_name —
+                      // the earlier `org_name` reference was inherited
+                      // from the clients table and crashed with "column
+                      // org_name does not exist" on Postgres.
+                      $c->where('company_name', 'like', $like)
+                        ->orWhere('legal_name',   'like', $like)
+                        ->orWhere('customer_code','like', $like)
+                        ->orWhere('primary_email','like', $like);
+                  });
+
+                // Numeric columns get a strict-equals branch when the
+                // term looks like an integer so a search for the bare
+                // price "50000" still matches without forcing the user
+                // to remember the exact formatting.
+                if (ctype_digit($search)) {
+                    $w->orWhere('product_quantity', (int) $search);
+                }
             });
         }
     }
@@ -195,6 +250,22 @@ class SalesLeadController extends Controller
             'product_quantity'    => 'nullable|string|max:64',
             'query_product_name'  => 'nullable|string|max:255',
         ]);
+
+        /* Auto-fill sender_country_iso from the master_countries table
+         * when the client sends sender_country_name but no iso. The
+         * Add-New-Lead frontend only collects a country name; the
+         * leads table column renders the ISO code (e.g. "IN", "DE"),
+         * so without this lookup every manually-created lead showed
+         * "—" in the Country column. Lookup is case-insensitive so
+         * "India" / "INDIA" / "india" all resolve. */
+        if (empty($data['sender_country_iso']) && !empty($data['sender_country_name'])) {
+            $iso = \App\Models\Masters\Countries::query()
+                ->whereRaw('LOWER(name) = ?', [strtolower(trim($data['sender_country_name']))])
+                ->value('iso_code');
+            if ($iso) {
+                $data['sender_country_iso'] = strtoupper($iso);
+            }
+        }
 
         $lead = DB::transaction(function () use ($data, $user) {
             return Lead::create(array_merge($data, [

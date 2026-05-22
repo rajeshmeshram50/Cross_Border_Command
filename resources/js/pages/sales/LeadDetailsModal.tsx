@@ -98,9 +98,12 @@ export default function LeadDetailsModal({ open, leadId, onClose }: Props) {
     : '';
 
   return createPortal((
-    <div className="ldv-backdrop" onClick={onClose}>
+    /* Backdrop click is not wired to onClose — a stray click outside
+     * the panel should not dismiss the detail view. The header ✕ and
+     * footer Close button are the explicit dismissal paths. */
+    <div className="ldv-backdrop">
       <style>{LDV_CSS}</style>
-      <div className="ldv-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="ldv-modal">
         <div className="ldv-head">
           <div className="ldv-head-left">
             <div className="ldv-head-icon">
@@ -476,6 +479,17 @@ const LDV_CSS = `
 [data-bs-theme="dark"] .ldv-message { background: #0b1226; border-color: #1e293b; color: #cbd5e1; }
 [data-bs-theme="dark"] .ldv-foot { background: #0f172a; border-color: #1e293b; }
 [data-bs-theme="dark"] .ldv-link { color: #67e8f9; }
+
+/* Lead-details shimmer in dark mode — the light-mode gradient
+ * (#e2e8f0 → #f1f5f9) renders as glaring near-white bars against the
+ * #0b1226 modal body. Swap to a dark-slate gradient so the skeleton
+ * reads as a subtle pulse instead of a flashbang. The lower-alpha
+ * second stop preserves the "shimmer" highlight motion the keyframe
+ * animates across. */
+[data-bs-theme="dark"] .ldv-skel {
+  background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+  background-size: 200% 100%;
+}
 
 @media (max-width: 720px) {
   .ldv-grid, .ldv-loading { grid-template-columns: 1fr; }

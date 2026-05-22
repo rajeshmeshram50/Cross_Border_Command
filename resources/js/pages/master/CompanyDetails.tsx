@@ -378,7 +378,7 @@ export default function CompanyDetailsMaster() {
       </Card>
 
       {/* Add/Edit Modal — mirrors payment form pattern */}
-      <Modal isOpen={modalOpen} toggle={() => setModalOpen(false)} size="xl" centered>
+      <Modal isOpen={modalOpen} toggle={() => setModalOpen(false)} size="xl" centered backdrop="static">
         <ModalHeader toggle={() => setModalOpen(false)}>
           {viewOnly ? 'View Company Detail' : editingId != null ? 'Edit Company Detail' : 'Add Company Detail'}
         </ModalHeader>
