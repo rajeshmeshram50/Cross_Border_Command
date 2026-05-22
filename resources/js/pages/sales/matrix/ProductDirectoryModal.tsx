@@ -229,7 +229,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
             </button>
             {onAddProduct && (
               <button className="pdm-map-btn pdm-map-btn-ghost" onClick={onAddProduct}>
-                + New Master
+                + Add Product
               </button>
             )}
             <button className="pdm-close" onClick={onClose} aria-label="Close">
@@ -506,18 +506,91 @@ const SCOPED_CSS = `
 .pdm-input:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.16); }
 
 /* Dark mode */
-[data-bs-theme="dark"] .pdm-modal { background: #0f172a; }
-[data-bs-theme="dark"] .pdm-body  { background: #0b1226; }
-[data-bs-theme="dark"] .pdm-table-wrap { background: #0f172a; border-color: rgba(167,139,250,.22); }
-[data-bs-theme="dark"] .pdm-table tbody tr { border-color: rgba(167,139,250,.16); }
-[data-bs-theme="dark"] .pdm-table tbody tr:hover { background: rgba(124,58,237,.12); }
-[data-bs-theme="dark"] .pdm-table tbody td { color: #e2e8f0; }
-[data-bs-theme="dark"] .pdm-prod-name      { color: #ede9fe; }
-[data-bs-theme="dark"] .pdm-draft-row      { background: rgba(124,58,237,.16) !important; }
-[data-bs-theme="dark"] .pdm-curr-pill { background: rgba(124,58,237,.22); color: #d8b4fe; }
-[data-bs-theme="dark"] .pdm-input     { background: #1e293b; border-color: #334155; color: #e2e8f0; }
-[data-bs-theme="dark"] .pdm-row-btn   { background: #1e293b; border-color: #334155; color: #cbd5e1; }
-[data-bs-theme="dark"] .pdm-row-btn:hover:not(:disabled) { background: #0f172a; }
+[data-bs-theme="dark"] .pdm-modal { background: #14102a; }
+[data-bs-theme="dark"] .pdm-body  { background: #1a1538; }
+[data-bs-theme="dark"] .pdm-table-wrap {
+  background: #14102a;
+  border-color: rgba(167, 139, 250, .25);
+}
+[data-bs-theme="dark"] .pdm-table thead {
+  background: linear-gradient(135deg, #20184a, #2a2150);
+}
+[data-bs-theme="dark"] .pdm-table thead th {
+  color: #c4b5fd;
+  border-bottom-color: rgba(167, 139, 250, .25);
+}
+[data-bs-theme="dark"] .pdm-table tbody tr   { border-color: rgba(167, 139, 250, .18); }
+[data-bs-theme="dark"] .pdm-table tbody tr:hover { background: rgba(124, 58, 237, .14); }
+[data-bs-theme="dark"] .pdm-table tbody td   { color: #ede9fe; }
+[data-bs-theme="dark"] .pdm-prod-name        { color: #ede9fe; }
+[data-bs-theme="dark"] .pdm-prod-code        { color: #a78bfa; }
+[data-bs-theme="dark"] .pdm-draft-row        { background: rgba(124, 58, 237, .18) !important; }
+[data-bs-theme="dark"] .pdm-curr-pill {
+  background: rgba(167, 139, 250, .22);
+  color: #d8b4fe;
+  border-color: rgba(167, 139, 250, .35);
+}
+[data-bs-theme="dark"] .pdm-input {
+  background: #1f1845;
+  border-color: rgba(167, 139, 250, .30);
+  color: #ede9fe;
+}
+[data-bs-theme="dark"] .pdm-input::placeholder { color: rgba(196, 181, 253, .50); }
+[data-bs-theme="dark"] .pdm-input:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, .20);
+}
+
+/* Row action buttons — Edit (violet) + Delete (red) on dark. */
+[data-bs-theme="dark"] .pdm-row-btn {
+  background: #1f1845;
+  border-color: rgba(167, 139, 250, .30);
+  color: #d8b4fe;
+}
+[data-bs-theme="dark"] .pdm-row-btn:hover:not(:disabled) {
+  background: #2a2150;
+  border-color: rgba(167, 139, 250, .55);
+}
+[data-bs-theme="dark"] .pdm-row-btn-edit {
+  background: rgba(124, 58, 237, .18);
+  border-color: rgba(167, 139, 250, .40);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .pdm-row-btn-edit:hover:not(:disabled) {
+  background: rgba(124, 58, 237, .30);
+  border-color: #a78bfa;
+  color: #ede9fe;
+}
+[data-bs-theme="dark"] .pdm-row-btn-del {
+  background: rgba(239, 68, 68, .14);
+  border-color: rgba(252, 165, 165, .40);
+  color: #fca5a5;
+}
+[data-bs-theme="dark"] .pdm-row-btn-del:hover:not(:disabled) {
+  background: rgba(239, 68, 68, .25);
+  border-color: #fca5a5;
+  color: #fecaca;
+}
+[data-bs-theme="dark"] .pdm-row-btn-primary {
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, .40);
+}
+[data-bs-theme="dark"] .pdm-row-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #6d28d9, #4c1d95);
+}
+
+/* Header pill button "+ Add Product" (ghost variant). */
+[data-bs-theme="dark"] .pdm-map-btn-ghost {
+  background: rgba(255, 255, 255, .12);
+  border-color: rgba(255, 255, 255, .25);
+  color: #fff;
+}
+[data-bs-theme="dark"] .pdm-map-btn-ghost:hover { background: rgba(255, 255, 255, .22); }
+
+/* Empty-state row */
+[data-bs-theme="dark"] .pdm-status { color: rgba(196, 181, 253, .55); }
 
 @media (max-width: 640px) {
   .pdm-backdrop { padding: 0; }

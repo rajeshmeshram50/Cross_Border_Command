@@ -7,467 +7,637 @@ import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { MasterTimePicker } from '../../../components/ui/MasterTimePicker';
 
 /* ─────────────────────────────────────────────────────────────────────────
- * Meetings for this lead — toolbar pill drawer.
+ * Add Meeting — focused dialog opened from the matrix toolbar.
  *
- * Mirrors the Reminders flow: lists meetings filtered by opp_id and lets
- * the user spin a new one up via an inline + New form at the top, then
- * appends it to the table on save. No redirects out to /sales/todo —
- * the full Sales To-Do page is still there for the multi-lead inbox view.
- *
- * The inline form captures the bare-minimum legacy required fields:
- * type (virtual/physical), customer, contact, platform, date, time
- * window, link (virtual) / venue (physical), agenda. The customer +
- * contact are pre-filled when the parent passes the lead's mapped
- * customer down via props.
- *
- * Status toggles fire the existing PATCH /status endpoint with the
- * server's exact constants ("In Progress" / "Done" / "Postponed" /
- * "Cancelled") — earlier builds shipped lowercase values which 422'd.
+ * Mirrors the Productivity Tracker (SalesTodo) Add Meeting form so the
+ * UX is consistent across both pages. Auto-fetches Opportunity ID +
+ * Date from the current lead (read-only chips at top), then captures
+ * the meeting details and posts to /sales/meetings.
  * ───────────────────────────────────────────────────────────────────────── */
 
-type MeetingStatus = 'In Progress' | 'Done' | 'Postponed' | 'Cancelled';
 type MeetingType   = 'virtual' | 'physical';
+type MeetingStatus = 'In Progress' | 'Done' | 'Postponed' | 'Cancelled';
 
-type Meeting = {
-  id:         number;
-  meeting_code: string | null;
-  type:       MeetingType;
-  opp_id:     string | null;
-  customer:   string;
-  email:      string | null;
-  contact:    string | null;
-  platform:   string | null;
-  date:       string;
-  start_time: string;
-  end_time:   string;
-  link:       string | null;
-  venue:      string | null;
-  agenda:     string;
-  status:     MeetingStatus;
-};
+const VIRTUAL_PLATFORMS  = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Webex', 'Phone Call'];
+const PHYSICAL_PLATFORMS = ['Office Visit', 'Client Site', 'Trade Fair', 'Conference', 'Factory Visit', 'Port Visit'];
 
-const STATUS_META: Record<MeetingStatus, { label: string; pill: string }> = {
-  'In Progress': { label: 'In Progress', pill: 'mfl-pill-sch'  },
-  'Done':        { label: 'Done',        pill: 'mfl-pill-done' },
-  'Postponed':   { label: 'Postponed',   pill: 'mfl-pill-sch'  },
-  'Cancelled':   { label: 'Cancelled',   pill: 'mfl-pill-cncl' },
-};
-
-const VIRTUAL_PLATFORMS  = ['Zoom', 'Google Meet', 'Microsoft Teams', 'WhatsApp Video', 'Skype', 'Other'];
-const PHYSICAL_PLATFORMS = ['On-site', 'Customer Office', 'Our Office', 'Hotel / Conference', 'Trade Fair', 'Other'];
+function toIsoDate(input: string | undefined | null): string | undefined {
+  if (!input) return undefined;
+  const s = String(input).trim();
+  if (!s) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+  if (dmy) {
+    const [, d, m, y] = dmy;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  const d = new Date(s);
+  return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : undefined;
+}
+function toDisplayDate(input: string | undefined | null): string {
+  const iso = toIsoDate(input);
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  return `${d}-${m}-${y}`;
+}
 
 type Props = {
-  open:   boolean;
-  oppId:  string | undefined;
-  /** Pre-fill the meeting's `customer` + `contact` from the lead so the
-   *  user doesn't have to retype them. Both optional — when missing the
-   *  fields stay empty and editable. */
+  open:    boolean;
+  oppId:   string | undefined;
+  oppDate?: string;
   defaultCustomer?: string;
   defaultContact?:  string;
   defaultEmail?:    string;
   onClose: () => void;
 };
 
-const digitsOnly = (s: string) => s.replace(/[^\d+\s-]/g, '').slice(0, 20);
-const isValidEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
-
 export default function MeetingsForLeadModal({
-  open, oppId, defaultCustomer, defaultContact, defaultEmail, onClose,
+  open, oppId, oppDate, defaultCustomer, defaultContact, defaultEmail, onClose,
 }: Props) {
   const toast = useToast();
-  const [rows, setRows]       = useState<Meeting[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [draftOpen, setDraftOpen] = useState(false);
-  const [saving, setSaving]   = useState(false);
 
-  /* ── Inline + New form state ────────────────────────────────── */
-  const [type, setType]             = useState<MeetingType>('virtual');
-  const [customer, setCustomer]     = useState(defaultCustomer ?? '');
-  const [email, setEmail]           = useState(defaultEmail ?? '');
-  const [contact, setContact]       = useState(defaultContact ?? '');
-  const [platform, setPlatform]     = useState(VIRTUAL_PLATFORMS[0]);
-  const [date, setDate]             = useState('');
-  const [startTime, setStartTime]   = useState('10:00');
-  const [endTime, setEndTime]       = useState('11:00');
-  const [link, setLink]             = useState('');
-  const [venue, setVenue]           = useState('');
-  const [agenda, setAgenda]         = useState('');
+  const [type, setType]           = useState<MeetingType>('virtual');
+  const [customer, setCustomer]   = useState('');
+  const [email, setEmail]         = useState('');
+  const [contact, setContact]     = useState('');
+  const [platform, setPlatform]   = useState('');
+  const [link, setLink]           = useState('');
+  const [venue, setVenue]         = useState('');
+  const [date, setDate]           = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime]     = useState('');
+  const [agenda, setAgenda]       = useState('');
+  const [status, setStatus]       = useState<MeetingStatus>('In Progress');
+  const [saving, setSaving]       = useState(false);
+  const [formError, setFormError] = useState('');
 
-  const refresh = () => {
-    if (!oppId) return;
-    setLoading(true);
-    api.get<Meeting[]>('/sales/meetings', { params: { scope: 'mine', search: oppId } })
-      .then(({ data }) => setRows((data ?? []).filter(m => m.opp_id === oppId)))
-      .catch(() => toast.error('Load failed', 'Could not load meetings'))
-      .finally(() => setLoading(false));
-  };
-
+  /* Reset every time the modal opens. */
   useEffect(() => {
-    if (open) refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, oppId]);
-
-  /* Reset draft form whenever modal opens or the lead context
-   * (customer / contact) changes. */
-  useEffect(() => {
-    if (!open) { setDraftOpen(false); return; }
+    if (!open) return;
     setType('virtual');
     setCustomer(defaultCustomer ?? '');
     setEmail(defaultEmail ?? '');
     setContact(defaultContact ?? '');
-    setPlatform(VIRTUAL_PLATFORMS[0]);
+    setPlatform('');
+    setLink('');
+    setVenue('');
     setDate('');
-    setStartTime('10:00');
-    setEndTime('11:00');
-    setLink(''); setVenue(''); setAgenda('');
+    setStartTime('');
+    setEndTime('');
+    setAgenda('');
+    setStatus('In Progress');
+    setFormError('');
   }, [open, defaultCustomer, defaultContact, defaultEmail]);
-
-  /* Swap platform list when type flips. */
-  useEffect(() => {
-    setPlatform(type === 'virtual' ? VIRTUAL_PLATFORMS[0] : PHYSICAL_PLATFORMS[0]);
-  }, [type]);
 
   if (!open) return null;
 
-  const setStatus = async (m: Meeting, next: MeetingStatus) => {
-    try {
-      await api.patch(`/sales/meetings/${m.id}/status`, { status: next });
-      setRows(prev => prev.map(x => x.id === m.id ? { ...x, status: next } : x));
-      toast.success('Status updated', `Meeting marked ${next}`);
-    } catch (e: any) {
-      toast.error('Update failed', e?.response?.data?.message ?? 'Could not change status');
-    }
-  };
+  const save = async () => {
+    setFormError('');
+    if (!oppId) { setFormError('No opportunity in context.'); return; }
 
-  const saveDraft = async () => {
-    if (!customer.trim()) { toast.warning('Customer required',  'Type the customer name'); return; }
-    if (!contact.trim())  { toast.warning('Contact required',   'Type the contact number'); return; }
-    if (!date)            { toast.warning('Date required',      'Pick the meeting date'); return; }
-    if (!startTime || !endTime) { toast.warning('Time required', 'Set both start and end time'); return; }
-    if (endTime <= startTime)   { toast.warning('Bad time window', 'End time must be after start time'); return; }
-    if (!agenda.trim())   { toast.warning('Agenda required',    'Describe what the meeting is about'); return; }
-    if (type === 'virtual'  && !link.trim())  { toast.warning('Link required',  'Paste the meeting link for a virtual meeting'); return; }
-    if (type === 'physical' && !venue.trim()) { toast.warning('Venue required', 'Enter the venue for an in-person meeting'); return; }
-    if (email.trim() && !isValidEmail(email)) { toast.warning('Invalid email', 'Enter a valid email or leave blank'); return; }
+    const cust = customer.trim();
+    if (!cust) { setFormError('Customer Name is required.'); return; }
+    if (!/[A-Za-z]/.test(cust)) { setFormError('Customer Name must contain letters.'); return; }
+    if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) { setFormError('Customer Name has invalid characters or length.'); return; }
+
+    if (!date)      { setFormError('Meeting Date is required.'); return; }
+    if (!startTime) { setFormError('Start Time is required.'); return; }
+    if (!endTime)   { setFormError('End Time is required.'); return; }
+
+    const contactRaw = contact.trim();
+    if (!contactRaw) { setFormError('Contact Number is required.'); return; }
+    const digits = contactRaw.replace(/\D/g, '');
+    if (digits.length < 10) { setFormError('Contact Number must be at least 10 digits.'); return; }
+    if (digits.length > 15) { setFormError('Contact Number cannot be more than 15 digits.'); return; }
+    if (!/^\+?[\d\s\-]+$/.test(contactRaw)) {
+      setFormError('Contact Number can only contain digits, spaces, dashes and a leading +.'); return;
+    }
+    if (!platform) {
+      setFormError(type === 'physical' ? 'Meeting Type is required.' : 'Platform is required.'); return;
+    }
+
+    const isVirtual = type === 'virtual';
+    const linkRaw   = link.trim();
+    const venueRaw  = venue.trim();
+    if (isVirtual) {
+      if (!linkRaw) { setFormError('Meeting Link is required.'); return; }
+      try {
+        const u = new URL(linkRaw);
+        if (!/^https?:$/.test(u.protocol)) throw new Error();
+      } catch {
+        setFormError('Meeting Link must be a valid http(s) URL (e.g. https://meet.google.com/abc-def-ghi).'); return;
+      }
+    } else {
+      if (!venueRaw) { setFormError('Place / Venue is required.'); return; }
+      if (!/[A-Za-z]/.test(venueRaw)) { setFormError('Venue must contain letters, not just symbols or digits.'); return; }
+      if (venueRaw.length < 3 || venueRaw.length > 200) { setFormError('Venue must be between 3 and 200 characters.'); return; }
+    }
+
+    const agendaRaw = agenda.trim();
+    if (!agendaRaw) { setFormError('Meeting Agenda is required.'); return; }
+    if (agendaRaw.length < 3) { setFormError('Meeting Agenda must be at least 3 characters.'); return; }
+
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setFormError('Email is invalid.'); return;
+    }
 
     setSaving(true);
     try {
-      const payload: Record<string, unknown> = {
-        type, opp_id: oppId,
-        customer:   customer.trim(),
-        contact:    contact.trim(),
-        platform:   platform.trim(),
-        date,
+      await api.post('/sales/meetings', {
+        type,
+        opp_id: oppId,
+        customer: cust,
+        email: email.trim() || undefined,
+        contact: contactRaw,
+        platform,
+        date: toIsoDate(date),
         start_time: startTime,
-        end_time:   endTime,
-        agenda:     agenda.trim(),
-      };
-      if (email.trim())           payload.email = email.trim();
-      if (type === 'virtual')     payload.link  = link.trim();
-      if (type === 'physical')    payload.venue = venue.trim();
-
-      await api.post('/sales/meetings', payload);
-      toast.success('Meeting scheduled', 'Saved to this opportunity');
-      setDraftOpen(false);
-      refresh();
+        end_time: endTime,
+        link: isVirtual ? linkRaw : undefined,
+        venue: isVirtual ? undefined : venueRaw,
+        agenda: agendaRaw,
+        status,
+      });
+      toast.success('Meeting added', 'Saved to this opportunity');
+      onClose();
     } catch (e: any) {
+      const status = e?.response?.status;
       const errors = e?.response?.data?.errors as Record<string, string[]> | undefined;
       const firstErr = errors ? Object.values(errors)[0]?.[0] : undefined;
-      toast.error('Save failed', firstErr ?? e?.response?.data?.message ?? 'Could not save meeting');
+      if (status === 413) {
+        setFormError('Attachment is too large.');
+      } else {
+        setFormError(firstErr ?? e?.response?.data?.message ?? 'Could not save meeting');
+      }
     } finally {
       setSaving(false);
     }
   };
 
   return createPortal((
-    /* Backdrop is purely visual — closing only via the X / Cancel button
-     * so accidental outside-clicks don't wipe an in-progress entry. */
     <div className="mfl-backdrop">
-      <style>{CSS}</style>
-      <div className="mfl-modal">
+      <style>{MFL_CSS}</style>
+      <div className="mfl-modal" onClick={(e) => e.stopPropagation()}>
         <div className="mfl-head">
           <div className="mfl-head-left">
             <div className="mfl-head-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <rect x="3" y="4" width="18" height="18" rx="2" />
-                <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <polygon points="23 7 16 12 23 17 23 7" />
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
               </svg>
             </div>
             <div>
-              <div className="mfl-head-title">Meetings</div>
-              <div className="mfl-head-sub">Opp ID: {oppId ?? '—'} · {rows.length} {rows.length === 1 ? 'meeting' : 'meetings'}</div>
+              <div className="mfl-head-row">
+                <span className="mfl-head-title">Add Meeting</span>
+                <span className="mfl-head-tag">MEETING</span>
+              </div>
+              <div className="mfl-head-sub">Meeting</div>
             </div>
           </div>
-          <div className="mfl-head-actions">
-            <button className="mfl-add-btn" onClick={() => setDraftOpen(o => !o)}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              {draftOpen ? 'Close form' : 'New'}
-            </button>
-            <button className="mfl-close" onClick={onClose} aria-label="Close">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
+          <button className="mfl-close" onClick={onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
 
         <div className="mfl-body">
-          {/* Inline + New form */}
-          {draftOpen && (
-            <div className="mfl-draft">
-              <div className="mfl-draft-row mfl-row-3">
-                <div className="mfl-fld">
-                  <label>TYPE *</label>
-                  <MasterSelect
-                    value={type}
-                    onChange={(v) => setType(v as MeetingType)}
-                    options={[
-                      { value: 'virtual',  label: '🔗 Virtual'  },
-                      { value: 'physical', label: '📍 Physical' },
-                    ]}
-                    placeholder="Select type"
-                  />
-                </div>
-                <div className="mfl-fld mfl-fld-span-2">
-                  <label>CUSTOMER *</label>
-                  <input className="mfl-input" value={customer} onChange={e => setCustomer(e.target.value)} placeholder="Customer name" />
-                </div>
+          {/* Auto-fetched opp ID + opp date — read-only chips up top */}
+          <div className="mfl-grid">
+            <div className="mfl-fld">
+              <div className="mfl-lbl-row">
+                <label className="mfl-lbl">OPPORTUNITY ID <span className="mfl-req">*</span></label>
+                <span className="mfl-pill mfl-pill-fetched"><span className="mfl-pill-dot" /> AUTO-FETCHED</span>
               </div>
-
-              <div className="mfl-draft-row mfl-row-2">
-                <div className="mfl-fld">
-                  <label>CONTACT *</label>
-                  <input className="mfl-input" value={contact} onChange={e => setContact(digitsOnly(e.target.value))} placeholder="+91 98xxxxxxxx" />
-                </div>
-                <div className="mfl-fld">
-                  <label>EMAIL</label>
-                  <input type="email" className="mfl-input" value={email} onChange={e => setEmail(e.target.value)} placeholder="optional" />
-                </div>
-              </div>
-
-              <div className="mfl-draft-row mfl-row-3">
-                <div className="mfl-fld">
-                  <label>DATE *</label>
-                  <MasterDatePicker value={date} onChange={setDate} placeholder="dd-mm-yyyy" />
-                </div>
-                <div className="mfl-fld">
-                  <label>START *</label>
-                  <MasterTimePicker value={startTime} onChange={setStartTime} placeholder="--:--" />
-                </div>
-                <div className="mfl-fld">
-                  <label>END *</label>
-                  <MasterTimePicker value={endTime} onChange={setEndTime} placeholder="--:--" />
-                </div>
-              </div>
-
-              <div className="mfl-draft-row mfl-row-2">
-                <div className="mfl-fld">
-                  <label>PLATFORM *</label>
-                  <MasterSelect
-                    value={platform}
-                    onChange={setPlatform}
-                    options={(type === 'virtual' ? VIRTUAL_PLATFORMS : PHYSICAL_PLATFORMS).map(p => ({ value: p, label: p }))}
-                    placeholder="Select platform"
-                  />
-                </div>
-                <div className="mfl-fld">
-                  {type === 'virtual'
-                    ? <>
-                        <label>MEETING LINK *</label>
-                        <input className="mfl-input" value={link} onChange={e => setLink(e.target.value)} placeholder="https://meet.google.com/…" />
-                      </>
-                    : <>
-                        <label>VENUE *</label>
-                        <input className="mfl-input" value={venue} onChange={e => setVenue(e.target.value)} placeholder="Office address / hotel etc." />
-                      </>}
-                </div>
-              </div>
-
-              <div className="mfl-fld">
-                <label>AGENDA *</label>
-                <textarea className="mfl-input" rows={2} value={agenda} onChange={e => setAgenda(e.target.value)} placeholder="What's the meeting about?" />
-              </div>
-
-              <div className="mfl-draft-foot">
-                <button className="mfl-btn" onClick={() => setDraftOpen(false)} disabled={saving}>Cancel</button>
-                <button className="mfl-btn mfl-btn-primary" onClick={() => void saveDraft()} disabled={saving}>
-                  {saving ? 'Saving…' : 'Save Meeting'}
-                </button>
-              </div>
+              <input className="mfl-input mfl-input-ro" value={oppId ?? ''} readOnly />
             </div>
-          )}
+            <div className="mfl-fld">
+              <div className="mfl-lbl-row">
+                <label className="mfl-lbl">OPPORTUNITY DATE <span className="mfl-req">*</span></label>
+                <span className="mfl-pill mfl-pill-fetched"><span className="mfl-pill-dot" /> AUTO-FETCHED</span>
+              </div>
+              <input className="mfl-input mfl-input-ro" value={toDisplayDate(oppDate)} readOnly />
+            </div>
+          </div>
 
-          {/* List */}
-          {loading && <div className="mfl-status">Loading meetings…</div>}
-          {!loading && rows.length === 0 && !draftOpen && (
-            <div className="mfl-status">
-              No meetings for this opportunity yet — click <strong>+ New</strong> to schedule one.
+          {/* Virtual / Physical toggle */}
+          <div className="mfl-toggle">
+            <button
+              type="button"
+              className={`mfl-toggle-btn ${type === 'virtual' ? 'active' : ''}`}
+              onClick={() => { setType('virtual'); setPlatform(''); }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <polygon points="23 7 16 12 23 17 23 7" />
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+              </svg>
+              💻 Virtual Meeting
+            </button>
+            <button
+              type="button"
+              className={`mfl-toggle-btn ${type === 'physical' ? 'active' : ''}`}
+              onClick={() => { setType('physical'); setPlatform(''); }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              🏢 Physical Meeting
+            </button>
+          </div>
+
+          <div className="mfl-grid">
+            <div className="mfl-fld">
+              <label className="mfl-lbl">CUSTOMER NAME <span className="mfl-req">*</span></label>
+              <input className="mfl-input" value={customer} onChange={e => setCustomer(e.target.value)} placeholder="Customer name" />
             </div>
-          )}
-          {rows.map(m => (
-            <div key={m.id} className={`mfl-row mfl-row-${m.status.toLowerCase().replace(/\s+/g, '-')}`}>
-              <div className="mfl-row-main">
-                <div className="mfl-row-head">
-                  <span className="mfl-row-code">{m.meeting_code ?? `MTG-${m.id}`}</span>
-                  <span className={`mfl-type mfl-type-${m.type}`}>{m.type === 'virtual' ? '🔗 Virtual' : '📍 Physical'}</span>
-                  <span className={`mfl-pill ${STATUS_META[m.status]?.pill ?? 'mfl-pill-sch'}`}>
-                    {STATUS_META[m.status]?.label ?? m.status}
-                  </span>
-                </div>
-                <div className="mfl-row-title">{m.customer}</div>
-                <div className="mfl-row-meta">
-                  <span>📅 {new Date(m.date).toLocaleDateString('en-GB')}</span>
-                  <span>· {m.start_time}–{m.end_time}</span>
-                  {m.platform && <span>· {m.platform}</span>}
-                  {m.type === 'physical' && m.venue && <span>· {m.venue}</span>}
-                  {m.type === 'virtual'  && m.link  && (
-                    <a className="mfl-row-link" href={m.link} target="_blank" rel="noreferrer">Join</a>
-                  )}
-                </div>
-                <div className="mfl-row-agenda">{m.agenda}</div>
-              </div>
-              <div className="mfl-row-actions">
-                {(m.status === 'In Progress' || m.status === 'Postponed') && (
-                  <>
-                    <button className="mfl-row-btn" onClick={() => void setStatus(m, 'Done')}>Done</button>
-                    <button className="mfl-row-btn mfl-row-btn-x" onClick={() => void setStatus(m, 'Cancelled')}>Cancel</button>
-                  </>
-                )}
-                {(m.status === 'Done' || m.status === 'Cancelled') && (
-                  <button className="mfl-row-btn" onClick={() => void setStatus(m, 'In Progress')}>Reopen</button>
-                )}
-              </div>
+            <div className="mfl-fld">
+              <label className="mfl-lbl">CUSTOMER EMAIL</label>
+              <input className="mfl-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email address" />
             </div>
-          ))}
+
+            <div className="mfl-fld">
+              <label className="mfl-lbl">CONTACT NO <span className="mfl-req">*</span></label>
+              <input
+                className="mfl-input"
+                type="tel"
+                inputMode="tel"
+                maxLength={20}
+                value={contact}
+                onChange={e => {
+                  const cleaned = e.target.value
+                    .replace(/[^\d\s+\-]/g, '')
+                    .replace(/(?!^)\+/g, '');
+                  setContact(cleaned);
+                }}
+                placeholder="e.g. +91 98765 43210"
+              />
+            </div>
+            <div className="mfl-fld">
+              <label className="mfl-lbl">
+                {type === 'physical' ? 'MEETING TYPE' : 'PLATFORM'} <span className="mfl-req">*</span>
+              </label>
+              <MasterSelect
+                value={platform}
+                onChange={setPlatform}
+                options={(type === 'physical' ? PHYSICAL_PLATFORMS : VIRTUAL_PLATFORMS).map(p => ({ value: p, label: p }))}
+                placeholder={type === 'physical' ? 'Select type' : 'Select platform'}
+              />
+            </div>
+          </div>
+
+          {/* Link OR Venue full-width */}
+          <div className="mfl-fld mfl-fld-full">
+            {type === 'virtual' ? (
+              <>
+                <label className="mfl-lbl">MEETING LINK <span className="mfl-req">*</span></label>
+                <input className="mfl-input" value={link} onChange={e => setLink(e.target.value)} placeholder="https://meet.google.com/abc-def-ghi" />
+              </>
+            ) : (
+              <>
+                <label className="mfl-lbl">PLACE / VENUE <span className="mfl-req">*</span></label>
+                <input className="mfl-input" value={venue} onChange={e => setVenue(e.target.value)} placeholder="e.g. Mumbai Head Office, BKC" />
+              </>
+            )}
+          </div>
+
+          {/* Date + start + end (3 cols) */}
+          <div className="mfl-grid mfl-grid-3">
+            <div className="mfl-fld">
+              <label className="mfl-lbl">MEETING DATE <span className="mfl-req">*</span></label>
+              <MasterDatePicker value={date} onChange={setDate} placeholder="dd-mm-yyyy" />
+            </div>
+            <div className="mfl-fld">
+              <label className="mfl-lbl">START TIME <span className="mfl-req">*</span></label>
+              <MasterTimePicker value={startTime} onChange={setStartTime} placeholder="--:--" />
+            </div>
+            <div className="mfl-fld">
+              <label className="mfl-lbl">END TIME <span className="mfl-req">*</span></label>
+              <MasterTimePicker value={endTime} onChange={setEndTime} placeholder="--:--" />
+            </div>
+          </div>
+
+          {/* Agenda full-width */}
+          <div className="mfl-fld mfl-fld-full">
+            <label className="mfl-lbl">MEETING AGENDA <span className="mfl-req">*</span></label>
+            <textarea
+              className="mfl-input mfl-textarea"
+              rows={3}
+              value={agenda}
+              onChange={e => setAgenda(e.target.value)}
+              placeholder="Meeting agenda..."
+            />
+          </div>
+
+          {formError && <div className="mfl-form-error">{formError}</div>}
+        </div>
+
+        <div className="mfl-foot">
+          <div className="mfl-foot-note">
+            <span className="mfl-foot-dot" /> Fields marked <span className="mfl-req">*</span> are required
+          </div>
+          <div className="mfl-foot-actions">
+            <button className="mfl-btn mfl-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="mfl-btn mfl-btn-primary" onClick={() => void save()} disabled={saving || !oppId}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
   ), document.body);
 }
 
-const CSS = `
+const MFL_CSS = `
 .mfl-backdrop {
   position: fixed; inset: 0; z-index: 1080;
-  background: rgba(15,23,42,.55); backdrop-filter: blur(3px);
+  background: rgba(15, 23, 42, .55);
+  backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
+  animation: mfl-fade .15s ease-out;
 }
+@keyframes mfl-fade { from { opacity: 0; } to { opacity: 1; } }
+
 .mfl-modal {
-  width: min(720px, 100%); max-height: 90vh;
-  background: #fff; border-radius: 14px;
-  box-shadow: 0 18px 48px rgba(15,23,42,.28);
-  overflow: hidden; display: flex; flex-direction: column;
+  width: min(820px, 100%); max-height: 92vh;
+  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, .28);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  animation: mfl-pop .18s ease-out;
 }
+@keyframes mfl-pop {
+  from { transform: scale(.96); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+/* ─── Header (teal gradient) ─── */
 .mfl-head {
+  position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px; color: #fff;
-  background: linear-gradient(135deg, #0ea5e9 0%, #1e40af 100%);
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%);
+  color: #fff;
 }
-.mfl-head-left { display: flex; align-items: center; gap: 12px; }
+.mfl-head::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .18), transparent);
+  pointer-events: none;
+}
+.mfl-head-left { position: relative; z-index: 1; display: flex; align-items: center; gap: 13px; }
 .mfl-head-icon {
-  width: 36px; height: 36px; border-radius: 10px;
-  background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center;
-}
-.mfl-head-title { font-size: 15px; font-weight: 700; }
-.mfl-head-sub   { font-size: 11px; opacity: .85; margin-top: 3px; }
-.mfl-head-actions { display: flex; gap: 8px; align-items: center; }
-.mfl-add-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 7px 13px; border-radius: 8px; border: none;
-  background: rgba(255,255,255,.18); color: #fff; font-size: 11.5px; font-weight: 700; cursor: pointer;
-}
-.mfl-add-btn:hover { background: rgba(255,255,255,.30); }
-.mfl-close {
-  width: 28px; height: 28px; border: none; cursor: pointer;
-  background: rgba(255,255,255,.18); color: #fff; border-radius: 8px;
+  width: 42px; height: 42px; border-radius: 11px;
+  background: rgba(255, 255, 255, .22);
+  border: 1px solid rgba(255, 255, 255, .30);
   display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .15);
+  flex-shrink: 0;
 }
-.mfl-close:hover { background: rgba(255,255,255,.32); }
-
-.mfl-body { flex: 1; overflow-y: auto; padding: 14px 18px; background: #f0f9ff; display: flex; flex-direction: column; gap: 8px; }
-.mfl-status { text-align: center; padding: 26px 12px; color: #0c4a6e; font-style: italic; font-size: 12px; }
-
-/* Inline draft form */
-.mfl-draft {
-  background: #fff; border: 1.5px solid #bae6fd; border-radius: 10px;
-  padding: 12px; margin-bottom: 12px;
+.mfl-head-row { display: inline-flex; align-items: center; gap: 8px; }
+.mfl-head-title { font-size: 17px; font-weight: 800; line-height: 1.2; letter-spacing: -.2px; }
+.mfl-head-tag {
+  font-size: 9px; font-weight: 800; letter-spacing: .12em;
+  padding: 3px 9px; border-radius: 999px;
+  background: rgba(255, 255, 255, .22);
+  border: 1px solid rgba(255, 255, 255, .35);
+  color: #fff;
+  text-transform: uppercase;
 }
-.mfl-draft-row { display: grid; gap: 10px; margin-bottom: 8px; }
-.mfl-row-2 { grid-template-columns: 1fr 1fr; }
-.mfl-row-3 { grid-template-columns: 1fr 1fr 1fr; }
-.mfl-fld { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; min-width: 0; }
-.mfl-fld-span-2 { grid-column: span 2; }
-.mfl-fld label { font-size: 9.5px; font-weight: 800; letter-spacing: .06em; color: #1e40af; }
+.mfl-head-sub { font-size: 11.5px; color: rgba(255, 255, 255, .85); margin-top: 2px; font-weight: 500; }
+.mfl-close {
+  position: relative; z-index: 1;
+  width: 30px; height: 30px; border: none; cursor: pointer;
+  background: rgba(255, 255, 255, .20);
+  color: #fff; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+}
+.mfl-close:hover { background: rgba(255, 255, 255, .35); }
+
+/* ─── Body ─── */
+.mfl-body {
+  padding: 18px 22px;
+  flex: 1; overflow-y: auto;
+}
+.mfl-body::-webkit-scrollbar { width: 5px; }
+.mfl-body::-webkit-scrollbar-thumb { background: rgba(20, 184, 166, .35); border-radius: 999px; }
+
+.mfl-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 18px;
+  margin-bottom: 12px;
+}
+.mfl-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+.mfl-fld {
+  display: flex; flex-direction: column; gap: 6px;
+  min-width: 0;
+}
+.mfl-fld-full { margin-bottom: 12px; }
+
+.mfl-lbl-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mfl-lbl {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  color: #0f766e; text-transform: uppercase;
+}
+.mfl-req { color: #ef4444; }
+
+/* AUTO-FETCHED chip */
+.mfl-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.mfl-pill-fetched {
+  background: rgba(20, 184, 166, .12);
+  border: 1px solid rgba(20, 184, 166, .40);
+  color: #0f766e;
+}
+.mfl-pill-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #14b8a6;
+  box-shadow: 0 0 6px rgba(20, 184, 166, .55);
+  animation: mfl-pulse 1.4s ease-in-out infinite;
+}
+@keyframes mfl-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .5; transform: scale(.7); }
+}
+
+/* Virtual / Physical toggle */
+.mfl-toggle {
+  display: flex; gap: 8px;
+  padding: 4px;
+  background: rgba(20, 184, 166, .10);
+  border: 1.5px solid rgba(20, 184, 166, .25);
+  border-radius: 12px;
+  margin-bottom: 14px;
+}
+.mfl-toggle-btn {
+  flex: 1;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 9px 14px;
+  border: none; border-radius: 9px;
+  background: transparent;
+  color: #0f766e;
+  font-family: inherit;
+  font-size: 12.5px; font-weight: 700;
+  cursor: pointer;
+  transition: all .15s;
+}
+.mfl-toggle-btn:hover:not(.active) { background: rgba(20, 184, 166, .14); }
+.mfl-toggle-btn.active {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(20, 184, 166, .35);
+}
+
+/* Inputs */
 .mfl-input {
-  width: 100%; min-height: 34px; padding: 6px 10px;
-  border: 1.5px solid #bae6fd; border-radius: 8px;
-  font-size: 12.5px; background: #fff; outline: none; font-family: inherit;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1.5px solid rgba(20, 184, 166, .35);
+  border-radius: 9px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13px; font-weight: 500; color: #0f172a;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.mfl-input::placeholder { color: #94a3b8; font-weight: 400; }
+.mfl-input:focus {
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, .18);
+}
+.mfl-input-ro {
+  background: rgba(20, 184, 166, .08);
+  color: #0f766e;
+  font-weight: 700;
+  cursor: not-allowed;
+}
+.mfl-textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.mfl-form-error {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, .08);
+  border: 1px solid rgba(239, 68, 68, .35);
+  border-radius: 8px;
+  color: #b91c1c;
+  font-size: 12px; font-weight: 600;
+}
+
+/* ─── Footer ─── */
+.mfl-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  background: #fff;
+  border-top: 1px solid rgba(20, 184, 166, .20);
+}
+.mfl-foot-note {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: #475569; font-weight: 500;
+}
+.mfl-foot-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #14b8a6;
+  box-shadow: 0 0 4px rgba(20, 184, 166, .55);
+}
+.mfl-foot-actions { display: flex; align-items: center; gap: 8px; }
+
+.mfl-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 20px;
+  border-radius: 9px;
+  border: 1.5px solid transparent;
+  font-family: inherit;
+  font-size: 13px; font-weight: 700;
+  cursor: pointer;
+  transition: all .15s;
+}
+.mfl-btn:disabled { opacity: .55; cursor: not-allowed; }
+.mfl-btn-ghost {
+  background: #fff;
+  border-color: #cbd5e1;
   color: #0f172a;
 }
-.mfl-input:focus { border-color: #1e40af; box-shadow: 0 0 0 3px rgba(30,64,175,.16); }
-.mfl-draft-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-.mfl-btn { padding: 7px 14px; border-radius: 8px; border: 1.5px solid #bae6fd; background: #fff; color: #0c4a6e; font-size: 11.5px; font-weight: 700; cursor: pointer; }
-.mfl-btn-primary { border-color: transparent; background: linear-gradient(135deg,#0ea5e9,#1e40af); color: #fff; }
-.mfl-btn-primary:hover { filter: brightness(1.08); }
-.mfl-btn:disabled { opacity: .55; cursor: not-allowed; }
-
-/* Existing meeting cards */
-.mfl-row {
-  display: flex; gap: 12px; align-items: flex-start;
-  background: #fff; border: 1.5px solid #bae6fd; border-radius: 10px;
-  padding: 11px 14px;
+.mfl-btn-ghost:hover:not(:disabled) { background: #f8fafc; border-color: #94a3b8; }
+.mfl-btn-primary {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(20, 184, 166, .35);
 }
-.mfl-row-main  { flex: 1; min-width: 0; }
-.mfl-row-head  { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; flex-wrap: wrap; }
-.mfl-row-code  {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10.5px; color: #0c4a6e; font-weight: 700;
-  background: #e0f2fe; padding: 1px 8px; border-radius: 5px;
-}
-.mfl-type {
-  font-size: 10.5px; padding: 2px 9px; border-radius: 999px;
-  font-weight: 700;
-}
-.mfl-type-virtual  { background: #e0e7ff; color: #4338ca; }
-.mfl-type-physical { background: #dcfce7; color: #166534; }
-.mfl-pill { font-size: 10px; padding: 2px 9px; border-radius: 999px; font-weight: 700; }
-.mfl-pill-sch  { background: #fef3c7; color: #b45309; }
-.mfl-pill-done { background: #dcfce7; color: #166534; }
-.mfl-pill-cncl { background: #fee2e2; color: #b91c1c; }
-.mfl-row-title { font-size: 13px; font-weight: 700; color: #0f172a; }
-.mfl-row-meta {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  font-size: 11px; color: #475569; margin-top: 3px;
-}
-.mfl-row-link { color: #1e40af; font-weight: 600; text-decoration: none; }
-.mfl-row-link:hover { text-decoration: underline; }
-.mfl-row-agenda { font-size: 11.5px; color: #334155; margin-top: 5px; line-height: 1.45; }
-.mfl-row-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
-.mfl-row-btn { padding: 5px 12px; border: 1.5px solid #bae6fd; background: #fff; color: #0c4a6e; border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer; }
-.mfl-row-btn:hover { background: #e0f2fe; }
-.mfl-row-btn-x { color: #b91c1c; border-color: #fecaca; }
-.mfl-row-btn-x:hover { background: #fee2e2; }
-
-/* Dark mode */
-[data-bs-theme="dark"] .mfl-modal { background: #0f172a; }
-[data-bs-theme="dark"] .mfl-body  { background: #0b1226; }
-[data-bs-theme="dark"] .mfl-draft, [data-bs-theme="dark"] .mfl-row { background: #1e293b; border-color: #334155; }
-[data-bs-theme="dark"] .mfl-fld label { color: #93c5fd; }
-[data-bs-theme="dark"] .mfl-input { background: #0f172a; border-color: #334155; color: #e2e8f0; }
-[data-bs-theme="dark"] .mfl-row-title { color: #f1f5f9; }
-[data-bs-theme="dark"] .mfl-row-meta  { color: #cbd5e1; }
-[data-bs-theme="dark"] .mfl-row-agenda { color: #94a3b8; }
-[data-bs-theme="dark"] .mfl-btn, [data-bs-theme="dark"] .mfl-row-btn {
-  background: #0f172a; border-color: #334155; color: #67e8f9;
+.mfl-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(20, 184, 166, .45);
 }
 
-@media (max-width: 640px) {
-  .mfl-row-2, .mfl-row-3 { grid-template-columns: 1fr; }
-  .mfl-fld-span-2 { grid-column: span 1; }
-  .mfl-row { flex-direction: column; }
-  .mfl-row-actions { flex-direction: row; justify-content: flex-end; width: 100%; }
+/* ─── Dark mode ─── */
+[data-bs-theme="dark"] .mfl-modal {
+  background: linear-gradient(180deg, #0c2620 0%, #0a1a17 100%);
+}
+[data-bs-theme="dark"] .mfl-body { color: #d1fae5; }
+[data-bs-theme="dark"] .mfl-lbl  { color: #5eead4; }
+[data-bs-theme="dark"] .mfl-input {
+  background: #0f1f1c;
+  border-color: rgba(20, 184, 166, .35);
+  color: #ecfdf5;
+}
+[data-bs-theme="dark"] .mfl-input::placeholder { color: #475569; }
+[data-bs-theme="dark"] .mfl-input:focus {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, .25);
+}
+[data-bs-theme="dark"] .mfl-input-ro {
+  background: rgba(20, 184, 166, .12);
+  color: #5eead4;
+}
+[data-bs-theme="dark"] .mfl-toggle {
+  background: rgba(20, 184, 166, .12);
+  border-color: rgba(20, 184, 166, .35);
+}
+[data-bs-theme="dark"] .mfl-toggle-btn { color: #5eead4; }
+[data-bs-theme="dark"] .mfl-toggle-btn:hover:not(.active) { background: rgba(20, 184, 166, .18); }
+[data-bs-theme="dark"] .mfl-pill-fetched {
+  background: rgba(20, 184, 166, .18);
+  border-color: rgba(20, 184, 166, .45);
+  color: #5eead4;
+}
+[data-bs-theme="dark"] .mfl-form-error {
+  background: rgba(239, 68, 68, .15);
+  border-color: rgba(239, 68, 68, .45);
+  color: #fca5a5;
+}
+[data-bs-theme="dark"] .mfl-foot {
+  background: #0f1f1c;
+  border-top-color: rgba(20, 184, 166, .25);
+}
+[data-bs-theme="dark"] .mfl-foot-note { color: #94a3b8; }
+[data-bs-theme="dark"] .mfl-btn-ghost {
+  background: #1e293b;
+  border-color: rgba(20, 184, 166, .30);
+  color: #d1fae5;
+}
+[data-bs-theme="dark"] .mfl-btn-ghost:hover:not(:disabled) { background: #243b3a; }
+
+@media (max-width: 720px) {
+  .mfl-grid, .mfl-grid-3 { grid-template-columns: 1fr; }
+  .mfl-foot { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
+  .mfl-foot-actions { width: 100%; }
+  .mfl-foot-actions .mfl-btn { flex: 1; justify-content: center; }
 }
 `;

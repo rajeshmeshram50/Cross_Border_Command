@@ -1022,13 +1022,31 @@ export const SALES_MATRIX_DETAIL_CSS = `
   background: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
   color: #fff;
 }
-[data-bs-theme="dark"] .smd-root .smd-deal-tabs { border-bottom-color: rgba(167, 139, 250, .22); }
-[data-bs-theme="dark"] .smd-root .smd-deal-tab { color: #94a3b8; }
+/* Tab strip — was light lavender pill in light mode; needs dark wash here. */
+[data-bs-theme="dark"] .smd-root .smd-deal-tabs {
+  background: linear-gradient(135deg, #1f1845, #2a2150);
+  border-bottom-color: rgba(167, 139, 250, .22);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, .35);
+}
+[data-bs-theme="dark"] .smd-root .smd-deal-tab { color: rgba(196, 181, 253, .55); }
+[data-bs-theme="dark"] .smd-root .smd-deal-tab-active {
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, .50);
+}
 [data-bs-theme="dark"] .smd-root .smd-deal-tab.on {
   color: #ede9fe; border-bottom-color: #a78bfa;
 }
 [data-bs-theme="dark"] .smd-root .smd-deal-tab-soon {
-  background: rgba(245, 158, 11, .18); color: #fbbf24;
+  background: rgba(167, 139, 250, .14);
+  border-color: rgba(167, 139, 250, .35);
+  color: #a78bfa;
+}
+
+/* PURCHASE DECISION MAKER divider — was lavender pill bleeding light. */
+[data-bs-theme="dark"] .smd-root .smd-deal-section-label {
+  background: linear-gradient(135deg, #1f1845, #2a2150);
+  color: #a78bfa;
 }
 [data-bs-theme="dark"] .smd-root .smd-deal-section-title { color: #c4b5fd; }
 [data-bs-theme="dark"] .smd-root .smd-deal-label { color: #c4b5fd; }

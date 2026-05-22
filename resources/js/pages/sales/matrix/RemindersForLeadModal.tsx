@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
@@ -6,128 +6,118 @@ import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 
 /* ─────────────────────────────────────────────────────────────────────────
- * Reminders for this lead — toolbar pill drawer.
+ * Add Reminder — focused dialog opened from the matrix toolbar.
  *
- * Lists every reminder with this lead's opp_id pulled from the existing
- * /sales/reminders endpoint, plus a tiny inline "+ New" form that
- * pre-fills opp_id so the user doesn't retype it. Status toggles fire
- * the existing PATCH /sales/reminders/{id}/status endpoint.
- *
- * For the full reminder form (with attachments, tat etc.), users still
- * have /sales/todo. This modal is the quick-action shortcut from the
- * matrix toolbar.
+ * Auto-fetches Opportunity ID + Date from the current lead (read-only),
+ * lets the user set Status / Subject / Reminder Date / TAT / Attachment /
+ * Remark. Posts to /sales/reminders (multipart so the optional attachment
+ * can ride along).
  * ───────────────────────────────────────────────────────────────────────── */
 
-/* Server status values are the exact constants on SalesReminder (capitalised
- * strings with spaces). Keep them as-is here so PATCH /status doesn't
- * 422 on validation. */
 type ReminderStatus = 'In Progress' | 'Done';
 
-type Reminder = {
-  id:        number;
-  subject:   string;
-  set_date:  string;
-  tat?:      string | null;
-  remark?:   string | null;
-  opp_id?:   string | null;
-  opp_date?: string | null;
-  status:    ReminderStatus;
-};
-
-const STATUS_META: Record<ReminderStatus, { label: string; pill: string }> = {
-  'In Progress': { label: 'In Progress', pill: 'rfl-pill-prog' },
-  'Done':        { label: 'Done',        pill: 'rfl-pill-done' },
-};
-
-/* Normalise a date that could come in as DD/MM/YYYY (display format),
- * YYYY-MM-DD (already ISO), or ISO 8601 with time → return YYYY-MM-DD
- * if anything parses, undefined otherwise. Server's `date` rule only
- * accepts an unambiguous date string. */
+/* Convert a date that could be DD/MM/YYYY (display format) or already
+ * YYYY-MM-DD into ISO. Returns undefined on parse failure. */
 function toIsoDate(input: string | undefined | null): string | undefined {
   if (!input) return undefined;
   const s = String(input).trim();
   if (!s) return undefined;
-  // Already YYYY-MM-DD or ISO with time → take the first 10 chars
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  // DD/MM/YYYY (en-GB locale format) → reorder
   const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
   if (dmy) {
     const [, d, m, y] = dmy;
     return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
-  // Last resort — let the Date parser try
   const d = new Date(s);
   return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : undefined;
 }
 
+/* Display format for the read-only OPP DATE chip. */
+function toDisplayDate(input: string | undefined | null): string {
+  const iso = toIsoDate(input);
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  return `${d}-${m}-${y}`;
+}
+
 type Props = {
-  open:   boolean;
-  oppId:  string | undefined;   // OPP-#### code, used to filter + prefill
+  open:    boolean;
+  oppId:   string | undefined;
   oppDate?: string;
   onClose: () => void;
 };
 
 export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }: Props) {
   const toast = useToast();
-  const [rows, setRows]       = useState<Reminder[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [draftOpen, setDraftOpen] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const [subject, setSubject]   = useState('');
-  const [setDate, setSetDate]   = useState('');
-  const [tat, setTat]           = useState('24 Hours');
-  const [remark, setRemark]     = useState('');
-  const [saving, setSaving]     = useState(false);
+  const [status, setStatus]   = useState<ReminderStatus>('In Progress');
+  const [subject, setSubject] = useState('');
+  const [setDate, setSetDate] = useState('');
+  const [tat, setTat]         = useState('');
+  const [remark, setRemark]   = useState('');
+  const [picked, setPicked]   = useState<File | null>(null);
+  const [saving, setSaving]   = useState(false);
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  const refresh = () => {
-    if (!oppId) return;
-    setLoading(true);
-    api.get<Reminder[]>('/sales/reminders', { params: { scope: 'mine', search: oppId } })
-      .then(({ data }) => {
-        // Server-side filter is `ilike` so we narrow to exact opp_id matches
-        // here — avoids stray subject-matches polluting the list.
-        setRows((data ?? []).filter(r => r.opp_id === oppId));
-      })
-      .catch(() => toast.error('Load failed', 'Could not load reminders'))
-      .finally(() => setLoading(false));
-  };
-
+  /* Reset every time the modal opens so an old draft never leaks into a
+   * fresh lead. */
   useEffect(() => {
-    if (!open) { setDraftOpen(false); setSubject(''); setRemark(''); setSetDate(''); return; }
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, oppId]);
+    if (!open) return;
+    setStatus('In Progress');
+    setSubject('');
+    setSetDate('');
+    setTat('');
+    setRemark('');
+    setPicked(null);
+    if (fileRef.current) fileRef.current.value = '';
+  }, [open]);
 
   if (!open) return null;
 
-  const saveDraft = async () => {
-    if (!subject.trim()) { toast.warning('Subject required', 'Type a subject'); return; }
-    if (!setDate) { toast.warning('Date required', 'Pick the reminder date'); return; }
+  const onPickFile = () => fileRef.current?.click();
+  const onFileChange = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const f = ev.target.files?.[0];
+    if (f) setPicked(f);
+  };
+  const clearPicked = () => {
+    setPicked(null);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const save = async () => {
+    if (!oppId) {
+      toast.warning('No opportunity in context', 'Open this from the Lead Worksheet to enable saving');
+      return;
+    }
+    if (!subject.trim()) {
+      toast.warning('Subject required', 'Type a reminder subject');
+      return;
+    }
+    if (!setDate) {
+      toast.warning('Date required', 'Pick a reminder date');
+      return;
+    }
     setSaving(true);
     try {
-      // `oppDate` arrives from the parent as the human display string
-      // (DD/MM/YYYY) so Laravel's `date` rule rejects it. Convert to
-      // ISO (YYYY-MM-DD) before sending; omit the field if it doesn't
-      // parse cleanly — the column is nullable, no need to gamble.
       const isoOppDate = toIsoDate(oppDate);
-      const payload: Record<string, unknown> = {
-        opp_id:   oppId,
-        subject:  subject.trim(),
-        set_date: setDate,
-        tat,
-      };
-      if (isoOppDate)            payload.opp_date = isoOppDate;
-      if (remark.trim())         payload.remark   = remark.trim();
+      const fd = new FormData();
+      fd.append('opp_id', oppId);
+      fd.append('subject', subject.trim());
+      fd.append('set_date', setDate);
+      fd.append('status', status);
+      if (isoOppDate)    fd.append('opp_date', isoOppDate);
+      if (tat)           fd.append('tat', tat);
+      if (remark.trim()) fd.append('remark', remark.trim());
+      if (picked)        fd.append('attachment', picked);
 
-      await api.post('/sales/reminders', payload);
+      await api.post('/sales/reminders', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       toast.success('Reminder added', 'Saved to this opportunity');
-      setSubject(''); setRemark(''); setSetDate(''); setDraftOpen(false);
-      refresh();
+      onClose();
     } catch (e: any) {
-      // Surface the first server-side validation error if any so the
-      // user sees the real complaint ("subject must be 3+ chars" etc).
       const errors = e?.response?.data?.errors as Record<string, string[]> | undefined;
       const firstErr = errors ? Object.values(errors)[0]?.[0] : undefined;
       toast.error('Save failed', firstErr ?? e?.response?.data?.message ?? 'Could not save reminder');
@@ -136,120 +126,155 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
     }
   };
 
-  const setStatus = async (r: Reminder, next: ReminderStatus) => {
-    try {
-      await api.patch(`/sales/reminders/${r.id}/status`, { status: next });
-      setRows(prev => prev.map(x => x.id === r.id ? { ...x, status: next } : x));
-      toast.success('Status updated', `Reminder marked ${next}`);
-    } catch (e: any) {
-      toast.error('Update failed', e?.response?.data?.message ?? 'Could not change status');
-    }
-  };
-
   return createPortal((
-    /* Backdrop is purely visual — closing only via the X / Cancel button
-     * so accidental outside-clicks don't wipe an in-progress entry. */
     <div className="rfl-backdrop">
-      <style>{CSS}</style>
-      <div className="rfl-modal">
+      <style>{RFL_CSS}</style>
+      <div className="rfl-modal" onClick={(e) => e.stopPropagation()}>
         <div className="rfl-head">
           <div className="rfl-head-left">
             <div className="rfl-head-icon">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
             </div>
             <div>
-              <div className="rfl-head-title">Reminders</div>
-              <div className="rfl-head-sub">Opp ID: {oppId ?? '—'} · {rows.length} {rows.length === 1 ? 'reminder' : 'reminders'}</div>
+              <div className="rfl-head-row">
+                <span className="rfl-head-title">Add Reminder</span>
+                <span className="rfl-head-tag">REMINDER</span>
+              </div>
+              <div className="rfl-head-sub">Reminder</div>
             </div>
           </div>
-          <div className="rfl-head-actions">
-            <button className="rfl-add-btn" onClick={() => setDraftOpen(o => !o)}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              New
-            </button>
-            <button className="rfl-close" onClick={onClose} aria-label="Close">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
+          <button className="rfl-close" onClick={onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
 
         <div className="rfl-body">
-          {draftOpen && (
-            <div className="rfl-draft">
-              <div className="rfl-draft-grid">
-                <div className="rfl-fld">
-                  <label>SUBJECT *</label>
-                  <input className="rfl-input" value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Follow up on quotation" />
-                </div>
-                <div className="rfl-fld">
-                  <label>DATE *</label>
-                  <MasterDatePicker value={setDate} onChange={setSetDate} minDate={todayStr} placeholder="dd-mm-yyyy" />
-                </div>
-                <div className="rfl-fld">
-                  <label>TAT</label>
-                  <MasterSelect
-                    value={tat}
-                    onChange={setTat}
-                    options={[
-                      { value: '24 Hours', label: '24 Hours' },
-                      { value: '48 Hours', label: '48 Hours' },
-                      { value: '72 Hours', label: '72 Hours' },
-                      { value: '1 Week',   label: '1 Week'   },
-                      { value: '2 Weeks',  label: '2 Weeks'  },
-                      { value: '1 Month',  label: '1 Month'  },
-                    ]}
-                    placeholder="Select TAT"
-                  />
-                </div>
+          <div className="rfl-grid">
+            <div className="rfl-fld">
+              <div className="rfl-lbl-row">
+                <label className="rfl-lbl">OPPORTUNITY ID <span className="rfl-req">*</span></label>
+                <span className="rfl-pill rfl-pill-fetched"><span className="rfl-pill-dot" /> AUTO-FETCHED</span>
               </div>
-              <div className="rfl-fld">
-                <label>REMARK</label>
-                <textarea className="rfl-input" rows={2} value={remark} onChange={e => setRemark(e.target.value)} placeholder="Optional context…" />
-              </div>
-              <div className="rfl-draft-foot">
-                <button className="rfl-btn" onClick={() => setDraftOpen(false)} disabled={saving}>Cancel</button>
-                <button className="rfl-btn rfl-btn-primary" onClick={() => void saveDraft()} disabled={saving}>
-                  {saving ? 'Saving…' : 'Save Reminder'}
-                </button>
-              </div>
+              <input className="rfl-input rfl-input-ro" value={oppId ?? ''} readOnly />
             </div>
-          )}
-
-          <div className="rfl-list">
-            {loading && <div className="rfl-status">Loading reminders…</div>}
-            {!loading && rows.length === 0 && !draftOpen && (
-              <div className="rfl-status">No reminders for this opportunity yet — click <strong>+ New</strong>.</div>
-            )}
-            {rows.map(r => (
-              <div key={r.id} className={`rfl-row rfl-row-${r.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                <div className="rfl-row-main">
-                  <div className="rfl-row-title">{r.subject}</div>
-                  <div className="rfl-row-meta">
-                    <span>📅 {new Date(r.set_date).toLocaleDateString('en-GB')}</span>
-                    {r.tat && <span>· {r.tat}</span>}
-                    {r.remark && <span className="rfl-row-remark"> · {r.remark}</span>}
-                  </div>
-                </div>
-                <div className="rfl-row-actions">
-                  <span className={`rfl-pill ${STATUS_META[r.status]?.pill ?? 'rfl-pill-prog'}`}>
-                    {STATUS_META[r.status]?.label ?? r.status}
-                  </span>
-                  {r.status !== 'Done' && (
-                    <button className="rfl-row-btn" onClick={() => void setStatus(r, 'Done')}>Mark Done</button>
-                  )}
-                  {r.status === 'Done' && (
-                    <button className="rfl-row-btn" onClick={() => void setStatus(r, 'In Progress')}>Reopen</button>
-                  )}
-                </div>
+            <div className="rfl-fld">
+              <div className="rfl-lbl-row">
+                <label className="rfl-lbl">OPPORTUNITY DATE <span className="rfl-req">*</span></label>
+                <span className="rfl-pill rfl-pill-fetched"><span className="rfl-pill-dot" /> AUTO-FETCHED</span>
               </div>
-            ))}
+              <input className="rfl-input rfl-input-ro" value={toDisplayDate(oppDate)} readOnly />
+            </div>
+
+            <div className="rfl-fld">
+              <label className="rfl-lbl">STATUS</label>
+              <MasterSelect
+                value={status}
+                onChange={(v) => setStatus(v as ReminderStatus)}
+                options={[
+                  { value: 'In Progress', label: 'In Progress' },
+                  { value: 'Done',        label: 'Done'        },
+                ]}
+                placeholder="Select status"
+              />
+            </div>
+            <div className="rfl-fld">
+              <label className="rfl-lbl">REMINDER SUBJECT <span className="rfl-req">*</span></label>
+              <input
+                className="rfl-input"
+                placeholder="Subject"
+                value={subject}
+                onChange={e => setSubject(e.target.value)}
+              />
+            </div>
+
+            <div className="rfl-fld">
+              <label className="rfl-lbl">REMINDER SET DATE <span className="rfl-req">*</span></label>
+              <MasterDatePicker
+                value={setDate}
+                onChange={setSetDate}
+                minDate={todayStr}
+                placeholder="dd-mm-yyyy"
+              />
+            </div>
+            <div className="rfl-fld">
+              <label className="rfl-lbl">TAT</label>
+              <MasterSelect
+                value={tat}
+                onChange={setTat}
+                options={[
+                  { value: '24 Hours', label: '24 Hours' },
+                  { value: '48 Hours', label: '48 Hours' },
+                  { value: '72 Hours', label: '72 Hours' },
+                  { value: '1 Week',   label: '1 Week'   },
+                  { value: '2 Weeks',  label: '2 Weeks'  },
+                  { value: '1 Month',  label: '1 Month'  },
+                ]}
+                placeholder="Select TAT"
+              />
+            </div>
+
+            <div className="rfl-fld">
+              <label className="rfl-lbl">ATTACHMENT</label>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp,.pdf"
+                onChange={onFileChange}
+                style={{ display: 'none' }}
+              />
+              {picked ? (
+                <div className="rfl-file-chip" title={picked.name}>
+                  <svg className="rfl-file-chip-ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                  <span className="rfl-file-chip-name">{picked.name}</span>
+                  <button type="button" className="rfl-file-chip-x" onClick={clearPicked} aria-label="Remove">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <button type="button" className="rfl-file-btn" onClick={onPickFile}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                  Choose file...
+                </button>
+              )}
+            </div>
+            <div className="rfl-fld">
+              <label className="rfl-lbl">REMARK</label>
+              <textarea
+                className="rfl-input rfl-textarea"
+                rows={3}
+                placeholder="Add a remark or note…"
+                value={remark}
+                onChange={e => setRemark(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="rfl-foot">
+          <div className="rfl-foot-note">
+            <span className="rfl-foot-dot" /> Fields marked <span className="rfl-req">*</span> are required
+          </div>
+          <div className="rfl-foot-actions">
+            <button className="rfl-btn rfl-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="rfl-btn rfl-btn-primary" onClick={() => void save()} disabled={saving || !oppId}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
           </div>
         </div>
       </div>
@@ -257,95 +282,290 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
   ), document.body);
 }
 
-const CSS = `
+const RFL_CSS = `
 .rfl-backdrop {
   position: fixed; inset: 0; z-index: 1080;
-  background: rgba(15,23,42,.55); backdrop-filter: blur(3px);
+  background: rgba(15, 23, 42, .55);
+  backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
+  animation: rfl-fade .15s ease-out;
 }
+@keyframes rfl-fade { from { opacity: 0; } to { opacity: 1; } }
+
 .rfl-modal {
-  width: min(620px, 100%); max-height: 88vh;
-  background: #fff; border-radius: 14px;
-  box-shadow: 0 18px 48px rgba(15,23,42,.28);
-  overflow: hidden; display: flex; flex-direction: column;
+  width: min(720px, 100%); max-height: 92vh;
+  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, .28);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  animation: rfl-pop .18s ease-out;
 }
+@keyframes rfl-pop {
+  from { transform: scale(.96); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+/* ─── Header (teal gradient) ─── */
 .rfl-head {
+  position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px; color: #fff;
-  background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%);
+  color: #fff;
 }
-.rfl-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.rfl-head::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .18), transparent);
+  pointer-events: none;
+}
+.rfl-head-left { position: relative; z-index: 1; display: flex; align-items: center; gap: 13px; }
 .rfl-head-icon {
-  width: 36px; height: 36px; border-radius: 10px;
-  background: rgba(255,255,255,.18); display: flex; align-items: center; justify-content: center;
-}
-.rfl-head-title { font-size: 15px; font-weight: 700; }
-.rfl-head-sub   { font-size: 11px; opacity: .85; margin-top: 3px; }
-.rfl-head-actions { display: flex; gap: 8px; align-items: center; }
-.rfl-add-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 7px 13px; border-radius: 8px; border: none;
-  background: rgba(255,255,255,.18); color: #fff; font-size: 11.5px; font-weight: 700; cursor: pointer;
-}
-.rfl-add-btn:hover { background: rgba(255,255,255,.30); }
-.rfl-close {
-  width: 28px; height: 28px; border: none; cursor: pointer;
-  background: rgba(255,255,255,.18); color: #fff; border-radius: 8px;
+  width: 42px; height: 42px; border-radius: 11px;
+  background: rgba(255, 255, 255, .22);
+  border: 1px solid rgba(255, 255, 255, .30);
   display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .15);
+  flex-shrink: 0;
 }
-.rfl-close:hover { background: rgba(255,255,255,.32); }
+.rfl-head-row { display: inline-flex; align-items: center; gap: 8px; }
+.rfl-head-title { font-size: 17px; font-weight: 800; line-height: 1.2; letter-spacing: -.2px; }
+.rfl-head-tag {
+  font-size: 9px; font-weight: 800; letter-spacing: .12em;
+  padding: 3px 9px; border-radius: 999px;
+  background: rgba(255, 255, 255, .22);
+  border: 1px solid rgba(255, 255, 255, .35);
+  color: #fff;
+  text-transform: uppercase;
+}
+.rfl-head-sub { font-size: 11.5px; color: rgba(255, 255, 255, .85); margin-top: 2px; font-weight: 500; }
+.rfl-close {
+  position: relative; z-index: 1;
+  width: 30px; height: 30px; border: none; cursor: pointer;
+  background: rgba(255, 255, 255, .20);
+  color: #fff; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+}
+.rfl-close:hover { background: rgba(255, 255, 255, .35); }
 
-.rfl-body { flex: 1; overflow-y: auto; padding: 14px 18px; background: #fffbeb; }
+/* ─── Body ─── */
+.rfl-body {
+  padding: 20px 22px;
+  flex: 1; overflow-y: auto;
+}
+.rfl-body::-webkit-scrollbar { width: 5px; }
+.rfl-body::-webkit-scrollbar-thumb { background: rgba(20, 184, 166, .35); border-radius: 999px; }
 
-.rfl-draft { background: #fff; border: 1.5px solid #fde68a; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
-.rfl-draft-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-.rfl-fld { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
-.rfl-fld label { font-size: 9.5px; font-weight: 800; letter-spacing: .06em; color: #b45309; }
+.rfl-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 18px;
+}
+
+.rfl-fld {
+  display: flex; flex-direction: column; gap: 6px;
+  min-width: 0;
+}
+.rfl-lbl-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rfl-lbl {
+  font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  color: #0f766e; text-transform: uppercase;
+}
+.rfl-req { color: #ef4444; }
+
+/* AUTO-FETCHED chip */
+.rfl-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.rfl-pill-fetched {
+  background: rgba(20, 184, 166, .12);
+  border: 1px solid rgba(20, 184, 166, .40);
+  color: #0f766e;
+}
+.rfl-pill-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #14b8a6;
+  box-shadow: 0 0 6px rgba(20, 184, 166, .55);
+  animation: rfl-pulse 1.4s ease-in-out infinite;
+}
+@keyframes rfl-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .5; transform: scale(.7); }
+}
+
+/* Inputs */
 .rfl-input {
-  width: 100%; min-height: 34px; padding: 6px 10px;
-  border: 1.5px solid #fde68a; border-radius: 8px;
-  font-size: 12.5px; background: #fff; outline: none; font-family: inherit;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1.5px solid rgba(20, 184, 166, .35);
+  border-radius: 9px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13px; font-weight: 500; color: #0f172a;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
 }
-.rfl-input:focus { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
-.rfl-draft-foot { display: flex; justify-content: flex-end; gap: 8px; }
-.rfl-btn { padding: 7px 14px; border-radius: 8px; border: 1.5px solid #fde68a; background: #fff; color: #b45309; font-size: 11.5px; font-weight: 700; cursor: pointer; }
-.rfl-btn-primary { border-color: transparent; background: linear-gradient(135deg,#f59e0b,#ea580c); color: #fff; }
-.rfl-btn-primary:hover { filter: brightness(1.08); }
+.rfl-input::placeholder { color: #94a3b8; font-weight: 400; }
+.rfl-input:focus {
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, .18);
+}
+.rfl-input-ro {
+  background: rgba(20, 184, 166, .08);
+  color: #0f766e;
+  font-weight: 700;
+  cursor: not-allowed;
+}
+.rfl-textarea {
+  resize: vertical;
+  min-height: 76px;
+}
+
+/* File picker */
+.rfl-file-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1.5px dashed rgba(20, 184, 166, .50);
+  border-radius: 9px;
+  background: rgba(20, 184, 166, .06);
+  color: #0f766e;
+  font-family: inherit;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  text-align: left;
+}
+.rfl-file-btn:hover { background: rgba(20, 184, 166, .12); border-color: #0d9488; }
+
+.rfl-file-chip {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%;
+  padding: 6px 8px 6px 10px;
+  border: 1.5px solid rgba(20, 184, 166, .40);
+  border-radius: 9px;
+  background: #fff;
+  min-height: 38px;
+}
+.rfl-file-chip-ico { color: #0d9488; flex-shrink: 0; }
+.rfl-file-chip-name {
+  flex: 1; min-width: 0;
+  font-size: 12px; font-weight: 600; color: #0f766e;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rfl-file-chip-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 6px;
+  background: transparent; border: 1.5px solid rgba(20, 184, 166, .30);
+  color: #ef4444; cursor: pointer; padding: 0; flex-shrink: 0;
+  transition: background .15s, border-color .15s;
+}
+.rfl-file-chip-x:hover { background: rgba(239, 68, 68, .08); border-color: #ef4444; }
+
+/* ─── Footer ─── */
+.rfl-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  background: #fff;
+  border-top: 1px solid rgba(20, 184, 166, .20);
+}
+.rfl-foot-note {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: #475569; font-weight: 500;
+}
+.rfl-foot-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #14b8a6;
+  box-shadow: 0 0 4px rgba(20, 184, 166, .55);
+}
+.rfl-foot-actions { display: flex; align-items: center; gap: 8px; }
+
+.rfl-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 20px;
+  border-radius: 9px;
+  border: 1.5px solid transparent;
+  font-family: inherit;
+  font-size: 13px; font-weight: 700;
+  cursor: pointer;
+  transition: all .15s;
+}
 .rfl-btn:disabled { opacity: .55; cursor: not-allowed; }
-
-.rfl-status { text-align: center; padding: 26px 12px; color: #a16207; font-style: italic; font-size: 12px; }
-.rfl-list { display: flex; flex-direction: column; gap: 8px; }
-.rfl-row {
-  display: flex; align-items: center; gap: 12px;
-  background: #fff; border: 1.5px solid #fde68a; border-radius: 10px;
-  padding: 10px 12px;
+.rfl-btn-ghost {
+  background: #fff;
+  border-color: #cbd5e1;
+  color: #0f172a;
 }
-.rfl-row-main { flex: 1; min-width: 0; }
-.rfl-row-title { font-size: 13px; font-weight: 700; color: #1f2937; }
-.rfl-row-meta { font-size: 11px; color: #78716c; margin-top: 3px; display: flex; gap: 6px; flex-wrap: wrap; }
-.rfl-row-remark { color: #57534e; }
-.rfl-row-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.rfl-pill { font-size: 10px; font-weight: 700; padding: 2px 10px; border-radius: 999px; }
-.rfl-pill-prog { background: #fef3c7; color: #b45309; }
-.rfl-pill-done { background: #dcfce7; color: #166534; }
-.rfl-pill-cncl { background: #fee2e2; color: #b91c1c; }
-.rfl-row-btn { padding: 5px 10px; border: 1.5px solid #fde68a; background: #fff; color: #b45309; border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer; }
-.rfl-row-btn:hover { background: #fef3c7; }
+.rfl-btn-ghost:hover:not(:disabled) { background: #f8fafc; border-color: #94a3b8; }
+.rfl-btn-primary {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(20, 184, 166, .35);
+}
+.rfl-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(20, 184, 166, .45);
+}
 
-/* Dark mode */
-[data-bs-theme="dark"] .rfl-modal { background: #1c1410; }
-[data-bs-theme="dark"] .rfl-body  { background: #28190e; }
-[data-bs-theme="dark"] .rfl-draft, [data-bs-theme="dark"] .rfl-row { background: #1f1611; border-color: #422006; }
-[data-bs-theme="dark"] .rfl-fld label { color: #fcd34d; }
-[data-bs-theme="dark"] .rfl-input { background: #28190e; border-color: #422006; color: #fef3c7; }
-[data-bs-theme="dark"] .rfl-row-title { color: #fef3c7; }
-[data-bs-theme="dark"] .rfl-row-meta  { color: #fcd34d; }
-[data-bs-theme="dark"] .rfl-btn { background: #28190e; border-color: #422006; color: #fcd34d; }
+/* ─── Dark mode ─── */
+[data-bs-theme="dark"] .rfl-modal {
+  background: linear-gradient(180deg, #0c2620 0%, #0a1a17 100%);
+}
+[data-bs-theme="dark"] .rfl-body { color: #d1fae5; }
+[data-bs-theme="dark"] .rfl-lbl  { color: #5eead4; }
+[data-bs-theme="dark"] .rfl-input {
+  background: #0f1f1c;
+  border-color: rgba(20, 184, 166, .35);
+  color: #ecfdf5;
+}
+[data-bs-theme="dark"] .rfl-input::placeholder { color: #475569; }
+[data-bs-theme="dark"] .rfl-input:focus {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, .25);
+}
+[data-bs-theme="dark"] .rfl-input-ro {
+  background: rgba(20, 184, 166, .12);
+  color: #5eead4;
+}
+[data-bs-theme="dark"] .rfl-file-btn {
+  background: rgba(20, 184, 166, .10);
+  border-color: rgba(20, 184, 166, .40);
+  color: #5eead4;
+}
+[data-bs-theme="dark"] .rfl-file-btn:hover { background: rgba(20, 184, 166, .18); }
+[data-bs-theme="dark"] .rfl-file-chip {
+  background: #0f1f1c;
+  border-color: rgba(20, 184, 166, .35);
+}
+[data-bs-theme="dark"] .rfl-file-chip-name { color: #5eead4; }
+[data-bs-theme="dark"] .rfl-pill-fetched {
+  background: rgba(20, 184, 166, .18);
+  border-color: rgba(20, 184, 166, .45);
+  color: #5eead4;
+}
+[data-bs-theme="dark"] .rfl-foot {
+  background: #0f1f1c;
+  border-top-color: rgba(20, 184, 166, .25);
+}
+[data-bs-theme="dark"] .rfl-foot-note { color: #94a3b8; }
+[data-bs-theme="dark"] .rfl-btn-ghost {
+  background: #1e293b;
+  border-color: rgba(20, 184, 166, .30);
+  color: #d1fae5;
+}
+[data-bs-theme="dark"] .rfl-btn-ghost:hover:not(:disabled) { background: #243b3a; }
 
-@media (max-width: 520px) {
-  .rfl-draft-grid { grid-template-columns: 1fr; }
-  .rfl-row { flex-direction: column; align-items: stretch; }
-  .rfl-row-actions { justify-content: space-between; }
+@media (max-width: 720px) {
+  .rfl-grid { grid-template-columns: 1fr; }
+  .rfl-foot { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
+  .rfl-foot-actions { width: 100%; }
+  .rfl-foot-actions .rfl-btn { flex: 1; justify-content: center; }
 }
 `;

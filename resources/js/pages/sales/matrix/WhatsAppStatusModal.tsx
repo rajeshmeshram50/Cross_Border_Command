@@ -72,11 +72,10 @@ export default function WhatsAppStatusModal({
     try {
       const fd = new FormData();
       fd.append('whatsapp_status', choice === 'yes' ? 'connected' : 'not_connected');
-      /* Both proof file and remark can ride along on either branch. Yes
-       * = optional remark; No = required reason. The screenshot is
-       * always optional. */
-      if (reason.trim()) fd.append('whatsapp_reason', reason.trim());
-      if (picked)        fd.append('screenshot', picked);
+      /* Yes branch carries the proof screenshot, No branch carries the
+       * reason text — each branch only sends what its UI captures. */
+      if (choice === 'yes' && picked)       fd.append('screenshot', picked);
+      if (choice === 'no'  && reason.trim()) fd.append('whatsapp_reason', reason.trim());
 
       await api.post(`/sales/leads/${leadId}/whatsapp`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -155,14 +154,9 @@ export default function WhatsAppStatusModal({
               </label>
             </div>
 
-            {choice && (
+            {choice === 'yes' && (
               <>
-                {/* Upload proof — shown for both Yes and No once a choice is made. */}
-                <div className="was-prompt">
-                  {choice === 'yes'
-                    ? 'Please Upload Supporting Proof For WhatsApp Usage Related To This Lead.'
-                    : 'Please Upload Supporting Evidence For The Lack Of WhatsApp Communication.'}
-                </div>
+                <div className="was-prompt">Please Upload Supporting Proof For WhatsApp Usage Related To This Lead.</div>
                 <input
                   ref={fileRef}
                   type="file"
@@ -202,17 +196,16 @@ export default function WhatsAppStatusModal({
                 <div className="was-formats">
                   Accepted formats: PDF or image (JPG, PNG, GIF, WEBP)
                 </div>
+              </>
+            )}
 
-                {/* Remark — also shown for both branches. */}
-                <div className="was-prompt was-prompt-second">
-                  {choice === 'yes'
-                    ? 'Remark (any context worth remembering)'
-                    : 'Please Specify The Reason For Not Communicating With The Customer Via WhatsApp.'}
-                </div>
+            {choice === 'no' && (
+              <>
+                <div className="was-prompt">Please Specify The Reason For Not Communicating With The Customer Via WhatsApp.</div>
                 <textarea
                   className="was-textarea"
                   rows={4}
-                  placeholder={choice === 'yes' ? 'Optional remark…' : 'Reason For Not Communicating'}
+                  placeholder="Reason For Not Communicating"
                   value={reason}
                   onChange={e => setReason(e.target.value)}
                 />
