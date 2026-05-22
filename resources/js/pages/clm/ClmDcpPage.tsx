@@ -109,7 +109,12 @@ export default function ClmDcpPage() {
       if (id) { await api.put(`/clm/segment-rules/${id}`, form); toast.success('Updated', `${form.segment_code} rules saved`); }
       else    { await api.post('/clm/segment-rules', form);     toast.success('Added',   `${form.segment_code} rules created`); }
       setModalOpen(false); setEditing(null); reload();
-    } catch (e: any) { toast.error('Save failed', e?.response?.data?.message ?? 'Could not save'); }
+    } catch (e: any) {
+      // 409: another rule already exists for this segment — refresh rows
+      // so the modal pivots into edit-mode on next open.
+      if (e?.response?.status === 409) { toast.info('Already exists', e.response.data?.message ?? 'A rule already exists for this segment.'); reload(); return; }
+      toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
+    }
   };
   const onDelete = async () => {
     if (!pendingDelete) return;
@@ -240,9 +245,10 @@ export default function ClmDcpPage() {
       {modalOpen && boot && (
         <SegmentRuleModal
           existing={editing}
+          existingRules={rows}
           boot={boot}
           onClose={() => { setModalOpen(false); setEditing(null); }}
-          onSave={(form) => onSave(form, editing?.id)}
+          onSave={(form, ruleId) => onSave(form, ruleId ?? editing?.id)}
         />
       )}
       {pendingDelete && createPortal((
@@ -265,18 +271,37 @@ export default function ClmDcpPage() {
 /* ─── 2-stage Segment Rule modal ─── */
 
 function SegmentRuleModal(props: {
-  existing: SegRule | null; boot: Bootstrap;
+  existing: SegRule | null; existingRules: SegRule[]; boot: Bootstrap;
   onClose: () => void;
-  onSave: (f: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }) => void;
+  onSave: (f: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }, ruleId?: number) => void;
 }) {
-  const { existing, boot, onClose, onSave } = props;
-  const isEdit = !!existing;
+  const { existing, existingRules, boot, onClose, onSave } = props;
   const [stage, setStage]     = useState<1 | 2>(1);
   const [reg, setReg]         = useState<'highly'|'less'|null>(existing?.regulatory_status ?? null);
   const [segCode, setSegCode] = useState<string>(existing?.segment_code ?? '');
   const [docSel, setDocSel]   = useState<DocSelections>(existing?.doc_selections ?? {});
   const [activeCat, setActiveCat] = useState<keyof DocSelections>('kyc');
   const [saving, setSaving]   = useState(false);
+
+  /* When the segment picker matches a rule that already exists for this
+   * tenant, the modal pivots into Edit-mode for that rule: prefill from the
+   * existing row and PUT on save. Enforces "one rule per segment". */
+  const matchedRule = useMemo(
+    () => existingRules.find(r => r.id !== existing?.id && r.segment_code === segCode) ?? null,
+    [existingRules, segCode, existing?.id]
+  );
+  const effectiveExisting = existing ?? matchedRule;
+  const isEdit = !!effectiveExisting;
+
+  /* Hydrate state from the matched rule the first time it's encountered so
+   * the user can immediately see and tweak the existing requirements. The
+   * effect only fires when segCode changes onto a different matched rule. */
+  useEffect(() => {
+    if (!existing && matchedRule) {
+      setReg(matchedRule.regulatory_status);
+      setDocSel(matchedRule.doc_selections ?? {});
+    }
+  }, [matchedRule, existing]);
 
   const segments = useMemo(() => reg ? boot.segments.filter(s => s.regulatory_status === reg) : [], [reg, boot.segments]);
   const selSeg   = useMemo(() => boot.segments.find(s => s.code === segCode) ?? null, [segCode, boot.segments]);
@@ -314,7 +339,7 @@ function SegmentRuleModal(props: {
         regulatory_status: reg,
         auths: auths.map(a => a.code),
         doc_selections: docSel,
-      }));
+      }, effectiveExisting?.id));
     } finally { setSaving(false); }
   };
 
@@ -388,6 +413,14 @@ function SegmentRuleModal(props: {
                       <option value="">— Choose a {reg === 'highly' ? 'Highly' : 'Less'} Regulated Segment —</option>
                       {segments.map(s => <option key={s.id} value={s.code}>{s.name} ({s.code})</option>)}
                     </select>
+                    {!existing && matchedRule && (
+                      <div style={{ marginTop: 9, display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 11px', background: 'linear-gradient(110deg, rgba(251,191,36,.10), rgba(254,243,199,.55))', border: '1.5px solid rgba(217,119,6,.32)', borderRadius: 9 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <div style={{ fontSize: 11, color: '#92400e', lineHeight: 1.45 }}>
+                          <strong style={{ color: '#78350f' }}>A rule already exists for this segment ({matchedRule.rule_code}).</strong> One rule per segment is allowed — you're now editing that rule. Save will update it instead of creating a new one.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
