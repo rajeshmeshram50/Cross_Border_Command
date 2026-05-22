@@ -145,10 +145,10 @@ export const CLM_CSS = `
 }
 .clm-bref-mid { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; position: relative; z-index: 1; }
 .clm-bref-row { display: flex; align-items: center; gap: 9px; }
-.clm-bref-label { font-size: 9.5px; font-weight: 800; letter-spacing: -.2px; color: #0891b2; line-height: 1; white-space: nowrap; flex-shrink: 0; }
-.clm-bref-sep { width: 1px; height: 13px; background: #A5E8F5; flex-shrink: 0; }
-.clm-bref-title { font-size: 11px; font-weight: 800; color: #0c4a6e; letter-spacing: -.2px; line-height: 1; white-space: nowrap; }
-.clm-bref-sub { font-size: 9.5px; font-weight: 500; color: #0e7490; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clm-bref-label { font-size: 12px; font-weight: 700; letter-spacing: 0; color: #0891b2; line-height: 1.2; white-space: nowrap; flex-shrink: 0; }
+.clm-bref-sep { width: 1px; height: 14px; background: #A5E8F5; flex-shrink: 0; }
+.clm-bref-title { font-size: 13px; font-weight: 700; color: #0c4a6e; letter-spacing: 0; line-height: 1.2; white-space: nowrap; }
+.clm-bref-sub { font-size: 11.5px; font-weight: 500; color: #0e7490; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clm-bref-toggle {
   width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -186,9 +186,9 @@ export const CLM_CSS = `
 }
 .clm-bref-item-top { display: flex; align-items: center; gap: 6px; margin-bottom: 0; }
 .clm-bref-item-ico { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #0891b2; }
-.clm-bref-item-num { font-size: 8.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #94A3B8; line-height: 1; }
-.clm-bref-item-title { font-size: 11px; font-weight: 800; color: #0F172A; letter-spacing: -.2px; line-height: 1.25; margin-bottom: 3px; margin-top: 5px; }
-.clm-bref-item-desc { font-size: 9.5px; font-weight: 500; color: #94A3B8; line-height: 1.4; }
+.clm-bref-item-num { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #94A3B8; line-height: 1; }
+.clm-bref-item-title { font-size: 13px; font-weight: 700; color: #0F172A; letter-spacing: 0; line-height: 1.25; margin-bottom: 4px; margin-top: 6px; }
+.clm-bref-item-desc { font-size: 11.5px; font-weight: 500; color: #94A3B8; line-height: 1.45; }
 @media (max-width: 1100px) { .clm-bref-body { grid-template-columns: repeat(4, 1fr); } }
 @media (max-width: 700px)  { .clm-bref-body { grid-template-columns: repeat(2, 1fr); } }
 
@@ -334,11 +334,11 @@ export const CLM_CSS = `
 .clm-table-wrap { overflow-x: auto; background: #fff; }
 .clm-table { width: 100%; border-collapse: collapse; min-width: 880px; }
 .clm-table thead th {
-  padding: 10px 16px;
+  padding: 13px 16px;
   background: linear-gradient(110deg, #f0fdff, #e8fbfd);
-  border-bottom: 1.5px solid rgba(6,182,212,.15);
-  font-size: 8px; font-weight: 800; letter-spacing: .14em;
-  color: #0891b2; text-transform: uppercase; opacity: .7;
+  border-bottom: 1.5px solid rgba(6,182,212,.20);
+  font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  color: #0e7490; text-transform: uppercase;
   white-space: nowrap; text-align: left;
 }
 .clm-table tbody tr {
@@ -347,8 +347,8 @@ export const CLM_CSS = `
 }
 .clm-table tbody tr:nth-child(even) { background: rgba(240,253,255,.5); }
 .clm-table tbody tr:hover { background: rgba(6,182,212,.06); box-shadow: inset 3px 0 0 #0891b2; }
-.clm-table tbody td { padding: 11px 16px; font-size: 12.5px; color: #0c4a6e; vertical-align: middle; }
-.clm-td-num  { text-align: center; color: #b0c4d4; font-weight: 600; width: 48px; }
+.clm-table tbody td { padding: 13px 16px; font-size: 13px; color: #0c4a6e; vertical-align: middle; }
+.clm-td-num  { text-align: center; color: #94a3b8; font-weight: 700; width: 48px; }
 .clm-td-name { font-weight: 700; color: #0c4a6e; letter-spacing: -.15px; text-align: left; font-size: 13.5px; }
 .clm-td-desc { font-size: 12px; color: #475569; }
 
@@ -366,13 +366,15 @@ export const CLM_CSS = `
 
 /* Badges */
 .clm-badge {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 11px; border-radius: 20px;
-  font-size: 10.5px; font-weight: 700;
+  display: inline-block;
+  padding: 4px 12px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700;
   border: 1px solid; white-space: nowrap;
-  letter-spacing: .01em;
+  letter-spacing: 0; line-height: 1.3;
 }
-.clm-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; box-shadow: 0 0 6px currentColor; }
+/* Legacy dot kept in JSX but hidden — visual cleanup without
+   touching markup. Light + dark mode both pick this up. */
+.clm-badge-dot { display: none; }
 .clm-badge-teal    { background: rgba(8,145,178,.08); color: #0891b2; border-color: rgba(6,182,212,.22); }
 .clm-badge-emerald { background: rgba(13,148,136,.07); color: #0d9488; border-color: rgba(13,148,136,.22); }
 .clm-badge-red     { background: rgba(220,38,38,.07); color: #dc2626; border-color: rgba(220,38,38,.22); }
@@ -387,18 +389,18 @@ export const CLM_CSS = `
 /* Actions */
 .clm-actions { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .clm-act {
-  width: 30px; height: 30px; border-radius: 7px; cursor: pointer;
-  border: 1.5px solid; background: transparent;
-  display: flex; align-items: center; justify-content: center;
-  opacity: .72; transition: all .15s;
+  width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
+  border: 1px solid; background: transparent; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .22s ease;
 }
-.clm-act:hover { opacity: 1; transform: translateY(-1px); }
+.clm-act:hover { transform: translateY(-1px); }
 .clm-act-edit { color: #0891b2; border-color: rgba(6,182,212,.25); background: rgba(240,253,255,.8); }
-.clm-act-edit:hover { background: #e0f9fd; border-color: #0891b2; box-shadow: 0 2px 8px rgba(8,145,178,.22); }
+.clm-act-edit:hover { background: #cffafe; border-color: #0891b2; box-shadow: 0 4px 12px rgba(8,145,178,.25); }
 .clm-act-del  { color: #ef4444; border-color: rgba(239,68,68,.22); background: rgba(255,245,245,.8); }
-.clm-act-del:hover  { background: #fff0f0; border-color: #ef4444; box-shadow: 0 2px 8px rgba(239,68,68,.20); }
+.clm-act-del:hover  { background: #fee2e2; border-color: #ef4444; box-shadow: 0 4px 12px rgba(239,68,68,.22); }
 .clm-act-view { color: #6366f1; border-color: rgba(99,102,241,.22); background: rgba(238,242,255,.8); }
-.clm-act-view:hover { background: #eef2ff; border-color: #6366f1; box-shadow: 0 2px 8px rgba(99,102,241,.22); }
+.clm-act-view:hover { background: #e0e7ff; border-color: #6366f1; box-shadow: 0 4px 12px rgba(99,102,241,.22); }
 
 /* Empty / loading */
 .clm-status { text-align: center; padding: 24px 12px; color: #94a3b8; font-style: italic; font-size: 12.5px; }
@@ -416,31 +418,41 @@ export const CLM_CSS = `
 .clm-empty-title { font-size: 13px; font-weight: 700; color: #0c4a6e; }
 .clm-empty-sub   { font-size: 11px; color: #94A3B8; }
 
-/* Pagination */
+/* Pagination — clean flat row. Plain "Showing X of Y" on left,
+   numbered chips on right with teal gradient on the active chip. */
 .clm-pag {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 16px;
-  background: linear-gradient(110deg, #f0fdff, #e8fbfd);
-  border-top: 1.5px solid rgba(6,182,212,.12);
-  flex-wrap: wrap; gap: 8px;
+  padding: 12px 18px;
+  background: #fff;
+  border-top: 1px solid rgba(6,182,212,.15);
+  flex-wrap: wrap; gap: 10px;
 }
-.clm-pag-info { font-size: 11.5px; color: #0891b2; opacity: .7; }
-.clm-pag-info b { color: #0c4a6e; font-weight: 700; opacity: 1; }
-.clm-pag-btns { display: flex; gap: 4px; }
+.clm-pag-info { font-size: 12.5px; color: #475569; font-weight: 500; }
+.clm-pag-info b { color: #0c4a6e; font-weight: 800; }
+.clm-pag-btns { display: inline-flex; align-items: center; gap: 6px; }
 .clm-pag-btn {
-  min-width: 30px; height: 30px; padding: 0 7px;
-  border-radius: 7px; border: 1.5px solid rgba(6,182,212,.20);
-  background: rgba(240,253,255,.7); color: #0891b2;
-  font-size: 12px; font-weight: 600; cursor: pointer;
-  font-family: inherit; transition: all .15s;
+  min-width: 32px; height: 32px; padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  font-family: inherit;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .18s ease, box-shadow .22s ease;
   display: inline-flex; align-items: center; justify-content: center;
 }
-.clm-pag-btn:hover:not(:disabled) { background: rgba(6,182,212,.10); }
+.clm-pag-btn:hover:not(:disabled):not(.on) {
+  background: #f0fdff;
+  border-color: #67e8f9;
+  color: #0891b2;
+  transform: translateY(-1px);
+}
+.clm-pag-btn:disabled { opacity: 0.40; cursor: not-allowed; }
 .clm-pag-btn.on {
-  background: linear-gradient(135deg, #0891b2, #0e7490);
+  background: linear-gradient(135deg, #06b6d4, #0891b2 60%, #0e7490);
   border-color: transparent; color: #fff; font-weight: 800;
-  box-shadow: 0 4px 12px rgba(8,145,178,.35);
-  cursor: not-allowed;
+  box-shadow: 0 4px 12px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.18);
+  cursor: default;
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -454,15 +466,19 @@ export const CLM_CSS = `
 }
 @keyframes clmFadeIn { from { opacity: 0 } to { opacity: 1 } }
 .clm-modal {
-  width: 100%; max-width: 460px; max-height: 92vh;
+  width: 100%; max-width: 620px; max-height: calc(100vh - 40px);
   border-radius: 18px; overflow: hidden;
   display: flex; flex-direction: column;
   background: #fff;
-  box-shadow: 0 40px 90px rgba(6,182,212,.18), 0 12px 32px rgba(15,23,42,.28);
-  border: 1.5px solid rgba(6,182,212,.25);
+  margin: auto;
+  box-shadow:
+    0 28px 70px rgba(15,23,42,.45),
+    0 12px 32px rgba(6,182,212,.22),
+    0 0 0 1px rgba(255,255,255,.06);
+  border: 1px solid rgba(6,182,212,.25);
   animation: clmSlideUp .24s cubic-bezier(.22,1,.36,1) both;
 }
-.clm-modal-wide { max-width: 720px; }
+.clm-modal-wide { max-width: 820px; }
 @keyframes clmSlideUp { from { opacity: 0; transform: translateY(24px) scale(.96) } to { opacity: 1; transform: none } }
 
 .clm-modal-head {
@@ -492,16 +508,9 @@ export const CLM_CSS = `
 }
 .clm-modal-head-title { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -.3px; line-height: 1.2; }
 .clm-modal-head-sub   { font-size: 10.5px; color: rgba(255,255,255,.7); margin-top: 4px; font-weight: 500; line-height: 1.4; }
-.clm-modal-close {
-  position: relative; z-index: 1; flex-shrink: 0;
-  width: 32px; height: 32px; border-radius: 9px;
-  background: rgba(255,255,255,.12);
-  border: 1.5px solid rgba(255,255,255,.25); color: rgba(255,255,255,.9);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; font-size: 15px; font-weight: 300;
-  transition: all .15s;
-}
-.clm-modal-close:hover { background: rgba(255,255,255,.24); border-color: rgba(255,255,255,.45); }
+/* Top-right X hidden via CSS — Cancel button in footer is the
+   single dismissal path. JSX intact so it can be flipped back. */
+.clm-modal-close { display: none !important; }
 
 .clm-modal-body {
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
@@ -599,22 +608,29 @@ export const CLM_CSS = `
   flex-shrink: 0;
 }
 .clm-btn-cancel {
-  padding: 10px 22px; border-radius: 10px;
-  border: 1.5px solid #D1D9F0;
+  padding: 10px 24px; border-radius: 10px;
+  border: 1px solid #d1d5db;
   background: #fff; font-family: inherit;
-  font-size: 13px; font-weight: 600; color: #475569;
-  cursor: pointer; transition: all .15s;
+  font-size: 13px; font-weight: 700; color: #475569;
+  cursor: pointer;
+  transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .22s ease;
 }
-.clm-btn-cancel:hover:not(:disabled) { border-color: #0891b2; color: #0891b2; background: #f0fdff; }
+.clm-btn-cancel:hover:not(:disabled) {
+  border-color: #0891b2;
+  color: #0891b2;
+  background: #f0fdff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(8,145,178,.18);
+}
 .clm-btn-save {
   position: relative; overflow: hidden;
   padding: 10px 26px; border-radius: 10px;
   border: none; cursor: pointer; font-family: inherit;
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
   font-size: 13px; font-weight: 700; color: #fff;
-  box-shadow: 0 4px 14px rgba(8,145,178,.4), inset 0 1px 0 rgba(255,255,255,.18);
-  display: inline-flex; align-items: center; gap: 6px;
-  transition: all .15s;
+  box-shadow: 0 4px 14px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.18);
+  display: inline-flex; align-items: center; gap: 7px;
+  transition: transform .18s ease, box-shadow .22s ease;
 }
 .clm-btn-save::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
@@ -622,11 +638,10 @@ export const CLM_CSS = `
   border-radius: 10px 10px 0 0; pointer-events: none;
 }
 .clm-btn-save:hover:not(:disabled) {
-  background: linear-gradient(135deg, #0891b2, #0e7490, #155e75);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(8,145,178,.48);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.22);
 }
-.clm-btn-cancel:disabled, .clm-btn-save:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+.clm-btn-cancel:disabled, .clm-btn-save:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
 
 /* Delete confirm */
 .clm-conf-bd {
@@ -664,7 +679,22 @@ export const CLM_CSS = `
 [data-bs-theme="dark"] .clm-head-strip { background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(6,182,212,.10)); border-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .clm-head-strip-title { color: #67e8f9; }
 [data-bs-theme="dark"] .clm-head-strip-sub   { color: #7dd3fc; }
-[data-bs-theme="dark"] .clm-bref-head { background: linear-gradient(110deg, rgba(8,145,178,.20), rgba(6,182,212,.10)); border-bottom-color: rgba(6,182,212,.22); }
+/* Dark mode: solid dark bg instead of cyan gradient. The previous
+   gradient made the panel look light/glossy against the dark page.
+   Hover state also needs an override or the light-mode hover rule
+   takes over (light gradient bleeds in when cursor enters). */
+[data-bs-theme="dark"] .clm-bref-head {
+  background: #102234;
+  border-bottom-color: rgba(6,182,212,.22);
+}
+[data-bs-theme="dark"] .clm-bref-head:hover {
+  background: #14293f;
+}
+/* Kill the 60% white sheen overlay too — it bled through and made
+   the surface look bright white. Tiny dark gloss for material feel. */
+[data-bs-theme="dark"] .clm-bref-head::after {
+  background: linear-gradient(180deg, rgba(255,255,255,.04), transparent);
+}
 [data-bs-theme="dark"] .clm-bref-title { color: #67e8f9; }
 [data-bs-theme="dark"] .clm-bref-sub   { color: #7dd3fc; }
 [data-bs-theme="dark"] .clm-bref-body { background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%); }
@@ -679,21 +709,44 @@ export const CLM_CSS = `
 [data-bs-theme="dark"] .clm-search input { color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-total-num { background: #1e293b; color: #67e8f9; }
 [data-bs-theme="dark"] .clm-table-wrap { background: #0f172a; }
-[data-bs-theme="dark"] .clm-table thead th { background: rgba(8,145,178,.14); color: #67e8f9; border-bottom-color: rgba(6,182,212,.22); }
+[data-bs-theme="dark"] .clm-table thead th {
+  background: rgba(8,145,178,.18);
+  color: #cffafe;
+  border-bottom-color: rgba(6,182,212,.30);
+}
 [data-bs-theme="dark"] .clm-table tbody tr { border-bottom-color: rgba(6,182,212,.10); }
 [data-bs-theme="dark"] .clm-table tbody tr:nth-child(even) { background: rgba(8,145,178,.06); }
 [data-bs-theme="dark"] .clm-table tbody tr:hover { background: rgba(8,145,178,.16); }
 [data-bs-theme="dark"] .clm-table tbody td { color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-td-name { color: #f1f5f9; }
-[data-bs-theme="dark"] .clm-pag { background: rgba(8,145,178,.10); border-top-color: rgba(6,182,212,.18); }
+[data-bs-theme="dark"] .clm-pag { background: #0f172a; border-top-color: rgba(6,182,212,.18); }
+[data-bs-theme="dark"] .clm-pag-info { color: #cbd5e1; }
 [data-bs-theme="dark"] .clm-pag-info b { color: #67e8f9; }
-[data-bs-theme="dark"] .clm-pag-btn { background: #1e293b; color: #67e8f9; border-color: rgba(6,182,212,.25); }
+[data-bs-theme="dark"] .clm-pag-btn {
+  background: rgba(255,255,255,.03);
+  color: #cbd5e1;
+  border-color: rgba(6,182,212,.25);
+}
+[data-bs-theme="dark"] .clm-pag-btn:hover:not(:disabled):not(.on) {
+  background: rgba(8,145,178,.14);
+  color: #67e8f9;
+  border-color: rgba(103,232,249,.40);
+}
+[data-bs-theme="dark"] .clm-pag-btn.on {
+  background: linear-gradient(135deg, #06b6d4, #0891b2 60%, #0e7490);
+  color: #fff; border-color: transparent;
+}
 [data-bs-theme="dark"] .clm-modal { background: #0f172a; }
 [data-bs-theme="dark"] .clm-modal-body { background: linear-gradient(160deg, rgba(8,145,178,.10), rgba(8,145,178,.05) 50%, #0f172a 100%); }
 [data-bs-theme="dark"] .clm-modal-foot { background: #1e293b; border-top-color: rgba(6,182,212,.18); }
+/* Use background-color (not shorthand) so we don't reset the
+   chevron background-image + no-repeat set in the base rule.
+   Bug: shorthand "background: #1e293b" was clearing background-repeat
+   to default (repeat), causing the chevron icon to tile across the
+   whole width and produce a "v v v v v" pattern in dark mode. */
 [data-bs-theme="dark"] .clm-input,
 [data-bs-theme="dark"] .clm-textarea,
-[data-bs-theme="dark"] .clm-select { background: #1e293b; border-color: rgba(6,182,212,.30); color: #e2e8f0; }
+[data-bs-theme="dark"] .clm-select { background-color: #1e293b; border-color: rgba(6,182,212,.30); color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-btn-cancel { background: #1e293b; border-color: #334155; color: #cbd5e1; }
 [data-bs-theme="dark"] .clm-autocode { background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(6,182,212,.08)); border-color: rgba(6,182,212,.25); }
 [data-bs-theme="dark"] .clm-autocode-val { color: #67e8f9; }
@@ -708,8 +761,15 @@ export const CLM_CSS = `
 [data-bs-theme="dark"] .clm-empty-ico { background: linear-gradient(135deg, rgba(8,145,178,.20), rgba(8,145,178,.10)); color: #67e8f9; }
 [data-bs-theme="dark"] .clm-empty-title { color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-empty-sub   { color: #64748b; }
-[data-bs-theme="dark"] .clm-bref-label  { color: #67e8f9; }
-[data-bs-theme="dark"] .clm-bref-item-desc { color: #94a3b8; }
+[data-bs-theme="dark"] .clm-bref-label    { color: #67e8f9; }
+/* Step description + "STEP 01" label brightened in dark mode —
+   previous #94a3b8 was the same as light mode and read as
+   barely-visible gray against the dark navy background. */
+[data-bs-theme="dark"] .clm-bref-item-desc { color: #cbd5e1; }
+[data-bs-theme="dark"] .clm-bref-item-num  { color: #67e8f9; }
+[data-bs-theme="dark"] .clm-bref-item-title { color: #f1f5f9; }
+[data-bs-theme="dark"] .clm-bref-item-ico  { color: #67e8f9; }
+[data-bs-theme="dark"] .clm-bref-sub      { color: #cffafe; }
 [data-bs-theme="dark"] .clm-bref-toggle { background: rgba(15,23,42,.65); border-color: rgba(8,145,178,.32); color: #67e8f9; }
 [data-bs-theme="dark"] .clm-status { color: #64748b; }
 [data-bs-theme="dark"] .clm-field-label { color: #67e8f9; }

@@ -4,6 +4,8 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
+import Tooltip from '../../components/ui/Tooltip';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 
 /* Central CLM → Segment Master.
  * Faithful 3-card port of the CLM-Master.html prototype:
@@ -172,12 +174,16 @@ export default function ClmSegmentPage() {
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <div className="clm-actions">
-                            <button className="clm-act clm-act-edit" title="Edit segment" onClick={() => { setEditing(r); setModalOpen(true); }}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                            </button>
-                            <button className="clm-act clm-act-del" title="Delete segment" onClick={() => setPendingDelete(r)}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-                            </button>
+                            <Tooltip label="Edit segment">
+                              <button type="button" aria-label="Edit segment" className="clm-act clm-act-edit" onClick={() => { setEditing(r); setModalOpen(true); }}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Delete segment">
+                              <button type="button" aria-label="Delete segment" className="clm-act clm-act-del" onClick={() => setPendingDelete(r)}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                              </button>
+                            </Tooltip>
                           </div>
                         </td>
                       </tr>
@@ -209,19 +215,14 @@ export default function ClmSegmentPage() {
         />
       )}
 
-      {pendingDelete && createPortal((
-        <div className="clm-conf-bd" onClick={() => setPendingDelete(null)}>
-          <div className="clm-conf" onClick={e => e.stopPropagation()}>
-            <div className="clm-conf-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div>
-            <div className="clm-conf-title">Delete segment?</div>
-            <div className="clm-conf-sub"><strong>{pendingDelete.name}</strong> ({pendingDelete.code}) will be removed. This action cannot be undone.</div>
-            <div className="clm-conf-btns">
-              <button className="clm-btn-cancel" onClick={() => setPendingDelete(null)}>Cancel</button>
-              <button className="clm-btn-del" onClick={() => void onDelete()}>Delete</button>
-            </div>
-          </div>
-        </div>
-      ), document.body)}
+      <DeleteConfirmModal
+        open={!!pendingDelete}
+        title="Delete Segment"
+        itemName={pendingDelete ? `${pendingDelete.name} (${pendingDelete.code})` : undefined}
+        subMessage="This segment will be permanently removed. The action cannot be undone."
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => void onDelete()}
+      />
     </div>
   );
 }
