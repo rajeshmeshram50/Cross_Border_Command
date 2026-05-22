@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { MasterSelect } from '../../components/ui/MasterSelect';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Lead Acknowledgement Master
@@ -586,14 +587,9 @@ export default function SalesLeadAckMaster() {
         </div>
       )}
 
-      {/* ── Add / Edit modal — no top-right X. The footer's Cancel
-              button is the single dismissal path; two affordances on
-              the same modal felt redundant (same recipe as the
-              project's DeleteConfirmModal and MasterPage modal).
-              Header mirrors MasterPage's layered-orb recipe: rich
-              gradient base + warm/cool radial glows + diagonal
-              sheen, so the title surface reads as a real material
-              rather than a flat band. ── */}
+      {/* ── Add / Edit modal — clean two-column form. Reason
+              textarea spans the full width; Status / DQ Status sit
+              side-by-side in equal columns. ── */}
       {formOpen && pendingType && (
         <div className="lam-overlay lam-overlay-strong" onMouseDown={() => { if (!saving) closeForm(); }}>
           <div className="lam-modal lam-modal-lg lam-modal-noclose" onMouseDown={e => e.stopPropagation()}>
@@ -610,9 +606,11 @@ export default function SalesLeadAckMaster() {
                 <div className="lam-modal-sub">{TAB_LABELS[pendingType]}</div>
               </div>
             </div>
+
             <div className="lam-modal-body">
-              <div className="lam-field">
-                <label className="lam-label">Reason <span className="lam-req">*</span></label>
+              {/* Reason — full width row */}
+              <div className="lam-fld">
+                <label className="lam-lbl">Reason <span className="lam-req">*</span></label>
                 <textarea
                   className="lam-textarea"
                   placeholder="Enter reason (max 500 characters)"
@@ -627,27 +625,30 @@ export default function SalesLeadAckMaster() {
                 </div>
               </div>
 
-              <div className={`lam-form-grid ${pendingType === 'disqualified' ? 'two' : 'one'}`}>
-                <div className="lam-field">
-                  <label className="lam-label">Status <span className="lam-req">*</span></label>
-                  <div className="lam-select-wrap">
-                    <select className="lam-select" value={formStatus} onChange={e => setFormStatus(e.target.value as Status)}>
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                    </select>
-                    <i className="ri-arrow-down-s-line lam-select-caret" />
-                  </div>
+              {/* Status / DQ Status — equal-width 2-column row */}
+              <div className={`lam-row ${pendingType === 'disqualified' ? 'cols-2' : 'cols-1'}`}>
+                <div className="lam-fld">
+                  <label className="lam-lbl">Status <span className="lam-req">*</span></label>
+                  <MasterSelect
+                    value={formStatus}
+                    options={[
+                      { value: 'active',   label: 'Active' },
+                      { value: 'inactive', label: 'Inactive' },
+                    ]}
+                    onChange={(v) => setFormStatus(v as Status)}
+                  />
                 </div>
                 {pendingType === 'disqualified' && (
-                  <div className="lam-field">
-                    <label className="lam-label">DQ Status <span className="lam-req">*</span></label>
-                    <div className="lam-select-wrap">
-                      <select className="lam-select" value={formDQ} onChange={e => setFormDQ(e.target.value as DQ)}>
-                        <option value="positive">Positive</option>
-                        <option value="negative">Negative</option>
-                      </select>
-                      <i className="ri-arrow-down-s-line lam-select-caret" />
-                    </div>
+                  <div className="lam-fld">
+                    <label className="lam-lbl">DQ Status <span className="lam-req">*</span></label>
+                    <MasterSelect
+                      value={formDQ}
+                      options={[
+                        { value: 'positive', label: 'Positive' },
+                        { value: 'negative', label: 'Negative' },
+                      ]}
+                      onChange={(v) => setFormDQ(v as DQ)}
+                    />
                   </div>
                 )}
               </div>
@@ -1159,7 +1160,7 @@ const SCOPED_CSS = `
   100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 .lam-modal-md { width: min(92vw, 460px); }
-.lam-modal-lg { width: min(94vw, 580px); }
+.lam-modal-lg { width: min(94vw, 720px); }
 .lam-modal-header {
   position: relative; overflow: hidden;
   background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 50%, #7c3aed 100%);
@@ -1287,51 +1288,63 @@ const SCOPED_CSS = `
 .lam-opp-clarity .lam-opp-chev { color: #1d4ed8; }
 .lam-opp-clarity .lam-opp-sub  { color: #2563eb; }
 
-/* Form fields */
-.lam-field { display: flex; flex-direction: column; }
-.lam-field + .lam-field { margin-top: 14px; }
-.lam-label {
+/* ─── Form fields — clean block layout. Each .lam-fld is a
+   self-contained label+input column. Rows of fields are wrapped in
+   .lam-row which uses CSS grid with minmax(0, 1fr) so native form
+   controls can't push columns wider than their grid track. */
+.lam-fld { display: block; min-width: 0; }
+.lam-fld + .lam-fld { margin-top: 0; }
+.lam-modal-body > .lam-fld + .lam-row,
+.lam-modal-body > .lam-row + .lam-fld,
+.lam-modal-body > .lam-row + .lam-row { margin-top: 18px; }
+.lam-lbl {
   display: block;
-  font-size: 10px; font-weight: 800; color: #6d28d9;
-  letter-spacing: 0.08em; text-transform: uppercase;
-  margin-bottom: 7px;
+  font-size: 11px; font-weight: 700; color: #4c1d95;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  margin-bottom: 6px;
 }
-.lam-req { color: #e11d48; }
+.lam-row {
+  display: grid; gap: 16px;
+  align-items: start;
+}
+.lam-row.cols-1 { grid-template-columns: minmax(0, 1fr); }
+.lam-row.cols-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.lam-row > .lam-fld { width: 100%; min-width: 0; }
+.lam-row > .lam-fld > * { width: 100%; box-sizing: border-box; }
+.lam-req { color: #e11d48; margin-left: 2px; }
 .lam-textarea {
   width: 100%; box-sizing: border-box;
-  border: 1.5px solid #ddd6fe; border-radius: 10px;
-  padding: 11px 13px;
-  font-family: inherit; font-size: 12.5px; color: #1e293b;
+  border: 1px solid #e2e8f0; border-radius: 8px;
+  padding: 10px 12px;
+  font-family: inherit; font-size: 13px; color: #1e293b;
   background: #fff; outline: none; resize: vertical;
-  min-height: 92px; line-height: 1.55;
+  min-height: 96px; line-height: 1.55;
   transition: border-color .15s, box-shadow .15s;
 }
-.lam-textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 4px rgba(124,58,237,.15); }
-.lam-textarea::placeholder { color: #a78bfa; font-weight: 500; }
-.lam-char-count { font-size: 10.5px; color: #94a3b8; text-align: right; margin-top: 4px; transition: color .15s; }
-.lam-char-max   { color: #c4b5fd; }
+.lam-textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+.lam-textarea::placeholder { color: #94a3b8; font-weight: 400; }
+.lam-char-count { font-size: 10.5px; color: #94a3b8; text-align: right; margin-top: 5px; transition: color .15s; }
+.lam-char-max   { color: #cbd5e1; }
 .lam-cc-warn    { color: #ea580c; font-weight: 700; }
 .lam-cc-warn .lam-char-max { color: #fdba74; }
 .lam-cc-max     { color: #dc2626; font-weight: 800; }
 .lam-cc-max .lam-char-max  { color: #f87171; }
 
-.lam-form-grid { display: grid; gap: 14px; margin-top: 14px; }
-.lam-form-grid.one { grid-template-columns: 1fr; }
-.lam-form-grid.two { grid-template-columns: 1fr 1fr; }
-.lam-select-wrap { position: relative; }
+.lam-select-wrap { position: relative; width: 100%; }
 .lam-select {
   width: 100%; box-sizing: border-box;
-  border: 1.5px solid #ddd6fe; border-radius: 10px;
-  padding: 10px 32px 10px 13px;
-  font-family: inherit; font-size: 12.5px; color: #334155;
+  border: 1px solid #e2e8f0; border-radius: 8px;
+  padding: 9px 32px 9px 12px;
+  font-family: inherit; font-size: 13px; color: #1e293b; font-weight: 500;
   background: #fff; outline: none; cursor: pointer;
   appearance: none; -webkit-appearance: none;
   transition: border-color .15s, box-shadow .15s;
 }
-.lam-select:focus { border-color: #7c3aed; box-shadow: 0 0 0 4px rgba(124,58,237,.15); }
+.lam-select:hover { border-color: #cbd5e1; }
+.lam-select:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
 .lam-select-caret {
-  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
-  pointer-events: none; color: #7c3aed; font-size: 16px;
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  pointer-events: none; color: #64748b; font-size: 16px;
 }
 .lam-error {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1509,7 +1522,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lam-textarea::placeholder { color: #7a6b9a; }
 [data-bs-theme="dark"] .lam-textarea:focus,
 [data-bs-theme="dark"] .lam-select:focus { border-color: #a78bfa; box-shadow: 0 0 0 4px rgba(167,139,250,.18); }
-[data-bs-theme="dark"] .lam-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .lam-lbl { color: #c4b5fd; }
 [data-bs-theme="dark"] .lam-char-count { color: #7a6b9a; }
 [data-bs-theme="dark"] .lam-char-max { color: #4a4663; }
 [data-bs-theme="dark"] .lam-error { background: rgba(239,68,68,.16); color: #fca5a5; border-color: rgba(239,68,68,.40); }
@@ -1575,7 +1588,7 @@ const SCOPED_CSS = `
 @media (max-width: 520px) {
   .lam-overlay { padding: 12px; }
   .lam-kpi-grid { grid-template-columns: 1fr; }
-  .lam-form-grid.two { grid-template-columns: 1fr; }
+  .lam-row.cols-2 { grid-template-columns: minmax(0, 1fr); }
   .lam-modal { border-radius: 16px; max-height: calc(100vh - 24px); }
   .lam-modal-md, .lam-modal-lg { width: 100%; }
   .lam-modal-header { padding: 16px 18px; gap: 12px; }
