@@ -804,7 +804,7 @@ function ExpenseSummaryCard({ item }: { item: ApprovalItem }) {
         <ExpenseField label="Department" value={(raw.department_name as string) || item.subject_dept} />
         <ExpenseField label="Category"   value={(raw.category_name as string) || '—'} />
         <ExpenseField label="Expense Date" value={fmtDate(raw.expense_date as string)} />
-        <ExpenseField label="Vendor"     value={(raw.vendor as string) || '—'} />
+        <ExpenseField label="Supplier"   value={(raw.vendor as string) || '—'} />
         <ExpenseField label="Project"    value={(raw.project as string) || '—'} />
         <ExpenseField label="Payment"    value={(raw.payment_method as string) || '—'} />
         <ExpenseField label="Reporting Manager" value={(raw.manager_name as string) || '—'} />

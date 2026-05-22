@@ -721,7 +721,7 @@ export default function AddVendorModal(props: {
           totalAmount: Number(m.total_amount ?? 0),
         })));
       } catch {
-        toast.error('Load failed', 'Could not load the vendor — closing the form.');
+        toast.error('Load failed', 'Could not load the supplier — closing the form.');
         onClose();
       } finally {
         setLoadingEdit(false);
@@ -754,10 +754,10 @@ export default function AddVendorModal(props: {
   const saveIdentity = async (): Promise<boolean> => {
     if (!companyName.trim()) { setFieldErrors(e => ({ ...e, companyName: 'Company Name is required' })); toast.error('Missing required fields', 'Company Name is required'); return false; }
     const errs: Record<string, string> = {};
-    if (!vendorType)         errs.vendorType          = 'Vendor Type is required';
+    if (!vendorType)         errs.vendorType          = 'Supplier Type is required';
     if (!riskLevel)          errs.riskLevel           = 'Risk Level is required';
-    if (!vendorBehaviour)    errs.vendorBehaviour     = 'Vendor Behaviour is required';
-    if (!segment)            errs.segment             = 'Vendor Segment is required';
+    if (!vendorBehaviour)    errs.vendorBehaviour     = 'Supplier Behaviour is required';
+    if (!segment)            errs.segment             = 'Supplier Segment is required';
     if (!complianceBehaviour) errs.complianceBehaviour = 'Compliance Behaviour is required';
     if (website)             { const e = validateWebsite(website); if (e) errs.website = e; }
     if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); toast.error('Missing required fields', 'Please fix the highlighted fields'); return false; }
@@ -1325,8 +1325,8 @@ export default function AddVendorModal(props: {
               </svg>
             </div>
             <div className="min-w-0">
-              <div className="avm-title">{isEdit ? 'Edit Vendor' : 'Add Vendor'}</div>
-              <div className="avm-sub">{isEdit ? 'Update vendor details, KYC, or product mappings — saved per step.' : 'Capture, verify, and onboard vendors with complete compliance and sourcing readiness.'}</div>
+              <div className="avm-title">{isEdit ? 'Edit Supplier' : 'Add Supplier'}</div>
+              <div className="avm-sub">{isEdit ? 'Update supplier details, KYC, or product mappings — saved per step.' : 'Capture, verify, and onboard suppliers with complete compliance and sourcing readiness.'}</div>
             </div>
           </div>
           <div className="avm-head-right">
@@ -1342,9 +1342,9 @@ export default function AddVendorModal(props: {
         {/* ─── Stepper strip ─── */}
         <div className="avm-stepper-wrap">
           <div className="avm-stepper">
-            <StepperItem n={1} title="Vendor Legal Identity"     sub="Company, GST, PAN & contact"            current={step} tone="violet" />
+            <StepperItem n={1} title="Supplier Legal Identity"     sub="Company, GST, PAN & contact"            current={step} tone="violet" />
             <div className="avm-step-arrow">›</div>
-            <StepperItem n={2} title="Vendor KYC / Due Diligence" sub="Docs, identity & compliance"            current={step} tone="teal" />
+            <StepperItem n={2} title="Supplier KYC / Due Diligence" sub="Docs, identity & compliance"            current={step} tone="teal" />
             <div className="avm-step-arrow">›</div>
             <StepperItem n={3} title="Trade Document Management"  sub="Manage trade docs, contracts & agreements" current={step} tone="purple" />
             <div className="avm-step-arrow">›</div>
@@ -1379,19 +1379,19 @@ export default function AddVendorModal(props: {
             if (step > 1) {
               const yesNo = (b: boolean) => (b ? 'Yes' : 'No');
               prevStages.push({
-                name: 'Vendor Legal Identity Details',
+                name: 'Supplier Legal Identity Details',
                 tone: 'violet',
                 rows: [
                   [
-                    { label: 'Vendor Code',         value: vendorCode || '—' },
+                    { label: 'Supplier Code',       value: vendorCode || '—' },
                     { label: 'Company Name',        value: companyName || '—' },
                     { label: 'Company Legal Name',  value: legalName || '—' },
-                    { label: 'Vendor Type',         value: labelFor(vendorType, vendorTypeOpts) || '—' },
+                    { label: 'Supplier Type',       value: labelFor(vendorType, vendorTypeOpts) || '—' },
                   ],
                   [
                     { label: 'Company Website',     value: website || 'NA' },
                     { label: 'Risk Level',          value: labelFor(riskLevel, riskLevelOpts) || '—' },
-                    { label: 'Vendor Behaviour',    value: labelFor(vendorBehaviour, behaviourOpts) || '—' },
+                    { label: 'Supplier Behaviour',  value: labelFor(vendorBehaviour, behaviourOpts) || '—' },
                     { label: 'Compliance Behaviour',value: labelFor(complianceBehaviour, complianceOpts) || '—' },
                   ],
                   [
@@ -1452,7 +1452,7 @@ export default function AddVendorModal(props: {
               }
               if (kycRows.length) {
                 prevStages.push({
-                  name: 'Vendor KYC / Due Diligence Details',
+                  name: 'Supplier KYC / Due Diligence Details',
                   tone: 'teal',
                   rows: kycRows,
                 });
@@ -1520,7 +1520,7 @@ export default function AddVendorModal(props: {
           {step === 1 && (
             <>
               <div className="avm-tabs">
-                <button className={`avm-tab ${idTab === 'identification' ? 'on' : ''}`} onClick={() => setIdTab('identification')}>Vendor Identification</button>
+                <button className={`avm-tab ${idTab === 'identification' ? 'on' : ''}`} onClick={() => setIdTab('identification')}>Supplier Identification</button>
                 <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`}        onClick={() => setIdTab('address')}>Address &amp; Contact Persons</button>
               </div>
 
@@ -1535,7 +1535,7 @@ export default function AddVendorModal(props: {
                     </Field>
                   </div>
                   <div className="avm-grid-3">
-                    <Field label="Vendor Type" required addNew onAdd={() => setQuickAdd('vendor_types')} error={fieldErrors.vendorType}>
+                    <Field label="Supplier Type" required addNew onAdd={() => setQuickAdd('vendor_types')} error={fieldErrors.vendorType}>
                       <SelectInput value={vendorType} onChange={(v) => { setVendorType(v); clearFieldError('vendorType'); }} placeholder="Select" options={vendorTypeOpts} />
                     </Field>
                     <Field label="Company Website">
@@ -1546,10 +1546,10 @@ export default function AddVendorModal(props: {
                     </Field>
                   </div>
                   <div className="avm-grid-3">
-                    <Field label="Vendor Behaviour" required addNew onAdd={() => setQuickAdd('vendor_behaviour')} error={fieldErrors.vendorBehaviour}>
+                    <Field label="Supplier Behaviour" required addNew onAdd={() => setQuickAdd('vendor_behaviour')} error={fieldErrors.vendorBehaviour}>
                       <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts} />
                     </Field>
-                    <Field label="Vendor Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
+                    <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
                       <SelectInput value={segment} onChange={(v) => { setSegment(v); clearFieldError('segment'); }} placeholder="Select Segment" options={segmentOpts} />
                     </Field>
                     <Field label="Compliance Behaviour" required addNew onAdd={() => setQuickAdd('compliance_behaviours')} error={fieldErrors.complianceBehaviour}>
@@ -1833,7 +1833,7 @@ export default function AddVendorModal(props: {
                 <button className={`avm-pill ${kycTab === 'company' ? 'on' : ''}`} onClick={() => setKycTab('company')}>Company Due Diligence Details</button>
                 <button className={`avm-pill ${kycTab === 'owner'   ? 'on' : ''}`} onClick={() => setKycTab('owner')}>Owner KYC Details</button>
                 <button className={`avm-pill ${kycTab === 'license' ? 'on' : ''}`} onClick={() => setKycTab('license')}>Trade License Details</button>
-                <button className={`avm-pill ${kycTab === 'bank'    ? 'on' : ''}`} onClick={() => setKycTab('bank')}>Vendor Bank Details</button>
+                <button className={`avm-pill ${kycTab === 'bank'    ? 'on' : ''}`} onClick={() => setKycTab('bank')}>Supplier Bank Details</button>
                 <button className={`avm-pill ${kycTab === 'gst'     ? 'on' : ''}`} onClick={() => setKycTab('gst')}>GST Scrutiny</button>
               </div>
 
@@ -2071,9 +2071,9 @@ type VendorMasterSlug = 'vendor_types' | 'risk_levels' | 'vendor_behaviour' | 's
 type QaField = { name: string; label: string; type?: 'text' | 'number'; required?: boolean; placeholder?: string };
 
 const QUICK_ADD_SCHEMAS: Record<VendorMasterSlug, { title: string; fields: QaField[] }> = {
-  vendor_types:          { title: 'Add Vendor Type',         fields: [{ name: 'name',  label: 'Vendor Type',         required: true, placeholder: 'e.g. Genuine / Verified' }] },
+  vendor_types:          { title: 'Add Supplier Type',       fields: [{ name: 'name',  label: 'Supplier Type',       required: true, placeholder: 'e.g. Genuine / Verified' }] },
   risk_levels:           { title: 'Add Risk Level',          fields: [{ name: 'name',  label: 'Risk Level',          required: true, placeholder: 'e.g. Low, Medium, High' }] },
-  vendor_behaviour:      { title: 'Add Vendor Behaviour',    fields: [{ name: 'name',  label: 'Vendor Behaviour',    required: true, placeholder: 'e.g. Excellent / Good' }] },
+  vendor_behaviour:      { title: 'Add Supplier Behaviour',  fields: [{ name: 'name',  label: 'Supplier Behaviour',  required: true, placeholder: 'e.g. Excellent / Good' }] },
   segments:              { title: 'Add Segment',             fields: [{ name: 'title', label: 'Segment Name',        required: true, placeholder: 'e.g. Dry Fruits' }] },
   compliance_behaviours: { title: 'Add Compliance Behaviour', fields: [{ name: 'name',  label: 'Behaviour Name',      required: true, placeholder: 'e.g. Compliant, Under Review' }] },
   countries:             { title: 'Add Country',             fields: [{ name: 'name',  label: 'Country Name',        required: true, placeholder: 'e.g. India' }] },

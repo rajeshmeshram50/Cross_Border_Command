@@ -463,7 +463,7 @@ export default function HrExpenseManagement() {
     const header = [
       'Claim No', 'Employee', 'Emp Code', 'Category',
       'Description', 'Expense Date', 'Amount', 'Currency',
-      'Vendor', 'Project', 'Payment Method',
+      'Supplier', 'Project', 'Payment Method',
       'Status', 'Manager Status', 'Manager Acted', 'Manager Comment',
       'HR Status', 'HR User', 'HR Acted', 'HR Comment',
       'Created By', 'Created At',

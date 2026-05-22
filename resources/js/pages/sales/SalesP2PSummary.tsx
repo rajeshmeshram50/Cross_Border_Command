@@ -134,8 +134,8 @@ const PREVIEW_CARDS: { title: string; desc: string; tag: string; gradient: strin
     path: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="15" y2="17" /></>,
   },
   {
-    title: 'Vendor & PO Management',
-    desc: 'Map vendors to products, raise POs from approved requisitions, and track delivery commitments.',
+    title: 'Supplier & PO Management',
+    desc: 'Map suppliers to products, raise POs from approved requisitions, and track delivery commitments.',
     tag: 'STAGE 2',
     gradient: 'linear-gradient(135deg,#06b6d4,#0e7490)',
     path: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></>,
@@ -148,8 +148,8 @@ const PREVIEW_CARDS: { title: string; desc: string; tag: string; gradient: strin
     path: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></>,
   },
   {
-    title: 'Vendor Invoicing & 3-way Match',
-    desc: 'Match vendor bills against PO and GRN — auto-flag mismatches before payment release.',
+    title: 'Supplier Invoicing & 3-way Match',
+    desc: 'Match supplier bills against PO and GRN — auto-flag mismatches before payment release.',
     tag: 'STAGE 4',
     gradient: 'linear-gradient(135deg,#f59e0b,#b45309)',
     path: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="12" y1="18" x2="12" y2="12" /><line x1="9" y1="15" x2="15" y2="15" /></>,

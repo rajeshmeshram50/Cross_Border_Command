@@ -43,7 +43,7 @@ export default function Stage3ProductSourcing({ onPrev, onNext }: StageProps) {
           </div>
           <div>
             <div className="smd-stg-head-title">Stage 3: Product Sourcing</div>
-            <div className="smd-stg-head-sub">● Product and vendor sourcing in progress</div>
+            <div className="smd-stg-head-sub">● Product and supplier sourcing in progress</div>
           </div>
         </div>
         <span className="smd-stg-head-badge">● ACTIVE</span>
@@ -117,7 +117,7 @@ export default function Stage3ProductSourcing({ onPrev, onNext }: StageProps) {
                         value={sourcingStatus[p.code] || ''}
                         onChange={(v) => setSourcingStatus(prev => ({ ...prev, [p.code]: v }))}
                         options={[
-                          { value: 'vendor_assigned', label: 'Vendor Assigned' },
+                          { value: 'vendor_assigned', label: 'Supplier Assigned' },
                           { value: 'awaiting_quote',  label: 'Awaiting Quote'  },
                           { value: 'sourced',         label: 'Sourced'         },
                           { value: 'not_required',    label: 'Not Required'    },
@@ -135,7 +135,7 @@ export default function Stage3ProductSourcing({ onPrev, onNext }: StageProps) {
 
       <div className="smd-stg-foot">
         <div className="smd-stg-foot-note">
-          ⚠ Note : Add product details and shortlist vendors to proceed.
+          ⚠ Note : Add product details and shortlist suppliers to proceed.
         </div>
         <div className="smd-stg-btn-row">
           <button className="smd-stg-btn" onClick={onPrev}>← Previous</button>

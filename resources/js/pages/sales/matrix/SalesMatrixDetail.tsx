@@ -38,7 +38,7 @@ export type StageNum = 1 | 2 | 3 | 4 | 5 | 6;
 const STAGES: { n: StageNum; title: string; sub: string }[] = [
   { n: 1, title: 'Inquiry Received',     sub: 'Lead inquiry captured' },
   { n: 2, title: 'Lead Acknowledgement', sub: 'Qualification confirmed' },
-  { n: 3, title: 'Product Sourcing',     sub: 'Product/vendor sourcing' },
+  { n: 3, title: 'Product Sourcing',     sub: 'Product/supplier sourcing' },
   { n: 4, title: 'Price Shared',         sub: 'Price shared with customer' },
   { n: 5, title: 'Quotation vs PI',      sub: 'Quotation/PI comparison' },
   { n: 6, title: 'Victory Stage',        sub: 'Deal successfully won' },

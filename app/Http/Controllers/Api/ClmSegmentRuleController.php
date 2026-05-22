@@ -83,6 +83,23 @@ class ClmSegmentRuleController extends Controller
 
         $data = $this->validatePayload($request);
 
+        // One rule per segment per tenant. If a rule already exists for this
+        // segment_code, return 409 with the existing row so the frontend can
+        // pivot the Add modal into Edit mode against it instead of creating
+        // a duplicate. The composite (client_id, segment_code) is the only
+        // guard — no DB-level UNIQUE because pre-existing duplicate data
+        // would block the migration; application-layer is sufficient.
+        $existing = ClmSegmentRule::where('client_id', $user->client_id)
+            ->where('segment_code', $data['segment_code'])
+            ->first();
+        if ($existing) {
+            return response()->json([
+                'status'   => false,
+                'message'  => "A rule already exists for segment {$data['segment_code']} ({$existing->rule_code}). Edit the existing rule instead.",
+                'existing' => $existing,
+            ], 409);
+        }
+
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $code = sprintf('SR-%03d', ClmSegmentRule::where('client_id', $user->client_id)->count() + 1);

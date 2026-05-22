@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import AddNewLeadModal, { type LeadFormValues } from './AddNewLeadModal';
-import AssignedLeadsModal from './AssignedLeadsModal';
 import AssignLeadsModal from './AssignLeadsModal';
 import LeadDetailsModal from './LeadDetailsModal';
 import LeadFilterModal, { type LeadFilters } from './LeadFilterModal';
@@ -193,7 +192,8 @@ export default function SalesLeadWorksheet() {
      * owner — mixed selections leave the field blank. */
     initialSalespersonId?: number | null;
   }>({ open: false, mode: 'filters' });
-  const [assignedLeadsOpen, setAssignedLeadsOpen] = useState(false);
+  // Lead Distribution lives at /sales/lead-distribution now. The salesperson
+  // pick comes back as ?sp=<id> on the URL and is applied below in useEffect.
   const [filterOpen, setFilterOpen] = useState(false);
 
   // Salesperson chip-label resolver — when "View Leads" applies a
@@ -218,6 +218,25 @@ export default function SalesLeadWorksheet() {
     customers: Array<{ value: string; label: string }>;
   }>({ stages: [], platforms: [], queryTypes: [], countries: [], customers: [] });
   const [activeFilters, setActiveFilters] = useState<LeadFilters>({});
+
+  /* When the user picks "View Leads" on the Lead Distribution page they
+   * land back here with `?sp=<id>&sp_name=<name>` in the URL. Apply the
+   * salesperson filter once on mount and strip the params so a reload
+   * doesn't lock the filter in. */
+  const location = useLocation();
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sp = params.get('sp');
+    const spName = params.get('sp_name');
+    if (sp) {
+      if (spName) setSalespersonNames(prev => ({ ...prev, [Number(sp)]: spName }));
+      setTab('all');
+      setActiveFilters(prev => ({ ...prev, salesperson_id: sp }));
+      setPage(1);
+      navigate('/sales/lead-worksheet', { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Sync-config state. The Sync button only renders when:
   //   - LEAD_SYNC_BRANCH_ID matches the user's branch (or =all), AND
@@ -420,7 +439,7 @@ export default function SalesLeadWorksheet() {
     }
   };
   const onAssignLeads   = () => setAssignModal({ open: true, mode: 'filters' });
-  const onAssignedLeads = () => setAssignedLeadsOpen(true);
+  const onAssignedLeads = () => navigate('/sales/lead-distribution');
   const onFilter        = () => setFilterOpen(true);
   // Opens the Sales Matrix detail page (Stage 1) for this opportunity.
   // The clicked row travels in router state so the detail page can render
@@ -574,7 +593,7 @@ export default function SalesLeadWorksheet() {
           </button>
           <button className="lwp-bact lwp-bact-assigned" onClick={onAssignedLeads}>
             <IconUserCheck />
-            Assigned Leads
+            Lead Distribution
           </button>
           {/* Pulls leads from every IndiaMart CRM key configured in .env.
               LEAD_SYNC_BRANCH_ID in .env decides which branch sees this
@@ -985,22 +1004,7 @@ export default function SalesLeadWorksheet() {
         onAssigned={() => { clearSelection(); fetchLeads(); }}
       />
 
-      <AssignedLeadsModal
-        open={assignedLeadsOpen}
-        onClose={() => setAssignedLeadsOpen(false)}
-        onViewLeads={(sp) => {
-          // Remember the picked person's name so the chip strip can show
-          // it (the lead row name surfaces on every visible row anyway,
-          // but the chip needs an explicit label).
-          setSalespersonNames(prev => ({ ...prev, [sp.id]: sp.name }));
-          setAssignedLeadsOpen(false);
-          // Switch to All so rows from any qualification bucket appear,
-          // then apply the salesperson filter and reset pagination.
-          setTab('all');
-          setActiveFilters(prev => ({ ...prev, salesperson_id: String(sp.id) }));
-          setPage(1);
-        }}
-      />
+      {/* Lead Distribution moved to a standalone page at /sales/lead-distribution. */}
 
       <LeadFilterModal
         open={filterOpen}

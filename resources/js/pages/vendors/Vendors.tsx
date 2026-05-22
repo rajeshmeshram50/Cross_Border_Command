@@ -110,7 +110,7 @@ export default function Vendors() {
   const apiToVendor = (row: ApiVendor): Vendor => ({
     id:          row.id,
     code:        row.vendor_code ?? `V-${row.id}`,
-    companyName: row.company_name ?? 'Untitled Vendor',
+    companyName: row.company_name ?? 'Untitled Supplier',
     legalName:   row.legal_name ?? row.company_name ?? '—',
     type:        row.vendor_type?.name ?? 'Pending',
     state:       String(row.primary_address?.state_id ?? '—'),
@@ -131,7 +131,7 @@ export default function Vendors() {
       const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
       setVendors(rows.map(apiToVendor));
     } catch {
-      toast.error('Load failed', 'Could not load vendors');
+      toast.error('Load failed', 'Could not load suppliers');
     } finally {
       setLoading(false);
     }
@@ -212,7 +212,7 @@ export default function Vendors() {
       cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
     },
     {
-      header: 'Vendor Code',
+      header: 'Supplier Code',
       accessorKey: 'code',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       cell: (info: any) => (
@@ -346,7 +346,7 @@ export default function Vendors() {
             <ActionBtn title="View"         icon="ri-eye-line"            color="primary"   onClick={() => toast.info('View', `Viewing ${v.companyName}`)} />
             <ActionBtn title="Edit"         icon="ri-pencil-line"         color="info"      onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }} />
             <ActionBtn title="Map Products" icon="ri-links-line"          color="success"   onClick={() => navigate(`/products?vendor_id=${v.id}&vendor_code=${encodeURIComponent(v.code || '')}&vendor_name=${encodeURIComponent(v.companyName || '')}`)} />
-            <ActionBtn title="Vault"        icon="ri-folder-3-line"       color="secondary" onClick={() => toast.info('Vault', 'Vendor vault coming soon')} />
+            <ActionBtn title="Vault"        icon="ri-folder-3-line"       color="secondary" onClick={() => toast.info('Vault', 'Supplier vault coming soon')} />
           </div>
         );
       },
@@ -373,7 +373,7 @@ export default function Vendors() {
             <CardBody className="text-center py-5">
               <i className="ri-shield-keyhole-line text-danger" style={{ fontSize: 42 }} />
               <h5 className="mt-3 mb-1">Branch / Employee only</h5>
-              <p className="text-muted mb-0">The Vendors module is available only to branch users and employees.</p>
+              <p className="text-muted mb-0">The Suppliers module is available only to branch users and employees.</p>
             </CardBody>
           </Card>
         </Col>
@@ -487,9 +487,9 @@ export default function Vendors() {
                   <i className="ri-store-2-line" style={{ color: '#fff', fontSize: 21 }} />
                 </span>
                 <div className="min-w-0">
-                  <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Vendors</h5>
+                  <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Suppliers</h5>
                   <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-                    Vendor directory — companies you buy product from, with compliance and contact details
+                    Supplier directory — companies you buy product from, with compliance and contact details
                   </div>
                 </div>
               </div>
@@ -505,7 +505,7 @@ export default function Vendors() {
                   }}
                 >
                   <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                  Add Vendor
+                  Add Supplier
                 </Button>
               </div>
             </div>
@@ -552,13 +552,13 @@ export default function Vendors() {
                       tableClass="align-middle table-nowrap mb-0"
                       theadClass="table-light"
                       divClass="table-responsive table-card border rounded"
-                      SearchPlaceholder="Search vendors..."
+                      SearchPlaceholder="Search suppliers..."
                     />
                     {filtered.length === 0 && (
                       <div className="text-center text-muted py-5">
                         <i className="ri-store-2-line d-block" style={{ fontSize: 36, color: '#cbd5e1' }} />
-                        <div className="mt-2 fw-semibold">No vendors found</div>
-                        <div style={{ fontSize: 12 }}>Try clearing the search, or click "Add Vendor" to create one.</div>
+                        <div className="mt-2 fw-semibold">No suppliers found</div>
+                        <div style={{ fontSize: 12 }}>Try clearing the search, or click "Add Supplier" to create one.</div>
                       </div>
                     )}
                   </>

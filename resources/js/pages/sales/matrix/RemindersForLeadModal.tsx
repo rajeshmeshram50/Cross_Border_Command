@@ -415,6 +415,39 @@ const RFL_CSS = `
   border-color: #0d9488;
   box-shadow: 0 0 0 3px rgba(20, 184, 166, .18);
 }
+
+/* MasterSelect + MasterDatePicker triggers — re-skin to match the rest
+ * of the modal's inputs. Default ones use var(--vz-card-bg) which
+ * resolves transparent against the mint body. */
+.rfl-modal .master-select-toggle,
+.rfl-modal .master-datepicker-toggle {
+  height: 40px;
+  background: #fff !important;
+  border: 1.5px solid rgba(20, 184, 166, .35) !important;
+  border-radius: 9px !important;
+  color: #0f172a !important;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 12px;
+  box-shadow: none !important;
+}
+.rfl-modal .master-select-toggle:hover:not(:disabled),
+.rfl-modal .master-datepicker-toggle:hover:not(:disabled) {
+  border-color: rgba(20, 184, 166, .55) !important;
+}
+.rfl-modal .master-select-wrap.show .master-select-toggle,
+.rfl-modal .master-datepicker-toggle.open {
+  border-color: #0d9488 !important;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, .18) !important;
+}
+.rfl-modal .master-select-placeholder,
+.rfl-modal .master-datepicker-placeholder {
+  color: #94a3b8 !important;
+  opacity: 1 !important;
+  font-weight: 400 !important;
+}
+.rfl-modal .master-datepicker-icon,
+.rfl-modal .master-select-caret { color: #0d9488; }
 .rfl-input-ro {
   background: rgba(20, 184, 166, .08);
   color: #0f766e;
@@ -529,6 +562,16 @@ const RFL_CSS = `
 [data-bs-theme="dark"] .rfl-input:focus {
   border-color: #14b8a6;
   box-shadow: 0 0 0 3px rgba(20, 184, 166, .25);
+}
+[data-bs-theme="dark"] .rfl-modal .master-select-toggle,
+[data-bs-theme="dark"] .rfl-modal .master-datepicker-toggle {
+  background: #0f1f1c !important;
+  border-color: rgba(20, 184, 166, .35) !important;
+  color: #ecfdf5 !important;
+}
+[data-bs-theme="dark"] .rfl-modal .master-select-placeholder,
+[data-bs-theme="dark"] .rfl-modal .master-datepicker-placeholder {
+  color: rgba(94, 234, 212, .50) !important;
 }
 [data-bs-theme="dark"] .rfl-input-ro {
   background: rgba(20, 184, 166, .12);

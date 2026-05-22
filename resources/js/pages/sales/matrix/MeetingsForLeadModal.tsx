@@ -518,6 +518,44 @@ const MFL_CSS = `
   border-color: #0d9488;
   box-shadow: 0 0 0 3px rgba(20, 184, 166, .18);
 }
+
+/* MasterSelect + MasterDatePicker + MasterTimePicker triggers — re-skin
+ * inside this modal so they pick up the teal palette instead of the
+ * default var(--vz-card-bg) which goes transparent on the mint body. */
+.mfl-modal .master-select-toggle,
+.mfl-modal .master-datepicker-toggle,
+.mfl-modal .master-timepicker-toggle {
+  height: 40px;
+  background: #fff !important;
+  border: 1.5px solid rgba(20, 184, 166, .35) !important;
+  border-radius: 9px !important;
+  color: #0f172a !important;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 12px;
+  box-shadow: none !important;
+}
+.mfl-modal .master-select-toggle:hover:not(:disabled),
+.mfl-modal .master-datepicker-toggle:hover:not(:disabled),
+.mfl-modal .master-timepicker-toggle:hover:not(:disabled) {
+  border-color: rgba(20, 184, 166, .55) !important;
+}
+.mfl-modal .master-select-wrap.show .master-select-toggle,
+.mfl-modal .master-datepicker-toggle.open,
+.mfl-modal .master-timepicker-toggle.open {
+  border-color: #0d9488 !important;
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, .18) !important;
+}
+.mfl-modal .master-select-placeholder,
+.mfl-modal .master-datepicker-placeholder,
+.mfl-modal .master-timepicker-placeholder {
+  color: #94a3b8 !important;
+  opacity: 1 !important;
+  font-weight: 400 !important;
+}
+.mfl-modal .master-datepicker-icon,
+.mfl-modal .master-timepicker-icon,
+.mfl-modal .master-select-caret { color: #0d9488; }
 .mfl-input-ro {
   background: rgba(20, 184, 166, .08);
   color: #0f766e;
@@ -601,6 +639,18 @@ const MFL_CSS = `
 [data-bs-theme="dark"] .mfl-input:focus {
   border-color: #14b8a6;
   box-shadow: 0 0 0 3px rgba(20, 184, 166, .25);
+}
+[data-bs-theme="dark"] .mfl-modal .master-select-toggle,
+[data-bs-theme="dark"] .mfl-modal .master-datepicker-toggle,
+[data-bs-theme="dark"] .mfl-modal .master-timepicker-toggle {
+  background: #0f1f1c !important;
+  border-color: rgba(20, 184, 166, .35) !important;
+  color: #ecfdf5 !important;
+}
+[data-bs-theme="dark"] .mfl-modal .master-select-placeholder,
+[data-bs-theme="dark"] .mfl-modal .master-datepicker-placeholder,
+[data-bs-theme="dark"] .mfl-modal .master-timepicker-placeholder {
+  color: rgba(94, 234, 212, .50) !important;
 }
 [data-bs-theme="dark"] .mfl-input-ro {
   background: rgba(20, 184, 166, .12);

@@ -91,7 +91,7 @@ const LEAF_DESCRIPTIONS: Record<string, string> = {
   'master.advance_payment_rules':   'Max advance % per vendor type / category + approval matrix',
   'master.exchange_rate_log':       'Date-wise exchange rate history vs INR for multi-currency',
   'master.goods_service_flag':      'Switches GRN logic between physical receipt and service proof',
-  'master.vendor_directory':        'Vendor information, addresses & document verification',
+  'master.vendor_directory':        'Supplier information, addresses & document verification',
   'master.warehouse_master':        'Define all warehouse locations — Own & Third Party',
   'master.zone_master':             'Storage zones inside warehouses — Storage, Cold Chain, Hazmat',
   'master.rack_type_master':        'Rack types used across warehouses — Pallet, Cold, Hazardous',

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
+import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Product Directory — lists every product mapped to the current
@@ -66,6 +67,8 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
   const [saving, setSaving]           = useState(false);
   const [editingId, setEditingId]     = useState<number | null>(null);
   const [editDraft, setEditDraft]     = useState<DraftRow>(EMPTY_DRAFT);
+  const [pendingDelete, setPendingDelete] = useState<DirectoryRow | null>(null);
+  const [deleting, setDeleting]       = useState(false);
 
   /* Load mapped rows whenever the modal opens for a lead. */
   useEffect(() => {
@@ -185,15 +188,19 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
     }
   };
 
-  const removeRow = async (row: DirectoryRow) => {
-    if (!leadId) return;
-    if (!confirm(`Unmap "${row.product_name ?? '—'}" from this opportunity?`)) return;
+  const confirmDelete = async () => {
+    if (!pendingDelete || !leadId) return;
+    const row = pendingDelete;
+    setDeleting(true);
     try {
       await api.delete(`/sales/leads/${leadId}/products/${row.id}`);
       setRows(prev => prev.filter(r => r.id !== row.id));
       toast.success('Unmapped', 'Removed from the directory');
+      setPendingDelete(null);
     } catch (e: any) {
       toast.error('Remove failed', e?.response?.data?.message ?? 'Could not unmap');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -380,7 +387,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                           </svg>
                           Edit
                         </button>
-                        <button className="pdm-row-btn pdm-row-btn-del" onClick={() => void removeRow(r)} title="Unmap">
+                        <button className="pdm-row-btn pdm-row-btn-del" onClick={() => setPendingDelete(r)} title="Unmap">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                             <polyline points="3 6 5 6 21 6" />
                             <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
@@ -395,6 +402,20 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
           </div>
         </div>
       </div>
+
+      {/* Themed delete (unmap) confirmation */}
+      <DeleteConfirmModal
+        open={!!pendingDelete}
+        title="Unmap Product"
+        itemName={pendingDelete?.product_name ?? '—'}
+        actionVerb="Unmap"
+        confirmLabel="Unmap"
+        confirmingLabel="Unmapping…"
+        subMessage="This product will be removed from this opportunity's directory."
+        loading={deleting}
+        onClose={() => { if (!deleting) setPendingDelete(null); }}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   ), document.body);
 }
