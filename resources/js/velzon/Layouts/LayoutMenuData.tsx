@@ -308,14 +308,16 @@ const Navdata = () => {
 
   const menuItems: any[] = [];
 
-  const isMainBranchUser = user?.user_type === 'branch_user' && user.is_main_branch === true;
-
   for (const m of MENU_ITEMS) {
     if (!user || !m.roles.includes(user.user_type)) continue;
 
-    if (m.id === 'permissions' && user.user_type === 'branch_user' && !isMainBranchUser) {
-      continue;
-    }
+    // Permissions menu is visible to every branch_user (main + sub).
+    // Sub-branch users can grant module access to employees in their
+    // own branch — see PermissionController::manageableUsers /
+    // savePermissions for the back-end scope guards. Hiding the menu
+    // for sub-branch users was the old behavior when the spec said
+    // "not implemented yet"; now that the back-end accepts the grant,
+    // the menu mirrors that.
 
     if (m.section) {
       menuItems.push({ label: m.section, isHeader: true });
