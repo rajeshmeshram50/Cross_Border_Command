@@ -1,172 +1,259 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Input } from 'reactstrap';
-
-//SimpleBar
 import SimpleBar from "simplebar-react";
 
-//import images
-import image2 from "../../assets/images/users/avatar-2.jpg";
-import image3 from "../../assets/images/users/avatar-3.jpg";
-import image5 from "../../assets/images/users/avatar-5.jpg";
+import { useAuth } from '../../../contexts/AuthContext';
+import { MENU_ITEMS, HR_GROUPS, SALES_GROUPS } from '../../../constants';
+import type { UserRole } from '../../../types';
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Header search — restricted to global menu items only.
+ *
+ * The Velzon template originally shipped this component with hard-coded
+ * "Recent Searches" / "Pages" / "Members" mock content (Angela Bernier and
+ * friends). Per product call, that mock was misleading because nothing in
+ * the app actually searches users / pages — the dropdown was decorative.
+ *
+ * This rewrite drops every mock section and uses MENU_ITEMS (the same
+ * source the Sidebar reads) as the index. Typing in the box filters the
+ * menus the current user can see and clicking a result navigates to the
+ * matching route. HR + Sales children are flattened in so a deep leaf like
+ * "Leave Plan Master" or "Lead Distribution" is reachable from one click.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+// Local id→path resolver. Mirrors getPagePath() in components/App.tsx — kept
+// inline to avoid a circular dependency. Only the menu-reachable ids need to
+// be covered here; anything not matched falls back to /dashboard.
+function pathForId(id: string): string {
+    if (!id) return '/dashboard';
+    if (id.startsWith('master.')) return `/master/${id.slice('master.'.length)}`;
+    if (id === 'master') return '/master';
+    switch (id) {
+        case 'dashboard':            return '/dashboard';
+        case 'clients':              return '/clients';
+        case 'branches':             return '/branches';
+        case 'plans':                return '/plans';
+        case 'my-plan':              return '/my-plan';
+        case 'payments':             return '/payments';
+        case 'permissions':          return '/permissions';
+        case 'settings':             return '/settings';
+        case 'profile':              return '/profile';
+        case 'clock-in':             return '/clock-in';
+        case 'products':             return '/products';
+        case 'vendors':              return '/vendors';
+        case 'hr-employees':         return '/hr/employees';
+        case 'hr-recruitment':       return '/hr/recruitment';
+        case 'hr-attendance':        return '/hr/attendance';
+        case 'hr-leave':             return '/hr/leave';
+        case 'hr-expense':           return '/hr/expense';
+        case 'hr-payroll':           return '/hr/payroll';
+        case 'hr-broadcast':         return '/hr/broadcast';
+        case 'hr-doc-templates':     return '/hr/doc-templates';
+        case 'hr-employee-onboarding': return '/hr/employee-onboarding';
+        case 'sales.customers':       return '/sales/customers';
+        case 'sales.consignee':       return '/sales/consignee';
+        case 'sales.lead_ack_master': return '/sales/lead-ack-master';
+        case 'sales.lead_worksheet':  return '/sales/lead-worksheet';
+        case 'sales.todo':            return '/sales/todo';
+        case 'sales.lead_distribution': return '/sales/lead-distribution';
+        case 'sales.lead_detail':     return '/sales/lead-detail';
+        case 'sales.matrix_detail':   return '/sales/matrix';
+        case 'sales.enquiries':       return '/sales/enquiries';
+        case 'sales.leads_details':   return '/sales/leads-details';
+        case 'sales.qpi':             return '/sales/qpi';
+        case 'sales.p2p_summary':     return '/sales/p2p-summary';
+        case 'sales.diagnosis':       return '/sales/diagnosis';
+        case 'sales.resolution_center': return '/sales/resolution-center';
+        case 'sales.analytics':       return '/sales/analytics';
+        case 'sales.performance':     return '/sales/performance';
+        default:                     return '/dashboard';
+    }
+}
+
+interface MenuHit {
+    id: string;
+    label: string;
+    section?: string;      // e.g. "MAIN", "MASTER DATA" — taken from the nearest section header.
+    parentLabel?: string;  // for HR/Sales children: surfaces "HR · Leave Plan Master".
+}
 
 const SearchOption = () => {
+    const { user } = useAuth();
+    const navigate = useNavigate();
+    const [value, setValue] = useState('');
+    const role = (user?.user_type ?? 'employee') as UserRole;
 
-    const [value, setValue] = useState("");
-    const onChangeData = (value : any) => {
-        setValue(value);
+    // Wire up the existing Velzon dropdown show/hide on focus/keyup/blur.
+    // Behaviour preserved from the original template; only the dropdown
+    // contents below changed.
+    useEffect(() => {
+        const searchOptions = document.getElementById("search-close-options") as HTMLElement | null;
+        const dropdown = document.getElementById("search-dropdown") as HTMLElement | null;
+        const searchInput = document.getElementById("search-options") as HTMLInputElement | null;
+        if (!searchOptions || !dropdown || !searchInput) return;
+
+        const show = () => {
+            if (searchInput.value.length > 0) {
+                dropdown.classList.add("show");
+                searchOptions.classList.remove("d-none");
+            } else {
+                dropdown.classList.remove("show");
+                searchOptions.classList.add("d-none");
+            }
+        };
+
+        const handleClickClose = () => {
+            searchInput.value = "";
+            setValue('');
+            dropdown.classList.remove("show");
+            searchOptions.classList.add("d-none");
+        };
+
+        const handleBodyClick = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (!target.closest('.app-search')) {
+                dropdown.classList.remove("show");
+                searchOptions.classList.add("d-none");
+            }
+        };
+
+        searchInput.addEventListener("focus", show);
+        searchInput.addEventListener("keyup", show);
+        searchOptions.addEventListener("click", handleClickClose);
+        document.body.addEventListener("click", handleBodyClick);
+        return () => {
+            searchInput.removeEventListener("focus", show);
+            searchInput.removeEventListener("keyup", show);
+            searchOptions.removeEventListener("click", handleClickClose);
+            document.body.removeEventListener("click", handleBodyClick);
+        };
+    }, []);
+
+    /* Flatten the role-visible menu tree into a single list of hits we can
+     * filter. Section headers carry no `id` and aren't searchable; we just
+     * tag the next leaf with the most recent section name so the dropdown
+     * can group hits the same way the sidebar does. HR + Sales groups are
+     * expanded one level deep so "Leave Plan Master" / "Lead Distribution"
+     * etc. surface even though they live under a parent. */
+    const allHits = useMemo<MenuHit[]>(() => {
+        const list: MenuHit[] = [];
+        let currentSection: string | undefined;
+
+        for (const item of MENU_ITEMS) {
+            if (!item.roles?.includes(role)) continue;
+            if (item.section) {
+                currentSection = item.section;
+                continue;
+            }
+            if (!item.id) continue;
+            list.push({ id: item.id, label: item.label, section: currentSection });
+
+            // Expand HR + Sales groups one level deep so leaf entries are
+            // searchable directly.
+            if (item.id === 'hr') {
+                for (const g of HR_GROUPS) {
+                    for (const child of g.children) {
+                        list.push({
+                            id: child.id,
+                            label: child.label,
+                            section: currentSection,
+                            parentLabel: `${item.label} · ${g.label}`,
+                        });
+                    }
+                }
+            }
+            if (item.id === 'sales') {
+                for (const g of SALES_GROUPS) {
+                    for (const child of g.children) {
+                        list.push({
+                            id: child.id,
+                            label: child.label,
+                            section: currentSection,
+                            parentLabel: `${item.label} · ${g.label}`,
+                        });
+                    }
+                }
+            }
+        }
+        return list;
+    }, [role]);
+
+    const filtered = useMemo<MenuHit[]>(() => {
+        const q = value.trim().toLowerCase();
+        if (!q) return allHits.slice(0, 12);
+        return allHits.filter(h =>
+            h.label.toLowerCase().includes(q) ||
+            (h.parentLabel?.toLowerCase().includes(q) ?? false)
+        ).slice(0, 30);
+    }, [allHits, value]);
+
+    const go = (id: string) => {
+        const dropdown = document.getElementById("search-dropdown");
+        const searchOptions = document.getElementById("search-close-options");
+        dropdown?.classList.remove("show");
+        searchOptions?.classList.add("d-none");
+        setValue('');
+        navigate(pathForId(id));
     };
 
-    useEffect(() => {
-        const searchOptions = document.getElementById("search-close-options") as HTMLElement;
-        const dropdown = document.getElementById("search-dropdown") as HTMLElement;
-        const searchInput = document.getElementById("search-options") as HTMLInputElement;
-      
-        const handleFocus = () => {
-          const inputLength = searchInput.value.length;
-          if (inputLength > 0) {
-            dropdown.classList.add("show");
-            searchOptions.classList.remove("d-none");
-          } else {
-            dropdown.classList.remove("show");
-            searchOptions.classList.add("d-none");
-          }
-        };
-      
-        const handleKeyUp = () => {
-          const inputLength = searchInput.value.length;
-          if (inputLength > 0) {
-            dropdown.classList.add("show");
-            searchOptions.classList.remove("d-none");
-          } else {
-            dropdown.classList.remove("show");
-            searchOptions.classList.add("d-none");
-          }
-        };
-      
-        const handleClick = () => {
-          searchInput.value = "";
-          dropdown.classList.remove("show");
-          searchOptions.classList.add("d-none");
-        };
-      
-        const handleBodyClick = (e: MouseEvent) => {
-          const target = e.target as HTMLElement;
-          if (target.getAttribute("id") !== "search-options") {
-            dropdown.classList.remove("show");
-            searchOptions.classList.add("d-none");
-          }
-        };
-      
-        searchInput.addEventListener("focus", handleFocus);
-        searchInput.addEventListener("keyup", handleKeyUp);
-        searchOptions.addEventListener("click", handleClick);
-        document.body.addEventListener("click", handleBodyClick);
-      
-        return () => {
-          searchInput.removeEventListener("focus", handleFocus);
-          searchInput.removeEventListener("keyup", handleKeyUp);
-          searchOptions.removeEventListener("click", handleClick);
-          document.body.removeEventListener("click", handleBodyClick);
-        };
-      }, []);
-      
     return (
         <React.Fragment>
-            <form className="app-search d-none d-md-block">
+            <form className="app-search d-none d-md-block" onSubmit={e => e.preventDefault()}>
                 <div className="position-relative">
-                    <Input type="text" className="form-control" placeholder="Search..."
+                    <Input
+                        type="text"
+                        className="form-control"
+                        placeholder="Search menus..."
                         id="search-options"
                         value={value}
-                        onChange={(e : any) => {
-                            onChangeData(e.target.value);
-                        }} />
+                        onChange={e => setValue(e.target.value)}
+                    />
                     <span className="mdi mdi-magnify search-widget-icon"></span>
-                    <span className="mdi mdi-close-circle search-widget-icon search-widget-icon-close d-none"
-                        id="search-close-options"></span>
+                    <span
+                        className="mdi mdi-close-circle search-widget-icon search-widget-icon-close d-none"
+                        id="search-close-options"
+                    ></span>
                 </div>
                 <div className="dropdown-menu dropdown-menu-lg" id="search-dropdown">
-                    <SimpleBar style={{ height: "320px" }}>
-
-                        <div className="dropdown-header">
-                            <h6 className="text-overflow text-muted mb-0 text-uppercase">Recent Searches</h6>
-                        </div>
-
-                        <div className="dropdown-item bg-transparent text-wrap">
-                            <Link to="/" className="btn btn-soft-secondary btn-sm rounded-pill">how to setup <i
-                                className="mdi mdi-magnify ms-1"></i></Link>
-                            <Link to="/" className="btn btn-soft-secondary btn-sm rounded-pill">buttons <i
-                                className="mdi mdi-magnify ms-1"></i></Link>
-                        </div>
-
-                        <div className="dropdown-header mt-2">
-                            <h6 className="text-overflow text-muted mb-1 text-uppercase">Pages</h6>
-                        </div>
-
-
-                        <Link to="#" className="dropdown-item notify-item">
-                            <i className="ri-bubble-chart-line align-middle fs-18 text-muted me-2"></i>
-                            <span>Analytics Dashboard</span>
-                        </Link>
-
-
-                        <Link to="#" className="dropdown-item notify-item">
-                            <i className="ri-lifebuoy-line align-middle fs-18 text-muted me-2"></i>
-                            <span>Help Center</span>
-                        </Link>
-
-
-                        <Link to="#" className="dropdown-item notify-item">
-                            <i className="ri-user-settings-line align-middle fs-18 text-muted me-2"></i>
-                            <span>My account settings</span>
-                        </Link>
-
-
-                        <div className="dropdown-header mt-2">
-                            <h6 className="text-overflow text-muted mb-2 text-uppercase">Members</h6>
-                        </div>
-
-                        <div className="notification-list">
-
-                            <Link to="#" className="dropdown-item notify-item py-2">
-                                <div className="d-flex">
-                                    <img src={image2} className="me-3 rounded-circle avatar-xs"
-                                        alt="user-pic" />
-                                    <div className="flex-grow-1">
-                                        <h6 className="m-0">Angela Bernier</h6>
-                                        <span className="fs-11 mb-0 text-muted">Manager</span>
-                                    </div>
+                    <SimpleBar style={{ maxHeight: 360 }}>
+                        {filtered.length === 0 ? (
+                            <div className="text-center text-muted py-4" style={{ fontSize: 12.5 }}>
+                                No menu matches "{value}"
+                            </div>
+                        ) : (
+                            <>
+                                <div className="dropdown-header">
+                                    <h6 className="text-overflow text-muted mb-0 text-uppercase">
+                                        {value.trim() ? 'Matching menus' : 'Suggestions'}
+                                    </h6>
                                 </div>
-                            </Link>
-
-                            <Link to="#" className="dropdown-item notify-item py-2">
-                                <div className="d-flex">
-                                    <img src={image3} className="me-3 rounded-circle avatar-xs"
-                                        alt="user-pic" />
-                                    <div className="flex-grow-1">
-                                        <h6 className="m-0">David Grasso</h6>
-                                        <span className="fs-11 mb-0 text-muted">Web Designer</span>
-                                    </div>
-                                </div>
-                            </Link>
-
-                            <Link to="#" className="dropdown-item notify-item py-2">
-                                <div className="d-flex">
-                                    <img src={image5} className="me-3 rounded-circle avatar-xs"
-                                        alt="user-pic" />
-                                    <div className="flex-grow-1">
-                                        <h6 className="m-0">Mike Bunch</h6>
-                                        <span className="fs-11 mb-0 text-muted">React Developer</span>
-                                    </div>
-                                </div>
-                            </Link>
-                        </div>
+                                {filtered.map(hit => (
+                                    <button
+                                        key={hit.id}
+                                        type="button"
+                                        className="dropdown-item notify-item d-flex align-items-center"
+                                        onClick={() => go(hit.id)}
+                                    >
+                                        <i className="ri-arrow-right-s-line align-middle fs-18 text-muted me-2" />
+                                        <div className="flex-grow-1 min-w-0">
+                                            <div className="text-truncate" style={{ fontSize: 13, fontWeight: 600 }}>
+                                                {hit.label}
+                                            </div>
+                                            {(hit.parentLabel || hit.section) && (
+                                                <div
+                                                    className="text-muted text-truncate"
+                                                    style={{ fontSize: 10.5, marginTop: 1 }}
+                                                >
+                                                    {hit.parentLabel || hit.section}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </button>
+                                ))}
+                            </>
+                        )}
                     </SimpleBar>
-
-                    <div className="text-center pt-3 pb-1">
-                        <Link to="/pages-search-results" className="btn btn-primary btn-sm">View All Results <i
-                            className="ri-arrow-right-line ms-1"></i></Link>
-                    </div>
                 </div>
             </form>
         </React.Fragment>

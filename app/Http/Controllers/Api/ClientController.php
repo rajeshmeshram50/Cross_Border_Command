@@ -88,8 +88,18 @@ class ClientController extends Controller
             // Organization
             'org_name' => 'required|string|max:255',
             'org_type' => 'required|string|max:50|exists:organization_types,name',
-            'email' => 'required|email|max:255',
-            'phone' => 'nullable|string|max:20',
+            /* Org email + phone are now globally unique (case-insensitive on
+             * email via the lowercase normalization in normalizeGstPanInput).
+             * The Rule::unique whereNull('deleted_at') keeps a soft-deleted
+             * client's email available for re-use after restore/cleanup. */
+            'email' => [
+                'required', 'email', 'max:255',
+                Rule::unique('clients', 'email')->whereNull('deleted_at'),
+            ],
+            'phone' => [
+                'nullable', 'string', 'max:20',
+                Rule::unique('clients', 'phone')->whereNull('deleted_at'),
+            ],
             'website' => 'nullable|string|max:500',
             'status' => 'required|in:active,inactive,suspended',
             'sports' => 'nullable|string|max:100',
@@ -131,10 +141,17 @@ class ClientController extends Controller
             // Notes
             'notes' => 'nullable|string',
 
-            // Client Admin credentials
+            // Client Admin credentials. Admin email + phone are also
+            // globally unique on the users table — same normalization
+            // (lowercase + digits-only) handles the case-sensitivity
+            // ask. soft-deleted rows excluded so a removed admin can
+            // be re-added cleanly.
             'admin_name' => 'required|string|max:255',
             'admin_email' => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
-            'admin_phone' => 'nullable|string|max:20',
+            'admin_phone' => [
+                'nullable', 'string', 'max:20',
+                Rule::unique('users', 'phone')->whereNull('deleted_at'),
+            ],
             'admin_designation' => 'nullable|string|max:100',
             'admin_password' => 'required|string|min:6',
             'admin_status' => 'nullable|in:active,inactive,pending',
@@ -143,6 +160,10 @@ class ClientController extends Controller
             'gst_number.regex'  => 'Invalid GSTIN format. Example: 27AADCI6120M1ZH',
             'pan_number.unique' => 'This PAN is already registered with another client.',
             'pan_number.regex'  => 'Invalid PAN format. Example: AADCI6120M',
+            'email.unique'        => 'Another client is already registered with this email.',
+            'phone.unique'        => 'Another client is already registered with this phone number.',
+            'admin_email.unique'  => 'This email is already in use by another user. Pick a different one.',
+            'admin_phone.unique'  => 'This phone number is already in use by another user.',
         ]);
 
         return DB::transaction(function () use ($request) {
@@ -317,8 +338,19 @@ class ClientController extends Controller
         $request->validate([
             'org_name' => 'required|string|max:255',
             'org_type' => 'required|string|max:50|exists:organization_types,name',
-            'email' => 'required|email|max:255',
-            'phone' => 'nullable|string|max:20',
+            /* Same email + phone uniqueness as store(), with ->ignore on
+             * the row being edited so saving an unchanged client doesn't
+             * report itself as its own duplicate. Case-insensitive on
+             * email via the lowercase normalization in
+             * normalizeGstPanInput. */
+            'email' => [
+                'required', 'email', 'max:255',
+                Rule::unique('clients', 'email')->ignore($client->id)->whereNull('deleted_at'),
+            ],
+            'phone' => [
+                'nullable', 'string', 'max:20',
+                Rule::unique('clients', 'phone')->ignore($client->id)->whereNull('deleted_at'),
+            ],
             'website' => 'nullable|string|max:500',
             'status' => 'required|in:active,inactive,suspended',
             'sports' => 'nullable|string|max:100',
@@ -351,7 +383,10 @@ class ClientController extends Controller
             'notes' => 'nullable|string',
             'admin_name' => 'nullable|string|max:255',
             'admin_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($adminUser?->id)->whereNull('deleted_at')],
-            'admin_phone' => 'nullable|string|max:20',
+            'admin_phone' => [
+                'nullable', 'string', 'max:20',
+                Rule::unique('users', 'phone')->ignore($adminUser?->id)->whereNull('deleted_at'),
+            ],
             'admin_designation' => 'nullable|string|max:100',
             'admin_password' => 'nullable|string|min:6',
             'admin_status' => 'nullable|in:active,inactive,pending',
@@ -360,6 +395,10 @@ class ClientController extends Controller
             'gst_number.regex'  => 'Invalid GSTIN format. Example: 27AADCI6120M1ZH',
             'pan_number.unique' => 'This PAN is already registered with another client.',
             'pan_number.regex'  => 'Invalid PAN format. Example: AADCI6120M',
+            'email.unique'        => 'Another client is already registered with this email.',
+            'phone.unique'        => 'Another client is already registered with this phone number.',
+            'admin_email.unique'  => 'This email is already in use by another user. Pick a different one.',
+            'admin_phone.unique'  => 'This phone number is already in use by another user.',
         ]);
 
         return DB::transaction(function () use ($request, $client, $adminUser) {
@@ -507,6 +546,29 @@ class ClientController extends Controller
             $val = $request->input($field);
             if (is_string($val) && $val !== '') {
                 $patch[$field] = strtoupper(trim($val));
+            }
+        }
+        /* Lowercase + trim both email fields BEFORE validation runs so the
+         * downstream Rule::unique checks become case-insensitive. Without
+         * this, super admins could re-create a client with "Admin@x.com"
+         * after one already existed at "admin@x.com" — Postgres treats
+         * the strings as distinct and the unique constraint passes.
+         * Storing lowercase keeps the auth lookup (which calls
+         * strtolower on the input) consistent too. */
+        foreach (['email', 'admin_email'] as $field) {
+            $val = $request->input($field);
+            if (is_string($val) && $val !== '') {
+                $patch[$field] = strtolower(trim($val));
+            }
+        }
+        /* Phones — strip every non-digit so "+91 98765-43210" and
+         * "9876543210" collide on the unique check. The same digits-only
+         * form is what we then store, so the column is the authoritative
+         * normalized value. */
+        foreach (['phone', 'admin_phone'] as $field) {
+            $val = $request->input($field);
+            if (is_string($val) && $val !== '') {
+                $patch[$field] = preg_replace('/\D/', '', $val) ?? '';
             }
         }
         if ($patch) $request->merge($patch);
