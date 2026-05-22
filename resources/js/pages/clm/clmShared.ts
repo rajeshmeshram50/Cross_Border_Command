@@ -205,26 +205,26 @@ export const CLM_CSS = `
   flex-wrap: wrap;
 }
 .clm-tab {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 14px; border-radius: 8px;
-  font-size: 12.5px; font-weight: 600; color: #475569;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 16px; border-radius: 8px;
+  font-size: 13px; font-weight: 600; color: #475569;
   cursor: pointer; border: none; background: transparent;
-  font-family: inherit; transition: all .15s;
+  font-family: inherit; transition: background .15s ease, color .15s ease, box-shadow .22s ease;
   white-space: nowrap; position: relative; z-index: 1;
 }
 .clm-tab:hover { background: rgba(6,182,212,.08); color: #0891b2; }
 .clm-tab.active {
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 45%, #0e7490 100%);
-  color: #fff; font-weight: 700;
-  box-shadow: 0 4px 14px rgba(6,182,212,.45), 0 1px 3px rgba(8,145,178,.25), inset 0 1px 0 rgba(255,255,255,.22);
+  color: #fff; font-weight: 600;
+  box-shadow: 0 3px 10px rgba(8,145,178,.32), inset 0 1px 0 rgba(255,255,255,.18);
 }
 .clm-tab.active:hover { opacity: .95; }
 .clm-tab-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .clm-tab.active .clm-tab-dot { background: rgba(255,255,255,.65) !important; box-shadow: none !important; }
 .clm-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 20px; border-radius: 20px; padding: 0 6px;
-  font-size: 10px; font-weight: 800;
+  min-width: 22px; height: 22px; border-radius: 999px; padding: 0 7px;
+  font-size: 11px; font-weight: 700;
 }
 .clm-tab.active .clm-tab-count {
   background: rgba(255,255,255,.18); color: #fff;
@@ -464,6 +464,13 @@ export const CLM_CSS = `
   display: flex; align-items: center; justify-content: center;
   padding: 20px; animation: clmFadeIn .18s ease both;
 }
+/* MasterSelect portals its dropdown menu to <body> at z-index 11000.
+   CLM modal backdrop is at 200000 — without this override, the
+   portalled menu sits behind the modal and the user sees an empty
+   dropdown. Bumping all portalled dropdowns above the CLM modal so
+   they remain visible inside the Add/Edit forms. */
+body > .dropdown-menu.master-select-menu,
+.master-select-menu.dropdown-menu { z-index: 250000 !important; }
 @keyframes clmFadeIn { from { opacity: 0 } to { opacity: 1 } }
 .clm-modal {
   width: 100%; max-width: 620px; max-height: calc(100vh - 40px);
