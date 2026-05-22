@@ -1005,25 +1005,12 @@ export default function Profile() {
                   <p className="fs-11 mb-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.75)', letterSpacing: '0.06em' }}>Role</p>
                   <h6 className="text-white mb-0 fw-bold lh-1">{roleShort[user.user_type] || user.user_type}</h6>
                 </div>
-                <div
-                  className="text-center px-3 py-2 d-flex flex-column justify-content-center"
-                  style={{
-                    background: 'rgba(255,255,255,0.12)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: 14,
-                    backdropFilter: 'blur(6px)',
-                    minWidth: 110,
-                  }}
-                >
-                  <p className="fs-11 mb-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.75)', letterSpacing: '0.06em' }}>Status</p>
-                  <div className="d-inline-flex align-items-center justify-content-center gap-1">
-                    <span
-                      className="d-inline-block rounded-circle"
-                      style={{ width: 8, height: 8, background: '#22c55e', boxShadow: '0 0 8px #22c55e' }}
-                    />
-                    <h6 className="text-white mb-0 fw-bold lh-1">Active</h6>
-                  </div>
-                </div>
+                {/* Status card removed — the user is literally signed in
+                    and viewing their own profile, so "Status: Active"
+                    was a tautology that took header space without
+                    communicating anything actionable. Inactive accounts
+                    can't reach this page anyway (auth middleware blocks
+                    sign-in), so the chip never showed any other value. */}
                 {/* Plan pill is hidden for branch_user and employee — only
                     super_admin / client_admin (who actually manage the
                     subscription) see plan info on their own profile. */}

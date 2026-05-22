@@ -7,7 +7,9 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
+import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import { validatePhone } from '../../utils/validatePhone';
+import { Shimmer } from '../../components/ui/Shimmer';
 
 interface Props {
   onBack: () => void;
@@ -582,10 +584,62 @@ export default function BranchForm({ onBack, editId }: Props) {
     setLogoFile(null); setLogoPreview(null);
   };
 
+  /* Edit-mode preload — previously a small centered spinner that
+   * gave no preview of the form shape, so the page felt blank for
+   * the ~500ms hydration window. Replaced with a form-shaped
+   * shimmer (banner + four sections × six field cells) so the user
+   * sees the structure they're about to fill in while the data
+   * loads. Matches the ClientForm shimmer pattern. */
   if (loadingData) return (
-    <div className="text-center py-5">
-      <Spinner color="primary" />
-      <p className="text-muted mt-2" style={{ fontSize: '12px' }}>Loading branch data...</p>
+    <div className="p-3">
+      <div
+        style={{
+          background: 'var(--vz-card-bg, #fff)',
+          border: '1px solid var(--vz-border-color)',
+          borderRadius: 16,
+          padding: 24,
+          marginBottom: 16,
+          display: 'flex', alignItems: 'center', gap: 18,
+        }}
+      >
+        <Shimmer width={64} height={64} radius={14} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Shimmer width={220} height={18} />
+          <Shimmer width={320} height={12} />
+        </div>
+        <Shimmer width={120} height={36} radius={10} />
+      </div>
+      {Array.from({ length: 4 }).map((_, sectionIdx) => (
+        <div
+          key={sectionIdx}
+          style={{
+            background: 'var(--vz-card-bg, #fff)',
+            border: '1px solid var(--vz-border-color)',
+            borderRadius: 16,
+            padding: 20,
+            marginBottom: 14,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <Shimmer width={32} height={32} radius={8} />
+            <Shimmer width={180} height={14} />
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gap: 14,
+            }}
+          >
+            {Array.from({ length: 6 }).map((__, fieldIdx) => (
+              <div key={fieldIdx} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Shimmer width={`${50 + (fieldIdx % 4) * 10}%`} height={10} />
+                <Shimmer width="100%" height={38} radius={8} />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 
@@ -1247,7 +1301,13 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Website</Lbl>
-                <Input name="website" style={css.input} type="url" value={form.website}
+                {/* type="text" not "url" — the browser's url validation
+                    rejects bare-domain inputs like "www.branch.com" and
+                    forces the user to type "http://..." even though our
+                    own validateWebsite() (and the placeholder) accepts
+                    the www. form. Keep our regex as the gate so the
+                    UX stays consistent with the hint text. */}
+                <Input name="website" style={css.input} type="text" value={form.website}
                   invalid={fieldInvalid('website')}
                   onChange={e => set('website', e.target.value)} onBlur={() => touch('website')}
                   placeholder="www.branch.com or https://branch.com" />
@@ -1317,10 +1377,18 @@ export default function BranchForm({ onBack, editId }: Props) {
               <Col md={4}>
                 <Lbl>Established Date</Lbl>
                 <div style={{ maxWidth: 240 }}>
-                  <ThemedDatePicker
+                  {/* Swapped from the in-file ThemedDatePicker to the
+                      shared MasterDatePicker so this calendar matches
+                      every other date control across the app
+                      (master forms, recruitment, products). The old
+                      one had its own month/year drill-down that
+                      diverged from the rest, so users said the calendar
+                      "looked wrong" only on this page. */}
+                  <MasterDatePicker
                     value={form.established_at}
                     onChange={v => set('established_at', v)}
                     placeholder="Select date"
+                    maxDate={new Date().toISOString().slice(0, 10)}
                   />
                 </div>
               </Col>

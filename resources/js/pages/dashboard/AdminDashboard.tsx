@@ -230,6 +230,99 @@ export default function AdminDashboard() {
         .ad-list-row + .ad-list-row { border-top: 1px solid #f1f3f9; }
         [data-bs-theme="dark"] .ad-list-row + .ad-list-row,
         [data-layout-mode="dark"] .ad-list-row + .ad-list-row { border-top-color: rgba(255,255,255,0.06); }
+
+        /* "View All" outline pill — used on Recent Clients / Recent
+         * Payments card headers. Dark, prominent border so the button
+         * reads as an actionable affordance in both themes, with a
+         * hover lift that matches the rest of the dashboard's
+         * interactive elements. */
+        .ad-view-all-btn {
+          background: transparent;
+          border: 1.5px solid #334155;
+          border-radius: 8px;
+          padding: 5px 14px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #1e293b;
+          cursor: pointer;
+          transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease, box-shadow .15s ease;
+        }
+        .ad-view-all-btn:hover {
+          background: #334155;
+          border-color: #1e293b;
+          color: #ffffff;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+        }
+        .ad-view-all-btn:active { transform: translateY(0); }
+        [data-bs-theme="dark"] .ad-view-all-btn,
+        [data-layout-mode="dark"] .ad-view-all-btn {
+          border-color: #cbd5e1;
+          color: #e2e8f0;
+        }
+        [data-bs-theme="dark"] .ad-view-all-btn:hover,
+        [data-layout-mode="dark"] .ad-view-all-btn:hover {
+          background: #e2e8f0;
+          border-color: #f1f5f9;
+          color: #0f172a;
+          box-shadow: 0 4px 12px rgba(226, 232, 240, 0.22);
+        }
+
+        /* Generic hover lift for the small standalone buttons across the
+         * dashboard (refresh / quick action chips). Picks up any button
+         * tagged with the ad-hover-btn class so future additions stay
+         * consistent (no backticks in this comment — the whole block is
+         * a JS template literal and backticks would close it early). */
+        .ad-hover-btn {
+          transition: background .15s ease, color .15s ease, transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+        }
+        .ad-hover-btn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(64, 81, 137, 0.18);
+        }
+        .ad-hover-btn:active { transform: translateY(0); }
+
+        /* User-role pill on the Payment Health card. Each pill reads its
+         * accent from --role-c (set inline) so this rule covers every
+         * role without per-role copies. Light mode keeps the original
+         * 12-alpha tint; dark mode lifts the surface to a 22-alpha tint
+         * + a stronger border so the pill stands out from the dark
+         * card, and the count text uses near-white instead of the raw
+         * saturated colour (which faded against the dark canvas). */
+        .ad-role-pill {
+          background: color-mix(in srgb, var(--role-c) 12%, transparent);
+          border: 1px solid color-mix(in srgb, var(--role-c) 30%, transparent);
+          border-radius: 10px;
+          padding: 6px 12px;
+        }
+        .ad-role-pill .ad-role-dot {
+          width: 8px; height: 8px; border-radius: 50%;
+          background: var(--role-c); flex-shrink: 0;
+        }
+        .ad-role-pill .ad-role-label {
+          font-size: 11px; font-weight: 600; text-transform: capitalize;
+          color: var(--vz-body-color);
+        }
+        .ad-role-pill .ad-role-count {
+          font-size: 13px; font-weight: 800;
+          color: var(--role-c);
+        }
+        [data-bs-theme="dark"] .ad-role-pill,
+        [data-layout-mode="dark"] .ad-role-pill {
+          background: color-mix(in srgb, var(--role-c) 22%, rgba(0,0,0,0.35));
+          border-color: color-mix(in srgb, var(--role-c) 55%, transparent);
+        }
+        [data-bs-theme="dark"] .ad-role-pill .ad-role-label,
+        [data-layout-mode="dark"] .ad-role-pill .ad-role-label {
+          color: #f1f5f9;
+        }
+        [data-bs-theme="dark"] .ad-role-pill .ad-role-count,
+        [data-layout-mode="dark"] .ad-role-pill .ad-role-count {
+          /* Mix the role colour with white so saturated mids (#405189
+           * indigo / #f06548 coral) lift to readable values on the dark
+           * pill surface — the raw colour blended into the bg before. */
+          color: color-mix(in srgb, var(--role-c) 35%, #ffffff);
+        }
       `}</style>
       {/* Page Title */}
       <Row className="mb-2">
@@ -358,19 +451,55 @@ export default function AdminDashboard() {
               </div>
             </div>
             <CardBody style={{ padding: '8px 16px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
-                  <Pie data={data.plan_breakdown} dataKey="count" nameKey="plan_name" cx="50%" cy="45%" innerRadius={52} outerRadius={82} paddingAngle={0} stroke="none">
-                    {data.plan_breakdown.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip content={<ChartTooltip />} />
-                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px', fontWeight: 600, paddingTop: 8 }} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div style={{ textAlign: 'center', marginTop: 4 }}>
-                <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{counts.total_clients}</div>
-                <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Clients</div>
-              </div>
+              {/* Pie + centered total. The previous version stacked the
+                  "Total Clients" block below the pie, which left a big
+                  empty donut hole and pushed the legend off the visible
+                  area on shorter viewports. Position the total INSIDE
+                  the donut hole via an absolute-positioned overlay so
+                  the chart reads cleanly with no extra vertical space.
+                  Also added a `paddingAngle` to separate the slices,
+                  a `stroke` matching the surface so adjacent slices
+                  stay visually distinct in dark mode, and a guard for
+                  the empty-data case so the card doesn't render a
+                  blank ring. */}
+              {data.plan_breakdown && data.plan_breakdown.length > 0 ? (
+                <div style={{ width: '100%', position: 'relative' }}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={data.plan_breakdown}
+                        dataKey="count"
+                        nameKey="plan_name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={54}
+                        outerRadius={84}
+                        paddingAngle={2}
+                        stroke="var(--vz-card-bg, #ffffff)"
+                        strokeWidth={2}
+                      >
+                        {data.plan_breakdown.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip content={<ChartTooltip />} />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px', fontWeight: 600, paddingTop: 8 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div style={{
+                    position: 'absolute', top: '40%', left: 0, right: 0,
+                    transform: 'translateY(-50%)', textAlign: 'center', pointerEvents: 'none',
+                  }}>
+                    <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>{counts.total_clients}</div>
+                    <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }}>Total Clients</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  width: '100%', height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--vz-secondary-color)', fontSize: 12, fontWeight: 600,
+                }}>
+                  No plan data yet
+                </div>
+              )}
             </CardBody>
           </Card>
         </Col>
@@ -466,24 +595,32 @@ export default function AdminDashboard() {
 
               <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>User Roles</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {Object.entries(data.user_types).map(([type, count], i) => (
-                  <div key={type} style={{
-                    display: 'flex', alignItems: 'center', gap: 8, background: COLORS[i % COLORS.length] + '12',
-                    borderRadius: 10, padding: '6px 12px', border: `1px solid ${COLORS[i % COLORS.length]}30`,
-                  }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS[i % COLORS.length], flexShrink: 0 }} />
-                    {/* Use a theme variable instead of a hardcoded slate so
-                        the label stays readable in dark mode. The pill
-                        background is only a 12-alpha tint of the role
-                        colour, which becomes near-invisible on a dark
-                        page — dark slate text on a dark background read
-                        as faded. var(--vz-body-color) flips correctly. */}
-                    <span style={{ fontSize: 11, color: 'var(--vz-body-color)', textTransform: 'capitalize', fontWeight: 600 }}>
-                      {type.replace(/_/g, ' ')}
-                    </span>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: COLORS[i % COLORS.length] }}>{count as number}</span>
-                  </div>
-                ))}
+                {Object.entries(data.user_types).map(([type, count], i) => {
+                  const role = COLORS[i % COLORS.length];
+                  return (
+                    /* Pill styling is themed via the .ad-role-pill class
+                       so dark mode can swap the surface + raise contrast
+                       on the count text. Previously the bg was a 12-alpha
+                       tint of the role colour, which on a near-black
+                       canvas read as completely flat, and the saturated
+                       indigo / amber counts disappeared against it. */
+                    <div
+                      key={type}
+                      className="ad-role-pill"
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        // Pull the per-role accent through a CSS variable
+                        // so the dark-mode override can layer a brighter
+                        // background / border without re-stating the hue.
+                        ['--role-c' as any]: role,
+                      }}
+                    >
+                      <span className="ad-role-dot" />
+                      <span className="ad-role-label">{type.replace(/_/g, ' ')}</span>
+                      <span className="ad-role-count">{count as number}</span>
+                    </div>
+                  );
+                })}
               </div>
             </CardBody>
           </Card>
@@ -499,10 +636,10 @@ export default function AdminDashboard() {
                 <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Recent Clients</h5>
                 <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Latest registered clients</p>
               </div>
-              <button onClick={() => setOpenModal('clients')} style={{
-                background: 'transparent', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 14px',
-                fontSize: 12, fontWeight: 600, color: '#405189', cursor: 'pointer',
-              }}>View All</button>
+              <button
+                onClick={() => setOpenModal('clients')}
+                className="ad-view-all-btn"
+              >View All</button>
             </div>
             <CardBody style={{ padding: 0 }}>
               {data.recent_clients.slice(0, 5).map((c: any, i: number) => (
@@ -511,13 +648,30 @@ export default function AdminDashboard() {
                   padding: '12px 20px',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{
-                      width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      background: `linear-gradient(135deg,${COLORS[i % COLORS.length]},${COLORS[(i + 2) % COLORS.length]})`,
-                      color: '#fff', fontWeight: 800, fontSize: 13, flexShrink: 0,
-                    }}>
-                      {c.org_name.charAt(0)}{c.org_name.split(' ')[1]?.charAt(0) || ''}
-                    </div>
+                    {/* Real logo when the client has uploaded one (backend
+                        exposes it via the appended profile_photo_url
+                        accessor on the Client model). Fallback stays the
+                        gradient-initials avatar so brand-less clients
+                        still render with a consistent thumb. */}
+                    {c.profile_photo_url ? (
+                      <img
+                        src={c.profile_photo_url}
+                        alt={`${c.org_name} logo`}
+                        style={{
+                          width: 38, height: 38, borderRadius: 11, objectFit: 'cover',
+                          flexShrink: 0, background: 'var(--vz-secondary-bg)',
+                          border: '1px solid var(--vz-border-color)',
+                        }}
+                      />
+                    ) : (
+                      <div style={{
+                        width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: `linear-gradient(135deg,${COLORS[i % COLORS.length]},${COLORS[(i + 2) % COLORS.length]})`,
+                        color: '#fff', fontWeight: 800, fontSize: 13, flexShrink: 0,
+                      }}>
+                        {c.org_name.charAt(0)}{c.org_name.split(' ')[1]?.charAt(0) || ''}
+                      </div>
+                    )}
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{c.org_name}</div>
                       <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 1 }}>{c.email}</div>
@@ -547,10 +701,10 @@ export default function AdminDashboard() {
                 <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Recent Payments</h5>
                 <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Latest transactions</p>
               </div>
-              <button onClick={() => setOpenModal('payments')} style={{
-                background: 'transparent', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 14px',
-                fontSize: 12, fontWeight: 600, color: '#405189', cursor: 'pointer',
-              }}>View All</button>
+              <button
+                onClick={() => setOpenModal('payments')}
+                className="ad-view-all-btn"
+              >View All</button>
             </div>
             <CardBody style={{ padding: 0 }}>
               {data.recent_payments.slice(0, 5).map((p: any) => {
@@ -661,30 +815,54 @@ export default function AdminDashboard() {
                   <th>METHOD</th>
                   <th className="text-end">AMOUNT</th>
                   <th>STATUS</th>
-                  <th className="pe-4">DATE</th>
+                  <th className="pe-4 text-end">DATE</th>
                 </tr>
               </thead>
               <tbody>
                 {data.recent_payments.map((p: any) => {
-                  const tone = p.status === 'success' ? { bg: '#0ab39c22', text: '#067d6e' }
-                    : p.status === 'failed' ? { bg: '#f0654822', text: '#c2410c' }
-                    : { bg: '#f7b84b22', text: '#a16207' };
-                  const amtTone = p.status === 'success' ? '#0ab39c' : p.status === 'failed' ? '#f06548' : '#f7b84b';
+                  /* Status pill — uses dual light/dark colours via color-mix
+                     so the chip stays readable on both themes. The previous
+                     hard-coded 22-alpha tints washed out on dark canvases
+                     and the saturated text colours (#067d6e etc.) blurred
+                     into them. Also lifted Method / Invoice / Date from
+                     `text-muted` to a theme variable so they don't read as
+                     "faded" on dark mode. */
+                  const role = p.status === 'success' ? '#0ab39c'
+                    : p.status === 'failed' ? '#f06548'
+                    : '#f7b84b';
                   return (
                     <tr key={p.id}>
-                      <td className="ps-4 fw-semibold">{p.client?.org_name || 'Unknown'}</td>
-                      <td className="text-muted">{p.invoice_number}</td>
-                      <td>{methodLabels[p.method] || p.method}</td>
-                      <td className="text-end fw-bold" style={{ color: amtTone }}>₹{parseFloat(p.total).toLocaleString('en-IN')}</td>
-                      <td>
-                        <span className="rec-pill fw-bold" style={{ background: tone.bg, color: tone.text }}>{p.status}</span>
+                      <td className="ps-4 fw-semibold" style={{ color: 'var(--vz-body-color)' }}>{p.client?.org_name || 'Unknown'}</td>
+                      <td style={{ color: 'var(--vz-secondary-color)', fontVariantNumeric: 'tabular-nums' }}>{p.invoice_number}</td>
+                      <td style={{ color: 'var(--vz-body-color)' }}>{methodLabels[p.method] || p.method}</td>
+                      <td className="text-end fw-bold" style={{ color: role, fontVariantNumeric: 'tabular-nums' }}>
+                        ₹{parseFloat(p.total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
-                      <td className="pe-4 text-muted">{new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                      <td>
+                        <span
+                          className="fw-bold text-capitalize"
+                          style={{
+                            display: 'inline-block',
+                            padding: '3px 10px',
+                            borderRadius: 999,
+                            fontSize: 11,
+                            letterSpacing: '0.02em',
+                            background: `color-mix(in srgb, ${role} 18%, transparent)`,
+                            border: `1px solid color-mix(in srgb, ${role} 45%, transparent)`,
+                            color: role,
+                          }}
+                        >
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="pe-4 text-end" style={{ color: 'var(--vz-secondary-color)', fontVariantNumeric: 'tabular-nums' }}>
+                        {new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </td>
                     </tr>
                   );
                 })}
                 {data.recent_payments.length === 0 && (
-                  <tr><td colSpan={6} className="text-center text-muted py-4">No recent payments</td></tr>
+                  <tr><td colSpan={6} className="text-center py-4" style={{ color: 'var(--vz-secondary-color)' }}>No recent payments</td></tr>
                 )}
               </tbody>
             </table>

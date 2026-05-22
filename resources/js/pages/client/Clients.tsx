@@ -291,12 +291,21 @@ export default function Clients({ onNavigate }: Props) {
       header: 'Org. Status',
       accessorKey: 'status',
       cell: (info: any) => {
-        const isActive = info.row.original.status === 'active';
-        const color = isActive ? 'success' : 'danger';
-        const label = isActive ? 'Active' : 'Inactive';
+        /* Status pill — three distinct states: Active (green),
+         * Suspended (amber), Inactive (grey/red). Previously this
+         * collapsed every non-active row into "Inactive", so a
+         * suspended client showed up as "Inactive" on the list view
+         * even though the row's status column actually held
+         * "suspended" — the bug the user flagged. */
+        const raw = String(info.row.original.status ?? '').toLowerCase();
+        const cfg = raw === 'active'
+          ? { color: 'success', label: 'Active' }
+          : raw === 'suspended'
+            ? { color: 'warning', label: 'Suspended' }
+            : { color: 'danger', label: 'Inactive' };
         return (
-          <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2 fs-13`}>
-            {label}
+          <span className={`badge rounded-pill bg-${cfg.color}-subtle text-${cfg.color} fw-semibold px-3 py-2 fs-13`}>
+            {cfg.label}
           </span>
         );
       },
@@ -332,6 +341,28 @@ export default function Clients({ onNavigate }: Props) {
       <style>{`
         .clients-surface { background: #ffffff; }
         [data-bs-theme="dark"] .clients-surface { background: #1c2531; }
+
+        /* Add Client — call-to-action button. Previously the only
+         * feedback was Reactstrap's default focus ring; users wanted
+         * a clearer hover affordance. Lift + glow + colour-shift on
+         * hover, with a press-down on active so the button feels
+         * tactile. */
+        .cl-add-client-btn {
+          transition:
+            transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 180ms ease,
+            background-color 180ms ease,
+            filter 180ms ease;
+        }
+        .cl-add-client-btn:hover {
+          transform: translateY(-1px) scale(1.02);
+          filter: brightness(1.08);
+          box-shadow: 0 8px 22px rgba(64, 81, 137, 0.32);
+        }
+        .cl-add-client-btn:active {
+          transform: translateY(0) scale(0.99);
+          box-shadow: 0 4px 12px rgba(64, 81, 137, 0.22);
+        }
 
         /* Unify table typography — every cell + header reads at the same
            13px size so the table looks like a single grid, not a patchwork
@@ -633,7 +664,7 @@ export default function Clients({ onNavigate }: Props) {
                 </Button>
                 <Button
                   color="secondary"
-                  className="btn-label waves-effect waves-light rounded-pill"
+                  className="btn-label waves-effect waves-light rounded-pill cl-add-client-btn"
                   onClick={() => onNavigate('client-form')}
                 >
                   <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>

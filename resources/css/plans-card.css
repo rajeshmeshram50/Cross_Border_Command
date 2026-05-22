@@ -319,14 +319,20 @@
   animation-play-state: paused !important;
 }
 
-/* ───── Featured card — green accent ───── */
+/* ───── Featured card — green accent ─────
+   The previous light-mode background almost entirely washed out to
+   white (rgba 0.16 green that faded to #ffffff at 55%), which is why
+   the "green plan" looked the same as every other card. The new
+   gradient holds the emerald tint across the whole card height and
+   layers a brighter band at the top so the card reads as visibly
+   green even at a glance. */
 .plan-card-v2.is-featured {
   --card-accent: #10b981;
   --accent-price: #10b981;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 255, 255, 0) 28%),
-    linear-gradient(180deg, rgba(16, 185, 129, 0.16) 0%, #ffffff 55%);
-  border-color: rgba(16, 185, 129, 0.45);
+    linear-gradient(180deg, rgba(16, 185, 129, 0.22) 0%, rgba(16, 185, 129, 0.06) 60%, rgba(16, 185, 129, 0.10) 100%),
+    #ecfdf5;
+  border-color: rgba(16, 185, 129, 0.55);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.95) inset,
     0 1px 2px rgba(15, 23, 42, 0.04),
@@ -729,14 +735,34 @@
   color: #fff;
   border-color: #f06548;
 }
+/* Featured (green) plan still uses the same red delete affordance —
+ * earlier this overrode the icon + border to white so it would
+ * "fit" the green card, but users couldn't tell delete from any
+ * other circular icon. Keep delete unmistakably red in both light
+ * and dark themes; only nudge the resting opacity so the red doesn't
+ * scream against the green canvas. */
 .plan-card-v2.is-featured .plan-delete-btn {
-  color: rgba(255, 255, 255, 0.92);
-  border-color: rgba(255, 255, 255, 0.45);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(255, 255, 255, 0.7);
 }
 .plan-card-v2.is-featured .plan-delete-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.22);
-  color: #fff;
-  border-color: rgba(255, 255, 255, 0.65);
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+  box-shadow: 0 6px 14px rgba(239, 68, 68, 0.32);
+}
+[data-bs-theme="dark"]   .plan-card-v2.is-featured .plan-delete-btn,
+[data-layout-mode="dark"].plan-card-v2.is-featured .plan-delete-btn {
+  color: #fca5a5;
+  border-color: rgba(252, 165, 165, 0.55);
+  background: rgba(0, 0, 0, 0.35);
+}
+[data-bs-theme="dark"]   .plan-card-v2.is-featured .plan-delete-btn:hover:not(:disabled),
+[data-layout-mode="dark"].plan-card-v2.is-featured .plan-delete-btn:hover:not(:disabled) {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
 }
 
 /* "View all modules" link button */
