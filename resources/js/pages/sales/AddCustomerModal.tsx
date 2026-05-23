@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../api';
 import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
+import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
@@ -261,7 +262,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 
   // Form: company + primary address + primary contact
   const [form, setForm] = useState({
-    coName:'', coLegal:'', coType:'', coWeb:'', coSeg:'', coClass:'', coRisk:'',
+    coName:'', coLegal:'', coType:'', coWeb:'', coSeg:[] as string[], coClass:'', coRisk:'',
     /* Primary address type is locked to "Registered Office" in the UI
        — other types live on the Address & Contact Details tab. */
     addrType: DEFAULT_ADDRESS_TYPE, addr:'', country:'', state:'', city:'', pin:'',
@@ -315,11 +316,33 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
    * cold. Fixes the duplicate-row issue users saw on quick clicks. */
   const inFlightRef = useRef(false);
 
-  // Trade docs selection
-  const [tdDocs, setTdDocs] = useState([
+  // Trade docs selection — initial rows are populated from the segment
+  // rule when the user picks a segment in Stage 1 (see segment-template
+  // effect below). Falls back to the original two-row placeholder when
+  // the segment has no rule (or no `td` selections).
+  const [tdDocs, setTdDocs] = useState<{ id:string; name:string; selected:boolean; sent:boolean }[]>([
     { id:'td1', name:'Bill of Lading',           selected:true, sent:false },
     { id:'td2', name:'Phytosanitary Certificate', selected:true, sent:false },
   ]);
+
+  /* Segment-rule template — resolved KYC / DD / TL / TD / QC master rows
+   * for the currently-selected segment. The Stage 2 Trade Licence sub-
+   * tab and Stage 3 Trade Documents tab render off these when present
+   * (falling back to the legacy static lists otherwise). Stage 2 Company
+   * DD also surfaces the segment's required-doc reference list as an
+   * info banner so the user knows which uploads are expected. */
+  type SegDocRow = { id:number; code:string; name:string; authority?:string|null; expiry?:string|null; status?:string; requirement:'M'|'O' };
+  type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
+  const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
+  const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
+
+  /* Per-row file uploads against the segment-rule reference rows in
+   * Stage 2 (Company DD / Owner KYC / Trade Licence). Key shape is
+   * `${sub-tab}::${doc.code}` so codes don't collide across categories.
+   * Value carries the File plus a blob URL for View/Download links —
+   * the URL stays valid as long as the modal session lives. */
+  type SegRefUpload = { file: File; url: string; name: string };
+  const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
 
   // Sub-modal — single one now since address and contact share the same
   // fields. `editing` carries the location row id when re-opening for edit.
@@ -413,7 +436,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       coLegal:  customer?.company ?? '',
       coType:   customer?.type ?? '',
       coWeb:    '',
-      coSeg:    customer?.segment ?? '',
+      /* Segment is now multi-valued. The list row only carries a
+       * single comma-separated string (legacy), so split on comma and
+       * trim — empty pieces drop out. */
+      coSeg:    (customer?.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
       coClass:  '',
       coRisk:   '',
       addrType: DEFAULT_ADDRESS_TYPE,
@@ -441,6 +467,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       { id:'td1', name:'Bill of Lading',           selected:true, sent:false },
       { id:'td2', name:'Phytosanitary Certificate', selected:true, sent:false },
     ]);
+    setSegmentDocs(EMPTY_SEG_DOCS);
+    /* Revoke any previously-issued blob URLs so the browser releases
+     * them back to the GC. Failing to do this leaks each picked file
+     * for the lifetime of the tab. */
+    Object.values(segmentRefUploads).forEach(u => { try { URL.revokeObjectURL(u.url); } catch {} });
+    setSegmentRefUploads({});
     setLocModal({ open:false, editing:null });
     // Flip the shimmer ON immediately when an edit-mode modal opens.
     // Without this, the first render after `open` flips sees
@@ -492,7 +524,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           coLegal:  d.legalName     ?? d.company ?? '',
           coType:   d.type          ?? '',
           coWeb:    d.website       ?? '',
-          coSeg:    d.segment       ?? '',
+          /* Server still ships a single comma-joined `segment` string
+           * (the column is scalar) — split + trim back into an array
+           * for the multi-select. Array shapes from a future PATCH
+           * also land here once the backend column is widened. */
+          coSeg:    Array.isArray(d.segment)
+                      ? d.segment.filter(Boolean)
+                      : String(d.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
           coClass:  d.classification ?? '',
           coRisk:   d.riskLevel     ?? '',
           // Primary address type is locked to "Registered Office" — even
@@ -542,6 +580,82 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
 
     return () => { cancelled = true; };
   }, [open, customer?.db_id]);
+
+  /* ── Segment-rule template fetch ───────────────────────────────────
+   * Whenever the user picks (or hydration sets) a segment in Stage 1,
+   * resolve each chosen segment's id from the segments master and pull
+   * its KYC / DD / TL / TD / QC documents in parallel. The category
+   * arrays are then merged and deduped by `code` so a doc that's
+   * required by multiple segments only renders once in Stage 2 + Stage
+   * 3. Mandatory wins on dedupe: if ANY selected segment marks a code
+   * as 'M', the merged row inherits 'M' even when another segment had
+   * it as 'O'.
+   *
+   * Bailout (resets segmentDocs to empty) when nothing's selected, the
+   * masters list hasn't loaded yet, or no chosen name resolves to a
+   * master row.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const names = (form.coSeg ?? []).filter(Boolean);
+    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    const segRows = names
+      .map(n => masters.segments.find(s => s.name === n))
+      .filter((r): r is { id:number; name:string } => !!r);
+    if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+
+    let cancelled = false;
+    Promise.all(
+      segRows.map(s =>
+        api.get(`/clm/segment-rules/for-segment/${s.id}`)
+          .then(r => r.data?.data ?? {})
+          .catch(() => ({}))
+      )
+    ).then(results => {
+      if (cancelled) return;
+      /* Per-category merge + dedupe. Key = code; Mandatory > Optional
+       * so a doc that's mandatory in any rule stays mandatory in the
+       * union. Order is "first-seen wins" otherwise so the Stage 2
+       * table doesn't reshuffle every render. */
+      const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc') => {
+        const map = new Map<string, SegDocRow>();
+        for (const r of results) {
+          const rows: SegDocRow[] = Array.isArray(r?.[cat]) ? r[cat] : [];
+          for (const d of rows) {
+            const existing = map.get(d.code);
+            if (!existing) { map.set(d.code, d); continue; }
+            if (existing.requirement !== 'M' && d.requirement === 'M') {
+              map.set(d.code, { ...existing, requirement: 'M' });
+            }
+          }
+        }
+        return Array.from(map.values());
+      };
+      const merged: SegmentDocs = {
+        kyc: mergeCat('kyc'),
+        dd:  mergeCat('dd'),
+        tl:  mergeCat('tl'),
+        td:  mergeCat('td'),
+        qc:  mergeCat('qc'),
+      };
+      setSegmentDocs(merged);
+      /* Pre-populate Stage 3 Trade Documents from the merged td
+       * selections. Mandatory rows arrive pre-checked. The legacy
+       * two-row placeholder only kicks in when the merged set is
+       * empty (preserved for backward compatibility). */
+      if (merged.td.length > 0) {
+        setTdDocs(merged.td.map(d => ({
+          id: `td_${d.code}`,
+          name: d.name,
+          selected: d.requirement === 'M',
+          sent: false,
+        })));
+      }
+    });
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, form.coSeg, masters.segments]);
 
   // Inject DM Sans/Inter once
   useEffect(() => {
@@ -593,7 +707,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     else if (form.coName.trim().length > 30)            next.coName  = 'Company name must be 30 characters or fewer';
     if (!form.coLegal.trim())                           next.coLegal = 'Legal name is required';
     if (!form.coType)                                   next.coType  = 'Select a customer type';
-    if (!form.coSeg)                                    next.coSeg   = 'Select a segment';
+    if (!form.coSeg || form.coSeg.length === 0)         next.coSeg   = 'Select at least one segment';
     if (!form.coClass)                                  next.coClass = 'Select a classification';
     if (!form.coRisk)                                   next.coRisk  = 'Select a risk level';
     if (!form.addrType)                                 next.addrType = 'Select an address type';
@@ -644,7 +758,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     company_name:   form.coName,
     legal_name:     form.coLegal,
     type:           form.coType,
-    segment:        form.coSeg,
+    /* Multi-segment is stored as a comma-joined string for now — the
+     * legacy `customers.segment` column is scalar (string). Order is
+     * preserved so the first entry stays the "primary" segment for
+     * existing list-row callers that only read the first label. */
+    segment:        (form.coSeg ?? []).join(', '),
     classification: form.coClass,
     risk_level:     form.coRisk,
     website:        form.coWeb,
@@ -835,22 +953,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       // toast twice (once here, once again after final Stage 3 save).
       // The parent refreshes its list when the modal actually closes.
     } else if (stage === 2) {
-      /* Stage 2 gate: KYC compliance needs at least one Owner KYC
-       * entry AND at least one Company DD document. Trade Licence
-       * stays optional (not every business has one). Each missing
-       * piece flips the offending sub-tab so the user lands on the
-       * exact place they need to fill in. */
-      const hasOwner = kycOwners.length > 0;
-      const hasDD = kycDocs.some(d => d.kind === 'dd');
-      if (!hasOwner || !hasDD) {
-        if (!hasOwner) setKycSub('owner-kyc');
-        else if (!hasDD) setKycSub('company-dd');
-        const missing = !hasOwner && !hasDD
-          ? 'at least one Owner KYC entry and one Company DD document'
-          : !hasOwner ? 'at least one Owner KYC entry' : 'at least one Company Due Diligence document';
-        toast.warning('KYC required', `Add ${missing} before continuing.`);
-        return;
-      }
+      /* Stage 2 advance: no validation gate. Stage 2 is now a
+       * segment-rule-driven reference view — the manual Add flow that
+       * the old DD/Owner KYC gate enforced has been removed, so the
+       * user can move to Stage 3 without uploading anything. */
       setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
     } else {
       if (!validateStage1()) { setStage(1); setTab('identification'); return; }
@@ -869,18 +975,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     ? (isEdit ? 'Update Customer' : 'Submit Customer')
     : 'Save & Next';
 
-  /* Stage 2 → 3 hard gate. The button stays visibly disabled until the
-   * user has captured at least one Company DD document AND at least
-   * one Owner KYC entry — tab switching still works, but Save & Next
-   * is locked so the user can't slip past with a half-filled stage. */
-  const stage2HasDD    = kycDocs.some(d => d.kind === 'dd');
-  const stage2HasOwner = kycOwners.length > 0;
-  const stage2Missing =
-    !stage2HasDD && !stage2HasOwner ? 'Add at least one Company DD document and one Owner KYC entry to continue.'
-    : !stage2HasDD                  ? 'Add at least one Company Due Diligence document to continue.'
-    : !stage2HasOwner               ? 'Add at least one Owner KYC entry to continue.'
-    : '';
-  const nextLocked = stage === 2 && !!stage2Missing;
+  /* Stage 2/3 advance: no gates. The form moves freely between stages
+   * 1 → 2 → 3 — only Stage 1's required fields are enforced. */
+  const stage2Missing = '';
+  const nextLocked = false;
 
   return (
     /* No backdrop-click-to-close — users were losing partially filled
@@ -1022,6 +1120,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               onAdd={(s) => { setEditDocId(null); setEditOwnerId(null); setDocModal({ open: true, sub: s }); }}
               docs={kycDocs}
               owners={kycOwners}
+              segmentName={(form.coSeg ?? []).join(', ')}
+              segmentDocs={segmentDocs}
+              segmentRefUploads={segmentRefUploads}
+              setSegmentRefUploads={setSegmentRefUploads}
               customerSaved={!!savedDbId}
               onEditDoc={(id) => {
                 const row = kycDocs.find(d => d.id === id);
@@ -1045,7 +1147,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           )}
           {stage === 3 && hydrating && <Stage3Shimmer />}
           {stage === 3 && !hydrating && evTab === 'kyc-documents' && (
-            <Stage3KycDocs sub={evSub} setSub={setEvSub} />
+            <Stage3KycDocs sub={evSub} setSub={setEvSub} segmentDocs={segmentDocs} segmentRefUploads={segmentRefUploads} />
           )}
           {stage === 3 && !hydrating && evTab === 'trade-documents' && (
             <Stage3TradeDocs
@@ -1458,7 +1560,14 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
           <div className="acm-row acm-row-4">
             <Field label="Company Website"><input value={form.coWeb} onChange={e => setF('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
             <Field label="Customer Segment" required error={errors.coSeg} fieldKey="coSeg">
-              <MasterSelect value={form.coSeg} options={optsWith(masters.segments, form.coSeg)} placeholder="Select segment" invalid={!!errors.coSeg} onChange={v => set('coSeg', v)} />
+              <MasterMultiSelect
+                values={form.coSeg}
+                options={toSelectOpts(masters.segments)}
+                placeholder="Select segment"
+                addMorePlaceholder="+ Add another segment"
+                invalid={!!errors.coSeg}
+                onChange={vs => set('coSeg', vs)}
+              />
             </Field>
             <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">
               <MasterSelect value={form.coClass} options={optsWith(masters.classifications, form.coClass)} placeholder="Select classification" invalid={!!errors.coClass} onChange={v => set('coClass', v)} />
@@ -1648,8 +1757,108 @@ function Stage1AdditionalLocations({ primary, locations, onAdd, onEdit, onDel, o
   );
 }
 
+/* ───── Segment-required reference banner ─────
+ * Compact callout rendered above the Company DD table when the
+ * selected segment's rule defines required due-diligence documents.
+ * Pure-read — clicking nothing; the user still uses "+ Add Document"
+ * to upload. Acts as a checklist so they know what to expect. */
+function SegmentRequiredBanner({ segmentName, label, rows }: {
+  segmentName: string;
+  label: string;
+  rows: { code:string; name:string; requirement:'M'|'O' }[];
+}) {
+  const mandCount = rows.filter(r => r.requirement === 'M').length;
+  return (
+    <div style={{
+      margin: '0 0 12px',
+      padding: '10px 12px',
+      borderRadius: 10,
+      background: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)',
+      border: '1px solid #c4b5fd',
+      fontSize: 11.5,
+    }}>
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, color:'#5b21b6', fontWeight:700, letterSpacing:0.2 }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Segment "{segmentName}" requires {rows.length} {label} document{rows.length === 1 ? '' : 's'}
+          {mandCount > 0 && <span style={{ color:'#7c3aed' }}> · {mandCount} mandatory</span>}
+      </div>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+        {rows.map(r => (
+          <span key={r.code} style={{
+            display:'inline-flex', alignItems:'center', gap:4,
+            padding:'3px 8px', borderRadius:999, fontSize:10.5, fontWeight:600,
+            background: r.requirement === 'M' ? '#7c3aed' : '#ffffff',
+            color:      r.requirement === 'M' ? '#ffffff' : '#5b21b6',
+            border:     r.requirement === 'M' ? 'none' : '1px solid #c4b5fd',
+          }}>
+            {r.requirement === 'M' ? '★ ' : ''}{r.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* Stage 2 reference-row actions cell. Initial state shows a single
+ * Upload button — clicking it opens the file picker. Once a file is
+ * picked the cell switches to View / Download / Delete actions backed
+ * by a blob URL the parent component holds onto. Delete revokes the
+ * URL and drops the entry from the upload map, returning the cell to
+ * its initial Upload state. */
+function SegmentRefRowActions({ refKey, uploads, setUploads }: {
+  refKey: string;
+  uploads: Record<string, { file: File; url: string; name: string }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+}) {
+  const uploaded = uploads[refKey];
+  /* Re-using `onPick` for both first-time upload and re-upload — the
+   * setter already revokes the previous blob URL before replacing it,
+   * so swapping a file is just another pick from the user's POV. */
+  const onPick = (f: File | undefined) => {
+    if (!f) return;
+    setUploads(prev => {
+      const existing = prev[refKey];
+      if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+      return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
+    });
+  };
+
+  if (!uploaded) {
+    return (
+      <div className="acm-row-actions">
+        <Tooltip label="Upload">
+          <label className="acm-doc-action acm-doc-action-upload" aria-label="Upload" style={{ cursor: 'pointer' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+          </label>
+        </Tooltip>
+      </div>
+    );
+  }
+  return (
+    <div className="acm-row-actions">
+      <Tooltip label={`View ${uploaded.name}`}>
+        <a href={uploaded.url} target="_blank" rel="noreferrer" className="acm-doc-action acm-doc-action-view" aria-label="View">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </a>
+      </Tooltip>
+      <Tooltip label={`Download ${uploaded.name}`}>
+        <a href={uploaded.url} download={uploaded.name} className="acm-doc-action acm-doc-action-download" aria-label="Download">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </a>
+      </Tooltip>
+      <Tooltip label="Re-upload (replace file)">
+        <label className="acm-doc-action acm-doc-action-upload" aria-label="Re-upload" style={{ cursor: 'pointer' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+        </label>
+      </Tooltip>
+    </div>
+  );
+}
+
 /* ───── Stage 2 — KYC sub-tabs + doc table ───── */
-function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs, owners, customerSaved, onEditDoc, onDeleteDoc, onEditOwner, onDeleteOwner }:
+function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs, owners, segmentName, segmentDocs, segmentRefUploads, setSegmentRefUploads, customerSaved, onEditDoc, onDeleteDoc, onEditOwner, onDeleteOwner }:
   { sub: KycSubTab; setSub: (s: KycSubTab) => void;
     page: Record<KycSubTab, number>; setPage: (s: KycSubTab, p: number) => void;
     search: string; setSearch: (s: string) => void;
@@ -1657,6 +1866,18 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
     /** Live KYC data fetched on edit. `docs` covers both DD + TL — filter by `kind`.  */
     docs: { id:number; kind:'dd'|'tl'; name:string; license_number?:string|null; issuing_authority?:string|null; issue_date?:string|null; expiry_date?:string|null; attachment_path?:string|null; attachment_url?:string|null; attachment_name?:string|null; status?:string }[];
     owners: { id:number; owner_name:string; designation?:string|null; official_email?:string|null; phone_number?:string|null; id_proof_path?:string|null; id_proof_url?:string|null; address_proof_path?:string|null; address_proof_url?:string|null; photograph_path?:string|null; photograph_url?:string|null; status?:string }[];
+    /** Segment chosen on Stage 1 + the KYC/DD/TL master rows the
+     *  segment rule references. When the segment has a configured rule
+     *  these drive the Trade Licence sub-tab and the reference banner
+     *  on Company DD; otherwise fall back to the legacy static lists. */
+    segmentName: string;
+    segmentDocs: { kyc:{ id:number; code:string; name:string; authority?:string|null; expiry?:string|null; status?:string; requirement:'M'|'O' }[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
+    /** Per-row file picker state for the segment-rule reference rows.
+     *  Key is `${sub}::${doc.code}`; value carries the File + a blob URL
+     *  used by the View / Download actions. Lifted to the parent so it
+     *  survives sub-tab switches. */
+    segmentRefUploads: Record<string, { file: File; url: string; name: string }>;
+    setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
     /** True only when the parent customer has a db_id (i.e. has been saved). */
     customerSaved: boolean;
     onEditDoc:     (id:number) => void;
@@ -1667,10 +1888,14 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
   const meta = KYC_TAB_META[sub];
 
   // Source data depends on the sub-tab:
-  //   company-dd   → live docs filtered by kind='dd'
-  //   owner-kyc    → live owners
-  //   trade-licence → design-only placeholder list (TL_DOCS); backend
-  //                  wiring to ship in a follow-up
+  //   company-dd   → live docs filtered by kind='dd'; falls back to a
+  //                  segment-driven reference table when no live rows
+  //                  yet AND the segment rule defines DD documents.
+  //   owner-kyc    → live owners; falls back to a segment-driven KYC
+  //                  reference table when no owners yet AND the segment
+  //                  rule defines KYC documents.
+  //   trade-licence → segment-driven reference table (segmentDocs.tl)
+  //                  with a static TL_DOCS fallback.
   const isOwners      = sub === 'owner-kyc';
   const isTradeLegacy = sub === 'trade-licence';
   const kind: 'dd' | 'tl' = sub === 'company-dd' ? 'dd' : 'tl';
@@ -1691,19 +1916,49 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
       (o.designation || '').toLowerCase().includes(q) ||
       (o.official_email || '').toLowerCase().includes(q));
   }, [owners, q]);
-  // Trade Licence reference list — kept in sync via search so the
-  // toolbar count + filter still feel responsive even though the data
-  // is static.
+  /* Segment-rule reference list per sub-tab. The DD / KYC / TL master
+   * rows the active segment's rule references are surfaced here as a
+   * 7-column reference table — the same table layout the Trade Licence
+   * sub-tab has always used. Source per sub-tab:
+   *   company-dd   → segmentDocs.dd
+   *   owner-kyc    → segmentDocs.kyc
+   *   trade-licence → segmentDocs.tl, falling back to static TL_DOCS
+   * Each row is normalized to { code, name, authority, expiry, status }
+   * so a single render path serves all three tabs. */
+  const segmentRefSource = useMemo(() => {
+    const norm = (rows: any[]) => rows.map(d => ({
+      code:      d.code,
+      name:      d.name,
+      authority: d.authority ?? '—',
+      expiry:    d.expiry ?? 'N/A',
+      status:    d.requirement === 'M' ? 'mandatory' : 'optional',
+    }));
+    if (sub === 'company-dd')   return norm(segmentDocs.dd || []);
+    if (sub === 'owner-kyc')    return norm(segmentDocs.kyc || []);
+    if (sub === 'trade-licence') {
+      const tl = segmentDocs.tl || [];
+      return tl.length > 0 ? norm(tl) : TL_DOCS;
+    }
+    return [];
+  }, [sub, segmentDocs]);
   const filteredTradeLegacy = useMemo(() => {
-    if (!q) return TL_DOCS;
-    return TL_DOCS.filter(d =>
+    if (!q) return segmentRefSource;
+    return segmentRefSource.filter(d =>
       d.code.toLowerCase().includes(q) ||
       d.name.toLowerCase().includes(q) ||
-      d.authority.toLowerCase().includes(q));
-  }, [q]);
+      (d.authority || '').toLowerCase().includes(q));
+  }, [q, segmentRefSource]);
+  /* Which sub-tabs are currently rendering the 7-col reference table.
+   * Always for trade-licence (matches prior behavior). For company-dd
+   * and owner-kyc, only when (a) no live data yet AND (b) the segment
+   * provides reference rows — once the user adds a real upload (or an
+   * owner), the live tables take over. */
+  const showSegmentRef = isTradeLegacy
+    || (sub === 'company-dd' && filteredDocs.length === 0 && (segmentDocs.dd?.length ?? 0) > 0)
+    || (sub === 'owner-kyc'  && owners.length === 0       && (segmentDocs.kyc?.length ?? 0) > 0);
 
-  const totalRows = isOwners ? filteredOwners.length
-                  : isTradeLegacy ? filteredTradeLegacy.length
+  const totalRows = showSegmentRef ? filteredTradeLegacy.length
+                  : isOwners       ? filteredOwners.length
                   : filteredDocs.length;
 
   const maxPage = Math.max(1, Math.ceil(totalRows / KYC_PER_PAGE));
@@ -1735,33 +1990,11 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
               <span className="acm-section-title">{meta.title}</span>
               <span className="acm-section-sub">{meta.sub}</span>
             </div>
-            {meta.showAdd && (() => {
-              // Trade Licence is still placeholder-only — disable add
-              // until the backend wiring lands. Company DD and Owner
-              // KYC are fully wired so they fall through to the normal
-              // enabled / customerSaved gating.
-              const isPlaceholder = isTradeLegacy;
-              const isDisabled    = isPlaceholder || !customerSaved;
-              const reason = isPlaceholder
-                ? 'Trade Licence is design-only for now. Backend wiring coming soon.'
-                : !customerSaved
-                  ? 'Save the customer (Stage 1) first to enable adding KYC documents'
-                  : '';
-              return (
-                <Tooltip label={reason} disabled={!isDisabled}>
-                  <button
-                    type="button"
-                    className="acm-add-pill"
-                    onClick={() => { if (!isDisabled) onAdd(sub); }}
-                    disabled={isDisabled}
-                    style={isDisabled ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
-                  >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    {meta.addLabel}
-                  </button>
-                </Tooltip>
-              );
-            })()}
+            {/* Stage 2 sub-tab headers no longer carry a "+ Add" pill —
+                the section is driven entirely by the segment-rule
+                reference table below. Per-row upload actions on each
+                reference row are still the path to attaching real
+                files in a future iteration. */}
           </div>
         </div>
 
@@ -1770,16 +2003,19 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
             <svg className="acm-doc-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="search" placeholder={meta.placeholder} value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <div className="acm-doc-count">{totalRows} {isOwners ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}</div>
+          <div className="acm-doc-count">{totalRows} {(!showSegmentRef && isOwners) ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}</div>
         </div>
 
         <div className="acm-section-body acm-section-body-table">
           <div className="acm-table-wrap">
-            {isTradeLegacy ? (
-              /* Design-only Trade Licence table — keeps the
-                 Mandatory/Optional toggle + upload/download icons from
-                 the original mock. Wiring to /customers/{id}/documents
-                 with kind='tl' will land in a follow-up. */
+            {showSegmentRef ? (
+              /* Segment-rule reference table — shared layout for
+                 Company DD, Owner KYC, and Trade Licence sub-tabs.
+                 Rows come from the segment's configured rule (or the
+                 static TL_DOCS fallback for Trade Licence when no rule
+                 exists). Upload + download icons stay design-only for
+                 now; the "+ Add" pill above still launches the wired
+                 add flow. */
               <table className="acm-table">
                 <thead><tr>
                   <th>Sr No</th><th>Auto Code</th><th>Document Name</th>
@@ -1787,7 +2023,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                 </tr></thead>
                 <tbody>
                   {totalRows === 0 ? (
-                    <tr className="acm-empty-row"><td colSpan={7}>No trade licence documents match your search.</td></tr>
+                    <tr className="acm-empty-row"><td colSpan={7}>No reference documents match your search.</td></tr>
                   ) : legacySlice.map((dl, i) => {
                     const sr = start + i + 1;
                     const srPad = String(sr).padStart(2, '0');
@@ -1805,18 +2041,11 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                             : <span className="acm-status-toggle"><span className="acm-status-mandatory">Mandatory</span><span className="acm-status-optional is-on">Optional</span></span>}
                         </td>
                         <td>
-                          <div className="acm-row-actions">
-                            <Tooltip label="Upload (coming soon)">
-                              <button type="button" className="acm-doc-action acm-doc-action-upload" aria-label="Upload" disabled style={{ opacity: 0.7, cursor: 'not-allowed' }}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                              </button>
-                            </Tooltip>
-                            <Tooltip label="Download (coming soon)">
-                              <button type="button" className="acm-doc-action acm-doc-action-download" aria-label="Download" disabled style={{ opacity: 0.7, cursor: 'not-allowed' }}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                              </button>
-                            </Tooltip>
-                          </div>
+                          <SegmentRefRowActions
+                            refKey={`${sub}::${dl.code}`}
+                            uploads={segmentRefUploads}
+                            setUploads={setSegmentRefUploads}
+                          />
                         </td>
                       </tr>
                     );
@@ -1939,8 +2168,21 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
    once Stage 2 became data-driven and inlined its row rendering. */
 
 /* ───── Stage 3 — Evidence Vault KYC Documents ───── */
-function Stage3KycDocs({ sub, setSub }: { sub: EvSubTab; setSub: (s: EvSubTab) => void }) {
+function Stage3KycDocs({ sub, setSub, segmentDocs, segmentRefUploads }: {
+  sub: EvSubTab;
+  setSub: (s: EvSubTab) => void;
+  segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
+  segmentRefUploads: Record<string, { file: File; url: string; name: string }>;
+}) {
   const meta = EV_SUB_META[sub];
+  /* Stage 3 KYC vault is a read-only roll-up of the Stage 2
+   * segment-rule uploads. Map each EvSubTab to the matching Stage 2
+   * sub-tab (the refKey prefix that the uploader stored uploads
+   * under) and the segmentDocs category that drives the row list. */
+  const stage2Key = sub === 'dd' ? 'company-dd' : sub === 'kyc' ? 'owner-kyc' : 'trade-licence';
+  const sourceRows = sub === 'dd' ? segmentDocs.dd
+                    : sub === 'kyc' ? segmentDocs.kyc
+                    : segmentDocs.tl;
   return (
     <div>
       <div className="acm-nested-tabs">
@@ -1966,27 +2208,35 @@ function Stage3KycDocs({ sub, setSub }: { sub: EvSubTab; setSub: (s: EvSubTab) =
             <table className="acm-table">
               <thead><tr><th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>Issuing Authority</th><th>Expiry</th><th>Status</th><th>Attachment</th></tr></thead>
               <tbody>
-                {meta.data.map((d, i) => {
-                  let st: React.ReactNode;
-                  if (d.status === 'active') st = <span className="acm-status-active">✓ Active</span>;
-                  else if (d.status === 'mandatory') st = <span className="acm-status-mandatory is-on">✓ Mandatory</span>;
-                  else st = <span className="acm-status-optional is-on">Optional</span>;
-                  const expCls = d.expiry === 'N/A' ? 'acm-expiry-na' : d.expiry === 'Varies' ? 'acm-expiry-varies' : 'acm-expiry-date';
+                {sourceRows.length === 0 ? (
+                  <tr className="acm-empty-row"><td colSpan={7}>No segment rule loaded for this category yet — pick a segment on Stage 1.</td></tr>
+                ) : sourceRows.map((d: any, i: number) => {
+                  const refKey = `${stage2Key}::${d.code}`;
+                  const uploaded = segmentRefUploads[refKey];
+                  const expCls = !d.expiry || d.expiry === 'N/A' ? 'acm-expiry-na' : 'acm-expiry-date';
                   return (
                     <tr key={d.code}>
                       <td>{i + 1}</td>
                       <td><span className="acm-doc-code">{d.code}</span></td>
                       <td style={{ fontWeight: 700, color: '#1f2937' }}>{d.name}</td>
-                      <td style={{ color: '#6b7280' }}>{d.authority}</td>
-                      <td><span className={expCls}>{d.expiry}</span></td>
-                      <td>{st}</td>
+                      <td style={{ color: '#6b7280' }}>{d.authority || '—'}</td>
+                      <td><span className={expCls}>{d.expiry || 'N/A'}</span></td>
                       <td>
-                        <Tooltip label="Preview the uploaded attachment">
-                          <button type="button" className="acm-attach-link" aria-label="View attachment">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                            View Attachment
-                          </button>
-                        </Tooltip>
+                        {d.requirement === 'M'
+                          ? <span className="acm-status-mandatory is-on">✓ Mandatory</span>
+                          : <span className="acm-status-optional is-on">Optional</span>}
+                      </td>
+                      <td>
+                        {uploaded ? (
+                          <Tooltip label={`Open ${uploaded.name}`}>
+                            <a href={uploaded.url} target="_blank" rel="noreferrer" className="acm-attach-link" aria-label="View attachment">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                              {uploaded.name}
+                            </a>
+                          </Tooltip>
+                        ) : (
+                          <span style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: 11 }}>Not uploaded in Stage 2</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -3122,7 +3372,7 @@ function HistoryStage1({ form, locations, customerId }: { form: any; locations: 
         <ReadInline label="Customer Type"             value={form.coType} />
 
         <ReadInline label="Company Website"           value={form.coWeb} />
-        <ReadInline label="Customer Segment"          value={form.coSeg} />
+        <ReadInline label="Customer Segment"          value={(form.coSeg ?? []).join(', ')} />
         <ReadInline label="Classification"            value={form.coClass} />
         <ReadInline label="Risk Level"                value={form.coRisk} />
 

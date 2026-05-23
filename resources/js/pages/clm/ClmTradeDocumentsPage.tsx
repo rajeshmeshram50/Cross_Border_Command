@@ -5,13 +5,12 @@ import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import { DeleteConf, SimpleNameModal } from './clmCommon';
+import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 
 /* Central CLM → Trade Documents Master (two tabs: List + Library). */
 
 type TdName = { id: number; code: string; name: string };
 type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; file_path: string | null };
-
-const DOC_TYPES = ['Declaration', 'Undertaking', 'Authorization', 'Bond', 'Certificate', 'Letter'] as const;
 
 export default function ClmTradeDocumentsPage() {
   const toast = useToast();
@@ -189,14 +188,6 @@ function LibraryPane({ rows, names, loading, reload }: { rows: TdLib[]; names: T
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page);
 
-  const onSave = async (form: Omit<TdLib, 'id'|'code'>, id?: number) => {
-    try {
-      if (id) await api.put(`/clm/trade-doc-library/${id}`, form);
-      else    await api.post('/clm/trade-doc-library', form);
-      toast.success(id ? 'Updated' : 'Added', form.title);
-      setModalOpen(false); setEditing(null); reload();
-    } catch (e: any) { toast.error('Save failed', e?.response?.data?.message ?? 'Could not save'); }
-  };
   const onDelete = async () => {
     if (!pendingDelete) return;
     try { await api.delete(`/clm/trade-doc-library/${pendingDelete.id}`); toast.success('Deleted', pendingDelete.title); setPendingDelete(null); reload(); }
@@ -283,111 +274,16 @@ function LibraryPane({ rows, names, loading, reload }: { rows: TdLib[]; names: T
         )}
       </div>
 
-      {modalOpen && <LibraryModal existing={editing} names={names} nextCode={`TD-${String(rows.length + 1).padStart(3, '0')}`} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />}
-      {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
+      {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+
+      <ClmTradeDocumentDraftModal
+        open={modalOpen}
+        existing={editing}
+        names={names}
+        nextCode={editing?.code ?? `TDL-${String(rows.length + 1).padStart(3, '0')}`}
+        onClose={() => { setModalOpen(false); setEditing(null); }}
+        onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
+      />
     </div>
   );
-}
-
-function LibraryModal(props: { existing: TdLib | null; names: TdName[]; nextCode: string; onClose: () => void; onSave: (f: Omit<TdLib, 'id'|'code'>) => void; }) {
-  const { existing, names, nextCode, onClose, onSave } = props;
-  const isEdit = !!existing;
-  const [name, setName]       = useState(existing?.name ?? '');
-  const [title, setTitle]     = useState(existing?.title ?? '');
-  const [docType, setDocType] = useState(existing?.doc_type ?? DOC_TYPES[0]);
-  const [purpose, setPurpose] = useState(existing?.purpose ?? '');
-  const [party, setParty]     = useState(existing?.party ?? '');
-  const [filePath, setFilePath] = useState(existing?.file_path ?? '');
-  const [errors, setErrors]   = useState<Record<string, string>>({});
-  const [saving, setSaving]   = useState(false);
-
-  const handleSave = async () => {
-    const next: Record<string, string> = {};
-    if (!name.trim())    next.name    = 'Document name is required';
-    if (!title.trim())   next.title   = 'Title is required';
-    if (!purpose.trim()) next.purpose = 'Purpose is required';
-    if (!party.trim())   next.party   = 'Party is required';
-    setErrors(next);
-    if (Object.keys(next).length) return;
-    setSaving(true);
-    try {
-      await Promise.resolve(onSave({
-        name: name.trim(), title: title.trim(), doc_type: docType.trim(),
-        purpose: purpose.trim(), party: party.trim(), file_path: filePath?.trim() || null,
-      }));
-    } finally { setSaving(false); }
-  };
-
-  return createPortal((
-    <div className="clm-modal-bd" onClick={onClose}>
-      <div className="clm-modal clm-modal-wide" onClick={e => e.stopPropagation()}>
-        <div className="clm-modal-head">
-          <div className="clm-modal-head-left">
-            <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg></div>
-            <div>
-              <div className="clm-modal-head-title">{isEdit ? 'Edit Library Entry' : 'Add Library Entry'}</div>
-              <div className="clm-modal-head-sub">{isEdit ? 'Update trade document template details.' : 'Register a reusable trade document template.'}</div>
-            </div>
-          </div>
-          <button className="clm-modal-close" onClick={onClose}>×</button>
-        </div>
-        <div className="clm-modal-body">
-          <div className="clm-autocode">
-            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
-            <div className="clm-autocode-text">
-              <div className="clm-autocode-label">{isEdit ? 'Trade Doc ID' : 'Auto Generated Code'}</div>
-              <div className="clm-autocode-val">{isEdit ? existing!.code : nextCode}</div>
-            </div>
-            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div className="clm-field">
-              <label className="clm-field-label">Document Name <span className="clm-req">*</span></label>
-              <select className={`clm-select ${errors.name ? 'clm-input-err' : ''}`} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }}>
-                <option value="">— Select —</option>
-                {names.map(n => <option key={n.id} value={n.name}>{n.name}</option>)}
-                {name && !names.find(n => n.name === name) && <option value={name}>{name}</option>}
-              </select>
-              <div className="clm-field-hint">Pulls from Trade Document Names tab.</div>
-              {errors.name && <div className="clm-err">{errors.name}</div>}
-            </div>
-            <div className="clm-field">
-              <label className="clm-field-label">Type <span className="clm-req">*</span></label>
-              <select className="clm-select" value={docType} onChange={e => setDocType(e.target.value)}>
-                {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">Document Title <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.title ? 'clm-input-err' : ''}`} placeholder="e.g. Supplier Self Declaration Form" value={title} onChange={e => { setTitle(e.target.value); setErrors(p => ({ ...p, title: '' })); }} />
-            {errors.title && <div className="clm-err">{errors.title}</div>}
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">Purpose <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.purpose ? 'clm-input-err' : ''}`} placeholder="What this template is for…" value={purpose} onChange={e => { setPurpose(e.target.value); setErrors(p => ({ ...p, purpose: '' })); }} />
-            {errors.purpose && <div className="clm-err">{errors.purpose}</div>}
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">Applicable Party <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.party ? 'clm-input-err' : ''}`} placeholder="Comma-separated, e.g. Buyer, Supplier-Material" value={party} onChange={e => { setParty(e.target.value); setErrors(p => ({ ...p, party: '' })); }} />
-            <div className="clm-field-hint">List the parties signing or using the document.</div>
-            {errors.party && <div className="clm-err">{errors.party}</div>}
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">File Path (optional)</label>
-            <input className="clm-input" placeholder="storage/trade-docs/supplier-decl.docx" value={filePath ?? ''} onChange={e => setFilePath(e.target.value)} />
-            <div className="clm-field-hint">Storage-relative path to the docx / pdf template.</div>
-          </div>
-        </div>
-        <div className="clm-modal-foot">
-          <button className="clm-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="clm-btn-save" onClick={() => void handleSave()} disabled={saving}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            {saving ? 'Saving…' : (isEdit ? 'Update' : 'Save')}
-          </button>
-        </div>
-      </div>
-    </div>
-  ), document.body);
 }

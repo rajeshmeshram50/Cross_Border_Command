@@ -7,6 +7,7 @@ use App\Mail\PasswordChangedMail;
 use App\Mail\WelcomeCredentialsMail;
 use App\Models\Branch;
 use App\Models\Employee;
+use App\Models\Masters\LeavePlans;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
@@ -511,6 +512,17 @@ class EmployeeController extends Controller
                 ]);
                 $employee = Employee::create($payload);
 
+                // Mirror the leave_plan dropdown selection into the
+                // leave_plan_employees pivot. The frontend used to do
+                // this via a separate fire-and-forget POST after save,
+                // which dropped silently when the call lost its race
+                // with the modal closing — employees got
+                // employees.leave_plan set but no pivot row, so their
+                // own Leave tab rendered "No leave plan assigned".
+                // Doing it here inside the same transaction makes the
+                // pivot the source of truth.
+                $this->syncLeavePlanPivot($employee, $data['leave_plan'] ?? null, $auth?->id);
+
                 // Backfill emp_code onto the user row so legacy code that reads
                 // user.employee_code keeps working.
                 $loginUser->update(['employee_code' => $empCode]);
@@ -608,7 +620,8 @@ class EmployeeController extends Controller
 
         $oldStatus = (string) $row->getOriginal('status');
 
-        DB::transaction(function () use ($row, $data, $newStep, $newMacro, $oldStatus) {
+        $authId = $request->user()?->id;
+        DB::transaction(function () use ($row, $data, $newStep, $newMacro, $oldStatus, $authId) {
             // first_name might not be in $data on a partial step-3/step-4
             // PATCH (the frontend only sends the fields for the step it
             // just saved). Fall back to the existing row value so
@@ -622,6 +635,17 @@ class EmployeeController extends Controller
                 'wizard_step_completed'       => $newStep,
                 'onboarding_stage_completed'  => $newMacro,
             ]));
+
+            // Keep the leave_plan_employees pivot in sync whenever the
+            // Step 3 PUT carries a leave_plan value. A partial PATCH
+            // that doesn't touch Step 3 won't have the key, so we
+            // intentionally skip the sync rather than clearing the
+            // existing assignment. Same source-of-truth rationale as
+            // store() — without this the employee's Leave tab stays
+            // empty even though the dropdown shows the plan selected.
+            if (array_key_exists('leave_plan', $data)) {
+                $this->syncLeavePlanPivot($row, $data['leave_plan'], $authId);
+            }
 
             // Keep the linked user in sync — name + email + phone changes here
             // should land on the login account too.
@@ -1385,6 +1409,59 @@ class EmployeeController extends Controller
             $out .= $pool[random_int(0, strlen($pool) - 1)];
         }
         return $out;
+    }
+
+    /**
+     * Mirror the Step 3 Leave Plan dropdown selection into the
+     * `leave_plan_employees` pivot so the employee's own Leave tab
+     * (which reads from the pivot, not the legacy `leave_plan` string
+     * column) shows their plan + accrued balances after login.
+     *
+     * - Numeric value      → upsert pivot to that plan_id (one plan per
+     *                        employee; unique constraint on employee_id
+     *                        guarantees old assignments are replaced).
+     * - Explicit null / "" → wipe the pivot row (admin cleared the
+     *                        dropdown — the legacy string column also
+     *                        becomes null in the same save).
+     * - Non-numeric string → legacy plan-name data left over from before
+     *                        the dropdown was switched to plan_id; leave
+     *                        the pivot alone, don't guess at a match.
+     *
+     * Cross-tenant guard: if the chosen plan belongs to a different
+     * client_id than the employee, the assignment is dropped silently
+     * — same defensive shape as LeavePlanController::assignEmployees,
+     * but here we can't 422 because the caller is mid-wizard.
+     */
+    private function syncLeavePlanPivot(Employee $employee, $rawValue, ?int $assignedBy): void
+    {
+        // Explicit clear — admin deselected the plan.
+        if ($rawValue === null || $rawValue === '') {
+            DB::table('leave_plan_employees')
+                ->where('employee_id', $employee->id)
+                ->delete();
+            return;
+        }
+
+        if (!is_numeric($rawValue)) return; // legacy plan-name string — ignore.
+        $planId = (int) $rawValue;
+        if ($planId <= 0) return;
+
+        $plan = LeavePlans::find($planId);
+        if (!$plan) return;
+        // Same-tenant check — never let one tenant's plan get assigned
+        // to another tenant's employee, even if a stale payload arrives.
+        if ($plan->client_id !== null && $plan->client_id !== $employee->client_id) return;
+
+        DB::table('leave_plan_employees')->updateOrInsert(
+            ['employee_id' => $employee->id],
+            [
+                'leave_plan_id' => $planId,
+                'assigned_at'   => now(),
+                'assigned_by'   => $assignedBy,
+                'updated_at'    => now(),
+                'created_at'    => now(),
+            ],
+        );
     }
 
     /**

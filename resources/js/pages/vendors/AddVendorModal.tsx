@@ -4,6 +4,7 @@ import api from '../../api';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import {
   validateEmail, validatePincode, validateWebsite,
@@ -266,16 +267,25 @@ export default function AddVendorModal(props: {
   const [complianceOpts, setComplianceOpts]     = useState<Opt[]>([]);
   const [behaviourOpts,  setBehaviourOpts]      = useState<Opt[]>([]);
   const [countryOpts,    setCountryOpts]        = useState<Opt[]>([]);
-  /* state_codes master rows (eager-loaded with state.name) drive the
-     State dropdown AND the State Code auto-fill. */
+  /* master_states drives the State dropdown — full per-country list
+     (1800+ rows across 90+ countries). Loaded once on mount and
+     cascaded off the selected Country via the `country_id` field. */
+  const [stateRows, setStateRows] = useState<Array<{
+    id: string;
+    name: string;
+    country_id: string;
+  }>>([]);
+  /* master_state_codes — only used for the State Code auto-fill once
+     a state is picked. Most countries have no entries here (it was
+     seeded for India only at boot); the State dropdown must not be
+     gated by it or non-Indian countries would show zero options.
+     Each row carries `state_id` (the FK into master_states) and
+     `state_code` (the value we auto-fill into the State Code field). */
   const [stateCodeRows, setStateCodeRows] = useState<Array<{
     id: string;
     state_id: string;
     state_code: string;
     state_name: string;
-    /* country_id rides along the state_codes payload so the State
-       dropdown can be filtered by the currently-selected Country —
-       picking India narrows the list to Indian states, etc. */
     country_id: string;
   }>>([]);
   /* The State dropdown is now declared further down (after `country`
@@ -316,8 +326,31 @@ export default function AddVendorModal(props: {
   const [website,     setWebsite]     = useState('');
   const [riskLevel,   setRiskLevel]   = useState('');
   const [vendorBehaviour, setVendorBehaviour] = useState('');
-  const [segment,     setSegment]     = useState('');
+  /* Segment is multi-valued — array of segment ids (as strings) so a
+   * supplier can be tagged with several segments and the segment-rule
+   * resolver unions all their KYC/DD/TL/TD/QC docs into Step 2/3. The
+   * legacy `segment_id` column is scalar, so on save we send the first
+   * id as `segment_id` and the joined list as `segment_ids`. */
+  const [segment,     setSegment]     = useState<string[]>([]);
   const [complianceBehaviour, setComplianceBehaviour] = useState('');
+
+  /* Segment-rule template — resolved KYC/DD/TL/TD/QC master rows for the
+   * currently-selected supplier segment. Renders as a reference banner
+   * above the Step 2 Company DD and Trade License tables so onboarders
+   * see the segment's required uploads at a glance. Stays empty when no
+   * segment is picked or the segment has no rule configured. */
+  type SegDocRow = { id:number; code:string; name:string; authority?:string|null; expiry?:string|null; status?:string; requirement:'M'|'O' };
+  type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
+  const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
+  const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
+
+  /* Per-row file uploads against the segment-rule reference rows in
+   * Step 2 (Company DD / Owner KYC / Trade License). Key:
+   * `${kycTab}::${doc.code}`. Value: File + blob URL. Reset on modal
+   * close — held at this level (not inside SupplierSegmentRefTable)
+   * so switching sub-tabs doesn't drop uploads. */
+  type SegRefUpload = { file: File; url: string; name: string };
+  const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
 
   /* ─── Step 1: Address + primary contact ─── */
   const [registeredOffice, setRegisteredOffice] = useState('');
@@ -327,23 +360,20 @@ export default function AddVendorModal(props: {
   const [city,      setCity]      = useState('');
   const [pincode,   setPincode]   = useState('');
 
-  /* State dropdown is ID-based — `value` is state_id, `label` is the
-     state's name. We cascade off the selected Country (when one is
-     picked) so the list narrows to that country's states; the state
-     code auto-fills once a state is picked. De-duped by state_id
-     because the state_codes master can carry multiple codes per state
-     in theory, and we only want one entry per state on the picker. */
+  /* State dropdown options. Source is master_states (the full per-
+     country list), filtered by the selected Country. Country is the
+     master_countries id stored as a string, so the comparison matches
+     `country_id` (also stringified) directly. When no country is
+     picked yet we show every state — the cascade narrows it as soon
+     as the user chooses one. */
   const stateOpts = useMemo<Opt[]>(() => {
-    const seen = new Set<string>();
-    const filtered = stateCodeRows.filter(r => {
-      if (!r.state_id) return false;
-      if (country && r.country_id && r.country_id !== country) return false;
-      if (seen.has(r.state_id)) return false;
-      seen.add(r.state_id);
-      return true;
-    });
-    return filtered.map(r => ({ value: r.state_id, label: r.state_name }));
-  }, [stateCodeRows, country]);
+    const filtered = country
+      ? stateRows.filter(r => r.country_id === country)
+      : stateRows;
+    return filtered
+      .map(r => ({ value: r.id, label: r.name }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [stateRows, country]);
   const [contactName, setContactName] = useState('');
   const [designation, setDesignation] = useState('');
   const [contactNo,   setContactNo]   = useState('');
@@ -517,8 +547,30 @@ export default function AddVendorModal(props: {
         return [] as Array<{ id: string; state_id: string; state_code: string; state_name: string; country_id: string }>;
       }
     };
+    /* master_states is the full per-country state list. Pulled
+       directly here (instead of relying on state_codes' eager-loaded
+       relation) because state_codes only carries ~10 Indian rows —
+       picking any other country was returning an empty State dropdown
+       before this. country_id rides along so the dropdown can cascade
+       off the chosen Country. */
+    const fetchStates = async () => {
+      try {
+        type S = { id: number | string; name?: string; country_id?: number | string; status?: string };
+        const res = await api.get<S[]>(`/master/states`);
+        return (res.data || [])
+          .filter(r => String(r.status ?? '').toLowerCase() !== 'inactive')
+          .map(r => ({
+            id: String(r.id),
+            name: String(r.name ?? ''),
+            country_id: String(r.country_id ?? ''),
+          }))
+          .filter(r => r.name !== '');
+      } catch {
+        return [] as Array<{ id: string; name: string; country_id: string }>;
+      }
+    };
     (async () => {
-      const [vt, rl, bh, sg, cb, co, sc] = await Promise.all([
+      const [vt, rl, bh, sg, cb, co, sc, st] = await Promise.all([
         fetchMaster('vendor_types',          'name'),
         fetchMaster('risk_levels',           'name'),
         fetchMaster('vendor_behaviour',      'name'),
@@ -526,6 +578,7 @@ export default function AddVendorModal(props: {
         fetchMaster('compliance_behaviours', 'name'),
         fetchMaster('countries',             'name'),
         fetchStateCodes(),
+        fetchStates(),
       ]);
       setVendorTypeOpts(vt);
       setRiskLevelOpts(rl);
@@ -534,8 +587,63 @@ export default function AddVendorModal(props: {
       setComplianceOpts(cb);
       setCountryOpts(co);
       setStateCodeRows(sc);
+      setStateRows(st);
     })();
   }, []);
+
+  /* Segment-rule template fetch (multi-segment). The supplier
+   * `segment` state is an array of DB ids (stringified). For each id
+   * we hit the resolver in parallel and merge category arrays —
+   * deduped by `code`, with Mandatory winning over Optional so a doc
+   * required by any segment stays mandatory in the union. */
+  useEffect(() => {
+    /* Selection changed → previously-attached uploads no longer match
+     * (the DCP rule's codes are different). Wipe them and revoke
+     * blob URLs so the GC can reclaim. */
+    setSegmentRefUploads(prev => {
+      Object.values(prev).forEach(u => { try { URL.revokeObjectURL(u.url); } catch {} });
+      return {};
+    });
+
+    const ids = (segment ?? [])
+      .map(s => Number(s))
+      .filter(n => Number.isFinite(n) && n > 0);
+    if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+
+    let cancelled = false;
+    Promise.all(
+      ids.map(id =>
+        api.get(`/clm/segment-rules/for-segment/${id}`)
+          .then(r => r.data?.data ?? {})
+          .catch(() => ({}))
+      )
+    ).then(results => {
+      if (cancelled) return;
+      const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc'): SegDocRow[] => {
+        const map = new Map<string, SegDocRow>();
+        for (const r of results) {
+          const rows: SegDocRow[] = Array.isArray(r?.[cat]) ? r[cat] : [];
+          for (const d of rows) {
+            const existing = map.get(d.code);
+            if (!existing) { map.set(d.code, d); continue; }
+            if (existing.requirement !== 'M' && d.requirement === 'M') {
+              map.set(d.code, { ...existing, requirement: 'M' });
+            }
+          }
+        }
+        return Array.from(map.values());
+      };
+      setSegmentDocs({
+        kyc: mergeCat('kyc'),
+        dd:  mergeCat('dd'),
+        tl:  mergeCat('tl'),
+        td:  mergeCat('td'),
+        qc:  mergeCat('qc'),
+      });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segment]);
 
   /* ──────────────────────────────────────────────────────────────────
    * Edit-mode prefill — fires once on mount when the parent passed an
@@ -607,7 +715,16 @@ export default function AddVendorModal(props: {
         setVendorType(numStr(v.vendor_type_id));
         setRiskLevel(numStr(v.risk_level_id));
         setVendorBehaviour(numStr(v.vendor_behaviour_id));
-        setSegment(numStr(v.segment_id));
+        /* Multi-segment hydration. The legacy `segment_id` column is
+         * scalar — when the server starts shipping a `segment_ids`
+         * array (or comma-joined string), we honour it; otherwise we
+         * fall back to a single-element array sourced from segment_id. */
+        const segIds: string[] = Array.isArray((v as any).segment_ids)
+          ? (v as any).segment_ids.map((x: any) => String(x)).filter(Boolean)
+          : typeof (v as any).segment_ids === 'string'
+            ? (v as any).segment_ids.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : v.segment_id ? [String(v.segment_id)] : [];
+        setSegment(segIds);
         setComplianceBehaviour(numStr(v.compliance_behaviour_id));
 
         // Step 1 — primary address + extra contacts
@@ -757,7 +874,8 @@ export default function AddVendorModal(props: {
     if (!vendorType)         errs.vendorType          = 'Supplier Type is required';
     if (!riskLevel)          errs.riskLevel           = 'Risk Level is required';
     if (!vendorBehaviour)    errs.vendorBehaviour     = 'Supplier Behaviour is required';
-    if (!segment)            errs.segment             = 'Supplier Segment is required';
+    if (!Array.isArray(segment) || segment.length === 0)
+                              errs.segment             = 'Select at least one supplier segment';
     if (!complianceBehaviour) errs.complianceBehaviour = 'Compliance Behaviour is required';
     if (website)             { const e = validateWebsite(website); if (e) errs.website = e; }
     if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); toast.error('Missing required fields', 'Please fix the highlighted fields'); return false; }
@@ -772,7 +890,11 @@ export default function AddVendorModal(props: {
         vendor_type_id: vendorType ? Number(vendorType) : null,
         risk_level_id: riskLevel ? Number(riskLevel) : null,
         vendor_behaviour_id: vendorBehaviour ? Number(vendorBehaviour) : null,
-        segment_id: segment ? Number(segment) : null,
+        /* Multi-segment: the legacy `segment_id` column is scalar so
+         * we send the first selected id as primary. `segment_ids` is
+         * a comma-joined list for the future column. */
+        segment_id: (segment ?? [])[0] ? Number((segment ?? [])[0]) : null,
+        segment_ids: (segment ?? []).join(','),
         compliance_behaviour_id: complianceBehaviour ? Number(complianceBehaviour) : null,
       });
       setVendorId(res.data?.data?.id ?? vendorId);
@@ -1550,7 +1672,13 @@ export default function AddVendorModal(props: {
                       <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts} />
                     </Field>
                     <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
-                      <SelectInput value={segment} onChange={(v) => { setSegment(v); clearFieldError('segment'); }} placeholder="Select Segment" options={segmentOpts} />
+                      <MasterMultiSelect
+                        values={segment}
+                        options={segmentOpts}
+                        placeholder="Select Segment"
+                        addMorePlaceholder="+ Add another segment"
+                        onChange={vs => { setSegment(vs); clearFieldError('segment'); }}
+                      />
                     </Field>
                     <Field label="Compliance Behaviour" required addNew onAdd={() => setQuickAdd('compliance_behaviours')} error={fieldErrors.complianceBehaviour}>
                       <SelectInput value={complianceBehaviour} onChange={(v) => { setComplianceBehaviour(v); clearFieldError('complianceBehaviour'); }} placeholder="Select" options={complianceOpts} />
@@ -1667,7 +1795,7 @@ export default function AddVendorModal(props: {
                     <div className="avm-id-summary-row">
                       <span className="avm-id-pair"><span className="avm-id-k">RISK LEVEL :</span> <span className="avm-id-v">{labelFor(riskLevel, riskLevelOpts) || '—'}</span></span>
                       <span className="avm-id-pair"><span className="avm-id-k">VENDOR BEHAVIOUR :</span> <span className="avm-id-v">{labelFor(vendorBehaviour, behaviourOpts) || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">SEGMENT :</span> <span className="avm-id-v">{labelFor(segment, segmentOpts) || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">SEGMENT :</span> <span className="avm-id-v">{segment.length > 0 ? segment.map(id => labelFor(id, segmentOpts)).filter(Boolean).join(', ') : '—'}</span></span>
                       <span className="avm-id-pair"><span className="avm-id-k">COMPLIANCE BEHAVIOUR :</span> <span className="avm-id-v">{labelFor(complianceBehaviour, complianceOpts) || '—'}</span></span>
                     </div>
                     <div className="avm-id-summary-row">
@@ -1823,11 +1951,17 @@ export default function AddVendorModal(props: {
           )}
 
           {/* ─── STEP 2 ─── */}
+          {/* The "+ Add" header pill is hidden for the three KYC sub-tabs
+              (company / owner / license) — rows there are sourced from
+              the segment-rule reference tables now. Bank Details and GST
+              Scrutiny still need the add button for manual entries. */}
           {step === 2 && (
             <SectionCard tone="teal" icon={<i className="ri-shield-check-line" />} title="KYC / Due Diligence Details" subtitle="Upload statutory & identity proofs" headerAction={
-              <button className="avm-section-add-btn" onClick={kycTabAddMeta[kycTab].onClick}>
-                {kycTabAddMeta[kycTab].label}
-              </button>
+              (kycTab === 'bank' || kycTab === 'gst') ? (
+                <button className="avm-section-add-btn" onClick={kycTabAddMeta[kycTab].onClick}>
+                  {kycTabAddMeta[kycTab].label}
+                </button>
+              ) : null
             }>
               <div className="avm-pill-tabs">
                 <button className={`avm-pill ${kycTab === 'company' ? 'on' : ''}`} onClick={() => setKycTab('company')}>Company Due Diligence Details</button>
@@ -1838,26 +1972,56 @@ export default function AddVendorModal(props: {
               </div>
 
               {kycTab === 'company' && (
-                <DdTable
-                  rows={ddRows}
-                  onRemove={removeDdRow}
-                  onAttach={attachFileToDd}
-                  onClearFile={(id) => setDdRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
-                />
+                ddRows.length === 0 && segmentDocs.dd.length > 0 ? (
+                  <SupplierSegmentRefTable
+                    title="DD DOCUMENT NAME"
+                    rows={segmentDocs.dd}
+                    tabKey="company"
+                    uploads={segmentRefUploads}
+                    setUploads={setSegmentRefUploads}
+                  />
+                ) : (
+                  <DdTable
+                    rows={ddRows}
+                    onRemove={removeDdRow}
+                    onAttach={attachFileToDd}
+                    onClearFile={(id) => setDdRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
+                  />
+                )
               )}
               {kycTab === 'owner' && (
-                <OwnerKycTable
-                  rows={ownerRows}
-                  onRemove={removeOwnerRow}
-                />
+                ownerRows.length === 0 && segmentDocs.kyc.length > 0 ? (
+                  <SupplierSegmentRefTable
+                    title="KYC DOCUMENT NAME"
+                    rows={segmentDocs.kyc}
+                    tabKey="owner"
+                    uploads={segmentRefUploads}
+                    setUploads={setSegmentRefUploads}
+                  />
+                ) : (
+                  <OwnerKycTable
+                    rows={ownerRows}
+                    onRemove={removeOwnerRow}
+                  />
+                )
               )}
               {kycTab === 'license' && (
-                <TradeLicenseTable
-                  rows={licenseRows}
-                  onRemove={removeLicRow}
-                  onAttach={attachFileToLicense}
-                  onClearFile={(id) => setLicenseRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
-                />
+                licenseRows.length === 0 && segmentDocs.tl.length > 0 ? (
+                  <SupplierSegmentRefTable
+                    title="TRADE LICENSE NAME"
+                    rows={segmentDocs.tl}
+                    tabKey="license"
+                    uploads={segmentRefUploads}
+                    setUploads={setSegmentRefUploads}
+                  />
+                ) : (
+                  <TradeLicenseTable
+                    rows={licenseRows}
+                    onRemove={removeLicRow}
+                    onAttach={attachFileToLicense}
+                    onClearFile={(id) => setLicenseRows(prev => prev.map(r => r.id === id ? { ...r, file: null, fileName: '', existingPath: undefined } : r))}
+                  />
+                )
               )}
               {kycTab === 'bank' && (
                 <BankTable
@@ -1891,13 +2055,66 @@ export default function AddVendorModal(props: {
                     <button className={`avm-sub-pill ${kycSub === 'company' ? 'on' : ''}`} onClick={() => setKycSub('company')}>Company Due Diligence</button>
                     <button className={`avm-sub-pill ${kycSub === 'license' ? 'on' : ''}`} onClick={() => setKycSub('license')}>Trade License</button>
                   </div>
-                  {/* Read-only summary of what was captured in Step 2 — the
-                      Trade Document repository surfaces the same rows so
-                      onboarders can verify everything is in place before
-                      moving to product mapping. */}
-                  {kycSub === 'owner'   && <OwnerKycTable rows={ownerRows}   readOnly />}
-                  {kycSub === 'company' && <DdTable        rows={ddRows}      readOnly />}
-                  {kycSub === 'license' && <TradeLicenseTable rows={licenseRows} readOnly />}
+                  {/* Read-only roll-up of Step 2's segment-rule uploads.
+                      Each sub-pill maps to the matching Step 2 tab key
+                      (`company`/`owner`/`license`) — the same prefix
+                      SupplierSegmentRefTable uses to store uploads, so
+                      the View link here resolves the same blob URL the
+                      user picked on Step 2. */}
+                  {(() => {
+                    const sourceRows = kycSub === 'owner'   ? (segmentDocs.kyc || [])
+                                      : kycSub === 'company' ? (segmentDocs.dd  || [])
+                                      : (segmentDocs.tl || []);
+                    const tabKey = kycSub === 'owner' ? 'owner' : kycSub === 'company' ? 'company' : 'license';
+                    if (sourceRows.length === 0) {
+                      return (
+                        <div className="text-center text-muted py-4">
+                          No segment rule loaded for this category. Pick a segment on Step 1 to populate the vault.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="table-responsive table-card border rounded mt-2">
+                        <table className="table align-middle table-nowrap mb-0">
+                          <thead className="table-light">
+                            <tr>
+                              <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
+                              <th>AUTHORITY</th><th>EXPIRY</th><th>STATUS</th><th>ATTACHMENT</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sourceRows.map((d: any, i: number) => {
+                              const refKey = `${tabKey}::${d.code}`;
+                              const uploaded = segmentRefUploads[refKey];
+                              return (
+                                <tr key={d.code}>
+                                  <td>{String(i + 1).padStart(2, '0')}</td>
+                                  <td><span className="avm-auto-code">{d.code}</span></td>
+                                  <td><strong>{d.name}</strong></td>
+                                  <td>{d.authority || '—'}</td>
+                                  <td>{d.expiry || 'N/A'}</td>
+                                  <td>
+                                    <span className={`avm-pill ${d.requirement === 'M' ? 'avm-pill-success' : 'avm-pill-muted'}`}>
+                                      {d.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    {uploaded ? (
+                                      <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>
+                                        <i className="ri-attachment-line me-1" />{uploaded.name}
+                                      </a>
+                                    ) : (
+                                      <span className="text-muted fst-italic">Not uploaded in Step 2</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
                 </>
               )}
               {tradeTab === 'trade' && (
@@ -2034,7 +2251,14 @@ export default function AddVendorModal(props: {
               }
               case 'segments': {
                 const label = String(row.title ?? '');
-                if (label) { setSegmentOpts(prev => [...prev, { value: id, label }]); setSegment(id); clearFieldError('segment'); }
+                if (label) {
+                  setSegmentOpts(prev => [...prev, { value: id, label }]);
+                  /* Multi-select: append the newly-created segment id
+                   * rather than replacing the existing selection. Guard
+                   * against double-add when the user clicks twice. */
+                  setSegment(prev => prev.includes(id) ? prev : [...prev, id]);
+                  clearFieldError('segment');
+                }
                 break;
               }
               case 'compliance_behaviours': {
@@ -2527,6 +2751,98 @@ function FileChooser(props: {
  * ────────────────────────────────────────────────────────────────────── */
 function EmptyTable(props: { label: string }) {
   return <div className="avm-empty">{props.label}</div>;
+}
+
+/* Segment-rule reference table — rendered in Step 2 sub-tabs (Company
+ * DD, Owner KYC, Trade License) when no live rows have been captured
+ * yet AND the selected supplier segment's rule defines required
+ * documents. Acts as a checklist of what the segment expects. Each
+ * row's Actions cell starts as a single Upload button; on file pick
+ * it flips to View / Download / Delete via a blob URL held in the
+ * parent's `uploads` map. */
+function SupplierSegmentRefTable(props: {
+  title: string;
+  tabKey: string;
+  rows: { code: string; name: string; authority?: string | null; expiry?: string | null; requirement: 'M' | 'O' }[];
+  uploads: Record<string, { file: File; url: string; name: string }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+}) {
+  const { title, tabKey, rows, uploads, setUploads } = props;
+  /* Single picker handler — drives both first-time Upload and the
+   * Re-upload action after the file is in. The setter swaps the blob
+   * URL atomically so we never leak the previous File object. */
+  const onPick = (refKey: string, f: File | undefined) => {
+    if (!f) return;
+    setUploads(prev => {
+      const existing = prev[refKey];
+      if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+      return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
+    });
+  };
+  return (
+    <div className="table-responsive table-card border rounded">
+      <table className="table align-middle table-nowrap mb-0">
+        <thead className="table-light">
+          <tr>
+            <th>SR NO</th>
+            <th>AUTO CODE</th>
+            <th>{title}</th>
+            <th>ISSUING AUTHORITY</th>
+            <th>EXPIRY</th>
+            <th>STATUS</th>
+            <th>FILE</th>
+            <th>ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => {
+            const refKey = `${tabKey}::${r.code}`;
+            const uploaded = uploads[refKey];
+            return (
+              <tr key={r.code} style={{ background: '#fafafa' }}>
+                <td>{String(i + 1).padStart(2, '0')}</td>
+                <td><span className="avm-auto-code">{r.code}</span></td>
+                <td><strong>{r.name}</strong></td>
+                <td>{r.authority || '—'}</td>
+                <td>{r.expiry || 'N/A'}</td>
+                <td>
+                  <span className={`avm-pill ${r.requirement === 'M' ? 'avm-pill-success' : 'avm-pill-muted'}`}>
+                    {r.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
+                  </span>
+                </td>
+                <td>
+                  {uploaded
+                    ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
+                    : <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span>}
+                </td>
+                <td>
+                  {!uploaded ? (
+                    <label className="btn btn-sm btn-soft-primary mb-0" title="Upload" style={{ cursor: 'pointer' }}>
+                      <i className="ri-upload-2-line" />
+                      <input type="file" hidden onChange={e => onPick(refKey, e.target.files?.[0])} />
+                    </label>
+                  ) : (
+                    <div className="hstack gap-1">
+                      <a href={uploaded.url} target="_blank" rel="noreferrer" className="btn btn-sm btn-soft-info" title={`View ${uploaded.name}`}>
+                        <i className="ri-eye-line" />
+                      </a>
+                      <a href={uploaded.url} download={uploaded.name} className="btn btn-sm btn-soft-secondary" title={`Download ${uploaded.name}`}>
+                        <i className="ri-download-2-line" />
+                      </a>
+                      <label className="btn btn-sm btn-soft-primary mb-0" title="Re-upload (replace file)" style={{ cursor: 'pointer' }}>
+                        <i className="ri-refresh-line" />
+                        <input type="file" hidden onChange={e => onPick(refKey, e.target.files?.[0])} />
+                      </label>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 /* Reusable FILE-cell renderer for the KYC tables — shows the filename

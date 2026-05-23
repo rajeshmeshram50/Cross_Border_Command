@@ -314,6 +314,17 @@ export default function AddProductModal(props: {
     testingParameter: '', minAcceptance: '', attachmentName: '',
   });
 
+  /* Segment-rule QC reference rows + per-row file uploads.
+   * The Quality & Compliance section is now driven by the segment's
+   * configured rule (DCP → Segment Rules → QC selections) — manual
+   * QC entry has been removed. Each row starts with an Upload action;
+   * once a file is picked, the cell flips to View / Download /
+   * Re-upload. Key shape for uploads: `qc::${doc.code}`. */
+  type SegDocRow = { id:number; code:string; name:string; authority?:string|null; expiry?:string|null; requirement:'M'|'O' };
+  const [segmentQcDocs, setSegmentQcDocs] = useState<SegDocRow[]>([]);
+  type SegRefUpload = { file: File; url: string; name: string };
+  const [qcRefUploads, setQcRefUploads] = useState<Record<string, SegRefUpload>>({});
+
   /* ─── Step 2: Vendor ─── */
   const [vendors, setVendors] = useState<VendorEntry[]>([]);
   const [vendorDraftOpen, setVendorDraftOpen] = useState(false);
@@ -705,6 +716,34 @@ export default function AddProductModal(props: {
       setVendorOpts(vd);
     })();
   }, []);
+
+  /* Segment-rule QC fetch. Whenever the user picks (or hydration sets)
+   * a segment, pull the rule's QC selections so the Quality & Compliance
+   * section can show them as upload-ready rows. Bails out to an empty
+   * list when no segment is picked or no rule exists. */
+  useEffect(() => {
+    /* Segment changed → previously-attached uploads no longer match.
+     * Revoke each blob URL and drop the state. */
+    setQcRefUploads(prev => {
+      Object.values(prev).forEach(u => { try { URL.revokeObjectURL(u.url); } catch {} });
+      return {};
+    });
+
+    if (!segmentId) { setSegmentQcDocs([]); return; }
+    const id = Number(segmentId);
+    if (!Number.isFinite(id) || id <= 0) { setSegmentQcDocs([]); return; }
+
+    let cancelled = false;
+    api.get(`/clm/segment-rules/for-segment/${id}`)
+      .then(r => {
+        if (cancelled) return;
+        const data = r.data?.data ?? {};
+        setSegmentQcDocs(Array.isArray(data.qc) ? data.qc : []);
+      })
+      .catch(() => { if (!cancelled) setSegmentQcDocs([]); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segmentId]);
 
   /**
    * Called by the MasterQuickAddPopup after a successful POST. Pushes
@@ -1526,78 +1565,80 @@ export default function AddProductModal(props: {
                     tone="green"
                     icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
                     title="QC & Compliance"
-                    subtitle="Quality standards and compliance certifications"
-                    headerAction={
-                      <button className="apm-section-add-btn" onClick={openQcModal}>
-                        <span>+</span> Add QC
-                      </button>
-                    }
+                    subtitle={segmentId ? "Quality checks required by the chosen segment's rule" : "Pick a segment on the Core tab to load required QC documents"}
                   >
-                    {qcRecords.length === 0 ? (
-                      <div className="apm-empty">No QC records. Click "Add QC" to begin.</div>
+                    {!segmentId ? (
+                      <div className="apm-empty">Select a segment first — required QC documents are pulled from that segment's rule.</div>
+                    ) : segmentQcDocs.length === 0 ? (
+                      <div className="apm-empty">The chosen segment's rule has no QC documents configured. Open Document Control Panel → Segment Rules to add them.</div>
                     ) : (
                       <div className="table-responsive table-card border rounded">
                         <table className="table align-middle table-nowrap mb-0">
                           <thead className="table-light">
                             <tr>
                               <th scope="col">Sr No</th>
-                              <th scope="col">QC Name</th>
-                              <th scope="col">QC Purpose</th>
-                              <th scope="col">Issued By</th>
-                              <th scope="col">QA Testing Parameter</th>
-                              <th scope="col">Min Acceptance Criteria</th>
-                              <th scope="col">Attachments</th>
+                              <th scope="col">Auto Code</th>
+                              <th scope="col">QC Document Name</th>
+                              <th scope="col">Authority</th>
+                              <th scope="col">Expiry</th>
+                              <th scope="col">Status</th>
+                              <th scope="col">File</th>
                               <th scope="col">Actions</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {qcRecords.map((q, i) => (
-                              <tr key={q.id}>
-                                <td><span className="text-muted fs-13">{i + 1}</span></td>
-                                <td><span className="fw-semibold text-primary fs-13">{q.name}</span></td>
-                                <td><span className="fs-13">{q.purpose}</span></td>
-                                <td><span className="fs-13">{q.issuedBy}</span></td>
-                                <td>
-                                  <span className="fs-13 d-inline-block text-truncate" style={{ maxWidth: 220 }} title={q.testingParameter}>
-                                    {q.testingParameter || <span className="text-muted">—</span>}
-                                  </span>
-                                </td>
-                                <td>
-                                  <span className="fs-13 d-inline-block text-truncate" style={{ maxWidth: 220 }} title={q.minAcceptance}>
-                                    {q.minAcceptance || <span className="text-muted">—</span>}
-                                  </span>
-                                </td>
-                                <td>
-                                  {q.attachmentName ? (
-                                    q.attachmentUrl ? (
-                                      <a
-                                        href={q.attachmentUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="fs-13 d-inline-block text-truncate"
-                                        style={{ maxWidth: 200, color: '#4338ca', textDecoration: 'underline', cursor: 'pointer' }}
-                                        title={`Open ${q.attachmentName}`}
-                                      >
-                                        <i className="ri-attachment-line me-1" />
-                                        {q.attachmentName}
-                                      </a>
+                            {segmentQcDocs.map((q, i) => {
+                              const refKey = `qc::${q.code}`;
+                              const uploaded = qcRefUploads[refKey];
+                              const onPick = (f: File | undefined) => {
+                                if (!f) return;
+                                setQcRefUploads(prev => {
+                                  const existing = prev[refKey];
+                                  if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+                                  return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
+                                });
+                              };
+                              return (
+                                <tr key={q.code} style={{ background: uploaded ? undefined : '#fafafa' }}>
+                                  <td><span className="text-muted fs-13">{String(i + 1).padStart(2, '0')}</span></td>
+                                  <td><span className="badge bg-light text-dark border">{q.code}</span></td>
+                                  <td><strong className="fs-13">{q.name}</strong></td>
+                                  <td className="fs-13">{q.authority || '—'}</td>
+                                  <td className="fs-13">{q.expiry || 'N/A'}</td>
+                                  <td>
+                                    <span className={`badge ${q.requirement === 'M' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`}>
+                                      {q.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    {uploaded
+                                      ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
+                                      : <span className="text-muted fs-13 fst-italic">Not uploaded</span>}
+                                  </td>
+                                  <td>
+                                    {!uploaded ? (
+                                      <label className="btn btn-sm btn-soft-primary mb-0" title="Upload" style={{ cursor: 'pointer' }}>
+                                        <i className="ri-upload-2-line" />
+                                        <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+                                      </label>
                                     ) : (
-                                      <span className="fs-13 d-inline-block text-truncate" style={{ maxWidth: 200 }} title={q.attachmentName}>
-                                        <i className="ri-attachment-line text-muted me-1" />
-                                        {q.attachmentName}
-                                      </span>
-                                    )
-                                  ) : <span className="text-muted fs-13">—</span>}
-                                </td>
-                                <td>
-                                  <div className="d-flex gap-1">
-                                    <QcActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => openQcViewer(q)} disabled={!q.attachmentUrl} />
-                                    <QcActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => openQcEdit(q)} />
-                                    <QcActionBtn title="Delete" icon="ri-delete-bin-line" color="danger"  onClick={() => setQcDeleteTarget(q)} />
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
+                                      <div className="d-flex gap-1">
+                                        <a href={uploaded.url} target="_blank" rel="noreferrer" className="btn btn-sm btn-soft-info" title={`View ${uploaded.name}`}>
+                                          <i className="ri-eye-line" />
+                                        </a>
+                                        <a href={uploaded.url} download={uploaded.name} className="btn btn-sm btn-soft-secondary" title={`Download ${uploaded.name}`}>
+                                          <i className="ri-download-2-line" />
+                                        </a>
+                                        <label className="btn btn-sm btn-soft-primary mb-0" title="Re-upload (replace file)" style={{ cursor: 'pointer' }}>
+                                          <i className="ri-refresh-line" />
+                                          <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+                                        </label>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>

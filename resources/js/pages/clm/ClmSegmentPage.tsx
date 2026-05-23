@@ -6,6 +6,7 @@ import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { MasterSelect } from '../../components/ui/MasterSelect';
 
 /* Central CLM → Segment Master.
  * Faithful 3-card port of the CLM-Master.html prototype:
@@ -292,21 +293,31 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
 
           <div className="clm-field">
             <label className="clm-field-label">Regulatory Status <span className="clm-req">*</span></label>
-            <select className={`clm-select ${errors.reg ? 'clm-input-err' : ''}`} value={reg} onChange={e => { setReg(e.target.value as Reg); setErrors(p => ({ ...p, reg: '' })); }}>
-              <option value="">— Select —</option>
-              <option value="highly">Highly Regulated</option>
-              <option value="less">Less Regulated</option>
-            </select>
+            <MasterSelect
+              value={reg}
+              invalid={!!errors.reg}
+              placeholder="— Select —"
+              options={[
+                { value: 'highly', label: 'Highly Regulated' },
+                { value: 'less',   label: 'Less Regulated' },
+              ]}
+              onChange={(v) => { setReg(v as Reg); setErrors(p => ({ ...p, reg: '' })); }}
+            />
             {errors.reg && <div className="clm-err">{errors.reg}</div>}
           </div>
 
           <div className="clm-field">
             <label className="clm-field-label">Buyer ≠ Consignee <span className="clm-req">*</span></label>
-            <select className={`clm-select ${errors.bc ? 'clm-input-err' : ''}`} value={bc} onChange={e => { setBc(e.target.value as BC); setErrors(p => ({ ...p, bc: '' })); }}>
-              <option value="">— Select —</option>
-              <option value="allowed">Allowed</option>
-              <option value="not_allowed">Not Allowed</option>
-            </select>
+            <MasterSelect
+              value={bc}
+              invalid={!!errors.bc}
+              placeholder="— Select —"
+              options={[
+                { value: 'allowed',     label: 'Allowed' },
+                { value: 'not_allowed', label: 'Not Allowed' },
+              ]}
+              onChange={(v) => { setBc(v as BC); setErrors(p => ({ ...p, bc: '' })); }}
+            />
             {errors.bc && <div className="clm-err">{errors.bc}</div>}
           </div>
 

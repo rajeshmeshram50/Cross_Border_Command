@@ -39,10 +39,19 @@ class PermissionController extends Controller
         // page must load too. The save path then adopts the orphan into the
         // granter's tenant.
         $isPrivilegedGranter = $authUser->isClientAdmin() || $authUser->isMainBranchUser();
+        // Sub-branch user can read perms for employees in their own
+        // branch only — mirrors the savePermissions scope below.
+        $isSubBranchGranter = $authUser->isBranchUser() && !$authUser->isMainBranchUser();
+        $subBranchAllowed = $isSubBranchGranter
+            && $targetUser->user_type === 'employee'
+            && $authUser->client_id === $targetUser->client_id
+            && $authUser->branch_id === $targetUser->branch_id;
+
         $allowed = $authUser->id === $targetUser->id
             || $authUser->isSuperAdmin()
             || ($isPrivilegedGranter && $authUser->client_id === $targetUser->client_id)
-            || ($isPrivilegedGranter && $targetUser->client_id === null);
+            || ($isPrivilegedGranter && $targetUser->client_id === null)
+            || $subBranchAllowed;
 
         if (!$allowed) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -104,6 +113,19 @@ class PermissionController extends Controller
             }
 
             $users = $query->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
+        } elseif ($authUser->isBranchUser() && !$authUser->isMainBranchUser()) {
+            // Sub-branch user — picker is restricted to employees in
+            // their own branch (no other branch_users, no employees
+            // from sibling branches, no client_admin). Same active-row
+            // shape as the main-branch path so the SPA can render the
+            // list identically.
+            $users = User::where('client_id', $authUser->client_id)
+                ->where('branch_id', $authUser->branch_id)
+                ->where('id', '!=', $authUser->id)
+                ->where('user_type', 'employee')
+                ->where('status', 'active')
+                ->with('branch:id,name,status')
+                ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
         } else {
             $users = collect();
         }
@@ -138,7 +160,7 @@ class PermissionController extends Controller
         //   super_admin       → client_admin only
         //   client_admin      → branch_user only  (NOT employees)
         //   main_branch_user  → branch_user + employee under client
-        //   sub_branch_user   → employees in same branch (not implemented here yet)
+        //   sub_branch_user   → employees in same (client_id, branch_id)
         if ($authUser->isSuperAdmin()) {
             if (!$targetUser->isClientAdmin()) {
                 return response()->json([
@@ -204,6 +226,50 @@ class PermissionController extends Controller
                     continue;
                 }
 
+                foreach ($fields as $field) {
+                    if (($perm[$field] ?? false) && !$myPerm->$field) {
+                        return response()->json([
+                            'message' => "You cannot grant '{$field}' permission that you don't have",
+                        ], 422);
+                    }
+                }
+            }
+        } elseif ($authUser->isBranchUser() && !$authUser->isMainBranchUser()) {
+            // Sub-branch user — can only grant to employees in their
+            // own (client_id, branch_id). Matches the spec line in the
+            // big comment above ("sub_branch_user → employees in same
+            // branch"). Cannot grant to other branch_users, cannot
+            // adopt orphans (that's reserved for the main-branch / client
+            // admin path which is the tenant's HR proxy).
+            $allowed = $targetUser->user_type === 'employee'
+                && $targetUser->client_id === $authUser->client_id
+                && $targetUser->branch_id === $authUser->branch_id
+                && $targetUser->id !== $authUser->id;
+
+            if (!$allowed) {
+                return response()->json([
+                    'message' => 'Sub-branch users can only grant permissions to employees in their own branch.',
+                ], 403);
+            }
+
+            // Same can't-grant-what-you-don't-have rule as the privileged
+            // path above. Without this a sub-branch user could escalate an
+            // employee past their own access.
+            $myPerms = Permission::where('user_id', $authUser->id)->get()->keyBy('module_id');
+            $fields = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
+
+            foreach ($request->permissions as $perm) {
+                $myPerm = $myPerms->get($perm['module_id']);
+                if (!$myPerm) {
+                    foreach ($fields as $field) {
+                        if ($perm[$field] ?? false) {
+                            return response()->json([
+                                'message' => 'You cannot grant permissions for modules you don\'t have access to',
+                            ], 422);
+                        }
+                    }
+                    continue;
+                }
                 foreach ($fields as $field) {
                     if (($perm[$field] ?? false) && !$myPerm->$field) {
                         return response()->json([

@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+﻿import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Consignee Evidence Vault — read-only compliance archive
+ * Supplier Evidence Vault — read-only compliance archive
  *
  * Mirrors CustomerEvidenceVaultModal in structure (same 5 buckets, same
  * shipment matrix) but skinned with the emerald palette that matches the
- * Sales → Consignee page (mint hero strip, emerald Add Consignee button).
+ * Sales → Supplier page (mint hero strip, emerald Add Supplier button).
  * The vault opens FROM that page so it should feel like an extension of
  * it, not the sibling Customer module which owns the violet identity.
  *
@@ -16,12 +16,12 @@ import Tooltip from '../../components/ui/Tooltip';
  *   2. Owner KYC Details     — Aadhaar, PAN, Passport, Director address …
  *   3. Trade Licenses        — IEC, APEDA, Agro Export Permit, Organic …
  *   4. Trade Documents       — Master Sales Agreement, PO Framework, NDA …
- *   5. Shipment Agreements   — per-shipment matrix (Buyer = Consignee / ≠)
+ *   5. Shipment Agreements   — per-shipment matrix (Buyer = Supplier / ≠)
  *
- * Backend wiring (planned, NOT live yet):
- *   GET /api/consignees/{id}/vault → { stats, company_dd, owner_kyc,
- *                                      trade_licenses, trade_documents,
- *                                      shipment_agreements, last_updated }
+ * Backend wiring (live):
+ *   GET /api/segment-uploads/supplier/{id}/vault → { stats, company_dd,
+ *     owner_kyc, trade_licenses, trade_documents, shipment_agreements,
+ *     last_updated }
  * ──────────────────────────────────────────────────────────────────── */
 
 export type VaultStatus = 'Verified' | 'Pending' | 'Expiring' | 'Signed';
@@ -52,7 +52,7 @@ export interface VaultShipmentRow {
   trade_docs: { ratio: string; pct: number };
   agreement:  { ratio: string; pct: number };
   risk: 'Compliant' | 'Medium' | 'High';
-  buyer_is_consignee: boolean;
+  buyer_is_supplier: boolean;
 }
 
 export interface VaultData {
@@ -72,8 +72,8 @@ export interface VaultData {
   last_updated:           string;
 }
 
-export interface ConsigneeVaultTarget {
-  id: string;             // CN-001 / matches consignees.code
+export interface SupplierVaultTarget {
+  id: string;             // S-001 / matches vendors.vendor_code
   db_id?: number;
   company: string;
   risk?: string;
@@ -82,13 +82,13 @@ export interface ConsigneeVaultTarget {
   contact?: string;
   contactCity?: string;
   /* Linked customer code (e.g. C-010) so the header can show the
-   * buyer-consignee relationship at a glance. */
+   * buyer-supplier relationship at a glance. */
   customerId?: string;
 }
 
 interface Props {
   open: boolean;
-  consignee: ConsigneeVaultTarget | null;
+  supplier: SupplierVaultTarget | null;
   onClose: () => void;
   data?: VaultData | null;
 }
@@ -103,7 +103,7 @@ const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultDat
   { key: 'shipment-agreements', label: 'Shipment Agreements',   icon: 'ri-truck-line',          countKey: 'total_shipments' },
 ];
 
-function buildDemoVault(consignee: ConsigneeVaultTarget): VaultData {
+function buildDemoVault(supplier: SupplierVaultTarget): VaultData {
   return {
     total_documents:       22,
     verified_signed:       18,
@@ -137,31 +137,31 @@ function buildDemoVault(consignee: ConsigneeVaultTarget): VaultData {
       { id: 4, name: 'Organic Certification', reference: 'NPOP/ORG/2022/1134',  authority: 'APEDA / NPOP',    issue_date: '10/10/2022', expiry: '09/10/2027', attachment: 'OrganicCert.pdf', status: 'Verified' },
     ],
     trade_documents: [
-      { id: 1, name: 'Master Sales Agreement',  reference: 'MSA/CNGE/2024/001',  authority: consignee.company, issue_date: '01/04/2024', expiry: '31/03/2027', attachment: 'MSA.pdf',         status: 'Verified' },
-      { id: 2, name: 'Purchase Order Framework', reference: 'POF/CNGE/2024/012', authority: consignee.company, issue_date: '15/04/2024', expiry: '14/04/2026', attachment: 'POFramework.pdf', status: 'Verified' },
-      { id: 3, name: 'NDA & Confidentiality',    reference: 'NDA/CNGE/2025/003', authority: consignee.company, issue_date: '—',           expiry: '—',          attachment: 'NDA.pdf',         status: 'Pending' },
+      { id: 1, name: 'Master Sales Agreement',  reference: 'MSA/CNGE/2024/001',  authority: supplier.company, issue_date: '01/04/2024', expiry: '31/03/2027', attachment: 'MSA.pdf',         status: 'Verified' },
+      { id: 2, name: 'Purchase Order Framework', reference: 'POF/CNGE/2024/012', authority: supplier.company, issue_date: '15/04/2024', expiry: '14/04/2026', attachment: 'POFramework.pdf', status: 'Verified' },
+      { id: 3, name: 'NDA & Confidentiality',    reference: 'NDA/CNGE/2025/003', authority: supplier.company, issue_date: '—',           expiry: '—',          attachment: 'NDA.pdf',         status: 'Pending' },
     ],
     shipment_agreements: [
-      { id: 1, shipment_id: 'SHP-2026-00487', opportunity_id: 'OPP-107', customer: consignee.company,         country: consignee.country ?? 'India',
-        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_consignee: true },
+      { id: 1, shipment_id: 'SHP-2026-00487', opportunity_id: 'OPP-107', customer: supplier.company,         country: supplier.country ?? 'India',
+        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_supplier: true },
       { id: 2, shipment_id: 'SHP-2026-00328', opportunity_id: 'OPP-028', customer: 'GreenHarvest Global Ltd',  country: 'United States',
-        due_dil: { ratio: '0/2', pct: 0 },   kyc: { ratio: '0/4', pct: 0 },   trade_lic: { ratio: '0/1', pct: 0 },   trade_docs: { ratio: '0/4', pct: 0 },   agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: false },
+        due_dil: { ratio: '0/2', pct: 0 },   kyc: { ratio: '0/4', pct: 0 },   trade_lic: { ratio: '0/1', pct: 0 },   trade_docs: { ratio: '0/4', pct: 0 },   agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_supplier: false },
       { id: 3, shipment_id: 'SHP-2026-00512', opportunity_id: 'OPP-134', customer: 'Eastern Harvest Co.',      country: 'UAE',
-        due_dil: { ratio: '1/2', pct: 50 },  kyc: { ratio: '2/3', pct: 67 },  trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '2/4', pct: 50 },  agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: true },
+        due_dil: { ratio: '1/2', pct: 50 },  kyc: { ratio: '2/3', pct: 67 },  trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '2/4', pct: 50 },  agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_supplier: true },
       { id: 4, shipment_id: 'SHP-2026-00601', opportunity_id: 'OPP-156', customer: 'International Buyer LLC',  country: 'UAE',
-        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_consignee: true },
+        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_supplier: true },
     ],
     last_updated: '04/05/2026',
   };
 }
 
-export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, data }: Props) {
+export default function SupplierEvidenceVaultModal({ open, supplier, onClose, data }: Props) {
   const [tab, setTab] = useState<TabKey>('company-dd');
-  const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');
+  const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-supplier' | 'buyer-neq-supplier'>('all');
   const kpiStripRef = useRef<HTMLDivElement | null>(null);
   const [kpiPaused, setKpiPaused] = useState(false);
   /* Live API payload — populated by the fetch effect below. Falls back
-   * to the demo builder if the fetch fails or the consignee has no
+   * to the demo builder if the fetch fails or the supplier has no
    * db_id (unsaved record). */
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -173,25 +173,25 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     setTab('company-dd');
     setShipmentFilter('all');
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, consignee?.db_id, onClose]);
+  }, [open, supplier?.db_id, onClose]);
 
   /* Fetch the vault payload when the modal opens. Skips when (a) the
-   * parent passed an override via `data` or (b) consignee has no
+   * parent passed an override via `data` or (b) supplier has no
    * db_id. Failure leaves vaultLive at null and the demo path takes
    * over so the design review still has content. */
   useEffect(() => {
-    if (!open || !consignee?.db_id || data) {
+    if (!open || !supplier?.db_id || data) {
       setVaultLive(null);
       return;
     }
     let cancelled = false;
     setLoading(true);
-    api.get(`/segment-uploads/consignee/${consignee.db_id}/vault`)
+    api.get(`/segment-uploads/supplier/${supplier.db_id}/vault`)
       .then(r => { if (!cancelled) setVaultLive((r.data?.data ?? null) as VaultData | null); })
       .catch(() => { if (!cancelled) setVaultLive(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, consignee?.db_id, data]);
+  }, [open, supplier?.db_id, data]);
 
   /* Auto-scroll the KPI ribbon — continuous one-way drift. Tiles
    * rendered twice, scrollLeft wraps invisibly at the halfway mark.
@@ -214,12 +214,12 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   }, [open, kpiPaused, tab]);
 
   const vault: VaultData | null = useMemo(() => {
-    if (!consignee) return null;
+    if (!supplier) return null;
     /* Priority: explicit `data` prop > live API > demo fallback. */
-    return data ?? vaultLive ?? buildDemoVault(consignee);
-  }, [consignee, data, vaultLive]);
+    return data ?? vaultLive ?? buildDemoVault(supplier);
+  }, [supplier, data, vaultLive]);
 
-  if (!open || !consignee || !vault) return null;
+  if (!open || !supplier || !vault) return null;
 
   const StatusPill = ({ s }: { s: VaultStatus }) => {
     const tone =
@@ -228,7 +228,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
       : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', mark: '⚠' }
       :                    { bg: '#fee2e2', fg: '#b91c1c', mark: '⌛' };
     return (
-      <span className="cnev-pill" style={{ background: tone.bg, color: tone.fg }}>
+      <span className="svev-pill" style={{ background: tone.bg, color: tone.fg }}>
         {tone.mark} {s}
       </span>
     );
@@ -248,48 +248,48 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const tabMeta = TABS.find(t => t.key === tab)!;
 
   return createPortal(
-    <div className="cnev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <style>{CNEV_CSS}</style>
-      <div className="cnev-card" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="svev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <style>{SVEV_CSS}</style>
+      <div className="svev-card" onMouseDown={(e) => e.stopPropagation()}>
         {/* ─── HEADER ─── */}
-        <div className="cnev-header">
-          <div className="cnev-header-bg" aria-hidden />
-          <span className="cnev-header-orb" aria-hidden />
-          <div className="cnev-header-content">
-            <div className="cnev-header-left">
-              <div className="cnev-vault-icon">
+        <div className="svev-header">
+          <div className="svev-header-bg" aria-hidden />
+          <span className="svev-header-orb" aria-hidden />
+          <div className="svev-header-content">
+            <div className="svev-header-left">
+              <div className="svev-vault-icon">
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="3" width="20" height="5" rx="1.5" />
                   <path d="M4 8v12a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8" />
                   <line x1="10" y1="13" x2="14" y2="13" />
                   <line x1="10" y1="17" x2="14" y2="17" />
                 </svg>
-                <span className="cnev-vault-icon-tick" aria-hidden>
+                <span className="svev-vault-icon-tick" aria-hidden>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12" /></svg>
                 </span>
               </div>
-              <div className="cnev-header-text">
-                <div className="cnev-header-eyebrow">— EVIDENCE VAULT</div>
-                <div className="cnev-header-title">{consignee.company}</div>
-                <div className="cnev-header-chips">
-                  <span className="cnev-chip cnev-chip-id">● {consignee.id}</span>
-                  {consignee.customerId && <span className="cnev-chip cnev-chip-link">↳ {consignee.customerId}</span>}
-                  <span className="cnev-chip cnev-chip-risk" data-risk={(consignee.risk ?? 'Low').toLowerCase()}>● {consignee.risk ?? 'Low'} Risk</span>
-                  {consignee.contact && (
-                    <span className="cnev-chip cnev-chip-contact">
+              <div className="svev-header-text">
+                <div className="svev-header-eyebrow">— EVIDENCE VAULT</div>
+                <div className="svev-header-title">{supplier.company}</div>
+                <div className="svev-header-chips">
+                  <span className="svev-chip svev-chip-id">● {supplier.id}</span>
+                  {supplier.customerId && <span className="svev-chip svev-chip-link">↳ {supplier.customerId}</span>}
+                  <span className="svev-chip svev-chip-risk" data-risk={(supplier.risk ?? 'Low').toLowerCase()}>● {supplier.risk ?? 'Low'} Risk</span>
+                  {supplier.contact && (
+                    <span className="svev-chip svev-chip-contact">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                      {consignee.contact}{consignee.contactCity ? ` · ${consignee.contactCity}` : ''}
+                      {supplier.contact}{supplier.contactCity ? ` · ${supplier.contactCity}` : ''}
                     </span>
                   )}
                 </div>
               </div>
             </div>
-            <div className="cnev-header-right">
-              <div className="cnev-header-meta">
-                {consignee.segment && <span>{consignee.segment}</span>}
-                {consignee.country && <span>· {consignee.country}</span>}
+            <div className="svev-header-right">
+              <div className="svev-header-meta">
+                {supplier.segment && <span>{supplier.segment}</span>}
+                {supplier.country && <span>· {supplier.country}</span>}
               </div>
-              <button type="button" className="cnev-close" onClick={onClose} aria-label="Close vault">
+              <button type="button" className="svev-close" onClick={onClose} aria-label="Close vault">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
@@ -298,17 +298,17 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
         {/* ─── KPI STRIP ─── */}
         <div
-          className="cnev-kpi-outer"
+          className="svev-kpi-outer"
           onMouseEnter={() => setKpiPaused(true)}
           onMouseLeave={() => setKpiPaused(false)}
           onTouchStart={() => setKpiPaused(true)}
           onTouchEnd={() => setKpiPaused(false)}
         >
-          <span className="cnev-kpi-fade cnev-kpi-fade-l" aria-hidden />
-          <span className="cnev-kpi-fade cnev-kpi-fade-r" aria-hidden />
+          <span className="svev-kpi-fade svev-kpi-fade-l" aria-hidden />
+          <span className="svev-kpi-fade svev-kpi-fade-r" aria-hidden />
           <button
             type="button"
-            className="cnev-kpi-nav cnev-kpi-nav-prev"
+            className="svev-kpi-nav svev-kpi-nav-prev"
             aria-label="Scroll KPIs left"
             onClick={() => kpiStripRef.current?.scrollBy({ left: -260, behavior: 'smooth' })}
           >
@@ -316,7 +316,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </button>
           <button
             type="button"
-            className="cnev-kpi-nav cnev-kpi-nav-next"
+            className="svev-kpi-nav svev-kpi-nav-next"
             aria-label="Scroll KPIs right"
             onClick={() => kpiStripRef.current?.scrollBy({ left: 260, behavior: 'smooth' })}
           >
@@ -324,7 +324,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </button>
           <div
             ref={kpiStripRef}
-            className="cnev-kpi-strip"
+            className="svev-kpi-strip"
             onWheel={(e) => {
               if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
                 e.currentTarget.scrollLeft += e.deltaY;
@@ -332,7 +332,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             }}
           >
           {[0, 1].map((cycle) => (
-            <div key={cycle} className="cnev-kpi-cycle" aria-hidden={cycle === 1 ? true : undefined}>
+            <div key={cycle} className="svev-kpi-cycle" aria-hidden={cycle === 1 ? true : undefined}>
               <KpiTile label="Total Documents"        value={vault.total_documents}        icon="ri-file-list-3-line"        gradient="linear-gradient(135deg, #047857 0%, #10b981 100%)" />
               <KpiTile label="Verified / Signed"      value={vault.verified_signed}        icon="ri-shield-check-line"       gradient="linear-gradient(135deg, #16a34a 0%, #4ade80 100%)" />
               <KpiTile label="Pending"                value={vault.pending}                icon="ri-time-line"               gradient="linear-gradient(135deg, #d97706 0%, #f59e0b 100%)" />
@@ -347,44 +347,44 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         </div>
 
         {/* ─── TABS ─── */}
-        <div className="cnev-tabs-wrap">
-          <div className="cnev-tabs">
+        <div className="svev-tabs-wrap">
+          <div className="svev-tabs">
             {TABS.map(t => (
               <button
                 key={t.key}
                 type="button"
-                className={`cnev-tab ${tab === t.key ? 'is-active' : ''}`}
+                className={`svev-tab ${tab === t.key ? 'is-active' : ''}`}
                 onClick={() => setTab(t.key)}
               >
-                <span className="cnev-tab-icon"><i className={t.icon} aria-hidden /></span>
-                <span className="cnev-tab-label">{t.label}</span>
-                <span className="cnev-tab-count">{vault[t.countKey] as number}</span>
+                <span className="svev-tab-icon"><i className={t.icon} aria-hidden /></span>
+                <span className="svev-tab-label">{t.label}</span>
+                <span className="svev-tab-count">{vault[t.countKey] as number}</span>
               </button>
             ))}
           </div>
         </div>
 
         {/* ─── BODY ─── */}
-        <div className="cnev-body">
-          <div className="cnev-section">
-            <div className="cnev-section-left">
-              <div className="cnev-section-icon"><i className={tabMeta.icon} /></div>
+        <div className="svev-body">
+          <div className="svev-section">
+            <div className="svev-section-left">
+              <div className="svev-section-icon"><i className={tabMeta.icon} /></div>
               <div>
-                <div className="cnev-section-title">{tabMeta.label}</div>
-                <div className="cnev-section-sub">{sectionSub(tab)}</div>
+                <div className="svev-section-title">{tabMeta.label}</div>
+                <div className="svev-section-sub">{sectionSub(tab)}</div>
               </div>
             </div>
-            <div className="cnev-section-right">
-              <div className="cnev-section-count">{vault[tabMeta.countKey] as number}</div>
-              <div className="cnev-section-count-label">{tab === 'shipment-agreements' ? 'SHIPMENTS' : 'DOCUMENTS'}</div>
+            <div className="svev-section-right">
+              <div className="svev-section-count">{vault[tabMeta.countKey] as number}</div>
+              <div className="svev-section-count-label">{tab === 'shipment-agreements' ? 'SHIPMENTS' : 'DOCUMENTS'}</div>
             </div>
           </div>
 
           {tab !== 'shipment-agreements' && (
-            <div className="cnev-filter-row">
-              <span className="cnev-filter cnev-filter-verified">● Verified {counts.Verified}</span>
-              <span className="cnev-filter cnev-filter-expiring">● Expiring {counts.Expiring}</span>
-              <span className="cnev-filter cnev-filter-pending">● Pending {counts.Pending}</span>
+            <div className="svev-filter-row">
+              <span className="svev-filter svev-filter-verified">● Verified {counts.Verified}</span>
+              <span className="svev-filter svev-filter-expiring">● Expiring {counts.Expiring}</span>
+              <span className="svev-filter svev-filter-pending">● Pending {counts.Pending}</span>
             </div>
           )}
 
@@ -394,15 +394,15 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         </div>
 
         {/* ─── FOOTER ─── */}
-        <div className="cnev-footer">
-          <div className="cnev-footer-meta">
+        <div className="svev-footer">
+          <div className="svev-footer-meta">
             Last updated: <b>{vault.last_updated}</b> · Vault managed by Compliance Team
           </div>
-          <div className="cnev-footer-actions">
-            <button type="button" className="cnev-btn cnev-btn-light" onClick={() => alert('Export wiring lands with the backend')}>
+          <div className="svev-footer-actions">
+            <button type="button" className="svev-btn svev-btn-light" onClick={() => alert('Export wiring lands with the backend')}>
               <i className="ri-download-cloud-2-line" /> Export All
             </button>
-            <button type="button" className="cnev-btn cnev-btn-dark" onClick={onClose}>
+            <button type="button" className="svev-btn svev-btn-dark" onClick={onClose}>
               Close Vault
             </button>
           </div>
@@ -415,14 +415,14 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
 function KpiTile({ label, value, icon, gradient }: { label: string; value: number; icon: string; gradient: string }) {
   return (
-    <div className="cnev-kpi-tile">
-      <span className="cnev-kpi-strip-top" style={{ background: gradient }} aria-hidden />
-      <div className="cnev-kpi-body">
-        <div className="cnev-kpi-text">
-          <div className="cnev-kpi-label">{label.toUpperCase()}</div>
-          <div className="cnev-kpi-value">{value.toLocaleString()}</div>
+    <div className="svev-kpi-tile">
+      <span className="svev-kpi-strip-top" style={{ background: gradient }} aria-hidden />
+      <div className="svev-kpi-body">
+        <div className="svev-kpi-text">
+          <div className="svev-kpi-label">{label.toUpperCase()}</div>
+          <div className="svev-kpi-value">{value.toLocaleString()}</div>
         </div>
-        <div className="cnev-kpi-icon" style={{ background: gradient }}>
+        <div className="svev-kpi-icon" style={{ background: gradient }}>
           <i className={icon} aria-hidden />
         </div>
       </div>
@@ -436,9 +436,9 @@ function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; S
   const expiryLabel  = tab === 'trade-documents' ? 'Valid Till'  : 'Expiry';
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
   return (
-    <div className="cnev-table-wrap">
-      <div className="cnev-table-scroll">
-      <table className="cnev-table">
+    <div className="svev-table-wrap">
+      <div className="svev-table-scroll">
+      <table className="svev-table">
         <thead>
           <tr>
             <th style={{ width: 56 }}>SR</th>
@@ -453,33 +453,33 @@ function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; S
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={8} className="cnev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={8} className="svev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={d.id}>
               <td>{i + 1}</td>
-              <td className="cnev-doc-name">{d.name}</td>
-              <td className="cnev-mono">{d.reference || '—'}</td>
+              <td className="svev-doc-name">{d.name}</td>
+              <td className="svev-mono">{d.reference || '—'}</td>
               <td>{d.authority || '—'}</td>
-              <td><span className="cnev-date">{d.issue_date || '—'}</span></td>
-              <td><span className="cnev-date cnev-date-expiry" data-status={d.status.toLowerCase()}>{d.expiry || '—'}</span></td>
+              <td><span className="svev-date">{d.issue_date || '—'}</span></td>
+              <td><span className="svev-date svev-date-expiry" data-status={d.status.toLowerCase()}>{d.expiry || '—'}</span></td>
               <td>
                 {d.attachment ? (
                   d.attachment_url ? (
                     <Tooltip label={`Open ${d.attachment}`}>
-                      <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cnev-attach" style={{ textDecoration: 'none' }}>
+                      <a href={d.attachment_url} target="_blank" rel="noreferrer" className="svev-attach" style={{ textDecoration: 'none' }}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                         {d.attachment}
                       </a>
                     </Tooltip>
                   ) : (
                   <Tooltip label={d.attachment}>
-                    <span className="cnev-attach">
+                    <span className="svev-attach">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                       {d.attachment}
                     </span>
                   </Tooltip>
                   )
-                ) : <span className="cnev-muted">Not uploaded</span>}
+                ) : <span className="svev-muted">Not uploaded</span>}
               </td>
               <td><StatusPill s={d.status} /></td>
             </tr>
@@ -493,24 +493,24 @@ function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; S
 
 function ShipmentTable({ rows, filter, setFilter }: {
   rows: VaultShipmentRow[];
-  filter: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee';
-  setFilter: (f: 'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
+  filter: 'all' | 'buyer-eq-supplier' | 'buyer-neq-supplier';
+  setFilter: (f: 'all' | 'buyer-eq-supplier' | 'buyer-neq-supplier') => void;
 }) {
   const filtered = rows.filter(r =>
     filter === 'all' ? true
-    : filter === 'buyer-eq-consignee' ? r.buyer_is_consignee
-    : !r.buyer_is_consignee
+    : filter === 'buyer-eq-supplier' ? r.buyer_is_supplier
+    : !r.buyer_is_supplier
   );
   return (
     <>
-      <div className="cnev-ship-filter">
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'all' ? 'is-active' : ''}`} onClick={() => setFilter('all')}>All Shipments</button>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-eq-consignee')}>✓ Buyer = Consignee</button>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-neq-consignee')}>✕ Buyer ≠ Consignee</button>
+      <div className="svev-ship-filter">
+        <button type="button" className={`svev-ship-fbtn ${filter === 'all' ? 'is-active' : ''}`} onClick={() => setFilter('all')}>All Shipments</button>
+        <button type="button" className={`svev-ship-fbtn ${filter === 'buyer-eq-supplier' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-eq-supplier')}>✓ Buyer = Supplier</button>
+        <button type="button" className={`svev-ship-fbtn ${filter === 'buyer-neq-supplier' ? 'is-active' : ''}`} onClick={() => setFilter('buyer-neq-supplier')}>✕ Buyer ≠ Supplier</button>
       </div>
-      <div className="cnev-table-wrap">
-        <div className="cnev-table-scroll">
-        <table className="cnev-table">
+      <div className="svev-table-wrap">
+        <div className="svev-table-scroll">
+        <table className="svev-table">
           <thead>
             <tr>
               <th style={{ width: 56 }}>SR</th>
@@ -528,15 +528,15 @@ function ShipmentTable({ rows, filter, setFilter }: {
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={11} className="cnev-empty">No shipments match the filter.</td></tr>
+              <tr><td colSpan={11} className="svev-empty">No shipments match the filter.</td></tr>
             ) : filtered.map((r, i) => (
               <tr key={r.id}>
                 <td>{i + 1}</td>
-                <td><span className="cnev-chip-pill">● {r.shipment_id}</span></td>
-                <td><span className="cnev-chip-pill cnev-chip-pill-warm">● {r.opportunity_id}</span></td>
+                <td><span className="svev-chip-pill">● {r.shipment_id}</span></td>
+                <td><span className="svev-chip-pill svev-chip-pill-warm">● {r.opportunity_id}</span></td>
                 <td>
-                  <span className="cnev-cust-cell">
-                    <span className="cnev-cust-mono">{r.customer.charAt(0)}</span>
+                  <span className="svev-cust-cell">
+                    <span className="svev-cust-mono">{r.customer.charAt(0)}</span>
                     {r.customer}
                   </span>
                 </td>
@@ -547,7 +547,7 @@ function ShipmentTable({ rows, filter, setFilter }: {
                 <td><Ratio r={r.trade_docs} /></td>
                 <td><Ratio r={r.agreement} /></td>
                 <td>
-                  <span className={`cnev-pill cnev-risk-${r.risk.toLowerCase()}`}>
+                  <span className={`svev-pill svev-risk-${r.risk.toLowerCase()}`}>
                     {r.risk === 'Compliant' ? '✓' : '⚠'} {r.risk}
                   </span>
                 </td>
@@ -591,7 +591,7 @@ function Ratio({ r }: { r: { ratio: string; pct: number } }) {
     <>
       <span
         ref={triggerRef}
-        className="cnev-ratio"
+        className="svev-ratio"
         data-tone={tone}
         onMouseEnter={showTip}
         onMouseLeave={hideTip}
@@ -600,9 +600,9 @@ function Ratio({ r }: { r: { ratio: string; pct: number } }) {
         tabIndex={0}
       >
         <svg width="38" height="38" viewBox="0 0 38 38" aria-hidden>
-          <circle className="cnev-ratio-track" cx="19" cy="19" r={radius} fill="none" strokeWidth="3.5" />
+          <circle className="svev-ratio-track" cx="19" cy="19" r={radius} fill="none" strokeWidth="3.5" />
           <circle
-            className="cnev-ratio-arc"
+            className="svev-ratio-arc"
             cx="19" cy="19" r={radius}
             fill="none" strokeWidth="3.5"
             strokeDasharray={circumference}
@@ -611,12 +611,12 @@ function Ratio({ r }: { r: { ratio: string; pct: number } }) {
             transform="rotate(-90 19 19)"
           />
         </svg>
-        <span className="cnev-ratio-label">{r.ratio}</span>
+        <span className="svev-ratio-label">{r.ratio}</span>
       </span>
       {tip && createPortal(
-        <div className="cnev-ratio-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">
-          <b className="cnev-ratio-tip-pct" data-tone={tone}>{r.pct}%</b>
-          <span className="cnev-ratio-tip-meta">{r.ratio} · {status}</span>
+        <div className="svev-ratio-tip" style={{ top: tip.top, left: tip.left }} role="tooltip">
+          <b className="svev-ratio-tip-pct" data-tone={tone}>{r.pct}%</b>
+          <span className="svev-ratio-tip-meta">{r.ratio} · {status}</span>
         </div>,
         document.body,
       )}
@@ -630,15 +630,15 @@ function sectionSub(tab: TabKey): string {
     case 'owner-kyc':        return 'Director identity, address proof & personal compliance documents';
     case 'trade-licenses':   return 'Export, import & product-specific trade authorization licenses';
     case 'trade-documents':  return 'Sales contracts, purchase orders & signed trade agreements';
-    case 'shipment-agreements': return 'Per-shipment compliance matrix grouped by buyer-consignee link';
+    case 'shipment-agreements': return 'Per-shipment compliance matrix grouped by buyer-supplier link';
   }
 }
 
-/* ─── Scoped CSS — emerald palette to match the Sales → Consignee
-   page (mint hero strip, emerald Add Consignee button, mint table
+/* ─── Scoped CSS — emerald palette to match the Sales → Supplier
+   page (mint hero strip, emerald Add Supplier button, mint table
    header). Sibling Customer module owns the violet identity. */
-const CNEV_CSS = `
-.cnev-overlay {
+const SVEV_CSS = `
+.svev-overlay {
   position: fixed; inset: 0;
   background: rgba(6,78,59,0.45);
   -webkit-backdrop-filter: blur(6px);
@@ -649,7 +649,7 @@ const CNEV_CSS = `
   animation: cnevFade .18s ease both;
 }
 @keyframes cnevFade { from { opacity: 0; } to { opacity: 1; } }
-.cnev-card {
+.svev-card {
   position: relative;
   width: min(1280px, 90vw);
   height: 100vh;
@@ -663,7 +663,7 @@ const CNEV_CSS = `
 @keyframes cnevSlide { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
 /* ─── HEADER ─── */
-.cnev-header {
+.svev-header {
   position: relative;
   flex-shrink: 0;
   padding: 14px 22px;
@@ -671,7 +671,7 @@ const CNEV_CSS = `
   color: #fff;
   overflow: hidden;
 }
-.cnev-header-bg {
+.svev-header-bg {
   position: absolute; inset: 0;
   pointer-events: none;
   overflow: hidden;
@@ -679,18 +679,18 @@ const CNEV_CSS = `
     radial-gradient(circle at 100% 0%, rgba(167,243,208,0.32), transparent 45%),
     radial-gradient(circle at 0% 100%, rgba(110,231,183,0.30), transparent 55%);
 }
-.cnev-header-bg::before,
-.cnev-header-bg::after {
+.svev-header-bg::before,
+.svev-header-bg::after {
   content: '';
   position: absolute;
   border-radius: 50%;
   background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.22), rgba(255,255,255,0.06) 60%, transparent 75%);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
 }
-.cnev-header-bg::before { width: 220px; height: 220px; top: -80px; right: -40px; }
-.cnev-header-bg::after  { width: 130px; height: 130px; bottom: -45px; right: 130px;
+.svev-header-bg::before { width: 220px; height: 220px; top: -80px; right: -40px; }
+.svev-header-bg::after  { width: 130px; height: 130px; bottom: -45px; right: 130px;
   background: radial-gradient(circle at 30% 30%, rgba(110,231,183,0.30), rgba(110,231,183,0.06) 60%, transparent 75%); }
-.cnev-header-orb {
+.svev-header-orb {
   position: absolute;
   width: 90px; height: 90px;
   top: 8px; right: 220px;
@@ -698,12 +698,12 @@ const CNEV_CSS = `
   background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.18), rgba(255,255,255,0.04) 60%, transparent 75%);
   pointer-events: none;
 }
-.cnev-header-content {
+.svev-header-content {
   position: relative;
   display: flex; align-items: center; justify-content: space-between; gap: 20px;
 }
-.cnev-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.cnev-vault-icon {
+.svev-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.svev-vault-icon {
   position: relative;
   width: 42px; height: 42px; border-radius: 12px;
   background: rgba(255,255,255,0.18);
@@ -714,45 +714,45 @@ const CNEV_CSS = `
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   flex-shrink: 0;
 }
-.cnev-vault-icon-tick {
+.svev-vault-icon-tick {
   position: absolute; top: -3px; right: -3px;
   width: 18px; height: 18px; border-radius: 50%;
   background: #6ee7b7; color: #064e3b;
   display: inline-flex; align-items: center; justify-content: center;
   border: 2px solid #047857;
 }
-.cnev-header-text { min-width: 0; }
-.cnev-header-eyebrow { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: rgba(255,255,255,.78); margin-bottom: 2px; }
-.cnev-header-title { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.15; margin-bottom: 6px; color: #fff; }
-.cnev-header-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.cnev-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.24); color: #ecfdf5; }
-.cnev-chip-id { background: rgba(255,255,255,0.20); }
-.cnev-chip-link { background: rgba(255,255,255,0.14); color: #d1fae5; }
-.cnev-chip-risk[data-risk="low"]      { background: rgba(16,185,129,0.30); color: #ecfdf5; }
-.cnev-chip-risk[data-risk="medium"]   { background: rgba(245,158,11,0.30); color: #fef3c7; }
-.cnev-chip-risk[data-risk="high"]     { background: rgba(239,68,68,0.30);  color: #fee2e2; }
-.cnev-chip-risk[data-risk="critical"] { background: rgba(220,38,38,0.40);  color: #fee2e2; }
+.svev-header-text { min-width: 0; }
+.svev-header-eyebrow { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: rgba(255,255,255,.78); margin-bottom: 2px; }
+.svev-header-title { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.15; margin-bottom: 6px; color: #fff; }
+.svev-header-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.svev-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.24); color: #ecfdf5; }
+.svev-chip-id { background: rgba(255,255,255,0.20); }
+.svev-chip-link { background: rgba(255,255,255,0.14); color: #d1fae5; }
+.svev-chip-risk[data-risk="low"]      { background: rgba(16,185,129,0.30); color: #ecfdf5; }
+.svev-chip-risk[data-risk="medium"]   { background: rgba(245,158,11,0.30); color: #fef3c7; }
+.svev-chip-risk[data-risk="high"]     { background: rgba(239,68,68,0.30);  color: #fee2e2; }
+.svev-chip-risk[data-risk="critical"] { background: rgba(220,38,38,0.40);  color: #fee2e2; }
 
-.cnev-header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-.cnev-header-meta { font-size: 11px; color: rgba(255,255,255,.84); display: inline-flex; gap: 4px; align-items: center; }
-.cnev-header-meta span { white-space: nowrap; }
-.cnev-close {
+.svev-header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.svev-header-meta { font-size: 11px; color: rgba(255,255,255,.84); display: inline-flex; gap: 4px; align-items: center; }
+.svev-header-meta span { white-space: nowrap; }
+.svev-close {
   width: 28px; height: 28px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,0.18); color: #fff; border: 1px solid rgba(255,255,255,0.28);
   cursor: pointer; transition: all .15s;
   flex-shrink: 0;
 }
-.cnev-close:hover { background: rgba(255,255,255,0.30); transform: rotate(90deg); }
+.svev-close:hover { background: rgba(255,255,255,0.30); transform: rotate(90deg); }
 
 /* ─── KPI STRIP ─── */
-.cnev-kpi-outer {
+.svev-kpi-outer {
   position: relative;
   flex-shrink: 0;
   background: linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%);
   border-bottom: 1px solid #d1fae5;
 }
-.cnev-kpi-strip {
+.svev-kpi-strip {
   display: flex; gap: 12px; align-items: stretch;
   padding: 14px 64px;
   overflow-x: auto;
@@ -761,23 +761,23 @@ const CNEV_CSS = `
   -ms-overflow-style: none;
   scroll-behavior: smooth;
 }
-.cnev-kpi-strip::-webkit-scrollbar { display: none; }
-.cnev-kpi-cycle {
+.svev-kpi-strip::-webkit-scrollbar { display: none; }
+.svev-kpi-cycle {
   display: flex; gap: 12px; align-items: stretch;
   flex-shrink: 0;
   margin-right: 12px;
 }
-.cnev-kpi-cycle:last-child { margin-right: 0; }
-.cnev-kpi-fade {
+.svev-kpi-cycle:last-child { margin-right: 0; }
+.svev-kpi-fade {
   position: absolute;
   top: 0; bottom: 0;
   width: 70px;
   pointer-events: none;
   z-index: 3;
 }
-.cnev-kpi-fade-l { left: 0;  background: linear-gradient(90deg,  #f0fdf4 0%, #f0fdf4 25%, rgba(240,253,244,0) 100%); }
-.cnev-kpi-fade-r { right: 0; background: linear-gradient(270deg, #ecfdf5 0%, #ecfdf5 25%, rgba(236,253,245,0) 100%); }
-.cnev-kpi-nav {
+.svev-kpi-fade-l { left: 0;  background: linear-gradient(90deg,  #f0fdf4 0%, #f0fdf4 25%, rgba(240,253,244,0) 100%); }
+.svev-kpi-fade-r { right: 0; background: linear-gradient(270deg, #ecfdf5 0%, #ecfdf5 25%, rgba(236,253,245,0) 100%); }
+.svev-kpi-nav {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
@@ -796,7 +796,7 @@ const CNEV_CSS = `
   transition: all .18s ease;
   font-size: 18px;
 }
-.cnev-kpi-nav:hover {
+.svev-kpi-nav:hover {
   background: linear-gradient(135deg, #047857, #10b981);
   color: #fff;
   transform: translateY(-50%) scale(1.10);
@@ -804,10 +804,10 @@ const CNEV_CSS = `
     0 4px 10px rgba(16,185,129,0.30),
     0 10px 26px rgba(16,185,129,0.45);
 }
-.cnev-kpi-nav:active { transform: translateY(-50%) scale(0.96); }
-.cnev-kpi-nav-prev { left: 14px; }
-.cnev-kpi-nav-next { right: 14px; }
-.cnev-kpi-tile {
+.svev-kpi-nav:active { transform: translateY(-50%) scale(0.96); }
+.svev-kpi-nav-prev { left: 14px; }
+.svev-kpi-nav-next { right: 14px; }
+.svev-kpi-tile {
   position: relative;
   flex: 0 0 220px;
   background: var(--vz-card-bg, #fff);
@@ -819,26 +819,26 @@ const CNEV_CSS = `
   min-width: 0;
   transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease;
 }
-.cnev-kpi-tile:hover {
+.svev-kpi-tile:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(6,78,59,0.10);
   border-color: rgba(16,185,129,0.30);
 }
-.cnev-kpi-strip-top { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
-.cnev-kpi-body { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.cnev-kpi-text { min-width: 0; }
-.cnev-kpi-label {
+.svev-kpi-strip-top { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+.svev-kpi-body { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.svev-kpi-text { min-width: 0; }
+.svev-kpi-label {
   font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
   color: var(--vz-secondary-color, #6b7280);
   text-transform: uppercase;
   margin-bottom: 6px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cnev-kpi-value {
+.svev-kpi-value {
   font-size: 22px; font-weight: 800; line-height: 1;
   color: var(--vz-heading-color, #2b3245);
 }
-.cnev-kpi-icon {
+.svev-kpi-icon {
   width: 38px; height: 38px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
   color: #fff;
@@ -848,20 +848,20 @@ const CNEV_CSS = `
 }
 
 /* ─── TABS ─── */
-.cnev-tabs-wrap {
+.svev-tabs-wrap {
   flex-shrink: 0;
   background: linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%);
   border-bottom: 1px solid #d1fae5;
   padding: 12px 18px;
 }
-.cnev-tabs {
+.svev-tabs {
   display: flex; gap: 8px;
   overflow-x: auto;
   scrollbar-width: none;
   padding-bottom: 2px;
 }
-.cnev-tabs::-webkit-scrollbar { display: none; }
-.cnev-tab {
+.svev-tabs::-webkit-scrollbar { display: none; }
+.svev-tab {
   flex: 0 0 auto;
   position: relative;
   display: inline-flex; align-items: center; gap: 9px;
@@ -875,7 +875,7 @@ const CNEV_CSS = `
   transition: transform .18s ease, box-shadow .22s ease, border-color .18s ease, background .18s ease, color .18s ease;
   box-shadow: 0 1px 2px rgba(6,78,59,0.04);
 }
-.cnev-tab-icon {
+.svev-tab-icon {
   width: 28px; height: 28px;
   border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
@@ -885,17 +885,17 @@ const CNEV_CSS = `
   transition: all .18s ease;
   flex-shrink: 0;
 }
-.cnev-tab-label { white-space: nowrap; }
-.cnev-tab:hover {
+.svev-tab-label { white-space: nowrap; }
+.svev-tab:hover {
   transform: translateY(-1px);
   border-color: rgba(16,185,129,0.42);
   box-shadow: 0 6px 16px rgba(16,185,129,0.16);
   color: #064e3b;
 }
-.cnev-tab:hover .cnev-tab-icon {
+.svev-tab:hover .svev-tab-icon {
   background: linear-gradient(135deg, #a7f3d0, #6ee7b7);
 }
-.cnev-tab.is-active {
+.svev-tab.is-active {
   background: linear-gradient(135deg, #047857 0%, #10b981 55%, #6ee7b7 100%);
   border-color: transparent;
   color: #ffffff;
@@ -904,44 +904,44 @@ const CNEV_CSS = `
     0 10px 26px rgba(6,78,59,0.28);
   transform: translateY(-1px);
 }
-.cnev-tab.is-active .cnev-tab-icon {
+.svev-tab.is-active .svev-tab-icon {
   background: rgba(255,255,255,0.22);
   color: #ffffff;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.30);
 }
-.cnev-tab-count {
+.svev-tab-count {
   background: #d1fae5; color: #047857;
   font-size: 10.5px; font-weight: 800; letter-spacing: 0.02em;
   padding: 2px 8px; border-radius: 999px;
   min-width: 22px; text-align: center;
   transition: all .18s ease;
 }
-.cnev-tab.is-active .cnev-tab-count {
+.svev-tab.is-active .svev-tab-count {
   background: rgba(255,255,255,0.28);
   color: #ffffff;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.30);
 }
 
 /* ─── BODY ─── */
-.cnev-body {
+.svev-body {
   flex: 1; min-height: 0; overflow-y: auto;
   padding: 18px 24px 22px;
   display: flex; flex-direction: column; gap: 14px;
   scrollbar-width: thin;
 }
-.cnev-body::-webkit-scrollbar { width: 8px; }
-.cnev-body::-webkit-scrollbar-thumb { background: rgba(16,185,129,.30); border-radius: 999px; }
-.cnev-body::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
+.svev-body::-webkit-scrollbar { width: 8px; }
+.svev-body::-webkit-scrollbar-thumb { background: rgba(16,185,129,.30); border-radius: 999px; }
+.svev-body::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
 
-.cnev-section {
+.svev-section {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 18px;
   background: linear-gradient(110deg, #ecfdf5, #d1fae5 70%, #a7f3d0);
   border: 1px solid rgba(16,185,129,.18);
   border-radius: 14px;
 }
-.cnev-section-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.cnev-section-icon {
+.svev-section-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.svev-section-icon {
   width: 38px; height: 38px; border-radius: 10px;
   background: linear-gradient(135deg, #10b981, #047857);
   color: #fff;
@@ -949,19 +949,19 @@ const CNEV_CSS = `
   font-size: 18px;
   box-shadow: 0 4px 12px rgba(16,185,129,.30);
 }
-.cnev-section-title { font-size: 15px; font-weight: 800; color: #064e3b; }
-.cnev-section-sub   { font-size: 12px; color: #047857; margin-top: 1px; }
-.cnev-section-right { text-align: right; }
-.cnev-section-count { font-size: 26px; font-weight: 800; color: #064e3b; line-height: 1; }
-.cnev-section-count-label { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: #047857; margin-top: 2px; }
+.svev-section-title { font-size: 15px; font-weight: 800; color: #064e3b; }
+.svev-section-sub   { font-size: 12px; color: #047857; margin-top: 1px; }
+.svev-section-right { text-align: right; }
+.svev-section-count { font-size: 26px; font-weight: 800; color: #064e3b; line-height: 1; }
+.svev-section-count-label { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: #047857; margin-top: 2px; }
 
-.cnev-filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.cnev-filter { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 700; border: 1px solid transparent; }
-.cnev-filter-verified { background: #d1fae5; color: #047857; border-color: rgba(5,150,105,.30); }
-.cnev-filter-expiring { background: #fef3c7; color: #92400e; border-color: rgba(217,119,6,.30); }
-.cnev-filter-pending  { background: #fee2e2; color: #b91c1c; border-color: rgba(239,68,68,.30); }
+.svev-filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.svev-filter { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 700; border: 1px solid transparent; }
+.svev-filter-verified { background: #d1fae5; color: #047857; border-color: rgba(5,150,105,.30); }
+.svev-filter-expiring { background: #fef3c7; color: #92400e; border-color: rgba(217,119,6,.30); }
+.svev-filter-pending  { background: #fee2e2; color: #b91c1c; border-color: rgba(239,68,68,.30); }
 
-.cnev-table-wrap {
+.svev-table-wrap {
   background: #fff;
   border: 1px solid rgba(16,185,129,.18);
   border-radius: 14px;
@@ -969,17 +969,17 @@ const CNEV_CSS = `
   scrollbar-width: thin;
   position: relative;
 }
-.cnev-table-scroll {
+.svev-table-scroll {
   max-height: 480px;
   overflow-x: auto;
   overflow-y: auto;
   scrollbar-width: thin;
 }
-.cnev-table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-.cnev-table-scroll::-webkit-scrollbar-thumb { background: rgba(16,185,129,.30); border-radius: 999px; }
-.cnev-table-scroll::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
-.cnev-table { width: 100%; min-width: 980px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
-.cnev-table thead th {
+.svev-table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.svev-table-scroll::-webkit-scrollbar-thumb { background: rgba(16,185,129,.30); border-radius: 999px; }
+.svev-table-scroll::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
+.svev-table { width: 100%; min-width: 980px; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.svev-table thead th {
   position: sticky; top: 0;
   z-index: 3;
   padding: 9px 14px;
@@ -994,24 +994,24 @@ const CNEV_CSS = `
   color: #047857; text-transform: uppercase;
   white-space: nowrap;
 }
-.cnev-table tbody td { padding: 13px 14px; border-bottom: 1px solid #ecfdf5; vertical-align: middle; }
-.cnev-table tbody tr:last-child td { border-bottom: none; }
-.cnev-table tbody tr:hover td { background: #f0fdf4; }
-.cnev-doc-name { font-weight: 700; color: #064e3b; }
-.cnev-mono { font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace; font-size: 12px; color: #1f2937; }
-.cnev-empty { padding: 30px !important; text-align: center; color: #94a3b8; font-style: italic; }
-.cnev-muted { color: #94a3b8; font-style: italic; font-size: 12px; }
+.svev-table tbody td { padding: 13px 14px; border-bottom: 1px solid #ecfdf5; vertical-align: middle; }
+.svev-table tbody tr:last-child td { border-bottom: none; }
+.svev-table tbody tr:hover td { background: #f0fdf4; }
+.svev-doc-name { font-weight: 700; color: #064e3b; }
+.svev-mono { font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace; font-size: 12px; color: #1f2937; }
+.svev-empty { padding: 30px !important; text-align: center; color: #94a3b8; font-style: italic; }
+.svev-muted { color: #94a3b8; font-style: italic; font-size: 12px; }
 
-.cnev-date {
+.svev-date {
   display: inline-block;
   font-size: 11.5px; font-weight: 600;
   padding: 3px 9px; border-radius: 6px;
   background: #ecfdf5; color: #047857;
 }
-.cnev-date-expiry[data-status="expiring"] { background: #fef3c7; color: #92400e; }
-.cnev-date-expiry[data-status="pending"]  { background: #fee2e2; color: #b91c1c; }
+.svev-date-expiry[data-status="expiring"] { background: #fef3c7; color: #92400e; }
+.svev-date-expiry[data-status="pending"]  { background: #fee2e2; color: #b91c1c; }
 
-.cnev-attach {
+.svev-attach {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 9px; border-radius: 6px;
   background: #d1fae5; color: #047857;
@@ -1019,19 +1019,19 @@ const CNEV_CSS = `
   border: 1px solid rgba(16,185,129,.30);
 }
 
-.cnev-pill {
+.svev-pill {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 10px; border-radius: 999px;
   font-size: 11px; font-weight: 700;
 }
-.cnev-risk-compliant { background: #d1fae5; color: #047857; }
-.cnev-risk-medium    { background: #fef3c7; color: #92400e; }
-.cnev-risk-high      { background: #fee2e2; color: #b91c1c; }
+.svev-risk-compliant { background: #d1fae5; color: #047857; }
+.svev-risk-medium    { background: #fef3c7; color: #92400e; }
+.svev-risk-high      { background: #fee2e2; color: #b91c1c; }
 
-.cnev-chip-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 6px; background: #d1fae5; color: #047857; font-size: 11.5px; font-weight: 700; border: 1px solid rgba(16,185,129,.30); font-family: 'JetBrains Mono', ui-monospace, monospace; }
-.cnev-chip-pill-warm { background: #fef3c7; color: #92400e; border-color: rgba(217,119,6,.30); }
-.cnev-cust-cell { display: inline-flex; align-items: center; gap: 8px; }
-.cnev-cust-mono {
+.svev-chip-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 6px; background: #d1fae5; color: #047857; font-size: 11.5px; font-weight: 700; border: 1px solid rgba(16,185,129,.30); font-family: 'JetBrains Mono', ui-monospace, monospace; }
+.svev-chip-pill-warm { background: #fef3c7; color: #92400e; border-color: rgba(217,119,6,.30); }
+.svev-cust-cell { display: inline-flex; align-items: center; gap: 8px; }
+.svev-cust-mono {
   width: 26px; height: 26px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   background: linear-gradient(135deg, #10b981, #047857); color: #fff;
@@ -1040,33 +1040,33 @@ const CNEV_CSS = `
 }
 
 /* Compact donut + portal tooltip */
-.cnev-ratio {
+.svev-ratio {
   position: relative;
   display: inline-flex; align-items: center; justify-content: center;
   width: 38px; height: 38px;
   line-height: 1;
 }
-.cnev-ratio svg { display: block; transition: filter .2s ease; }
-.cnev-ratio:hover svg { filter: drop-shadow(0 2px 6px rgba(6,78,59,0.20)); }
-.cnev-ratio-track { stroke: #d1fae5; }
-.cnev-ratio-arc {
+.svev-ratio svg { display: block; transition: filter .2s ease; }
+.svev-ratio:hover svg { filter: drop-shadow(0 2px 6px rgba(6,78,59,0.20)); }
+.svev-ratio-track { stroke: #d1fae5; }
+.svev-ratio-arc {
   transition: stroke-dashoffset .6s cubic-bezier(.22,1,.36,1), stroke .2s ease;
 }
-.cnev-ratio[data-tone="good"] .cnev-ratio-arc { stroke: #16a34a; }
-.cnev-ratio[data-tone="mid"]  .cnev-ratio-arc { stroke: #f59e0b; }
-.cnev-ratio[data-tone="bad"]  .cnev-ratio-arc { stroke: #dc2626; }
-.cnev-ratio-label {
+.svev-ratio[data-tone="good"] .svev-ratio-arc { stroke: #16a34a; }
+.svev-ratio[data-tone="mid"]  .svev-ratio-arc { stroke: #f59e0b; }
+.svev-ratio[data-tone="bad"]  .svev-ratio-arc { stroke: #dc2626; }
+.svev-ratio-label {
   position: absolute; inset: 0;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 10.5px; font-weight: 800; letter-spacing: -0.02em;
   color: #064e3b;
   font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
 }
-.cnev-ratio[data-tone="good"] .cnev-ratio-label { color: #047857; }
-.cnev-ratio[data-tone="mid"]  .cnev-ratio-label { color: #b45309; }
-.cnev-ratio[data-tone="bad"]  .cnev-ratio-label { color: #b91c1c; }
+.svev-ratio[data-tone="good"] .svev-ratio-label { color: #047857; }
+.svev-ratio[data-tone="mid"]  .svev-ratio-label { color: #b45309; }
+.svev-ratio[data-tone="bad"]  .svev-ratio-label { color: #b91c1c; }
 
-.cnev-ratio-tip {
+.svev-ratio-tip {
   position: fixed;
   z-index: 12500;
   display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
@@ -1087,22 +1087,22 @@ const CNEV_CSS = `
   0%   { opacity: 0; transform: translateY(4px) scale(0.92); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
-.cnev-ratio-tip-pct {
+.svev-ratio-tip-pct {
   font-size: 15px; font-weight: 800; letter-spacing: -0.01em;
   font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace;
   color: #ffffff;
 }
-.cnev-ratio-tip-pct[data-tone="good"] { color: #6ee7b7; }
-.cnev-ratio-tip-pct[data-tone="mid"]  { color: #fcd34d; }
-.cnev-ratio-tip-pct[data-tone="bad"]  { color: #fca5a5; }
-.cnev-ratio-tip-meta {
+.svev-ratio-tip-pct[data-tone="good"] { color: #6ee7b7; }
+.svev-ratio-tip-pct[data-tone="mid"]  { color: #fcd34d; }
+.svev-ratio-tip-pct[data-tone="bad"]  { color: #fca5a5; }
+.svev-ratio-tip-meta {
   font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
   text-transform: uppercase;
   opacity: 0.82;
 }
 
-.cnev-ship-filter { display: flex; gap: 8px; flex-wrap: wrap; }
-.cnev-ship-fbtn {
+.svev-ship-filter { display: flex; gap: 8px; flex-wrap: wrap; }
+.svev-ship-fbtn {
   flex: 1; min-width: 160px;
   padding: 10px 18px;
   background: #fff;
@@ -1112,24 +1112,24 @@ const CNEV_CSS = `
   font-size: 12.5px; font-weight: 700;
   cursor: pointer; transition: all .15s;
 }
-.cnev-ship-fbtn:hover { background: #f0fdf4; color: #047857; }
-.cnev-ship-fbtn.is-active {
+.svev-ship-fbtn:hover { background: #f0fdf4; color: #047857; }
+.svev-ship-fbtn.is-active {
   background: linear-gradient(135deg, #047857, #10b981);
   color: #fff; border-color: transparent;
   box-shadow: 0 4px 12px rgba(16,185,129,.30);
 }
 
 /* ─── FOOTER ─── */
-.cnev-footer {
+.svev-footer {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 24px;
   background: #fff;
   border-top: 1px solid #d1fae5;
 }
-.cnev-footer-meta { font-size: 12px; color: #475569; }
-.cnev-footer-actions { display: flex; gap: 10px; }
-.cnev-btn {
+.svev-footer-meta { font-size: 12px; color: #475569; }
+.svev-footer-actions { display: flex; gap: 10px; }
+.svev-btn {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 9px 18px;
   border-radius: 10px;
@@ -1137,39 +1137,39 @@ const CNEV_CSS = `
   cursor: pointer; border: 1px solid transparent;
   transition: all .15s;
 }
-.cnev-btn-light { background: #fff; color: #047857; border-color: rgba(16,185,129,.30); }
-.cnev-btn-light:hover { background: #ecfdf5; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16,185,129,.20); }
-.cnev-btn-dark  { background: linear-gradient(135deg, #064e3b, #047857); color: #fff; box-shadow: 0 4px 14px rgba(6,78,59,.30); }
-.cnev-btn-dark:hover  { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(6,78,59,.45); }
+.svev-btn-light { background: #fff; color: #047857; border-color: rgba(16,185,129,.30); }
+.svev-btn-light:hover { background: #ecfdf5; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(16,185,129,.20); }
+.svev-btn-dark  { background: linear-gradient(135deg, #064e3b, #047857); color: #fff; box-shadow: 0 4px 14px rgba(6,78,59,.30); }
+.svev-btn-dark:hover  { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(6,78,59,.45); }
 
 /* ─── DARK MODE ─── */
-[data-bs-theme="dark"] .cnev-card { background: #0c2218; }
-[data-bs-theme="dark"] .cnev-tabs-wrap { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); border-bottom-color: rgba(16,185,129,.22); }
-[data-bs-theme="dark"] .cnev-tab { background: #102b21; border-color: rgba(16,185,129,.28); color: #6ee7b7; box-shadow: 0 1px 2px rgba(0,0,0,0.30); }
-[data-bs-theme="dark"] .cnev-tab-icon { background: rgba(16,185,129,.18); color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-tab:hover { border-color: rgba(110,231,183,.50); color: #d1fae5; box-shadow: 0 6px 16px rgba(0,0,0,.30); }
-[data-bs-theme="dark"] .cnev-tab:hover .cnev-tab-icon { background: rgba(16,185,129,.32); color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-tab.is-active { background: linear-gradient(135deg, #047857 0%, #10b981 55%, #6ee7b7 100%); color: #fff; border-color: transparent; }
-[data-bs-theme="dark"] .cnev-tab.is-active .cnev-tab-icon { background: rgba(255,255,255,0.22); color: #fff; }
-[data-bs-theme="dark"] .cnev-tab-count { background: rgba(16,185,129,.22); color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-tab.is-active .cnev-tab-count { background: rgba(255,255,255,.28); color: #fff; }
-[data-bs-theme="dark"] .cnev-kpi-outer { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); border-bottom-color: rgba(16,185,129,.22); }
-[data-bs-theme="dark"] .cnev-kpi-fade-l { background: linear-gradient(90deg,  #0c2218 0%, #0c2218 25%, rgba(12,34,24,0) 100%); }
-[data-bs-theme="dark"] .cnev-kpi-fade-r { background: linear-gradient(270deg, #102b21 0%, #102b21 25%, rgba(16,43,33,0) 100%); }
-[data-bs-theme="dark"] .cnev-kpi-nav { background: linear-gradient(135deg, #143829 0%, #0c2218 100%); color: #6ee7b7; box-shadow: 0 2px 6px rgba(0,0,0,.40), 0 8px 22px rgba(0,0,0,.50), inset 0 0 0 1px rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .cnev-kpi-nav:hover { background: linear-gradient(135deg, #047857, #10b981); color: #fff; }
-[data-bs-theme="dark"] .cnev-kpi-tile { background: #102b21; border-color: rgba(16,185,129,.28); box-shadow: 0 2px 10px rgba(0,0,0,0.30); }
-[data-bs-theme="dark"] .cnev-kpi-tile:hover { border-color: rgba(16,185,129,.45); box-shadow: 0 6px 18px rgba(0,0,0,0.40); }
-[data-bs-theme="dark"] .cnev-kpi-label { color: #94a3b8; }
-[data-bs-theme="dark"] .cnev-kpi-value { color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-body { background: #0c2218; }
-[data-bs-theme="dark"] .cnev-section { background: linear-gradient(110deg, rgba(16,185,129,.14), rgba(110,231,183,.10)); border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .cnev-section-title { color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-section-sub { color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-section-count { color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-section-count-label { color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-table-wrap { background: #102b21; border-color: rgba(16,185,129,.28); }
-[data-bs-theme="dark"] .cnev-table thead th {
+[data-bs-theme="dark"] .svev-card { background: #0c2218; }
+[data-bs-theme="dark"] .svev-tabs-wrap { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); border-bottom-color: rgba(16,185,129,.22); }
+[data-bs-theme="dark"] .svev-tab { background: #102b21; border-color: rgba(16,185,129,.28); color: #6ee7b7; box-shadow: 0 1px 2px rgba(0,0,0,0.30); }
+[data-bs-theme="dark"] .svev-tab-icon { background: rgba(16,185,129,.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .svev-tab:hover { border-color: rgba(110,231,183,.50); color: #d1fae5; box-shadow: 0 6px 16px rgba(0,0,0,.30); }
+[data-bs-theme="dark"] .svev-tab:hover .svev-tab-icon { background: rgba(16,185,129,.32); color: #d1fae5; }
+[data-bs-theme="dark"] .svev-tab.is-active { background: linear-gradient(135deg, #047857 0%, #10b981 55%, #6ee7b7 100%); color: #fff; border-color: transparent; }
+[data-bs-theme="dark"] .svev-tab.is-active .svev-tab-icon { background: rgba(255,255,255,0.22); color: #fff; }
+[data-bs-theme="dark"] .svev-tab-count { background: rgba(16,185,129,.22); color: #6ee7b7; }
+[data-bs-theme="dark"] .svev-tab.is-active .svev-tab-count { background: rgba(255,255,255,.28); color: #fff; }
+[data-bs-theme="dark"] .svev-kpi-outer { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); border-bottom-color: rgba(16,185,129,.22); }
+[data-bs-theme="dark"] .svev-kpi-fade-l { background: linear-gradient(90deg,  #0c2218 0%, #0c2218 25%, rgba(12,34,24,0) 100%); }
+[data-bs-theme="dark"] .svev-kpi-fade-r { background: linear-gradient(270deg, #102b21 0%, #102b21 25%, rgba(16,43,33,0) 100%); }
+[data-bs-theme="dark"] .svev-kpi-nav { background: linear-gradient(135deg, #143829 0%, #0c2218 100%); color: #6ee7b7; box-shadow: 0 2px 6px rgba(0,0,0,.40), 0 8px 22px rgba(0,0,0,.50), inset 0 0 0 1px rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .svev-kpi-nav:hover { background: linear-gradient(135deg, #047857, #10b981); color: #fff; }
+[data-bs-theme="dark"] .svev-kpi-tile { background: #102b21; border-color: rgba(16,185,129,.28); box-shadow: 0 2px 10px rgba(0,0,0,0.30); }
+[data-bs-theme="dark"] .svev-kpi-tile:hover { border-color: rgba(16,185,129,.45); box-shadow: 0 6px 18px rgba(0,0,0,0.40); }
+[data-bs-theme="dark"] .svev-kpi-label { color: #94a3b8; }
+[data-bs-theme="dark"] .svev-kpi-value { color: #d1fae5; }
+[data-bs-theme="dark"] .svev-body { background: #0c2218; }
+[data-bs-theme="dark"] .svev-section { background: linear-gradient(110deg, rgba(16,185,129,.14), rgba(110,231,183,.10)); border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .svev-section-title { color: #d1fae5; }
+[data-bs-theme="dark"] .svev-section-sub { color: #6ee7b7; }
+[data-bs-theme="dark"] .svev-section-count { color: #d1fae5; }
+[data-bs-theme="dark"] .svev-section-count-label { color: #6ee7b7; }
+[data-bs-theme="dark"] .svev-table-wrap { background: #102b21; border-color: rgba(16,185,129,.28); }
+[data-bs-theme="dark"] .svev-table thead th {
   background:
     linear-gradient(180deg, rgba(16,185,129,.22) 0%, rgba(16,185,129,.16) 55%, rgba(6,78,59,.18) 100%);
   color: #6ee7b7;
@@ -1178,66 +1178,66 @@ const CNEV_CSS = `
     inset 0 -1px 0 rgba(16,185,129,0.40),
     0 4px 10px -8px rgba(0,0,0,0.40);
 }
-[data-bs-theme="dark"] .cnev-table tbody td { color: #e2e8f0; border-bottom-color: rgba(16,185,129,.10); }
-[data-bs-theme="dark"] .cnev-table tbody tr:hover td { background: rgba(16,185,129,.06); }
-[data-bs-theme="dark"] .cnev-doc-name { color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-mono { color: #e2e8f0; }
-[data-bs-theme="dark"] .cnev-date { background: rgba(16,185,129,.16); color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-date-expiry[data-status="expiring"] { background: rgba(245,158,11,.18); color: #fcd34d; }
-[data-bs-theme="dark"] .cnev-date-expiry[data-status="pending"]  { background: rgba(239,68,68,.18); color: #fca5a5; }
-[data-bs-theme="dark"] .cnev-attach { background: rgba(16,185,129,.16); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .cnev-chip-pill { background: rgba(16,185,129,.16); color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-chip-pill-warm { background: rgba(217,119,6,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
-[data-bs-theme="dark"] .cnev-ratio-track { stroke: rgba(16,185,129,.22); }
-[data-bs-theme="dark"] .cnev-ratio-label { color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-ratio[data-tone="good"] .cnev-ratio-label { color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-ratio[data-tone="mid"]  .cnev-ratio-label { color: #fcd34d; }
-[data-bs-theme="dark"] .cnev-ratio[data-tone="bad"]  .cnev-ratio-label { color: #fca5a5; }
-[data-bs-theme="dark"] .cnev-footer { background: #0c2218; border-top-color: rgba(16,185,129,.22); }
-[data-bs-theme="dark"] .cnev-footer-meta { color: #cbd5e1; }
-[data-bs-theme="dark"] .cnev-btn-light { background: rgba(16,185,129,.12); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .cnev-btn-light:hover { background: rgba(16,185,129,.18); }
-[data-bs-theme="dark"] .cnev-ship-fbtn { background: #102b21; color: #94a3b8; border-color: rgba(16,185,129,.28); }
-[data-bs-theme="dark"] .cnev-ship-fbtn:hover { color: #6ee7b7; background: rgba(16,185,129,.10); }
-[data-bs-theme="dark"] .cnev-filter-verified { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .cnev-filter-expiring { background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
-[data-bs-theme="dark"] .cnev-filter-pending  { background: rgba(239,68,68,.18);  color: #fca5a5; border-color: rgba(239,68,68,.30); }
+[data-bs-theme="dark"] .svev-table tbody td { color: #e2e8f0; border-bottom-color: rgba(16,185,129,.10); }
+[data-bs-theme="dark"] .svev-table tbody tr:hover td { background: rgba(16,185,129,.06); }
+[data-bs-theme="dark"] .svev-doc-name { color: #d1fae5; }
+[data-bs-theme="dark"] .svev-mono { color: #e2e8f0; }
+[data-bs-theme="dark"] .svev-date { background: rgba(16,185,129,.16); color: #6ee7b7; }
+[data-bs-theme="dark"] .svev-date-expiry[data-status="expiring"] { background: rgba(245,158,11,.18); color: #fcd34d; }
+[data-bs-theme="dark"] .svev-date-expiry[data-status="pending"]  { background: rgba(239,68,68,.18); color: #fca5a5; }
+[data-bs-theme="dark"] .svev-attach { background: rgba(16,185,129,.16); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .svev-chip-pill { background: rgba(16,185,129,.16); color: #6ee7b7; }
+[data-bs-theme="dark"] .svev-chip-pill-warm { background: rgba(217,119,6,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
+[data-bs-theme="dark"] .svev-ratio-track { stroke: rgba(16,185,129,.22); }
+[data-bs-theme="dark"] .svev-ratio-label { color: #d1fae5; }
+[data-bs-theme="dark"] .svev-ratio[data-tone="good"] .svev-ratio-label { color: #6ee7b7; }
+[data-bs-theme="dark"] .svev-ratio[data-tone="mid"]  .svev-ratio-label { color: #fcd34d; }
+[data-bs-theme="dark"] .svev-ratio[data-tone="bad"]  .svev-ratio-label { color: #fca5a5; }
+[data-bs-theme="dark"] .svev-footer { background: #0c2218; border-top-color: rgba(16,185,129,.22); }
+[data-bs-theme="dark"] .svev-footer-meta { color: #cbd5e1; }
+[data-bs-theme="dark"] .svev-btn-light { background: rgba(16,185,129,.12); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .svev-btn-light:hover { background: rgba(16,185,129,.18); }
+[data-bs-theme="dark"] .svev-ship-fbtn { background: #102b21; color: #94a3b8; border-color: rgba(16,185,129,.28); }
+[data-bs-theme="dark"] .svev-ship-fbtn:hover { color: #6ee7b7; background: rgba(16,185,129,.10); }
+[data-bs-theme="dark"] .svev-filter-verified { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .svev-filter-expiring { background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(217,119,6,.30); }
+[data-bs-theme="dark"] .svev-filter-pending  { background: rgba(239,68,68,.18);  color: #fca5a5; border-color: rgba(239,68,68,.30); }
 
 /* ─── RESPONSIVE ─── */
-@media (max-width: 1440px) { .cnev-card { width: min(1100px, 92vw); } }
-@media (max-width: 1280px) { .cnev-card { width: 92vw; } }
+@media (max-width: 1440px) { .svev-card { width: min(1100px, 92vw); } }
+@media (max-width: 1280px) { .svev-card { width: 92vw; } }
 @media (max-width: 960px) {
-  .cnev-card { width: 96vw; }
-  .cnev-header { padding: 12px 14px; }
-  .cnev-header-title { font-size: 16px; }
-  .cnev-vault-icon { width: 38px; height: 38px; border-radius: 10px; }
-  .cnev-header-content { flex-direction: column; align-items: flex-start; gap: 10px; }
-  .cnev-header-right { width: 100%; justify-content: space-between; }
-  .cnev-kpi-strip { padding: 12px 52px; gap: 8px; }
-  .cnev-kpi-tile { flex: 0 0 190px; padding: 10px 12px; }
-  .cnev-kpi-value { font-size: 20px; }
-  .cnev-kpi-icon { width: 32px; height: 32px; font-size: 15px; }
-  .cnev-kpi-fade { width: 50px; }
-  .cnev-kpi-nav { width: 30px; height: 30px; font-size: 16px; }
-  .cnev-kpi-nav-prev { left: 10px; }
-  .cnev-kpi-nav-next { right: 10px; }
-  .cnev-tabs-wrap { padding: 10px 14px; }
-  .cnev-tab { padding: 7px 14px 7px 7px; font-size: 12.5px; gap: 7px; }
-  .cnev-tab-icon { width: 24px; height: 24px; font-size: 13px; }
-  .cnev-body { padding: 14px 16px 18px; gap: 12px; }
-  .cnev-section { padding: 12px 14px; }
-  .cnev-section-count { font-size: 22px; }
-  .cnev-footer { flex-direction: column; align-items: stretch; gap: 10px; }
-  .cnev-footer-actions { display: flex; gap: 8px; }
-  .cnev-footer-actions .cnev-btn { flex: 1; justify-content: center; }
-  .cnev-header-orb { display: none; }
-  .cnev-header-bg::after { display: none; }
+  .svev-card { width: 96vw; }
+  .svev-header { padding: 12px 14px; }
+  .svev-header-title { font-size: 16px; }
+  .svev-vault-icon { width: 38px; height: 38px; border-radius: 10px; }
+  .svev-header-content { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .svev-header-right { width: 100%; justify-content: space-between; }
+  .svev-kpi-strip { padding: 12px 52px; gap: 8px; }
+  .svev-kpi-tile { flex: 0 0 190px; padding: 10px 12px; }
+  .svev-kpi-value { font-size: 20px; }
+  .svev-kpi-icon { width: 32px; height: 32px; font-size: 15px; }
+  .svev-kpi-fade { width: 50px; }
+  .svev-kpi-nav { width: 30px; height: 30px; font-size: 16px; }
+  .svev-kpi-nav-prev { left: 10px; }
+  .svev-kpi-nav-next { right: 10px; }
+  .svev-tabs-wrap { padding: 10px 14px; }
+  .svev-tab { padding: 7px 14px 7px 7px; font-size: 12.5px; gap: 7px; }
+  .svev-tab-icon { width: 24px; height: 24px; font-size: 13px; }
+  .svev-body { padding: 14px 16px 18px; gap: 12px; }
+  .svev-section { padding: 12px 14px; }
+  .svev-section-count { font-size: 22px; }
+  .svev-footer { flex-direction: column; align-items: stretch; gap: 10px; }
+  .svev-footer-actions { display: flex; gap: 8px; }
+  .svev-footer-actions .svev-btn { flex: 1; justify-content: center; }
+  .svev-header-orb { display: none; }
+  .svev-header-bg::after { display: none; }
 }
 @media (max-width: 640px) {
-  .cnev-card { width: 100vw; }
-  .cnev-kpi-tile { flex: 0 0 170px; }
-  .cnev-tab { padding: 6px 12px 6px 6px; font-size: 11.5px; }
-  .cnev-tab-icon { width: 22px; height: 22px; font-size: 12px; }
-  .cnev-tab-count { font-size: 9.5px; padding: 1px 6px; }
+  .svev-card { width: 100vw; }
+  .svev-kpi-tile { flex: 0 0 170px; }
+  .svev-tab { padding: 6px 12px 6px 6px; font-size: 11.5px; }
+  .svev-tab-icon { width: 22px; height: 22px; font-size: 12px; }
+  .svev-tab-count { font-size: 9.5px; padding: 1px 6px; }
 }
 `;

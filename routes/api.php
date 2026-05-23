@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\ClmKycController;
 use App\Http\Controllers\Api\ClmQcController;
 use App\Http\Controllers\Api\ClmSegmentController;
 use App\Http\Controllers\Api\ClmSegmentRuleController;
+use App\Http\Controllers\Api\SegmentDocUploadController;
 use App\Http\Controllers\Api\ClmTncController;
 use App\Http\Controllers\Api\ClmTradeDocumentController;
 use App\Http\Controllers\Api\ClmTradeLicenseController;
@@ -254,10 +255,28 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // one round-trip. Declared BEFORE /clm/segment-rules/{id} so it isn't
     // captured as an id parameter.
     Route::get   ('/clm/segment-rules/bootstrap', [ClmSegmentRuleController::class, 'bootstrap']);
+    // Resolve a segment's rule + the full KYC/DD/TL/TD/QC master rows the rule
+    // references, so Customer/Consignee/Supplier Stage 2 forms can pre-populate
+    // their document tables in one fetch when the user picks a segment.
+    Route::get   ('/clm/segment-rules/for-segment/{segmentId}', [ClmSegmentRuleController::class, 'forSegment'])->whereNumber('segmentId');
     Route::get   ('/clm/segment-rules',           [ClmSegmentRuleController::class, 'index']);
     Route::post  ('/clm/segment-rules',           [ClmSegmentRuleController::class, 'store']);
     Route::put   ('/clm/segment-rules/{id}',      [ClmSegmentRuleController::class, 'update']);
     Route::delete('/clm/segment-rules/{id}',      [ClmSegmentRuleController::class, 'destroy']);
+
+    /* Segment-rule reference uploads — polymorphic across Customer /
+     * Consignee / Supplier. {type} is the URL slug (customer | consignee
+     * | supplier) and {id} is the owning record's primary key. Returns
+     * uploaded-doc rows grouped by category so the Evidence Vault can
+     * render its KPI cards + per-tab tables off one fetch. */
+    Route::get   ('/segment-uploads/{type}/{id}/summary',          [SegmentDocUploadController::class, 'summary'])->whereNumber('id');
+    /* Evidence Vault — single fetch that returns the buckets + KPI
+     * counts for the standalone Customer/Consignee/Supplier Vault
+     * popup. Built off (segment rule docs) ∪ (actual uploads). */
+    Route::get   ('/segment-uploads/{type}/{id}/vault',            [SegmentDocUploadController::class, 'vault'])->whereNumber('id');
+    Route::get   ('/segment-uploads/{type}/{id}',                  [SegmentDocUploadController::class, 'index'])->whereNumber('id');
+    Route::post  ('/segment-uploads/{type}/{id}',                  [SegmentDocUploadController::class, 'store'])->whereNumber('id');
+    Route::delete('/segment-uploads/{type}/{id}/{uploadId}',       [SegmentDocUploadController::class, 'destroy'])->whereNumber('id')->whereNumber('uploadId');
 
     // Sales Matrix → Lead Acknowledgement Master. Three opportunity buckets
     // (qualified / disqualified / clarity_pending) — controller returns them
