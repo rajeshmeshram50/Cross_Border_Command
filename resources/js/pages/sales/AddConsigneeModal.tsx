@@ -1519,6 +1519,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               segmentDocs={segmentDocs}
               segmentRefUploads={segmentRefUploads}
               setSegmentRefUploads={setSegmentRefUploads}
+              persistSegmentRefUpload={persistSegmentRefUpload}
             />
           )}
           {stage === 3 && (
@@ -2424,7 +2425,7 @@ const Stage2 = ({
   sub, setSub, search, setSearch, docs, owners,
   onAddDoc, onEditDoc, onDeleteDoc, onAddOwner, onEditOwner, onDeleteOwner,
   form1, locations, consigneeCode, sameAsCustomer, segmentName, segmentDocs,
-  segmentRefUploads, setSegmentRefUploads,
+  segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload,
 }: {
   sub: KycSubTab;
   setSub: (s: KycSubTab) => void;
@@ -2450,6 +2451,7 @@ const Stage2 = ({
   segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
   segmentRefUploads: Record<string, { file: File; url: string; name: string }>;
   setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+  persistSegmentRefUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
 }) => {
   const meta = KYC_SUB_META[sub];
   const isOwners = sub === 'owner-kyc';
@@ -5743,23 +5745,16 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   background: rgba(16,185,129,.35); border-radius: 999px;
 }
 .acm-loc-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
-/* Stage 2 KYC tables — cap the body height so a long list of
-   documents / owners scrolls inside the card instead of pushing the
-   modal footer off-screen. The header strip stays sticky so the user
-   can always see which column they're scrolling through. Both axes
-   scroll: vertical for many rows, horizontal for many columns on
-   narrow viewports. */
+/* Stage 2 KYC tables — let the table grow with its rows and rely on
+   the outer .acm-wiz-body as the single scroll surface. An inner
+   max-height here used to capture wheel events when the cursor was
+   over the table, so users on Stage 2 (especially edit mode with many
+   rows) couldn't scroll the modal at all. The footer stays anchored
+   because .acm-wiz-footer is outside .acm-wiz-body with flex-shrink: 0.
+   Horizontal scroll is still local to the wrap on narrow viewports. */
 .acm-kyc-body .acm-loc-table-wrap {
-  max-height: 360px;
-  overflow-y: auto;
   overflow-x: auto;
   scrollbar-width: thin;
-}
-.acm-kyc-body .acm-loc-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: #f9fafb;
 }
 [data-bs-theme="dark"] .acm-kyc-body .acm-loc-table thead th { background: #103129; }
 .acm-loc-table {
