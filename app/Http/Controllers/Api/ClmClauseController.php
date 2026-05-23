@@ -32,9 +32,12 @@ class ClmClauseController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
+        /* Description is no longer required — the redesigned Clause Type
+         * modal collects only the name. Old payloads with description
+         * still work; new ones can send empty string or omit. */
         $data = $request->validate([
             'name'        => 'required|string|max:255',
-            'description' => 'required|string|max:500',
+            'description' => 'nullable|string|max:500',
         ]);
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
@@ -43,7 +46,7 @@ class ClmClauseController extends Controller
                 'client_id'   => $user->client_id,
                 'code'        => $code,
                 'name'        => trim($data['name']),
-                'description' => trim($data['description']),
+                'description' => trim($data['description'] ?? ''),
                 'created_by'  => $user->id,
                 'updated_by'  => $user->id,
             ]);
@@ -57,10 +60,10 @@ class ClmClauseController extends Controller
         $row  = ClmClauseType::where('client_id', $user->client_id)->findOrFail($id);
         $data = $request->validate([
             'name'        => 'sometimes|required|string|max:255',
-            'description' => 'sometimes|required|string|max:500',
+            'description' => 'sometimes|nullable|string|max:500',
         ]);
         if (isset($data['name']))        $data['name']        = trim($data['name']);
-        if (isset($data['description'])) $data['description'] = trim($data['description']);
+        if (array_key_exists('description', $data)) $data['description'] = trim((string) $data['description']);
         $data['updated_by'] = $user->id;
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
@@ -90,10 +93,13 @@ class ClmClauseController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
+        /* Party is no longer required — the redesigned Add Clause modal
+         * collects only clause_type + name + content. Backward compatible:
+         * old payloads with party still work. */
         $data = $request->validate([
             'clause_type'   => 'required|string|max:255',
             'name'          => 'required|string|max:255',
-            'party'         => 'required|string|max:255',
+            'party'         => 'nullable|string|max:255',
             'clause_status' => 'nullable|string|max:32',
             'content'       => 'nullable|string',
         ]);
@@ -106,7 +112,7 @@ class ClmClauseController extends Controller
                 'code'          => $code,
                 'clause_type'   => trim($data['clause_type']),
                 'name'          => trim($data['name']),
-                'party'         => trim($data['party']),
+                'party'         => trim($data['party'] ?? ''),
                 'clause_status' => $data['clause_status'] ?? 'Active',
                 'content'       => $data['content']       ?? null,
                 'created_by'    => $user->id,
@@ -123,10 +129,11 @@ class ClmClauseController extends Controller
         $data = $request->validate([
             'clause_type'   => 'sometimes|required|string|max:255',
             'name'          => 'sometimes|required|string|max:255',
-            'party'         => 'sometimes|required|string|max:255',
+            'party'         => 'sometimes|nullable|string|max:255',
             'clause_status' => 'nullable|string|max:32',
             'content'       => 'nullable|string',
         ]);
+        if (array_key_exists('party', $data)) $data['party'] = trim((string) $data['party']);
         $data['updated_by'] = $user->id;
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh()]);

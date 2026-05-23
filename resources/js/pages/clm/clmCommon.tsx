@@ -172,21 +172,29 @@ export function ShortCodeNameModal(props: {
   onClose: () => void;
   onSave: (form: { short_code: string; name: string }) => void;
 }) {
-  const { title, code, isEdit, initialShortCode, initialName, onClose, onSave } = props;
-  const [shortCode, setShortCode] = useState(initialShortCode);
-  const [name, setName]           = useState(initialName);
-  const [errors, setErrors]       = useState<Record<string, string>>({});
-  const [saving, setSaving]       = useState(false);
+  const { title, code, isEdit, initialShortCode, onClose, onSave } = props;
+  const [name, setName]     = useState(props.initialName);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  /* Auto-derive a 3–4 letter short_code from the category name:
+   * first letter of each word longer than 2 chars, uppercased, capped at 4.
+   * Backend still requires short_code, so we send it but never show the field. */
+  const deriveShortCode = (raw: string): string => {
+    const fromWords = raw.split(/\s+/).filter(w => w.length > 2).map(w => w[0]).join('').toUpperCase().slice(0, 4);
+    return fromWords || raw.replace(/\s+/g, '').toUpperCase().slice(0, 4) || 'CAT';
+  };
 
   const handleSave = async () => {
     const next: Record<string, string> = {};
-    if (!shortCode.trim()) next.shortCode = 'Short code is required';
-    if (!name.trim())      next.name      = 'Name is required';
+    if (!name.trim()) next.name = 'Name is required';
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
-    try { await Promise.resolve(onSave({ short_code: shortCode.trim().toUpperCase(), name: name.trim() })); }
-    finally { setSaving(false); }
+    try {
+      const sc = (initialShortCode && isEdit) ? initialShortCode : deriveShortCode(name.trim());
+      await Promise.resolve(onSave({ short_code: sc, name: name.trim() }));
+    } finally { setSaving(false); }
   };
 
   return createPortal((
@@ -199,29 +207,23 @@ export function ShortCodeNameModal(props: {
             </div>
             <div>
               <div className="clm-modal-head-title">{title}</div>
-              <div className="clm-modal-head-sub">{isEdit ? 'Update the category below.' : 'Add a T&C category for grouping reusable terms.'}</div>
+              <div className="clm-modal-head-sub">{isEdit ? 'Update category details.' : 'Create a new document category.'}</div>
             </div>
           </div>
           <button className="clm-modal-close" onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
         </div>
         <div className="clm-modal-body">
           <div className="clm-autocode">
-            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg></div>
+            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>
             <div className="clm-autocode-text">
-              <div className="clm-autocode-label">{isEdit ? 'Category Code' : 'Auto Generated Code'}</div>
+              <div className="clm-autocode-label">Document Category ID</div>
               <div className="clm-autocode-val">{code}</div>
             </div>
             <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
           <div className="clm-field">
-            <label className="clm-field-label">Short Code <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.shortCode ? 'clm-input-err' : ''}`} placeholder="e.g. IPI, DPI, IGPO" value={shortCode} onChange={e => { setShortCode(e.target.value); setErrors(p => ({ ...p, shortCode: '' })); }} maxLength={12} style={{ textTransform: 'uppercase' }} />
-            <div className="clm-field-hint">3–4 letter chip displayed on cards.</div>
-            {errors.shortCode && <div className="clm-err">{errors.shortCode}</div>}
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">Category Name <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. International - Proforma Invoice" value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} />
+            <label className="clm-field-label">Document Category Name <span className="clm-req">*</span></label>
+            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. International – Proforma Invoice" value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
         </div>
@@ -229,7 +231,7 @@ export function ShortCodeNameModal(props: {
           <button className="clm-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="clm-btn-save" onClick={() => void handleSave()} disabled={saving}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-            {saving ? 'Saving…' : (isEdit ? 'Update' : 'Save')}
+            {saving ? 'Saving…' : (isEdit ? 'Update Category' : 'Save Entry')}
           </button>
         </div>
       </div>
@@ -237,17 +239,56 @@ export function ShortCodeNameModal(props: {
   ), document.body);
 }
 
-export function DeleteConf(props: { title: string; sub: string; onCancel: () => void; onConfirm: () => void }) {
+export function DeleteConf(props: { title: string; sub: string; onCancel: () => void; onConfirm: () => void | Promise<void> }) {
   const { title, sub, onCancel, onConfirm } = props;
+  /* Local in-flight guard — prevents duplicate API calls when the
+   * user double-clicks Delete (which was causing 404/409 backend
+   * errors). Awaits onConfirm so the state stays true until the
+   * parent's async delete actually resolves; if the parent unmounts
+   * the modal on success, the state is irrelevant. */
+  const [deleting, setDeleting] = useState(false);
+
+  const handleConfirm = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try { await Promise.resolve(onConfirm()); }
+    finally { setDeleting(false); }
+  };
+  const handleCancel = () => { if (!deleting) onCancel(); };
+
+  /* Wrap any "(XX-NNN)" code pattern in the sub string with a
+   * monospace cyan pill — matches the CLM table code pills. We
+   * split on the parenthesised group and rebuild as JSX so React
+   * can attach the styling without dangerouslySetInnerHTML. */
+  const renderSub = (text: string) => {
+    const parts = text.split(/(\([A-Z]{1,4}-\d{2,4}\))/);
+    return parts.map((p, i) => {
+      const m = /^\((.+)\)$/.exec(p);
+      return m
+        ? <span key={i}>(<span className="clm-conf-code">{m[1]}</span>)</span>
+        : <span key={i}>{p}</span>;
+    });
+  };
+
   return (
-    <div className="clm-conf-bd" onClick={onCancel}>
+    <div className="clm-conf-bd" onClick={handleCancel}>
       <div className="clm-conf" onClick={e => e.stopPropagation()}>
-        <div className="clm-conf-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg></div>
+        <div className="clm-conf-ico"><svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></div>
         <div className="clm-conf-title">{title}</div>
-        <div className="clm-conf-sub">{sub}</div>
+        <div className="clm-conf-sub">{renderSub(sub)}</div>
+        <div className="clm-conf-hint">This action cannot be undone.</div>
         <div className="clm-conf-btns">
-          <button className="clm-btn-cancel" onClick={onCancel}>Cancel</button>
-          <button className="clm-btn-del" onClick={onConfirm}>Delete</button>
+          <button className="clm-btn-cancel" onClick={handleCancel} disabled={deleting}>Cancel</button>
+          <button className="clm-btn-del" onClick={() => void handleConfirm()} disabled={deleting}>
+            {deleting ? (
+              <>
+                <svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+                Deleting…
+              </>
+            ) : 'Delete'}
+          </button>
         </div>
       </div>
     </div>

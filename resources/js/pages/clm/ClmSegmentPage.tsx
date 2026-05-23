@@ -15,17 +15,17 @@ import { MasterSelect } from '../../components/ui/MasterSelect';
  *   Card 3 — tabs (All/Highly/Less) + search + table + pagination
  */
 
-type Reg = 'highly' | 'less';
-type BC  = 'allowed' | 'not_allowed';
-type SegStatus = 'active' | 'inactive';
+export type Reg = 'highly' | 'less';
+export type BC  = 'allowed' | 'not_allowed';
+export type SegStatus = 'active' | 'inactive';
 
-type Segment = {
+export type Segment = {
   id: number; code: string; name: string;
   regulatory_status: Reg; buyer_consignee: BC; status: SegStatus;
 };
 type Counts = { all: number; highly: number; less: number };
 
-type SegmentForm = {
+export type SegmentForm = {
   name: string;
   regulatory_status: Reg;
   buyer_consignee: BC;
@@ -228,7 +228,7 @@ export default function ClmSegmentPage() {
   );
 }
 
-function SegmentModal(props: { existing: Segment | null; nextCode: string; onClose: () => void; onSave: (f: SegmentForm) => void; }) {
+export function SegmentModal(props: { existing: Segment | null; nextCode: string; onClose: () => void; onSave: (f: SegmentForm) => void; }) {
   const { existing, nextCode, onClose, onSave } = props;
   const isEdit = !!existing;
 

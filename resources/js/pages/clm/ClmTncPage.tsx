@@ -194,7 +194,7 @@ function CategoriesPane({ rows, loading, reload }: { rows: Cat[]; loading: boole
       </div>
 
       {modalOpen && <SimpleNameModal title={editing ? 'Edit Document Category' : 'Add New Document Category'} placeholder="e.g. International – Proforma Invoice" code={editing?.code ?? `DC-${String(rows.length + 1).padStart(3, '0')}`} isEdit={!!editing} initial={editing?.name ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(name) => onSave(name, editing?.id)} />}
-      {pendingDelete && createPortal(<DeleteConf title="Delete category?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+      {pendingDelete && createPortal(<DeleteConf title="Delete category?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
     </div>
   );
 }
@@ -325,3 +325,4 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
     </div>
   );
 }
+

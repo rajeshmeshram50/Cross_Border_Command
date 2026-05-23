@@ -26,7 +26,10 @@ return new class extends Migration
             $table->string('code', 16);          // CL-001
             $table->string('clause_type', 255);  // "Core Legal", "Financial", …
             $table->string('name', 255);
-            $table->string('party', 255);        // CSV
+            /* Party was dropped from the Add Clause modal in the redesign
+             * — kept on the schema for backward compatibility but now
+             * nullable so the API can omit it. */
+            $table->string('party', 255)->nullable();  // CSV
             $table->string('clause_status', 32)->default('Active');  // Active | Draft
 
             $table->text('content')->nullable();

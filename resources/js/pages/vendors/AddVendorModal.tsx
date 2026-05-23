@@ -4,6 +4,7 @@ import api from '../../api';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import {
   validateEmail, validatePincode, validateWebsite,
@@ -325,7 +326,12 @@ export default function AddVendorModal(props: {
   const [website,     setWebsite]     = useState('');
   const [riskLevel,   setRiskLevel]   = useState('');
   const [vendorBehaviour, setVendorBehaviour] = useState('');
-  const [segment,     setSegment]     = useState('');
+  /* Segment is multi-valued — array of segment ids (as strings) so a
+   * supplier can be tagged with several segments and the segment-rule
+   * resolver unions all their KYC/DD/TL/TD/QC docs into Step 2/3. The
+   * legacy `segment_id` column is scalar, so on save we send the first
+   * id as `segment_id` and the joined list as `segment_ids`. */
+  const [segment,     setSegment]     = useState<string[]>([]);
   const [complianceBehaviour, setComplianceBehaviour] = useState('');
 
   /* Segment-rule template — resolved KYC/DD/TL/TD/QC master rows for the
@@ -585,38 +591,56 @@ export default function AddVendorModal(props: {
     })();
   }, []);
 
-  /* Segment-rule template fetch. The supplier `segment` state stores
-   * the segment's DB id directly (unlike Customer/Consignee which hold
-   * the name) — feed it straight into the resolver endpoint. Bails out
-   * to an empty template when no segment is chosen or the API doesn't
-   * find a rule for it. */
+  /* Segment-rule template fetch (multi-segment). The supplier
+   * `segment` state is an array of DB ids (stringified). For each id
+   * we hit the resolver in parallel and merge category arrays —
+   * deduped by `code`, with Mandatory winning over Optional so a doc
+   * required by any segment stays mandatory in the union. */
   useEffect(() => {
-    /* Segment changed → previously-attached reference-row uploads no
-     * longer match anything (the DCP rule's codes are different). Wipe
-     * them and revoke each blob URL so the GC can reclaim them. */
+    /* Selection changed → previously-attached uploads no longer match
+     * (the DCP rule's codes are different). Wipe them and revoke
+     * blob URLs so the GC can reclaim. */
     setSegmentRefUploads(prev => {
       Object.values(prev).forEach(u => { try { URL.revokeObjectURL(u.url); } catch {} });
       return {};
     });
 
-    if (!segment) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
-    const id = Number(segment);
-    if (!Number.isFinite(id) || id <= 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    const ids = (segment ?? [])
+      .map(s => Number(s))
+      .filter(n => Number.isFinite(n) && n > 0);
+    if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
 
     let cancelled = false;
-    api.get(`/clm/segment-rules/for-segment/${id}`)
-      .then(r => {
-        if (cancelled) return;
-        const data = r.data?.data ?? {};
-        setSegmentDocs({
-          kyc: Array.isArray(data.kyc) ? data.kyc : [],
-          dd:  Array.isArray(data.dd)  ? data.dd  : [],
-          tl:  Array.isArray(data.tl)  ? data.tl  : [],
-          td:  Array.isArray(data.td)  ? data.td  : [],
-          qc:  Array.isArray(data.qc)  ? data.qc  : [],
-        });
-      })
-      .catch(() => { if (!cancelled) setSegmentDocs(EMPTY_SEG_DOCS); });
+    Promise.all(
+      ids.map(id =>
+        api.get(`/clm/segment-rules/for-segment/${id}`)
+          .then(r => r.data?.data ?? {})
+          .catch(() => ({}))
+      )
+    ).then(results => {
+      if (cancelled) return;
+      const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc'): SegDocRow[] => {
+        const map = new Map<string, SegDocRow>();
+        for (const r of results) {
+          const rows: SegDocRow[] = Array.isArray(r?.[cat]) ? r[cat] : [];
+          for (const d of rows) {
+            const existing = map.get(d.code);
+            if (!existing) { map.set(d.code, d); continue; }
+            if (existing.requirement !== 'M' && d.requirement === 'M') {
+              map.set(d.code, { ...existing, requirement: 'M' });
+            }
+          }
+        }
+        return Array.from(map.values());
+      };
+      setSegmentDocs({
+        kyc: mergeCat('kyc'),
+        dd:  mergeCat('dd'),
+        tl:  mergeCat('tl'),
+        td:  mergeCat('td'),
+        qc:  mergeCat('qc'),
+      });
+    });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segment]);
@@ -691,7 +715,16 @@ export default function AddVendorModal(props: {
         setVendorType(numStr(v.vendor_type_id));
         setRiskLevel(numStr(v.risk_level_id));
         setVendorBehaviour(numStr(v.vendor_behaviour_id));
-        setSegment(numStr(v.segment_id));
+        /* Multi-segment hydration. The legacy `segment_id` column is
+         * scalar — when the server starts shipping a `segment_ids`
+         * array (or comma-joined string), we honour it; otherwise we
+         * fall back to a single-element array sourced from segment_id. */
+        const segIds: string[] = Array.isArray((v as any).segment_ids)
+          ? (v as any).segment_ids.map((x: any) => String(x)).filter(Boolean)
+          : typeof (v as any).segment_ids === 'string'
+            ? (v as any).segment_ids.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : v.segment_id ? [String(v.segment_id)] : [];
+        setSegment(segIds);
         setComplianceBehaviour(numStr(v.compliance_behaviour_id));
 
         // Step 1 — primary address + extra contacts
@@ -841,7 +874,8 @@ export default function AddVendorModal(props: {
     if (!vendorType)         errs.vendorType          = 'Supplier Type is required';
     if (!riskLevel)          errs.riskLevel           = 'Risk Level is required';
     if (!vendorBehaviour)    errs.vendorBehaviour     = 'Supplier Behaviour is required';
-    if (!segment)            errs.segment             = 'Supplier Segment is required';
+    if (!Array.isArray(segment) || segment.length === 0)
+                              errs.segment             = 'Select at least one supplier segment';
     if (!complianceBehaviour) errs.complianceBehaviour = 'Compliance Behaviour is required';
     if (website)             { const e = validateWebsite(website); if (e) errs.website = e; }
     if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); toast.error('Missing required fields', 'Please fix the highlighted fields'); return false; }
@@ -856,7 +890,11 @@ export default function AddVendorModal(props: {
         vendor_type_id: vendorType ? Number(vendorType) : null,
         risk_level_id: riskLevel ? Number(riskLevel) : null,
         vendor_behaviour_id: vendorBehaviour ? Number(vendorBehaviour) : null,
-        segment_id: segment ? Number(segment) : null,
+        /* Multi-segment: the legacy `segment_id` column is scalar so
+         * we send the first selected id as primary. `segment_ids` is
+         * a comma-joined list for the future column. */
+        segment_id: (segment ?? [])[0] ? Number((segment ?? [])[0]) : null,
+        segment_ids: (segment ?? []).join(','),
         compliance_behaviour_id: complianceBehaviour ? Number(complianceBehaviour) : null,
       });
       setVendorId(res.data?.data?.id ?? vendorId);
@@ -1634,7 +1672,13 @@ export default function AddVendorModal(props: {
                       <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts} />
                     </Field>
                     <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
-                      <SelectInput value={segment} onChange={(v) => { setSegment(v); clearFieldError('segment'); }} placeholder="Select Segment" options={segmentOpts} />
+                      <MasterMultiSelect
+                        values={segment}
+                        options={segmentOpts}
+                        placeholder="Select Segment"
+                        addMorePlaceholder="+ Add another segment"
+                        onChange={vs => { setSegment(vs); clearFieldError('segment'); }}
+                      />
                     </Field>
                     <Field label="Compliance Behaviour" required addNew onAdd={() => setQuickAdd('compliance_behaviours')} error={fieldErrors.complianceBehaviour}>
                       <SelectInput value={complianceBehaviour} onChange={(v) => { setComplianceBehaviour(v); clearFieldError('complianceBehaviour'); }} placeholder="Select" options={complianceOpts} />
@@ -1751,7 +1795,7 @@ export default function AddVendorModal(props: {
                     <div className="avm-id-summary-row">
                       <span className="avm-id-pair"><span className="avm-id-k">RISK LEVEL :</span> <span className="avm-id-v">{labelFor(riskLevel, riskLevelOpts) || '—'}</span></span>
                       <span className="avm-id-pair"><span className="avm-id-k">VENDOR BEHAVIOUR :</span> <span className="avm-id-v">{labelFor(vendorBehaviour, behaviourOpts) || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">SEGMENT :</span> <span className="avm-id-v">{labelFor(segment, segmentOpts) || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">SEGMENT :</span> <span className="avm-id-v">{segment.length > 0 ? segment.map(id => labelFor(id, segmentOpts)).filter(Boolean).join(', ') : '—'}</span></span>
                       <span className="avm-id-pair"><span className="avm-id-k">COMPLIANCE BEHAVIOUR :</span> <span className="avm-id-v">{labelFor(complianceBehaviour, complianceOpts) || '—'}</span></span>
                     </div>
                     <div className="avm-id-summary-row">
@@ -2011,13 +2055,66 @@ export default function AddVendorModal(props: {
                     <button className={`avm-sub-pill ${kycSub === 'company' ? 'on' : ''}`} onClick={() => setKycSub('company')}>Company Due Diligence</button>
                     <button className={`avm-sub-pill ${kycSub === 'license' ? 'on' : ''}`} onClick={() => setKycSub('license')}>Trade License</button>
                   </div>
-                  {/* Read-only summary of what was captured in Step 2 — the
-                      Trade Document repository surfaces the same rows so
-                      onboarders can verify everything is in place before
-                      moving to product mapping. */}
-                  {kycSub === 'owner'   && <OwnerKycTable rows={ownerRows}   readOnly />}
-                  {kycSub === 'company' && <DdTable        rows={ddRows}      readOnly />}
-                  {kycSub === 'license' && <TradeLicenseTable rows={licenseRows} readOnly />}
+                  {/* Read-only roll-up of Step 2's segment-rule uploads.
+                      Each sub-pill maps to the matching Step 2 tab key
+                      (`company`/`owner`/`license`) — the same prefix
+                      SupplierSegmentRefTable uses to store uploads, so
+                      the View link here resolves the same blob URL the
+                      user picked on Step 2. */}
+                  {(() => {
+                    const sourceRows = kycSub === 'owner'   ? (segmentDocs.kyc || [])
+                                      : kycSub === 'company' ? (segmentDocs.dd  || [])
+                                      : (segmentDocs.tl || []);
+                    const tabKey = kycSub === 'owner' ? 'owner' : kycSub === 'company' ? 'company' : 'license';
+                    if (sourceRows.length === 0) {
+                      return (
+                        <div className="text-center text-muted py-4">
+                          No segment rule loaded for this category. Pick a segment on Step 1 to populate the vault.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="table-responsive table-card border rounded mt-2">
+                        <table className="table align-middle table-nowrap mb-0">
+                          <thead className="table-light">
+                            <tr>
+                              <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
+                              <th>AUTHORITY</th><th>EXPIRY</th><th>STATUS</th><th>ATTACHMENT</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sourceRows.map((d: any, i: number) => {
+                              const refKey = `${tabKey}::${d.code}`;
+                              const uploaded = segmentRefUploads[refKey];
+                              return (
+                                <tr key={d.code}>
+                                  <td>{String(i + 1).padStart(2, '0')}</td>
+                                  <td><span className="avm-auto-code">{d.code}</span></td>
+                                  <td><strong>{d.name}</strong></td>
+                                  <td>{d.authority || '—'}</td>
+                                  <td>{d.expiry || 'N/A'}</td>
+                                  <td>
+                                    <span className={`avm-pill ${d.requirement === 'M' ? 'avm-pill-success' : 'avm-pill-muted'}`}>
+                                      {d.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    {uploaded ? (
+                                      <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>
+                                        <i className="ri-attachment-line me-1" />{uploaded.name}
+                                      </a>
+                                    ) : (
+                                      <span className="text-muted fst-italic">Not uploaded in Step 2</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
                 </>
               )}
               {tradeTab === 'trade' && (
@@ -2154,7 +2251,14 @@ export default function AddVendorModal(props: {
               }
               case 'segments': {
                 const label = String(row.title ?? '');
-                if (label) { setSegmentOpts(prev => [...prev, { value: id, label }]); setSegment(id); clearFieldError('segment'); }
+                if (label) {
+                  setSegmentOpts(prev => [...prev, { value: id, label }]);
+                  /* Multi-select: append the newly-created segment id
+                   * rather than replacing the existing selection. Guard
+                   * against double-add when the user clicks twice. */
+                  setSegment(prev => prev.includes(id) ? prev : [...prev, id]);
+                  clearFieldError('segment');
+                }
                 break;
               }
               case 'compliance_behaviours': {
