@@ -40,6 +40,10 @@ return new class extends Migration
         //    in the mapping so downstream FKs can be re-pointed.
         $rows = DB::table('master_segments')->orderBy('id')->get();
         $perClientCounter = [];   // client_id → highest S-NNN already on clm_segments
+        $perClientCodes   = [];   // client_id → Set<string> of every code already
+                                  //              present in clm_segments. Used to
+                                  //              skip duplicates when a code-NNN is
+                                  //              already taken (sparse sequences).
 
         foreach ($rows as $row) {
             if (empty($row->client_id)) {
@@ -48,19 +52,41 @@ return new class extends Migration
 
             $cid = (int) $row->client_id;
 
-            // Initialise the per-client counter the first time we touch a
-            // client — read the current max code from clm_segments so the new
-            // sequence picks up where the existing one left off.
+            // Initialise per-client tracking the first time we touch a client.
+            // We seed the counter from the MAX existing S-NNN (not just the
+            // count, which is wrong when the sequence has gaps), and snapshot
+            // every existing code so we can skip past collisions when assigning.
             if (!isset($perClientCounter[$cid])) {
-                $existingCount = DB::table('clm_segments')
+                $existing = DB::table('clm_segments')
                     ->where('client_id', $cid)
-                    ->count();
-                $perClientCounter[$cid] = $existingCount;
+                    ->pluck('code')
+                    ->all();
+                $perClientCodes[$cid] = array_fill_keys($existing, true);
+                $maxN = 0;
+                foreach ($existing as $c) {
+                    if (preg_match('/^S-(\d+)$/', (string) $c, $m)) {
+                        $n = (int) $m[1];
+                        if ($n > $maxN) $maxN = $n;
+                    }
+                }
+                $perClientCounter[$cid] = $maxN;
             }
 
+            // Match-by-name short-circuit. If a row with the same name already
+            // exists for this client (e.g. a prior run got partway through, or
+            // the user manually added "Abc" before re-running migrate), reuse
+            // its id instead of re-inserting and tripping the unique key.
             $title = trim((string) ($row->title ?? ''));
             if ($title === '') {
                 $title = 'Segment ' . $row->id;
+            }
+            $existingByName = DB::table('clm_segments')
+                ->where('client_id', $cid)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($title)])
+                ->first();
+            if ($existingByName) {
+                $idMap[(int) $row->id] = (int) $existingByName->id;
+                continue;
             }
 
             // Status normalisation: master used 'Active'/'Inactive'
@@ -70,8 +96,12 @@ return new class extends Migration
                 $status = 'active';
             }
 
-            $perClientCounter[$cid]++;
-            $code = sprintf('S-%03d', $perClientCounter[$cid]);
+            // Find the next free S-NNN — skip any value already taken.
+            do {
+                $perClientCounter[$cid]++;
+                $code = sprintf('S-%03d', $perClientCounter[$cid]);
+            } while (isset($perClientCodes[$cid][$code]));
+            $perClientCodes[$cid][$code] = true;
 
             $newId = DB::table('clm_segments')->insertGetId([
                 'client_id'         => $cid,

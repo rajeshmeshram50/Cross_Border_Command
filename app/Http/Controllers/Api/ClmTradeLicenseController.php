@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClmTradeLicense;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class ClmTradeLicenseController extends Controller
@@ -34,6 +35,16 @@ class ClmTradeLicenseController extends Controller
             'validity'  => 'nullable|string|max:32',
             'status'    => ['nullable', Rule::in(ClmTradeLicense::STATUSES)],
         ]);
+
+        $name = trim($data['name']);
+        if (ClmTradeLicense::where('client_id', $user->client_id)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->exists()) {
+            return response()->json([
+                'status'  => false,
+                'message' => "A trade licence named \"{$name}\" already exists. Pick a different name.",
+            ], 409);
+        }
 
         $row = DB::transaction(function () use ($user, $data) {
             return ClmTradeLicense::create([
@@ -66,6 +77,18 @@ class ClmTradeLicenseController extends Controller
 
         if (isset($data['name']))      $data['name']      = trim($data['name']);
         if (isset($data['authority'])) $data['authority'] = trim($data['authority']);
+
+        if (isset($data['name'])
+            && ClmTradeLicense::where('client_id', $user->client_id)
+                ->where('id', '!=', $row->id)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
+                ->exists()) {
+            return response()->json([
+                'status'  => false,
+                'message' => "Another trade licence named \"{$data['name']}\" already exists. Pick a different name.",
+            ], 409);
+        }
+
         $data['updated_by'] = $user->id;
         $row->update($data);
 
@@ -77,15 +100,60 @@ class ClmTradeLicenseController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
         $row  = ClmTradeLicense::where('client_id', $user->client_id)->findOrFail($id);
+
+        $usedIn = $this->usageCheck($row->code);
+        if (!empty($usedIn)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This trade license is in use by ' . implode(', ', $usedIn) . '. Remove or reassign those records before deleting.',
+                'used_in' => $usedIn,
+            ], 409);
+        }
+
         $row->delete();
 
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
+    /** Shared usage check — referenced by segment rules (doc_selections
+     *  JSON) and by segment_doc_uploads (doc_code). */
+    private function usageCheck(?string $code): array
+    {
+        if (!$code) return [];
+        $usedIn = [];
+        if (Schema::hasTable('clm_segment_rules')
+            && Schema::hasColumn('clm_segment_rules', 'doc_selections')
+            && DB::table('clm_segment_rules')
+                ->where('doc_selections', 'like', '%"' . $code . '"%')
+                ->exists()) {
+            $usedIn[] = 'Segment Rules';
+        }
+        if (Schema::hasTable('segment_doc_uploads')
+            && Schema::hasColumn('segment_doc_uploads', 'doc_code')
+            && DB::table('segment_doc_uploads')->where('doc_code', $code)->exists()) {
+            $usedIn[] = 'Segment Doc Uploads';
+        }
+        return $usedIn;
+    }
+
     private function nextCode(int $clientId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        $count = ClmTradeLicense::where('client_id', $clientId)->count();
-        return sprintf('TL-%03d', $count + 1);
+        $codes = ClmTradeLicense::where('client_id', $clientId)->pluck('code')->all();
+        $maxN = 0;
+        $taken = [];
+        foreach ($codes as $c) {
+            if (preg_match('/^TL-(\d+)$/', (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $maxN) $maxN = $n;
+            }
+            $taken[(string) $c] = true;
+        }
+        $n = $maxN;
+        do {
+            $n++;
+            $code = sprintf('TL-%03d', $n);
+        } while (isset($taken[$code]));
+        return $code;
     }
 }

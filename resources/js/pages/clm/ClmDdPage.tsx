@@ -7,6 +7,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { SimpleDescModal } from './clmCommon';
 
 /* Central CLM → Due Diligence Master. 3-card faithful port. */
 
@@ -160,12 +161,16 @@ export default function ClmDdPage() {
 }
 
 function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: { name: string; authority: string }) => void; }) {
-  const { existing, authorities, nextCode, onClose, onSave } = props;
+  const { existing, authorities: initialAuthorities, nextCode, onClose, onSave } = props;
+  const toast = useToast();
   const isEdit = !!existing;
   const [name, setName] = useState(existing?.name ?? '');
   const [auth, setAuth] = useState(existing?.authority ?? '');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [authorities, setAuthorities] = useState<Authority[]>(initialAuthorities);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  useEffect(() => { setAuthorities(initialAuthorities); }, [initialAuthorities]);
 
   const handleSave = async () => {
     const next: Record<string, string> = {};
@@ -176,6 +181,20 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
     setSaving(true);
     try { await Promise.resolve(onSave({ name: name.trim(), authority: auth.trim() })); }
     finally { setSaving(false); }
+  };
+
+  const onAddNewAuthority = async (form: { name: string; description: string }) => {
+    try {
+      const r = await api.post<{ status: boolean; data: Authority }>('/clm/authorities', form);
+      const created = r.data.data;
+      setAuthorities(prev => [...prev, created]);
+      setAuth(created.name);
+      setErrors(p => ({ ...p, auth: '' }));
+      setQuickAddOpen(false);
+      toast.success('Added', created.name);
+    } catch (e: any) {
+      toast.error('Save failed', e?.response?.data?.message ?? 'Could not add authority');
+    }
   };
 
   return createPortal((
@@ -207,18 +226,27 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Issuing Authority <span className="clm-req">*</span></label>
-            <MasterSelect
-              key={`dd-auth-${authorities.length}`}
-              value={auth}
-              invalid={!!errors.auth}
-              placeholder="— Select Authority —"
-              options={[
-                ...authorities.map(a => ({ value: a.name, label: a.name })),
-                ...(auth && !authorities.find(a => a.name === auth) ? [{ value: auth, label: auth }] : []),
-              ]}
-              onChange={(v) => { setAuth(v); setErrors(p => ({ ...p, auth: '' })); }}
-            />
-            <div className="clm-field-hint">Pulls from Authority Master.</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <MasterSelect
+                  key={`dd-auth-${authorities.length}`}
+                  value={auth}
+                  invalid={!!errors.auth}
+                  placeholder="— Select Authority —"
+                  options={[
+                    ...authorities.map(a => ({ value: a.name, label: a.name })),
+                    ...(auth && !authorities.find(a => a.name === auth) ? [{ value: auth, label: auth }] : []),
+                  ]}
+                  onChange={(v) => { setAuth(v); setErrors(p => ({ ...p, auth: '' })); }}
+                />
+              </div>
+              <Tooltip label="Add new authority">
+                <button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+              </Tooltip>
+            </div>
+            <div className="clm-field-hint">Pulls from Authority Master — click + to add a new authority.</div>
             {errors.auth && <div className="clm-err">{errors.auth}</div>}
           </div>
         </div>
@@ -230,6 +258,19 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
           </button>
         </div>
       </div>
+      {quickAddOpen && (
+        <SimpleDescModal
+          title="Add New Authority"
+          namePlaceholder="e.g. Income Tax Department, DGFT, GSTN"
+          descPlaceholder="What this authority issues / regulates"
+          code={`A-${String(authorities.length + 1).padStart(3, '0')}`}
+          isEdit={false}
+          initialName=""
+          initialDesc=""
+          onClose={() => setQuickAddOpen(false)}
+          onSave={(f) => void onAddNewAuthority(f)}
+        />
+      )}
     </div>
   ), document.body);
 }
