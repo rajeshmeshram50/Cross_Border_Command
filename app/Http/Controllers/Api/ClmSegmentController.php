@@ -218,6 +218,10 @@ class ClmSegmentController extends Controller
      * so two concurrent inserts can't pick the same number (Postgres
      * rejects FOR UPDATE on aggregates so we can't lock count(*) itself).
      * The composite UNIQUE on (client_id, code) is the second guard.
+     *
+     * Uses MAX(numeric suffix) + 1 rather than count() so deleted rows in
+     * the middle of the sequence don't cause the next allocation to clash
+     * with an existing code.
      */
     private function nextCode(int $clientId): string
     {
