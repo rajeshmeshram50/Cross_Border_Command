@@ -167,7 +167,7 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
       </div>
 
       {modalOpen && <SimpleNameModal title={editing ? 'Edit Trade Document' : 'Add Trade Document'} placeholder="e.g. Bill of Lading, Commercial Invoice" code={editing?.code ?? `TDN-${String(rows.length + 1).padStart(3, '0')}`} isEdit={!!editing} initial={editing?.name ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(name) => onSave(name, editing?.id)} />}
-      {pendingDelete && createPortal(<DeleteConf title="Delete trade document?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+      {pendingDelete && createPortal(<DeleteConf title="Delete trade document?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
     </div>
   );
 }
@@ -284,7 +284,7 @@ function LibraryPane({ rows, names, loading, reload }: { rows: TdLib[]; names: T
       </div>
 
       {modalOpen && <LibraryModal existing={editing} names={names} nextCode={`TD-${String(rows.length + 1).padStart(3, '0')}`} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />}
-      {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+      {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
     </div>
   );
 }

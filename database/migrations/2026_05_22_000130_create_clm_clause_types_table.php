@@ -22,7 +22,10 @@ return new class extends Migration
 
             $table->string('code', 16);          // CLT-001
             $table->string('name', 255);
-            $table->string('description', 500);
+            /* Description was dropped from the Clause Type modal in the
+             * redesign — kept on the schema for backward compatibility
+             * but now nullable so the API can omit it. */
+            $table->string('description', 500)->nullable();
 
             $table->string('status', 16)->default('active');
 

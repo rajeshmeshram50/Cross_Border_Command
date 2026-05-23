@@ -24,7 +24,9 @@ export const CLM_CSS = `
 .clm-root {
   padding: 12px 14px;
   width: 100%;
-  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-family: 'Rubik', system-ui, sans-serif;
+  font-size: 14px;
+  letter-spacing: normal;
   color: #0F172A;
   display: flex; flex-direction: column; gap: 8px;
   background: #F4F6FB;
@@ -83,13 +85,13 @@ export const CLM_CSS = `
 }
 .clm-head-strip-text { min-width: 0; }
 .clm-head-strip-title {
-  font-size: 19px; font-weight: 800; color: #0c4a6e;
-  letter-spacing: -.01em; line-height: 1.2;
+  font-size: 16px; font-weight: 500; color: #0c4a6e;
+  letter-spacing: -.4px; line-height: 1.15;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .clm-head-strip-sub {
-  font-size: 12.5px; font-weight: 500; color: #0e7490;
-  opacity: 1; margin-top: 4px; line-height: 1.4;
+  font-size: 11px; font-weight: 500; color: #0e7490;
+  opacity: .9; margin-top: 3px; line-height: 1.4;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .clm-add-btn {
@@ -145,10 +147,10 @@ export const CLM_CSS = `
 }
 .clm-bref-mid { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; position: relative; z-index: 1; }
 .clm-bref-row { display: flex; align-items: center; gap: 9px; }
-.clm-bref-label { font-size: 12px; font-weight: 700; letter-spacing: 0; color: #0891b2; line-height: 1.2; white-space: nowrap; flex-shrink: 0; }
-.clm-bref-sep { width: 1px; height: 14px; background: #A5E8F5; flex-shrink: 0; }
-.clm-bref-title { font-size: 13px; font-weight: 700; color: #0c4a6e; letter-spacing: 0; line-height: 1.2; white-space: nowrap; }
-.clm-bref-sub { font-size: 11.5px; font-weight: 500; color: #0e7490; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clm-bref-label { font-size: 9.5px; font-weight: 500; letter-spacing: -.2px; color: #0891b2; line-height: 1; white-space: nowrap; flex-shrink: 0; }
+.clm-bref-sep { width: 1px; height: 13px; background: #A5E8F5; flex-shrink: 0; }
+.clm-bref-title { font-size: 11px; font-weight: 500; color: #0c4a6e; letter-spacing: -.2px; line-height: 1; white-space: nowrap; }
+.clm-bref-sub { font-size: 9.5px; font-weight: 500; color: #0e7490; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clm-bref-toggle {
   width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -186,9 +188,9 @@ export const CLM_CSS = `
 }
 .clm-bref-item-top { display: flex; align-items: center; gap: 6px; margin-bottom: 0; }
 .clm-bref-item-ico { width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #0891b2; }
-.clm-bref-item-num { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #94A3B8; line-height: 1; }
-.clm-bref-item-title { font-size: 13px; font-weight: 700; color: #0F172A; letter-spacing: 0; line-height: 1.25; margin-bottom: 4px; margin-top: 6px; }
-.clm-bref-item-desc { font-size: 11.5px; font-weight: 500; color: #94A3B8; line-height: 1.45; }
+.clm-bref-item-num { font-size: 8.5px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: #94A3B8; line-height: 1; }
+.clm-bref-item-title { font-size: 11px; font-weight: 500; color: #0F172A; letter-spacing: -.2px; line-height: 1.25; margin-bottom: 3px; margin-top: 5px; }
+.clm-bref-item-desc { font-size: 9.5px; font-weight: 500; color: #94A3B8; line-height: 1.4; }
 @media (max-width: 1100px) { .clm-bref-body { grid-template-columns: repeat(4, 1fr); } }
 @media (max-width: 700px)  { .clm-bref-body { grid-template-columns: repeat(2, 1fr); } }
 
@@ -224,7 +226,7 @@ export const CLM_CSS = `
 .clm-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 20px; height: 20px; border-radius: 20px; padding: 0 6px;
-  font-size: 10px; font-weight: 800;
+  font-size: 10px; font-weight: 500;
 }
 .clm-tab.active .clm-tab-count {
   background: rgba(255,255,255,.18); color: #fff;
@@ -317,7 +319,7 @@ export const CLM_CSS = `
   display: flex; align-items: center; justify-content: center;
   background: #fff;
   border-left: 1.5px solid rgba(8,145,178,.25);
-  font-size: 13px; font-weight: 800; color: #0891b2;
+  font-size: 13px; font-weight: 500; color: #0891b2;
   letter-spacing: -.3px; min-width: 16px; text-align: center;
 }
 
@@ -337,7 +339,7 @@ export const CLM_CSS = `
   padding: 13px 16px;
   background: linear-gradient(110deg, #f0fdff, #e8fbfd);
   border-bottom: 1.5px solid rgba(6,182,212,.20);
-  font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  font-size: 11px; font-weight: 500; letter-spacing: .08em;
   color: #0e7490; text-transform: uppercase;
   white-space: nowrap; text-align: left;
 }
@@ -356,7 +358,7 @@ export const CLM_CSS = `
 .clm-code-pill {
   display: inline-block;
   font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px; font-weight: 800; letter-spacing: .05em;
+  font-size: 11px; font-weight: 500; letter-spacing: .05em;
   color: #0891b2;
   background: linear-gradient(135deg, rgba(8,145,178,.10), rgba(6,182,212,.06));
   padding: 4px 9px; border-radius: 7px;
@@ -428,7 +430,7 @@ export const CLM_CSS = `
   flex-wrap: wrap; gap: 10px;
 }
 .clm-pag-info { font-size: 12.5px; color: #475569; font-weight: 500; }
-.clm-pag-info b { color: #0c4a6e; font-weight: 800; }
+.clm-pag-info b { color: #0c4a6e; font-weight: 500; }
 .clm-pag-btns { display: inline-flex; align-items: center; gap: 6px; }
 .clm-pag-btn {
   min-width: 32px; height: 32px; padding: 0 10px;
@@ -450,7 +452,7 @@ export const CLM_CSS = `
 .clm-pag-btn:disabled { opacity: 0.40; cursor: not-allowed; }
 .clm-pag-btn.on {
   background: linear-gradient(135deg, #06b6d4, #0891b2 60%, #0e7490);
-  border-color: transparent; color: #fff; font-weight: 800;
+  border-color: transparent; color: #fff; font-weight: 500;
   box-shadow: 0 4px 12px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.18);
   cursor: default;
 }
@@ -506,11 +508,21 @@ export const CLM_CSS = `
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 4px 12px rgba(0,0,0,.15), inset 0 1px 0 rgba(255,255,255,.2);
 }
-.clm-modal-head-title { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -.3px; line-height: 1.2; }
+.clm-modal-head-title { font-size: 16px; font-weight: 500; color: #fff; letter-spacing: -.3px; line-height: 1.2; }
 .clm-modal-head-sub   { font-size: 10.5px; color: rgba(255,255,255,.7); margin-top: 4px; font-weight: 500; line-height: 1.4; }
-/* Top-right X hidden via CSS — Cancel button in footer is the
-   single dismissal path. JSX intact so it can be flipped back. */
-.clm-modal-close { display: none !important; }
+.clm-modal-close {
+  position: relative; z-index: 1; flex-shrink: 0;
+  width: 32px; height: 32px; border-radius: 9px;
+  background: rgba(255,255,255,.12);
+  border: 1.5px solid rgba(255,255,255,.25);
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,.9);
+  cursor: pointer;
+  font-size: 16px; font-weight: 300;
+  font-family: inherit; line-height: 1;
+  transition: background .15s, border-color .15s;
+}
+.clm-modal-close:hover { background: rgba(255,255,255,.24); border-color: rgba(255,255,255,.45); }
 
 .clm-modal-body {
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
@@ -536,10 +548,10 @@ export const CLM_CSS = `
   box-shadow: 0 2px 6px rgba(8,145,178,.28);
 }
 .clm-autocode-text { flex: 1; min-width: 0; }
-.clm-autocode-label { font-size: 8px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #0891b2; opacity: .7; margin-bottom: 2px; }
+.clm-autocode-label { font-size: 8px; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: #0891b2; opacity: .7; margin-bottom: 2px; }
 .clm-autocode-val {
   font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 14px; font-weight: 800; color: #0c4a6e;
+  font-size: 14px; font-weight: 500; color: #0c4a6e;
   letter-spacing: .06em; line-height: 1;
 }
 .clm-autocode-badge {
@@ -558,7 +570,7 @@ export const CLM_CSS = `
 .clm-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 6px; }
 .clm-field:last-child { margin-bottom: 0; }
 .clm-field-label {
-  font-size: 8.5px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase;
+  font-size: 8.5px; font-weight: 500; letter-spacing: .13em; text-transform: uppercase;
   color: #0e7490; display: flex; align-items: center; gap: 5px;
 }
 .clm-req { color: #EF4444; font-size: 13px; line-height: 1; font-weight: 700; }
@@ -643,35 +655,242 @@ export const CLM_CSS = `
 }
 .clm-btn-cancel:disabled, .clm-btn-save:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
 
-/* Delete confirm */
+/* ──────────────────────────────────────────────────────────
+ * 2-STAGE STEPPER MODAL — used by T&C Library "Add T&C".
+ * Header carries an eyebrow + ID badge; body has a stepper bar
+ * with active/done/idle cards and a 2-bar progress indicator.
+ * ────────────────────────────────────────────────────────── */
+.clm-modal-xwide { max-width: 960px; }
+.clm-modal-head-eyebrow { font-size: 8.5px; font-weight: 700; color: rgba(255,255,255,.6); letter-spacing: .12em; text-transform: uppercase; margin-bottom: 3px; }
+.clm-modal-head-right { display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; flex-shrink: 0; }
+.clm-modal-id-badge { background: rgba(255,255,255,.13); border: 1.5px solid rgba(255,255,255,.22); border-radius: 10px; padding: 6px 14px; text-align: center; min-width: 110px; }
+.clm-modal-id-label { font-size: 8.5px; font-weight: 700; color: rgba(255,255,255,.55); letter-spacing: .1em; text-transform: uppercase; margin-bottom: 2px; }
+.clm-modal-id-val { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: .04em; font-family: 'Geist Mono', monospace; line-height: 1.2; }
+
+/* Stepper bar — sits between modal head and body */
+.clm-stepper { background: #fff; padding: 14px 24px; border-bottom: 1.5px solid rgba(6,182,212,.1); flex-shrink: 0; display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+.clm-step-card { display: flex; align-items: center; gap: 11px; padding: 10px 18px; border-radius: 12px; cursor: pointer; transition: all .2s; flex-shrink: 0; border: 1.5px solid transparent; position: relative; overflow: hidden; }
+.clm-step-card.active { background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 4px 16px rgba(8,145,178,.32), inset 0 1px 0 rgba(255,255,255,.18); }
+.clm-step-card.active::before { content: ''; position: absolute; inset: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.14), transparent); pointer-events: none; border-radius: 12px 12px 0 0; }
+.clm-step-card.done { background: rgba(236,253,245,.9); border-color: rgba(34,197,94,.28); box-shadow: 0 2px 10px rgba(34,197,94,.12); }
+.clm-step-card.idle { background: rgba(241,245,249,.7); border-color: rgba(203,213,225,.5); }
+.clm-step-num { width: 28px; height: 28px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; flex-shrink: 0; position: relative; z-index: 1; }
+.clm-step-card.active .clm-step-num { background: rgba(255,255,255,.2); border: 1.5px solid rgba(255,255,255,.35); color: #fff; }
+.clm-step-card.done .clm-step-num { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; border: 1.5px solid rgba(34,197,94,.5); box-shadow: 0 2px 6px rgba(34,197,94,.28); }
+.clm-step-card.idle .clm-step-num { background: #e2e8f0; border: 1.5px solid #cbd5e1; color: #94a3b8; }
+.clm-step-text { position: relative; z-index: 1; }
+.clm-step-title { font-size: 12px; line-height: 1.2; }
+.clm-step-sub { font-size: 9.5px; font-weight: 500; margin-top: 2px; }
+.clm-step-card.active .clm-step-title { color: #fff; font-weight: 500; }
+.clm-step-card.active .clm-step-sub { color: rgba(255,255,255,.72); }
+.clm-step-card.done .clm-step-title { color: #15803d; font-weight: 700; }
+.clm-step-card.done .clm-step-sub { color: rgba(21,128,61,.65); }
+.clm-step-card.idle .clm-step-title { color: #94a3b8; font-weight: 700; }
+.clm-step-card.idle .clm-step-sub { color: #b0bec5; }
+.clm-step-conn { display: flex; align-items: center; gap: 3px; padding: 0 10px; flex-shrink: 0; }
+.clm-step-conn-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(8,145,178,.18); }
+.clm-step-conn-dot.filled { background: rgba(8,145,178,.4); }
+.clm-step-conn-line { width: 28px; height: 2px; border-radius: 2px; background: rgba(6,182,212,.12); }
+.clm-step-conn-line.filled { background: linear-gradient(90deg, rgba(8,145,178,.5), rgba(6,182,212,.2)); }
+.clm-step-conn-dot-sm { width: 4px; height: 4px; border-radius: 50%; background: rgba(8,145,178,.1); }
+.clm-step-progress { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.clm-step-progress-bars { display: flex; gap: 5px; }
+.clm-step-progress-bar { width: 32px; height: 4px; border-radius: 4px; background: #e2e8f0; transition: all .3s; }
+.clm-step-progress-bar.filled { background: linear-gradient(90deg, #0891b2, #22d3ee); box-shadow: 0 2px 6px rgba(8,145,178,.35); }
+.clm-step-progress-label { font-size: 10px; font-weight: 700; color: #0891b2; background: rgba(8,145,178,.08); border: 1px solid rgba(8,145,178,.18); border-radius: 20px; padding: 3px 10px; }
+
+/* Applies To section — checkbox chips grouped by row */
+.clm-applies-card { padding: 12px 14px; background: rgba(255,255,255,.7); border: 1.5px solid rgba(6,182,212,.15); border-radius: 12px; }
+.clm-applies-head { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
+.clm-applies-head-label { font-size: 10.5px; font-weight: 500; color: #0891b2; letter-spacing: .06em; text-transform: uppercase; }
+.clm-applies-all { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: #0891b2; cursor: pointer; user-select: none; }
+.clm-applies-all input { accent-color: #0891b2; width: 13px; height: 13px; }
+.clm-applies-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.clm-applies-row:last-child { margin-bottom: 0; }
+.clm-applies-row-label { font-size: 9px; font-weight: 500; color: #94a3b8; letter-spacing: .09em; text-transform: uppercase; min-width: 130px; }
+.clm-party-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 9px; border: 1.5px solid rgba(6,182,212,.2); background: #fff; font-size: 11.5px; font-weight: 600; color: #0c4a6e; cursor: pointer; transition: all .14s; box-shadow: 0 1px 3px rgba(6,182,212,.06); user-select: none; }
+.clm-party-chip:hover { border-color: #0891b2; background: rgba(240,253,255,.9); }
+.clm-party-chip.on { border-color: #0891b2; background: rgba(8,145,178,.08); box-shadow: 0 2px 8px rgba(8,145,178,.12); }
+.clm-party-chip input { accent-color: #0891b2; width: 13px; height: 13px; flex-shrink: 0; }
+.clm-party-chip-emoji { font-size: 14px; line-height: 1; }
+.clm-applies-hint { font-size: 9.5px; color: #64748b; margin-top: 7px; opacity: .8; }
+
+/* Segment Regulatory Status strip — radio cards picked BEFORE
+ * the Segment dropdown. High requires a specific segment; Less
+ * implicitly defaults to General and the segment dropdown is hidden. */
+.clm-reg-card {
+  padding: 12px 14px;
+  background: rgba(255,255,255,.7);
+  border: 1.5px solid rgba(6,182,212,.15);
+  border-radius: 12px;
+}
+.clm-reg-head { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
+.clm-reg-head-label { font-size: 10.5px; font-weight: 500; color: #0891b2; letter-spacing: .06em; text-transform: uppercase; }
+.clm-reg-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.clm-reg-option {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 14px; border-radius: 10px;
+  border: 1.5px solid rgba(203,213,225,.5);
+  background: #fff;
+  cursor: pointer;
+  transition: all .15s;
+  user-select: none;
+}
+.clm-reg-option:hover { background: rgba(248,250,252,.95); }
+.clm-reg-option input[type="radio"] { accent-color: #0891b2; flex-shrink: 0; margin-top: 2px; width: 14px; height: 14px; }
+.clm-reg-option-body { flex: 1; }
+.clm-reg-option-title { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; color: #0c4a6e; line-height: 1.2; }
+.clm-reg-option-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+.clm-reg-option-desc { font-size: 10.5px; color: #64748b; margin-top: 4px; line-height: 1.4; }
+/* High = red tint */
+.clm-reg-option.high { border-color: rgba(239,68,68,.25); background: rgba(254,242,242,.4); }
+.clm-reg-option.high.on { border-color: rgba(239,68,68,.55); background: rgba(254,242,242,.85); box-shadow: 0 2px 10px rgba(239,68,68,.12); }
+.clm-reg-option.high .clm-reg-option-dot { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,.4); }
+.clm-reg-option.high.on .clm-reg-option-title { color: #991b1b; }
+/* Less = green tint */
+.clm-reg-option.less { border-color: rgba(34,197,94,.25); background: rgba(240,253,244,.4); }
+.clm-reg-option.less.on { border-color: rgba(34,197,94,.55); background: rgba(240,253,244,.85); box-shadow: 0 2px 10px rgba(34,197,94,.12); }
+.clm-reg-option.less .clm-reg-option-dot { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,.4); }
+.clm-reg-option.less.on .clm-reg-option-title { color: #166534; }
+
+/* Rich text editor card (stage 2) */
+.clm-editor-card { border: 1.5px solid rgba(6,182,212,.18); border-radius: 14px; overflow: hidden; background: #fff; box-shadow: 0 2px 16px rgba(8,145,178,.07); }
+.clm-editor-head { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; background: linear-gradient(110deg, #0891b2, #0e7490); position: relative; overflow: hidden; }
+.clm-editor-head::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.12), transparent); pointer-events: none; }
+.clm-editor-head-left { display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; }
+.clm-editor-head-ico { width: 24px; height: 24px; border-radius: 6px; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #fff; }
+.clm-editor-head-label { font-size: 10.5px; font-weight: 500; color: #fff; letter-spacing: .06em; text-transform: uppercase; }
+.clm-editor-head-actions { display: flex; gap: 6px; position: relative; z-index: 1; }
+.clm-editor-head-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 8px; border: 1.5px solid rgba(255,255,255,.25); background: rgba(255,255,255,.1); font-family: inherit; font-size: 10.5px; font-weight: 600; color: #fff; cursor: pointer; transition: all .15s; }
+.clm-editor-head-btn:hover { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.45); }
+.clm-editor-toolbar { display: flex; align-items: center; gap: 2px; padding: 5px 10px; background: linear-gradient(110deg, #f8fcff, #f0fbfd); border-bottom: 1px solid rgba(6,182,212,.1); flex-wrap: wrap; }
+.clm-editor-tb-sel { height: 25px; padding: 0 5px; border: 1px solid rgba(6,182,212,.2); border-radius: 6px; font-family: inherit; font-size: 11px; color: #334155; background: #fff; outline: none; cursor: pointer; margin-right: 3px; }
+.clm-editor-tb-btn { width: 26px; height: 26px; border-radius: 5px; border: none; background: transparent; color: #334155; cursor: pointer; transition: all .12s; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-family: inherit; }
+.clm-editor-tb-btn:hover { background: rgba(8,145,178,.12); color: #0891b2; }
+.clm-editor-tb-btn.b { font-weight: 500; font-size: 13px; }
+.clm-editor-tb-btn.i { font-style: italic; font-size: 13px; }
+.clm-editor-tb-btn.u { text-decoration: underline; font-size: 13px; }
+.clm-editor-tb-btn.s { text-decoration: line-through; font-size: 13px; }
+.clm-editor-tb-divider { width: 1px; height: 18px; background: rgba(6,182,212,.2); margin: 0 4px; flex-shrink: 0; }
+.clm-editor-body {
+  min-height: 220px; max-height: 360px;
+  overflow-y: auto;
+  padding: 14px 18px;
+  background: #fff;
+  font-family: inherit; font-size: 13px; color: #0c4a6e; line-height: 1.8;
+  outline: none; cursor: text;
+}
+/* Subtle teal-tinted scrollbar so the editor's scroll affordance
+ * matches the rest of the CLM module instead of the browser default. */
+.clm-editor-body::-webkit-scrollbar { width: 8px; }
+.clm-editor-body::-webkit-scrollbar-track { background: transparent; }
+.clm-editor-body::-webkit-scrollbar-thumb { background: rgba(8,145,178,.22); border-radius: 8px; }
+.clm-editor-body::-webkit-scrollbar-thumb:hover { background: rgba(8,145,178,.40); }
+.clm-editor-body:empty:before { content: attr(data-placeholder); color: #94a3b8; font-style: italic; }
+.clm-editor-foot { display: flex; align-items: center; justify-content: space-between; padding: 6px 14px; background: linear-gradient(110deg, #f8fcff, #f0fbfd); border-top: 1px solid rgba(6,182,212,.08); }
+.clm-editor-foot-hint { display: flex; align-items: center; gap: 5px; font-size: 9.5px; color: #94a3b8; font-style: italic; }
+.clm-editor-foot-ph { font-size: 9.5px; color: rgba(8,145,178,.45); font-weight: 700; font-family: 'Geist Mono', monospace; }
+
+/* Back button — left-side in stage 2 footer */
+.clm-btn-back { display: inline-flex; align-items: center; gap: 5px; padding: 9px 18px; border: 1.5px solid rgba(6,182,212,.25); border-radius: 10px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #0891b2; cursor: pointer; background: #fff; transition: all .15s; }
+.clm-btn-back:hover { background: rgba(240,253,255,.9); border-color: #0891b2; }
+.clm-modal-foot.split { justify-content: space-between; }
+
+/* Inline field hint variant for stepper modal (smaller, blue-tinted) */
+.clm-field-hint-sm { font-size: 9.5px; color: #0891b2; margin-top: 3px; opacity: .75; }
+
+/* ──────────────────────────────────────────────────────────
+ * DELETE CONFIRM — redesigned to match the CLM master palette.
+ *   - cyan-tinted card border + soft cyan shadow (like other CLM modals)
+ *   - 4px gradient accent stripe at top (red, signals destructive intent)
+ *   - 64px icon ring with soft red gradient + inset highlight
+ *   - mono-styled code pill inside the subtitle for the item code
+ *   - existing red Delete button + cyan-tinted Cancel button
+ * ────────────────────────────────────────────────────────── */
 .clm-conf-bd {
   position: fixed; inset: 0; z-index: 210000;
-  background: rgba(15,23,42,.55); backdrop-filter: blur(3px);
+  background: rgba(7,30,50,.55); backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center; padding: 16px;
   animation: clmFadeIn .15s ease-out;
 }
 .clm-conf {
-  width: min(380px, 100%); background: #fff; border-radius: 14px;
-  padding: 22px 22px 18px; text-align: center;
-  box-shadow: 0 18px 48px rgba(15,23,42,.28);
-  animation: clmSlideUp .18s cubic-bezier(.22,1,.36,1);
+  width: min(420px, 100%);
+  background: #fff;
+  border: 1.5px solid rgba(6,182,212,.22);
+  border-radius: 16px;
+  padding: 26px 24px 18px;
+  text-align: center;
+  box-shadow:
+    0 28px 70px rgba(15,23,42,.32),
+    0 12px 32px rgba(6,182,212,.16),
+    0 0 0 1px rgba(255,255,255,.04);
+  animation: clmSlideUp .22s cubic-bezier(.22,1,.36,1);
+  position: relative; overflow: hidden;
+}
+/* Red gradient stripe at the very top — destructive intent signal. */
+.clm-conf::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, #dc2626 0%, #f87171 50%, #dc2626 100%);
 }
 .clm-conf-ico {
-  width: 52px; height: 52px; margin: 0 auto 12px;
-  background: rgba(239,68,68,.10); border-radius: 50%;
+  width: 64px; height: 64px; margin: 4px auto 14px;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(254,242,242,1) 0%, rgba(254,226,226,.85) 50%, rgba(239,68,68,.12) 100%);
+  border: 1.5px solid rgba(239,68,68,.22);
+  border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
+  box-shadow:
+    0 4px 14px rgba(239,68,68,.18),
+    inset 0 1px 0 rgba(255,255,255,.9);
 }
-.clm-conf-title { font-size: 15px; font-weight: 800; color: #0c4a6e; margin-bottom: 6px; }
-.clm-conf-sub   { font-size: 12px; color: #64748b; line-height: 1.5; margin-bottom: 16px; }
-.clm-conf-btns { display: flex; justify-content: center; gap: 8px; }
+.clm-conf-ico svg { width: 26px; height: 26px; }
+.clm-conf-title {
+  font-size: 16px; font-weight: 600; color: #0c4a6e;
+  margin-bottom: 8px; letter-spacing: -.2px; line-height: 1.25;
+}
+.clm-conf-sub {
+  font-size: 12.5px; color: #475569; line-height: 1.5;
+  margin-bottom: 4px;
+}
+/* Inline code pill inside the subtitle — auto-wrapped by JSX
+ * around any parenthesised CODE pattern. Uses the same monospace
+ * Geist Mono + cyan tint as the other CLM code pills for visual
+ * consistency. */
+.clm-conf-code {
+  display: inline-flex; align-items: center;
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; font-weight: 600; color: #0891b2;
+  background: linear-gradient(135deg, rgba(8,145,178,.10), rgba(6,182,212,.06));
+  border: 1px solid rgba(6,182,212,.25);
+  padding: 1px 7px; border-radius: 6px;
+  letter-spacing: .04em;
+  margin: 0 2px;
+}
+.clm-conf-hint  { font-size: 10.5px; color: #94a3b8; margin-bottom: 20px; font-style: italic; }
+.clm-conf-btns { display: flex; justify-content: center; gap: 10px; }
 .clm-btn-del {
-  padding: 8px 18px; border: none; cursor: pointer; border-radius: 9px;
-  background: #ef4444; color: #fff; font-family: inherit;
-  font-size: 12.5px; font-weight: 700;
-  box-shadow: 0 3px 10px rgba(239,68,68,.30);
-  transition: all .15s;
+  padding: 9px 22px; border: none; cursor: pointer; border-radius: 10px;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #fff; font-family: inherit;
+  font-size: 12.5px; font-weight: 600; letter-spacing: .01em;
+  box-shadow: 0 4px 14px rgba(239,68,68,.36), inset 0 1px 0 rgba(255,255,255,.18);
+  transition: transform .18s ease, box-shadow .22s ease, filter .18s ease;
+  display: inline-flex; align-items: center; gap: 6px;
+  position: relative; overflow: hidden;
 }
-.clm-btn-del:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.clm-btn-del::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,.14), transparent);
+  border-radius: 10px 10px 0 0; pointer-events: none;
+}
+.clm-btn-del:hover:not(:disabled) {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(239,68,68,.46), inset 0 1px 0 rgba(255,255,255,.18);
+}
+.clm-btn-del:disabled { opacity: .65; cursor: not-allowed; transform: none; box-shadow: 0 2px 6px rgba(239,68,68,.18); }
+.clm-spin { animation: clmSpin .8s linear infinite; }
+@keyframes clmSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* ── Dark mode ── */
 [data-bs-theme="dark"] .clm-root { color: #e2e8f0; background: #0a0f1c; }

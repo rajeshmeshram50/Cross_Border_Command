@@ -169,7 +169,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
       </div>
 
       {modalOpen && <SimpleDescModal title={editing ? 'Edit Agreement Type' : 'Add Agreement Type'} namePlaceholder="e.g. Sales Agreement, Service Agreement" descPlaceholder="Short description of when this agreement type is used" code={editing?.code ?? `AT-${String(rows.length + 1).padStart(3, '0')}`} isEdit={!!editing} initialName={editing?.name ?? ''} initialDesc={editing?.description ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />}
-      {pendingDelete && createPortal(<DeleteConf title="Delete agreement type?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+      {pendingDelete && createPortal(<DeleteConf title="Delete agreement type?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
     </div>
   );
 }
@@ -285,7 +285,7 @@ function LibraryPane({ rows, types, loading, reload }: { rows: AgrLib[]; types: 
       </div>
 
       {modalOpen && <AgrLibModal existing={editing} types={types} nextCode={`A-${String(rows.length + 1).padStart(3, '0')}`} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />}
-      {pendingDelete && createPortal(<DeleteConf title="Delete agreement?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+      {pendingDelete && createPortal(<DeleteConf title="Delete agreement?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
     </div>
   );
 }
