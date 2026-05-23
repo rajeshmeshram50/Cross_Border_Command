@@ -536,21 +536,30 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                   <div className="agw-expiry-grid">
                     <div className="agw-field">
                       <label className="agw-mini-label">Validity Period</label>
-                      <select className="agw-input agw-select" value={validityPeriod} onChange={(e) => setValidityPeriod(e.target.value)}>
-                        {['6 Months', '1 Year', '2 Years', '3 Years', '5 Years', 'Perpetual'].map(v => <option key={v} value={v}>{v}</option>)}
-                      </select>
+                      <MasterSelect
+                        value={validityPeriod}
+                        placeholder="— Select —"
+                        options={['6 Months', '1 Year', '2 Years', '3 Years', '5 Years', 'Perpetual'].map(v => ({ value: v, label: v }))}
+                        onChange={(v) => setValidityPeriod(v)}
+                      />
                     </div>
                     <div className="agw-field">
                       <label className="agw-mini-label">Renewal Type</label>
-                      <select className="agw-input agw-select" value={renewalType} onChange={(e) => setRenewalType(e.target.value)}>
-                        {['Auto-Renew', 'Manual Renewal', 'No Renewal'].map(v => <option key={v} value={v}>{v}</option>)}
-                      </select>
+                      <MasterSelect
+                        value={renewalType}
+                        placeholder="— Select —"
+                        options={['Auto-Renew', 'Manual Renewal', 'No Renewal'].map(v => ({ value: v, label: v }))}
+                        onChange={(v) => setRenewalType(v)}
+                      />
                     </div>
                     <div className="agw-field">
                       <label className="agw-mini-label">Notice Period</label>
-                      <select className="agw-input agw-select" value={noticePeriod} onChange={(e) => setNoticePeriod(e.target.value)}>
-                        {['15 Days', '30 Days', '60 Days', '90 Days', '120 Days'].map(v => <option key={v} value={v}>{v}</option>)}
-                      </select>
+                      <MasterSelect
+                        value={noticePeriod}
+                        placeholder="— Select —"
+                        options={['15 Days', '30 Days', '60 Days', '90 Days', '120 Days'].map(v => ({ value: v, label: v }))}
+                        onChange={(v) => setNoticePeriod(v)}
+                      />
                     </div>
                   </div>
                 </div>

@@ -129,11 +129,10 @@ export default function ClmQcPage() {
                   <th>QC DOCUMENT NAME</th>
                   <th>PURPOSE</th>
                   <th style={{ width: 150, textAlign: 'center' }}>ISSUED BY</th>
-                  <th style={{ width: 130, textAlign: 'center' }}>TYPE</th>
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <tr><td colSpan={7} className="clm-status">Loading…</td></tr>}
+                  {loading && <tr><td colSpan={6} className="clm-status">Loading…</td></tr>}
                   {!loading && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
@@ -142,11 +141,6 @@ export default function ClmQcPage() {
                       <td className="clm-td-desc">{r.purpose}</td>
                       <td style={{ textAlign: 'center' }}>
                         <span className="clm-badge clm-badge-teal"><span className="clm-badge-dot" />{r.issued_by}</span>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <span className={`clm-badge ${r.doc_type === 'cert' ? 'clm-badge-teal' : 'clm-badge-violet'}`}>
-                          {r.doc_type === 'cert' ? 'Certificate' : 'Compliance Doc'}
-                        </span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
