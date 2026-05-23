@@ -234,9 +234,6 @@ export const SALES_GROUPS: MenuGroup[] = [
       { id: 'sales.analytics',            icon: 'BarChart3',      label: 'Sales Analytics' },
       { id: 'sales.productivity_tracker', icon: 'ClipboardCheck', label: 'Productivity Tracker' },
       { id: 'sales.p2p_summary',          icon: 'ShoppingBag',    label: 'Procure to Pay (P2P) Summary' },
-      { id: 'sales.diagnosis',            icon: 'Stethoscope',    label: 'Diagnosis' },
-      { id: 'sales.resolution_center',    icon: 'Wrench',         label: 'Resolution Center' },
-      { id: 'sales.performance',          icon: 'TrendingUp',     label: 'Performance' },
     ],
   },
   {

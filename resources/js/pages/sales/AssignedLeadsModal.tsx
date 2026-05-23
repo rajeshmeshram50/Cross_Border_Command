@@ -57,8 +57,16 @@ export default function AssignedLeadsModal() {
   const [search, setSearch] = useState('');
 
   const onClose = () => navigate('sales.workplace');
-  const onViewLeads = (sp: { id: number; name: string }) => {
-    navigate('sales.lead_worksheet', { salespersonId: sp.id, salespersonName: sp.name });
+  /* Route to the dedicated Leads Details page (ports the SalesMatrix_v4_9
+   * `#leadsDetailModal` design). The page reads the salesperson + meta
+   * from the URL query string so a direct deep-link works too. */
+  const onViewLeads = (sp: { id: number; name: string; emp?: string | null; mgr?: string | null }) => {
+    navigate('sales.leads_details', {
+      salespersonId:   sp.id,
+      salespersonName: sp.name,
+      salespersonEmp:  sp.emp ?? undefined,
+      salespersonMgr:  sp.mgr ?? undefined,
+    });
   };
 
   useEffect(() => {
@@ -282,7 +290,7 @@ export default function AssignedLeadsModal() {
                   <td className="ldp-td-action">
                     <button
                       className="ldp-view-btn"
-                      onClick={() => onViewLeads({ id: r.salesperson_id, name: r.salesperson_name })}
+                      onClick={() => onViewLeads({ id: r.salesperson_id, name: r.salesperson_name, emp: r.salesperson_code, mgr: r.reporting_manager })}
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
