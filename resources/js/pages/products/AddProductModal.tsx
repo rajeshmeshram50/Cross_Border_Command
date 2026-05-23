@@ -6,6 +6,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
+import { SegmentModal, type SegmentForm } from '../clm/ClmSegmentPage';
+import { CLM_CSS } from '../clm/clmShared';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Product — 2-step wizard
@@ -322,8 +324,75 @@ export default function AddProductModal(props: {
    * Re-upload. Key shape for uploads: `qc::${doc.code}`. */
   type SegDocRow = { id:number; code:string; name:string; authority?:string|null; expiry?:string|null; requirement:'M'|'O' };
   const [segmentQcDocs, setSegmentQcDocs] = useState<SegDocRow[]>([]);
-  type SegRefUpload = { file: File; url: string; name: string };
+  type SegRefUpload = { file: File | null; url: string; name: string };
   const [qcRefUploads, setQcRefUploads] = useState<Record<string, SegRefUpload>>({});
+
+  /* Persist a QC reference upload to /segment-uploads/product/{id} so
+   * the file actually lands in the segment_doc_uploads table (same
+   * pipeline customer/consignee/supplier forms use). Without this the
+   * file would only live in browser memory as a blob URL and disappear
+   * on close. Bails out silently before the product has been saved
+   * (no id to scope the upload to). */
+  const persistQcRefUpload = async (refKey: string, file: File, docName: string) => {
+    if (!productId) {
+      toast.error('Save first', 'Save the product before attaching QC documents.');
+      return;
+    }
+    const [, doc_code] = refKey.split('::');
+    if (!doc_code) return;
+    const fd = new FormData();
+    fd.append('category', 'qc');
+    fd.append('doc_code', doc_code);
+    fd.append('doc_name', docName || doc_code);
+    fd.append('attachment', file);
+    try {
+      const { data } = await api.post(`/segment-uploads/product/${productId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const row = data?.data;
+      if (row?.attachment_url) {
+        setQcRefUploads(prev => {
+          const existing = prev[refKey];
+          if (existing?.url && existing.url.startsWith('blob:')) {
+            try { URL.revokeObjectURL(existing.url); } catch {}
+          }
+          return {
+            ...prev,
+            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name },
+          };
+        });
+      }
+    } catch (err: any) {
+      toast.error('Upload failed', err?.response?.data?.message ?? 'Could not save the QC document.');
+    }
+  };
+
+  /* Hydrate qcRefUploads from the server when the modal opens in edit
+   * mode. Same pattern as customer/consignee — fetch the existing
+   * segment_doc_uploads rows and seed the per-row state so re-opens
+   * show what was attached previously. */
+  useEffect(() => {
+    if (!productId) return;
+    let cancelled = false;
+    api.get(`/segment-uploads/product/${productId}?category=qc`)
+      .then(r => {
+        if (cancelled) return;
+        const refs: any[] = Array.isArray(r.data?.data) ? r.data.data : [];
+        const hydrated: Record<string, SegRefUpload> = {};
+        for (const u of refs) {
+          if (u.category !== 'qc' || !u.doc_code) continue;
+          hydrated[`qc::${u.doc_code}`] = {
+            file: null,
+            url:  u.attachment_url || '',
+            name: u.attachment_name || '',
+          };
+        }
+        if (Object.keys(hydrated).length > 0) setQcRefUploads(hydrated);
+      })
+      .catch(() => { /* leave empty — the user can still upload fresh */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId]);
 
   /* ─── Step 2: Vendor ─── */
   const [vendors, setVendors] = useState<VendorEntry[]>([]);
@@ -1579,8 +1648,6 @@ export default function AddProductModal(props: {
                               <th scope="col">Sr No</th>
                               <th scope="col">Auto Code</th>
                               <th scope="col">QC Document Name</th>
-                              <th scope="col">Authority</th>
-                              <th scope="col">Expiry</th>
                               <th scope="col">Status</th>
                               <th scope="col">File</th>
                               <th scope="col">Actions</th>
@@ -1592,19 +1659,24 @@ export default function AddProductModal(props: {
                               const uploaded = qcRefUploads[refKey];
                               const onPick = (f: File | undefined) => {
                                 if (!f) return;
+                                /* Show the blob URL immediately for instant feedback,
+                                 * then fire the server upload — the persist callback
+                                 * swaps the blob URL for the permanent attachment_url
+                                 * once the row hits segment_doc_uploads. */
                                 setQcRefUploads(prev => {
                                   const existing = prev[refKey];
-                                  if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+                                  if (existing?.url && existing.url.startsWith('blob:')) {
+                                    try { URL.revokeObjectURL(existing.url); } catch {}
+                                  }
                                   return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
                                 });
+                                void persistQcRefUpload(refKey, f, q.name);
                               };
                               return (
                                 <tr key={q.code} style={{ background: uploaded ? undefined : '#fafafa' }}>
                                   <td><span className="text-muted fs-13">{String(i + 1).padStart(2, '0')}</span></td>
                                   <td><span className="badge bg-light text-dark border">{q.code}</span></td>
                                   <td><strong className="fs-13">{q.name}</strong></td>
-                                  <td className="fs-13">{q.authority || '—'}</td>
-                                  <td className="fs-13">{q.expiry || 'N/A'}</td>
                                   <td>
                                     <span className={`badge ${q.requirement === 'M' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`}>
                                       {q.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
@@ -1980,7 +2052,36 @@ export default function AddProductModal(props: {
         }}
       />
 
-      {quickAdd && (
+      {quickAdd === 'segments' ? (
+        /* Segments quick-add now opens the full CLM segment form (name +
+         * regulatory status + buyer/consignee rule) and POSTs to the CLM
+         * endpoint so the new row lands on the unified `clm_segments`
+         * table that downstream segment rules + DCP read from. The CLM
+         * styles get injected here too since the modal portals to body. */
+        <>
+          <style>{CLM_CSS}</style>
+          <SegmentModal
+            existing={null}
+            nextCode={`S-${String(optSegments.length + 1).padStart(3, '0')}`}
+            onClose={() => setQuickAdd(null)}
+            onSave={async (form: SegmentForm) => {
+              try {
+                const { data } = await api.post('/clm/segments', form);
+                const row = (data?.data ?? data) as Record<string, unknown>;
+                /* ClmSegmentController returns `name` (not `title`),
+                 * but `onMasterAdded('segments', …)` reads `row.title`.
+                 * Normalise so the option label lines up with the rest
+                 * of the segments dropdown (which also displays name). */
+                onMasterAdded('segments', { ...row, title: row.title ?? row.name });
+                setQuickAdd(null);
+                toast.success('Segment added', String(row.name ?? row.title ?? form.name));
+              } catch (e: any) {
+                toast.error('Save failed', e?.response?.data?.message ?? 'Could not save segment');
+              }
+            }}
+          />
+        </>
+      ) : quickAdd && (
         <MasterQuickAddPopup
           slug={quickAdd}
           onClose={() => setQuickAdd(null)}
