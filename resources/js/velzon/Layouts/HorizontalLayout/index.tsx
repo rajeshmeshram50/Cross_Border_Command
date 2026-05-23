@@ -258,18 +258,19 @@ const HorizontalLayout = (props : any) => {
                                     <div
                                         className={dropdownClass(
                                             (item.id === "baseUi" && item.subItems.length > 13) ||
-                                            item.id === "hr" || item.id === "sales" || item.id === "more"
+                                            item.id === "hr" || item.id === "sales" || item.id === "clm" || item.id === "more"
                                                 ? "mega-dropdown-menu hr-mega-menu"
                                                 : ""
                                         )}
                                         id={item.id}>
-                                        {/* Horizontal mega-menu used for both HR and More.
-                                            Strip rendering supports a mix of:
+                                        {/* Horizontal mega-menu used for HR, Sales Matrix,
+                                            Central CLM, and the overflow More bucket. Strip
+                                            rendering supports a mix of:
                                               • category buttons (isChildItem with childItems) — click
                                                 expands the category's leaves in a horizontal row below
                                               • plain links — direct navigation, no expand
                                             Only one category is expanded at a time. */}
-                                        {(item.id === "hr" || item.id === "sales" || item.id === "more") ? (
+                                        {(item.id === "hr" || item.id === "sales" || item.id === "clm" || item.id === "more") ? (
                                             (() => {
                                                 const items = item.subItems || [];
                                                 const activeCat = items.find((c: any) => c.isChildItem && c.id === openHrCat) || null;

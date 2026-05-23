@@ -90,11 +90,22 @@ return new class extends Migration
             $idMap[(int) $row->id] = $newId;
         }
 
-        // 2. Re-point downstream FKs / scalar refs that used master_segments.id
+        // 2. Drop the old FK on vendors.segment_id FIRST. Until this is
+        //    gone, the column is gated on master_segments — any UPDATE
+        //    to a new clm_segments id (like 6) is rejected because the
+        //    new value doesn't exist in master_segments yet. Laravel
+        //    auto-names the FK `vendors_segment_id_foreign`.
+        if (Schema::hasTable('vendors') && Schema::hasColumn('vendors', 'segment_id')) {
+            Schema::table('vendors', function (Blueprint $table) {
+                $table->dropForeign(['segment_id']);
+            });
+        }
+
+        // 3. Re-point downstream FKs / scalar refs that used master_segments.id
         //    to the new clm_segments.id. Anything that doesn't map gets
-        //    nulled rather than left dangling.
+        //    nulled rather than left dangling. With the FK dropped above,
+        //    the vendor UPDATEs no longer trip the integrity check.
         if (!empty($idMap)) {
-            // vendors.segment_id — has a real FK constraint (set below).
             if (Schema::hasTable('vendors')) {
                 foreach ($idMap as $oldId => $newId) {
                     DB::table('vendors')
@@ -109,7 +120,7 @@ return new class extends Migration
             }
 
             // products.segment_id is an unsignedBigInteger without an FK
-            // constraint, so we can update directly without dropping anything.
+            // constraint, so it didn't need the drop above.
             if (Schema::hasTable('products') && Schema::hasColumn('products', 'segment_id')) {
                 foreach ($idMap as $oldId => $newId) {
                     DB::table('products')
@@ -122,20 +133,18 @@ return new class extends Migration
                     ->update(['segment_id' => null]);
             }
         } else {
-            // No data migrated — still null out any stale segment_id refs so
-            // the FK swap below doesn't fail.
+            // No data migrated — still null out any stale segment_id refs
+            // so the new FK we're about to add doesn't trip on dangling rows.
             if (Schema::hasTable('vendors')) {
                 DB::table('vendors')->whereNotNull('segment_id')->update(['segment_id' => null]);
             }
         }
 
-        // 3. Swap the FK on vendors.segment_id from master_segments to
-        //    clm_segments. Drop first (Laravel auto-names it
-        //    `vendors_segment_id_foreign`), then re-add.
+        // 4. Re-create the FK on vendors.segment_id pointing at the new
+        //    clm_segments table. All vendor rows are either pointing at a
+        //    valid new id (from the map) or nulled out, so this never
+        //    fails on stale data.
         if (Schema::hasTable('vendors') && Schema::hasColumn('vendors', 'segment_id')) {
-            Schema::table('vendors', function (Blueprint $table) {
-                $table->dropForeign(['segment_id']);
-            });
             Schema::table('vendors', function (Blueprint $table) {
                 $table->foreign('segment_id')
                     ->references('id')->on('clm_segments')
@@ -143,7 +152,7 @@ return new class extends Migration
             });
         }
 
-        // 4. Drop the old table.
+        // 5. Drop the old table.
         Schema::dropIfExists('master_segments');
     }
 
