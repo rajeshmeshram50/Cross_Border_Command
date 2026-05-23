@@ -128,11 +128,20 @@ class ClmSegmentController extends Controller
      * so two concurrent inserts can't pick the same number (Postgres
      * rejects FOR UPDATE on aggregates so we can't lock count(*) itself).
      * The composite UNIQUE on (client_id, code) is the second guard.
+     *
+     * Uses MAX(numeric suffix) + 1 rather than count() so deleted rows in
+     * the middle of the sequence don't cause the next allocation to clash
+     * with an existing code.
      */
     private function nextCode(int $clientId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        $count = ClmSegment::where('client_id', $clientId)->count();
-        return sprintf('S-%03d', $count + 1);
+
+        $maxNum = (int) ClmSegment::where('client_id', $clientId)
+            ->where('code', 'like', 'S-%')
+            ->selectRaw("COALESCE(MAX(CAST(SUBSTRING(code FROM 3) AS INTEGER)), 0) AS max_num")
+            ->value('max_num');
+
+        return sprintf('S-%03d', $maxNum + 1);
     }
 }
