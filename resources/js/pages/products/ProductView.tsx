@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../api';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
@@ -77,6 +77,31 @@ export default function ProductView() {
   const [activeImg, setActiveImg] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
 
+  /* QC documents come from the same `segment_doc_uploads` table the Add
+   * Product wizard writes to (category = 'qc'). Surfaced here so the
+   * read-only product view shows what's been attached against each
+   * QC slot from the product's segment rule. */
+  type QcUpload = { id: number; doc_code: string; doc_name: string; attachment_name: string | null; attachment_url: string | null; requirement: 'M' | 'O' | null };
+  const [qcUploads, setQcUploads] = useState<QcUpload[]>([]);
+
+  const loadQcUploads = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await api.get(`/segment-uploads/product/${id}?category=qc`);
+      const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+      setQcUploads(rows.map((r: any) => ({
+        id:              Number(r.id),
+        doc_code:        String(r.doc_code ?? ''),
+        doc_name:        String(r.doc_name ?? ''),
+        attachment_name: r.attachment_name ?? null,
+        attachment_url:  r.attachment_url ?? null,
+        requirement:     r.requirement ?? null,
+      })));
+    } catch {
+      /* silent — empty table just means "no QC docs uploaded yet" */
+    }
+  }, [id]);
+
   const load = async (silent = false) => {
     if (!id) return;
     // Silent reloads (triggered from inside the edit modal's Save & Next)
@@ -98,7 +123,7 @@ export default function ProductView() {
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
+  useEffect(() => { load(); void loadQcUploads(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
 
   const images = useMemo(() => {
     if (!product) return [] as string[];
@@ -337,38 +362,47 @@ export default function ProductView() {
               <p className="pv2-tab-text">{product.confidential_info || <em className="pv2-muted">No confidential information.</em>}</p>
             )}
             {tab === 'qc' && (
-              product.qc_records.length === 0 ? (
-                <p className="pv2-tab-text"><em className="pv2-muted">No QC records.</em></p>
+              qcUploads.length === 0 ? (
+                <p className="pv2-tab-text"><em className="pv2-muted">No QC documents uploaded yet.</em></p>
               ) : (
                 <div className="table-responsive">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th>SR</th><th>QC Name</th><th>Purpose</th><th>Issued By</th><th>Testing</th><th>Min Acceptance</th><th>Attachment</th>
+                        <th>SR</th>
+                        <th>Auto Code</th>
+                        <th>QC Document Name</th>
+                        <th>Status</th>
+                        <th>File</th>
+                        <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {product.qc_records.map((q, i) => {
-                        const att = (q.attachment_path as string | null) ?? null;
-                        const attUrl = att ? resolveFileUrl(att) : '';
-                        return (
-                          <tr key={String(q.id ?? i)}>
-                            <td>{i + 1}</td>
-                            <td><strong>{String(q.qc_name ?? '')}</strong></td>
-                            <td>{String(q.qc_purpose ?? '—')}</td>
-                            <td>{String(q.issued_by ?? '—')}</td>
-                            <td>{String(q.qa_testing_parameter ?? '—')}</td>
-                            <td>{String(q.min_acceptance_criteria ?? '—')}</td>
-                            <td>
-                              {attUrl ? (
-                                <a href={attUrl} target="_blank" rel="noopener noreferrer" className="pv2-attach-link">
-                                  <i className="ri-attachment-2" /> View
-                                </a>
-                              ) : <span className="pv2-muted">—</span>}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {qcUploads.map((q, i) => (
+                        <tr key={q.id}>
+                          <td>{String(i + 1).padStart(2, '0')}</td>
+                          <td><span className="badge bg-light text-dark border">{q.doc_code}</span></td>
+                          <td><strong>{q.doc_name}</strong></td>
+                          <td>
+                            <span className={`badge ${q.requirement === 'M' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`}>
+                              {q.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
+                            </span>
+                          </td>
+                          <td>
+                            {q.attachment_url
+                              ? <a href={q.attachment_url} target="_blank" rel="noreferrer" className="pv2-attach-link">{q.attachment_name || 'View attachment'}</a>
+                              : <span className="pv2-muted">Not uploaded</span>}
+                          </td>
+                          <td>
+                            <QcRowActions
+                              doc={q}
+                              productId={product.id}
+                              onReload={loadQcUploads}
+                              toast={toast}
+                            />
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -460,6 +494,99 @@ function Row(props: { k: string; v: string; accent?: 'success' | 'danger' }) {
       ) : (
         <span className={`pv2-info-val${props.accent ? ` pv2-info-val-${props.accent}` : ''}`}>{props.v}</span>
       )}
+    </div>
+  );
+}
+
+/* View / Download / Re-upload — mirrors the Evidence Vault action set so
+ * the read-only product page can swap a QC attachment without bouncing
+ * through the full Add Product wizard. Re-upload posts to the same
+ * segment-uploads endpoint that the wizard writes to. */
+function QcRowActions({ doc, productId, onReload, toast }: {
+  doc: { id: number; doc_code: string; doc_name: string; attachment_name: string | null; attachment_url: string | null };
+  productId: number;
+  onReload: () => Promise<void> | void;
+  toast: ReturnType<typeof useToast>;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const canViewOrDownload = !!doc.attachment_url;
+
+  const download = () => {
+    if (!doc.attachment_url) return;
+    const a = document.createElement('a');
+    a.href = doc.attachment_url;
+    a.download = doc.attachment_name || '';
+    a.target = '_blank';
+    a.rel = 'noreferrer';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  const onPick = async (f: File | undefined) => {
+    if (!f) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('category', 'qc');
+      fd.append('doc_code', doc.doc_code);
+      fd.append('doc_name', doc.doc_name || doc.doc_code);
+      fd.append('attachment', f);
+      await api.post(`/segment-uploads/product/${productId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await onReload();
+      toast.success('Re-uploaded', f.name);
+    } catch (err: any) {
+      toast.error('Upload failed', err?.response?.data?.message ?? 'Could not save the QC document.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="d-inline-flex align-items-center gap-1">
+      <input
+        ref={fileRef}
+        type="file"
+        hidden
+        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+        onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }}
+      />
+      <Tooltip label={canViewOrDownload ? `View ${doc.attachment_name}` : 'No attachment yet'}>
+        <a
+          href={canViewOrDownload ? doc.attachment_url! : undefined}
+          target={canViewOrDownload ? '_blank' : undefined}
+          rel="noreferrer"
+          aria-disabled={!canViewOrDownload}
+          className={`btn btn-sm btn-soft-info ${!canViewOrDownload ? 'disabled' : ''}`}
+          onClick={e => { if (!canViewOrDownload) e.preventDefault(); }}
+          aria-label="View"
+        >
+          <i className="ri-eye-line" />
+        </a>
+      </Tooltip>
+      <Tooltip label={canViewOrDownload ? `Download ${doc.attachment_name}` : 'No attachment yet'}>
+        <button
+          type="button"
+          disabled={!canViewOrDownload}
+          onClick={download}
+          className="btn btn-sm btn-soft-secondary"
+          aria-label="Download"
+        >
+          <i className="ri-download-2-line" />
+        </button>
+      </Tooltip>
+      <Tooltip label={busy ? 'Uploading…' : (doc.attachment_name ? 'Re-upload (replace file)' : 'Upload')}>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => fileRef.current?.click()}
+          className="btn btn-sm btn-soft-primary"
+          aria-label={doc.attachment_name ? 'Re-upload' : 'Upload'}
+        >
+          <i className={busy ? 'ri-loader-4-line' : (doc.attachment_name ? 'ri-refresh-line' : 'ri-upload-2-line')} />
+        </button>
+      </Tooltip>
     </div>
   );
 }

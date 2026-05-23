@@ -12,6 +12,7 @@ use App\Models\ClmTradeDocLibrary;
 use App\Models\ClmTradeLicense;
 use App\Models\Consignee;
 use App\Models\Customer;
+use App\Models\Product;
 use App\Models\SegmentDocUpload;
 use App\Models\Vendor;
 use Illuminate\Database\Eloquent\Model;
@@ -53,6 +54,10 @@ class SegmentDocUploadController extends Controller
         // alias kept for backward compatibility with any callers that
         // pass `vendor` instead of the user-facing rename.
         'vendor'    => Vendor::class,
+        // Products carry a single `segment_id` FK so QC reference rows
+        // can attach against the product's chosen segment, the same way
+        // the customer/consignee/vendor forms upload their KYC/DD/TL.
+        'product'   => Product::class,
     ];
 
     private const CATEGORIES = ['kyc', 'dd', 'tl', 'td', 'qc'];
@@ -376,7 +381,7 @@ class SegmentDocUploadController extends Controller
      */
     private function resolveSegmentIds(Model $owner, string $type, int $cid): array
     {
-        if (in_array($type, ['supplier', 'vendor'], true)) {
+        if (in_array($type, ['supplier', 'vendor', 'product'], true)) {
             return $owner->segment_id ? [(int) $owner->segment_id] : [];
         }
         // customer / consignee — comma-joined name string. Empty
