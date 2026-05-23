@@ -2,11 +2,32 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
-import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
+import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
+import { MasterMultiSelect } from '../master/masterFormKit';
+
+/* Stage 3 → Trade Documents → Send for Signature.
+ * Same shape used by AddCustomerModal / AddVendorModal so the Zoho
+ * Sign send modal accepts any of the three flows interchangeably. */
+type TdSigStatus = 'idle' | 'inprogress' | 'completed' | 'declined' | 'recalled' | 'expired';
+type TdDocRow = {
+  id: string; db_id: number | null;
+  name: string; selected: boolean; sent: boolean;
+  status?: TdSigStatus;
+  signature_request_id?: number;
+  signed_url?: string;
+};
+const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: string }> = {
+  idle:       { label: 'N/A',                bg: '#f1f5f9', fg: '#94a3b8' },
+  inprogress: { label: 'Awaiting Signature', bg: '#fef3c7', fg: '#92400e' },
+  completed:  { label: 'Signed',             bg: '#dcfce7', fg: '#166534' },
+  declined:   { label: 'Declined',           bg: '#fee2e2', fg: '#991b1b' },
+  recalled:   { label: 'Recalled',           bg: '#e0e7ff', fg: '#3730a3' },
+  expired:    { label: 'Expired',            bg: '#fee2e2', fg: '#7f1d1d' },
+};
 
 /* Each row in the Address & Contact Details table — mirrors the
  * shape used by AddCustomerModal so the JSX patterns line up. */
@@ -264,6 +285,14 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * call cold. This is the actual fix for the duplicate row issue
    * the user saw on rapid clicks. */
   const inFlightRef = useRef(false);
+
+  /* Stage 3 → Trade Documents → Send for Signature. Mirrors what
+   * [[AddCustomerModal]] does — tdDocs is the table state (per-row
+   * checkbox + status badge), sendForSignature holds the IDs the user
+   * just clicked Send on so the wizard pops with them pre-checked. */
+  const [tdDocs, setTdDocs] = useState<TdDocRow[]>([]);
+  const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
+  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TdSigStatus; signatureRequestId: number; signedUrl?: string }>>({});
 
   /* True while the edit-mode hydration fetch is in flight. Renders a
    * shimmer skeleton over Stage 1 so the user sees the form shape
@@ -773,8 +802,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         }
         return Array.from(map.values());
       };
-      const partyCodes = new Set<string>((partyDocs as Array<{ code: string }>).map(p => p.code));
-      const mergedTd   = mergeCat('td').filter(d => partyCodes.has(d.code));
+      const partyById = new Map<string, number>(
+        (partyDocs as Array<{ code: string; id: number }>).map(p => [p.code, p.id]),
+      );
+      const mergedTd = mergeCat('td').filter(d => partyById.has(d.code));
       setSegmentDocs({
         kyc: mergeCat('kyc'),
         dd:  mergeCat('dd'),
@@ -782,10 +813,78 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         td:  mergedTd,
         qc:  mergeCat('qc'),
       });
+      // Parallel state for the Send-for-Signature flow — same shape
+      // as in [[AddCustomerModal]] so Stage3TradeDocs is portable.
+      setTdDocs(mergedTd.map(d => ({
+        id: `td_${d.code}`,
+        db_id: partyById.get(d.code) ?? null,
+        name: d.name,
+        selected: d.requirement === 'M',
+        sent: false,
+        status: 'idle' as TdSigStatus,
+      })));
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, form1.segment, mSegmentIds]);
+
+  /* Poll the live signature-request list every 15s while the user is on
+   * Stage 3 → Trade Documents. The backend's ?sync=true triggers a Zoho
+   * round-trip per inprogress row, so completed signings, declines and
+   * recalls show up in the badges without the user having to refresh. */
+  useEffect(() => {
+    const partyId = consignee?.db_id ?? savedDbId;
+    if (!open || stage !== 3 || vaultTab !== 'trade' || !partyId) return;
+    let cancelled = false;
+    const fetchAndUpdate = async (withSync: boolean) => {
+      try {
+        const r = await api.get('/clm/signature-requests', {
+          params: { party_id: partyId, model_name: 'Consignee', sync: withSync ? 1 : 0 },
+        });
+        if (cancelled) return;
+        const rows: Array<{
+          id: number;
+          status: TdSigStatus;
+          trade_doc_ids: number[];
+          signed_document_paths?: Array<{ url?: string; path?: string }> | null;
+        }> = Array.isArray(r.data?.data) ? r.data.data : [];
+        const map: Record<number, { status: TdSigStatus; signatureRequestId: number; signedUrl?: string }> = {};
+        for (const row of rows) {
+          const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
+          for (let i = 0; i < ids.length; i++) {
+            const docId = Number(ids[i]);
+            if (!docId || map[docId]) continue;
+            const signedEntry = Array.isArray(row.signed_document_paths) ? row.signed_document_paths[i] : null;
+            map[docId] = {
+              status: row.status,
+              signatureRequestId: row.id,
+              signedUrl: signedEntry?.url || (signedEntry?.path ? `/storage/${signedEntry.path}` : undefined),
+            };
+          }
+        }
+        setSigStatusByDoc(map);
+      } catch { /* silent — polling failures shouldn't toast every 15s */ }
+    };
+    fetchAndUpdate(false);
+    const iv = window.setInterval(() => fetchAndUpdate(true), 15000);
+    return () => { cancelled = true; window.clearInterval(iv); };
+  }, [open, stage, vaultTab, consignee?.db_id, savedDbId]);
+
+  // Project the polled status into the tdDocs rows.
+  useEffect(() => {
+    setTdDocs(prev => prev.map(d => {
+      if (!d.db_id) return d;
+      const info = sigStatusByDoc[d.db_id];
+      if (!info) return d;
+      return {
+        ...d,
+        sent:   d.sent || info.status !== 'idle',
+        status: info.status,
+        signature_request_id: info.signatureRequestId,
+        signed_url: info.signedUrl ?? d.signed_url,
+      };
+    }));
+  }, [sigStatusByDoc]);
 
   // useMemo MUST come before any conditional return — React enforces a
   // stable hook order across renders. Putting `if (!open) return null;`
@@ -1535,6 +1634,21 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               sameAsCustomer={sameAsCustomer}
               segmentDocs={segmentDocs}
               segmentRefUploads={segmentRefUploads}
+              tdDocs={tdDocs}
+              onToggleTd={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, selected: !d.selected } : d))}
+              onToggleAllTd={(checked) => setTdDocs(prev => prev.map(d => ({ ...d, selected: checked })))}
+              onSendTd={(id) => {
+                const row = tdDocs.find(d => d.id === id);
+                if (!row?.db_id) { toast.info('Not a library document', 'Pick a segment with mapped trade documents to enable signature sending.'); return; }
+                if (!(consignee?.db_id || savedDbId)) { toast.info('Save consignee first', 'Save the consignee before sending documents for signature.'); return; }
+                setSendForSignature([row.db_id]);
+              }}
+              onSendSelectedTd={() => {
+                const ids = tdDocs.filter(d => d.selected && d.db_id).map(d => d.db_id!);
+                if (ids.length === 0) { toast.info('Nothing selected', 'Tick one or more documents under "Send for Signature" first.'); return; }
+                if (!(consignee?.db_id || savedDbId)) { toast.info('Save consignee first', 'Save the consignee before sending documents for signature.'); return; }
+                setSendForSignature(ids.slice(0, 10));
+              }}
             />
           )}
         </div>
@@ -1708,6 +1822,35 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           else if (kind === 'doc') setKycDocs(prev => prev.filter(d => d.id !== id));
           setKycDelModal({ open: false, kind: null, id: null });
         }
+      }}
+    />
+
+    {/* Stage 3 Trade Documents → Send for Signature (Zoho Sign).
+        Opens the Zoho Sign wizard pre-checked with the docs the user
+        picked. modelName='Consignee' tells the backend to resolve the
+        {{consignee.*}} token namespace from this consignee's data. */}
+    <SalesCustomerSendForSignatureModal
+      open={Array.isArray(sendForSignature)}
+      modelName="Consignee"
+      customer={(() => {
+        const partyId = (consignee?.db_id ?? savedDbId) ?? null;
+        if (!partyId) return null;
+        return {
+          id:      consignee?.id ?? `g-${partyId}`,
+          db_id:   partyId,
+          company: form1.companyName || '',
+          contact: form1.contactName || '',
+          email:   form1.email || '',
+        };
+      })()}
+      preselectedDocIds={sendForSignature ?? undefined}
+      onClose={() => setSendForSignature(null)}
+      onSent={(sentDocIds) => {
+        const sentSet = new Set(sentDocIds);
+        setTdDocs(prev => prev.map(d => (d.db_id && sentSet.has(d.db_id))
+          ? { ...d, sent: true, status: 'inprogress' as TdSigStatus }
+          : d));
+        setSendForSignature(null);
       }}
     />
     </>
@@ -2014,11 +2157,14 @@ const Stage1 = ({
               <input className="acm-input" placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
             </Field>
             <Field label="Consignee Segment" required error={errors.segment} fieldKey="segment">
+              {/* masterFormKit's MasterMultiSelect renders visible violet
+                  chips with × buttons + a checkbox-marked dropdown so
+                  multi-select is obvious. `value` prop is plural despite
+                  the singular name. */}
               <MasterMultiSelect
-                values={Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : [])}
+                value={Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : [])}
                 options={masters.segments.map(o => ({ value: o.value, label: o.label }))}
                 placeholder="Select Segment"
-                addMorePlaceholder="+ Add another segment"
                 invalid={!!errors.segment}
                 disabled={lock}
                 onChange={vs => set('segment', vs)}
@@ -2773,7 +2919,139 @@ const Stage2 = ({
 };
 
 /* ─── Stage 3 — Evidence Vault ─── */
-const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwners, locations, sameAsCustomer, segmentDocs, segmentRefUploads }: {
+/* Stage 3 → Trade Documents → interactive table. Mirrors the Customer
+ * modal's Stage3TradeDocs — same row shape, same status badge styling,
+ * different launch context (signs as Consignee). Per-row Send and footer
+ * "Send Selected Documents for Signature" both open the Zoho wizard
+ * with the chosen library ids pre-checked. */
+function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSelected }: {
+  docs: TdDocRow[];
+  onToggle: (id: string) => void;
+  onToggleAll: (checked: boolean) => void;
+  onSend: (id: string) => void;
+  onSendSelected: () => void;
+}) {
+  const selCount = docs.filter(d => d.selected).length;
+  const allChecked = docs.length > 0 && selCount === docs.length;
+  return (
+    <div className="acm-kyc-card" style={{ marginTop: 12 }}>
+      <div className="acm-loc-table-wrap">
+        <table className="acm-loc-table">
+          <thead>
+            <tr>
+              <th>SR NO</th>
+              <th>DOCUMENT NAME</th>
+              <th>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = selCount > 0 && selCount < docs.length; }} onChange={e => onToggleAll(e.target.checked)} />
+                  SEND FOR SIGNATURE
+                </label>
+              </th>
+              <th>DOCUMENT STATUS</th>
+              <th>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {docs.length === 0 && (
+              <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: 18 }}>
+                No buyer/consignee-applicable trade documents — pick a segment with mapped TD docs on Stage 1.
+              </td></tr>
+            )}
+            {docs.map((d, i) => {
+              const s = d.status ?? 'idle';
+              const b = TD_STATUS_BADGE[s];
+              return (
+                <tr key={d.id}>
+                  <td style={{ color: '#9ca3af', fontWeight: 600 }}>{i + 1}</td>
+                  <td style={{ fontWeight: 600, color: '#1f2937' }}>{d.name}</td>
+                  <td>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} />
+                      <button
+                        type="button"
+                        onClick={() => onSend(d.id)}
+                        style={{
+                          padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                          background: d.sent ? '#f1f5f9' : '#4338ca',
+                          color: d.sent ? '#475569' : '#fff',
+                          border: '1px solid ' + (d.sent ? '#cbd5e1' : '#4338ca'),
+                          cursor: 'pointer',
+                        }}
+                      >{d.sent ? 'Resend' : 'Send'}</button>
+                    </div>
+                  </td>
+                  <td>
+                    <span style={{
+                      display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+                      fontSize: 11, fontWeight: 700,
+                      background: b.bg, color: b.fg,
+                    }}>{b.label}</span>
+                  </td>
+                  <td>
+                    <div style={{ display: 'inline-flex', gap: 6 }}>
+                      <Tooltip label={d.signed_url ? 'View signed document' : 'View document'}>
+                        <a
+                          href={d.signed_url || '#'}
+                          target={d.signed_url ? '_blank' : undefined}
+                          rel={d.signed_url ? 'noreferrer' : undefined}
+                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 26, height: 26, borderRadius: 6,
+                            background: '#eef2ff', color: '#4338ca',
+                            opacity: d.signed_url ? 1 : 0.5,
+                            cursor: d.signed_url ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </a>
+                      </Tooltip>
+                      <Tooltip label={d.signed_url ? 'Download signed document' : 'Download document'}>
+                        <a
+                          href={d.signed_url || '#'}
+                          download={d.signed_url ? '' : undefined}
+                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 26, height: 26, borderRadius: 6,
+                            background: '#ecfdf5', color: '#10b981',
+                            opacity: d.signed_url ? 1 : 0.5,
+                            cursor: d.signed_url ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        </a>
+                      </Tooltip>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {docs.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, padding: 14 }}>
+          <button
+            type="button"
+            onClick={onSendSelected}
+            style={{
+              padding: '9px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700,
+              background: 'linear-gradient(110deg, #4338ca 0%, #6366f1 100%)',
+              color: '#fff', border: 'none', cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Send Selected Documents for Signature
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwners, locations, sameAsCustomer, segmentDocs, segmentRefUploads, tdDocs, onToggleTd, onToggleAllTd, onSendTd, onSendSelectedTd }: {
   locations: LocationRow[];
   vaultTab: VaultTab;
   setVaultTab: (t: VaultTab) => void;
@@ -2785,6 +3063,11 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
   sameAsCustomer: boolean;
   segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
   segmentRefUploads: Record<string, { file: File; url: string; name: string }>;
+  tdDocs: TdDocRow[];
+  onToggleTd: (id: string) => void;
+  onToggleAllTd: (checked: boolean) => void;
+  onSendTd: (id: string) => void;
+  onSendSelectedTd: () => void;
 }) => {
   const ddCount = kycDocs.filter(d => d.kind === 'dd').length;
   const tlCount = kycDocs.filter(d => d.kind === 'tl').length;
@@ -2909,43 +3192,14 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
 
       {vaultTab === 'trade' && (
         <>
-          <SectionHeader icon={<IconVault />} title="Trade Documents" sub="Shipping bills, BL/AWB, packing lists & export evidence" accent="#10b981" />
-          {/* Design-only Trade Documents reference table — same TL
-              placeholder set the Stage 2 Trade Licence sub-tab uses
-              so the user gets a consistent reference across the
-              wizard. Real trade documents will populate this table
-              once the PI / Invoice / Shipping flows execute against
-              this consignee. */}
-          <div className="acm-kyc-card" style={{ marginTop: 12 }}>
-            <div className="acm-loc-table-wrap">
-              <table className="acm-loc-table">
-                <thead>
-                  <tr>
-                    <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-                    <th>ISSUING AUTHORITY</th><th>EXPIRY</th><th>ATTACHMENT</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {TL_PLACEHOLDER.map((tl, i) => (
-                    <tr key={tl.code} className="acm-loc-placeholder-row">
-                      <td>{String(i + 1).padStart(2, '0')}</td>
-                      <td><span className="acm-kyc-code">{tl.code}</span></td>
-                      <td style={{ fontWeight: 700 }}>{tl.name}</td>
-                      <td>{tl.authority}</td>
-                      <td><span className={tl.expiry === 'N/A' ? 'acm-kyc-exp na' : 'acm-kyc-exp'}>{tl.expiry}</span></td>
-                      <td><span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Pending upload</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div className="acm-trade-empty" style={{ marginTop: 12, fontSize: 12 }}>
-            <IconVault size={20} />
-            <div className="acm-trade-empty-sub" style={{ marginLeft: 8 }}>
-              Above is the standard reference list. Real trade documents will populate automatically as PI / Invoice / Shipping flows execute against this consignee.
-            </div>
-          </div>
+          <SectionHeader icon={<IconVault />} title="Trade Documents" sub="Send for digital signature via Zoho Sign" accent="#10b981" />
+          <ConsigneeTradeDocsTable
+            docs={tdDocs}
+            onToggle={onToggleTd}
+            onToggleAll={onToggleAllTd}
+            onSend={onSendTd}
+            onSendSelected={onSendSelectedTd}
+          />
         </>
       )}
     </>
