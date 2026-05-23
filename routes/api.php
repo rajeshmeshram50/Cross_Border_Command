@@ -35,6 +35,8 @@ use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrGeneratedDocumentController;
 use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\LeadAckReasonController;
+use App\Http\Controllers\Api\ProformaInvoiceController;
+use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\SalesLeadController;
 use App\Http\Controllers\Api\SalesPdfController;
 use App\Http\Controllers\Api\SalesTodoController;
@@ -315,6 +317,29 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/sales/leads/{id}',          [SalesLeadController::class, 'show'])->whereNumber('id');
     Route::put   ('/sales/leads/{id}',          [SalesLeadController::class, 'update'])->whereNumber('id');
     Route::delete('/sales/leads/{id}',          [SalesLeadController::class, 'destroy'])->whereNumber('id');
+
+    // Sales Matrix → Quotations. Outgoing-quotation header + line items,
+    // backed by the `quotations` / `quotation_items` tables. Code sequence
+    // QT/YYYY-NN/SEQ allocated atomically per client per financial year.
+    Route::get   ('/sales/quotations',                          [QuotationController::class, 'index']);
+    Route::post  ('/sales/quotations',                          [QuotationController::class, 'store']);
+    Route::get   ('/sales/quotations/{id}',                     [QuotationController::class, 'show'])->whereNumber('id');
+    Route::put   ('/sales/quotations/{id}',                     [QuotationController::class, 'update'])->whereNumber('id');
+    Route::delete('/sales/quotations/{id}',                     [QuotationController::class, 'destroy'])->whereNumber('id');
+    Route::post  ('/sales/quotations/{id}/duplicate',           [QuotationController::class, 'duplicate'])->whereNumber('id');
+    Route::post  ('/sales/quotations/{id}/convert-to-pi',       [QuotationController::class, 'convertToPi'])->whereNumber('id');
+
+    // Sales Matrix → Proforma Invoices. Mirror of Quotations + BT
+    // reference + signature mode + source_quotation_id traceback.
+    Route::get   ('/sales/proforma-invoices',                                   [ProformaInvoiceController::class, 'index']);
+    Route::post  ('/sales/proforma-invoices',                                   [ProformaInvoiceController::class, 'store']);
+    // Literal segment before {id} so Laravel doesn't try to capture
+    // 'from-quotation' as the numeric id.
+    Route::post  ('/sales/proforma-invoices/from-quotation/{quotationId}',      [ProformaInvoiceController::class, 'fromQuotation'])->whereNumber('quotationId');
+    Route::get   ('/sales/proforma-invoices/{id}',                              [ProformaInvoiceController::class, 'show'])->whereNumber('id');
+    Route::put   ('/sales/proforma-invoices/{id}',                              [ProformaInvoiceController::class, 'update'])->whereNumber('id');
+    Route::delete('/sales/proforma-invoices/{id}',                              [ProformaInvoiceController::class, 'destroy'])->whereNumber('id');
+    Route::post  ('/sales/proforma-invoices/{id}/duplicate',                    [ProformaInvoiceController::class, 'duplicate'])->whereNumber('id');
     // Stage 1 → Task Manager save (multipart for the optional attachment).
     // POST + _method=PUT-friendly: accepts both POST and PUT since file
     // uploads under PUT can't be parsed by PHP without enableHttpMethodParameterOverride.
