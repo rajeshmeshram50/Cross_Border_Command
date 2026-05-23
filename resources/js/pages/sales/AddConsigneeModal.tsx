@@ -343,8 +343,52 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * Key: `${sub-tab}::${doc.code}`. Value: File + blob URL used by the
    * View / Download actions. Lifted here (parent) so sub-tab switches
    * don't drop in-progress uploads. */
-  type SegRefUpload = { file: File; url: string; name: string };
+  type SegRefUpload = { file: File | null; url: string; name: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
+
+  /* Persist a segment-rule reference upload to /segment-uploads/consignee/{id}
+   * so the Evidence Vault sees it. Mirrors AddCustomerModal's helper —
+   * without this round-trip the upload only lives in browser memory. */
+  const SUB_TO_CAT_CO: Record<string, 'kyc' | 'dd' | 'tl'> = {
+    'company-dd':    'dd',
+    'owner-kyc':     'kyc',
+    'trade-license': 'tl',
+  };
+  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
+    const ownerId = savedDbId || consignee?.db_id || null;
+    if (!ownerId) {
+      toast.error('Save first', 'Save the consignee before attaching reference documents.');
+      return;
+    }
+    const [sub, doc_code] = refKey.split('::');
+    const category = SUB_TO_CAT_CO[sub];
+    if (!category || !doc_code) return;
+    const fd = new FormData();
+    fd.append('category', category);
+    fd.append('doc_code', doc_code);
+    fd.append('doc_name', docName || doc_code);
+    fd.append('attachment', file);
+    try {
+      const { data } = await api.post(`/segment-uploads/consignee/${ownerId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const row = data?.data;
+      if (row?.attachment_url) {
+        setSegmentRefUploads(prev => {
+          const existing = prev[refKey];
+          if (existing?.url && existing.url.startsWith('blob:')) {
+            try { URL.revokeObjectURL(existing.url); } catch {}
+          }
+          return {
+            ...prev,
+            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name },
+          };
+        });
+      }
+    } catch (err: any) {
+      toast.error('Upload failed', err?.response?.data?.message ?? 'Could not save the attachment.');
+    }
+  };
 
   // Reset everything when modal opens fresh.
   useEffect(() => {
@@ -699,13 +743,21 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
 
     let cancelled = false;
-    Promise.all(
-      segRows.map(s =>
-        api.get(`/clm/segment-rules/for-segment/${s.id}`)
-          .then(r => r.data?.data ?? {})
-          .catch(() => ({}))
-      )
-    ).then(results => {
+    Promise.all([
+      Promise.all(
+        segRows.map(s =>
+          api.get(`/clm/segment-rules/for-segment/${s.id}`)
+            .then(r => r.data?.data ?? {})
+            .catch(() => ({}))
+        )
+      ),
+      /* Party filter for the consignee form: only trade docs whose
+       * `party` CSV mentions "Consignee" reach the td bucket. We
+       * intersect with segment-rule td below. */
+      api.get('/clm/trade-doc-library/for-party/consignee')
+        .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
+        .catch(() => [] as Array<{ code: string }>),
+    ]).then(([results, partyDocs]) => {
       if (cancelled) return;
       const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc'): SegDocRow[] => {
         const map = new Map<string, SegDocRow>();
@@ -721,11 +773,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         }
         return Array.from(map.values());
       };
+      const partyCodes = new Set<string>((partyDocs as Array<{ code: string }>).map(p => p.code));
+      const mergedTd   = mergeCat('td').filter(d => partyCodes.has(d.code));
       setSegmentDocs({
         kyc: mergeCat('kyc'),
         dd:  mergeCat('dd'),
         tl:  mergeCat('tl'),
-        td:  mergeCat('td'),
+        td:  mergedTd,
         qc:  mergeCat('qc'),
       });
     });
@@ -801,10 +855,20 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const refetchKyc = async (id: number | null = savedDbId) => {
     if (!id) return;
     try {
-      const [docsR, ownersR] = await Promise.all([
+      const [docsR, ownersR, refsR] = await Promise.all([
         api.get(`/consignees/${id}/documents`),
         api.get(`/consignees/${id}/owners`),
+        api.get(`/segment-uploads/consignee/${id}`).catch(() => ({ data: { data: [] } })),
       ]);
+      const refs: any[] = Array.isArray(refsR.data?.data) ? refsR.data.data : [];
+      const hydrated: Record<string, SegRefUpload> = {};
+      const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-license' };
+      for (const r of refs) {
+        const sub = CAT_TO_SUB[r.category];
+        if (!sub || !r.doc_code) continue;
+        hydrated[`${sub}::${r.doc_code}`] = { file: null, url: r.attachment_url || '', name: r.attachment_name || '' };
+      }
+      if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
       const docs: any[] = Array.isArray(docsR.data?.data) ? docsR.data.data : [];
       const owners: any[] = Array.isArray(ownersR.data?.data) ? ownersR.data.data : [];
       setKycDocs(docs.map((x: any) => ({
@@ -2258,22 +2322,28 @@ const TL_PLACEHOLDER: TradePlaceholderRow[] = [
  * a single Upload icon; on file pick it flips to View / Download /
  * Delete using a blob URL the parent caches. Delete revokes the URL
  * and restores the initial Upload state. */
-function ConsigneeSegmentRefActions({ refKey, uploads, setUploads }: {
+function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, persistUpload }: {
   refKey: string;
-  uploads: Record<string, { file: File; url: string; name: string }>;
-  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+  docName: string;
+  uploads: Record<string, { file: File | null; url: string; name: string }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+  persistUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
 }) {
   const uploaded = uploads[refKey];
-  /* Single picker handler — also drives the Re-upload action after
-   * the initial file. The setter revokes the previous blob URL before
-   * swapping so we never leak. */
+  /* Single picker — drives both first-time Upload and Re-upload. Shows
+   * the blob URL immediately for snappy feedback and fires the server
+   * upload; the persist callback swaps the blob URL for the permanent
+   * attachment_url once it lands in segment_doc_uploads. */
   const onPick = (f: File | undefined) => {
     if (!f) return;
     setUploads(prev => {
       const existing = prev[refKey];
-      if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+      if (existing?.url && existing.url.startsWith('blob:')) {
+        try { URL.revokeObjectURL(existing.url); } catch {}
+      }
       return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
     });
+    void persistUpload(refKey, f, docName);
   };
 
   if (!uploaded) {
@@ -2515,8 +2585,10 @@ const Stage2 = ({
                         <td>
                           <ConsigneeSegmentRefActions
                             refKey={refKey}
+                            docName={d.name}
                             uploads={segmentRefUploads}
                             setUploads={setSegmentRefUploads}
+                            persistUpload={persistSegmentRefUpload}
                           />
                         </td>
                       </tr>
@@ -2628,8 +2700,10 @@ const Stage2 = ({
                           <td>
                             <ConsigneeSegmentRefActions
                               refKey={refKey}
+                              docName={tl.name}
                               uploads={segmentRefUploads}
                               setUploads={setSegmentRefUploads}
+                              persistUpload={persistSegmentRefUpload}
                             />
                           </td>
                         </tr>

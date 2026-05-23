@@ -349,8 +349,55 @@ export default function AddVendorModal(props: {
    * `${kycTab}::${doc.code}`. Value: File + blob URL. Reset on modal
    * close — held at this level (not inside SupplierSegmentRefTable)
    * so switching sub-tabs doesn't drop uploads. */
-  type SegRefUpload = { file: File; url: string; name: string };
+  type SegRefUpload = { file: File | null; url: string; name: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
+
+  /* Persist a segment-rule reference upload so it lands in
+   * segment_doc_uploads (where the Evidence Vault reads from). The
+   * three vendor KYC sub-tabs map directly onto the three categories:
+   *   company → dd, owner → kyc, license → tl. */
+  const SUB_TO_CAT_V: Record<string, 'kyc' | 'dd' | 'tl'> = {
+    company: 'dd',
+    owner:   'kyc',
+    license: 'tl',
+  };
+  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
+    const ownerId = vendorId || initialVendorId || null;
+    if (!ownerId) {
+      // Vendor row needs to exist before /segment-uploads/supplier/{id}
+      // can write. The supplier form posts on Step 1 save so this only
+      // bites if the user uploads before saving Step 1.
+      return;
+    }
+    const [sub, doc_code] = refKey.split('::');
+    const category = SUB_TO_CAT_V[sub];
+    if (!category || !doc_code) return;
+    const fd = new FormData();
+    fd.append('category', category);
+    fd.append('doc_code', doc_code);
+    fd.append('doc_name', docName || doc_code);
+    fd.append('attachment', file);
+    try {
+      const { data } = await api.post(`/segment-uploads/supplier/${ownerId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const row = data?.data;
+      if (row?.attachment_url) {
+        setSegmentRefUploads(prev => {
+          const existing = prev[refKey];
+          if (existing?.url && existing.url.startsWith('blob:')) {
+            try { URL.revokeObjectURL(existing.url); } catch {}
+          }
+          return {
+            ...prev,
+            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name },
+          };
+        });
+      }
+    } catch {
+      // Silent — keep blob URL in state so the user still sees the upload
+    }
+  };
 
   /* ─── Step 1: Address + primary contact ─── */
   const [registeredOffice, setRegisteredOffice] = useState('');
@@ -449,6 +496,29 @@ export default function AddVendorModal(props: {
      Trade License modal. Loaded lazily the first time the modal opens
      to avoid an extra fetch on initial mount. */
   const [licenseTypeOpts, setLicenseTypeOpts] = useState<Opt[]>([]);
+
+  /* Hydrate segmentRefUploads on edit-mode open so the KYC / DD / Trade
+   * License tables show what was previously attached. Reads the same
+   * segment_doc_uploads table the Evidence Vault uses. */
+  useEffect(() => {
+    if (!initialVendorId) return;
+    let cancelled = false;
+    api.get(`/segment-uploads/supplier/${initialVendorId}`)
+      .then((r) => {
+        if (cancelled) return;
+        const refs: any[] = Array.isArray(r.data?.data) ? r.data.data : [];
+        const CAT_TO_SUB: Record<string, string> = { dd: 'company', kyc: 'owner', tl: 'license' };
+        const hydrated: Record<string, SegRefUpload> = {};
+        for (const x of refs) {
+          const sub = CAT_TO_SUB[x.category];
+          if (!sub || !x.doc_code) continue;
+          hydrated[`${sub}::${x.doc_code}`] = { file: null, url: x.attachment_url || '', name: x.attachment_name || '' };
+        }
+        if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
+      })
+      .catch(() => { /* silent — leave the table empty */ });
+    return () => { cancelled = true; };
+  }, [initialVendorId]);
 
   /* ─── Step 3: Trade Documents (preset signature workflow) ─── */
   const [tradeDocRows, setTradeDocRows] = useState<TradeDocRow[]>(SEED_TRADE_DOCS);
@@ -611,13 +681,22 @@ export default function AddVendorModal(props: {
     if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
 
     let cancelled = false;
-    Promise.all(
-      ids.map(id =>
-        api.get(`/clm/segment-rules/for-segment/${id}`)
-          .then(r => r.data?.data ?? {})
-          .catch(() => ({}))
-      )
-    ).then(results => {
+    Promise.all([
+      Promise.all(
+        ids.map(id =>
+          api.get(`/clm/segment-rules/for-segment/${id}`)
+            .then(r => r.data?.data ?? {})
+            .catch(() => ({}))
+        )
+      ),
+      /* Party filter for the supplier (vendor) form: trade docs whose
+       * `party` CSV mentions ANY Supplier-* sub-type. The endpoint
+       * matches Supplier-Material / Logistic / Tech / Advisory /
+       * Strategic Risk. Intersected with segment-rule td below. */
+      api.get('/clm/trade-doc-library/for-party/supplier')
+        .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
+        .catch(() => [] as Array<{ code: string; name: string }>),
+    ]).then(([results, partyDocs]) => {
       if (cancelled) return;
       const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc'): SegDocRow[] => {
         const map = new Map<string, SegDocRow>();
@@ -633,13 +712,29 @@ export default function AddVendorModal(props: {
         }
         return Array.from(map.values());
       };
+      const partyCodes = new Set<string>((partyDocs as Array<{ code: string }>).map(p => p.code));
+      const mergedTd   = mergeCat('td').filter(d => partyCodes.has(d.code));
       setSegmentDocs({
         kyc: mergeCat('kyc'),
         dd:  mergeCat('dd'),
         tl:  mergeCat('tl'),
-        td:  mergeCat('td'),
+        td:  mergedTd,
         qc:  mergeCat('qc'),
       });
+      /* Drive the Step 3 Trade Documents signature workflow from the
+       * segment × party intersection. Mandatory rows arrive pre-checked
+       * to send for signature. When the intersection is empty we fall
+       * back to the legacy seed list so the table is never blank. */
+      if (mergedTd.length > 0) {
+        setTradeDocRows(mergedTd.map(d => ({
+          code: d.code,
+          name: d.name,
+          sendForSignature: d.requirement === 'M',
+          status: 'N/A' as const,
+          attachment: null,
+          attachmentName: '',
+        })));
+      }
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1979,6 +2074,7 @@ export default function AddVendorModal(props: {
                     tabKey="company"
                     uploads={segmentRefUploads}
                     setUploads={setSegmentRefUploads}
+                    persistUpload={persistSegmentRefUpload}
                   />
                 ) : (
                   <DdTable
@@ -1997,6 +2093,7 @@ export default function AddVendorModal(props: {
                     tabKey="owner"
                     uploads={segmentRefUploads}
                     setUploads={setSegmentRefUploads}
+                    persistUpload={persistSegmentRefUpload}
                   />
                 ) : (
                   <OwnerKycTable
@@ -2013,6 +2110,7 @@ export default function AddVendorModal(props: {
                     tabKey="license"
                     uploads={segmentRefUploads}
                     setUploads={setSegmentRefUploads}
+                    persistUpload={persistSegmentRefUpload}
                   />
                 ) : (
                   <TradeLicenseTable
@@ -2764,20 +2862,24 @@ function SupplierSegmentRefTable(props: {
   title: string;
   tabKey: string;
   rows: { code: string; name: string; authority?: string | null; expiry?: string | null; requirement: 'M' | 'O' }[];
-  uploads: Record<string, { file: File; url: string; name: string }>;
-  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+  uploads: Record<string, { file: File | null; url: string; name: string }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+  persistUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
 }) {
-  const { title, tabKey, rows, uploads, setUploads } = props;
-  /* Single picker handler — drives both first-time Upload and the
-   * Re-upload action after the file is in. The setter swaps the blob
-   * URL atomically so we never leak the previous File object. */
-  const onPick = (refKey: string, f: File | undefined) => {
+  const { title, tabKey, rows, uploads, setUploads, persistUpload } = props;
+  /* Show the blob URL immediately for instant feedback, then fire the
+   * server upload — the persist callback swaps the blob URL for a
+   * permanent attachment_url once the row lands in segment_doc_uploads. */
+  const onPick = (refKey: string, docName: string, f: File | undefined) => {
     if (!f) return;
     setUploads(prev => {
       const existing = prev[refKey];
-      if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+      if (existing?.url && existing.url.startsWith('blob:')) {
+        try { URL.revokeObjectURL(existing.url); } catch {}
+      }
       return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
     });
+    void persistUpload(refKey, f, docName);
   };
   return (
     <div className="table-responsive table-card border rounded">
@@ -2819,7 +2921,7 @@ function SupplierSegmentRefTable(props: {
                   {!uploaded ? (
                     <label className="btn btn-sm btn-soft-primary mb-0" title="Upload" style={{ cursor: 'pointer' }}>
                       <i className="ri-upload-2-line" />
-                      <input type="file" hidden onChange={e => onPick(refKey, e.target.files?.[0])} />
+                      <input type="file" hidden onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
                     </label>
                   ) : (
                     <div className="hstack gap-1">
@@ -2831,7 +2933,7 @@ function SupplierSegmentRefTable(props: {
                       </a>
                       <label className="btn btn-sm btn-soft-primary mb-0" title="Re-upload (replace file)" style={{ cursor: 'pointer' }}>
                         <i className="ri-refresh-line" />
-                        <input type="file" hidden onChange={e => onPick(refKey, e.target.files?.[0])} />
+                        <input type="file" hidden onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
                       </label>
                     </div>
                   )}

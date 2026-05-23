@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
@@ -38,6 +38,9 @@ export interface VaultDoc {
    *  attachment cell render as a clickable link. */
   attachment_url?: string | null;
   status: VaultStatus;
+  /** Master doc-code (DD-001, KYC-002, …). Required by the Actions
+   *  column so a re-upload can POST against the right SegmentDocUpload row. */
+  doc_code?: string | null;
 }
 
 export interface VaultShipmentRow {
@@ -174,6 +177,17 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     setShipmentFilter('all');
     return () => window.removeEventListener('keydown', onKey);
   }, [open, consignee?.db_id, onClose]);
+
+  /* Re-fetch helper — invoked after the Actions column re-uploads a
+   * file so the row picks up the fresh attachment_url. */
+  const reloadVault = useCallback(() => {
+    if (!consignee?.db_id) return Promise.resolve();
+    setLoading(true);
+    return api.get(`/segment-uploads/consignee/${consignee.db_id}/vault`)
+      .then(r => { setVaultLive((r.data?.data ?? null) as VaultData | null); })
+      .catch(() => { /* swallow transient errors — previous state stays */ })
+      .finally(() => setLoading(false));
+  }, [consignee?.db_id]);
 
   /* Fetch the vault payload when the modal opens. Skips when (a) the
    * parent passed an override via `data` or (b) consignee has no
@@ -380,17 +394,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             </div>
           </div>
 
-          {tab !== 'shipment-agreements' && (
-            <div className="cnev-filter-row">
-              <span className="cnev-filter cnev-filter-verified">● Verified {counts.Verified}</span>
-              <span className="cnev-filter cnev-filter-expiring">● Expiring {counts.Expiring}</span>
-              <span className="cnev-filter cnev-filter-pending">● Pending {counts.Pending}</span>
-            </div>
-          )}
-
           {tab === 'shipment-agreements'
             ? <ShipmentTable rows={vault.shipment_agreements} filter={shipmentFilter} setFilter={setShipmentFilter} />
-            : <DocsTable rows={docsForTab} tab={tab} StatusPill={StatusPill} />}
+            : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault} />}
         </div>
 
         {/* ─── FOOTER ─── */}
@@ -430,11 +436,16 @@ function KpiTile({ label, value, icon, gradient }: { label: string; value: numbe
   );
 }
 
-function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; StatusPill: (p: { s: VaultStatus }) => ReactElement }) {
+function DocsTable({ rows, tab, ownerType, ownerId, onReload }: {
+  rows: VaultDoc[];
+  tab: TabKey;
+  ownerType: 'customer' | 'consignee' | 'supplier';
+  ownerId: number | null;
+  onReload: () => Promise<void> | void;
+}) {
   const numberHeader = tab === 'company-dd' ? 'License / Number' : tab === 'owner-kyc' ? 'Document Number' : tab === 'trade-licenses' ? 'License Number' : 'Reference No';
-  const issueLabel   = tab === 'trade-documents' ? 'Signed Date' : 'Issue Date';
-  const expiryLabel  = tab === 'trade-documents' ? 'Valid Till'  : 'Expiry';
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
+  const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
   return (
     <div className="cnev-table-wrap">
       <div className="cnev-table-scroll">
@@ -445,23 +456,19 @@ function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; S
             <th>Document Name</th>
             <th>{numberHeader}</th>
             <th>{authorityLbl}</th>
-            <th>{issueLabel}</th>
-            <th>{expiryLabel}</th>
             <th>Attachment</th>
-            <th>Status</th>
+            <th style={{ width: 140 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={8} className="cnev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={6} className="cnev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={d.id}>
               <td>{i + 1}</td>
               <td className="cnev-doc-name">{d.name}</td>
               <td className="cnev-mono">{d.reference || '—'}</td>
               <td>{d.authority || '—'}</td>
-              <td><span className="cnev-date">{d.issue_date || '—'}</span></td>
-              <td><span className="cnev-date cnev-date-expiry" data-status={d.status.toLowerCase()}>{d.expiry || '—'}</span></td>
               <td>
                 {d.attachment ? (
                   d.attachment_url ? (
@@ -481,12 +488,108 @@ function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; S
                   )
                 ) : <span className="cnev-muted">Not uploaded</span>}
               </td>
-              <td><StatusPill s={d.status} /></td>
+              <td>
+                <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} />
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
       </div>
+    </div>
+  );
+}
+
+function VaultRowActions({ doc, ownerType, ownerId, category, onReload }: {
+  doc: VaultDoc;
+  ownerType: 'customer' | 'consignee' | 'supplier';
+  ownerId: number | null;
+  category: 'kyc' | 'dd' | 'tl' | 'td';
+  onReload: () => Promise<void> | void;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const canViewOrDownload = !!doc.attachment_url;
+  const canReupload = !!ownerId && !!doc.doc_code;
+
+  const download = () => {
+    if (!doc.attachment_url) return;
+    const a = document.createElement('a');
+    a.href = doc.attachment_url;
+    a.download = doc.attachment || '';
+    a.target = '_blank';
+    a.rel = 'noreferrer';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  const onPick = async (f: File | undefined) => {
+    if (!f || !ownerId || !doc.doc_code) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('category', category);
+      fd.append('doc_code', doc.doc_code);
+      fd.append('doc_name', doc.name || doc.doc_code);
+      fd.append('attachment', f);
+      await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await onReload();
+    } catch {
+      // silent — user can retry; toast threading not in scope here
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="cnev-row-actions">
+      <input
+        ref={fileRef}
+        type="file"
+        hidden
+        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+        onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }}
+      />
+      <Tooltip label={canViewOrDownload ? `View ${doc.attachment}` : 'No attachment yet'}>
+        <a
+          href={canViewOrDownload ? doc.attachment_url! : undefined}
+          target={canViewOrDownload ? '_blank' : undefined}
+          rel="noreferrer"
+          aria-disabled={!canViewOrDownload}
+          className={`cnev-row-act cnev-row-act-view ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          onClick={e => { if (!canViewOrDownload) e.preventDefault(); }}
+          aria-label="View"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </a>
+      </Tooltip>
+      <Tooltip label={canViewOrDownload ? `Download ${doc.attachment}` : 'No attachment yet'}>
+        <button
+          type="button"
+          disabled={!canViewOrDownload}
+          onClick={download}
+          className={`cnev-row-act cnev-row-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          aria-label="Download"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+      </Tooltip>
+      <Tooltip label={canReupload ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload')) : 'Save the record first'}>
+        <button
+          type="button"
+          disabled={!canReupload || busy}
+          onClick={() => fileRef.current?.click()}
+          className={`cnev-row-act cnev-row-act-upload ${(!canReupload || busy) ? 'is-disabled' : ''}`}
+          aria-label={doc.attachment ? 'Re-upload' : 'Upload'}
+        >
+          {busy
+            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            : doc.attachment
+              ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}
+        </button>
+      </Tooltip>
     </div>
   );
 }
@@ -970,9 +1073,8 @@ const CNEV_CSS = `
   position: relative;
 }
 .cnev-table-scroll {
-  max-height: 480px;
   overflow-x: auto;
-  overflow-y: auto;
+  overflow-y: visible;
   scrollbar-width: thin;
 }
 .cnev-table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -1018,6 +1120,23 @@ const CNEV_CSS = `
   font-size: 11.5px; font-weight: 600;
   border: 1px solid rgba(16,185,129,.30);
 }
+
+/* Row Actions — View / Download / Re-upload icons. */
+.cnev-row-actions { display: inline-flex; align-items: center; gap: 6px; }
+.cnev-row-act {
+  width: 28px; height: 28px; border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; background: transparent;
+  cursor: pointer; text-decoration: none;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+}
+.cnev-row-act-view     { color: #2563eb; background: rgba(37,99,235,.08);  border-color: rgba(37,99,235,.20); }
+.cnev-row-act-view:hover:not(.is-disabled)     { background: rgba(37,99,235,.18); transform: translateY(-1px); }
+.cnev-row-act-download { color: #0891b2; background: rgba(8,145,178,.08);  border-color: rgba(8,145,178,.20); }
+.cnev-row-act-download:hover:not(.is-disabled) { background: rgba(8,145,178,.18); transform: translateY(-1px); }
+.cnev-row-act-upload   { color: #047857; background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.30); }
+.cnev-row-act-upload:hover:not(.is-disabled)   { background: rgba(16,185,129,.20); transform: translateY(-1px); }
+.cnev-row-act.is-disabled, .cnev-row-act:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
 
 .cnev-pill {
   display: inline-flex; align-items: center; gap: 4px;

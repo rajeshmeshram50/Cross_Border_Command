@@ -11,8 +11,8 @@ class ClmTradeDocLibrary extends Model
 
     protected $fillable = [
         'client_id', 'code', 'name', 'title', 'doc_type', 'purpose',
-        'party', 'file_path', 'status',
-        'created_by', 'updated_by',
+        'party', 'file_path', 'content', 'docx_path', 'docx_original_name',
+        'status', 'created_by', 'updated_by',
     ];
 
     public function client(): BelongsTo { return $this->belongsTo(Client::class); }

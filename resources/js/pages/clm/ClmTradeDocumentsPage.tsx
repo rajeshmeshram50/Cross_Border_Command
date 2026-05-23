@@ -10,7 +10,7 @@ import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 /* Central CLM → Trade Documents Master (two tabs: List + Library). */
 
 type TdName = { id: number; code: string; name: string };
-type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; file_path: string | null };
+type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; file_path: string | null; content: string | null };
 
 export default function ClmTradeDocumentsPage() {
   const toast = useToast();

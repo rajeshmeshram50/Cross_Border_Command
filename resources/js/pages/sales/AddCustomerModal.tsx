@@ -341,8 +341,55 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
    * `${sub-tab}::${doc.code}` so codes don't collide across categories.
    * Value carries the File plus a blob URL for View/Download links —
    * the URL stays valid as long as the modal session lives. */
-  type SegRefUpload = { file: File; url: string; name: string };
+  type SegRefUpload = { file: File | null; url: string; name: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
+
+  /* Persist a segment-rule reference upload to the server. refKey
+   * shape is `${sub-tab}::${doc.code}` — we split the sub-tab back into
+   * its (kyc|dd|tl) category and POST FormData to the SegmentDocUpload
+   * endpoint that the Evidence Vault reads from. Without this round-
+   * trip the upload only lives in browser memory and disappears the
+   * next time the modal opens. */
+  const SUB_TO_CAT_C: Record<string, 'kyc' | 'dd' | 'tl'> = {
+    'company-dd':    'dd',
+    'owner-kyc':     'kyc',
+    'trade-license': 'tl',
+  };
+  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
+    const ownerId = savedDbId || customer?.db_id || null;
+    if (!ownerId) {
+      toast.error('Save first', 'Save the customer before attaching reference documents.');
+      return;
+    }
+    const [sub, doc_code] = refKey.split('::');
+    const category = SUB_TO_CAT_C[sub];
+    if (!category || !doc_code) return;
+    const fd = new FormData();
+    fd.append('category', category);
+    fd.append('doc_code', doc_code);
+    fd.append('doc_name', docName || doc_code);
+    fd.append('attachment', file);
+    try {
+      const { data } = await api.post(`/segment-uploads/customer/${ownerId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const row = data?.data;
+      if (row?.attachment_url) {
+        setSegmentRefUploads(prev => {
+          const existing = prev[refKey];
+          if (existing?.url && existing.url.startsWith('blob:')) {
+            try { URL.revokeObjectURL(existing.url); } catch {}
+          }
+          return {
+            ...prev,
+            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name },
+          };
+        });
+      }
+    } catch (err: any) {
+      toast.error('Upload failed', err?.response?.data?.message ?? 'Could not save the attachment.');
+    }
+  };
 
   // Sub-modal — single one now since address and contact share the same
   // fields. `editing` carries the location row id when re-opening for edit.
@@ -572,10 +619,28 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     Promise.all([
       api.get(`/customers/${customer.db_id}/documents`).catch(() => ({ data: { data: [] } })),
       api.get(`/customers/${customer.db_id}/owners`).catch(() => ({ data: { data: [] } })),
-    ]).then(([docsRes, ownersRes]) => {
+      /* Segment-rule reference uploads (Stage 2 KYC/DD/TL tables + Stage
+       * 3 Evidence Vault). Hydrate from the same `segment_doc_uploads`
+       * table that the Vault reads so re-open Edit shows what was
+       * previously attached. */
+      api.get(`/segment-uploads/customer/${customer.db_id}`).catch(() => ({ data: { data: [] } })),
+    ]).then(([docsRes, ownersRes, refsRes]) => {
       if (cancelled) return;
       setKycDocs(Array.isArray(docsRes.data?.data) ? docsRes.data.data : []);
       setKycOwners(Array.isArray(ownersRes.data?.data) ? ownersRes.data.data : []);
+      const refs = Array.isArray(refsRes.data?.data) ? refsRes.data.data : [];
+      const hydrated: Record<string, SegRefUpload> = {};
+      const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-license' };
+      for (const r of refs) {
+        const sub = CAT_TO_SUB[r.category];
+        if (!sub || !r.doc_code) continue;
+        hydrated[`${sub}::${r.doc_code}`] = {
+          file: null as unknown as File,
+          url:  r.attachment_url || '',
+          name: r.attachment_name || '',
+        };
+      }
+      if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
     });
 
     return () => { cancelled = true; };
@@ -605,13 +670,22 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
 
     let cancelled = false;
-    Promise.all(
-      segRows.map(s =>
-        api.get(`/clm/segment-rules/for-segment/${s.id}`)
-          .then(r => r.data?.data ?? {})
-          .catch(() => ({}))
-      )
-    ).then(results => {
+    Promise.all([
+      Promise.all(
+        segRows.map(s =>
+          api.get(`/clm/segment-rules/for-segment/${s.id}`)
+            .then(r => r.data?.data ?? {})
+            .catch(() => ({}))
+        )
+      ),
+      /* Party filter for the customer form: only trade docs whose
+       * `party` CSV mentions "Buyer" reach Stage 3. The endpoint scopes
+       * to the current client. We intersect against the segment-rule td
+       * set below so the union of (segments × party=Buyer) renders. */
+      api.get('/clm/trade-doc-library/for-party/buyer')
+        .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
+        .catch(() => [] as Array<{ code: string }>),
+    ]).then(([results, partyDocs]) => {
       if (cancelled) return;
       /* Per-category merge + dedupe. Key = code; Mandatory > Optional
        * so a doc that's mandatory in any rule stays mandatory in the
@@ -640,11 +714,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       };
       setSegmentDocs(merged);
       /* Pre-populate Stage 3 Trade Documents from the merged td
-       * selections. Mandatory rows arrive pre-checked. The legacy
-       * two-row placeholder only kicks in when the merged set is
-       * empty (preserved for backward compatibility). */
-      if (merged.td.length > 0) {
-        setTdDocs(merged.td.map(d => ({
+       * intersected with the party=Buyer library. Mandatory rows arrive
+       * pre-checked. The legacy two-row placeholder only kicks in when
+       * the merged set is empty (preserved for backward compatibility). */
+      const partyCodes = new Set<string>((partyDocs as Array<{ code: string }>).map(p => p.code));
+      const buyerTd = merged.td.filter(d => partyCodes.has(d.code));
+      if (buyerTd.length > 0) {
+        setTdDocs(buyerTd.map(d => ({
           id: `td_${d.code}`,
           name: d.name,
           selected: d.requirement === 'M',
@@ -1124,6 +1200,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               segmentDocs={segmentDocs}
               segmentRefUploads={segmentRefUploads}
               setSegmentRefUploads={setSegmentRefUploads}
+              persistSegmentRefUpload={persistSegmentRefUpload}
               customerSaved={!!savedDbId}
               onEditDoc={(id) => {
                 const row = kycDocs.find(d => d.id === id);
@@ -1805,22 +1882,28 @@ function SegmentRequiredBanner({ segmentName, label, rows }: {
  * by a blob URL the parent component holds onto. Delete revokes the
  * URL and drops the entry from the upload map, returning the cell to
  * its initial Upload state. */
-function SegmentRefRowActions({ refKey, uploads, setUploads }: {
+function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpload }: {
   refKey: string;
-  uploads: Record<string, { file: File; url: string; name: string }>;
-  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+  docName: string;
+  uploads: Record<string, { file: File | null; url: string; name: string }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+  persistUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
 }) {
   const uploaded = uploads[refKey];
-  /* Re-using `onPick` for both first-time upload and re-upload — the
-   * setter already revokes the previous blob URL before replacing it,
-   * so swapping a file is just another pick from the user's POV. */
+  /* Re-using `onPick` for both first-time upload and re-upload. We
+   * show the blob URL immediately for instant feedback, then fire the
+   * server upload — the persist callback swaps the blob URL for a
+   * permanent attachment_url once the row hits segment_doc_uploads. */
   const onPick = (f: File | undefined) => {
     if (!f) return;
     setUploads(prev => {
       const existing = prev[refKey];
-      if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+      if (existing?.url && existing.url.startsWith('blob:')) {
+        try { URL.revokeObjectURL(existing.url); } catch {}
+      }
       return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
     });
+    void persistUpload(refKey, f, docName);
   };
 
   if (!uploaded) {
@@ -1858,7 +1941,7 @@ function SegmentRefRowActions({ refKey, uploads, setUploads }: {
 }
 
 /* ───── Stage 2 — KYC sub-tabs + doc table ───── */
-function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs, owners, segmentName, segmentDocs, segmentRefUploads, setSegmentRefUploads, customerSaved, onEditDoc, onDeleteDoc, onEditOwner, onDeleteOwner }:
+function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs, owners, segmentName, segmentDocs, segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload, customerSaved, onEditDoc, onDeleteDoc, onEditOwner, onDeleteOwner }:
   { sub: KycSubTab; setSub: (s: KycSubTab) => void;
     page: Record<KycSubTab, number>; setPage: (s: KycSubTab, p: number) => void;
     search: string; setSearch: (s: string) => void;
@@ -1876,8 +1959,11 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
      *  Key is `${sub}::${doc.code}`; value carries the File + a blob URL
      *  used by the View / Download actions. Lifted to the parent so it
      *  survives sub-tab switches. */
-    segmentRefUploads: Record<string, { file: File; url: string; name: string }>;
-    setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+    segmentRefUploads: Record<string, { file: File | null; url: string; name: string }>;
+    setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+    /** Fires the actual POST /segment-uploads/customer/{id} so the
+     *  Evidence Vault sees the attachment. */
+    persistSegmentRefUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
     /** True only when the parent customer has a db_id (i.e. has been saved). */
     customerSaved: boolean;
     onEditDoc:     (id:number) => void;
@@ -2019,32 +2105,27 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
               <table className="acm-table">
                 <thead><tr>
                   <th>Sr No</th><th>Auto Code</th><th>Document Name</th>
-                  <th>Issuing Authority</th><th>Expiry</th><th>Status</th><th>Actions</th>
+                  <th>Issuing Authority</th><th>Actions</th>
                 </tr></thead>
                 <tbody>
                   {totalRows === 0 ? (
-                    <tr className="acm-empty-row"><td colSpan={7}>No reference documents match your search.</td></tr>
+                    <tr className="acm-empty-row"><td colSpan={5}>No reference documents match your search.</td></tr>
                   ) : legacySlice.map((dl, i) => {
                     const sr = start + i + 1;
                     const srPad = String(sr).padStart(2, '0');
-                    const expClass = dl.expiry === 'N/A' ? 'acm-expiry-na' : 'acm-expiry-date';
                     return (
                       <tr key={dl.code}>
                         <td>{srPad}</td>
                         <td><span className="acm-doc-code">{dl.code}</span></td>
                         <td style={{ fontWeight: 700, color: '#1f2937' }}>{dl.name}</td>
                         <td style={{ color: '#6b7280' }}>{dl.authority}</td>
-                        <td><span className={expClass}>{dl.expiry}</span></td>
-                        <td>
-                          {dl.status === 'mandatory'
-                            ? <span className="acm-status-toggle"><span className="acm-status-mandatory is-on">✓ Mandatory</span><span className="acm-status-optional">Optional</span></span>
-                            : <span className="acm-status-toggle"><span className="acm-status-mandatory">Mandatory</span><span className="acm-status-optional is-on">Optional</span></span>}
-                        </td>
                         <td>
                           <SegmentRefRowActions
                             refKey={`${sub}::${dl.code}`}
+                            docName={dl.name}
                             uploads={segmentRefUploads}
                             setUploads={setSegmentRefUploads}
+                            persistUpload={persistSegmentRefUpload}
                           />
                         </td>
                       </tr>

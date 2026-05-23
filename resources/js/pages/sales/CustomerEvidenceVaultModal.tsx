@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
@@ -46,6 +46,9 @@ export interface VaultDoc {
    *  the attachment cell renders as a clickable link. */
   attachment_url?: string | null;
   status: VaultStatus;
+  /** Master doc-code (DD-001, KYC-002, …). Needed by the Actions column
+   *  so a re-upload can POST to /segment-uploads with the right key. */
+  doc_code?: string | null;
 }
 
 export interface VaultShipmentRow {
@@ -196,6 +199,18 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
    * or (b) customer has no db_id (unsaved record). On failure the
    * `vaultLive` stays null and the demo builder takes over so the
    * design review still has something to render. */
+  /* Re-fetch the vault payload — called both by the open-effect below
+   * and by the Actions column after a successful re-upload so the row
+   * picks up the new attachment_url without a full modal re-open. */
+  const reloadVault = useCallback(() => {
+    if (!customer?.db_id) return Promise.resolve();
+    setLoading(true);
+    return api.get(`/segment-uploads/customer/${customer.db_id}/vault`)
+      .then(r => { setVaultLive((r.data?.data ?? null) as VaultData | null); })
+      .catch(() => { /* leave previous vault state intact on transient failures */ })
+      .finally(() => setLoading(false));
+  }, [customer?.db_id]);
+
   useEffect(() => {
     if (!open || !customer?.db_id || data) {
       setVaultLive(null);
@@ -415,19 +430,10 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             </div>
           </div>
 
-          {/* Status filter chips — only for the 4 document tabs. */}
-          {tab !== 'shipment-agreements' && (
-            <div className="cev-filter-row">
-              <span className="cev-filter cev-filter-verified">● Verified {counts.Verified}</span>
-              <span className="cev-filter cev-filter-expiring">● Expiring {counts.Expiring}</span>
-              <span className="cev-filter cev-filter-pending">● Pending {counts.Pending}</span>
-            </div>
-          )}
-
           {/* Tables */}
           {tab === 'shipment-agreements'
             ? <ShipmentTable rows={vault.shipment_agreements} filter={shipmentFilter} setFilter={setShipmentFilter} />
-            : <DocsTable rows={docsForTab} tab={tab} StatusPill={StatusPill} />}
+            : <DocsTable rows={docsForTab} tab={tab} ownerType="customer" ownerId={customer?.db_id ?? null} onReload={reloadVault} />}
         </div>
 
         {/* ─── FOOTER ─── */}
@@ -471,11 +477,17 @@ function KpiTile({ label, value, icon, gradient }: { label: string; value: numbe
 }
 
 /* ─── Docs table — used by 4 of the 5 tabs. */
-function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; StatusPill: (p: { s: VaultStatus }) => ReactElement }) {
+function DocsTable({ rows, tab, ownerType, ownerId, onReload }: {
+  rows: VaultDoc[];
+  tab: TabKey;
+  ownerType: 'customer' | 'consignee' | 'supplier';
+  ownerId: number | null;
+  onReload: () => Promise<void> | void;
+}) {
   const numberHeader = tab === 'company-dd' ? 'License / Number' : tab === 'owner-kyc' ? 'Document Number' : tab === 'trade-licenses' ? 'License Number' : 'Reference No';
-  const issueLabel   = tab === 'trade-documents' ? 'Signed Date' : 'Issue Date';
-  const expiryLabel  = tab === 'trade-documents' ? 'Valid Till'  : 'Expiry';
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
+  /* Tab → SegmentDocUpload category for the re-upload endpoint. */
+  const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
   return (
     <div className="cev-table-wrap">
       <div className="cev-table-scroll">
@@ -486,29 +498,22 @@ function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; S
             <th>Document Name</th>
             <th>{numberHeader}</th>
             <th>{authorityLbl}</th>
-            <th>{issueLabel}</th>
-            <th>{expiryLabel}</th>
             <th>Attachment</th>
-            <th>Status</th>
+            <th style={{ width: 140 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={8} className="cev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={6} className="cev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={d.id}>
               <td>{i + 1}</td>
               <td className="cev-doc-name">{d.name}</td>
               <td className="cev-mono">{d.reference || '—'}</td>
               <td>{d.authority || '—'}</td>
-              <td><span className="cev-date">{d.issue_date || '—'}</span></td>
-              <td><span className="cev-date cev-date-expiry" data-status={d.status.toLowerCase()}>{d.expiry || '—'}</span></td>
               <td>
                 {d.attachment ? (
                   d.attachment_url ? (
-                    /* Clickable when the server resolved a URL — opens
-                     * the file in a new tab so the user can preview
-                     * without leaving the vault. */
                     <Tooltip label={`Open ${d.attachment}`}>
                       <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach" style={{ textDecoration: 'none' }}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -525,12 +530,114 @@ function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; S
                   )
                 ) : <span className="cev-muted">Not uploaded</span>}
               </td>
-              <td><StatusPill s={d.status} /></td>
+              <td>
+                <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} />
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
       </div>
+    </div>
+  );
+}
+
+/* View / Download / Re-upload actions. View opens the attachment in a new
+ * tab; Download triggers a save via the `download` attribute on a hidden
+ * link; Re-upload posts to /segment-uploads/{type}/{id} with the same
+ * (category, doc_code) tuple so the existing row is replaced server-side. */
+function VaultRowActions({ doc, ownerType, ownerId, category, onReload }: {
+  doc: VaultDoc;
+  ownerType: 'customer' | 'consignee' | 'supplier';
+  ownerId: number | null;
+  category: 'kyc' | 'dd' | 'tl' | 'td';
+  onReload: () => Promise<void> | void;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const canViewOrDownload = !!doc.attachment_url;
+  const canReupload = !!ownerId && !!doc.doc_code;
+
+  const download = () => {
+    if (!doc.attachment_url) return;
+    const a = document.createElement('a');
+    a.href = doc.attachment_url;
+    a.download = doc.attachment || '';
+    a.target = '_blank';
+    a.rel = 'noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const onPick = async (f: File | undefined) => {
+    if (!f || !ownerId || !doc.doc_code) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('category', category);
+      fd.append('doc_code', doc.doc_code);
+      fd.append('doc_name', doc.name || doc.doc_code);
+      fd.append('attachment', f);
+      await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await onReload();
+    } catch {
+      // intentionally silent — parent toast pattern not threaded through here
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="cev-row-actions">
+      <input
+        ref={fileRef}
+        type="file"
+        hidden
+        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+        onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }}
+      />
+      <Tooltip label={canViewOrDownload ? `View ${doc.attachment}` : 'No attachment yet'}>
+        <a
+          href={canViewOrDownload ? doc.attachment_url! : undefined}
+          target={canViewOrDownload ? '_blank' : undefined}
+          rel="noreferrer"
+          aria-disabled={!canViewOrDownload}
+          className={`cev-row-act cev-row-act-view ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          onClick={e => { if (!canViewOrDownload) e.preventDefault(); }}
+          aria-label="View"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </a>
+      </Tooltip>
+      <Tooltip label={canViewOrDownload ? `Download ${doc.attachment}` : 'No attachment yet'}>
+        <button
+          type="button"
+          disabled={!canViewOrDownload}
+          onClick={download}
+          className={`cev-row-act cev-row-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          aria-label="Download"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+      </Tooltip>
+      <Tooltip label={canReupload ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload')) : 'Save the record first'}>
+        <button
+          type="button"
+          disabled={!canReupload || busy}
+          onClick={() => fileRef.current?.click()}
+          className={`cev-row-act cev-row-act-upload ${(!canReupload || busy) ? 'is-disabled' : ''}`}
+          aria-label={doc.attachment ? 'Re-upload' : 'Upload'}
+        >
+          {busy
+            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            : doc.attachment
+              ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}
+        </button>
+      </Tooltip>
     </div>
   );
 }
@@ -1050,15 +1157,18 @@ const CEV_CSS = `
   scrollbar-width: thin;
   position: relative;
 }
-/* Inner scroll context for the table — its own scrolling ancestor
-   so the sticky thead pins inside the table, not against the
-   outer body. Without an explicit max-height the table would grow
-   freely and the body's scroll would handle it instead, which let
-   long row lists slide under the sticky band visually. */
+/* Inner scroll context for the table — own scrolling ancestor so
+   the sticky thead pins inside the table, not against the outer
+   body. Viewport-relative max-height so the table fills the
+   available vertical space on any laptop screen while still
+   leaving a hard ceiling that keeps the sticky band working. */
+/* Let the outer body handle vertical scrolling (it already has
+ * overflow-y: auto). The inner div only handles horizontal overflow
+ * for tables wider than the modal so on narrow screens the table can
+ * scroll sideways without forcing the whole vault to widen. */
 .cev-table-scroll {
-  max-height: 480px;
   overflow-x: auto;
-  overflow-y: auto;
+  overflow-y: visible;
   scrollbar-width: thin;
 }
 .cev-table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -1109,6 +1219,27 @@ const CEV_CSS = `
   background: #ede9fe; color: #5b21b6;
   font-size: 11.5px; font-weight: 600;
   border: 1px solid rgba(124,58,237,.30);
+}
+
+/* Row Actions — View / Download / Re-upload icons. Shared baseline
+ * with a per-action tint so users can scan the column without reading
+ * the icons. Disabled state stays visible but loses its hover affordance. */
+.cev-row-actions { display: inline-flex; align-items: center; gap: 6px; }
+.cev-row-act {
+  width: 28px; height: 28px; border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; background: transparent;
+  cursor: pointer; text-decoration: none;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+}
+.cev-row-act-view     { color: #2563eb; background: rgba(37,99,235,.08);  border-color: rgba(37,99,235,.20); }
+.cev-row-act-view:hover:not(.is-disabled)     { background: rgba(37,99,235,.18); transform: translateY(-1px); }
+.cev-row-act-download { color: #0891b2; background: rgba(8,145,178,.08);  border-color: rgba(8,145,178,.20); }
+.cev-row-act-download:hover:not(.is-disabled) { background: rgba(8,145,178,.18); transform: translateY(-1px); }
+.cev-row-act-upload   { color: #7c3aed; background: rgba(124,58,237,.08); border-color: rgba(124,58,237,.20); }
+.cev-row-act-upload:hover:not(.is-disabled)   { background: rgba(124,58,237,.18); transform: translateY(-1px); }
+.cev-row-act.is-disabled, .cev-row-act:disabled {
+  opacity: .45; cursor: not-allowed; pointer-events: none;
 }
 
 .cev-pill {

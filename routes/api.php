@@ -215,10 +215,13 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/clm/trade-doc-names',      [ClmTradeDocumentController::class, 'namesStore']);
     Route::put   ('/clm/trade-doc-names/{id}', [ClmTradeDocumentController::class, 'namesUpdate']);
     Route::delete('/clm/trade-doc-names/{id}', [ClmTradeDocumentController::class, 'namesDestroy']);
-    Route::get   ('/clm/trade-doc-library',      [ClmTradeDocumentController::class, 'libraryIndex']);
-    Route::post  ('/clm/trade-doc-library',      [ClmTradeDocumentController::class, 'libraryStore']);
-    Route::put   ('/clm/trade-doc-library/{id}', [ClmTradeDocumentController::class, 'libraryUpdate']);
-    Route::delete('/clm/trade-doc-library/{id}', [ClmTradeDocumentController::class, 'libraryDestroy']);
+    Route::get   ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryIndex']);
+    Route::post  ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryStore']);
+    Route::put   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryUpdate']);
+    Route::delete('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryDestroy']);
+    Route::get   ('/clm/trade-doc-library/for-party/{party}', [ClmTradeDocumentController::class, 'libraryForParty']);
+    Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx']);
+    Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx']);
 
     // Central CLM → Terms & Conditions (two tabs: categories + library).
     Route::get   ('/clm/tnc-categories',      [ClmTncController::class, 'categoriesIndex']);

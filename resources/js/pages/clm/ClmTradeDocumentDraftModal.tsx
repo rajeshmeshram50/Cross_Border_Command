@@ -4,6 +4,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { SimpleNameModal } from './clmCommon';
+import ClmInsertPlaceholderModal from './ClmInsertPlaceholderModal';
 
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → Trade Documents Master → Draft New Trade Document (modal)
@@ -31,6 +32,7 @@ export type TdLib = {
   purpose: string;
   party: string;
   file_path: string | null;
+  content: string | null;
 };
 
 const DOC_TYPES = ['Declaration', 'Undertaking', 'Authorization', 'Bond', 'Certificate', 'Letter'] as const;
@@ -82,8 +84,105 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   // Step 2 fields
   const [content, setContent] = useState('');
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const [fontSize, setFontSizeState] = useState('14');
+  const [block, setBlockState]       = useState('p');
+  const [pickerOpen, setPickerOpen]  = useState(false);
+  const lastRangeRef                 = useRef<Range | null>(null);
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+
+  /* Rich-text helpers (step 2). execCommand is deprecated but still the
+   * simplest path for contentEditable without pulling in an editor framework.
+   * preventDefault on mouseDown keeps the editor's selection intact when a
+   * toolbar button is clicked. */
+  const syncContent = () => {
+    if (editorRef.current) setContent(editorRef.current.innerHTML);
+  };
+  const exec = (cmd: string, value?: string) => {
+    editorRef.current?.focus();
+    document.execCommand(cmd, false, value);
+    syncContent();
+  };
+  const applyFontSize = (px: string) => {
+    editorRef.current?.focus();
+    // execCommand fontSize accepts 1-7; we tag with size="7" then rewrite
+    // the resulting <font> elements into <span style="font-size:Npx">.
+    document.execCommand('fontSize', false, '7');
+    editorRef.current?.querySelectorAll('font[size="7"]').forEach((f) => {
+      const span = document.createElement('span');
+      span.style.fontSize = `${px}px`;
+      span.innerHTML = (f as HTMLElement).innerHTML;
+      f.replaceWith(span);
+    });
+    syncContent();
+  };
+  const applyBlock = (tag: string) => exec('formatBlock', `<${tag}>`);
+  const insertLink = () => {
+    const url = window.prompt('Enter URL', 'https://');
+    if (url) exec('createLink', url);
+  };
+  const stashSelection = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
+      lastRangeRef.current = sel.getRangeAt(0).cloneRange();
+    } else {
+      lastRangeRef.current = null;
+    }
+  };
+  const insertAtCaret = (text: string) => {
+    editorRef.current?.focus();
+    if (lastRangeRef.current) {
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(lastRangeRef.current);
+    }
+    document.execCommand('insertText', false, text);
+    syncContent();
+  };
+
+  /* DOCX round-trip — mirrors the HRMS template flow. Download streams
+   * the saved Word file (or one generated from `content` HTML on the
+   * fly); upload replaces the editor body with the parsed DOCX. Both
+   * require the row to have been saved at least once so we have an id. */
+  const docxRef = useRef<HTMLInputElement | null>(null);
+  const downloadDocx = async () => {
+    if (!editingId) {
+      toast.error('Save first', 'Save the trade document before downloading as DOCX.');
+      return;
+    }
+    try {
+      const resp = await api.get(`/clm/trade-doc-library/${editingId}/download`, { responseType: 'blob' });
+      const url  = URL.createObjectURL(new Blob([resp.data]));
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = `${existing?.code || 'trade-document'}.docx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error('Download failed', e?.response?.data?.message ?? 'Please try again.');
+    }
+  };
+  const uploadDocx = async (file: File) => {
+    if (!editingId) {
+      toast.error('Save first', 'Save the trade document before uploading a revised DOCX.');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('docx', file);
+    try {
+      const { data } = await api.post(`/clm/trade-doc-library/${editingId}/upload-docx`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const row = data?.data;
+      if (row?.content) {
+        setContent(row.content);
+        if (editorRef.current) editorRef.current.innerHTML = row.content;
+      }
+      toast.success('Uploaded', file.name);
+    } catch (e: any) {
+      toast.error('Upload failed', e?.response?.data?.message ?? 'Please try again.');
+    }
+  };
 
   // Bootstrap form state from the row being edited (or reset for add)
   useEffect(() => {
@@ -97,21 +196,33 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setDocType(existing.doc_type ?? DOC_TYPES[0]);
       setPurpose(existing.purpose ?? '');
       setParties(new Set((existing.party ?? '').split(',').map(s => s.trim()).filter(Boolean)));
+      setContent(existing.content ?? '');
+      if (editorRef.current) editorRef.current.innerHTML = existing.content ?? '';
     } else {
       setName('');
       setTitle('');
       setDocType(DOC_TYPES[0]);
       setPurpose('');
       setParties(new Set());
+      setContent('');
+      if (editorRef.current) editorRef.current.innerHTML = '';
     }
-    setContent('');
-    if (editorRef.current) editorRef.current.innerHTML = '';
   }, [open, existing]);
 
   // Keep our names list in sync with the parent — picks up new entries
   // added via the standalone "Trade Documents List" tab while the modal
   // is open in the background.
   useEffect(() => { setNames(initialNames); }, [initialNames]);
+
+  /* Editor element only mounts when step === 2. When the user crosses
+   * the step boundary, push the persisted content into the freshly-
+   * mounted contentEditable div so edit mode shows the saved body. */
+  useEffect(() => {
+    if (step === 2 && editorRef.current) {
+      editorRef.current.innerHTML = content ?? '';
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   // Close on Escape
   useEffect(() => {
@@ -164,6 +275,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       purpose: purpose.trim(),
       party: Array.from(parties).join(','),
       file_path: null,
+      content: editorRef.current?.innerHTML ?? content ?? null,
     };
     try {
       if (editingId) {
@@ -368,11 +480,17 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     DRAFT DOCUMENT CONTENT
                   </div>
                   <div className="tdw-editor-actions">
-                    <button type="button" className="tdw-editor-btn">
+                    <input ref={docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
+                           onChange={e => { const f = e.target.files?.[0]; if (f) void uploadDocx(f); e.currentTarget.value = ''; }} />
+                    <button type="button" className="tdw-editor-btn" onClick={() => void downloadDocx()} title={editingId ? 'Download as DOCX' : 'Save the trade document first'}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                      Download DOCX
+                    </button>
+                    <button type="button" className="tdw-editor-btn" onClick={() => docxRef.current?.click()} title={editingId ? 'Upload a revised Word file' : 'Save the trade document first'}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                       Upload Word Doc
                     </button>
-                    <button type="button" className="tdw-editor-btn">
+                    <button type="button" className="tdw-editor-btn" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={() => setPickerOpen(true)}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
                       {'{}'} Placeholder
                     </button>
@@ -382,34 +500,53 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     </button>
                   </div>
                 </div>
-                <div className="tdw-toolbar">
-                  <select className="tdw-toolbar-sel"><option>12</option><option>14</option><option>16</option></select>
-                  <select className="tdw-toolbar-sel"><option>Paragraph</option><option>Heading 1</option><option>Heading 2</option></select>
-                  <button type="button" className="tdw-toolbar-btn"><b>B</b></button>
-                  <button type="button" className="tdw-toolbar-btn"><i>I</i></button>
-                  <button type="button" className="tdw-toolbar-btn"><u>U</u></button>
-                  <button type="button" className="tdw-toolbar-btn"><s>S</s></button>
-                  <button type="button" className="tdw-toolbar-btn">X²</button>
-                  <button type="button" className="tdw-toolbar-btn">X₂</button>
-                  <button type="button" className="tdw-toolbar-btn">T</button>
-                  <button type="button" className="tdw-toolbar-btn" style={{ color: '#f59e0b' }}>✎</button>
+                <div className="tdw-toolbar" onMouseDown={e => e.preventDefault()}>
+                  <select className="tdw-toolbar-sel" value={fontSize} onChange={e => { setFontSizeState(e.target.value); applyFontSize(e.target.value); }} title="Font size">
+                    <option value="11">11</option><option value="12">12</option><option value="13">13</option>
+                    <option value="14">14</option><option value="16">16</option><option value="18">18</option>
+                    <option value="20">20</option><option value="24">24</option><option value="28">28</option>
+                  </select>
+                  <select className="tdw-toolbar-sel" value={block} onChange={e => { setBlockState(e.target.value); applyBlock(e.target.value); }} title="Block format">
+                    <option value="p">Paragraph</option>
+                    <option value="h1">Heading 1</option>
+                    <option value="h2">Heading 2</option>
+                    <option value="h3">Heading 3</option>
+                    <option value="blockquote">Quote</option>
+                    <option value="pre">Code</option>
+                  </select>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('bold')}        title="Bold (Ctrl+B)"><b>B</b></button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('italic')}      title="Italic (Ctrl+I)"><i>I</i></button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('underline')}   title="Underline (Ctrl+U)"><u>U</u></button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('strikeThrough')} title="Strikethrough"><s>S</s></button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('superscript')} title="Superscript">X²</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('subscript')}   title="Subscript">X₂</button>
+                  <label className="tdw-toolbar-btn tdw-toolbar-color" title="Text color" style={{ position: 'relative' }}>
+                    T
+                    <input type="color" defaultValue="#0c4a6e" onChange={e => exec('foreColor', e.target.value)}
+                           style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+                  </label>
+                  <label className="tdw-toolbar-btn tdw-toolbar-color" title="Highlight color" style={{ position: 'relative', color: '#f59e0b' }}>
+                    ✎
+                    <input type="color" defaultValue="#fde68a" onChange={e => exec('hiliteColor', e.target.value)}
+                           style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+                  </label>
                   <span className="tdw-toolbar-sep" />
-                  <button type="button" className="tdw-toolbar-btn">≡</button>
-                  <button type="button" className="tdw-toolbar-btn">≡</button>
-                  <button type="button" className="tdw-toolbar-btn">≡</button>
-                  <button type="button" className="tdw-toolbar-btn">≡</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyLeft')}    title="Align left">≡</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyCenter')}  title="Align center">≡</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyRight')}   title="Align right">≡</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyFull')}    title="Justify">≡</button>
                   <span className="tdw-toolbar-sep" />
-                  <button type="button" className="tdw-toolbar-btn">•≡</button>
-                  <button type="button" className="tdw-toolbar-btn">1≡</button>
-                  <button type="button" className="tdw-toolbar-btn">⇤</button>
-                  <button type="button" className="tdw-toolbar-btn">⇥</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('insertUnorderedList')} title="Bullet list">•≡</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('insertOrderedList')}   title="Numbered list">1≡</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('outdent')} title="Outdent">⇤</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('indent')}  title="Indent">⇥</button>
                   <span className="tdw-toolbar-sep" />
-                  <button type="button" className="tdw-toolbar-btn">🔗</button>
-                  <button type="button" className="tdw-toolbar-btn">🔗⃠</button>
-                  <button type="button" className="tdw-toolbar-btn">—</button>
-                  <button type="button" className="tdw-toolbar-btn">↶</button>
-                  <button type="button" className="tdw-toolbar-btn">↷</button>
-                  <button type="button" className="tdw-toolbar-btn">🅣</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={insertLink}        title="Insert link">🔗</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('unlink')} title="Remove link">🔗⃠</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('insertHorizontalRule')} title="Horizontal rule">—</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('undo')} title="Undo">↶</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('redo')} title="Redo">↷</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('removeFormat')} title="Clear formatting">🅣</button>
                 </div>
                 <div
                   ref={editorRef}
@@ -470,6 +607,12 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
             onSave={(newName) => void onAddNewName(newName)}
           />
         )}
+
+        <ClmInsertPlaceholderModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onInsert={(token) => { insertAtCaret(token); setPickerOpen(false); }}
+        />
       </div>
     </div>,
     document.body,
