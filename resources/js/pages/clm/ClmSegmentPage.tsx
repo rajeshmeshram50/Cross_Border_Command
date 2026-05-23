@@ -148,11 +148,10 @@ export default function ClmSegmentPage() {
                     <th>SEGMENT NAME</th>
                     <th style={{ width: 170, textAlign: 'center' }}>REGULATORY STATUS</th>
                     <th style={{ width: 150, textAlign: 'center' }}>BUYER ≠ CONSIGNEE</th>
-                    <th style={{ width: 100, textAlign: 'center' }}>STATUS</th>
                     <th style={{ width: 90,  textAlign: 'center' }}>ACTIONS</th>
                   </tr></thead>
                   <tbody>
-                    {loading && <tr><td colSpan={7} className="clm-status">Loading segments…</td></tr>}
+                    {loading && <tr><td colSpan={6} className="clm-status">Loading segments…</td></tr>}
                     {!loading && slice.map((r, i) => (
                       <tr key={r.id}>
                         <td className="clm-td-num">{start + i + 1}</td>
@@ -164,13 +163,10 @@ export default function ClmSegmentPage() {
                             {r.regulatory_status === 'highly' ? 'Highly Regulated' : 'Less Regulated'}
                           </span>
                         </td>
-                        <td style={{ textAlign: 'center', fontSize: 12, fontWeight: r.buyer_consignee === 'allowed' ? 700 : 600, color: r.buyer_consignee === 'allowed' ? '#16a34a' : '#ef4444' }}>
-                          {r.buyer_consignee === 'allowed' ? 'Allowed' : 'Not Allowed'}
-                        </td>
                         <td style={{ textAlign: 'center' }}>
-                          <span className={`clm-badge ${r.status === 'active' ? 'clm-badge-green' : 'clm-badge-slate'}`}>
+                          <span className={`clm-badge ${r.buyer_consignee === 'allowed' ? 'clm-badge-green' : 'clm-badge-red'}`}>
                             <span className="clm-badge-dot" />
-                            {r.status === 'active' ? 'Active' : 'Inactive'}
+                            {r.buyer_consignee === 'allowed' ? 'Allowed' : 'Not Allowed'}
                           </span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
@@ -235,7 +231,9 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
   const [name, setName]     = useState(existing?.name ?? '');
   const [reg, setReg]       = useState<Reg | ''>(existing?.regulatory_status ?? '');
   const [bc, setBc]         = useState<BC  | ''>(existing?.buyer_consignee   ?? '');
-  const [status, setStatus] = useState<SegStatus>(existing?.status ?? 'active');
+  // Status is no longer user-editable in the modal — preserve the existing
+  // value on edit, default to 'active' on add. Backend still receives it.
+  const status: SegStatus = existing?.status ?? 'active';
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -321,18 +319,6 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
             {errors.bc && <div className="clm-err">{errors.bc}</div>}
           </div>
 
-          <div className="clm-field">
-            <label className="clm-field-label">Status</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={() => setStatus('active')}   className={`clm-tab ${status === 'active'   ? 'active' : ''}`}>
-                <span className="clm-tab-dot" style={{ background: '#22c55e' }} /> Active
-              </button>
-              <button type="button" onClick={() => setStatus('inactive')} className={`clm-tab ${status === 'inactive' ? 'active' : ''}`}>
-                <span className="clm-tab-dot" style={{ background: '#94a3b8' }} /> Inactive
-              </button>
-            </div>
-            <div className="clm-field-hint">Inactive segments stay in history but are hidden from new contracts.</div>
-          </div>
         </div>
 
         <div className="clm-modal-foot">

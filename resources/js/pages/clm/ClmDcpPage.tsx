@@ -4,6 +4,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
+import { DeleteConf } from './clmCommon';
 
 /* Central CLM → Document Control Panel.
  *
@@ -81,7 +82,6 @@ export default function ClmDcpPage() {
   const [editing, setEditing] = useState<SegRule | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<SegRule | null>(null);
-  const [viewDocs, setViewDocs] = useState<{ rule: SegRule; cat: keyof DocSelections | 'all' } | null>(null);
 
   const reload = () => {
     setLoading(true);
@@ -146,7 +146,7 @@ export default function ClmDcpPage() {
 
   return (
     <div className="clm-root">
-      <style>{CLM_CSS + DCP_PAGE_CSS}</style>
+      <style>{CLM_CSS}</style>
 
       <ClmPageHeader
         icon={ICO.hDcp}
@@ -230,38 +230,13 @@ export default function ClmDcpPage() {
                         <td style={{ textAlign: 'center' }}>
                           <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-green'}`}><span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}</span>
                         </td>
-                        {CAT_KEYS.map(c => {
-                          const n = segCount(c);
-                          return (
-                            <td key={c} style={{ textAlign: 'center' }}>
-                              {n > 0 ? (
-                                <button
-                                  type="button"
-                                  className="clm-count-btn"
-                                  onClick={() => setViewDocs({ rule: r, cat: c })}
-                                  title={`View ${CAT_LABELS[c]} documents`}
-                                >{n}</button>
-                              ) : (
-                                <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                        <td style={{ textAlign: 'center' }}>
-                          {(r.mandatory_count + r.optional_count) > 0 ? (
-                            <button
-                              type="button"
-                              className="clm-total-btn"
-                              onClick={() => setViewDocs({ rule: r, cat: 'all' })}
-                              title="View all documents"
-                            >
-                              <span style={{ color: '#dc2626' }}>{r.mandatory_count}M</span>
-                              <span style={{ opacity: .5, margin: '0 3px' }}>·</span>
-                              <span style={{ color: '#d97706' }}>{r.optional_count}O</span>
-                            </button>
-                          ) : (
-                            <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>
-                          )}
+                        {CAT_KEYS.map(c => (
+                          <td key={c} style={{ textAlign: 'center', fontWeight: 700, color: segCount(c) ? '#0891b2' : '#94a3b8' }}>
+                            {segCount(c) || '—'}
+                          </td>
+                        ))}
+                        <td style={{ textAlign: 'center', fontWeight: 800, color: '#0c4a6e' }}>
+                          <span style={{ color: '#dc2626' }}>{r.mandatory_count}M</span> · <span style={{ color: '#d97706' }}>{r.optional_count}O</span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <div className="clm-actions">
@@ -297,14 +272,6 @@ export default function ClmDcpPage() {
           onClose={() => { setModalOpen(false); setEditing(null); }}
           onSave={(form, ruleId) => onSave(form, ruleId ?? editing?.id)}
           onBulkSave={onBulkSave}
-        />
-      )}
-      {viewDocs && boot && (
-        <DocListPopup
-          rule={viewDocs.rule}
-          cat={viewDocs.cat}
-          boot={boot}
-          onClose={() => setViewDocs(null)}
         />
       )}
       {pendingDelete && createPortal((
@@ -379,6 +346,16 @@ function SegmentRuleModal(props: {
 
   const segments = useMemo(() => reg ? boot.segments.filter(s => s.regulatory_status === reg) : [], [reg, boot.segments]);
   const selSeg   = useMemo(() => segCodes.length === 1 ? (boot.segments.find(s => s.code === segCodes[0]) ?? null) : null, [segCodes, boot.segments]);
+  /* Authority union — Stage 1's Mapped Authorities card aggregates auths
+   * across every picked segment so the user sees the full footprint. At
+   * save time each rule still gets its own segment-specific auth list. */
+  const auths = useMemo(() => {
+    const set = new Map<string, Authority>();
+    for (const code of segCodes) {
+      for (const a of authsForSegment(code, boot.authorities)) set.set(a.code, a);
+    }
+    return Array.from(set.values());
+  }, [segCodes, boot.authorities]);
 
   const toggleSegCode = (code: string, on: boolean) => {
     setSegCodes(prev => on ? Array.from(new Set([...prev, code])) : prev.filter(c => c !== code));
@@ -558,31 +535,55 @@ function SegmentRuleModal(props: {
                 )}
               </div>
 
-              {/* Card 2: Segment Details */}
+              {/* Card 2 + 3: Segment Details + Authorities */}
               {selSeg && (
-                <div style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden' }}>
-                  <div style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)' }}>
-                    <span style={{ fontSize: 9, fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.09em' }}>Segment Details</span>
+                <>
+                  <div style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)' }}>
+                      <span style={{ fontSize: 9, fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.09em' }}>Segment Details</span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 0 }}>
+                      <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
+                        <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 4 }}>Segment ID</div>
+                        <div style={{ fontFamily: "'Geist Mono', monospace", fontSize: 14, fontWeight: 800, color: '#0c4a6e' }}>{selSeg.code}</div>
+                      </div>
+                      <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
+                        <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 4 }}>Segment Name</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#0c4a6e' }}>{selSeg.name}</div>
+                      </div>
+                      <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
+                        <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 5 }}>Regulatory</div>
+                        <span className={`clm-badge ${reg === 'highly' ? 'clm-badge-red' : 'clm-badge-emerald'}`}><span className="clm-badge-dot" />{reg === 'highly' ? 'High' : 'Less'}</span>
+                      </div>
+                      <div style={{ padding: '10px 14px' }}>
+                        <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 5 }}>Buyer ≠ Consignee</div>
+                        <span className={`clm-badge ${selSeg.buyer_consignee === 'allowed' ? 'clm-badge-green' : 'clm-badge-red'}`}>{selSeg.buyer_consignee === 'allowed' ? 'Allowed' : 'Not Allowed'}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 0 }}>
-                    <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
-                      <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 4 }}>Segment ID</div>
-                      <div style={{ fontFamily: "'Geist Mono', monospace", fontSize: 14, fontWeight: 800, color: '#0c4a6e' }}>{selSeg.code}</div>
+
+                  <div style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 9, fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.09em' }}>Mapped Authorities</span>
+                      <span style={{ fontSize: 8.5, color: '#94a3b8', fontWeight: 500 }}>(auto-selected)</span>
+                      <span className="clm-badge clm-badge-teal" style={{ marginLeft: 'auto', padding: '1px 7px' }}>{auths.length}</span>
                     </div>
-                    <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
-                      <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 4 }}>Segment Name</div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#0c4a6e' }}>{selSeg.name}</div>
-                    </div>
-                    <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
-                      <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 5 }}>Regulatory</div>
-                      <span className={`clm-badge ${reg === 'highly' ? 'clm-badge-red' : 'clm-badge-emerald'}`}><span className="clm-badge-dot" />{reg === 'highly' ? 'High' : 'Less'}</span>
-                    </div>
-                    <div style={{ padding: '10px 14px' }}>
-                      <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 5 }}>Buyer ≠ Consignee</div>
-                      <span className={`clm-badge ${selSeg.buyer_consignee === 'allowed' ? 'clm-badge-green' : 'clm-badge-red'}`}>{selSeg.buyer_consignee === 'allowed' ? 'Allowed' : 'Not Allowed'}</span>
+                    <div style={{ padding: '7px 10px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      {auths.map((a, i) => (
+                        <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 10px', borderRadius: 9, background: 'rgba(8,145,178,.05)', border: '1px solid rgba(6,182,212,.2)' }}>
+                          <div style={{ width: 18, height: 18, borderRadius: 5, background: 'rgba(8,145,178,.11)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <span style={{ fontSize: 8, fontWeight: 800, color: '#0891b2' }}>{i + 1}</span>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 11.5, fontWeight: 800, color: '#0c4a6e' }}>{a.name}</div>
+                            <div style={{ fontSize: 9, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.description}</div>
+                          </div>
+                          <span className="clm-code-pill" style={{ fontSize: 9 }}>{a.code}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
+                </>
               )}
             </>
           ) : (
@@ -614,38 +615,13 @@ function SegmentRuleModal(props: {
                 </div>
                 <div style={{ maxHeight: 360, overflowY: 'auto' }}>
                   <table className="clm-table">
-                    <thead>
-                      <tr style={{ background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1.5px solid rgba(6,182,212,.12)' }}>
-                        <th style={{ width: 36, padding: '9px 4px 9px 14px', textAlign: 'left' }}></th>
-                        <th style={{ width: 36, padding: '9px 4px', textAlign: 'center' }}></th>
-                        <th style={{ width: 100, padding: '9px 8px', textAlign: 'left' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#0891b2', opacity: .65 }}>Code</span></th>
-                        <th style={{ padding: '9px 12px', textAlign: 'left' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#0891b2', opacity: .65 }}>Document Name</span></th>
-                        <th style={{ padding: '9px 12px', textAlign: 'left' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#0891b2', opacity: .65 }}>Authority / Type</span></th>
-                        <th style={{ width: 200, padding: '9px 16px', textAlign: 'right' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#0891b2', opacity: .65 }}>Requirement</span></th>
-                      </tr>
-                    </thead>
                     <tbody>
                       {catData[activeCat].map((d, i) => {
                         const sel = docSel[activeCat]?.[d.code];
                         const isM = sel === 'M', isO = sel === 'O';
-                        const checked = isM || isO;
                         return (
                           <tr key={d.id}>
                             <td className="clm-td-num">{String(i + 1).padStart(2, '0')}</td>
-                            <td style={{ width: 36, textAlign: 'center', padding: '6px 4px' }}>
-                              <label className="clm-doc-check">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={e => setDocReq(activeCat, d.code, e.target.checked ? (sel ?? 'M') : null)}
-                                />
-                                <span className="clm-doc-check-box">
-                                  {checked && (
-                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                                  )}
-                                </span>
-                              </label>
-                            </td>
                             <td style={{ width: 100 }}><span className="clm-code-pill">{d.code}</span></td>
                             <td className="clm-td-name">{d.name || d.title}</td>
                             <td className="clm-td-desc">{d.authority || d.issued_by || '—'}</td>
@@ -679,189 +655,6 @@ function SegmentRuleModal(props: {
                   {saving ? 'Saving…' : (isEdit ? `Update Rule (${grandTotal} docs)` : `Save Rule (${grandTotal} docs)`)}
                 </button>}
           </div>
-        </div>
-      </div>
-    </div>
-  ), document.body);
-}
-
-/* ─── Per-page CSS for count/total buttons ─── */
-const DCP_PAGE_CSS = `
-.clm-count-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 30px; height: 26px; padding: 0 9px;
-  font-family: inherit; font-size: 11px; font-weight: 800;
-  color: #0891b2; background: rgba(8,145,178,.08);
-  border: 1.5px solid rgba(6,182,212,.22); border-radius: 14px;
-  cursor: pointer; transition: all .14s;
-}
-.clm-count-btn:hover {
-  background: rgba(8,145,178,.18); transform: scale(1.07);
-  box-shadow: 0 3px 10px rgba(6,182,212,.22);
-}
-.clm-total-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 3px 11px; font-family: inherit; font-size: 11px; font-weight: 800;
-  color: #0c4a6e; background: rgba(239,68,68,.05);
-  border: 1.5px solid rgba(239,68,68,.22); border-radius: 18px;
-  cursor: pointer; transition: all .14s; white-space: nowrap;
-}
-.clm-total-btn:hover {
-  background: rgba(239,68,68,.12); transform: scale(1.05);
-  box-shadow: 0 3px 10px rgba(239,68,68,.18);
-}
-.clm-doc-check {
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; user-select: none;
-}
-.clm-doc-check input { position: absolute; opacity: 0; width: 0; height: 0; }
-.clm-doc-check-box {
-  width: 18px; height: 18px; border-radius: 5px;
-  border: 1.5px solid rgba(203,213,225,.7);
-  background: #fff;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: all .14s;
-}
-.clm-doc-check:hover .clm-doc-check-box { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.12); }
-.clm-doc-check input:checked + .clm-doc-check-box {
-  background: linear-gradient(135deg,#06b6d4,#0891b2);
-  border-color: #0891b2;
-  box-shadow: 0 2px 6px rgba(8,145,178,.28);
-}
-`;
-
-/* ─── DocListPopup — opens when a count or total cell is clicked ─── */
-
-function DocListPopup(props: {
-  rule: SegRule;
-  cat: keyof DocSelections | 'all';
-  boot: Bootstrap;
-  onClose: () => void;
-}) {
-  const { rule, cat, boot, onClose } = props;
-  const isAll = cat === 'all';
-
-  const seg = boot.segments.find(s => s.code === rule.segment_code);
-  const segName = seg?.name ?? rule.segment_code;
-  const catData: Record<keyof DocSelections, DocItem[]> = {
-    kyc: boot.kyc, dd: boot.dd, tl: boot.tl, td: boot.td, qc: boot.qc,
-  };
-
-  /* Flatten selected docs across one (or all) categories. In all-mode each
-   * row is tagged with its source category so the popup can show a pill. */
-  type Row = DocItem & { __cat: keyof DocSelections; __req: 'M' | 'O' };
-  const mand: Row[] = [];
-  const opt: Row[]  = [];
-  const cats: Array<keyof DocSelections> = isAll ? CAT_KEYS : [cat as keyof DocSelections];
-  for (const c of cats) {
-    const sel = rule.doc_selections?.[c] ?? {};
-    for (const d of catData[c]) {
-      const v = sel[d.code];
-      if (v === 'M') mand.push({ ...d, __cat: c, __req: 'M' });
-      else if (v === 'O') opt.push({ ...d, __cat: c, __req: 'O' });
-    }
-  }
-  const totalSel = mand.length + opt.length;
-  const universe = isAll
-    ? CAT_KEYS.reduce((n, c) => n + catData[c].length, 0)
-    : catData[cat as keyof DocSelections].length;
-
-  const catLabel = isAll ? 'All' : CAT_LABELS[cat as keyof DocSelections];
-
-  const renderRow = (d: Row, idx: number, isLast: boolean) => (
-    <div key={`${d.__cat}-${d.code}`} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 22px', background: '#fff', borderBottom: isLast ? 'none' : '1px solid rgba(6,182,212,.07)' }}>
-      <span style={{ fontSize: 10, fontWeight: 700, color: '#c0d4e0', width: 22, textAlign: 'right', flexShrink: 0 }}>{String(idx + 1).padStart(2, '0')}</span>
-      <span className="clm-code-pill" style={{ flexShrink: 0 }}>{d.code}</span>
-      {isAll && (
-        <span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 8.5, fontWeight: 800, color: '#4f46e5', background: 'rgba(99,102,241,.08)', padding: '2px 7px', borderRadius: 5, border: '1px solid rgba(99,102,241,.2)', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: '.05em', textTransform: 'uppercase' }}>
-          {CAT_LABELS[d.__cat]}
-        </span>
-      )}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#0c4a6e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name || d.title}</div>
-        <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.authority || d.issued_by || '—'}</div>
-      </div>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 14px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
-        background: d.__req === 'M' ? 'rgba(8,145,178,.09)' : 'rgba(245,158,11,.09)',
-        color: d.__req === 'M' ? '#0891b2' : '#d97706',
-        border: `1.5px solid ${d.__req === 'M' ? 'rgba(6,182,212,.28)' : 'rgba(245,158,11,.28)'}`
-      }}>
-        {d.__req === 'M' ? 'Mandatory' : 'Optional'}
-      </span>
-    </div>
-  );
-
-  return createPortal((
-    <div className="clm-modal-bd" onClick={onClose} style={{ zIndex: 200000 }}>
-      <div className="clm-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 640, width: '100%' }}>
-        <div className="clm-modal-head">
-          <div className="clm-modal-head-left">
-            <div className="clm-modal-head-ico">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            </div>
-            <div>
-              <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.65)', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 3 }}>{segName}</div>
-              <div className="clm-modal-head-title">{catLabel} Documents</div>
-              <div className="clm-modal-head-sub">{totalSel} document{totalSel === 1 ? '' : 's'} configured</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            {mand.length > 0 && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: '#fff', background: 'rgba(6,182,212,.28)', border: '1px solid rgba(255,255,255,.3)', padding: '5px 13px', borderRadius: 20, whiteSpace: 'nowrap' }}>
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                {mand.length} Mandatory
-              </span>
-            )}
-            {opt.length > 0 && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: '#fff', background: 'rgba(251,191,36,.28)', border: '1px solid rgba(251,191,36,.32)', padding: '5px 13px', borderRadius: 20, whiteSpace: 'nowrap' }}>
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><circle cx="12" cy="12" r="5"/></svg>
-                {opt.length} Optional
-              </span>
-            )}
-            <button className="clm-modal-close" onClick={onClose}>×</button>
-          </div>
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto', maxHeight: '60vh', background: '#fff' }}>
-          {totalSel === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '48px 24px' }}>
-              <div style={{ width: 52, height: 52, borderRadius: 15, background: 'rgba(8,145,178,.07)', border: '1.5px solid rgba(6,182,212,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0891b2' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              </div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#0c4a6e' }}>No documents configured</div>
-              <div style={{ fontSize: 11.5, color: '#94a3b8', textAlign: 'center' }}>No {isAll ? '' : catLabel + ' '}documents have been assigned<br/>for this segment rule.</div>
-            </div>
-          ) : (
-            <>
-              {mand.length > 0 && (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 22px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.12)', borderTop: '1px solid rgba(6,182,212,.1)' }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#0891b2' }}>Mandatory</span>
-                    <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', padding: '1px 7px', borderRadius: 9 }}>{mand.length}</span>
-                  </div>
-                  {mand.map((d, i) => renderRow(d, i, i === mand.length - 1))}
-                </>
-              )}
-              {opt.length > 0 && (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 22px', background: 'linear-gradient(110deg,#fffbeb,#fef9ee)', borderBottom: '1px solid rgba(245,158,11,.12)', borderTop: '1px solid rgba(245,158,11,.1)' }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.8"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="9"/></svg>
-                    <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#d97706' }}>Optional</span>
-                    <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg,#fbbf24,#d97706)', padding: '1px 7px', borderRadius: 9 }}>{opt.length}</span>
-                  </div>
-                  {opt.map((d, i) => renderRow(d, i, i === opt.length - 1))}
-                </>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="clm-modal-foot" style={{ justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 11, color: '#0891b2', opacity: .75 }}>
-            <b style={{ color: '#0c4a6e', fontWeight: 700, opacity: 1 }}>{totalSel}</b> of <b style={{ color: '#0c4a6e', fontWeight: 700, opacity: 1 }}>{universe}</b> documents configured
-          </span>
-          <button className="clm-btn-cancel" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
