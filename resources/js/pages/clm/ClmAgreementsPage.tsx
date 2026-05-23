@@ -5,6 +5,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import { DeleteConf, SimpleDescModal } from './clmCommon';
+import Tooltip from '../../components/ui/Tooltip';
+import ClmAgreementWizardModal from './ClmAgreementWizardModal';
 
 /* Central CLM → Agreements Master (two tabs: Types + Library). */
 
@@ -14,12 +16,14 @@ type AgrLib = {
   regulatory: 'highly'|'less'; signing: boolean; segment: string | null;
   agr_status: string; content: string | null;
 };
+type Seg = { id: number; code: string; name: string };
 
 export default function ClmAgreementsPage() {
   const toast = useToast();
   const [tab, setTab]       = useState<'type'|'lib'>('type');
   const [types, setTypes]   = useState<AgrType[]>([]);
   const [lib, setLib]       = useState<AgrLib[]>([]);
+  const [segs, setSegs]     = useState<Seg[]>([]);
   const [loading, setLoading] = useState(false);
 
   const reload = () => {
@@ -27,7 +31,8 @@ export default function ClmAgreementsPage() {
     Promise.all([
       api.get<{ status: boolean; data: AgrType[] }>('/clm/agreement-types'),
       api.get<{ status: boolean; data: AgrLib[]  }>('/clm/agreement-library'),
-    ]).then(([t, l]) => { setTypes(t.data.data ?? []); setLib(l.data.data ?? []); })
+      api.get<{ status: boolean; data: Seg[]     }>('/clm/segments'),
+    ]).then(([t, l, s]) => { setTypes(t.data.data ?? []); setLib(l.data.data ?? []); setSegs(s.data.data ?? []); })
       .catch(() => toast.error('Load failed', 'Could not load agreements'))
       .finally(() => setLoading(false));
   };
@@ -72,7 +77,7 @@ export default function ClmAgreementsPage() {
 
       {tab === 'type'
         ? <TypesPane rows={types} loading={loading} reload={reload} />
-        : <LibraryPane rows={lib} types={types} loading={loading} reload={reload} />}
+        : <LibraryPane rows={lib} types={types} segs={segs} loading={loading} reload={reload} />}
     </div>
   );
 }
@@ -113,10 +118,12 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" placeholder="Search agreement types…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
         </div>
-        <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add Agreement Type
-        </button>
+        <Tooltip label="Create a new agreement type">
+          <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Agreement Type
+          </button>
+        </Tooltip>
       </div>
 
       <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
@@ -146,8 +153,12 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
                     <td className="clm-td-desc">{r.description}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
-                        <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                        <button className="clm-act clm-act-del" title="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                        <Tooltip label={`Edit ${r.name}`}>
+                          <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                        </Tooltip>
+                        <Tooltip label={`Delete ${r.name}`}>
+                          <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                        </Tooltip>
                       </div>
                     </td>
                   </tr>
@@ -174,7 +185,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
   );
 }
 
-function LibraryPane({ rows, types, loading, reload }: { rows: AgrLib[]; types: AgrType[]; loading: boolean; reload: () => void }) {
+function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; types: AgrType[]; segs: Seg[]; loading: boolean; reload: () => void }) {
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [page, setPage]     = useState(1);
@@ -189,18 +200,43 @@ function LibraryPane({ rows, types, loading, reload }: { rows: AgrLib[]; types: 
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page);
 
-  const onSave = async (form: Omit<AgrLib, 'id'|'code'>, id?: number) => {
-    try {
-      if (id) await api.put(`/clm/agreement-library/${id}`, form);
-      else    await api.post('/clm/agreement-library', form);
-      toast.success(id ? 'Updated' : 'Added', form.title);
-      setModalOpen(false); setEditing(null); reload();
-    } catch (e: any) { toast.error('Save failed', e?.response?.data?.message ?? 'Could not save'); }
-  };
   const onDelete = async () => {
     if (!pendingDelete) return;
     try { await api.delete(`/clm/agreement-library/${pendingDelete.id}`); toast.success('Deleted', pendingDelete.title); setPendingDelete(null); reload(); }
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
+  };
+
+  // Real segments from /clm/segments unioned with anything historically saved
+  // on existing rows so older data still surfaces if the master was edited.
+  const knownSegments = useMemo(() => {
+    const set = new Set<string>();
+    segs.forEach(s => { if (s.name) set.add(s.name); });
+    rows.forEach(r => { if (r.segment) set.add(r.segment); });
+    return Array.from(set);
+  }, [rows, segs]);
+
+  // Download the agreement's content as an .html file (Word opens .html
+  // gracefully) — no extra backend round-trip needed.
+  const onDownload = (r: AgrLib) => {
+    const body = r.content ?? '<p><em>No content saved for this agreement yet.</em></p>';
+    const html =
+      '<!doctype html><html><head><meta charset="utf-8"/>' +
+      `<title>${escapeHtmlForFile(r.title)}</title>` +
+      '<style>body{font-family:Calibri,Arial,sans-serif;color:#0c4a6e;line-height:1.55;max-width:780px;margin:24px auto;padding:0 16px}h1{color:#0c4a6e}h2,h3{margin-top:1.2em}</style>' +
+      '</head><body>' +
+      `<h1>${escapeHtmlForFile(r.title)}</h1>` +
+      `<p style="color:#475569"><strong>Agreement Type:</strong> ${escapeHtmlForFile(r.agreement_type)} &nbsp;·&nbsp; <strong>ID:</strong> ${escapeHtmlForFile(r.code)}</p>` +
+      body +
+      '</body></html>';
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `${r.code}-${slugForFile(r.title)}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -210,10 +246,12 @@ function LibraryPane({ rows, types, loading, reload }: { rows: AgrLib[]; types: 
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" placeholder="Search agreement library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
         </div>
-        <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add Agreement
-        </button>
+        <Tooltip label="Draft a new agreement template">
+          <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Agreement
+          </button>
+        </Tooltip>
       </div>
 
       <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
@@ -235,7 +273,7 @@ function LibraryPane({ rows, types, loading, reload }: { rows: AgrLib[]; types: 
                 <th style={{ width: 120, textAlign: 'center' }}>SEGMENT</th>
                 <th>APPLICABLE PARTY</th>
                 <th style={{ width: 85, textAlign: 'center' }}>SIGNING</th>
-                <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
+                <th style={{ width: 128, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
                 {loading && <tr><td colSpan={9} className="clm-status">Loading…</td></tr>}
@@ -261,8 +299,15 @@ function LibraryPane({ rows, types, loading, reload }: { rows: AgrLib[]; types: 
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
-                          <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                          <button className="clm-act clm-act-del" title="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                          <Tooltip label={`Edit — ${r.title}`}>
+                            <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                          </Tooltip>
+                          <Tooltip label={`Download ${r.code} as .html`}>
+                            <button className="clm-act clm-act-dl" aria-label="Download" onClick={() => onDownload(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+                          </Tooltip>
+                          <Tooltip label={`Delete — ${r.title}`}>
+                            <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                          </Tooltip>
                         </div>
                       </td>
                     </tr>
@@ -284,120 +329,26 @@ function LibraryPane({ rows, types, loading, reload }: { rows: AgrLib[]; types: 
         )}
       </div>
 
-      {modalOpen && <AgrLibModal existing={editing} types={types} nextCode={`A-${String(rows.length + 1).padStart(3, '0')}`} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />}
       {pendingDelete && createPortal(<DeleteConf title="Delete agreement?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+
+      <ClmAgreementWizardModal
+        open={modalOpen}
+        existing={editing}
+        types={types}
+        knownSegments={knownSegments}
+        nextCode={editing?.code ?? `A-${String(rows.length + 1).padStart(3, '0')}`}
+        onClose={() => { setModalOpen(false); setEditing(null); }}
+        onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
+      />
     </div>
   );
 }
 
-function AgrLibModal(props: { existing: AgrLib | null; types: AgrType[]; nextCode: string; onClose: () => void; onSave: (f: Omit<AgrLib, 'id'|'code'>) => void; }) {
-  const { existing, types, nextCode, onClose, onSave } = props;
-  const isEdit = !!existing;
-  const [type, setType]   = useState(existing?.agreement_type ?? (types[0]?.name ?? ''));
-  const [title, setTitle] = useState(existing?.title ?? '');
-  const [party, setParty] = useState(existing?.party ?? '');
-  const [reg, setReg]     = useState<'highly'|'less'>(existing?.regulatory ?? 'less');
-  const [signing, setSigning] = useState(existing?.signing ?? true);
-  const [segment, setSegment] = useState(existing?.segment ?? '');
-  const [agrStatus, setAgrStatus] = useState(existing?.agr_status ?? 'Active');
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-
-  const handleSave = async () => {
-    const next: Record<string, string> = {};
-    if (!type.trim())  next.type  = 'Agreement type is required';
-    if (!title.trim()) next.title = 'Title is required';
-    if (!party.trim()) next.party = 'Party is required';
-    setErrors(next);
-    if (Object.keys(next).length) return;
-    setSaving(true);
-    try {
-      await Promise.resolve(onSave({
-        agreement_type: type.trim(), title: title.trim(), party: party.trim(),
-        regulatory: reg, signing, segment: segment.trim() || null,
-        agr_status: agrStatus, content: null,
-      }));
-    } finally { setSaving(false); }
-  };
-
-  return createPortal((
-    <div className="clm-modal-bd" onClick={onClose}>
-      <div className="clm-modal clm-modal-wide" onClick={e => e.stopPropagation()}>
-        <div className="clm-modal-head">
-          <div className="clm-modal-head-left">
-            <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg></div>
-            <div>
-              <div className="clm-modal-head-title">{isEdit ? 'Edit Agreement' : 'Add New Agreement'}</div>
-              <div className="clm-modal-head-sub">{isEdit ? 'Update agreement template details.' : 'Create a reusable agreement template for CLM workflows.'}</div>
-            </div>
-          </div>
-          <button className="clm-modal-close" onClick={onClose}>×</button>
-        </div>
-        <div className="clm-modal-body">
-          <div className="clm-autocode">
-            <div className="clm-autocode-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
-            <div className="clm-autocode-text">
-              <div className="clm-autocode-label">{isEdit ? 'Agreement ID' : 'Auto Generated Code'}</div>
-              <div className="clm-autocode-val">{isEdit ? existing!.code : nextCode}</div>
-            </div>
-            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div className="clm-field">
-              <label className="clm-field-label">Agreement Type <span className="clm-req">*</span></label>
-              <select className={`clm-select ${errors.type ? 'clm-input-err' : ''}`} value={type} onChange={e => { setType(e.target.value); setErrors(p => ({ ...p, type: '' })); }}>
-                <option value="">— Select —</option>
-                {types.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                {type && !types.find(t => t.name === type) && <option value={type}>{type}</option>}
-              </select>
-              {errors.type && <div className="clm-err">{errors.type}</div>}
-            </div>
-            <div className="clm-field">
-              <label className="clm-field-label">Agreement Title <span className="clm-req">*</span></label>
-              <input className={`clm-input ${errors.title ? 'clm-input-err' : ''}`} placeholder="e.g. Master Supplier Agreement — FY2026" value={title} onChange={e => { setTitle(e.target.value); setErrors(p => ({ ...p, title: '' })); }} />
-              {errors.title && <div className="clm-err">{errors.title}</div>}
-            </div>
-          </div>
-          <div className="clm-field">
-            <label className="clm-field-label">Applicable Party <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.party ? 'clm-input-err' : ''}`} placeholder="Comma-separated, e.g. Buyer, Supplier-Material" value={party} onChange={e => { setParty(e.target.value); setErrors(p => ({ ...p, party: '' })); }} />
-            {errors.party && <div className="clm-err">{errors.party}</div>}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
-            <div className="clm-field">
-              <label className="clm-field-label">Regulatory</label>
-              <select className="clm-select" value={reg} onChange={e => setReg(e.target.value as 'highly'|'less')}>
-                <option value="less">Less Regulatory</option>
-                <option value="highly">High Regulatory</option>
-              </select>
-            </div>
-            <div className="clm-field">
-              <label className="clm-field-label">Segment</label>
-              <input className="clm-input" placeholder={reg === 'highly' ? 'e.g. Tobacco, Pharma' : 'All standard'} value={segment} onChange={e => setSegment(e.target.value)} disabled={reg !== 'highly'} />
-            </div>
-            <div className="clm-field">
-              <label className="clm-field-label">Status</label>
-              <select className="clm-select" value={agrStatus} onChange={e => setAgrStatus(e.target.value)}>
-                <option value="Active">Active</option>
-                <option value="Draft">Draft</option>
-              </select>
-            </div>
-          </div>
-          <div className="clm-field">
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12, color: '#0c4a6e' }}>
-              <input type="checkbox" checked={signing} onChange={e => setSigning(e.target.checked)} style={{ accentColor: '#0891b2' }} />
-              Signing workflow required (e-sign / signature pad)
-            </label>
-          </div>
-        </div>
-        <div className="clm-modal-foot">
-          <button className="clm-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="clm-btn-save" onClick={() => void handleSave()} disabled={saving}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            {saving ? 'Saving…' : (isEdit ? 'Update' : 'Save')}
-          </button>
-        </div>
-      </div>
-    </div>
-  ), document.body);
+/* Small helpers reused by the Library pane (download). */
+function escapeHtmlForFile(s: string) {
+  return (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+function slugForFile(s: string) {
+  return (s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'agreement';
+}
+

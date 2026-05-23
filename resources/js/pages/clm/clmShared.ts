@@ -401,6 +401,10 @@ export const CLM_CSS = `
 .clm-act-del:hover  { background: #fee2e2; border-color: #ef4444; box-shadow: 0 4px 12px rgba(239,68,68,.22); }
 .clm-act-view { color: #6366f1; border-color: rgba(99,102,241,.22); background: rgba(238,242,255,.8); }
 .clm-act-view:hover { background: #e0e7ff; border-color: #6366f1; box-shadow: 0 4px 12px rgba(99,102,241,.22); }
+.clm-act-dl   { color: #16a34a; border-color: rgba(34,197,94,.25); background: rgba(240,253,244,.8); }
+.clm-act-dl:hover   { background: #dcfce7; border-color: #16a34a; box-shadow: 0 4px 12px rgba(22,163,74,.22); }
+[data-bs-theme="dark"] .clm-act-dl { background: rgba(34,197,94,.12); border-color: rgba(34,197,94,.32); }
+[data-bs-theme="dark"] .clm-act-dl:hover { background: rgba(34,197,94,.24); }
 
 /* Empty / loading */
 .clm-status { text-align: center; padding: 24px 12px; color: #94a3b8; font-style: italic; font-size: 12.5px; }
