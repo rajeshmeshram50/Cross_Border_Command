@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\ClmKycController;
 use App\Http\Controllers\Api\ClmQcController;
 use App\Http\Controllers\Api\ClmSegmentController;
 use App\Http\Controllers\Api\ClmSegmentRuleController;
+use App\Http\Controllers\Api\ClmSignatureController;
 use App\Http\Controllers\Api\SegmentDocUploadController;
 use App\Http\Controllers\Api\ClmTncController;
 use App\Http\Controllers\Api\ClmTradeDocumentController;
@@ -224,6 +225,21 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/clm/trade-doc-library/for-party/{party}', [ClmTradeDocumentController::class, 'libraryForParty']);
     Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx']);
     Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx']);
+
+    // Central CLM → Trade Documents → Send for Signature (Zoho Sign).
+    // The preview endpoint renders the merged PDF without calling Zoho so the
+    // wizard's step-3 iframe stays snappy; send + status + reminder + recall +
+    // signed-file streaming all live behind the same controller for one
+    // tenant-scoping place.
+    Route::post  ('/clm/signature-requests/preview',                       [ClmSignatureController::class, 'preview']);
+    Route::post  ('/clm/signature-requests',                               [ClmSignatureController::class, 'send']);
+    Route::get   ('/clm/signature-requests',                               [ClmSignatureController::class, 'index']);
+    Route::get   ('/clm/signature-requests/{id}',                          [ClmSignatureController::class, 'show'])->whereNumber('id');
+    Route::post  ('/clm/signature-requests/{id}/remind',                   [ClmSignatureController::class, 'remind'])->whereNumber('id');
+    Route::post  ('/clm/signature-requests/{id}/recall',                   [ClmSignatureController::class, 'recall'])->whereNumber('id');
+    Route::get   ('/clm/signature-requests/{id}/download-file/{index}',    [ClmSignatureController::class, 'downloadFile'])->whereNumber('id')->whereNumber('index');
+    Route::get   ('/clm/signature-requests/{id}/view-file/{index}',        [ClmSignatureController::class, 'viewFile'])->whereNumber('id')->whereNumber('index');
+    Route::get   ('/clm/signature-requests/{id}/certificate',              [ClmSignatureController::class, 'viewCertificate'])->whereNumber('id');
 
     // Central CLM → Terms & Conditions (two tabs: categories + library).
     Route::get   ('/clm/tnc-categories',      [ClmTncController::class, 'categoriesIndex']);

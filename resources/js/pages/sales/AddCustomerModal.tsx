@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../api';
-import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
-import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
+import { MasterSelect, MasterDatePicker, MasterMultiSelect } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
+import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Customer — 3-stage modal
@@ -320,10 +320,97 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   // rule when the user picks a segment in Stage 1 (see segment-template
   // effect below). Falls back to the original two-row placeholder when
   // the segment has no rule (or no `td` selections).
-  const [tdDocs, setTdDocs] = useState<{ id:string; name:string; selected:boolean; sent:boolean }[]>([
-    { id:'td1', name:'Bill of Lading',           selected:true, sent:false },
-    { id:'td2', name:'Phytosanitary Certificate', selected:true, sent:false },
+  /* `db_id` is the numeric clm_trade_doc_library.id — required by the
+   * Zoho Sign send modal. It's null on the legacy placeholder rows and
+   * populated when the segment-rule merge below joins against the
+   * /clm/trade-doc-library/for-party/buyer endpoint. */
+  const [tdDocs, setTdDocs] = useState<TdDocRow[]>([
+    { id:'td1', db_id:null, name:'Bill of Lading',           selected:true, sent:false, status: 'idle' },
+    { id:'td2', db_id:null, name:'Phytosanitary Certificate', selected:true, sent:false, status: 'idle' },
   ]);
+
+  /* "Send for Signature" launch state — when non-null, the Zoho Sign
+   * wizard pops with the listed clm_trade_doc_library ids pre-checked.
+   * The Stage 3 Trade Documents tab's per-row "Send" button (single id)
+   * and the "Send Selected Documents for Signature" footer button
+   * (all currently-checked ids) both write to this state. */
+  const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
+
+  /* Signature-request status, keyed by clm_trade_doc_library.id. Hydrated
+   * from /clm/signature-requests?party_id=N and refreshed every 15s while
+   * the user is on the Stage 3 Trade Documents tab. The poller passes
+   * `sync=true` so the backend pulls each inprogress row from Zoho on the
+   * same request — that's how completed signings, declines and recalls
+   * appear in the table without the user having to reload. */
+  type SigInfo = { status: TdSigStatus; signatureRequestId: number; signedUrl?: string };
+  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, SigInfo>>({});
+
+  useEffect(() => {
+    const partyId = customer?.db_id ?? savedDbId;
+    if (!open || stage !== 3 || evTab !== 'trade-documents' || !partyId) return;
+
+    let cancelled = false;
+
+    const fetchAndUpdate = async (withSync: boolean) => {
+      try {
+        const r = await api.get('/clm/signature-requests', {
+          params: { party_id: partyId, model_name: 'Customer', sync: withSync ? 1 : 0 },
+        });
+        if (cancelled) return;
+        const rows: Array<{
+          id: number;
+          status: TdSigStatus;
+          trade_doc_ids: number[];
+          signed_document_paths?: Array<{ url?: string; path?: string }> | null;
+        }> = Array.isArray(r.data?.data) ? r.data.data : [];
+
+        // Latest request wins when a single doc has been resent. The list
+        // endpoint returns rows newest-first (per the controller's ->latest()
+        // ordering), so the first row we see for a doc id is the most
+        // recent — `if (!map.has(docId))` keeps it that way.
+        const map: Record<number, SigInfo> = {};
+        for (const row of rows) {
+          const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
+          for (let i = 0; i < ids.length; i++) {
+            const docId = Number(ids[i]);
+            if (!docId || map[docId]) continue;
+            const signedEntry = Array.isArray(row.signed_document_paths) ? row.signed_document_paths[i] : null;
+            map[docId] = {
+              status: row.status,
+              signatureRequestId: row.id,
+              signedUrl: signedEntry?.url || (signedEntry?.path ? `/storage/${signedEntry.path}` : undefined),
+            };
+          }
+        }
+        setSigStatusByDoc(map);
+      } catch {
+        // Silent — polling failures shouldn't toast every 15s.
+      }
+    };
+
+    fetchAndUpdate(false);
+    const iv = window.setInterval(() => fetchAndUpdate(true), 15000);
+    return () => { cancelled = true; window.clearInterval(iv); };
+  }, [open, stage, evTab, customer?.db_id, savedDbId]);
+
+  // Project the polled status into the tdDocs rows so the table renders
+  // live state. Kept as an effect (not a useMemo on render) because we
+  // also want the `sent` flag to flip permanently once a doc has been
+  // sent, even if the polling response transiently drops it.
+  useEffect(() => {
+    setTdDocs(prev => prev.map(d => {
+      if (!d.db_id) return d;
+      const info = sigStatusByDoc[d.db_id];
+      if (!info) return d;
+      return {
+        ...d,
+        sent: d.sent || info.status !== 'idle',
+        status: info.status,
+        signature_request_id: info.signatureRequestId,
+        signed_url: info.signedUrl ?? d.signed_url,
+      };
+    }));
+  }, [sigStatusByDoc]);
 
   /* Segment-rule template — resolved KYC / DD / TL / TD / QC master rows
    * for the currently-selected segment. The Stage 2 Trade Licence sub-
@@ -511,8 +598,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     // same modal session.
     setSavedDbId(customer?.db_id ?? null);
     setTdDocs([
-      { id:'td1', name:'Bill of Lading',           selected:true, sent:false },
-      { id:'td2', name:'Phytosanitary Certificate', selected:true, sent:false },
+      { id:'td1', db_id:null, name:'Bill of Lading',           selected:true, sent:false, status: 'idle' },
+      { id:'td2', db_id:null, name:'Phytosanitary Certificate', selected:true, sent:false, status: 'idle' },
     ]);
     setSegmentDocs(EMPTY_SEG_DOCS);
     /* Revoke any previously-issued blob URLs so the browser releases
@@ -717,14 +804,18 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
        * intersected with the party=Buyer library. Mandatory rows arrive
        * pre-checked. The legacy two-row placeholder only kicks in when
        * the merged set is empty (preserved for backward compatibility). */
-      const partyCodes = new Set<string>((partyDocs as Array<{ code: string }>).map(p => p.code));
-      const buyerTd = merged.td.filter(d => partyCodes.has(d.code));
+      const partyById = new Map<string, number>(
+        (partyDocs as Array<{ code: string; id: number }>).map(p => [p.code, p.id]),
+      );
+      const buyerTd = merged.td.filter(d => partyById.has(d.code));
       if (buyerTd.length > 0) {
         setTdDocs(buyerTd.map(d => ({
           id: `td_${d.code}`,
+          db_id: partyById.get(d.code) ?? null,
           name: d.name,
           selected: d.requirement === 'M',
           sent: false,
+          status: 'idle' as TdSigStatus,
         })));
       }
     });
@@ -1248,8 +1339,30 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               docs={tdDocs}
               onToggle={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, selected: !d.selected } : d))}
               onToggleAll={(checked) => setTdDocs(prev => prev.map(d => ({ ...d, selected: checked })))}
-              onSend={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, sent: true } : d))}
-              onSendSelected={() => setTdDocs(prev => prev.map(d => d.selected ? { ...d, sent: true } : d))}
+              onSend={(id) => {
+                const row = tdDocs.find(d => d.id === id);
+                if (!row?.db_id) {
+                  toast.info('Not a library document', 'This row is a placeholder. Pick a segment with mapped trade documents to enable signature sending.');
+                  return;
+                }
+                if (!(customer?.db_id || savedDbId)) {
+                  toast.info('Save customer first', 'Save the customer before sending documents for signature.');
+                  return;
+                }
+                setSendForSignature([row.db_id]);
+              }}
+              onSendSelected={() => {
+                const ids = tdDocs.filter(d => d.selected && d.db_id).map(d => d.db_id!);
+                if (ids.length === 0) {
+                  toast.info('Nothing selected', 'Tick one or more documents under "Send for Signature" first.');
+                  return;
+                }
+                if (!(customer?.db_id || savedDbId)) {
+                  toast.info('Save customer first', 'Save the customer before sending documents for signature.');
+                  return;
+                }
+                setSendForSignature(ids.slice(0, 10));
+              }}
             />
           )}
         </div>
@@ -1431,6 +1544,41 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           }}
         />
       )}
+
+      {/* Stage 3 Trade Documents → Send for Signature.
+          Opens the Zoho Sign wizard pre-checked with whichever
+          documents the user picked (single id from a row's "Send"
+          button, or the multi-id list from the footer button).
+          The wizard's onSent flips those rows' `sent` flags so
+          they show "Resend" thereafter. */}
+      <SalesCustomerSendForSignatureModal
+        open={Array.isArray(sendForSignature)}
+        customer={(() => {
+          // The Zoho send modal needs the saved DB id. In edit mode it
+          // comes from the `customer` prop; in create mode it shows up
+          // after the Stage 1 → 2 auto-save POST. The Stage 3 handlers
+          // already block when this id is missing, so this null-return
+          // is defensive only.
+          const partyId = (customer?.db_id ?? savedDbId) ?? null;
+          if (!partyId) return null;
+          return {
+            id:      customer?.id ?? `c-${partyId}`,
+            db_id:   partyId,
+            company: form.coName || customer?.company || '',
+            contact: form.cpName || customer?.contact || '',
+            email:   form.cpEmail || customer?.email || '',
+          };
+        })()}
+        preselectedDocIds={sendForSignature ?? undefined}
+        onClose={() => setSendForSignature(null)}
+        onSent={(sentDocIds) => {
+          const sentSet = new Set(sentDocIds);
+          setTdDocs(prev => prev.map(d => (d.db_id && sentSet.has(d.db_id))
+            ? { ...d, sent: true, status: 'inprogress' as TdSigStatus }
+            : d));
+          setSendForSignature(null);
+        }}
+      />
     </div>
   );
 }
@@ -1654,11 +1802,14 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
           <div className="acm-row acm-row-4">
             <Field label="Company Website"><input value={form.coWeb} onChange={e => setF('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
             <Field label="Customer Segment" required error={errors.coSeg} fieldKey="coSeg">
+              {/* masterFormKit's MasterMultiSelect renders visible violet
+                  chips with × buttons + a checkbox-marked dropdown so
+                  multi-select is obvious. `value` prop is plural despite
+                  the singular name. */}
               <MasterMultiSelect
-                values={form.coSeg}
+                value={form.coSeg}
                 options={toSelectOpts(masters.segments)}
                 placeholder="Select segment"
-                addMorePlaceholder="+ Add another segment"
                 invalid={!!errors.coSeg}
                 onChange={vs => set('coSeg', vs)}
               />
@@ -2348,9 +2499,31 @@ function Stage3KycDocs({ sub, setSub, segmentDocs, segmentRefUploads }: {
   );
 }
 
-/* ───── Stage 3 — Trade Documents ───── */
+/* ───── Stage 3 — Trade Documents ─────
+ * Per-row signature status. `status` mirrors clm_signature_requests.status
+ * exactly so it stays consistent across the front- and back-end; the badge
+ * style + label below is the only place where status → human-readable copy
+ * lives. */
+type TdSigStatus = 'idle' | 'inprogress' | 'completed' | 'declined' | 'recalled' | 'expired';
+type TdDocRow = {
+  id: string; db_id: number | null;
+  name: string; selected: boolean; sent: boolean;
+  status?: TdSigStatus;
+  signature_request_id?: number;
+  signed_url?: string;
+};
+
+const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: string }> = {
+  idle:       { label: 'N/A',                 bg: '#f1f5f9', fg: '#94a3b8' },
+  inprogress: { label: 'Awaiting Signature',  bg: '#fef3c7', fg: '#92400e' },
+  completed:  { label: 'Signed',              bg: '#dcfce7', fg: '#166534' },
+  declined:   { label: 'Declined',            bg: '#fee2e2', fg: '#991b1b' },
+  recalled:   { label: 'Recalled',            bg: '#e0e7ff', fg: '#3730a3' },
+  expired:    { label: 'Expired',             bg: '#fee2e2', fg: '#7f1d1d' },
+};
+
 function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }:
-  { docs: { id:string; name:string; selected:boolean; sent:boolean }[]; onToggle:(id:string)=>void; onToggleAll:(c:boolean)=>void; onSend:(id:string)=>void; onSendSelected:()=>void }) {
+  { docs: TdDocRow[]; onToggle:(id:string)=>void; onToggleAll:(c:boolean)=>void; onSend:(id:string)=>void; onSendSelected:()=>void }) {
   const selCount = docs.filter(d => d.selected).length;
   const allChecked = selCount === docs.length;
   return (
@@ -2401,14 +2574,45 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                       )}
                     </div>
                   </td>
-                  <td className="td-status"><span className="acm-expiry-na">N/A</span></td>
+                  <td className="td-status">
+                    {(() => {
+                      const s = d.status ?? 'idle';
+                      const b = TD_STATUS_BADGE[s];
+                      return (
+                        <span style={{
+                          display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+                          fontSize: 11, fontWeight: 700,
+                          background: b.bg, color: b.fg,
+                        }}>{b.label}</span>
+                      );
+                    })()}
+                  </td>
                   <td className="td-actions">
                     <div className="acm-row-actions">
-                      <Tooltip label="View document">
-                        <button type="button" className="acm-doc-action acm-doc-action-view" aria-label="View"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                      <Tooltip label={d.signed_url ? 'View signed document' : 'View document'}>
+                        <a
+                          href={d.signed_url || '#'}
+                          target={d.signed_url ? '_blank' : undefined}
+                          rel={d.signed_url ? 'noreferrer' : undefined}
+                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          className="acm-doc-action acm-doc-action-view"
+                          aria-label="View"
+                          style={{ opacity: d.signed_url ? 1 : 0.5, cursor: d.signed_url ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </a>
                       </Tooltip>
-                      <Tooltip label="Download document">
-                        <button type="button" className="acm-doc-action acm-doc-action-download" aria-label="Download"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+                      <Tooltip label={d.signed_url ? 'Download signed document' : 'Download document'}>
+                        <a
+                          href={d.signed_url || '#'}
+                          download={d.signed_url ? '' : undefined}
+                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          className="acm-doc-action acm-doc-action-download"
+                          aria-label="Download"
+                          style={{ opacity: d.signed_url ? 1 : 0.5, cursor: d.signed_url ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        </a>
                       </Tooltip>
                     </div>
                   </td>

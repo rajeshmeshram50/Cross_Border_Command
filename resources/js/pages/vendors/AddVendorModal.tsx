@@ -4,12 +4,13 @@ import api from '../../api';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
+import { MasterMultiSelect } from '../master/masterFormKit';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import {
   validateEmail, validatePincode, validateWebsite,
   validateGstin, validateIfsc, validateAccountNumber,
 } from '../../utils/fieldValidators';
+import SalesCustomerSendForSignatureModal from '../sales/SalesCustomerSendForSignatureModal';
 
 /* Vendor-specific contact number rule — 6 to 15 digits, numerics only.
  * Stricter than the shared `validatePhoneGeneric` (which permits +, spaces,
@@ -165,14 +166,22 @@ export type GstScrutinyRow = {
   redFlags: string;
 };
 
-/* Step 3 — Trade Documents (signature workflow on a preset list). */
+/* Step 3 — Trade Documents (signature workflow on a preset list).
+ * `db_id` is the clm_trade_doc_library.id used by the Zoho-Sign send
+ * modal; null for rows that came from the legacy SEED_TRADE_DOCS
+ * fallback (those can't be sent since they don't map to a library
+ * draft). `signedUrl` and `signatureRequestId` are set by the polling
+ * loop once the live signature status is fetched. */
 export type TradeDocRow = {
   code: string;             // TD-001, TD-002, …
   name: string;             // 'Vendor / Supplier Agreement'
+  db_id: number | null;
   sendForSignature: boolean;
-  status: 'N/A' | 'Sent' | 'Signed';
+  status: 'N/A' | 'Sent' | 'Signed' | 'inprogress' | 'completed' | 'declined' | 'recalled' | 'expired';
   attachment: File | null;
   attachmentName: string;
+  signatureRequestId?: number;
+  signedUrl?: string;
 };
 
 /* Step 4 — product-vendor mapping rows with pricing. */
@@ -226,11 +235,11 @@ const SEED_TRADE_LICENSE: TradeLicenseRow[] = [];
  * an onboarder typically sends for e-signature. Status flips to 'Sent'
  * when the user clicks the row's Send button. */
 const SEED_TRADE_DOCS: TradeDocRow[] = [
-  { code: 'TD-001', name: 'Vendor / Supplier Agreement',         sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-002', name: 'Non-Disclosure Agreement (NDA)',      sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-003', name: 'Declaration of Compliance / Conformity', sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-004', name: 'Quality Assurance Agreement',         sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-005', name: 'Service Level Agreement (SLA)',       sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-001', name: 'Vendor / Supplier Agreement',            db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-002', name: 'Non-Disclosure Agreement (NDA)',         db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-003', name: 'Declaration of Compliance / Conformity', db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-004', name: 'Quality Assurance Agreement',            db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-005', name: 'Service Level Agreement (SLA)',          db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
 ];
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -522,6 +531,11 @@ export default function AddVendorModal(props: {
 
   /* ─── Step 3: Trade Documents (preset signature workflow) ─── */
   const [tradeDocRows, setTradeDocRows] = useState<TradeDocRow[]>(SEED_TRADE_DOCS);
+  /* Send for Signature — when non-null the Zoho Sign wizard pops with
+   * the listed clm_trade_doc_library ids pre-checked. modelName='Vendor'
+   * makes the backend resolve {{supplier.*}} tokens with this vendor. */
+  const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
+  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string }>>({});
 
   /* ─── Step 4: Product mappings + Add Product Mapping modal ─── */
   type ProductOpt = {
@@ -712,8 +726,10 @@ export default function AddVendorModal(props: {
         }
         return Array.from(map.values());
       };
-      const partyCodes = new Set<string>((partyDocs as Array<{ code: string }>).map(p => p.code));
-      const mergedTd   = mergeCat('td').filter(d => partyCodes.has(d.code));
+      const partyById = new Map<string, number>(
+        (partyDocs as Array<{ code: string; id: number }>).map(p => [p.code, p.id]),
+      );
+      const mergedTd = mergeCat('td').filter(d => partyById.has(d.code));
       setSegmentDocs({
         kyc: mergeCat('kyc'),
         dd:  mergeCat('dd'),
@@ -722,13 +738,15 @@ export default function AddVendorModal(props: {
         qc:  mergeCat('qc'),
       });
       /* Drive the Step 3 Trade Documents signature workflow from the
-       * segment × party intersection. Mandatory rows arrive pre-checked
-       * to send for signature. When the intersection is empty we fall
-       * back to the legacy seed list so the table is never blank. */
+       * segment × party intersection. Mandatory rows arrive pre-checked.
+       * Falls back to the legacy seed list when the intersection is
+       * empty so the table is never blank — those rows have db_id=null
+       * and can't be sent (Send is gated on db_id). */
       if (mergedTd.length > 0) {
         setTradeDocRows(mergedTd.map(d => ({
           code: d.code,
           name: d.name,
+          db_id: partyById.get(d.code) ?? null,
           sendForSignature: d.requirement === 'M',
           status: 'N/A' as const,
           attachment: null,
@@ -739,6 +757,62 @@ export default function AddVendorModal(props: {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segment]);
+
+  /* Poll live signature-request status every 15s while the user is on
+   * Step 3 → Trade Documents. ?sync=true makes the backend pull each
+   * inprogress row from Zoho so completed signings appear in the badges
+   * without a refresh — same pattern as Customer/Consignee Stage 3. */
+  useEffect(() => {
+    if (!initialVendorId || step !== 3 || tradeTab !== 'trade') return;
+    let cancelled = false;
+    const fetchAndUpdate = async (withSync: boolean) => {
+      try {
+        const r = await api.get('/clm/signature-requests', {
+          params: { party_id: initialVendorId, model_name: 'Vendor', sync: withSync ? 1 : 0 },
+        });
+        if (cancelled) return;
+        const rows: Array<{
+          id: number;
+          status: TradeDocRow['status'];
+          trade_doc_ids: number[];
+          signed_document_paths?: Array<{ url?: string; path?: string }> | null;
+        }> = Array.isArray(r.data?.data) ? r.data.data : [];
+        const map: Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string }> = {};
+        for (const row of rows) {
+          const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
+          for (let i = 0; i < ids.length; i++) {
+            const docId = Number(ids[i]);
+            if (!docId || map[docId]) continue;
+            const signedEntry = Array.isArray(row.signed_document_paths) ? row.signed_document_paths[i] : null;
+            map[docId] = {
+              status: row.status,
+              signatureRequestId: row.id,
+              signedUrl: signedEntry?.url || (signedEntry?.path ? `/storage/${signedEntry.path}` : undefined),
+            };
+          }
+        }
+        setSigStatusByDoc(map);
+      } catch { /* silent — polling failures shouldn't toast every 15s */ }
+    };
+    fetchAndUpdate(false);
+    const iv = window.setInterval(() => fetchAndUpdate(true), 15000);
+    return () => { cancelled = true; window.clearInterval(iv); };
+  }, [initialVendorId, step, tradeTab]);
+
+  // Project polled status into tradeDocRows.
+  useEffect(() => {
+    setTradeDocRows(prev => prev.map(r => {
+      if (!r.db_id) return r;
+      const info = sigStatusByDoc[r.db_id];
+      if (!info) return r;
+      return {
+        ...r,
+        status: info.status,
+        signatureRequestId: info.signatureRequestId,
+        signedUrl: info.signedUrl ?? r.signedUrl,
+      };
+    }));
+  }, [sigStatusByDoc]);
 
   /* ──────────────────────────────────────────────────────────────────
    * Edit-mode prefill — fires once on mount when the parent passed an
@@ -1378,8 +1452,28 @@ export default function AddVendorModal(props: {
     });
   };
   const sendTradeDoc = (code: string) => {
-    setTradeDocRows(prev => prev.map(r => r.code === code ? { ...r, sendForSignature: false, status: 'Sent' as const } : r));
-    toast.success('Sent for signature', `${code} marked as sent`);
+    const row = tradeDocRows.find(r => r.code === code);
+    if (!row?.db_id) {
+      toast.info('Not a library document', 'This row is a legacy placeholder. Pick a segment with mapped trade documents to enable signature sending.');
+      return;
+    }
+    if (!initialVendorId) {
+      toast.info('Save vendor first', 'Save the vendor before sending documents for signature.');
+      return;
+    }
+    setSendForSignature([row.db_id]);
+  };
+  const sendSelectedTradeDocs = () => {
+    const ids = tradeDocRows.filter(r => r.sendForSignature && r.db_id).map(r => r.db_id!);
+    if (ids.length === 0) {
+      toast.info('Nothing selected', 'Tick one or more documents under "Send for Signature" first.');
+      return;
+    }
+    if (!initialVendorId) {
+      toast.info('Save vendor first', 'Save the vendor before sending documents for signature.');
+      return;
+    }
+    setSendForSignature(ids.slice(0, 10));
   };
 
   /* ──────────────────────────────────────────────────────────────────
@@ -1767,11 +1861,14 @@ export default function AddVendorModal(props: {
                       <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts} />
                     </Field>
                     <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
+                      {/* masterFormKit's MasterMultiSelect renders visible violet
+                          chips with × buttons + a checkbox-marked dropdown so
+                          multi-select is obvious. `value` prop is plural despite
+                          the singular name. */}
                       <MasterMultiSelect
-                        values={segment}
+                        value={segment}
                         options={segmentOpts}
                         placeholder="Select Segment"
-                        addMorePlaceholder="+ Add another segment"
                         onChange={vs => { setSegment(vs); clearFieldError('segment'); }}
                       />
                     </Field>
@@ -2221,6 +2318,7 @@ export default function AddVendorModal(props: {
                   onToggleAll={toggleAllTradeDocSign}
                   onToggleSign={toggleTradeDocSign}
                   onSend={sendTradeDoc}
+                  onSendSelected={sendSelectedTradeDocs}
                 />
               )}
             </SectionCard>
@@ -2374,6 +2472,34 @@ export default function AddVendorModal(props: {
           }}
         />
       )}
+
+      {/* Step 3 Trade Documents → Send for Signature (Zoho Sign).
+          Mounts at the modal root so the wizard renders ABOVE the
+          vendor form. modelName='Vendor' makes the backend resolve
+          the {{supplier.*}} token namespace from this vendor. */}
+      <SalesCustomerSendForSignatureModal
+        open={Array.isArray(sendForSignature)}
+        modelName="Vendor"
+        customer={(() => {
+          if (!initialVendorId) return null;
+          return {
+            id:      `v-${initialVendorId}`,
+            db_id:   initialVendorId,
+            company: companyName || '',
+            contact: contactName || '',
+            email:   email || '',
+          };
+        })()}
+        preselectedDocIds={sendForSignature ?? undefined}
+        onClose={() => setSendForSignature(null)}
+        onSent={(sentDocIds) => {
+          const sentSet = new Set(sentDocIds);
+          setTradeDocRows(prev => prev.map(r => (r.db_id && sentSet.has(r.db_id))
+            ? { ...r, sendForSignature: false, status: 'inprogress' as const }
+            : r));
+          setSendForSignature(null);
+        }}
+      />
     </div>
   ), document.body);
 }
@@ -3327,57 +3453,99 @@ function TradeDocsTable(props: {
   onToggleAll: () => void;
   onToggleSign: (code: string) => void;
   onSend: (code: string) => void;
+  onSendSelected: () => void;
 }) {
   const allChecked = props.rows.length > 0 && props.rows.every(r => r.sendForSignature);
+  // Map raw signature status → display label + pill colour. Legacy
+  // 'Sent'/'Signed'/'N/A' values still come back from local-only state
+  // (rows that haven't been hit by the poller yet); the live values
+  // come from the polling loop in the parent.
+  const badge = (status: TradeDocRow['status']): { label: string; cls: string } => {
+    switch (status) {
+      case 'completed': case 'Signed':     return { label: 'Signed',             cls: 'avm-pill-primary' };
+      case 'inprogress': case 'Sent':       return { label: 'Awaiting Signature', cls: 'avm-pill-success' };
+      case 'declined':                      return { label: 'Declined',           cls: 'avm-pill-muted' };
+      case 'recalled':                      return { label: 'Recalled',           cls: 'avm-pill-muted' };
+      case 'expired':                       return { label: 'Expired',            cls: 'avm-pill-muted' };
+      default:                              return { label: 'N/A',                cls: 'avm-pill-muted' };
+    }
+  };
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
-        <thead className="table-light">
-          <tr>
-            <th>SR NO</th>
-            <th>DOCUMENT NAME</th>
-            <th style={{ minWidth: 260 }}>
-              <label className="d-inline-flex align-items-center gap-2 mb-0">
-                <input type="checkbox" checked={allChecked} onChange={props.onToggleAll} />
-                SEND DOCUMENT FOR SIGNATURE
-              </label>
-            </th>
-            <th>DOCUMENT STATUS</th>
-            <th>ACTIONS</th>
-          </tr>
-        </thead>
-        <tbody>
-          {props.rows.map((r, i) => (
-            <tr key={r.code}>
-              <td>{String(i + 1)}</td>
-              <td><strong>{r.name}</strong></td>
-              <td>
-                <div className="d-inline-flex align-items-center gap-2">
-                  <input type="checkbox" checked={r.sendForSignature} onChange={() => props.onToggleSign(r.code)} />
-                  <button type="button" className="avm-btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => props.onSend(r.code)} disabled={!r.sendForSignature && r.status === 'N/A'}>
-                    <i className="ri-send-plane-line me-1" /> Send
-                  </button>
-                </div>
-              </td>
-              <td>
-                <span className={`avm-pill ${r.status === 'Sent' ? 'avm-pill-success' : (r.status === 'Signed' ? 'avm-pill-primary' : 'avm-pill-muted')}`}>
-                  {r.status}
-                </span>
-              </td>
-              <td>
-                <div className="hstack gap-1">
-                  <button type="button" className="btn btn-sm btn-soft-secondary" title="View" disabled={!r.attachmentName}>
-                    <i className="ri-eye-line" />
-                  </button>
-                  <button type="button" className="btn btn-sm btn-soft-secondary" title="Download" disabled={!r.attachmentName}>
-                    <i className="ri-download-2-line" />
-                  </button>
-                </div>
-              </td>
+    <div>
+      <div className="table-responsive table-card border rounded">
+        <table className="table align-middle table-nowrap mb-0">
+          <thead className="table-light">
+            <tr>
+              <th>SR NO</th>
+              <th>DOCUMENT NAME</th>
+              <th style={{ minWidth: 260 }}>
+                <label className="d-inline-flex align-items-center gap-2 mb-0">
+                  <input type="checkbox" checked={allChecked} onChange={props.onToggleAll} />
+                  SEND DOCUMENT FOR SIGNATURE
+                </label>
+              </th>
+              <th>DOCUMENT STATUS</th>
+              <th>ACTIONS</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {props.rows.map((r, i) => {
+              const b = badge(r.status);
+              const viewHref = r.signedUrl || (r.attachmentName ? '#' : '#');
+              const canView  = !!r.signedUrl || !!r.attachmentName;
+              return (
+                <tr key={r.code}>
+                  <td>{String(i + 1)}</td>
+                  <td><strong>{r.name}</strong></td>
+                  <td>
+                    <div className="d-inline-flex align-items-center gap-2">
+                      <input type="checkbox" checked={r.sendForSignature} onChange={() => props.onToggleSign(r.code)} />
+                      <button type="button" className="avm-btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => props.onSend(r.code)}>
+                        <i className="ri-send-plane-line me-1" /> {r.status === 'N/A' ? 'Send' : 'Resend'}
+                      </button>
+                    </div>
+                  </td>
+                  <td>
+                    <span className={`avm-pill ${b.cls}`}>{b.label}</span>
+                  </td>
+                  <td>
+                    <div className="hstack gap-1">
+                      <a
+                        href={r.signedUrl || viewHref}
+                        target={r.signedUrl ? '_blank' : undefined}
+                        rel={r.signedUrl ? 'noreferrer' : undefined}
+                        onClick={e => { if (!canView) e.preventDefault(); }}
+                        className="btn btn-sm btn-soft-secondary"
+                        title={r.signedUrl ? 'View signed document' : 'View'}
+                        style={{ opacity: canView ? 1 : 0.5, pointerEvents: canView ? 'auto' : 'none' }}
+                      >
+                        <i className="ri-eye-line" />
+                      </a>
+                      <a
+                        href={r.signedUrl || '#'}
+                        download={r.signedUrl ? '' : undefined}
+                        onClick={e => { if (!r.signedUrl) e.preventDefault(); }}
+                        className="btn btn-sm btn-soft-secondary"
+                        title={r.signedUrl ? 'Download signed document' : 'Download'}
+                        style={{ opacity: r.signedUrl ? 1 : 0.5, pointerEvents: r.signedUrl ? 'auto' : 'none' }}
+                      >
+                        <i className="ri-download-2-line" />
+                      </a>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {props.rows.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <button type="button" className="avm-btn-primary" onClick={props.onSendSelected}>
+            <i className="ri-send-plane-line me-1" /> Send Selected Documents for Signature
+          </button>
+        </div>
+      )}
     </div>
   );
 }
