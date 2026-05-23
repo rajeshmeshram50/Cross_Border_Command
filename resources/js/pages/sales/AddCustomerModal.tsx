@@ -1080,10 +1080,27 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               <div className="acm-subtitle">{isEdit ? 'Update customer details, KYC, and trade documents.' : 'Capture, verify, and onboard customers with complete compliance and product readiness.'}</div>
             </div>
           </div>
+          {hydrating && (
+            <div className="acm-loading-pill" aria-live="polite">
+              <span className="acm-loading-spinner" aria-hidden>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                  <path d="M12 2a10 10 0 0 1 10 10" />
+                </svg>
+              </span>
+              Loading customer details…
+            </div>
+          )}
           <button type="button" className="acm-close" onClick={onClose} aria-label="Close">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
+
+        {/* Indeterminate top progress bar — gives the user immediate
+            "actively loading" feedback while the parallel /customers,
+            /documents, /owners and /segment-uploads fetches resolve. The
+            shimmer skeletons below fill in the visual scaffold; this bar
+            is the kinetic cue that they're not stuck. */}
+        {hydrating && <div className="acm-top-progress" role="progressbar" aria-label="Loading"><span /></div>}
 
         {/* STEPPER — swap to skeleton during edit-mode hydration so
             the whole top of the modal reads as "loading" instead of
@@ -3663,6 +3680,45 @@ const SCOPED_CSS = `
 }
 .acm-close:hover { background: rgba(255,255,255,0.28); transform: rotate(90deg); }
 
+/* ── Hydration feedback ───────────────────────────────────────────
+ * A small "Loading…" pill in the modal header + an indeterminate
+ * progress bar under the header so users get clear active-loading
+ * feedback the moment they click Edit. Shimmer skeletons below fill
+ * in the scaffold — these two cues confirm "yes, fetching now". */
+.acm-loading-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 11px; border-radius: 999px;
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.30);
+  color: #fff;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .01em;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  position: relative; z-index: 1;
+  animation: acmPillFade .2s ease both;
+}
+@keyframes acmPillFade { from { opacity: 0; transform: translateY(-2px) } to { opacity: 1; transform: none } }
+.acm-loading-spinner {
+  display: inline-flex; width: 12px; height: 12px;
+  animation: acmSpin .8s linear infinite;
+}
+@keyframes acmSpin { to { transform: rotate(360deg); } }
+
+.acm-top-progress {
+  position: relative; height: 3px;
+  background: rgba(124,58,237,.10);
+  overflow: hidden; flex-shrink: 0;
+}
+.acm-top-progress > span {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 30%;
+  background: linear-gradient(90deg, transparent, #7c3aed 30%, #a855f7 70%, transparent);
+  border-radius: 2px;
+  animation: acmTopSlide 1.1s cubic-bezier(.4,0,.2,1) infinite;
+}
+@keyframes acmTopSlide {
+  0%   { left: -35%; }
+  100% { left: 100%; }
+}
+
 /* Stepper */
 .acm-stepper { padding: 16px 22px 14px; display: flex; align-items: center; gap: 0; flex-shrink: 0; background: #fff; border-bottom: 1px solid #ede9fe; }
 .acm-step-connector { flex: 0 0 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; z-index: 0; }
@@ -4463,6 +4519,9 @@ const SCOPED_CSS = `
   border-color: #a78bfa;
   color: #e9d5ff;
 }
+[data-bs-theme="dark"] .acm-loading-pill { background: rgba(167,139,250,.18); border-color: rgba(167,139,250,.35); color: #ede9fe; }
+[data-bs-theme="dark"] .acm-top-progress { background: rgba(167,139,250,.14); }
+[data-bs-theme="dark"] .acm-top-progress > span { background: linear-gradient(90deg, transparent, #a78bfa 30%, #c4b5fd 70%, transparent); }
 
 /* Stepper — keep colored states but darken pending */
 [data-bs-theme="dark"] .acm-step-active { background: linear-gradient(135deg, rgba(76,29,149,0.45) 0%, rgba(109,40,217,0.30) 100%); border-color: #a78bfa; box-shadow: 0 6px 22px rgba(0,0,0,.4), 0 0 0 1px rgba(167,139,250,.15) inset; }
