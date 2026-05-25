@@ -54,6 +54,7 @@ class Quotation extends Model
         'sales_manager_id', 'sales_manager_name',
         'sub_total', 'shipping', 'grand_total',
         'status',
+        'emailed_at', 'last_reminded_at', 'reminder_count',
         'terms',
         'created_by', 'updated_by',
     ];
@@ -62,6 +63,9 @@ class Quotation extends Model
         'opportunity_date' => 'date',
         'exchange_rate'    => 'decimal:4',
         'sub_total'        => 'decimal:2',
+        'emailed_at'       => 'datetime',
+        'last_reminded_at' => 'datetime',
+        'reminder_count'   => 'integer',
         'shipping'         => 'decimal:2',
         'grand_total'      => 'decimal:2',
     ];

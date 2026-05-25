@@ -60,7 +60,9 @@ class ProformaInvoice extends Model
         'state_code',
         'sales_manager_id', 'sales_manager_name',
         'sub_total', 'shipping', 'grand_total',
-        'status', 'terms',
+        'status',
+        'emailed_at', 'last_reminded_at', 'reminder_count',
+        'terms',
         'created_by', 'updated_by',
     ];
 
@@ -71,6 +73,9 @@ class ProformaInvoice extends Model
         'sub_total'        => 'decimal:2',
         'shipping'         => 'decimal:2',
         'grand_total'      => 'decimal:2',
+        'emailed_at'       => 'datetime',
+        'last_reminded_at' => 'datetime',
+        'reminder_count'   => 'integer',
     ];
 
     public function items(): HasMany
