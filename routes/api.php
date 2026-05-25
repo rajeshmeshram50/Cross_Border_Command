@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\EmployeeDocumentController;
 use App\Http\Controllers\Api\ExitController;
 use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
+use App\Http\Controllers\Api\ProcurementController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
@@ -317,6 +318,17 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // inline so the page can preview it in a new tab via blob URL.
     Route::post  ('/sales/pi/preview-pdf',         [SalesPdfController::class, 'previewPi']);
 
+    // Sales Matrix → QUOTATION DOCUMENT PDF preview. Per-quotation variant —
+    // loads the real Quotation row (with items + branch + bank + parties) and
+    // renders the same Blade template with branch-derived letterhead. The
+    // `signature=1` body flag picks the with-signature variant.
+    Route::post  ('/sales/quotations/{id}/preview-pdf', [SalesPdfController::class, 'previewQuotation']);
+
+    // Sales Matrix → PROFORMA INVOICE PDF preview. Mirror of the Quotation
+    // variant — loads the real PI row, same branch letterhead, same template,
+    // labels swap to "PI No / PI Date".
+    Route::post  ('/sales/proforma-invoices/{id}/preview-pdf', [SalesPdfController::class, 'previewProformaInvoice']);
+
     // Sales Matrix → Leads (My Workplace). Three feeders write here:
     //   - POST /sales/leads        manual capture (Add New Lead modal)
     //   - POST /sales/leads/sync   pull from IndiaMart CRM keys
@@ -386,6 +398,23 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
         [SalesLeadController::class, 'updateLeadProduct'])->whereNumber('id')->whereNumber('mapping');
     Route::delete('/sales/leads/{id}/products/{mapping}',
         [SalesLeadController::class, 'destroyLeadProduct'])->whereNumber('id')->whereNumber('mapping');
+
+    // Stage 3 (Product Sourcing) — per-row sourcing status + mark-sourced
+    // action. These are the IDIMS "set sourcing_status" + "mark as done"
+    // operations on the lead⇄product mapping, scaled down to CBC's model.
+    Route::patch('/sales/leads/{id}/products/{mapping}/sourcing-status',
+        [SalesLeadController::class, 'updateLeadProductSourcingStatus'])
+        ->whereNumber('id')->whereNumber('mapping');
+    Route::patch('/sales/leads/{id}/products/{mapping}/mark-sourced',
+        [SalesLeadController::class, 'markLeadProductSourced'])
+        ->whereNumber('id')->whereNumber('mapping');
+
+    // Stage 3 → Create Procurement modal posts here. Multi-tenant via
+    // client_id; see ProcurementController for the body shape.
+    Route::get   ('/procurements/next-number', [ProcurementController::class, 'nextNumber']);
+    Route::get   ('/procurements',             [ProcurementController::class, 'index']);
+    Route::post  ('/procurements',             [ProcurementController::class, 'store']);
+    Route::get   ('/procurements/{id}',        [ProcurementController::class, 'show'])->whereNumber('id');
 
     // Sales Matrix → Productivity Tracker (/sales/todo). Two parallel
     // sub-resources behind one controller — reminders + meetings — with

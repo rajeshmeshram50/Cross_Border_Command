@@ -23,9 +23,18 @@ class Branch extends Model
         'industry',
         'description',
         'gst_number',
+        'gst_state_code',
         'pan_number',
         'registration_number',
+        'cin',
+        'iec',
+        'drug_license',
+        'pcpndt_no',
+        'aeo_code',
+        'one_star_file_no',
+        'one_star_udin_no',
         'logo',
+        'signature_path',
         'profile_photo',
         'primary_color',
         'secondary_color',
@@ -44,7 +53,7 @@ class Branch extends Model
         'created_by',
     ];
 
-    protected $appends = ['logo_url', 'profile_photo_url'];
+    protected $appends = ['logo_url', 'profile_photo_url', 'signature_url'];
 
     protected function casts(): array
     {
@@ -63,6 +72,12 @@ class Branch extends Model
     public function getProfilePhotoUrlAttribute(): ?string
     {
         return file_url($this->profile_photo);
+    }
+
+    /** Authorised-signatory image rendered on "with signature" Quotation/PI PDFs. */
+    public function getSignatureUrlAttribute(): ?string
+    {
+        return file_url($this->signature_path);
     }
 
     // ── Relationships ──

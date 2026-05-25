@@ -59,28 +59,75 @@ type PI = {
 const ROWS_PER_PAGE = 10;
 
 /* ════════════════════════════════════════════════════════════════════════════
- * PI PDF preview — opens the Proforma Invoice in a new tab.
+ * PDF preview / download — Quotation or PI document, signature variants.
  *
- * Used by the More Options dropdown on both the Quotation and PI tables.
- * POSTs the row fields to /sales/pi/preview-pdf, gets back a PDF blob,
- * and opens it via blob URL. The `withSignature` flag picks between the
- * stamped and blank variants of the same template.
+ * Used by the More Options dropdown on both tables. Two backends, both
+ * per-row real-data endpoints now:
+ *   - kind="quotation" → POST /sales/quotations/{id}/preview-pdf
+ *   - kind="pi"        → POST /sales/proforma-invoices/{id}/preview-pdf
+ *
+ * Both render the SAME Blade template — `pdf_title` + `doc_label_short`
+ * switch on the backend so the labels read "QT No"/"PI No" appropriately
+ * but the rest of the letterhead, products, bank, totals, etc. are
+ * identical in shape.
+ *
+ * The `withSignature` flag picks the stamped vs blank variant.
+ * The `mode` decides what to do with the resulting PDF:
+ *   - 'view'     → open in a new tab (the caller pre-opens the window
+ *                  SYNCHRONOUSLY from the click handler to bypass the
+ *                  browser's popup blocker — see the kebab onClick)
+ *   - 'download' → trigger a file save via a hidden <a download> click
+ *                  (no popup, no tab — works even with blockers)
  * ════════════════════════════════════════════════════════════════════════ */
-async function openPiPreview(payload: Record<string, unknown>, withSignature: boolean): Promise<void> {
-  const res = await api.post('/sales/pi/preview-pdf', { ...payload, withSignature }, {
-    responseType: 'blob',
-  });
+async function openSalesPdf(
+  kind: 'quotation' | 'pi',
+  payload: Record<string, unknown>,
+  withSignature: boolean,
+  mode: 'view' | 'download',
+  preOpenedWindow: Window | null,
+): Promise<void> {
+  const url = kind === 'quotation'
+    ? `/sales/quotations/${payload.id}/preview-pdf`
+    : `/sales/proforma-invoices/${payload.id}/preview-pdf`;
+  // Both endpoints read the row from the DB by id — only the signature
+  // flag is needed in the body for either.
+  const body = { signature: withSignature };
+  const res = await api.post(url, body, { responseType: 'blob' });
   const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank', 'noopener,noreferrer');
-  // Revoke after a short delay so the browser has time to read the blob
-  // before we drop the reference; we can't revoke immediately or the new
-  // tab gets a broken/blank document.
-  if (win) setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  const objectUrl = URL.createObjectURL(blob);
+
+  if (mode === 'view') {
+    // Use the window the caller opened synchronously so popup blockers
+    // accept it. If pre-open failed (rare — usually only happens when
+    // window.open is invoked outside a user gesture), fall back to a
+    // fresh window.open here, which may or may not be blocked.
+    const win = preOpenedWindow ?? window.open(objectUrl, '_blank', 'noopener,noreferrer');
+    if (win && preOpenedWindow) win.location.href = objectUrl;
+    // Revoke after 60s — keeps the tab loadable but eventually GCs the blob.
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    return;
+  }
+
+  // mode === 'download'
+  const code = (payload.piNo as string | undefined) ?? ((payload.id as number | undefined)?.toString() ?? 'document');
+  const safeCode = code.replace(/[^A-Za-z0-9_-]/g, '_');
+  const label = kind === 'quotation' ? 'Quotation' : 'PI';
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = `${label}-${safeCode}-${withSignature ? 'signed' : 'unsigned'}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 5_000);
 }
 
 function piPayloadFromQuotation(q: Quotation) {
+  // `id` is read by openSalesPdf('quotation', …) to build the per-row
+  // URL `/sales/quotations/{id}/preview-pdf`. The rest is unused for
+  // the real-data endpoint (server reads from the DB), kept here for
+  // backwards-compat in case anything still inspects the payload.
   return {
+    id: q.id,
     piNo: q.qtNo, piDate: q.qtDate,
     oppId: q.oppId, oppDate: q.oppDate,
     customer: q.customer, consignee: q.consignee,
@@ -90,7 +137,11 @@ function piPayloadFromQuotation(q: Quotation) {
 }
 
 function piPayloadFromPI(p: PI) {
+  // `id` is the only field openSalesPdf actually uses now — both backends
+  // read the row from the DB by id. The rest is kept for backwards-compat
+  // in case anything inspects the payload elsewhere.
   return {
+    id: p.id,
     piNo: p.piNo, piDate: p.piDate,
     btId: p.btId ?? '0', btDate: p.btDate ?? 'NA',
     oppId: p.oppId, oppDate: p.oppDate,
@@ -116,13 +167,23 @@ function piPayloadFromPI(p: PI) {
 type AnchorRect = { top: number; bottom: number; left: number; right: number };
 function MoreOptionsMenu(props: {
   rect: AnchorRect;
+  /* Discriminator: quotation rows hit /sales/quotations/{id}/preview-pdf
+   * with branch-letterheaded REAL data; PI rows still use the legacy
+   * mock /sales/pi/preview-pdf until the PI controller is wired the same
+   * way. Labels in the menu also switch on this. */
+  kind: 'quotation' | 'pi';
   payload: Record<string, unknown>;
   onClose: () => void;
   onError: (msg: string) => void;
 }) {
-  const { rect, payload, onClose, onError } = props;
+  const { rect, kind, payload, onClose, onError } = props;
+  const docLabel = kind === 'quotation' ? 'Quotation' : 'PI';
   const menuRef = useRef<HTMLDivElement>(null);
-  const [busy, setBusy] = useState<'with' | 'without' | null>(null);
+  /* Busy key encodes mode + signature so only the clicked item shows a
+   * spinner while the request is in flight. Keys mirror the four menu
+   * buttons: view-sig / view-nosig / dl-sig / dl-nosig. */
+  type BusyKey = 'view-sig' | 'view-nosig' | 'dl-sig' | 'dl-nosig';
+  const [busy, setBusy] = useState<BusyKey | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   // Measure menu against captured rect before paint — no flash.
@@ -162,16 +223,26 @@ function MoreOptionsMenu(props: {
     };
   }, [onClose]);
 
-  const pick = async (withSignature: boolean) => {
-    setBusy(withSignature ? 'with' : 'without');
-    try {
-      await openPiPreview(payload, withSignature);
-      onClose();
-    } catch (err: any) {
-      onError(err?.response?.data?.message || 'Could not generate PDF');
-    } finally {
-      setBusy(null);
-    }
+  /* CRITICAL: the new tab MUST be opened synchronously in the click
+   * handler (this function is fine — it's called directly from onClick)
+   * — browsers reject window.open invoked after an async await because
+   * the user-gesture token has expired by then. We pre-open the tab
+   * with about:blank, kick off the fetch, then redirect the tab to the
+   * blob URL when the PDF is ready. Download mode skips the pre-open
+   * since it triggers a hidden anchor click instead. */
+  const pick = (mode: 'view' | 'download', withSignature: boolean) => {
+    const key: BusyKey =
+      mode === 'view' ? (withSignature ? 'view-sig' : 'view-nosig')
+                      : (withSignature ? 'dl-sig'   : 'dl-nosig');
+    const win = mode === 'view' ? window.open('', '_blank', 'noopener,noreferrer') : null;
+    setBusy(key);
+    openSalesPdf(kind, payload, withSignature, mode, win)
+      .then(() => onClose())
+      .catch((err: any) => {
+        if (win) win.close();
+        onError(err?.response?.data?.message || 'Could not generate PDF');
+      })
+      .finally(() => setBusy(null));
   };
 
   return createPortal(
@@ -181,33 +252,66 @@ function MoreOptionsMenu(props: {
       role="menu"
       style={pos ? { top: pos.top, left: pos.left } : { top: -9999, left: -9999 }}
     >
+      {/* View — opens in a new browser tab via blob URL */}
       <button
         type="button" role="menuitem"
         className="qpi-moremenu-item"
         disabled={busy !== null}
-        onClick={() => pick(true)}
+        onClick={() => pick('view', true)}
       >
-        <IconFileSignSm />
-        <span>PI with Signature</span>
-        {busy === 'with' && <span className="qpi-moremenu-spinner" />}
+        <IconEyeSm />
+        <span>View {docLabel} with Signature</span>
+        {busy === 'view-sig' && <span className="qpi-moremenu-spinner" />}
       </button>
       <button
         type="button" role="menuitem"
         className="qpi-moremenu-item"
         disabled={busy !== null}
-        onClick={() => pick(false)}
+        onClick={() => pick('view', false)}
       >
-        <IconFileSm />
-        <span>PI without Signature</span>
-        {busy === 'without' && <span className="qpi-moremenu-spinner" />}
+        <IconEyeSm />
+        <span>View {docLabel} without Signature</span>
+        {busy === 'view-nosig' && <span className="qpi-moremenu-spinner" />}
+      </button>
+      <div className="qpi-moremenu-sep" />
+      {/* Download — saves the file via a hidden <a download> click */}
+      <button
+        type="button" role="menuitem"
+        className="qpi-moremenu-item"
+        disabled={busy !== null}
+        onClick={() => pick('download', true)}
+      >
+        <IconDownloadSm />
+        <span>Download {docLabel} with Signature</span>
+        {busy === 'dl-sig' && <span className="qpi-moremenu-spinner" />}
+      </button>
+      <button
+        type="button" role="menuitem"
+        className="qpi-moremenu-item"
+        disabled={busy !== null}
+        onClick={() => pick('download', false)}
+      >
+        <IconDownloadSm />
+        <span>Download {docLabel} without Signature</span>
+        {busy === 'dl-nosig' && <span className="qpi-moremenu-spinner" />}
       </button>
     </div>,
     document.body
   );
 }
 
-const IconFileSignSm = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><path d="M9 18c1-2 2-3 3-3s2 1 3 2" /></svg>
+const IconEyeSm = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const IconDownloadSm = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
 );
 
 const STEPS = [
@@ -796,6 +900,7 @@ export default function SalesQPI() {
             since the column cell-renderer only sets anchor state. */}
         {qtMenuFor && (
           <MoreOptionsMenu
+            kind="quotation"
             rect={qtMenuFor.rect}
             payload={qtMenuFor.payload}
             onClose={() => setQtMenuFor(null)}
@@ -804,6 +909,7 @@ export default function SalesQPI() {
         )}
         {piMenuFor && (
           <MoreOptionsMenu
+            kind="pi"
             rect={piMenuFor.rect}
             payload={piMenuFor.payload}
             onClose={() => setPiMenuFor(null)}
@@ -2678,23 +2784,8 @@ const SCOPED_CSS = `
   border-bottom: 1px solid rgba(124,58,237,.15);
   position: relative; z-index: 1;
 }
-/* "Quotation List" pill — same density as the Customer page's
-   .smc-pill-group with a single solid pill. */
-.qpi-listpill {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 7px 16px; height: 32px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-  color: #fff;
-  font-family: inherit; font-size: 12.5px; font-weight: 600;
-  white-space: nowrap; flex-shrink: 0;
-  box-shadow: 0 3px 10px rgba(124,58,237,.30);
-}
-.qpi-listpill-icon {
-  display: inline-flex; align-items: center; justify-content: center;
-  color: #fff;
-}
-.qpi-listpill-icon svg { width: 14px; height: 14px; }
+/* (removed: legacy .qpi-listpill rules — the toolbar no longer renders
+    a separate "Quotation List" pill; the page-header tab switch covers it.) */
 
 /* Tabs bar (row 2) — mirrors .smc-tabs-bar on the Customer page.
    Light violet wash + same horizontal padding as the toolbar above,
@@ -2789,23 +2880,9 @@ const SCOPED_CSS = `
 .qpi-create-btn:active { transform: translateY(0); }
 .qpi-create-btn svg { width: 16px; height: 16px; }
 
-/* ─── Table ─── Customer-page chrome: lavender thead wash + white rows
-   + subtle violet borders, instead of the previous heavy purple bar. */
-.qpi-table-wrap {
-  overflow-x: auto;
-  padding: 14px 14px 12px;
-  scrollbar-width: thin;
-  scrollbar-color: #d1d5db transparent;
-}
-.qpi-table-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
-.qpi-table-wrap::-webkit-scrollbar-track { background: transparent; }
-.qpi-table-wrap::-webkit-scrollbar-thumb {
-  background: #d1d5db; border-radius: 10px;
-  border: 2px solid transparent; background-clip: padding-box;
-}
-.qpi-table-wrap::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af; background-clip: padding-box;
-}
+/* (removed: legacy .qpi-table-wrap rules — TableContainer renders into
+    .qpi-table-host now; the scrollbar styling lives on
+    .qpi-table-host .table-responsive below.) */
 
 /* Scope project-standard TableContainer to our card. Same soft violet
    header wash + 14px vertical cell padding the recruitment list uses,
@@ -3126,6 +3203,13 @@ const SCOPED_CSS = `
 .qpi-moremenu-item:disabled { opacity: .65; cursor: wait; }
 .qpi-moremenu-item svg { flex-shrink: 0; color: #0ea5e9; }
 .qpi-moremenu-item span { flex: 1; white-space: nowrap; }
+/* Slim divider between the View group and the Download group. */
+.qpi-moremenu-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: #e2e8f0;
+}
+[data-bs-theme="dark"] .qpi-moremenu-sep { background: rgba(167,139,250,.25); }
 .qpi-moremenu-spinner {
   width: 12px; height: 12px; border-radius: 50%;
   border: 2px solid rgba(14,165,233,.30); border-top-color: #0ea5e9;
@@ -3164,39 +3248,9 @@ const SCOPED_CSS = `
   margin: 0 2px;
 }
 .qpi-pag-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.qpi-pag-btn {
-  min-width: 32px; height: 32px;
-  padding: 0 8px; border-radius: 8px;
-  border: 1px solid var(--vz-border-color, #e9ecef);
-  background: #fff;
-  color: var(--vz-secondary-color, #878a99);
-  font-weight: 600; font-size: 13px;
-  font-variant-numeric: tabular-nums;
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  transition: all .15s ease;
-}
-.qpi-pag-btn svg { width: 14px; height: 14px; }
-.qpi-pag-btn:hover:not(:disabled):not(.is-active) {
-  border-color: #a78bfa;
-  color: #7c5cfc;
-}
-.qpi-pag-btn:active:not(:disabled) { transform: translateY(1px); }
-.qpi-pag-btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(124,92,252,.18);
-}
-.qpi-pag-btn:disabled { opacity: .45; cursor: not-allowed; }
-/* Active page chip — solid purple gradient square, like
-   .rec-pagebtn.is-active on the recruitment footer. */
-.qpi-pag-btn.is-active {
-  background: linear-gradient(135deg, #7c5cfc, #a78bfa);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 3px 8px rgba(124,92,252,.25);
-  cursor: default;
-}
-.qpi-pag-btn.is-active:hover { transform: none; }
+/* (removed: legacy .qpi-pag-btn rules — TableContainer renders pagination
+    as Bootstrap .pagination .page-link, which is styled directly via
+    .qpi-table-host .pagination .page-link further up.) */
 
 /* ════════════════════════════════════════════════════════════════════════════
  * Modal styles (shared between Create Quotation and Create PI)
@@ -3323,7 +3377,11 @@ const SCOPED_CSS = `
 .qpi-form-grid {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px;
 }
-.qpi-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+/* Each form-grid cell — block flow (.qpi-form-grid is a CSS Grid so
+   flex props would be ignored on children anyway). The 4px gap stacks
+   the label above the input/select inside the cell. */
+.qpi-field { display: block; min-width: 0; }
+.qpi-field > label { display: block; margin-bottom: 4px; }
 .qpi-field-label {
   font-size: 10px; font-weight: 700; letter-spacing: .06em;
   text-transform: uppercase; color: #475569;
