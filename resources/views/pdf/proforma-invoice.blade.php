@@ -98,9 +98,10 @@
 <!-- GLOBAL FOOTER — matches the reference Inorbvict letterhead layout:
      LEFT: small barcode + URL beneath it (only when branch.website is set),
      CENTER: company identity strip (Name | CIN | GST | IEC | PAN),
-     RIGHT: today's date.
-     The "Page X of Y" line below the footer is drawn via the
-     <script type="text/php"> block at the bottom of this file. -->
+     RIGHT: today's print date.
+     A "Page X of Y" line is drawn centered just beneath this footer
+     table via the <script type="text/php"> block at the bottom of this
+     file ({PAGE_COUNT} is only resolvable from page_text()). -->
 <div class="pdf-footer">
     <table style="width: 100%; border-collapse: collapse; margin: 0;">
         <tr>
@@ -804,13 +805,29 @@
 
 <script type="text/php">
 if (isset($pdf)) {
-    $font = $fontMetrics->get_font("helvetica", "normal");
-    $size = 7;
+    // Page pagination "1 / 3" — drawn AFTER the page is rendered (the
+    // script-text block is the only DomPDF hook that has access to
+    // {PAGE_COUNT}, since the total page count isn't known until
+    // rendering finishes).
+    //
+    // Coordinates use $pdf->get_width() / $pdf->get_height() instead of
+    // hardcoded A4 values so the position stays correct if the page
+    // size changes. Y = height − 28 keeps the text inside the printable
+    // area (below that and DomPDF clips it — earlier Y=828 was below
+    // the bottom margin and didn't render at all).
+    //
+    // Font is DejaVu Sans because it's the only font we can rely on
+    // being registered in the DomPDF cache; "helvetica" silently
+    // falls back to a default that doesn't always draw via page_text().
+    // Page indicator — "Page 1 of 3" centered just beneath the footer
+    // table, in the @page bottom margin area.
+    $font = $fontMetrics->get_font("DejaVu Sans", "normal");
+    $size = 9;
     $text = "Page {PAGE_NUM} of {PAGE_COUNT}";
     $width = $fontMetrics->get_text_width($text, $font, $size);
-    $x = (595 - $width) / 2 + 45;
-    $y = 805;
-    $pdf->page_text($x, $y, $text, $font, $size, [0.3, 0.3, 0.3]);
+    $x = ($pdf->get_width() - $width) / 2;
+    $y = $pdf->get_height() - 18;
+    $pdf->page_text($x, $y, $text, $font, $size, [0.2, 0.2, 0.2]);
 }
 </script>
 

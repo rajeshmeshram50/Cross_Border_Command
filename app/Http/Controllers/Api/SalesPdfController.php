@@ -3,14 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\SalesDocumentEmail;
 use App\Models\Branch;
 use App\Models\ProformaInvoice;
 use App\Models\Quotation;
 use Barryvdh\DomPDF\Facade\Pdf;
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
 use Milon\Barcode\DNS1D;
@@ -75,7 +79,12 @@ class SalesPdfController extends Controller
         $viewData = $this->buildViewData($payload, $currencyCode, $docType, $withSignature);
 
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
-            ->setPaper('A4', 'portrait');
+            ->setPaper('A4', 'portrait')
+            // Required for the <script type="text/php"> page-number block
+            // at the bottom of the Blade template to actually execute.
+            // The global dompdf config has enable_php=false (default,
+            // for security); we opt-in only on this controller's PDFs.
+            ->setOption('isPhpEnabled', true);
 
         $filename = 'PI-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $payload['piNo'] ?? 'preview') . '.pdf';
 
@@ -278,7 +287,12 @@ class SalesPdfController extends Controller
         $viewData = $this->buildQuotationViewData($quot, $withSignature);
 
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
-            ->setPaper('A4', 'portrait');
+            ->setPaper('A4', 'portrait')
+            // Required for the <script type="text/php"> page-number block
+            // at the bottom of the Blade template to actually execute.
+            // The global dompdf config has enable_php=false (default,
+            // for security); we opt-in only on this controller's PDFs.
+            ->setOption('isPhpEnabled', true);
 
         $filename = 'Quotation-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $quot->code ?? ('id-' . $quot->id))
             . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
@@ -332,7 +346,12 @@ class SalesPdfController extends Controller
         $viewData = $this->buildQuotationViewData($pi, $withSignature, 'PROFORMA INVOICE', 'PI');
 
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
-            ->setPaper('A4', 'portrait');
+            ->setPaper('A4', 'portrait')
+            // Required for the <script type="text/php"> page-number block
+            // at the bottom of the Blade template to actually execute.
+            // The global dompdf config has enable_php=false (default,
+            // for security); we opt-in only on this controller's PDFs.
+            ->setOption('isPhpEnabled', true);
 
         $filename = 'PI-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $pi->code ?? ('id-' . $pi->id))
             . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
@@ -340,6 +359,176 @@ class SalesPdfController extends Controller
         return Response::make($pdf->output(), 200, [
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . $filename . '"',
+        ]);
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * EMAIL — send the Quotation / PI PDF to the customer's primary email.
+     *
+     * POST /sales/quotations/{id}/email
+     * POST /sales/proforma-invoices/{id}/email
+     *
+     * Body:
+     *   signature (bool, default true) — picks the with-/without-signature PDF variant
+     *   to        (string, optional)   — override recipient. When omitted we read from the
+     *                                    customer's primary address (cp_email) and fall back
+     *                                    to customer.primary_email.
+     *
+     * Returns 200 on send, 422 when no recipient is available (so the
+     * frontend can prompt the user to add an email to the customer).
+     * ────────────────────────────────────────────────────────────────── */
+    public function emailQuotation(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $quot = Quotation::with([
+            'items', 'branch',
+            'customer:id,customer_code,company_name,primary_email,website',
+            'customer.primaryAddress:id,customer_id,address_line,country,state,city,pin,cp_contact,cp_email',
+            'consignee:id,consignee_code,company_name,primary_email,website',
+            'consignee.primaryAddress:id,consignee_id,address_line,country,state,city,pin,cp_contact,cp_email',
+            'lead:id,opp_code,query_time',
+            'salesManager:id,name',
+        ])->findOrFail($id);
+
+        if ($user->user_type !== 'super_admin' &&
+            (!$user->client_id || (int) $quot->client_id !== (int) $user->client_id)) {
+            abort(404);
+        }
+
+        return $this->sendSalesDocumentEmail(
+            $request, $quot,
+            kind: 'Quotation', pdfTitle: 'QUOTATION DOCUMENT', docLabel: 'QT',
+            filenamePrefix: 'Quotation',
+        );
+    }
+
+    public function emailProformaInvoice(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $pi = ProformaInvoice::with([
+            'items', 'branch',
+            'customer:id,customer_code,company_name,primary_email,website',
+            'customer.primaryAddress:id,customer_id,address_line,country,state,city,pin,cp_contact,cp_email',
+            'consignee:id,consignee_code,company_name,primary_email,website',
+            'consignee.primaryAddress:id,consignee_id,address_line,country,state,city,pin,cp_contact,cp_email',
+            'lead:id,opp_code,query_time',
+            'salesManager:id,name',
+        ])->findOrFail($id);
+
+        if ($user->user_type !== 'super_admin' &&
+            (!$user->client_id || (int) $pi->client_id !== (int) $user->client_id)) {
+            abort(404);
+        }
+
+        return $this->sendSalesDocumentEmail(
+            $request, $pi,
+            kind: 'Proforma Invoice', pdfTitle: 'PROFORMA INVOICE', docLabel: 'PI',
+            filenamePrefix: 'PI',
+        );
+    }
+
+    /**
+     * Shared sender for both Quotation + PI. Resolves recipient, renders
+     * the PDF to a temp file, builds the email payload, sends, then deletes
+     * the temp file. Returns a JsonResponse the frontend can toast off of.
+     */
+    private function sendSalesDocumentEmail(Request $request, $record, string $kind, string $pdfTitle, string $docLabel, string $filenamePrefix): JsonResponse
+    {
+        // 1) Resolve the recipient.
+        $override = trim((string) $request->input('to', ''));
+        if ($override !== '' && filter_var($override, FILTER_VALIDATE_EMAIL)) {
+            $to = $override;
+        } else {
+            $cust   = $record->customer;
+            $custAd = $cust?->primaryAddress;
+            $to     = $custAd?->cp_email ?? $cust?->primary_email ?? null;
+        }
+        if (!$to || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'No valid email address for this customer. Set a primary contact email on the customer first.',
+            ], 422);
+        }
+
+        $withSignature = $request->boolean('signature', true);
+
+        // 2) Render the PDF to a temp file (we use the existing view-data
+        //    builder so the email attachment matches the preview PDF byte-for-byte).
+        $viewData = $this->buildQuotationViewData($record, $withSignature, $pdfTitle, $docLabel);
+        $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
+            ->setPaper('A4', 'portrait')
+            ->setOption('isPhpEnabled', true);
+
+        $tmpDir = storage_path('app/tmp/sales-pdfs');
+        if (!is_dir($tmpDir)) @mkdir($tmpDir, 0775, true);
+        $safeCode = preg_replace('/[^A-Za-z0-9_-]/', '_', $record->code ?? ('id-' . $record->id));
+        $pdfFilename = $filenamePrefix . '-' . $safeCode . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
+        $pdfPath = $tmpDir . '/' . uniqid('mail-', true) . '-' . $pdfFilename;
+        $pdf->save($pdfPath);
+
+        // 3) Build the email payload (product summary = first item's name,
+        //    branch name/email/website for the signature block). Prefer the
+        //    LIVE product master name so renames in the product master flow
+        //    through to the email body too (mirrors the PDF behaviour).
+        $branch = $record->branch;
+        $firstItem = $record->items->first();
+        $productSummary = '';
+        if ($firstItem) {
+            if ($firstItem->product_id) {
+                $live = DB::table('products')->where('id', $firstItem->product_id)->value('name');
+                if ($live) $productSummary = (string) $live;
+            }
+            if ($productSummary === '') {
+                $productSummary = (string) ($firstItem->product_name ?? '');
+                // Strip "CODE – " prefix from snapshot so the email reads cleanly.
+                if (preg_match('/^.+?\s+[\x{2013}\-]\s+(.+)$/u', $productSummary, $m)) {
+                    $productSummary = trim($m[1]);
+                }
+            }
+        }
+        if ($record->items->count() > 1) {
+            $productSummary .= ' (+' . ($record->items->count() - 1) . ' more)';
+        }
+
+        $payload = [
+            'docKind'        => $kind,
+            'docCode'        => $record->code,
+            'docDate'        => optional($record->created_at)->format('d/m/Y') ?: date('d/m/Y'),
+            'branchName'     => $branch?->name    ?: ($branch?->code ?: 'Sales Team'),
+            'branchEmail'    => $branch?->email   ?: null,
+            'branchWebsite'  => $branch?->website ?: null,
+            'customerName'   => $record->customer?->company_name ?: ($record->customer_name ?: 'Sir/Madam'),
+            'productSummary' => $productSummary,
+            'pdfPath'        => $pdfPath,
+            'pdfFilename'    => $pdfFilename,
+        ];
+
+        // 4) Send + always clean up the temp PDF, even if the mailer throws.
+        try {
+            Mail::to($to)->send(new SalesDocumentEmail($payload));
+        } catch (\Throwable $e) {
+            @unlink($pdfPath);
+            Log::error('Sales document email failed', [
+                'kind'    => $kind,
+                'record'  => $record->code,
+                'to'      => $to,
+                'error'   => $e->getMessage(),
+            ]);
+            return response()->json([
+                'status'  => false,
+                'message' => 'Could not send email: ' . $e->getMessage(),
+            ], 500);
+        }
+        @unlink($pdfPath);
+
+        return response()->json([
+            'status'  => true,
+            'message' => "{$kind} emailed to {$to}",
+            'to'      => $to,
         ]);
     }
 
@@ -413,15 +602,19 @@ class SalesPdfController extends Controller
                                    ?? $this->publicImageDataUri('images/test-signature.png'),
         ];
 
-        // Buyer / Consignee — full details from the customer/consignee's
-        // PRIMARY address row (HasOne primaryAddress relation). Name +
-        // email fall back to the master's columns; address + phone come
-        // from the primary address. Both blocks render Name → Address →
-        // Email → Phone to match the reference Inorbvict layout.
+        // Buyer / Consignee — Name comes from the LIVE master row so
+        // edits to the customer/consignee company name flow through to
+        // every existing PDF (mirrors the live-product-name behaviour
+        // for line items). Snapshotted columns (`customer_name`,
+        // `consignee_name` on the quotation) are kept only as a
+        // fallback for the case where the master row was deleted.
+        // Address + email + phone come from the master's PRIMARY
+        // address row (HasOne primaryAddress relation). Layout order:
+        // Name → Address → Email → Phone (matches Inorbvict reference).
         $cust = $q->customer;
         $custAddr = $cust?->primaryAddress;
         $buyerDetails = (object) [
-            'name'       => $q->customer_name ?? ($cust?->company_name ?? 'Customer'),
+            'name'       => $cust?->company_name ?: ($q->customer_name ?: 'Customer'),
             'address'    => $this->composeAddress(
                 $custAddr?->address_line,
                 $custAddr?->city,
@@ -437,7 +630,7 @@ class SalesPdfController extends Controller
         $consAddr = $cons?->primaryAddress;
         $hasConsignee = (bool) $q->consignee_id;
         $consigneeDetails = $hasConsignee ? (object) [
-            'name'    => $q->consignee_name ?? ($cons?->company_name ?? 'Consignee'),
+            'name'    => $cons?->company_name ?: ($q->consignee_name ?: 'Consignee'),
             'address' => $this->composeAddress(
                 $consAddr?->address_line,
                 $consAddr?->city,
@@ -473,38 +666,54 @@ class SalesPdfController extends Controller
         // NB: template uses ARRAY access (`$product['product_name']`), so each
         // row is an assoc array, not a stdClass object.
         //
-        // product_name is stored as the MasterSelect display label
-        // ("P-03 – adsfegrtyjhuk") — we split that back into the code
-        // prefix and the actual name so the PDF can render them in
-        // their own columns. Free-text rows (no " – " separator) fall
-        // through to an empty code + the full string as the name.
-        $quotationProducts = collect($q->items)->map(function ($it) {
+        // Product display uses the LIVE master row (products.name +
+        // products.description + products.product_code) whenever the item
+        // still carries a `product_id` — so editing a product in the
+        // master immediately reflects on every PDF that references it.
+        // Snapshot (`product_name` stored as "CODE – NAME" at insert) is
+        // the fallback when product_id is null (free-text row) or the
+        // master row has been deleted.
+        $productIds = collect($q->items)->pluck('product_id')->filter()->unique()->values();
+        $productMap = $productIds->isNotEmpty()
+            ? DB::table('products')
+                ->whereIn('id', $productIds)
+                ->get(['id', 'product_code', 'name', 'description'])
+                ->keyBy('id')
+            : collect();
+
+        $quotationProducts = collect($q->items)->map(function ($it) use ($productMap) {
             $qty   = (float) $it->quantity;
             $rate  = (float) $it->rate;
             $tax   = (float) $it->tax_pct;
             $base  = $qty * $rate;
             $amt   = (float) $it->amount;
 
-            $rawName = trim((string) ($it->product_name ?? ''));
-            // Split "CODE – NAME" → [code, name]. The separator MUST have
-            // whitespace on both sides ("P-03 – adsfegrtyjhuk") so internal
-            // hyphens like the one inside "P-03" stay with the code instead
-            // of being treated as the separator. Accepts both the en-dash
-            // (– U+2013, what the MasterSelect dropdown uses) and a plain
-            // ASCII hyphen for legacy rows.
-            if (preg_match('/^(.+?)\s+[\x{2013}\-]\s+(.+)$/u', $rawName, $m)) {
-                $code = trim($m[1]);
-                $name = trim($m[2]);
+            $live = $it->product_id ? $productMap->get($it->product_id) : null;
+            if ($live) {
+                $code = (string) ($live->product_code ?? '');
+                $name = (string) ($live->name ?? '');
+                $desc = (string) ($live->description ?? '');
             } else {
-                $code = '';
-                $name = $rawName;
+                // Fallback: split snapshotted "CODE – NAME". The separator
+                // MUST have whitespace on both sides so internal hyphens
+                // like the one in "P-03" stay with the code. Accepts the
+                // en-dash (U+2013, what MasterSelect uses) and ASCII '-'.
+                $rawName = trim((string) ($it->product_name ?? ''));
+                if (preg_match('/^(.+?)\s+[\x{2013}\-]\s+(.+)$/u', $rawName, $m)) {
+                    $code = trim($m[1]);
+                    $name = trim($m[2]);
+                } else {
+                    $code = '';
+                    $name = $rawName;
+                }
+                $desc = '';
             }
 
             return [
                 'product_code'        => $code,
                 'product_name'        => $name,
                 'model_name'          => '',
-                'product_description' => '',
+                'product_description' => $desc,
                 'unit'                => $it->unit ?? '',
                 'quantity'            => $qty,
                 'rate'                => $rate,

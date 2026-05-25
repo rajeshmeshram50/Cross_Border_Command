@@ -325,6 +325,13 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // labels swap to "PI No / PI Date".
     Route::post  ('/sales/proforma-invoices/{id}/preview-pdf', [SalesPdfController::class, 'previewProformaInvoice']);
 
+    // Sales Matrix → email the PDF to the customer's primary email.
+    // Body: { signature?: bool, to?: string } — `to` overrides the
+    // customer's email when provided. Returns 422 if no recipient
+    // can be resolved so the frontend can prompt the user.
+    Route::post  ('/sales/quotations/{id}/email',         [SalesPdfController::class, 'emailQuotation']);
+    Route::post  ('/sales/proforma-invoices/{id}/email',  [SalesPdfController::class, 'emailProformaInvoice']);
+
     // Sales Matrix → Leads (My Workplace). Three feeders write here:
     //   - POST /sales/leads        manual capture (Add New Lead modal)
     //   - POST /sales/leads/sync   pull from IndiaMart CRM keys

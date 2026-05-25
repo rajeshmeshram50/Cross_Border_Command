@@ -458,9 +458,30 @@ export default function SalesQPI() {
   // automatically when its `data` array changes.
   const switchTab = (next: QPITab) => { setTab(next); setQ(''); };
   const switchPiSub = (next: PISubTab) => { setPiSub(next); setQ(''); };
-  const soon = (label: string) => toast.info(label, 'Coming in next phase');
 
   const [convertingId, setConvertingId] = useState<number | null>(null);
+
+  /* Email PDF state — per-row busy flag (so only the clicked row shows
+   * a spinner). Tagged with the kind so the same id can't collide
+   * between a Quotation row id and a PI row id. */
+  const [emailingFor, setEmailingFor] = useState<{ kind: 'quotation' | 'pi'; id: number } | null>(null);
+  const sendDocEmail = async (kind: 'quotation' | 'pi', id: number, code: string) => {
+    if (!id) { toast.error('Cannot email', 'This record has no server id yet.'); return; }
+    if (emailingFor) return;
+    setEmailingFor({ kind, id });
+    const url = kind === 'quotation'
+      ? `/sales/quotations/${id}/email`
+      : `/sales/proforma-invoices/${id}/email`;
+    try {
+      const { data } = await api.post(url, { signature: true });
+      toast.success('Email sent', `${code} → ${data?.to ?? 'customer'}`);
+    } catch (e: any) {
+      const msg = e?.response?.data?.message ?? 'Could not send email. Check the customer has a primary email.';
+      toast.error('Email failed', String(msg));
+    } finally {
+      setEmailingFor(null);
+    }
+  };
 
   /* Delete confirmation state — same DeleteConfirmModal used across the
    * project (Customers, Clients, etc.). `kind` discriminates which API
@@ -629,7 +650,12 @@ export default function SalesQPI() {
                 </span>
               </button>
             )}
-            <ActionBtn title="Email Quotation" icon={<IconMail />} color="#2563eb" onClick={() => soon('Mail Quotation')} />
+            <ActionBtn
+              title={emailingFor?.kind === 'quotation' && emailingFor.id === r.id ? 'Sending…' : 'Email Quotation'}
+              icon={<IconMail />}
+              color="#2563eb"
+              onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
+            />
             <ActionBtn
               title="Edit Quotation"
               icon={<IconEdit />}
@@ -710,6 +736,12 @@ export default function SalesQPI() {
         const r = info.row.original as PI;
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
+            <ActionBtn
+              title={emailingFor?.kind === 'pi' && emailingFor.id === r.id ? 'Sending…' : 'Email PI'}
+              icon={<IconMail />}
+              color="#2563eb"
+              onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
+            />
             <ActionBtn
               title="Edit PI"
               icon={<IconEdit />}
