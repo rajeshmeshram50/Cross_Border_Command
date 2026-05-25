@@ -21,6 +21,11 @@ const empty = {
   name: '', code: '', email: '', phone: '', website: '',
   contact_person: '', branch_type: '', industry: '', description: '',
   gst_number: '', pan_number: '', registration_number: '',
+  // Letterhead / export-house compliance fields — all optional, surface
+  // on the Quotation/PI PDF letterhead block when populated.
+  gst_state_code: '', cin: '', iec: '',
+  drug_license: '', pcpndt_no: '', aeo_code: '',
+  one_star_file_no: '', one_star_udin_no: '',
   address: '', city: '', district: '', taluka: '', pincode: '',
   state: '', country: '',
   is_main: 'false', max_users: '0',
@@ -42,6 +47,16 @@ const FIELD_LABELS: Record<string, string> = {
   pincode: 'Pincode',
   gst_number: 'GST Number',
   pan_number: 'PAN Number',
+  // Letterhead / export-house compliance — used by the error-summary
+  // toast so the user sees "GST State Code" instead of "gst_state_code".
+  gst_state_code: 'GST State Code',
+  cin: 'CIN',
+  iec: 'IEC',
+  drug_license: 'Drug License',
+  pcpndt_no: 'PCPNDT No',
+  aeo_code: 'AEO Code',
+  one_star_file_no: 'One Star File No',
+  one_star_udin_no: 'One Star UDIN No',
   max_users: 'Max Users',
   user_name: 'User Full Name',
   user_email: 'User Email',
@@ -297,6 +312,12 @@ export default function BranchForm({ onBack, editId }: Props) {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
+  // Authorised-signatory image (signature + company stamp combined).
+  // Goes on the with-signature variant of the Quotation/PI PDF in the
+  // bottom-left "Authorized Signatory" block. PNG with transparent
+  // background works best because it sits on the branded footer.
+  const [signatureFile, setSignatureFile] = useState<File | null>(null);
+  const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
 
   const handleLogoChange = (file: File | null, inputEl?: HTMLInputElement) => {
     if (file) {
@@ -345,6 +366,30 @@ export default function BranchForm({ onBack, editId }: Props) {
       r.readAsDataURL(file);
     } else {
       setProfilePhotoPreview(null);
+    }
+  };
+
+  const handleSignatureChange = (file: File | null, inputEl?: HTMLInputElement) => {
+    if (file) {
+      const okTypes = ['image/jpeg', 'image/png', 'image/webp'];
+      if (!okTypes.includes(file.type)) {
+        toast.error('Invalid signature', 'Signature must be PNG, JPG, or WebP.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error('Signature too large', 'Signature image must be 2MB or smaller.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+    }
+    setSignatureFile(file);
+    if (file) {
+      const r = new FileReader();
+      r.onload = ev => setSignaturePreview(ev.target?.result as string);
+      r.readAsDataURL(file);
+    } else {
+      setSignaturePreview(null);
     }
   };
 
@@ -461,6 +506,14 @@ export default function BranchForm({ onBack, editId }: Props) {
         industry: b.industry || '', description: b.description || '',
         gst_number: b.gst_number || '', pan_number: b.pan_number || '',
         registration_number: b.registration_number || '',
+        gst_state_code:   b.gst_state_code   || '',
+        cin:              b.cin              || '',
+        iec:              b.iec              || '',
+        drug_license:     b.drug_license     || '',
+        pcpndt_no:        b.pcpndt_no        || '',
+        aeo_code:         b.aeo_code         || '',
+        one_star_file_no: b.one_star_file_no || '',
+        one_star_udin_no: b.one_star_udin_no || '',
         address: b.address || '', city: b.city || '',
         district: b.district || '', taluka: b.taluka || '',
         pincode: b.pincode || '', state: b.state || '', country: b.country || '',
@@ -486,6 +539,7 @@ export default function BranchForm({ onBack, editId }: Props) {
       // "branches/logos/foo.png" relative to the SPA root and 404s.
       if (b.logo_url || b.logo) setLogoPreview(b.logo_url || b.logo);
       if (b.profile_photo_url || b.profile_photo) setProfilePhotoPreview(b.profile_photo_url || b.profile_photo);
+      if (b.signature_path_url || b.signature_path) setSignaturePreview(b.signature_path_url || b.signature_path);
     }).catch(() => {}).finally(() => setLoadingData(false));
   }, [editId]);
 
@@ -534,24 +588,26 @@ export default function BranchForm({ onBack, editId }: Props) {
       payload.max_users = parseInt(form.max_users) || 0;
 
       if (isEdit) {
-        if (logoFile || profilePhotoFile) {
+        if (logoFile || profilePhotoFile || signatureFile) {
           // Multipart upload — Laravel reads PUT only as application/x-www-form-urlencoded,
           // so use POST + _method=PUT spoofing (same trick ClientForm uses).
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
           if (logoFile)         fd.append('logo', logoFile);
           if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
+          if (signatureFile)    fd.append('signature_path', signatureFile);
           await api.post(`/branches/${editId}?_method=PUT`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
           await api.put(`/branches/${editId}`, payload);
         }
         toast.success('Branch Updated', 'Branch details have been updated successfully');
       } else {
-        if (logoFile || profilePhotoFile) {
+        if (logoFile || profilePhotoFile || signatureFile) {
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
           if (logoFile)         fd.append('logo', logoFile);
           if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
+          if (signatureFile)    fd.append('signature_path', signatureFile);
           await api.post('/branches', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
           await api.post('/branches', payload);
@@ -1366,6 +1422,14 @@ export default function BranchForm({ onBack, editId }: Props) {
                 </div>
                 <small style={css.small}>JPG, PNG &middot; Square 200&times;200 px recommended &middot; Max 2 MB</small>
               </Col>
+              <Col md={4}>
+                <Lbl>Authorized Signatory (Stamp &amp; Signature)</Lbl>
+                <div className="d-flex gap-2 align-items-center">
+                  {signaturePreview && <img src={signaturePreview} alt="signature" style={{ width: 60, height: 40, objectFit: 'contain', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', background: '#ffffff', padding: '2px', flexShrink: 0 }} />}
+                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleSignatureChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
+                </div>
+                <small style={css.small}>PNG (transparent bg) preferred &middot; Appears on signed Quotation / PI PDFs &middot; Max 2 MB</small>
+              </Col>
               <Col md={6}>
                 <Lbl>Primary Color</Lbl>
                 <div className="d-flex gap-2">
@@ -1499,6 +1563,59 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Input style={css.input} value={form.registration_number}
                   onChange={e => set('registration_number', e.target.value)}
                   placeholder="REG-XXXX-XXXX" />
+              </Col>
+
+              {/* ── Letterhead / export-house compliance fields ──
+                  All optional. Show on the Quotation/PI PDF letterhead
+                  block when populated. Two rows so the section doesn't
+                  get visually overwhelming. */}
+              <Col md={4}>
+                <Lbl>GST State Code</Lbl>
+                <Input style={css.input} value={form.gst_state_code}
+                  onChange={e => set('gst_state_code', e.target.value.toUpperCase())}
+                  maxLength={10} placeholder="27" />
+              </Col>
+              <Col md={4}>
+                <Lbl>CIN</Lbl>
+                <Input style={css.input} value={form.cin}
+                  onChange={e => set('cin', e.target.value.toUpperCase())}
+                  maxLength={30} placeholder="U85100PN2014PTC152252" />
+              </Col>
+              <Col md={4}>
+                <Lbl>IEC</Lbl>
+                <Input style={css.input} value={form.iec}
+                  onChange={e => set('iec', e.target.value.toUpperCase())}
+                  maxLength={30} placeholder="3114017398" />
+              </Col>
+              <Col md={4}>
+                <Lbl>Drug License</Lbl>
+                <Input style={css.input} value={form.drug_license}
+                  onChange={e => set('drug_license', e.target.value)}
+                  maxLength={60} placeholder="Optional" />
+              </Col>
+              <Col md={4}>
+                <Lbl>PCPNDT No</Lbl>
+                <Input style={css.input} value={form.pcpndt_no}
+                  onChange={e => set('pcpndt_no', e.target.value)}
+                  maxLength={60} placeholder="Optional" />
+              </Col>
+              <Col md={4}>
+                <Lbl>AEO Code</Lbl>
+                <Input style={css.input} value={form.aeo_code}
+                  onChange={e => set('aeo_code', e.target.value.toUpperCase())}
+                  maxLength={60} placeholder="Optional" />
+              </Col>
+              <Col md={6}>
+                <Lbl>One Star Export House — File No</Lbl>
+                <Input style={css.input} value={form.one_star_file_no}
+                  onChange={e => set('one_star_file_no', e.target.value)}
+                  maxLength={60} placeholder="Optional" />
+              </Col>
+              <Col md={6}>
+                <Lbl>One Star Export House — UDIN No</Lbl>
+                <Input style={css.input} value={form.one_star_udin_no}
+                  onChange={e => set('one_star_udin_no', e.target.value)}
+                  maxLength={60} placeholder="Optional" />
               </Col>
             </Row>
 

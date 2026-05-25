@@ -27,6 +27,7 @@ class SalesReminderEmail extends Mailable
     use Queueable, SerializesModels;
 
     public string $docKind;        // 'Quotation' | 'Proforma Invoice'
+    public string $docLabel;       // 'QT' | 'PI' — used in the info-card label
     public string $docCode;        // QT/2026-27/6
     public string $docDate;        // 25/05/2026
     public string $branchName;
@@ -34,12 +35,19 @@ class SalesReminderEmail extends Mailable
     public ?string $branchWebsite;
     public string $customerName;
     public int $reminderNumber;    // 1, 2, 3 … displayed in subject ("Reminder #2: …")
+    public int $productsCount;     // line-item count for the info card
+    public float $grandTotal;      // total amount on the doc (shown in the total card)
+    public string $currency;       // currency code
+    public string $docType;        // "International" | "Domestic"
+    public ?string $viewUrl;       // signed public URL that opens the PDF in a browser
+    public ?string $logoPath;      // absolute filesystem path to branch logo (for CID embed)
     public ?string $pdfPath;
     public string $pdfFilename;
 
     public function __construct(array $payload)
     {
         $this->docKind        = (string) ($payload['docKind']        ?? 'Document');
+        $this->docLabel       = (string) ($payload['docLabel']       ?? 'DOC');
         $this->docCode        = (string) ($payload['docCode']        ?? '');
         $this->docDate        = (string) ($payload['docDate']        ?? '');
         $this->branchName     = (string) ($payload['branchName']     ?? 'Sales Team');
@@ -47,6 +55,12 @@ class SalesReminderEmail extends Mailable
         $this->branchWebsite  = $payload['branchWebsite']            ?? null;
         $this->customerName   = (string) ($payload['customerName']   ?? 'Sir/Madam');
         $this->reminderNumber = (int)    ($payload['reminderNumber'] ?? 1);
+        $this->productsCount  = (int)    ($payload['productsCount']  ?? 0);
+        $this->grandTotal     = (float)  ($payload['grandTotal']     ?? 0);
+        $this->currency       = (string) ($payload['currency']       ?? '');
+        $this->docType        = (string) ($payload['docType']        ?? '');
+        $this->viewUrl        = $payload['viewUrl']                  ?? null;
+        $this->logoPath       = $payload['logoPath']                 ?? null;
         $this->pdfPath        = $payload['pdfPath']                  ?? null;
         $this->pdfFilename    = (string) ($payload['pdfFilename']    ?? 'document.pdf');
     }
@@ -72,6 +86,7 @@ class SalesReminderEmail extends Mailable
             view: 'emails.sales-reminder',
             with: [
                 'docKind'        => $this->docKind,
+                'docLabel'       => $this->docLabel,
                 'docCode'        => $this->docCode,
                 'docDate'        => $this->docDate,
                 'branchName'     => $this->branchName,
@@ -79,6 +94,12 @@ class SalesReminderEmail extends Mailable
                 'branchWebsite'  => $this->branchWebsite,
                 'customerName'   => $this->customerName,
                 'reminderNumber' => $this->reminderNumber,
+                'productsCount'  => $this->productsCount,
+                'grandTotal'     => $this->grandTotal,
+                'currency'       => $this->currency,
+                'docType'        => $this->docType,
+                'viewUrl'        => $this->viewUrl,
+                'logoPath'       => $this->logoPath,
             ],
         );
     }

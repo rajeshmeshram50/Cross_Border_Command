@@ -287,29 +287,69 @@
                                     <img src="{{ $logoData }}" alt="Logo" width="200" height="80" style="width:200px; height:auto; max-width:200px; max-height:90px; display:block; object-fit:contain;">
                                 @endif
 
-                                {{-- Letterhead block — uniform 6px row gap + line-height:1.55
-                                     gives the professional "breathing" rhythm the reference uses.
-                                     Section break before "One Star Export House Details :" bumps
-                                     to 10px so it reads as a sub-section divider, not just
-                                     another row in the same group. --}}
+                                {{-- Letterhead block — each row only renders when the
+                                     branch has the value set. Empty fields used to print
+                                     as "Drug License :" with a dangling colon, which
+                                     looked unfinished on the PDF. Now the block compacts
+                                     down to whatever the branch actually filled in.
+                                     The "One Star Export House Details :" section
+                                     heading + its two rows hide together when neither
+                                     File No nor UDIN No is set. --}}
                                 <div style="margin-top:12px; font-size:9px; line-height:14px;">
                                     <strong style="display:block; font-size:9px; margin-bottom:6px; color:#666666;">
                                         {{ ucwords(strtolower($companyDetails->name)) }}
                                     </strong>
-                                    <div style="margin-bottom:6px;">{{ $companyDetails->address }}</div>
-                                    <div style="margin-bottom:6px;">{{ $companyDetails->mobile }}</div>
-                                    <div style="margin-bottom:6px;">{{ $companyDetails->email }}</div>
-                                    <div style="margin-bottom:6px;"><strong>GST No : </strong>{{ $companyDetails->gst_no }}</div>
-                                    <div style="margin-bottom:6px;"><strong>GST State Code : </strong>{{ $companyDetails->gst_state_code }}</div>
-                                    <div style="margin-bottom:6px;"><strong>PAN No : </strong>{{ $companyDetails->pan_no }}</div>
-                                    <div style="margin-bottom:6px;"><strong>CIN : </strong>{{ $companyDetails->cin }}</div>
-                                    <div style="margin-bottom:6px;"><strong>IEC : </strong>{{ $companyDetails->iec }}</div>
-                                    <div style="margin-bottom:6px;"><strong>Drug License : </strong>{{ $companyDetails->drug_license }}</div>
-                                    <div style="margin-bottom:6px;"><strong>PCPNDT No : </strong>{{ $companyDetails->pcpndt_no }}</div>
-                                    <div style="margin-bottom:10px;"><strong>AEO Code : </strong>{{ $companyDetails->aeo_code }}</div>
-                                    <div style="margin-bottom:6px;"><strong>One Star Export House Details :</strong></div>
-                                    <div style="margin-bottom:6px;"><strong>File No : </strong>{{ $companyDetails->onestartfilename }}</div>
-                                    <div style="margin-bottom:0;"><strong>UDIN No : </strong>{{ $companyDetails->onestarudinumber }}</div>
+                                    @if(trim((string) $companyDetails->address) !== '')
+                                        <div style="margin-bottom:6px;">{{ $companyDetails->address }}</div>
+                                    @endif
+                                    @if(trim((string) $companyDetails->mobile) !== '')
+                                        <div style="margin-bottom:6px;">{{ $companyDetails->mobile }}</div>
+                                    @endif
+                                    @if(trim((string) $companyDetails->email) !== '')
+                                        <div style="margin-bottom:6px;">{{ $companyDetails->email }}</div>
+                                    @endif
+                                    @if(trim((string) $companyDetails->gst_no) !== '')
+                                        <div style="margin-bottom:6px;"><strong>GST No : </strong>{{ $companyDetails->gst_no }}</div>
+                                    @endif
+                                    @if(trim((string) $companyDetails->gst_state_code) !== '')
+                                        <div style="margin-bottom:6px;"><strong>GST State Code : </strong>{{ $companyDetails->gst_state_code }}</div>
+                                    @endif
+                                    @if(trim((string) $companyDetails->pan_no) !== '')
+                                        <div style="margin-bottom:6px;"><strong>PAN No : </strong>{{ $companyDetails->pan_no }}</div>
+                                    @endif
+                                    @if(trim((string) $companyDetails->cin) !== '')
+                                        <div style="margin-bottom:6px;"><strong>CIN : </strong>{{ $companyDetails->cin }}</div>
+                                    @endif
+                                    @if(trim((string) $companyDetails->iec) !== '')
+                                        <div style="margin-bottom:6px;"><strong>IEC : </strong>{{ $companyDetails->iec }}</div>
+                                    @endif
+                                    @if(trim((string) $companyDetails->drug_license) !== '')
+                                        <div style="margin-bottom:6px;"><strong>Drug License : </strong>{{ $companyDetails->drug_license }}</div>
+                                    @endif
+                                    @if(trim((string) $companyDetails->pcpndt_no) !== '')
+                                        <div style="margin-bottom:6px;"><strong>PCPNDT No : </strong>{{ $companyDetails->pcpndt_no }}</div>
+                                    @endif
+                                    @if(trim((string) $companyDetails->aeo_code) !== '')
+                                        <div style="margin-bottom:10px;"><strong>AEO Code : </strong>{{ $companyDetails->aeo_code }}</div>
+                                    @endif
+
+                                    {{-- One Star Export House sub-section: only print the
+                                         heading + rows when at least one of the two values
+                                         is filled. Otherwise the whole sub-section is hidden. --}}
+                                    @php
+                                        $oneStarFile = trim((string) $companyDetails->onestartfilename);
+                                        $oneStarUdin = trim((string) $companyDetails->onestarudinumber);
+                                        $oneStarVisible = $oneStarFile !== '' || $oneStarUdin !== '';
+                                    @endphp
+                                    @if($oneStarVisible)
+                                        <div style="margin-bottom:6px;"><strong>One Star Export House Details :</strong></div>
+                                        @if($oneStarFile !== '')
+                                            <div style="margin-bottom:6px;"><strong>File No : </strong>{{ $oneStarFile }}</div>
+                                        @endif
+                                        @if($oneStarUdin !== '')
+                                            <div style="margin-bottom:0;"><strong>UDIN No : </strong>{{ $oneStarUdin }}</div>
+                                        @endif
+                                    @endif
                                 </div>
                             </td>
 

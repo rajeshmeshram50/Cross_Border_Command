@@ -82,6 +82,18 @@ Route::post('/forgot-password/verify-otp', [ForgotPasswordController::class, 've
 Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'resetPassword']);
 Route::post('/razorpay/webhook', [RazorpayWebhookController::class, 'handle']);
 
+// Public PDF view links — the "View Quotation" / "View PI" button in
+// our outbound customer emails hits these. No app login (the customer
+// isn't a user), authenticated via Laravel's `signed` middleware: the
+// URL is signed at email-send time and expires after 60 days. Replays
+// + URL tampering get 403.
+Route::get('/sales/quotations/{id}/view',        [SalesPdfController::class, 'publicViewQuotation'])
+    ->middleware('signed')
+    ->name('sales.quotation.view');
+Route::get('/sales/proforma-invoices/{id}/view', [SalesPdfController::class, 'publicViewProformaInvoice'])
+    ->middleware('signed')
+    ->name('sales.pi.view');
+
 // Protected
 Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
