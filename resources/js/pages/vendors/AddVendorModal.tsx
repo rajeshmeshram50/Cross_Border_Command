@@ -989,8 +989,20 @@ export default function AddVendorModal(props: {
     const numStr = (n?: number | null): string => (n ?? '') === '' || n == null ? '' : String(n);
 
     (async () => {
+      /* Parallel fetch — kick off the vendor show AND the products
+       * dropdown at the same time. Previously productOpts only loaded
+       * when the user opened Step 4, so a fresh edit with mappings
+       * showed blank HSN/Segment until the user clicked Map Products
+       * and waited for *another* ~500-row fetch. Firing both in parallel
+       * shaves the perceived load to whichever is slower, and the
+       * Map Products backfill effect immediately joins them. */
+      const minShimmerMs = 350; // floor so the shimmer doesn't flicker on fast networks
+      const t0 = performance.now();
       try {
-        const res = await api.get<{ data: ApiVendor }>(`/vendors/${initialVendorId}`);
+        const [res] = await Promise.all([
+          api.get<{ data: ApiVendor }>(`/vendors/${initialVendorId}`),
+          fetchProductOptsIfNeeded(),
+        ]);
         const v = res.data?.data;
         if (!v) return;
 
@@ -1127,15 +1139,19 @@ export default function AddVendorModal(props: {
           gstAmount: Number(m.gst_amount ?? 0),
           totalAmount: Number(m.total_amount ?? 0),
         })));
-        // Trigger the products fetch immediately on edit-load so the
-        // Map Products table can show HSN / Segment without waiting for
-        // the user to open Step 4 first. The backfill effect joins on
-        // productId once both arrays are populated.
-        void fetchProductOptsIfNeeded();
+        // productOpts already fetched in parallel above — Map Products
+        // backfill effect joins on productId once both arrays are
+        // populated, so no extra fetch needed here.
       } catch {
         toast.error('Load failed', 'Could not load the supplier — closing the form.');
         onClose();
       } finally {
+        // Floor the visible shimmer time so a fast network doesn't
+        // render a 50ms flash that looks like a glitch. Once enough
+        // wall-clock has elapsed, drop the overlay.
+        const elapsed = performance.now() - t0;
+        const wait = Math.max(0, minShimmerMs - elapsed);
+        if (wait > 0) await new Promise(r => setTimeout(r, wait));
         setLoadingEdit(false);
       }
     })();
@@ -1922,24 +1938,33 @@ export default function AddVendorModal(props: {
         {/* ─── Body ─── */}
         <div className="avm-body">
           {loadingEdit && (
-            <div className="avm-load-overlay" role="status" aria-live="polite">
-              <div className="avm-load-card">
-                <span className="avm-spinner avm-spinner-lg" aria-hidden="true" />
-                <div className="avm-load-title">Loading supplier…</div>
-                <div className="avm-load-sub">Fetching identity, contacts, KYC documents and product mappings.</div>
-              </div>
-              {/* Shimmer placeholders behind the spinner card so the form
-                  geometry doesn't pop in suddenly when the fetch resolves. */}
+            /* Shimmer-only edit-load placeholder. The centred "Loading…"
+               spinner card was removed per design feedback — the form-
+               shaped skeleton bars convey the loading state without the
+               popup blocking the user's view of the form geometry. */
+            <div className="avm-load-overlay" role="status" aria-live="polite" aria-label="Loading supplier">
               <div className="avm-load-skeleton">
-                <div className="avm-load-bar" style={{ width: '60%' }} />
+                {/* Section heading + 4 fields */}
+                <div className="avm-load-bar avm-load-heading" />
                 <div className="avm-load-grid">
                   <div className="avm-load-bar" />
                   <div className="avm-load-bar" />
                   <div className="avm-load-bar" />
                   <div className="avm-load-bar" />
                 </div>
-                <div className="avm-load-bar" style={{ width: '40%', marginTop: 12 }} />
+                {/* Address section heading + grid */}
+                <div className="avm-load-bar avm-load-heading" style={{ marginTop: 18 }} />
                 <div className="avm-load-grid">
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                </div>
+                {/* Contact section heading + grid */}
+                <div className="avm-load-bar avm-load-heading" style={{ marginTop: 18 }} />
+                <div className="avm-load-grid">
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
                   <div className="avm-load-bar" />
                   <div className="avm-load-bar" />
                 </div>
@@ -4858,72 +4883,83 @@ const SCOPED_CSS = `
 .avm-body::-webkit-scrollbar-thumb { background: #c0cffb; border-radius: 99px; }
 
 /* Previous-stage summary */
+/* Step 2 / 3 / 4 carried-over summary header — restyled to match the
+ * lavender Stage 1 vendor header (.avm-id-summary) so every read-only
+ * header in the wizard reads as one component family. Previously this
+ * was a green "completed" panel; design feedback wanted the same calm
+ * violet palette applied across all stages. */
 .avm-prev {
-  background: #ecfdf5; border: 1.5px solid #86efac; border-radius: 12px;
+  background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
+  border: 1px solid #e9d5ff; border-radius: 12px;
   margin-bottom: 14px; overflow: hidden;
 }
 .avm-prev-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px;
-  background: linear-gradient(135deg, #dcfce7, #ecfdf5);
-  border-bottom: 1px solid #bbf7d0;
+  background: transparent;
+  border-bottom: 1px solid rgba(196,181,253,.45);
 }
-.avm-prev-title { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: #166534; letter-spacing: -0.01em; }
-.avm-prev-check { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
-.avm-prev-chip { padding: 3px 10px; border-radius: 99px; background: #fff; color: #166534; font-size: 11px; font-weight: 500; border: 1px solid #bbf7d0; }
-.avm-prev-toggle { height: 28px; padding: 0 12px; background: #fff; border: 1px solid #bbf7d0; color: #166534; border-radius: 7px; font-family: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; }
-.avm-prev-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
-/* Step-grouped summary — each stage gets a tone-coloured label
-   followed by a flat grid of label/value pairs. No per-cell box;
-   stage labels do the visual grouping. Mirrors the Add Product
-   wizard's PreviousStages styling. */
-.avm-prev-stage { display: flex; flex-direction: column; gap: 6px; }
-.avm-prev-stage + .avm-prev-stage { margin-top: 10px; }
+.avm-prev-title { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: #5b21b6; letter-spacing: -0.01em; }
+.avm-prev-check { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
+.avm-prev-chip { padding: 3px 10px; border-radius: 99px; background: #fff; color: #5b21b6; font-size: 11px; font-weight: 500; border: 1px solid #c4b5fd; }
+.avm-prev-toggle { height: 28px; padding: 0 12px; background: #fff; border: 1px solid #c4b5fd; color: #5b21b6; border-radius: 7px; font-family: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; }
+.avm-prev-toggle:hover { background: #ede9fe; border-color: #a78bfa; }
+.avm-prev-body { padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 13px; }
+/* Step-grouped summary — each stage's label uses the same muted violet
+ * tone so the header reads as a single block rather than several panels
+ * fighting for attention. */
+.avm-prev-stage { display: flex; flex-direction: column; gap: 8px; }
+.avm-prev-stage + .avm-prev-stage { margin-top: 6px; padding-top: 10px; border-top: 1px dashed rgba(196,181,253,.55); }
 .avm-prev-stage-label {
-  font-size: 10.5px; font-weight: 600; letter-spacing: .08em;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+  color: #6d28d9;
   display: inline-flex; align-items: center;
+  text-transform: uppercase;
 }
-.avm-prev-stage.tone-violet .avm-prev-stage-label { color: #5b21b6; }
-.avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #0f766e; }
-.avm-prev-stage.tone-purple .avm-prev-stage-label { color: #6b21a8; }
+.avm-prev-stage.tone-violet .avm-prev-stage-label,
+.avm-prev-stage.tone-teal   .avm-prev-stage-label,
+.avm-prev-stage.tone-purple .avm-prev-stage-label { color: #6d28d9; }
 
-/* Compact inline pair rows — each row is a flex-wrap container
-   that flows "Label : value" pairs side by side and breaks onto
-   the next visual line only when the viewport is too narrow. */
-.avm-prev-rows {
-  display: flex; flex-direction: column; gap: 6px;
-}
+/* Switch the per-stage rows from flex-wrap to the same 4-column grid
+ * used by .avm-id-summary-row, so labels and values line up cleanly
+ * across stages — matches the Stage 1 screenshot exactly. */
+.avm-prev-rows { display: flex; flex-direction: column; gap: 13px; }
 .avm-prev-row {
-  display: flex; flex-wrap: wrap; gap: 6px 26px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 28px;
+  row-gap: 13px;
   align-items: baseline;
 }
 .avm-prev-pair {
-  display: inline-flex; align-items: baseline; gap: 6px;
-  font-size: 12.5px; line-height: 1.45;
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 12px; line-height: 1.4;
   min-width: 0;
+  cursor: default; padding: 1px 2px; border-radius: 4px;
+  transition: background .12s;
 }
-/* Carried-over summary header (Steps 2 / 3 / 4) — same visual tone
-   as the .avm-id-summary strip on the Address & Contact sub-tab so
-   every read-only header in the wizard reads as one component
-   family. Label weight lowered from 700 → 500 per design feedback. */
+.avm-prev-pair:hover { background: rgba(124,58,237,0.06); }
 .avm-prev-k {
-  font-size: 10px; font-weight: 500; letter-spacing: .04em;
-  color: #7c3aed; text-transform: uppercase;
-  white-space: nowrap;
+  font-size: 12px; font-weight: 600; letter-spacing: .01em;
+  color: #64748b; text-transform: uppercase;
+  white-space: nowrap; flex-shrink: 0;
 }
 .avm-prev-v {
-  font-weight: 500; color: #1e1b4b;
+  font-weight: 600; color: #6d28d9; line-height: 1.4;
+  min-width: 0; flex: 1 1 auto;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 320px;
 }
 .avm-prev-link {
-  font-weight: 600; color: #4338ca; text-decoration: underline;
+  font-weight: 600; color: #6d28d9; text-decoration: underline;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 320px;
+  min-width: 0; flex: 1 1 auto;
 }
-.avm-prev-link:hover { color: #312e81; }
+.avm-prev-link:hover { color: #4c1d95; }
 .avm-prev-suffix {
-  font-size: 11.5px; color: #64748b; font-weight: 500;
+  font-size: 11px; color: #64748b; font-weight: 500;
+}
+@media (max-width: 900px) {
+  .avm-prev-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* Tabs */
@@ -5431,41 +5467,28 @@ const SCOPED_CSS = `
   border-top-color: #405189;
 }
 
-/* Edit-mode loading overlay — shown over the form while /vendors/{id}
- * is fetched. Combines a centred spinner card with shimmering form-shaped
- * bars so the layout doesn't jump when the data lands. */
+/* Edit-mode shimmer placeholder — shown over the form while /vendors/{id}
+ * is in flight. Form-shaped skeleton bars convey "data is loading" while
+ * preserving the user's mental map of the form layout (no centred modal
+ * card covering the geometry). */
 .avm-load-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(255,255,255,.85);
-  backdrop-filter: blur(2px);
+  background: #fff;
   z-index: 5;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: flex-start;
-  padding: 32px 40px;
-  gap: 18px;
+  overflow: hidden;
+  padding: 22px 26px;
 }
-[data-bs-theme="dark"] .avm-load-overlay { background: rgba(20,16,42,.85); }
-.avm-load-card {
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  padding: 24px 28px; border-radius: 14px;
-  background: #fff; border: 1px solid #e2e8f0;
-  box-shadow: 0 12px 28px rgba(15,23,42,.10);
-  min-width: 320px; text-align: center;
-}
-[data-bs-theme="dark"] .avm-load-card { background: #1c2531; border-color: rgba(255,255,255,.08); box-shadow: 0 12px 28px rgba(0,0,0,.5); }
-.avm-load-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-top: 4px; }
-.avm-load-sub   { font-size: 12px; color: #64748b; max-width: 320px; }
-[data-bs-theme="dark"] .avm-load-title { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-load-sub   { color: #adb5bd; }
-.avm-load-skeleton { width: 100%; max-width: 680px; display: flex; flex-direction: column; gap: 10px; }
-.avm-load-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+[data-bs-theme="dark"] .avm-load-overlay { background: #1c2531; }
+.avm-load-skeleton { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: 10px; }
+.avm-load-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
 .avm-load-bar {
   height: 38px; border-radius: 8px;
   background: linear-gradient(90deg, #eef2f7 0%, #f8fafc 50%, #eef2f7 100%);
   background-size: 200% 100%;
   animation: avm-skel-shimmer 1.2s ease-in-out infinite;
 }
+.avm-load-heading { height: 18px; width: 220px; border-radius: 5px; margin-bottom: 6px; }
 [data-bs-theme="dark"] .avm-load-bar {
   background: linear-gradient(90deg, #221940 0%, #1a1430 50%, #221940 100%);
   background-size: 200% 100%;
@@ -5473,6 +5496,9 @@ const SCOPED_CSS = `
 @keyframes avm-skel-shimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+@media (max-width: 880px) {
+  .avm-load-grid { grid-template-columns: 1fr 1fr; }
 }
 
 /* KYC table layout — Bootstrap's table-nowrap was forcing every cell
@@ -5570,21 +5596,25 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-doctable-search { background: #110c25; border-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-doctable-search input { color: #ede9fe; }
 [data-bs-theme="dark"] .avm-doctable-count { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev { background: #14241a; border-color: #166534; }
-[data-bs-theme="dark"] .avm-prev-head { background: linear-gradient(135deg, #16321f, #1d4029); border-bottom-color: #166534; }
-[data-bs-theme="dark"] .avm-prev-title { color: #ffffff; }
-[data-bs-theme="dark"] .avm-prev-toggle { background: #1a3225; color: #d1fae5; border-color: #22c55e; }
-[data-bs-theme="dark"] .avm-prev-chip { background: #1a3225; border-color: #22c55e; color: #ffffff; }
-[data-bs-theme="dark"] .avm-prev-field-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev-field-value { color: #ffffff; }
-[data-bs-theme="dark"] .avm-prev-k { color: #d8b4fe; font-weight: 600; }
-[data-bs-theme="dark"] .avm-prev-v { color: #ffffff; font-weight: 500; }
-[data-bs-theme="dark"] .avm-prev-link { color: #a5b4fc; }
-[data-bs-theme="dark"] .avm-prev-link:hover { color: #c7d2fe; }
-[data-bs-theme="dark"] .avm-prev-suffix { color: #cbd5e1; }
-[data-bs-theme="dark"] .avm-prev-stage.tone-violet .avm-prev-stage-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #5eead4; }
-[data-bs-theme="dark"] .avm-prev-stage.tone-purple .avm-prev-stage-label { color: #d8b4fe; }
+/* Dark mode — mirrors .avm-id-summary palette so all read-only headers
+ * (Stage 1 + carried-over Stage 2/3/4) share the same dark violet shell. */
+[data-bs-theme="dark"] .avm-prev { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-prev-head { background: transparent; border-bottom-color: rgba(167,139,250,.25); }
+[data-bs-theme="dark"] .avm-prev-title { color: #ddd6fe; }
+[data-bs-theme="dark"] .avm-prev-toggle { background: #221940; color: #c4b5fd; border-color: rgba(167,139,250,.35); }
+[data-bs-theme="dark"] .avm-prev-toggle:hover { background: #2a1d5c; border-color: #a78bfa; }
+[data-bs-theme="dark"] .avm-prev-chip { background: #221940; border-color: rgba(167,139,250,.35); color: #ddd6fe; }
+[data-bs-theme="dark"] .avm-prev-pair:hover { background: rgba(167,139,250,0.10); }
+[data-bs-theme="dark"] .avm-prev-k { color: #94a3b8; }
+[data-bs-theme="dark"] .avm-prev-v { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-link { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-link:hover { color: #ddd6fe; }
+[data-bs-theme="dark"] .avm-prev-suffix { color: #94a3b8; }
+[data-bs-theme="dark"] .avm-prev-stage-label,
+[data-bs-theme="dark"] .avm-prev-stage.tone-violet .avm-prev-stage-label,
+[data-bs-theme="dark"] .avm-prev-stage.tone-teal   .avm-prev-stage-label,
+[data-bs-theme="dark"] .avm-prev-stage.tone-purple .avm-prev-stage-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-stage + .avm-prev-stage { border-top-color: rgba(167,139,250,.20); }
 
 /* ─── Master Quick-Add popup ─── */
 .avm-qa-backdrop {
