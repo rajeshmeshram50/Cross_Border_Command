@@ -1642,10 +1642,12 @@ function CreateQuotationModal(props: { editId: number | null; onClose: () => voi
       }
       onSubmit();   // Parent closes modal + reloads list.
     } catch (e: any) {
-      const msg = e?.response?.data?.message
-        || e?.response?.data?.errors
-            ? Object.values(e.response.data.errors).flat().join(' ')
-            : 'Could not save the quotation.';
+      // Use ?? + explicit parens to avoid the (|| ? :) precedence trap —
+      // the old code crashed when the API returned `{message: '...'}`
+      // without an `errors` map (it'd run `Object.values(undefined)`).
+      const data = e?.response?.data;
+      const msg = data?.message
+        ?? (data?.errors ? Object.values(data.errors).flat().join(' ') : 'Could not save the quotation.');
       toast.error('Save failed', String(msg));
     } finally {
       setSaving(false);
@@ -4058,6 +4060,18 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-act-edit:hover { border-color: #4ade80; color: #86efac; }
 [data-bs-theme="dark"] .qpi-act-menu:hover { border-color: #a78bfa; color: #e9d5ff; }
 [data-bs-theme="dark"] .qpi-act-del:hover  { border-color: #f87171; color: #fca5a5; }
+/* Disabled-state action tile in dark mode — keep the muted look that
+   reads as "not interactive" without going invisible against the dark
+   table row background. Targets both the explicit class (.qpi-act-disabled)
+   and the native :disabled / [disabled] selectors. */
+[data-bs-theme="dark"] .qpi-act-disabled,
+[data-bs-theme="dark"] .qpi-act:disabled,
+[data-bs-theme="dark"] .qpi-act[disabled] {
+  background: #1c2531 !important;
+  border-color: rgba(167,139,250,.18) !important;
+  color: rgba(196,181,253,.45) !important;
+  opacity: 0.55;
+}
 
 /* Convert button */
 [data-bs-theme="dark"] .qpi-convert-btn {

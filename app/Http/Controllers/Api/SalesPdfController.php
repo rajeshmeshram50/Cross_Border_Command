@@ -519,9 +519,12 @@ class SalesPdfController extends Controller
                 'to'      => $to,
                 'error'   => $e->getMessage(),
             ]);
+            // Keep the user-facing message generic — raw driver errors
+            // (SMTP timeouts, auth failures, DB exceptions) leak server
+            // internals. The full trace is in laravel.log for ops.
             return response()->json([
                 'status'  => false,
-                'message' => 'Could not send email: ' . $e->getMessage(),
+                'message' => "Could not send {$kind} email. Please try again or contact support.",
             ], 500);
         }
         @unlink($pdfPath);
@@ -692,7 +695,7 @@ class SalesPdfController extends Controller
             ]);
             return response()->json([
                 'status'  => false,
-                'message' => 'Could not send reminder: ' . $e->getMessage(),
+                'message' => 'Could not send reminder. Please try again or contact support.',
             ], 500);
         }
         @unlink($pdfPath);
