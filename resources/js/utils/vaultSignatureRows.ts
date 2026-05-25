@@ -1,3 +1,5 @@
+import { resolveFileUrl } from './resolveFileUrl';
+
 /**
  * Shared helper used by the Customer / Consignee / Supplier Evidence
  * Vault modals to surface Zoho Sign signature requests under their
@@ -85,9 +87,17 @@ export function signatureRequestsToVaultDocs(rows: SigReqRow[]): VaultDocLike[] 
      * Completion" icon — mirrors New_IDIMS_6.0's per-row action menu
      * exactly (see Stage3Tab2DocumentationArchive's faCertificate
      * button). Hidden by the renderer when the request isn't
-     * completed. */
+     * completed.
+     *
+     * URL resolution — certificate_path is a disk-relative path
+     * ("uploads/signed_documents/customer/cert_…pdf"). resolveFileUrl
+     * prefixes the VITE_API_URL (so it works whether the SPA runs from
+     * the Vite dev server, the Laravel app, or a deployed CDN host)
+     * and routes legacy "storage/" / "uploads/" prefixes consistently.
+     * Plain string concatenation produced relative `/storage/…` URLs
+     * that 404'd whenever the SPA origin differed from the API. */
     const certUrl = isSigned && req.certificate_path
-      ? `/storage/${req.certificate_path}`
+      ? resolveFileUrl(req.certificate_path)
       : null;
 
     for (let i = 0; i < ids.length; i++) {
@@ -98,8 +108,13 @@ export function signatureRequestsToVaultDocs(rows: SigReqRow[]): VaultDocLike[] 
       seenDocs.add(seenKey);
 
       const signedEntry = paths[i] ?? null;
-      const url = signedEntry?.url
-        || (signedEntry?.path ? `/storage/${signedEntry.path}` : null);
+      // Resolve through resolveFileUrl so the URL works whether the
+      // backend returned an absolute URL (CDN / Azure), a /storage/…
+      // relative path, or just the disk-relative `path` value. Prevents
+      // 404s when the SPA origin and API origin differ (Vite dev
+      // server, separate deploy host, etc.).
+      const rawUrl = signedEntry?.url || signedEntry?.path || null;
+      const url    = rawUrl ? resolveFileUrl(rawUrl) : null;
       const name = names[i] ?? `Document ${docId}`;
 
       out.push({

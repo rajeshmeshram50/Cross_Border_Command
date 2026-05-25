@@ -106,11 +106,22 @@ export default function ProcurementDetailsModal({ open, procurementId, onClose }
 
           <div className="pdv-body">
             {loading ? (
-              <div className="pdv-loading">Loading procurement details…</div>
+              <div className="pdv-grid smd-fade-in">
+                {Array.from({ length: 9 }).map((_, i) => (
+                  <div key={`pdv-skl-${i}`} style={{ display: 'contents' }}>
+                    <div className="pdv-grid-label">
+                      <span className="smd-skel" style={{ height: 13, maxWidth: i % 2 ? 130 : 100 }} />
+                    </div>
+                    <div className="pdv-grid-val">
+                      <span className="smd-skel" style={{ height: 13, maxWidth: i === 7 ? 90 : 150 }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : !details ? (
               <div className="pdv-loading">No data found</div>
             ) : (
-              <div className="pdv-grid">
+              <div className="pdv-grid smd-fade-in">
                 <div className="pdv-grid-label">Opp ID</div>
                 <div className="pdv-grid-val">{oppId}</div>
 

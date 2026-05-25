@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import api from '../../../../api';
+import { useToast } from '../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -13,8 +16,34 @@ import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
  * itself. Advancing to Stage 2 is driven by the page-level stepper.
  * ───────────────────────────────────────────────────────────────────────── */
 
-export default function Stage1InquiryReceived({ header, onNext }: StageProps) {
+export default function Stage1InquiryReceived({ header, onNext, reloadLead }: StageProps) {
+  const toast = useToast();
+  const [advancing, setAdvancing] = useState(false);
   const tm = header.taskManager ?? null;
+
+  /* Persist Stage 1 → 2 advance. Without this PUT, the lead's
+   * lead_stage_id stayed at 1 even after the user clicked Save & Next,
+   * so the Lead Worksheet would always reopen the lead at Stage 1.
+   * Mirrors Stage 2/3/4's onSaveAndNext pattern. */
+  const onSaveAndNext = async () => {
+    if (!header.leadId) {
+      // No lead id in context (deep-link without backing row) — just
+      // navigate, nothing to persist.
+      onNext();
+      return;
+    }
+    setAdvancing(true);
+    try {
+      await api.put(`/sales/leads/${header.leadId}`, { lead_stage_id: 2 });
+      toast.success('Stage advanced', 'Moving to Lead Acknowledgement (Stage 2)…');
+      reloadLead?.();
+      onNext();
+    } catch (e: any) {
+      toast.error('Could not advance', e?.response?.data?.message ?? 'Network or server error — please try again.');
+    } finally {
+      setAdvancing(false);
+    }
+  };
 
   const orderValue = tm?.order_value != null
     ? formatINR(Number(tm.order_value))
@@ -122,10 +151,10 @@ export default function Stage1InquiryReceived({ header, onNext }: StageProps) {
         <button
           type="button"
           className="smd-stg-btn smd-stg-btn-primary"
-          onClick={onNext}
-          disabled={!tm?.name || !tm?.mobile_no || !tm?.email}
+          onClick={() => void onSaveAndNext()}
+          disabled={advancing || !tm?.name || !tm?.mobile_no || !tm?.email}
         >
-          Save &amp; Next →
+          {advancing ? 'Advancing…' : 'Save & Next →'}
         </button>
       </div>
     </>

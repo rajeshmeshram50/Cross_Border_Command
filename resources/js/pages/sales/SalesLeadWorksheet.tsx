@@ -28,6 +28,10 @@ type ServerLead = {
   qualified:         boolean;
   disqualified:      boolean;
   whatsapp_status:   string | null;
+  /* Saved progress — drives the resume-at-stage behaviour. Null/0 means the
+   * lead is fresh and lands on Stage 1; otherwise the worksheet opens the
+   * matrix detail at this stage so users pick up where they left off. */
+  lead_stage_id?:    number | null;
   salesperson?:      { id: number; name: string } | null;
 };
 
@@ -65,6 +69,9 @@ type Lead = {
   company: string;        // '—' for empty
   country: string;        // ISO-2 code
   status: LeadStatus;
+  /* Saved pipeline stage — clamped to 1..6 when the user clicks into the
+   * matrix detail page so they resume where they left off. */
+  leadStageId: number;
 };
 
 const TAB_LABELS: Record<TabKey, string> = {
@@ -140,6 +147,7 @@ const mapServerToLead = (r: ServerLead): Lead => {
     company:  r.sender_company || '—',
     country:  r.sender_country_iso || '—',
     status:   r.disqualified ? 'disqualified' : 'qualified',
+    leadStageId: Math.min(6, Math.max(1, Number(r.lead_stage_id) || 1)),
   };
 };
 
@@ -441,11 +449,13 @@ export default function SalesLeadWorksheet() {
   const onAssignLeads   = () => setAssignModal({ open: true, mode: 'filters' });
   const onAssignedLeads = () => navigate('/sales/lead-distribution');
   const onFilter        = () => setFilterOpen(true);
-  // Opens the Sales Matrix detail page (Stage 1) for this opportunity.
+  // Opens the Sales Matrix detail page for this opportunity at the lead's
+  // SAVED stage (resume-where-you-left-off). A brand-new lead at stage 1
+  // lands on Stage 1; a lead that advanced to 3 reopens at Stage 3, etc.
   // The clicked row travels in router state so the detail page can render
   // the customer header without a second fetch.
   const openMatrixDetail = (l: Lead) => {
-    navigate(`/sales/matrix/${l.oppId}/stage/1`, {
+    navigate(`/sales/matrix/${l.oppId}/stage/${l.leadStageId}`, {
       state: {
         row: {
           // Pass the DB id so Stage 1 / Task Manager can hit the API
@@ -478,6 +488,8 @@ export default function SalesLeadWorksheet() {
     // detail page falls back to a server fetch when state is missing.
     const lead = leads.find(l => l.oppId === oppId);
     if (lead) openMatrixDetail(lead);
+    // Outside the current page — fall back to stage 1; the matrix detail
+    // page's own fetch will redirect to the saved stage on load.
     else navigate(`/sales/matrix/${oppId}/stage/1`);
   };
   const onBulkAssign    = () => {

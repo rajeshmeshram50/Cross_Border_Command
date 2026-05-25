@@ -819,10 +819,15 @@ export default function AddVendorModal(props: {
             const docId = Number(ids[i]);
             if (!docId || map[docId]) continue;
             const signedEntry = Array.isArray(row.signed_document_paths) ? row.signed_document_paths[i] : null;
+            // Resolve via resolveFileUrl so the URL gets the right
+            // base prefix (VITE_API_URL on the deployed SPA, current
+            // origin in dev). Bare /storage/… relative URLs 404 when
+            // the SPA origin differs from the API host.
+            const rawSignedUrl = signedEntry?.url || signedEntry?.path || null;
             map[docId] = {
               status: row.status,
               signatureRequestId: row.id,
-              signedUrl: signedEntry?.url || (signedEntry?.path ? `/storage/${signedEntry.path}` : undefined),
+              signedUrl: rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
             };
           }
         }
