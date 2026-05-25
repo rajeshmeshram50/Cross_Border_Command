@@ -1110,11 +1110,14 @@ const CNEV_CSS = `
   flex: 1; min-height: 0; overflow-y: auto;
   padding: 18px 24px 22px;
   display: flex; flex-direction: column; gap: 14px;
-  scrollbar-width: thin;
+  /* Match the visible scrollbar pattern used by [[AddVendorModal]]'s
+     .avm-body so the rail is obvious when a tab's table grows past
+     the body. Solid emerald replaces the prior near-invisible rgba(.30). */
+  scrollbar-width: thin; scrollbar-color: #6ee7b7 transparent;
 }
 .cnev-body::-webkit-scrollbar { width: 8px; }
-.cnev-body::-webkit-scrollbar-thumb { background: rgba(16,185,129,.30); border-radius: 999px; }
-.cnev-body::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
+.cnev-body::-webkit-scrollbar-thumb { background: #6ee7b7; border-radius: 99px; }
+.cnev-body::-webkit-scrollbar-thumb:hover { background: #10b981; }
 
 .cnev-section {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -1151,7 +1154,13 @@ const CNEV_CSS = `
   overflow: hidden;
   scrollbar-width: thin;
   position: relative;
+  /* Don't let the flex column body squash this wrap below its
+     intrinsic height — without this, extra rows can be clipped at
+     the bottom and .cnev-body's overflow-y never trips, so the user
+     has no scrollbar to reach hidden documents. */
+  flex-shrink: 0;
 }
+.cnev-section { flex-shrink: 0; }
 .cnev-table-scroll {
   overflow-x: auto;
   overflow-y: visible;
@@ -1361,7 +1370,9 @@ const CNEV_CSS = `
 [data-bs-theme="dark"] .cnev-kpi-tile:hover { border-color: rgba(16,185,129,.45); box-shadow: 0 6px 18px rgba(0,0,0,0.40); }
 [data-bs-theme="dark"] .cnev-kpi-label { color: #94a3b8; }
 [data-bs-theme="dark"] .cnev-kpi-value { color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-body { background: #0c2218; }
+[data-bs-theme="dark"] .cnev-body { background: #0c2218; scrollbar-color: #047857 transparent; }
+[data-bs-theme="dark"] .cnev-body::-webkit-scrollbar-thumb { background: #047857; }
+[data-bs-theme="dark"] .cnev-body::-webkit-scrollbar-thumb:hover { background: #10b981; }
 [data-bs-theme="dark"] .cnev-section { background: linear-gradient(110deg, rgba(16,185,129,.14), rgba(110,231,183,.10)); border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .cnev-section-title { color: #d1fae5; }
 [data-bs-theme="dark"] .cnev-section-sub { color: #6ee7b7; }
