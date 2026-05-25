@@ -1732,6 +1732,17 @@ const SCOPED_CSS = `
 .prd-row-haz { padding: 2px 7px; border-radius: 6px; font-size: 9.5px; font-weight: 800; background: #fecaca; color: #b91c1c; border: 1px solid #f87171; }
 .prd-row-price { text-align: right; }
 .prd-row-actions { display: flex; align-items: center; gap: 6px; }
+/* List-view View button needs a visible border + tinted background — on
+ * a white row, the default near-transparent white-on-white styling that
+ * works against the grid card's dark hover overlay disappears entirely. */
+.prd-row-actions .prd-card-hover-btn {
+  background: #f5f3ff;
+  border-color: #c4b5fd;
+  color: #5b21b6;
+}
+.prd-row-actions .prd-card-hover-btn:hover { background: #ede9fe; border-color: #a78bfa; }
+.prd-row-actions .prd-card-hover-btn.primary { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; border-color: transparent; }
+.prd-row-actions .prd-card-hover-btn.danger { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
 
 /* Empty */
 .prd-empty {

@@ -1194,11 +1194,14 @@ const CEV_CSS = `
   flex: 1; min-height: 0; overflow-y: auto;
   padding: 18px 24px 22px;
   display: flex; flex-direction: column; gap: 14px;
-  scrollbar-width: thin;
+  /* Match the visible scrollbar pattern used by [[AddVendorModal]]'s
+     .avm-body so the rail is obvious when a tab's table grows past
+     the body. Solid violet replaces the prior near-invisible rgba(.30). */
+  scrollbar-width: thin; scrollbar-color: #c4b5fd transparent;
 }
 .cev-body::-webkit-scrollbar { width: 8px; }
-.cev-body::-webkit-scrollbar-thumb { background: rgba(124,58,237,.30); border-radius: 999px; }
-.cev-body::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.55); }
+.cev-body::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 99px; }
+.cev-body::-webkit-scrollbar-thumb:hover { background: #7c3aed; }
 
 .cev-section {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -1237,7 +1240,13 @@ const CEV_CSS = `
                                  paints over the corner radius */
   scrollbar-width: thin;
   position: relative;
+  /* Don't let the flex column body squash this wrap below its
+     intrinsic height — without this, extra rows can be clipped at
+     the bottom and .cev-body's overflow-y never trips, so the user
+     has no scrollbar to reach hidden documents. */
+  flex-shrink: 0;
 }
+.cev-section { flex-shrink: 0; }
 /* Inner scroll context for the table — own scrolling ancestor so
    the sticky thead pins inside the table, not against the outer
    body. Viewport-relative max-height so the table fills the
@@ -1468,7 +1477,9 @@ const CEV_CSS = `
 [data-bs-theme="dark"] .cev-kpi-tile:hover { border-color: rgba(124,58,237,.45); box-shadow: 0 6px 18px rgba(0,0,0,0.40); }
 [data-bs-theme="dark"] .cev-kpi-label { color: #94a3b8; }
 [data-bs-theme="dark"] .cev-kpi-value { color: #ede9fe; }
-[data-bs-theme="dark"] .cev-body { background: #1a1430; }
+[data-bs-theme="dark"] .cev-body { background: #1a1430; scrollbar-color: #6d28d9 transparent; }
+[data-bs-theme="dark"] .cev-body::-webkit-scrollbar-thumb { background: #6d28d9; }
+[data-bs-theme="dark"] .cev-body::-webkit-scrollbar-thumb:hover { background: #a78bfa; }
 [data-bs-theme="dark"] .cev-section { background: linear-gradient(110deg, rgba(124,58,237,.14), rgba(167,139,250,.10)); border-color: rgba(124,58,237,.30); }
 [data-bs-theme="dark"] .cev-section-title { color: #ede9fe; }
 [data-bs-theme="dark"] .cev-section-sub { color: #c4b5fd; }

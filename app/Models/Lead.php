@@ -36,11 +36,13 @@ class Lead extends Model
 
         'salesperson_id', 'customer_id', 'consignee_id', 'lead_ack_reason_id',
 
+        'won_at',
         'remark', 'price', 'created_by',
     ];
 
     protected $casts = [
         'query_time'      => 'datetime',
+        'won_at'          => 'datetime',
         'qualified'       => 'boolean',
         'disqualified'    => 'boolean',
         'key_opportunity' => 'boolean',

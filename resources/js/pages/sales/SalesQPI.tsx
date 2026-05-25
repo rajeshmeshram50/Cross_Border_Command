@@ -22,7 +22,7 @@ import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 type QPITab = 'quotation' | 'pi';
 type PISubTab = 'with' | 'without';
 
-type Quotation = {
+export type Quotation = {
   id?: number;         // server PK (undefined for legacy seed rows / new draft)
   qtNo: string;        // QT/2026-27/3
   qtDate: string;      // dd/mm/yyyy
@@ -1478,12 +1478,37 @@ function useQpiMasters(open: boolean): LoadedMasters {
  * Create Quotation Modal (2-step wizard)
  * ════════════════════════════════════════════════════════════════════════ */
 
-function CreateQuotationModal(props: { editId: number | null; onClose: () => void; onSubmit: () => void }) {
-  const { editId, onClose, onSubmit } = props;
+export type QpiInitialOpp = {
+  oppId:            number;
+  oppCode:          string;
+  oppDate?:         string;
+  customerLabel?:   string;
+  consigneeLabel?:  string;
+};
+
+export function CreateQuotationModal(props: {
+  editId: number | null;
+  initialOpp?: QpiInitialOpp;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  const { editId, initialOpp, onClose, onSubmit } = props;
   const isEdit = editId != null;
   const toast = useToast();
   const [step, setStep] = useState<1 | 2>(1);
-  const [form, setForm] = useState<BasicFormState>(EMPTY_BASIC);
+  /* If the modal was opened from inside a Sales Matrix lead, the parent
+   * passes the opportunity context so the user doesn't have to re-pick it
+   * from the Opportunity dropdown. The form is still freely editable —
+   * only the visible labels are pre-filled. */
+  const seededFromOpp: BasicFormState = initialOpp ? {
+    ...EMPTY_BASIC,
+    opportunity:     initialOpp.customerLabel ? `${initialOpp.oppCode} – ${initialOpp.customerLabel}` : initialOpp.oppCode,
+    opportunityDate: initialOpp.oppDate ?? '',
+    customer:        initialOpp.customerLabel ?? '',
+    consignee:       initialOpp.consigneeLabel ?? '',
+    oppId:           initialOpp.oppId,
+  } : EMPTY_BASIC;
+  const [form, setForm] = useState<BasicFormState>(seededFromOpp);
   /* Step-1 validation gate for the "Save & Next" button.
    * Server-required fields per QuotationController::validatePayload:
    *   - Always: doc_type, customer_id
@@ -1692,6 +1717,11 @@ function CreateQuotationModal(props: { editId: number | null; onClose: () => voi
     /* Backdrop is purely visual — closing only via the X / Cancel button
      * so accidental outside-clicks don't wipe an in-progress quote. */
     <div className="qpi-modal-backdrop">
+      {/* The QPI stylesheet lives at the bottom of this file and is injected
+       * once per modal mount so the modal renders correctly even when opened
+       * from outside the /sales/qpi workspace (e.g. Sales Matrix Stage 5).
+       * Duplicate <style> tags are inert when the workspace is also mounted. */}
+      <style>{SCOPED_CSS}</style>
       <div className="qpi-modal qpi-modal-teal">
         {/* Header (teal) — title + pills reflect create vs edit mode. */}
         <div className="qpi-modal-head qpi-modal-head-teal">
@@ -1796,8 +1826,16 @@ function CreateQuotationModal(props: { editId: number | null; onClose: () => voi
  * Create Proforma Invoice (PI) Modal (2-step wizard, purple theme)
  * ════════════════════════════════════════════════════════════════════════ */
 
-function CreatePIModal(props: { editId: number | null; source: Quotation | null; onClose: () => void; onSubmit: () => void }) {
-  const { editId, source, onClose, onSubmit } = props;
+export function CreatePIModal(props: {
+  editId: number | null;
+  source: Quotation | null;
+  /* Lead-scoped opening (from Sales Matrix Stage 5). Same shape as the
+   * Quotation modal — pre-fills the Opportunity dropdown. */
+  initialOpp?: QpiInitialOpp;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  const { editId, source, initialOpp, onClose, onSubmit } = props;
   const isEdit = editId != null;
   const toast = useToast();
   const [step, setStep] = useState<1 | 2>(1);
@@ -1810,8 +1848,16 @@ function CreatePIModal(props: { editId: number | null; source: Quotation | null;
   // When PI is created from an existing Quotation row, prefill the
   // visible labels from that row so the user sees what they're carrying
   // over. When opened standalone, start blank — the same opportunity /
-  // customer cascade fills the rest.
-  const seeded: BasicFormState = source ? {
+  // customer cascade fills the rest. When the matrix Stage 5 opens this
+  // modal, `initialOpp` takes precedence over `source` to lock the lead.
+  const seeded: BasicFormState = initialOpp ? {
+    ...EMPTY_BASIC,
+    opportunity:     initialOpp.customerLabel ? `${initialOpp.oppCode} – ${initialOpp.customerLabel}` : initialOpp.oppCode,
+    opportunityDate: initialOpp.oppDate ?? '',
+    customer:        initialOpp.customerLabel ?? '',
+    consignee:       initialOpp.consigneeLabel ?? '',
+    oppId:           initialOpp.oppId,
+  } : source ? {
     ...EMPTY_BASIC,
     opportunity:     source.oppId ? `${source.oppId} – ${source.customer}` : '',
     opportunityDate: source.oppDate ?? '',
@@ -2017,6 +2063,9 @@ function CreatePIModal(props: { editId: number | null; source: Quotation | null;
     /* Backdrop is purely visual — closing only via the X / Cancel button
      * so accidental outside-clicks don't wipe an in-progress quote. */
     <div className="qpi-modal-backdrop">
+      {/* Same scope CSS injection as the Quotation modal — keeps the PI
+       * modal styled regardless of where it's mounted. */}
+      <style>{SCOPED_CSS}</style>
       <div className="qpi-modal qpi-modal-purple">
         {/* Header (purple) — title + pills reflect create vs edit mode. */}
         <div className="qpi-modal-head qpi-modal-head-purple">
@@ -2351,7 +2400,8 @@ function BasicForm(props: {
           <MasterSelect
             key={`opp-${filteredOpportunities.length}`}
             value={form.opportunity}
-            placeholder={masters.loading ? 'Loading opportunities…' : '— Select Opportunity —'}
+            loading={masters.loading}
+            placeholder="— Select Opportunity —"
             options={withCurrent(filteredOpportunities, form.opportunity)}
             onChange={onOpportunityChange}
           />
@@ -2364,7 +2414,8 @@ function BasicForm(props: {
           <MasterSelect
             key={`cust-${masters.customers.length}`}
             value={form.customer}
-            placeholder={masters.loading ? 'Loading customers…' : '— Select Customer —'}
+            loading={masters.loading}
+            placeholder="— Select Customer —"
             options={withCurrent(masters.customers, form.customer)}
             onChange={(v) => { onCustomerChange(v); if (v) clearError?.('customer'); }}
           />
@@ -2373,13 +2424,12 @@ function BasicForm(props: {
           <MasterSelect
             key={`cons-${filteredConsignees.length}-${form.customer}`}
             value={form.consignee}
-            placeholder={masters.loading
-              ? 'Loading consignees…'
-              : (form.customer
-                  ? (filteredConsignees.length === 0
-                      ? 'No consignees for this customer'
-                      : '— Select Consignee —')
-                  : '— Select Consignee —')}
+            loading={masters.loading}
+            placeholder={form.customer
+              ? (filteredConsignees.length === 0
+                  ? 'No consignees for this customer'
+                  : '— Select Consignee —')
+              : '— Select Consignee —'}
             options={withCurrent(filteredConsignees, form.consignee)}
             onChange={onConsigneeChange}
           />
@@ -2388,6 +2438,7 @@ function BasicForm(props: {
           <MasterSelect
             key={`bank-${masters.banks.length}`}
             value={form.bankName}
+            loading={masters.loading}
             placeholder="— Select Bank —"
             options={withCurrent(masters.banks, form.bankName)}
             onChange={onBankChange}
@@ -2403,7 +2454,8 @@ function BasicForm(props: {
             <MasterSelect
               key={`st-${masters.states.length}`}
               value={form.stateCode}
-              placeholder={masters.loading ? 'Loading…' : '— Select State —'}
+              loading={masters.loading}
+              placeholder="— Select State —"
               options={withCurrent(masters.states, form.stateCode)}
               onChange={(v) => set('stateCode', v)}
             />
@@ -2414,7 +2466,8 @@ function BasicForm(props: {
               <MasterSelect
                 key={`cur-${masters.currencies.length}`}
                 value={form.currency}
-                placeholder={masters.loading ? 'Loading…' : '— Select Currency —'}
+                loading={masters.loading}
+                placeholder="— Select Currency —"
                 options={withCurrent(masters.currencies, form.currency)}
                 onChange={(v) => set('currency', v)}
               />
@@ -2426,7 +2479,8 @@ function BasicForm(props: {
               <MasterSelect
                 key={`inco-${masters.incoterms.length}`}
                 value={form.incoTerm}
-                placeholder={masters.loading ? 'Loading…' : '— Select INCO Term —'}
+                loading={masters.loading}
+                placeholder="— Select INCO Term —"
                 options={withCurrent(masters.incoterms, form.incoTerm)}
                 onChange={(v) => set('incoTerm', v)}
               />
@@ -2436,7 +2490,8 @@ function BasicForm(props: {
               <MasterSelect
                 key={`pol-${masters.ports.length}`}
                 value={form.portOfLoading}
-                placeholder={masters.loading ? 'Loading…' : '— Select Port —'}
+                loading={masters.loading}
+                placeholder="— Select Port —"
                 options={withCurrent(masters.ports, form.portOfLoading)}
                 onChange={(v) => set('portOfLoading', v)}
               />
@@ -2445,7 +2500,8 @@ function BasicForm(props: {
               <MasterSelect
                 key={`pod-${masters.ports.length}`}
                 value={form.portOfDischarge}
-                placeholder={masters.loading ? 'Loading…' : '— Select Port —'}
+                loading={masters.loading}
+                placeholder="— Select Port —"
                 options={withCurrent(masters.ports, form.portOfDischarge)}
                 onChange={(v) => set('portOfDischarge', v)}
               />
@@ -2463,7 +2519,8 @@ function BasicForm(props: {
               <MasterSelect
                 key={`oc-${masters.countries.length}`}
                 value={form.originCountry}
-                placeholder={masters.loading ? 'Loading…' : '— Select Country —'}
+                loading={masters.loading}
+                placeholder="— Select Country —"
                 options={withCurrent(masters.countries, form.originCountry)}
                 onChange={(v) => set('originCountry', v)}
               />

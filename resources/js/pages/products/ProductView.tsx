@@ -381,7 +381,7 @@ export default function ProductView() {
                       {qcUploads.map((q, i) => (
                         <tr key={q.id}>
                           <td>{String(i + 1).padStart(2, '0')}</td>
-                          <td><span className="badge bg-light text-dark border">{q.doc_code}</span></td>
+                          <td><span className="pv2-qc-code">{q.doc_code}</span></td>
                           <td><strong>{q.doc_name}</strong></td>
                           <td>
                             <span className={`badge ${q.requirement === 'M' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`}>
@@ -948,6 +948,21 @@ const SCOPED_CSS = `
 }
 .pv2-attach-link:hover { color: #3730a3; text-decoration: underline; }
 
+/* QC Auto-Code badge — Bootstrap's bg-light/text-dark goes muddy on the
+ * dark-theme card (light grey on near-black) and the code becomes hard
+ * to read. Custom class so the dark-mode override below can give it
+ * proper contrast. */
+.pv2-qc-code {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11.5px; font-weight: 700;
+  font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+  letter-spacing: 0.02em;
+  background: #f3f4f6; color: #1f2937;
+  border: 1px solid #e5e7eb;
+}
+
 @media (max-width: 1200px) {
   .pv2-top-grid { grid-template-columns: 1fr; }
   .pv2-bottom   { grid-template-columns: 1fr; }
@@ -1002,6 +1017,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .pv2-vendor-remarks-text { color: #ced4da; }
 [data-bs-theme="dark"] .pv2-attach-link { color: #a8b6e9; }
 [data-bs-theme="dark"] .pv2-attach-link:hover { color: #c4b5fd; }
+[data-bs-theme="dark"] .pv2-qc-code {
+  background: rgba(139, 92, 246, .18);
+  color: #ddd6fe;
+  border-color: rgba(167, 139, 250, .35);
+}
 [data-bs-theme="dark"] .pv2-status.is-active { background: rgba(34,197,94,.12); color: #4ade80; border-color: rgba(34,197,94,.3); }
 [data-bs-theme="dark"] .pv2-status.is-inactive { background: rgba(245,158,11,.12); color: #fcd34d; border-color: rgba(245,158,11,.3); }
 `;

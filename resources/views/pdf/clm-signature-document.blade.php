@@ -158,7 +158,16 @@
       /* SIGNATURE BOX — visual scaffolding for the signature placeholders
        * in the draft body. Zoho overlays the real signature widget at the
        * (x, y) coords sent in the submit payload; this box just shows the
-       * signer WHERE the widget will land in the rendered output. */
+       * signer WHERE the widget will land in the rendered output.
+       *
+       * `position: relative` anchors the absolutely-positioned .sig-marker
+       * to the box's top-left corner. Without this the marker would sit
+       * inside the centred text flow (text-align: center) and PDF.js
+       * would report its baseline at roughly (box_left + 60pt) instead
+       * of (box_left), pushing the Zoho field to the right of the box.
+       * That was the "Vendor signature lands above and to the right"
+       * bug — Customer drafts happened to use a left-aligned context so
+       * the centre-shift was zero, masking the issue. */
       .sig-box {
         display: inline-block;
         width: 220px; height: 80px;
@@ -168,11 +177,21 @@
         text-align: center;
         padding: 32px 0;
         vertical-align: middle;
+        position: relative;
       }
       /* Detection marker — rendered at 0.5pt in near-white so it sits in
        * the PDF text stream (where PDF.js can find it from the send modal)
-       * without being visible to humans. */
-      .sig-marker { font-size: 0.5pt; color: #fefefe; letter-spacing: 0; }
+       * without being visible to humans. Absolute positioning pins the
+       * marker text to the box's top-left corner so its detected
+       * (x, y) is the box's top-left regardless of how the surrounding
+       * draft paragraph is aligned. */
+      .sig-marker {
+        font-size: 0.5pt; color: #fefefe; letter-spacing: 0;
+        position: absolute;
+        top: 0;
+        left: 0;
+        line-height: 1;
+      }
     </style>
   </head>
 

@@ -657,6 +657,58 @@ function MasterPageInner({
           continue;
         }
       }
+      /* ── Security validators (text + textarea only) ──────────────
+       * XSS — angle brackets never legitimately appear in master
+       * names, descriptions, codes, etc. Blocking them at the form
+       * boundary kills <script>…</script>, <img onerror=…>, and
+       * every other HTML-injection payload regardless of which master
+       * is being edited.
+       *
+       * SQL injection — block the signature patterns a tester would
+       * paste (' OR 1=1 --, ; DROP …, UNION SELECT, javascript:,
+       * inline event handlers). Backend ORM already parameterises
+       * queries, but rejecting the payload up front prevents the
+       * data from being stored verbatim and surfacing later in
+       * exports / reports.
+       *
+       * Meaningful input — required free-text fields can be bypassed
+       * by submitting "...", "!!!", "---", or other symbol-only
+       * strings (raw.trim() leaves them non-empty). Require at least
+       * one letter or digit so "Segment Name" can't be saved as ":::".
+       *
+       * Name whitelist — per-slug list of fields that must stay in a
+       * conservative letters/digits/space/basic-punctuation charset
+       * (covers Segment Name, UOM Title & Short Code, Condition
+       * Title, Haz Class Name, Packaging Material). Other free-text
+       * fields (descriptions, addresses, action-required notes,
+       * incoterm full names) keep their broader charset. */
+      if (f.t === 'text' || f.t === 'textarea') {
+        if (/[<>]/.test(raw)) {
+          errs[f.n] = `${f.l} cannot contain HTML characters (< or >)`;
+          continue;
+        }
+        if (/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i.test(raw)) {
+          errs[f.n] = `${f.l} contains disallowed patterns (possible SQL/JS injection)`;
+          continue;
+        }
+        if (f.r && !/[A-Za-z0-9]/.test(raw)) {
+          errs[f.n] = `${f.l} must contain meaningful text (letters or numbers, not only symbols)`;
+          continue;
+        }
+        const NAME_FIELDS_BY_SLUG: Record<string, string[]> = {
+          segments: ['title'],
+          conditions: ['title'],
+          haz_class: ['name'],
+          packaging_material: ['title'],
+          uom: ['title', 'short_code'],
+        };
+        if (NAME_FIELDS_BY_SLUG[cfg.slug]?.includes(f.n)) {
+          if (!/^[A-Za-z0-9\s\-.,()&/'%]+$/.test(raw)) {
+            errs[f.n] = `${f.l} may only contain letters, numbers, spaces, and . , - ( ) & / ' %`;
+            continue;
+          }
+        }
+      }
       // Future-only date guard — kicks in for fields like Warranty
       // Expiry where a backdated value doesn't make sense. Lexical
       // YYYY-MM-DD compare is fine because that's what the picker
@@ -699,6 +751,18 @@ function MasterPageInner({
          * rule (^[0-9]{4,10}$) so the user sees an instant inline error
          * instead of a server-side 422 round-trip. */
         errs[f.n] = 'Invalid HSN / SAC — 4 to 10 digit numeric code';
+      } else if (cfg.slug === 'hsn_codes' && f.n === 'description') {
+        /* HSN/SAC commodity descriptions are short product names like
+         * "Almonds — Shelled" or "Sesame Seeds, Whole". Allow letters,
+         * digits, spaces, and the punctuation real descriptions actually
+         * use (hyphen, em/en dash, period, comma, parentheses, ampersand,
+         * slash, apostrophe, percent). Block everything else so a user
+         * can't paste markup, control characters, or symbol soup. */
+        if (!/^[A-Za-z0-9\s\-—–.,()&/'%]+$/.test(raw)) {
+          errs[f.n] = "Description may only contain letters, numbers, spaces, and . , - ( ) & / ' %";
+        } else if (raw.length > 150) {
+          errs[f.n] = 'Description must be 150 characters or fewer';
+        }
       }
     }
     return errs;

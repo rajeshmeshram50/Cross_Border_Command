@@ -398,6 +398,17 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/sales/proforma-invoices/{id}',                              [ProformaInvoiceController::class, 'update'])->whereNumber('id');
     Route::delete('/sales/proforma-invoices/{id}',                              [ProformaInvoiceController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/sales/proforma-invoices/{id}/duplicate',                    [ProformaInvoiceController::class, 'duplicate'])->whereNumber('id');
+
+    // Sales Matrix → Stage 6 (Victory) → Shipment Order. One per won
+    // opportunity. Ported from IDIMS's `bt` (Business Task) module.
+    Route::post('/sales/shipment-orders',
+        [\App\Http\Controllers\Api\ShipmentOrderController::class, 'store']);
+    Route::get ('/sales/shipment-orders/{id}',
+        [\App\Http\Controllers\Api\ShipmentOrderController::class, 'show'])->whereNumber('id');
+    Route::post('/sales/shipment-orders/{id}',
+        [\App\Http\Controllers\Api\ShipmentOrderController::class, 'update'])->whereNumber('id');
+    Route::get ('/sales/leads/{leadId}/shipment-order',
+        [\App\Http\Controllers\Api\ShipmentOrderController::class, 'getByLead'])->whereNumber('leadId');
     // Stage 1 → Task Manager save (multipart for the optional attachment).
     // POST + _method=PUT-friendly: accepts both POST and PUT since file
     // uploads under PUT can't be parsed by PHP without enableHttpMethodParameterOverride.
