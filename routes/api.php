@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\EmployeeDocumentController;
 use App\Http\Controllers\Api\ExitController;
 use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
+use App\Http\Controllers\Api\ProcurementController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
@@ -393,6 +394,23 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
         [SalesLeadController::class, 'updateLeadProduct'])->whereNumber('id')->whereNumber('mapping');
     Route::delete('/sales/leads/{id}/products/{mapping}',
         [SalesLeadController::class, 'destroyLeadProduct'])->whereNumber('id')->whereNumber('mapping');
+
+    // Stage 3 (Product Sourcing) — per-row sourcing status + mark-sourced
+    // action. These are the IDIMS "set sourcing_status" + "mark as done"
+    // operations on the lead⇄product mapping, scaled down to CBC's model.
+    Route::patch('/sales/leads/{id}/products/{mapping}/sourcing-status',
+        [SalesLeadController::class, 'updateLeadProductSourcingStatus'])
+        ->whereNumber('id')->whereNumber('mapping');
+    Route::patch('/sales/leads/{id}/products/{mapping}/mark-sourced',
+        [SalesLeadController::class, 'markLeadProductSourced'])
+        ->whereNumber('id')->whereNumber('mapping');
+
+    // Stage 3 → Create Procurement modal posts here. Multi-tenant via
+    // client_id; see ProcurementController for the body shape.
+    Route::get   ('/procurements/next-number', [ProcurementController::class, 'nextNumber']);
+    Route::get   ('/procurements',             [ProcurementController::class, 'index']);
+    Route::post  ('/procurements',             [ProcurementController::class, 'store']);
+    Route::get   ('/procurements/{id}',        [ProcurementController::class, 'show'])->whereNumber('id');
 
     // Sales Matrix → Productivity Tracker (/sales/todo). Two parallel
     // sub-resources behind one controller — reminders + meetings — with

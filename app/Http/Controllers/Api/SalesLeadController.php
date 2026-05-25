@@ -10,6 +10,8 @@ use App\Models\LeadAckReason;
 use App\Models\LeadAcknowledgement;
 use App\Models\LeadProduct;
 use App\Models\LeadTaskManager;
+use App\Models\Procurement;
+use App\Models\ProcurementProduct;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\IndiaMartLeadSyncService;
@@ -667,25 +669,136 @@ class SalesLeadController extends Controller
         $rows = LeadProduct::with(['product:id,product_code,name,status'])
             ->where('lead_id', $lead->id)
             ->orderByDesc('id')
-            ->get()
-            ->map(fn ($r) => [
-                'id'             => $r->id,
-                'product_id'     => $r->product_id,
-                'product_code'   => $r->product?->product_code,
-                'product_name'   => $r->product?->name,
-                'product_status' => $r->product?->status,
-                'currency'       => $r->currency,
-                'quantity'       => $r->quantity,
-                'target_price'   => $r->target_price,
-                'notes'          => $r->notes,
-                'created_at'     => $r->created_at,
-            ]);
+            ->get();
 
-        return response()->json(['status' => true, 'data' => $rows]);
+        // Latest procurement_id per lead_product (Stage 3 Required tab uses
+        // this to swap the row between "select to procure" and "Mark Sourced").
+        $procByLeadProduct = ProcurementProduct::query()
+            ->whereIn('lead_product_id', $rows->pluck('id'))
+            ->orderByDesc('id')
+            ->get()
+            ->groupBy('lead_product_id')
+            ->map(fn ($g) => $g->first()->procurement_id);
+
+        $mapped = $rows->map(fn ($r) => [
+            'id'               => $r->id,
+            'product_id'       => $r->product_id,
+            'product_code'     => $r->product?->product_code,
+            'product_name'     => $r->product?->name,
+            'product_status'   => $r->product?->status,
+            'currency'         => $r->currency,
+            'quantity'         => $r->quantity,
+            'target_price'     => $r->target_price,
+            'notes'            => $r->notes,
+            'sourcing_status'  => $r->sourcing_status,
+            'procurement_done' => (bool) $r->procurement_done,
+            'procurement_id'   => $procByLeadProduct[$r->id] ?? null,
+            'created_at'       => $r->created_at,
+        ]);
+
+        return response()->json(['status' => true, 'data' => $mapped]);
     }
 
     /* ─────────────────────────────────────────────────────────────────
-     *  LEAD PRODUCTS — POST /sales/leads/{lead}/products
+     *  LEAD PRODUCTS — PATCH /sales/leads/{lead}/products/{mapping}/sourcing-status
+     *
+     *  Stage 3 sub-flow. Salesperson labels each mapped product as
+     *  `required` (needs procurement) or `not_required`. The business
+     *  rule mirrors IDIMS: inactive / draft product masters cannot be
+     *  marked not_required — they have no current selling price so they
+     *  always need procurement before they can be quoted.
+     * ───────────────────────────────────────────────────────────────── */
+    public function updateLeadProductSourcingStatus(Request $request, int $leadId, int $mappingId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $row = LeadProduct::with('product:id,status')
+            ->where('lead_id', $lead->id)
+            ->findOrFail($mappingId);
+
+        $data = $request->validate([
+            'sourcing_status' => 'required|in:required,not_required',
+        ]);
+
+        $productStatus = strtolower((string) ($row->product?->status ?? ''));
+        if (in_array($productStatus, ['inactive', 'draft'], true)
+            && $data['sourcing_status'] !== 'required'
+        ) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Inactive or draft products must be marked Sourcing Required',
+            ], 422);
+        }
+
+        $row->update([
+            'sourcing_status'  => $data['sourcing_status'],
+            // Flipping to "not required" wipes any prior mark-sourced state
+            // so the row can't sneak past Stage 4 gating later.
+            'procurement_done' => $data['sourcing_status'] === 'required'
+                ? $row->procurement_done
+                : false,
+        ]);
+
+        return response()->json(['status' => true, 'data' => [
+            'id'               => $row->id,
+            'sourcing_status'  => $row->sourcing_status,
+            'procurement_done' => (bool) $row->procurement_done,
+        ]]);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  LEAD PRODUCTS — PATCH /sales/leads/{lead}/products/{mapping}/mark-sourced
+     *
+     *  Equivalent to IDIMS's "Mark as Done" on product_directories. Only
+     *  meaningful on rows already labelled sourcing_status = required. We
+     *  don't yet have a procurement-orders module in CBC, so the action
+     *  collapses to a single boolean flip — the IDIMS gate on vendor
+     *  mapping has no analogue here and is deliberately omitted.
+     * ───────────────────────────────────────────────────────────────── */
+    public function markLeadProductSourced(Request $request, int $leadId, int $mappingId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
+
+        if ($row->sourcing_status !== 'required') {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Only Sourcing Required products can be marked sourced',
+            ], 422);
+        }
+
+        // Mirror IDIMS: cannot mark sourced unless a procurement has been
+        // created for this row (Sourcing Required + procurement linked).
+        $hasProcurement = ProcurementProduct::where('lead_product_id', $row->id)->exists();
+        if (!$hasProcurement) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Create a procurement for this product before marking it sourced',
+            ], 422);
+        }
+
+        $row->update(['procurement_done' => true]);
+
+        return response()->json(['status' => true, 'data' => [
+            'id'               => $row->id,
+            'sourcing_status'  => $row->sourcing_status,
+            'procurement_done' => true,
+        ]]);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  LEAD PRODUCTcheS — POST /sales/leads/{lead}/products
      *
      *  Map a product master to this lead. The composite unique on
      *  (lead_id, product_id) prevents duplicates; the controller pre-

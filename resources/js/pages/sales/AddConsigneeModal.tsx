@@ -2965,20 +2965,32 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                   <td style={{ color: '#9ca3af', fontWeight: 600 }}>{i + 1}</td>
                   <td style={{ fontWeight: 600, color: '#1f2937' }}>{d.name}</td>
                   <td>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} />
-                      <button
-                        type="button"
-                        onClick={() => onSend(d.id)}
-                        style={{
-                          padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
-                          background: d.sent ? '#f1f5f9' : '#4338ca',
-                          color: d.sent ? '#475569' : '#fff',
-                          border: '1px solid ' + (d.sent ? '#cbd5e1' : '#4338ca'),
-                          cursor: 'pointer',
-                        }}
-                      >{d.sent ? 'Resend' : 'Send'}</button>
-                    </div>
+                    {(() => {
+                      // Once `completed` the signer has finished — a
+                      // Resend would create a brand-new request against
+                      // the archived PDF. Lock the button + checkbox.
+                      // declined / recalled / expired stay re-sendable.
+                      const isSigned = d.status === 'completed';
+                      return (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                          <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} disabled={isSigned} />
+                          <button
+                            type="button"
+                            onClick={() => { if (!isSigned) onSend(d.id); }}
+                            disabled={isSigned}
+                            title={isSigned ? 'This document has already been signed.' : (d.sent ? 'Resend for signature' : 'Send for signature')}
+                            style={{
+                              padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                              background: isSigned ? '#f1f5f9' : (d.sent ? '#f1f5f9' : '#4338ca'),
+                              color:      isSigned ? '#94a3b8' : (d.sent ? '#475569' : '#fff'),
+                              border: '1px solid ' + (isSigned ? '#e2e8f0' : (d.sent ? '#cbd5e1' : '#4338ca')),
+                              cursor: isSigned ? 'not-allowed' : 'pointer',
+                              opacity: isSigned ? 0.6 : 1,
+                            }}
+                          >{d.sent ? 'Resend' : 'Send'}</button>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td>
                     <span style={{
@@ -3031,7 +3043,7 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
         </table>
       </div>
       {docs.length > 0 && (
-        <div style={{ display: 'flex', gap: 10, padding: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, padding: 14 }}>
           <button
             type="button"
             onClick={onSendSelected}
