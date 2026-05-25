@@ -247,17 +247,33 @@ class ZohoSignService
                     // floats like 380.74832749827493, so round to whole pts
                     // before serialising. Sub-point precision is invisible
                     // to a signer anyway.
+                    //
+                    // Y-axis convention — Zoho Sign anchors the signature
+                    // field at its BOTTOM-LEFT (y_coord = pt-distance from
+                    // page top to the field's lower edge). The SPA drag
+                    // overlay treats (x, y) as the TOP-LEFT of the box,
+                    // which is also how the placeholder text on the PDF
+                    // is positioned. If we sent y unchanged, the signature
+                    // would render with its TOP at (y - height), i.e.
+                    // ~height pt ABOVE the dragged position. Offsetting
+                    // by +abs_height anchors the field's BOTTOM at
+                    // y + height, putting the field's TOP exactly at the
+                    // dragged y — matching the user's WYSIWYG intent.
+                    $xPt = (float) ($c['x']      ?? self::DEFAULT_FIELD_X);
+                    $yPt = (float) ($c['y']      ?? self::DEFAULT_FIELD_Y);
+                    $wPt = (float) ($c['width']  ?? self::DEFAULT_FIELD_WIDTH);
+                    $hPt = (float) ($c['height'] ?? self::DEFAULT_FIELD_HEIGHT);
                     $fields[] = [
                         'document_id'     => $docId,
                         'field_name'      => 'Signature_' . ($aIdx + 1) . '_' . ($dIdx + 1),
                         'field_label'     => 'Signature',
                         'field_type_name' => 'Signature',
                         'field_category'  => 'image',
-                        'x_coord'         => (int) round((float) ($c['x']      ?? self::DEFAULT_FIELD_X)),
-                        'y_coord'         => (int) round((float) ($c['y']      ?? self::DEFAULT_FIELD_Y)),
-                        'abs_width'       => (int) round((float) ($c['width']  ?? self::DEFAULT_FIELD_WIDTH)),
-                        'abs_height'      => (int) round((float) ($c['height'] ?? self::DEFAULT_FIELD_HEIGHT)),
-                        'page_no'         => (int)        ($c['page']   ?? self::DEFAULT_FIELD_PAGE),
+                        'x_coord'         => (int) round($xPt),
+                        'y_coord'         => (int) round($yPt + $hPt),
+                        'abs_width'       => (int) round($wPt),
+                        'abs_height'      => (int) round($hPt),
+                        'page_no'         => (int) ($c['page'] ?? self::DEFAULT_FIELD_PAGE),
                         'is_mandatory'    => true,
                     ];
                 }

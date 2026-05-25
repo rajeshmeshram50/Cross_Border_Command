@@ -336,6 +336,39 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
    * (all currently-checked ids) both write to this state. */
   const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
 
+  /* Resend cooldown — Zoho's remind API operates per-REQUEST (one request
+   * may bundle 1..10 docs), so clicking Resend on any row in a bundle
+   * triggers ONE email covering every unsigned doc in that request.
+   * To stop a 3-doc bundle from triggering 3 reminder emails, every
+   * successful remind seeds a 60-second cooldown keyed by zoho-side
+   * signature_request_id; the Resend button on every sibling row in
+   * the same bundle disables for the cooldown window.
+   *
+   * Stored as { signature_request_id: expiresAtMs }. A self-pruning
+   * setTimeout schedules cleanup at the earliest expiry; the resulting
+   * state change re-renders the table so the button auto-enables. */
+  const [recentReminds, setRecentReminds] = useState<Record<number, number>>({});
+  useEffect(() => {
+    const expiries = Object.values(recentReminds);
+    if (expiries.length === 0) return;
+    const earliest = Math.min(...expiries);
+    const wait = Math.max(50, earliest - Date.now() + 50);
+    const id = window.setTimeout(() => {
+      setRecentReminds(prev => {
+        const now = Date.now();
+        const fresh: Record<number, number> = {};
+        for (const k in prev) if (prev[k] > now) fresh[+k] = prev[k];
+        return fresh;
+      });
+    }, wait);
+    return () => window.clearTimeout(id);
+  }, [recentReminds]);
+  const isReminderCooldown = (reqId?: number): boolean => !!reqId && (recentReminds[reqId] ?? 0) > Date.now();
+  const reminderCooldownSeconds = (reqId?: number): number => {
+    if (!reqId) return 0;
+    return Math.max(0, Math.ceil(((recentReminds[reqId] ?? 0) - Date.now()) / 1000));
+  };
+
   /* Signature-request status, keyed by clm_trade_doc_library.id. Hydrated
    * from /clm/signature-requests?party_id=N and refreshed every 15s while
    * the user is on the Stage 3 Trade Documents tab. The poller passes
@@ -1336,7 +1369,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           )}
           {stage === 3 && !hydrating && evTab === 'trade-documents' && (
             <Stage3TradeDocs
-              docs={tdDocs}
+              docs={tdDocs.map(d => ({ ...d, cooldownActive: isReminderCooldown(d.signature_request_id) }))}
               onToggle={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, selected: !d.selected } : d))}
               onToggleAll={(checked) => setTdDocs(prev => prev.map(d => ({ ...d, selected: checked })))}
               onSend={(id) => {
@@ -1347,6 +1380,40 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
                 }
                 if (!(customer?.db_id || savedDbId)) {
                   toast.info('Save customer first', 'Save the customer before sending documents for signature.');
+                  return;
+                }
+                /* Resend semantics — when the doc is already sitting in
+                 * Zoho `inprogress`, the user clicking "Resend" wants to
+                 * NUDGE the existing signer, not re-pick recipients +
+                 * re-position the signature. Hit the remind endpoint
+                 * directly (same flow New_IDIMS_6.0 uses) and toast.
+                 * For declined / recalled / expired / never-sent rows
+                 * fall through to the wizard so the user can re-cast a
+                 * fresh request.
+                 *
+                 * Bundle handling — Zoho's remind API operates per-
+                 * REQUEST; a 3-doc bundle gets ONE email when any of
+                 * its rows is reminded. We seed a 60s cooldown on the
+                 * signature_request_id so accidentally clicking
+                 * Resend on the other two rows in the bundle doesn't
+                 * fire three reminder emails. */
+                const reqId = row.signature_request_id;
+                if (row.sent && reqId && row.status === 'inprogress') {
+                  if (isReminderCooldown(reqId)) {
+                    toast.info('Already reminded', `One reminder covers every document in this bundle. Try again in ${reminderCooldownSeconds(reqId)}s.`);
+                    return;
+                  }
+                  const bundleCount = tdDocs.filter(d => d.signature_request_id === reqId).length;
+                  api.post(`/clm/signature-requests/${reqId}/remind`)
+                    .then(() => {
+                      setRecentReminds(prev => ({ ...prev, [reqId]: Date.now() + 60_000 }));
+                      toast.success('Reminder sent',
+                        bundleCount > 1
+                          ? `The signer was notified about all ${bundleCount} documents in this signature request.`
+                          : 'The signer has been notified.',
+                      );
+                    })
+                    .catch(err => toast.error('Reminder failed', err?.response?.data?.message ?? 'Could not send the reminder. Try again later.'));
                   return;
                 }
                 setSendForSignature([row.db_id]);
@@ -2511,6 +2578,11 @@ type TdDocRow = {
   status?: TdSigStatus;
   signature_request_id?: number;
   signed_url?: string;
+  /* Set by the parent right before rendering — true when this row's
+   * signature_request_id is inside the active 60-second Resend
+   * cooldown. The button disables to stop a multi-doc bundle from
+   * firing one reminder per doc. */
+  cooldownActive?: boolean;
 };
 
 const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: string }> = {
@@ -2567,6 +2639,8 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                       // the user can retry with a different recipient or
                       // window.
                       const isSigned = d.status === 'completed';
+                      const onCooldown = !!d.cooldownActive;
+                      const resendLocked = isSigned || onCooldown;
                       return (
                         <div className="acm-td-cell-check">
                           <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} disabled={isSigned} />
@@ -2574,13 +2648,17 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                             <button
                               type="button"
                               className="acm-btn-resend"
-                              onClick={() => { if (!isSigned) onSend(d.id); }}
-                              disabled={isSigned}
-                              title={isSigned ? 'This document has already been signed.' : 'Resend for signature'}
-                              style={isSigned ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                              onClick={() => { if (!resendLocked) onSend(d.id); }}
+                              disabled={resendLocked}
+                              title={
+                                isSigned   ? 'This document has already been signed.'
+                                : onCooldown ? 'Reminder just sent — one reminder covers every document in this bundle.'
+                                : 'Resend for signature'
+                              }
+                              style={resendLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                             >
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
-                              Resend
+                              {onCooldown ? 'Sent ✓' : 'Resend'}
                             </button>
                           ) : (
                             <button type="button" className="acm-btn-send" onClick={() => onSend(d.id)}>

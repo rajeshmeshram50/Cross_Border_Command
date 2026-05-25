@@ -221,11 +221,15 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::delete('/clm/trade-doc-names/{id}', [ClmTradeDocumentController::class, 'namesDestroy']);
     Route::get   ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryIndex']);
     Route::post  ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryStore']);
-    Route::put   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryUpdate']);
-    Route::delete('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryDestroy']);
+    // Static-path endpoints declared BEFORE `{id}` so Laravel's router
+    // doesn't treat `upload-header-logo` / `for-party` as numeric ids
+    // and reject the request with 405 against the PUT/DELETE handlers.
+    Route::post  ('/clm/trade-doc-library/upload-header-logo',[ClmTradeDocumentController::class, 'uploadHeaderLogo']);
     Route::get   ('/clm/trade-doc-library/for-party/{party}', [ClmTradeDocumentController::class, 'libraryForParty']);
-    Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx']);
-    Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx']);
+    Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx'])->whereNumber('id');
+    Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx'])->whereNumber('id');
+    Route::put   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryUpdate'])->whereNumber('id');
+    Route::delete('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryDestroy'])->whereNumber('id');
 
     // Central CLM → Trade Documents → Send for Signature (Zoho Sign).
     // The preview endpoint renders the merged PDF without calling Zoho so the
@@ -313,6 +317,17 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // flag that picks between the two More-Options variants. Returns the PDF
     // inline so the page can preview it in a new tab via blob URL.
     Route::post  ('/sales/pi/preview-pdf',         [SalesPdfController::class, 'previewPi']);
+
+    // Sales Matrix → QUOTATION DOCUMENT PDF preview. Per-quotation variant —
+    // loads the real Quotation row (with items + branch + bank + parties) and
+    // renders the same Blade template with branch-derived letterhead. The
+    // `signature=1` body flag picks the with-signature variant.
+    Route::post  ('/sales/quotations/{id}/preview-pdf', [SalesPdfController::class, 'previewQuotation']);
+
+    // Sales Matrix → PROFORMA INVOICE PDF preview. Mirror of the Quotation
+    // variant — loads the real PI row, same branch letterhead, same template,
+    // labels swap to "PI No / PI Date".
+    Route::post  ('/sales/proforma-invoices/{id}/preview-pdf', [SalesPdfController::class, 'previewProformaInvoice']);
 
     // Sales Matrix → Leads (My Workplace). Three feeders write here:
     //   - POST /sales/leads        manual capture (Add New Lead modal)

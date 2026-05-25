@@ -285,22 +285,30 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
      * yet, errors out, or the customer has no db_id. */
     const base = data ?? vaultLive ?? buildDemoVault(customer);
     if (!base) return null;
-    // Inject Zoho Sign rows into the Trade Documents tab. Each signed
+    // Trade Documents tab is SIGNATURE-ONLY — segment-rule "expected TD"
+    // rows (rendered with manual Upload buttons by the /segment-uploads
+    // vault endpoint) are explicitly dropped, since a trade document
+    // only enters this tab via the Zoho Sign send flow. Each signed
     // row carries its own `certificate_url` (one cert per request,
     // attached to every doc-row in that request) so the Actions
     // column renders a Certificate-of-Completion button alongside
     // View/Download — mirrors New_IDIMS_6.0's faCertificate action.
-    const sigRows = signatureRequestsToVaultDocs(signatureRows);
-    const mergedTd = [...sigRows, ...(base.trade_documents ?? [])];
-    const signedDelta  = sigRows.filter(r => r.status === 'Signed').length;
-    const pendingDelta = sigRows.filter(r => r.status === 'Pending').length;
+    const sigRows            = signatureRequestsToVaultDocs(signatureRows);
+    const baseSegmentTd      = (base.trade_documents ?? []) as VaultDoc[];
+    const baseSegmentSigned  = baseSegmentTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
+    const baseSegmentPending = baseSegmentTd.filter(r => r.status === 'Pending').length;
+    const sigSignedDelta     = sigRows.filter(r => r.status === 'Signed').length;
+    const sigPendingDelta    = sigRows.filter(r => r.status === 'Pending').length;
     return {
       ...base,
-      trade_documents: mergedTd as typeof base.trade_documents,
-      trade_documents_count: mergedTd.length,
-      verified_signed: (base.verified_signed ?? 0) + signedDelta,
-      pending:         (base.pending ?? 0)         + pendingDelta,
-      total_documents: (base.total_documents ?? 0) + sigRows.length,
+      trade_documents: sigRows as typeof base.trade_documents,
+      trade_documents_count: sigRows.length,
+      // KPI roll-ups: subtract whatever the segment-rule TD bucket
+      // contributed (we no longer show those rows), then add in the
+      // signature-flow numbers.
+      verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + sigSignedDelta,
+      pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + sigPendingDelta,
+      total_documents: Math.max(0, (base.total_documents ?? 0) - baseSegmentTd.length) + sigRows.length,
     };
   }, [customer, data, vaultLive, signatureRows]);
 

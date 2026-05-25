@@ -78,6 +78,7 @@ class ProformaInvoice extends Model
         return $this->hasMany(ProformaInvoiceItem::class)->orderBy('line_no')->orderBy('id');
     }
 
+    public function branch(): BelongsTo    { return $this->belongsTo(Branch::class); }
     public function customer(): BelongsTo  { return $this->belongsTo(Customer::class); }
     public function consignee(): BelongsTo { return $this->belongsTo(Consignee::class); }
     public function lead(): BelongsTo      { return $this->belongsTo(Lead::class, 'opp_id'); }

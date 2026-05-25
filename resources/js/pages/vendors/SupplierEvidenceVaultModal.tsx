@@ -265,19 +265,26 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     // row carries its own `certificate_url` (one cert per request,
     // attached to every doc-row in that request) so the Actions
     // column renders a Certificate-of-Completion button alongside
-    // View/Download.
-    const sigRows = signatureRequestsToVaultDocs(signatureRows);
-    const mergedTd = [...sigRows, ...(base.trade_documents ?? [])];
-    const signedDelta  = sigRows.filter(r => r.status === 'Signed').length;
-    const pendingDelta = sigRows.filter(r => r.status === 'Pending').length;
+    // View/Download. Trade Documents tab is SIGNATURE-ONLY — segment-rule
+    // "expected TD" rows from /segment-uploads are dropped so this tab
+    // matches the Customer + Consignee modals (a trade document only
+    // enters here via the Zoho Sign send flow).
+    const sigRows            = signatureRequestsToVaultDocs(signatureRows);
+    const baseSegmentTd      = (base.trade_documents ?? []) as VaultDoc[];
+    const baseSegmentSigned  = baseSegmentTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
+    const baseSegmentPending = baseSegmentTd.filter(r => r.status === 'Pending').length;
+    const sigSignedDelta     = sigRows.filter(r => r.status === 'Signed').length;
+    const sigPendingDelta    = sigRows.filter(r => r.status === 'Pending').length;
     return {
       ...base,
-      trade_documents: mergedTd as typeof base.trade_documents,
-      trade_documents_count: mergedTd.length,
-      // Roll-up counters so the KPI strip stays consistent.
-      verified_signed: (base.verified_signed ?? 0) + signedDelta,
-      pending:         (base.pending ?? 0)         + pendingDelta,
-      total_documents: (base.total_documents ?? 0) + sigRows.length,
+      trade_documents: sigRows as typeof base.trade_documents,
+      trade_documents_count: sigRows.length,
+      // KPI roll-ups: back out the segment-rule TD bucket's contribution
+      // (those rows no longer render here), then layer in the
+      // signature-flow numbers so the KPI strip stays accurate.
+      verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + sigSignedDelta,
+      pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + sigPendingDelta,
+      total_documents: Math.max(0, (base.total_documents ?? 0) - baseSegmentTd.length) + sigRows.length,
     };
   }, [supplier, data, vaultLive, signatureRows]);
 

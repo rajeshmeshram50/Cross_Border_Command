@@ -351,6 +351,17 @@ class SegmentDocUploadController extends Controller
     /**
      * Resolve `{type}/{id}` to a tenant-scoped entity. Throws 404 if the
      * type isn't supported or the user can't see this record.
+     *
+     * Same-as-customer read-through: when the resolved row is a Consignee
+     * with `same_as_customer = true` and the caller is performing a READ
+     * (`$action === 'view'`), we transparently swap to the linked Customer
+     * so the consignee's Stage 3 Evidence Vault — segment-rule uploads
+     * across all five categories (kyc/dd/tl/td/qc) — surfaces the
+     * customer's documents instead of the consignee's empty bucket.
+     * Writes ('edit') intentionally do NOT swap: the UI locks Stage 3
+     * editing while the toggle is on, so attempting a store/destroy here
+     * is a programming error that should fail loudly against the
+     * consignee's own row (not silently mutate the customer's uploads).
      */
     private function resolveOwner(Request $request, string $type, int $id, string $action = 'view'): Model
     {
@@ -369,6 +380,26 @@ class SegmentDocUploadController extends Controller
         if ($user->client_id && (int) ($row->client_id ?? 0) !== (int) $user->client_id) {
             abort(404);
         }
+
+        if ($row instanceof Consignee && $row->same_as_customer && $row->customer_id) {
+            if ($action === 'view') {
+                $linked = Customer::query()->find($row->customer_id);
+                if ($linked && (!$user->client_id || (int) ($linked->client_id ?? 0) === (int) $user->client_id)) {
+                    return $linked;
+                }
+            } else {
+                // Defense-in-depth: the consignee's own segment_doc_uploads
+                // bucket must stay empty while same_as_customer is on, or
+                // the reads (which transparently swap to the customer)
+                // would silently orphan the writes. The UI hides the
+                // upload buttons under this flag — a 409 here only fires
+                // against direct/legacy API callers.
+                abort(response()->json([
+                    'message' => 'This consignee is flagged Same as Customer. Manage uploads on the linked customer instead.',
+                ], 409));
+            }
+        }
+
         return $row;
     }
 

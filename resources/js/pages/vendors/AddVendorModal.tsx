@@ -182,6 +182,11 @@ export type TradeDocRow = {
   attachmentName: string;
   signatureRequestId?: number;
   signedUrl?: string;
+  /* Set by the parent right before rendering — true when this row's
+   * signatureRequestId is inside the active 60-second Resend cooldown.
+   * The button locks so a multi-doc bundle can't fire one reminder
+   * email per doc. */
+  cooldownActive?: boolean;
 };
 
 /* Step 4 — product-vendor mapping rows with pricing. */
@@ -536,6 +541,34 @@ export default function AddVendorModal(props: {
    * makes the backend resolve {{supplier.*}} tokens with this vendor. */
   const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
   const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string }>>({});
+
+  /* Resend cooldown — same pattern as the customer + consignee modals.
+   * Zoho's remind API operates per-REQUEST so a multi-doc bundle gets
+   * ONE reminder email no matter how many rows in the bundle the user
+   * clicks Resend on. We seed a 60s cooldown on the
+   * signature_request_id; every sibling row's Resend button locks
+   * visually until the timer expires. */
+  const [recentReminds, setRecentReminds] = useState<Record<number, number>>({});
+  useEffect(() => {
+    const expiries = Object.values(recentReminds);
+    if (expiries.length === 0) return;
+    const earliest = Math.min(...expiries);
+    const wait = Math.max(50, earliest - Date.now() + 50);
+    const id = window.setTimeout(() => {
+      setRecentReminds(prev => {
+        const now = Date.now();
+        const fresh: Record<number, number> = {};
+        for (const k in prev) if (prev[k] > now) fresh[+k] = prev[k];
+        return fresh;
+      });
+    }, wait);
+    return () => window.clearTimeout(id);
+  }, [recentReminds]);
+  const isReminderCooldown = (reqId?: number | null): boolean => !!reqId && (recentReminds[reqId] ?? 0) > Date.now();
+  const reminderCooldownSeconds = (reqId?: number | null): number => {
+    if (!reqId) return 0;
+    return Math.max(0, Math.ceil(((recentReminds[reqId] ?? 0) - Date.now()) / 1000));
+  };
 
   /* ─── Step 4: Product mappings + Add Product Mapping modal ─── */
   type ProductOpt = {
@@ -1467,6 +1500,34 @@ export default function AddVendorModal(props: {
       toast.info('Save vendor first', 'Save the vendor before sending documents for signature.');
       return;
     }
+    /* Resend semantics — when the doc is already `inprogress` in Zoho,
+     * the user clicking "Resend" wants to NUDGE the existing signer,
+     * not re-pick recipients + re-position the signature box. Hit the
+     * remind endpoint directly (mirrors New_IDIMS_6.0 + the customer /
+     * consignee flows) and toast. Declined / recalled / expired rows
+     * fall through to the wizard so the user can re-cast a fresh
+     * request. Vendor row state uses signatureRequestId (camelCase).
+     * Bundle-aware cooldown stops a 3-doc bundle from triggering three
+     * reminder emails. */
+    const reqId = row.signatureRequestId;
+    if (reqId && row.status === 'inprogress') {
+      if (isReminderCooldown(reqId)) {
+        toast.info('Already reminded', `One reminder covers every document in this bundle. Try again in ${reminderCooldownSeconds(reqId)}s.`);
+        return;
+      }
+      const bundleCount = tradeDocRows.filter(r => r.signatureRequestId === reqId).length;
+      api.post(`/clm/signature-requests/${reqId}/remind`)
+        .then(() => {
+          setRecentReminds(prev => ({ ...prev, [reqId]: Date.now() + 60_000 }));
+          toast.success('Reminder sent',
+            bundleCount > 1
+              ? `The signer was notified about all ${bundleCount} documents in this signature request.`
+              : 'The signer has been notified.',
+          );
+        })
+        .catch(err => toast.error('Reminder failed', err?.response?.data?.message ?? 'Could not send the reminder. Try again later.'));
+      return;
+    }
     setSendForSignature([row.db_id]);
   };
   const sendSelectedTradeDocs = () => {
@@ -2320,7 +2381,7 @@ export default function AddVendorModal(props: {
               )}
               {tradeTab === 'trade' && (
                 <TradeDocsTable
-                  rows={tradeDocRows}
+                  rows={tradeDocRows.map(r => ({ ...r, cooldownActive: isReminderCooldown(r.signatureRequestId) }))}
                   onToggleAll={toggleAllTradeDocSign}
                   onToggleSign={toggleTradeDocSign}
                   onSend={sendTradeDoc}
@@ -3530,14 +3591,18 @@ function TradeDocsTable(props: {
                             style={{
                               padding: '6px 14px',
                               fontSize: 13,
-                              opacity: isSigned ? 0.5 : 1,
-                              cursor:  isSigned ? 'not-allowed' : 'pointer',
+                              opacity: (isSigned || r.cooldownActive) ? 0.5 : 1,
+                              cursor:  (isSigned || r.cooldownActive) ? 'not-allowed' : 'pointer',
                             }}
-                            onClick={() => { if (!isSigned) props.onSend(r.code); }}
-                            disabled={isSigned}
-                            title={isSigned ? 'This document has already been signed.' : (r.status === 'N/A' ? 'Send for signature' : 'Resend for signature')}
+                            onClick={() => { if (!isSigned && !r.cooldownActive) props.onSend(r.code); }}
+                            disabled={isSigned || !!r.cooldownActive}
+                            title={
+                              isSigned         ? 'This document has already been signed.'
+                              : r.cooldownActive ? 'Reminder just sent — one reminder covers every document in this bundle.'
+                              : (r.status === 'N/A' ? 'Send for signature' : 'Resend for signature')
+                            }
                           >
-                            <i className="ri-send-plane-line me-1" /> {r.status === 'N/A' ? 'Send' : 'Resend'}
+                            <i className="ri-send-plane-line me-1" /> {r.cooldownActive ? 'Sent ✓' : (r.status === 'N/A' ? 'Send' : 'Resend')}
                           </button>
                         </div>
                       );
