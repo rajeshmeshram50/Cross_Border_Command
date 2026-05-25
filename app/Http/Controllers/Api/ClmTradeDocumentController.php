@@ -96,6 +96,11 @@ class ClmTradeDocumentController extends Controller
             'party'     => 'required|string|max:255',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
+            // Stage 2 page-shell config — same JSON shape as
+            // hr_document_templates. Frontend layers it on top of
+            // DEFAULT_HEADER / DEFAULT_FOOTER so missing keys stay safe.
+            'header_config' => 'nullable|array',
+            'footer_config' => 'nullable|array',
         ]);
 
         $row = DB::transaction(function () use ($user, $data) {
@@ -124,6 +129,11 @@ class ClmTradeDocumentController extends Controller
             'party'     => 'sometimes|required|string|max:255',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
+            // Same Stage 2 page-shell config as libraryStore. Re-validated
+            // independently so PUT-only callers (Stage 2 auto-save) can
+            // patch just the header/footer without re-sending the form.
+            'header_config' => 'nullable|array',
+            'footer_config' => 'nullable|array',
         ]);
         $data['updated_by'] = $user->id;
         $row->update($data);
@@ -307,6 +317,36 @@ class ClmTradeDocumentController extends Controller
         ]);
 
         return response()->json(['status' => true, 'data' => $row->fresh()]);
+    }
+
+    /**
+     * Stage 2 page-shell logo upload. Stores the file under the tenant's
+     * own folder and returns { path, url } in the exact shape
+     * [[HeaderFooterPanel.tsx]] expects, so the same component works for
+     * both HR document templates and Trade Document drafts.
+     *
+     * Mirrors HrDocumentTemplateController::uploadHeaderLogo. We don't
+     * attach the path to a specific library row here — that linkage
+     * happens later when the user saves the form and the path lands in
+     * the row's header_config JSON. This keeps the endpoint usable for
+     * brand-new (not-yet-saved) drafts too.
+     */
+    public function uploadHeaderLogo(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $request->validate(['logo' => 'required|file|mimes:png,jpg,jpeg,svg,webp|max:5120']);
+
+        $clientSlug = $user->client_id ? 'c' . $user->client_id : 'public';
+        $folder = "trade_doc_library/{$clientSlug}/logos";
+        $file   = $request->file('logo');
+        $ext    = strtolower($file->getClientOriginalExtension() ?: 'png');
+        $filename = Str::random(16) . '.' . $ext;
+        $path = $file->storeAs($folder, $filename, 'public');
+
+        return response()->json([
+            'path' => $path,
+            'url'  => file_url($path),
+        ]);
     }
 
     /**

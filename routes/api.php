@@ -220,11 +220,15 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::delete('/clm/trade-doc-names/{id}', [ClmTradeDocumentController::class, 'namesDestroy']);
     Route::get   ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryIndex']);
     Route::post  ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryStore']);
-    Route::put   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryUpdate']);
-    Route::delete('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryDestroy']);
+    // Static-path endpoints declared BEFORE `{id}` so Laravel's router
+    // doesn't treat `upload-header-logo` / `for-party` as numeric ids
+    // and reject the request with 405 against the PUT/DELETE handlers.
+    Route::post  ('/clm/trade-doc-library/upload-header-logo',[ClmTradeDocumentController::class, 'uploadHeaderLogo']);
     Route::get   ('/clm/trade-doc-library/for-party/{party}', [ClmTradeDocumentController::class, 'libraryForParty']);
-    Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx']);
-    Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx']);
+    Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx'])->whereNumber('id');
+    Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx'])->whereNumber('id');
+    Route::put   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryUpdate'])->whereNumber('id');
+    Route::delete('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryDestroy'])->whereNumber('id');
 
     // Central CLM → Trade Documents → Send for Signature (Zoho Sign).
     // The preview endpoint renders the merged PDF without calling Zoho so the

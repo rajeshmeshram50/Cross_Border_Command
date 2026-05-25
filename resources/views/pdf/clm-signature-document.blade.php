@@ -2,79 +2,64 @@
   /**
    * CLM Trade Document → Zoho Sign render target (CBC).
    *
-   * Layout / styling are a direct port of New_IDIMS_6.0's
-   * documents.signature-document blade — fixed leafy SVG background, green
-   * accent header with the tenant's logo + tagline + document title +
-   * scannable Code-128 barcode, and a fixed bottom footer carrying the
-   * tenant's company line, a smaller barcode, and the generated date.
-   * "Page N of M" stamped via dompdf's text/php block.
+   * Header + footer are now driven by the document's saved page-shell
+   * config (`header_config` / `footer_config` JSON on
+   * clm_trade_doc_library — see [[HeaderFooterPanel.tsx]]). Whatever the
+   * user configured in Stage 2 of the draft renders verbatim here.
+   * Falls back to a minimal client-name header / company-line footer
+   * for legacy rows that pre-date those columns.
    *
    * Inputs:
-   *   - $document       (ClmTradeDocLibrary)  draft row (code, name, title, content)
-   *   - $party          (Model)               Customer | Consignee | Vendor
-   *   - $modelName      (string)              'Customer' | 'Consignee' | 'Vendor'
-   *   - $processedHtml  (string)              placeholder-replaced HTML body
-   *   - $signers        (array)               list of {name, email, order}
-   *   - $generatedDate  (string)              'd/m/Y'
-   *   - $requestId      (string)              UUID stamped in the footer
-   *   - $client         (Client|null)         tenant for branding (logo, company info)
+   *   - $document         (ClmTradeDocLibrary)  draft row (code, name, title, content)
+   *   - $party            (Model)               Customer | Consignee | Vendor
+   *   - $modelName        (string)              'Customer' | 'Consignee' | 'Vendor'
+   *   - $processedHtml    (string)              placeholder-replaced HTML body
+   *   - $signers          (array)               list of {name, email, order}
+   *   - $generatedDate    (string)              'd/m/Y'
+   *   - $requestId        (string)              UUID stamped in the footer
+   *   - $client           (Client|null)         tenant fallback for branding
+   *   - $headerConfig     (array)               saved HeaderConfig JSON
+   *   - $footerConfig     (array)               saved FooterConfig JSON
+   *   - $headerLogoBase64 (string)              pre-resolved base64 logo (or '')
    *
    * The signature placeholders in $processedHtml come pre-replaced with a
    * styled .sig-box scaffold; Zoho overlays the signer's real signature
    * on top via the x/y/page coords sent in the submit payload.
    */
 
-  use Milon\Barcode\DNS1D;
-
   $documentTitle = $document->title ?? $document->name ?? 'Document';
   $clientName    = trim((string) ($client->org_name ?? 'Cross Border Command'));
-  $clientWebsite = trim((string) ($client->website  ?? ''));
-  $clientEmail   = trim((string) ($client->email    ?? ''));
-  $clientPhone   = trim((string) ($client->phone    ?? ''));
-  $clientGstin   = trim((string) ($client->gst_number ?? ''));
-  $clientPan     = trim((string) ($client->pan_number ?? ''));
-  $clientCin     = trim((string) ($client->unique_number ?? ''));
 
-  // Header logo — base64-encode the client's stored logo so dompdf can
-  // embed it without a network round-trip. Falls back to a tagline-only
-  // header when no logo is configured.
-  $headerLogoBase64 = '';
-  if ($client && $client->logo) {
-      try {
-          $relativePath = (string) $client->logo;
-          if (\Illuminate\Support\Facades\Storage::disk('public')->exists($relativePath)) {
-              $headerLogoBase64 = base64_encode(
-                  \Illuminate\Support\Facades\Storage::disk('public')->get($relativePath),
-              );
-          }
-      } catch (\Throwable $e) {
-          $headerLogoBase64 = '';
-      }
-  }
+  // ── Resolve header zone from saved config, with sensible fallbacks ──
+  // For legacy rows (no header_config saved) we keep a minimal text-only
+  // header so the PDF still has a recognisable brand line.
+  $hcfg = is_array($headerConfig ?? null) ? $headerConfig : [];
+  $headerTitle      = (string) ($hcfg['title']      ?? $clientName);
+  $headerSubtitle   = (string) ($hcfg['subtitle']   ?? '');
+  $headerAlign      = (string) ($hcfg['align']      ?? 'right');
+  $headerBg         = (string) ($hcfg['background'] ?? '#ffffff');
+  $headerColor      = (string) ($hcfg['text_color'] ?? '#111827');
+  $headerShowLogo   = array_key_exists('show_logo',  $hcfg) ? (bool) $hcfg['show_logo']  : true;
+  $headerShowTitle  = array_key_exists('show_title', $hcfg) ? (bool) $hcfg['show_title'] : true;
+  $headerLogoHeight = (int) ($hcfg['logo_height'] ?? 62);
+  // dompdf has no support for the % free-drag positions HeaderFooterPanel
+  // emits — collapse them into a simple left/right 2-col header keyed off
+  // the logo's horizontal position (logo_pos.x ≤ 50 → logo on the left).
+  $logoX = isset($hcfg['logo_pos']['x']) ? (float) $hcfg['logo_pos']['x'] : 10.0;
+  $logoOnLeft = $logoX <= 50.0;
+  // Map HeaderFooterPanel's 'space-between' legacy value to right-align
+  // so the title block doesn't ghost off the page on those older rows.
+  if ($headerAlign === 'space-between') $headerAlign = 'right';
 
-  // Barcode payloads — same Code-128 width/heights as the New_IDIMS
-  // template. URL goes to the client's website if set, otherwise a CBC
-  // permalink that resolves to the signature request id.
-  $barcodeUrl = $clientWebsite !== '' ? $clientWebsite : 'https://cross-border-command.app';
-  try {
-      $barcodeGen   = new DNS1D();
-      $headerBarcode = $barcodeGen->getBarcodePNG($barcodeUrl, 'C128', 3, 60);
-      $footerBarcode = $barcodeGen->getBarcodePNG($barcodeUrl, 'C128', 2, 25);
-  } catch (\Throwable $e) {
-      $headerBarcode = '';
-      $footerBarcode = '';
-  }
-
-  // Footer company line — assembled from whichever client fields are
-  // present, separated by " | " so it degrades gracefully on partial
-  // tenant data.
-  $footerCompanyParts = array_filter([
-      $clientName ?: null,
-      $clientCin   !== '' ? "CIN: {$clientCin}"   : null,
-      $clientGstin !== '' ? "GST: {$clientGstin}" : null,
-      $clientPan   !== '' ? "PAN: {$clientPan}"   : null,
-  ]);
-  $footerCompanyLine = implode(' | ', $footerCompanyParts);
+  // ── Resolve footer zone ──
+  $fcfg = is_array($footerConfig ?? null) ? $footerConfig : [];
+  $footerText        = (string) ($fcfg['text']        ?? $clientName);
+  $footerAlign       = (string) ($fcfg['align']       ?? 'center');
+  $footerBg          = (string) ($fcfg['background']  ?? '#ffffff');
+  $footerColor       = (string) ($fcfg['text_color']  ?? '#6b7280');
+  $showPageNumber    = array_key_exists('show_page_number', $fcfg) ? (bool) $fcfg['show_page_number'] : true;
+  $pageNumberAlign   = (string) ($fcfg['page_number_align']  ?? 'right');
+  $pageNumberFormat  = (string) ($fcfg['page_number_format'] ?? 'Page N of M');
 @endphp
 <!DOCTYPE html>
 <html>
@@ -83,25 +68,32 @@
     <style>
       /* PAGE MARGINS — proper left/right padding */
       @page {
-        margin-bottom: 80px;
+        margin-bottom: 70px;
         margin-top: 25px;
         margin-left: 25px;
         margin-right: 25px;
       }
 
-      /* FOOTER — fixed at the bottom of every page */
+      /* FOOTER — fixed at the bottom of every page. Background / colour
+         come from the saved footer_config so a tenant whose footer band
+         was configured dark renders correctly on every page. */
       .pdf-footer {
         position: fixed;
         bottom: 0;
         left: 0;
         right: 0;
         width: 100%;
-        border-top: 1px solid #68AD35;
-        padding: 5px 0;
-        background: white;
+        border-top: 1px solid #e5e7eb;
+        padding: 8px 14px;
+        background: {{ $footerBg }};
+        color: {{ $footerColor }};
         z-index: 1000;
         font-family: Arial, Helvetica, sans-serif;
+        font-size: 11px;
       }
+
+      .pdf-footer table { width: 100%; border-collapse: collapse; margin: 0; }
+      .pdf-footer td    { vertical-align: middle; }
 
       body {
         margin: 0;
@@ -111,105 +103,33 @@
         color: #333;
       }
 
-      .pdf-bg {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 0;
-        pointer-events: none;
-      }
+      .no-page-break { page-break-inside: avoid; }
 
-      .pdf-bg svg.bg-svg {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        opacity: 0.06;
-      }
+      table { border-collapse: collapse; width: 100%; }
 
-      .no-page-break {
-        page-break-inside: avoid;
-      }
-
-      hr {
-        border: 0.1px solid #68AD35;
-        margin: 8px 0;
-      }
-
-      table {
-        border-collapse: collapse;
-        width: 100%;
-      }
-
-      /* HEADER */
+      /* HEADER — driven by header_config */
       .page-header {
         margin-bottom: 12px;
+        padding: 10px 14px;
+        background: {{ $headerBg }};
+        color: {{ $headerColor }};
         page-break-after: avoid;
         page-break-inside: avoid;
       }
 
-      .brand-block {
-        width: 100%;
-        margin: 0;
-        text-align: left;
-      }
-
-      .brand-logo-wrap {
-        width: 100%;
-        text-align: left;
-      }
+      .page-header table { border-collapse: collapse; }
+      .page-header td    { vertical-align: middle; padding: 0; }
 
       .brand-logo {
         display: block;
         max-width: 230px;
-        width: auto;
-        height: auto;
+        max-height: {{ max(24, min(200, $headerLogoHeight)) }}px;
+        width: auto; height: auto;
         margin: 0;
       }
 
-      .tagline-center {
-        margin-top: 6px;
-        font-size: 10px;
-        letter-spacing: 3px;
-        color: #68AD35;
-        font-weight: 600;
-        white-space: nowrap;
-        text-align: left;
-      }
-
-      .right-header-block {
-        width: 360px;
-        margin-left: auto;
-        margin-right: 18px;
-        margin-top: 5px;
-        font-family: Arial, Helvetica, sans-serif;
-        font-size: 9px;
-        line-height: 1.4;
-      }
-
-      .document-title {
-        text-align: center;
-        margin-top: 10px;
-        margin-bottom: 10px;
-        font-size: 18px;
-        font-weight: 800;
-        line-height: 1.1;
-        color: #68AD35;
-      }
-
-      .barcode-container {
-        text-align: center;
-        margin-top: 8px;
-      }
-
-      .barcode-url {
-        font-size: 8px;
-        text-align: center;
-        margin-top: 2px;
-      }
+      .header-title    { font-size: 16px; font-weight: 800; line-height: 1.25; }
+      .header-subtitle { font-size: 11px; opacity: 0.7; margin-top: 2px; }
 
       /* DOCUMENT SECTION */
       .document-section {
@@ -257,84 +177,78 @@
   </head>
 
   <body>
-    {{-- Leaf background watermark — same SVG New_IDIMS uses. --}}
-    <div class="pdf-bg">
-      <svg class="bg-svg" viewBox="0 0 800 1100" xmlns="http://www.w3.org/2000/svg">
-        <g fill="#43a047">
-          <path d="M120,980 C240,780 280,640 230,520 C180,400 80,320 50,220
-                   C170,290 290,380 340,520 C390,660 350,830 230,1010 Z" />
-          <path d="M740,210 C610,300 520,430 550,560 C580,690 690,800 770,900
-                   C705,815 650,700 635,560 C620,420 670,300 740,210 Z" />
-          <circle cx="640" cy="920" r="42" />
-          <circle cx="690" cy="960" r="30" />
-          <circle cx="600" cy="965" r="28" />
-          <circle cx="130" cy="160" r="30" />
-          <circle cx="170" cy="120" r="20" />
-          <circle cx="95"  cy="115" r="18" />
-        </g>
-      </svg>
-    </div>
-
-    {{-- GLOBAL FOOTER — fixed at the page bottom on every page. --}}
+    {{-- FOOTER — fixed on every page, driven by footer_config. Three
+         cells (left / center / right) mirror HeaderFooterPanel's preview
+         so footer.text lands in the cell matching its `align`, and the
+         page number (when enabled) lands in the cell matching its
+         `page_number_align`. Cells can overlap on the same side. --}}
     <div class="pdf-footer">
-      <table style="width: 100%; border-collapse: collapse; margin: 0;">
+      <table>
         <tr>
-          <td style="width: 20%; text-align: left; vertical-align: middle; padding-left: 10px;">
-            @if(!empty($footerBarcode))
-              <img src="data:image/png;base64,{{ $footerBarcode }}" alt="Barcode" style="width: 95px; height: 25px; display: block;">
-              @if($clientWebsite !== '')
-                <div style="font-size:7px; margin-top:2px;">{{ $clientWebsite }}</div>
+          @foreach (['left', 'center', 'right'] as $cell)
+            @php
+              $showText = $footerAlign === $cell;
+              $showNum  = $showPageNumber && $pageNumberAlign === $cell;
+              $justify  = $cell === 'left' ? 'left' : ($cell === 'right' ? 'right' : 'center');
+            @endphp
+            <td style="width: 33.33%; text-align: {{ $justify }};">
+              @if ($showText)
+                <span>{{ $footerText }}</span>
               @endif
-            @endif
-          </td>
-
-          <td style="width: 60%; text-align: center; vertical-align: middle; font-size: 9px; color: #333;">
-            {{ $footerCompanyLine ?: $clientName }}
-          </td>
-
-          <td style="width: 20%; text-align: right; vertical-align: middle; padding-right: 10px; font-size: 8px;">
-            {{ $generatedDate ?? date('d/m/Y') }}
-          </td>
+              @if ($showNum)
+                <span class="pdf-footer-pageno" data-format="{{ $pageNumberFormat }}"
+                      style="display:inline-block; padding:2px 6px; margin-left:{{ $showText ? '8px' : '0' }};
+                             font-weight:700; font-size:10.5px;">
+                  {{-- Actual page numbers are stamped by the dompdf script
+                       at the bottom (positioned absolutely); this span just
+                       reserves visual room in the right cell. --}}
+                  &nbsp;
+                </span>
+              @endif
+            </td>
+          @endforeach
         </tr>
       </table>
     </div>
 
-    {{-- MAIN CONTENT --}}
+    {{-- HEADER — driven by header_config, no hardcoded brand block. --}}
     <div class="content-wrapper main-content first-page-fix">
       <div class="page-header">
-        <table style="width:100%; border-collapse:collapse;">
+        <table>
           <tr>
-            {{-- LEFT: tenant logo + tagline --}}
-            <td style="width:60%; vertical-align:top; padding:0; margin:0;">
-              <div class="brand-block">
-                <div class="brand-logo-wrap">
-                  @if(!empty($headerLogoBase64))
-                    <img src="data:image/png;base64,{{ $headerLogoBase64 }}" class="brand-logo" alt="{{ $clientName }}">
-                  @else
-                    <div style="font-size: 20px; font-weight: 800; color: #68AD35; letter-spacing: -0.5px;">
-                      {{ $clientName }}
-                    </div>
+            @if ($logoOnLeft)
+              <td style="width: 45%; text-align: left;">
+                @if ($headerShowLogo)
+                  @if (!empty($headerLogoBase64))
+                    <img src="data:image/png;base64,{{ $headerLogoBase64 }}" class="brand-logo" alt="logo">
                   @endif
-                </div>
-                <div class="tagline-center">CROSS BORDER COMMAND</div>
-              </div>
-            </td>
-
-            {{-- RIGHT: document title + scannable barcode --}}
-            <td style="width:40%; vertical-align:top; padding:0; margin:0;">
-              <div class="right-header-block">
-                <div class="document-title">
-                  {{ $documentTitle }}
-                </div>
-
-                @if(!empty($headerBarcode))
-                  <div class="barcode-container">
-                    <img src="data:image/png;base64,{{ $headerBarcode }}" style="width:150px; height:50px; display:block; margin:0 auto;" alt="Barcode">
-                    <div class="barcode-url">{{ $barcodeUrl }}</div>
-                  </div>
                 @endif
-              </div>
-            </td>
+              </td>
+              <td style="width: 55%; text-align: {{ $headerAlign }};">
+                @if ($headerShowTitle)
+                  <div class="header-title">{!! nl2br(e($headerTitle)) !!}</div>
+                  @if ($headerSubtitle !== '')
+                    <div class="header-subtitle">{!! nl2br(e($headerSubtitle)) !!}</div>
+                  @endif
+                @endif
+              </td>
+            @else
+              <td style="width: 55%; text-align: {{ $headerAlign }};">
+                @if ($headerShowTitle)
+                  <div class="header-title">{!! nl2br(e($headerTitle)) !!}</div>
+                  @if ($headerSubtitle !== '')
+                    <div class="header-subtitle">{!! nl2br(e($headerSubtitle)) !!}</div>
+                  @endif
+                @endif
+              </td>
+              <td style="width: 45%; text-align: right;">
+                @if ($headerShowLogo)
+                  @if (!empty($headerLogoBase64))
+                    <img src="data:image/png;base64,{{ $headerLogoBase64 }}" class="brand-logo" alt="logo" style="margin-left:auto;">
+                  @endif
+                @endif
+              </td>
+            @endif
           </tr>
         </table>
       </div>
@@ -349,19 +263,33 @@
       </div>
     </div>
 
-    {{-- Page-number stamp; same script DOMPDF expects. --}}
-    <script type="text/php">
-      if (isset($pdf)) {
-        $font = $fontMetrics->get_font("helvetica", "normal");
-        $size = 8;
-        $text = "Page {PAGE_NUM} of {PAGE_COUNT}";
-        $color = array(0.4, 0.4, 0.4);
-        $pageWidth = $pdf->get_width();
-        $textWidth = $fontMetrics->getTextWidth($text, $font, $size);
-        $x = ($pageWidth - $textWidth) / 2;
-        $y = $pdf->get_height() - 45;
-        $pdf->page_text($x, $y, $text, $font, $size, $color);
-      }
-    </script>
+    {{-- Page-number stamp — renders into whichever footer cell the user
+         picked via page_number_align. Hidden entirely when the user
+         turned off `show_page_number` on the draft. --}}
+    @if ($showPageNumber)
+      <script type="text/php">
+        if (isset($pdf)) {
+          $font   = $fontMetrics->get_font("helvetica", "normal");
+          $size   = 9;
+          $align  = "{{ $pageNumberAlign }}";
+          $format = "{{ $pageNumberFormat }}";
+
+          // Match HeaderFooterPanel's format options 1:1.
+          $text = $format === "N"           ? "{PAGE_NUM}"
+                : ($format === "Page N"     ? "Page {PAGE_NUM}"
+                : ($format === "N / M"      ? "{PAGE_NUM} / {PAGE_COUNT}"
+                :                              "Page {PAGE_NUM} of {PAGE_COUNT}"));
+
+          $color      = array(0.42, 0.45, 0.5);
+          $pageWidth  = $pdf->get_width();
+          $textWidth  = $fontMetrics->getTextWidth($text, $font, $size);
+          if ($align === "left")        $x = 28;
+          elseif ($align === "right")   $x = $pageWidth - $textWidth - 28;
+          else                          $x = ($pageWidth - $textWidth) / 2;
+          $y = $pdf->get_height() - 22;
+          $pdf->page_text($x, $y, $text, $font, $size, $color);
+        }
+      </script>
+    @endif
   </body>
 </html>
