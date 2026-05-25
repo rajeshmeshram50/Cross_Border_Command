@@ -2300,6 +2300,10 @@ function ProductsStep(props: {
           Domestic and vice-versa so the summary matches what the user
           actually filled. */}
       <div className={`qpi-order-summary qpi-order-summary-${theme}`}>
+
+
+
+      {/* test */}
         <SummaryItem label="Opportunity ID"    value={(form.opportunity.split(' – ')[0] || form.opportunity)} />
         <SummaryItem label="Opportunity Date"  value={form.opportunityDate} />
         <SummaryItem label="Customer ID"       value={form.customer.split(' – ')[0] || ''} />
