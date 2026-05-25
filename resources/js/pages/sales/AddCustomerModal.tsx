@@ -2559,20 +2559,38 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                   <td style={{ color: '#9ca3af', fontWeight: 600 }}>{i + 1}</td>
                   <td style={{ fontWeight: 600, color: '#1f2937' }}>{d.name}</td>
                   <td>
-                    <div className="acm-td-cell-check">
-                      <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} />
-                      {d.sent ? (
-                        <button type="button" className="acm-btn-resend" onClick={() => onSend(d.id)}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
-                          Resend
-                        </button>
-                      ) : (
-                        <button type="button" className="acm-btn-send" onClick={() => onSend(d.id)}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                          Send
-                        </button>
-                      )}
-                    </div>
+                    {(() => {
+                      // Once a doc is `completed` (signer finished signing),
+                      // resending is a footgun — it would create a brand-new
+                      // signature request against the already-archived PDF.
+                      // declined / recalled / expired stay re-sendable so
+                      // the user can retry with a different recipient or
+                      // window.
+                      const isSigned = d.status === 'completed';
+                      return (
+                        <div className="acm-td-cell-check">
+                          <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} disabled={isSigned} />
+                          {d.sent ? (
+                            <button
+                              type="button"
+                              className="acm-btn-resend"
+                              onClick={() => { if (!isSigned) onSend(d.id); }}
+                              disabled={isSigned}
+                              title={isSigned ? 'This document has already been signed.' : 'Resend for signature'}
+                              style={isSigned ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                            >
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+                              Resend
+                            </button>
+                          ) : (
+                            <button type="button" className="acm-btn-send" onClick={() => onSend(d.id)}>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                              Send
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="td-status">
                     {(() => {

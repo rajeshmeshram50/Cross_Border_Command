@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } 
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
+import { signatureRequestsToVaultDocs, type SigReqRow } from '../../utils/vaultSignatureRows';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Consignee Evidence Vault — read-only compliance archive
@@ -41,6 +42,10 @@ export interface VaultDoc {
   /** Master doc-code (DD-001, KYC-002, …). Required by the Actions
    *  column so a re-upload can POST against the right SegmentDocUpload row. */
   doc_code?: string | null;
+  /** URL to the Zoho-issued Certificate of Completion. Set on rows
+   *  that came from a completed Zoho Sign request; renders the
+   *  certificate icon button in the Actions column. */
+  certificate_url?: string | null;
 }
 
 export interface VaultShipmentRow {
@@ -168,6 +173,11 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
    * db_id (unsaved record). */
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
   const [loading, setLoading] = useState(false);
+  /* Zoho Sign signature requests for this consignee — fetched in parallel
+   * with the vault payload and merged into the Trade Documents tab as
+   * "Signed" / "Pending" rows + a separate "Certificate of Completion"
+   * row per completed request (matches the New_IDIMS_6.0 evidence panel). */
+  const [signatureRows, setSignatureRows] = useState<SigReqRow[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -207,6 +217,25 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     return () => { cancelled = true; };
   }, [open, consignee?.db_id, data]);
 
+  /* Fetch signature requests for this consignee in parallel with the
+   * vault. sync=true triggers a Zoho round-trip for any still-inprogress
+   * rows so the vault reflects "Signed" the moment the recipient
+   * finishes signing, not just on the next vault open. */
+  useEffect(() => {
+    if (!open || !consignee?.db_id) { setSignatureRows([]); return; }
+    let cancelled = false;
+    api.get('/clm/signature-requests', {
+      params: { party_id: consignee.db_id, model_name: 'Consignee', sync: 1 },
+    })
+      .then(r => {
+        if (cancelled) return;
+        const rows = Array.isArray(r.data?.data) ? (r.data.data as SigReqRow[]) : [];
+        setSignatureRows(rows);
+      })
+      .catch(() => { if (!cancelled) setSignatureRows([]); });
+    return () => { cancelled = true; };
+  }, [open, consignee?.db_id]);
+
   /* Auto-scroll the KPI ribbon — continuous one-way drift. Tiles
    * rendered twice, scrollLeft wraps invisibly at the halfway mark.
    * Pauses on hover/touch. */
@@ -230,8 +259,26 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const vault: VaultData | null = useMemo(() => {
     if (!consignee) return null;
     /* Priority: explicit `data` prop > live API > demo fallback. */
-    return data ?? vaultLive ?? buildDemoVault(consignee);
-  }, [consignee, data, vaultLive]);
+    const base = data ?? vaultLive ?? buildDemoVault(consignee);
+    if (!base) return null;
+    // Inject Zoho Sign rows into the Trade Documents tab. Each signed
+    // row carries its own `certificate_url` (one cert per request,
+    // attached to every doc-row in that request) so the Actions
+    // column renders a Certificate-of-Completion button alongside
+    // View/Download — mirrors New_IDIMS_6.0's faCertificate action.
+    const sigRows = signatureRequestsToVaultDocs(signatureRows);
+    const mergedTd = [...sigRows, ...(base.trade_documents ?? [])];
+    const signedDelta  = sigRows.filter(r => r.status === 'Signed').length;
+    const pendingDelta = sigRows.filter(r => r.status === 'Pending').length;
+    return {
+      ...base,
+      trade_documents: mergedTd as typeof base.trade_documents,
+      trade_documents_count: mergedTd.length,
+      verified_signed: (base.verified_signed ?? 0) + signedDelta,
+      pending:         (base.pending ?? 0)         + pendingDelta,
+      total_documents: (base.total_documents ?? 0) + sigRows.length,
+    };
+  }, [consignee, data, vaultLive, signatureRows]);
 
   if (!open || !consignee || !vault) return null;
 
@@ -590,6 +637,32 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload }: {
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}
         </button>
       </Tooltip>
+      {/* Certificate of Completion — only rendered when this row came
+          from a completed Zoho Sign request. Mirrors the faCertificate
+          action in New_IDIMS_6.0's Stage3Tab2DocumentationArchive. */}
+      {doc.certificate_url && (
+        <Tooltip label="Certificate of Completion">
+          <a
+            href={doc.certificate_url}
+            target="_blank"
+            rel="noreferrer"
+            className="cnev-row-act cnev-row-act-cert"
+            aria-label="Certificate of Completion"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, borderRadius: 6,
+              background: '#cffafe', color: '#0e7490',
+              border: '1px solid #67e8f9',
+              cursor: 'pointer', textDecoration: 'none',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8" r="6"/>
+              <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+            </svg>
+          </a>
+        </Tooltip>
+      )}
     </div>
   );
 }

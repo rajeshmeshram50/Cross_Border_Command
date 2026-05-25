@@ -761,14 +761,16 @@ export default function AddVendorModal(props: {
   /* Poll live signature-request status every 15s while the user is on
    * Step 3 → Trade Documents. ?sync=true makes the backend pull each
    * inprogress row from Zoho so completed signings appear in the badges
-   * without a refresh — same pattern as Customer/Consignee Stage 3. */
+   * without a refresh — same pattern as Customer/Consignee Stage 3.
+   * Keyed on `vendorId` (not `initialVendorId`) so the poller also kicks
+   * in for newly-created vendors once Stage 1→2 has saved a row. */
   useEffect(() => {
-    if (!initialVendorId || step !== 3 || tradeTab !== 'trade') return;
+    if (!vendorId || step !== 3 || tradeTab !== 'trade') return;
     let cancelled = false;
     const fetchAndUpdate = async (withSync: boolean) => {
       try {
         const r = await api.get('/clm/signature-requests', {
-          params: { party_id: initialVendorId, model_name: 'Vendor', sync: withSync ? 1 : 0 },
+          params: { party_id: vendorId, model_name: 'Vendor', sync: withSync ? 1 : 0 },
         });
         if (cancelled) return;
         const rows: Array<{
@@ -797,7 +799,7 @@ export default function AddVendorModal(props: {
     fetchAndUpdate(false);
     const iv = window.setInterval(() => fetchAndUpdate(true), 15000);
     return () => { cancelled = true; window.clearInterval(iv); };
-  }, [initialVendorId, step, tradeTab]);
+  }, [vendorId, step, tradeTab]);
 
   // Project polled status into tradeDocRows.
   useEffect(() => {
@@ -1457,7 +1459,11 @@ export default function AddVendorModal(props: {
       toast.info('Not a library document', 'This row is a legacy placeholder. Pick a segment with mapped trade documents to enable signature sending.');
       return;
     }
-    if (!initialVendorId) {
+    // `vendorId` covers both edit-mode (prop-supplied) and create-mode
+    // (set by Stage 1→2 auto-save). Checking only `initialVendorId`
+    // here was wrong — it stays null after a fresh create until the
+    // user closes and re-opens the modal.
+    if (!vendorId) {
       toast.info('Save vendor first', 'Save the vendor before sending documents for signature.');
       return;
     }
@@ -1469,7 +1475,7 @@ export default function AddVendorModal(props: {
       toast.info('Nothing selected', 'Tick one or more documents under "Send for Signature" first.');
       return;
     }
-    if (!initialVendorId) {
+    if (!vendorId) {
       toast.info('Save vendor first', 'Save the vendor before sending documents for signature.');
       return;
     }
@@ -2481,10 +2487,15 @@ export default function AddVendorModal(props: {
         open={Array.isArray(sendForSignature)}
         modelName="Vendor"
         customer={(() => {
-          if (!initialVendorId) return null;
+          // `vendorId` is the runtime state — covers both edit-mode
+          // (prop) and create-mode (set by Stage 1→2 auto-save). The
+          // earlier check on `initialVendorId` returned null for newly
+          // saved vendors, blocking the wizard from opening even
+          // though the row existed on the server.
+          if (!vendorId) return null;
           return {
-            id:      `v-${initialVendorId}`,
-            db_id:   initialVendorId,
+            id:      `v-${vendorId}`,
+            db_id:   vendorId,
             company: companyName || '',
             contact: contactName || '',
             email:   email || '',
@@ -3498,12 +3509,39 @@ function TradeDocsTable(props: {
                   <td>{String(i + 1)}</td>
                   <td><strong>{r.name}</strong></td>
                   <td>
-                    <div className="d-inline-flex align-items-center gap-2">
-                      <input type="checkbox" checked={r.sendForSignature} onChange={() => props.onToggleSign(r.code)} />
-                      <button type="button" className="avm-btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => props.onSend(r.code)}>
-                        <i className="ri-send-plane-line me-1" /> {r.status === 'N/A' ? 'Send' : 'Resend'}
-                      </button>
-                    </div>
+                    {(() => {
+                      // Once the signer is done (`completed` from polling,
+                      // or the legacy 'Signed' local-state value), block
+                      // resend — it would create a fresh request against
+                      // an archived PDF. declined / recalled / expired
+                      // stay re-sendable so the user can retry.
+                      const isSigned = r.status === 'completed' || r.status === 'Signed';
+                      return (
+                        <div className="d-inline-flex align-items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={r.sendForSignature}
+                            onChange={() => props.onToggleSign(r.code)}
+                            disabled={isSigned}
+                          />
+                          <button
+                            type="button"
+                            className="avm-btn-primary"
+                            style={{
+                              padding: '6px 14px',
+                              fontSize: 13,
+                              opacity: isSigned ? 0.5 : 1,
+                              cursor:  isSigned ? 'not-allowed' : 'pointer',
+                            }}
+                            onClick={() => { if (!isSigned) props.onSend(r.code); }}
+                            disabled={isSigned}
+                            title={isSigned ? 'This document has already been signed.' : (r.status === 'N/A' ? 'Send for signature' : 'Resend for signature')}
+                          >
+                            <i className="ri-send-plane-line me-1" /> {r.status === 'N/A' ? 'Send' : 'Resend'}
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td>
                     <span className={`avm-pill ${b.cls}`}>{b.label}</span>
@@ -3540,7 +3578,7 @@ function TradeDocsTable(props: {
         </table>
       </div>
       {props.rows.length > 0 && (
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'center' }}>
           <button type="button" className="avm-btn-primary" onClick={props.onSendSelected}>
             <i className="ri-send-plane-line me-1" /> Send Selected Documents for Signature
           </button>

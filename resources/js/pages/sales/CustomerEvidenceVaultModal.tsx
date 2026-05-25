@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } 
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
+import { signatureRequestsToVaultDocs, type SigReqRow } from '../../utils/vaultSignatureRows';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Customer Evidence Vault — read-only compliance archive
@@ -49,6 +50,10 @@ export interface VaultDoc {
   /** Master doc-code (DD-001, KYC-002, …). Needed by the Actions column
    *  so a re-upload can POST to /segment-uploads with the right key. */
   doc_code?: string | null;
+  /** URL to the Zoho-issued Certificate of Completion. Set on rows
+   *  that came from a completed Zoho Sign request; renders the
+   *  certificate icon button in the Actions column. */
+  certificate_url?: string | null;
 }
 
 export interface VaultShipmentRow {
@@ -181,6 +186,11 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
    * render a skeleton instead of demo numbers. */
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
   const [loading, setLoading] = useState(false);
+  /* Zoho Sign signature requests for this customer — fetched in parallel
+   * with the vault payload and merged into the Trade Documents tab as
+   * "Signed" / "Pending" rows. Completion certificates surface as their
+   * own rows (one per completed request), matching New_IDIMS_6.0. */
+  const [signatureRows, setSignatureRows] = useState<SigReqRow[]>([]);
 
   /* Close on Escape — destructive shortcut is fine for a read-only
    * panel since there's no in-flight edit to lose. */
@@ -225,6 +235,25 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     return () => { cancelled = true; };
   }, [open, customer?.db_id, data]);
 
+  /* Fetch signature requests for this customer in parallel with the
+   * vault. sync=true triggers a Zoho round-trip for any still-inprogress
+   * rows so the vault reflects "Signed" the moment the recipient
+   * finishes signing, not just on the next vault open. */
+  useEffect(() => {
+    if (!open || !customer?.db_id) { setSignatureRows([]); return; }
+    let cancelled = false;
+    api.get('/clm/signature-requests', {
+      params: { party_id: customer.db_id, model_name: 'Customer', sync: 1 },
+    })
+      .then(r => {
+        if (cancelled) return;
+        const rows = Array.isArray(r.data?.data) ? (r.data.data as SigReqRow[]) : [];
+        setSignatureRows(rows);
+      })
+      .catch(() => { if (!cancelled) setSignatureRows([]); });
+    return () => { cancelled = true; };
+  }, [open, customer?.db_id]);
+
   /* Auto-scroll the KPI ribbon — continuous one-way drift. Tiles are
    * rendered twice (see render below), so when scrollLeft reaches the
    * halfway mark we snap back to 0 — invisible because the second
@@ -254,8 +283,26 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     /* Source priority: explicit `data` prop > live API > demo. The
      * demo path stays as a graceful fallback when the API hasn't run
      * yet, errors out, or the customer has no db_id. */
-    return data ?? vaultLive ?? buildDemoVault(customer);
-  }, [customer, data, vaultLive]);
+    const base = data ?? vaultLive ?? buildDemoVault(customer);
+    if (!base) return null;
+    // Inject Zoho Sign rows into the Trade Documents tab. Each signed
+    // row carries its own `certificate_url` (one cert per request,
+    // attached to every doc-row in that request) so the Actions
+    // column renders a Certificate-of-Completion button alongside
+    // View/Download — mirrors New_IDIMS_6.0's faCertificate action.
+    const sigRows = signatureRequestsToVaultDocs(signatureRows);
+    const mergedTd = [...sigRows, ...(base.trade_documents ?? [])];
+    const signedDelta  = sigRows.filter(r => r.status === 'Signed').length;
+    const pendingDelta = sigRows.filter(r => r.status === 'Pending').length;
+    return {
+      ...base,
+      trade_documents: mergedTd as typeof base.trade_documents,
+      trade_documents_count: mergedTd.length,
+      verified_signed: (base.verified_signed ?? 0) + signedDelta,
+      pending:         (base.pending ?? 0)         + pendingDelta,
+      total_documents: (base.total_documents ?? 0) + sigRows.length,
+    };
+  }, [customer, data, vaultLive, signatureRows]);
 
   if (!open || !customer || !vault) return null;
 
@@ -638,6 +685,32 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload }: {
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}
         </button>
       </Tooltip>
+      {/* Certificate of Completion — only rendered when this row came
+          from a completed Zoho Sign request. Mirrors the faCertificate
+          action in New_IDIMS_6.0's Stage3Tab2DocumentationArchive. */}
+      {doc.certificate_url && (
+        <Tooltip label="Certificate of Completion">
+          <a
+            href={doc.certificate_url}
+            target="_blank"
+            rel="noreferrer"
+            className="cev-row-act cev-row-act-cert"
+            aria-label="Certificate of Completion"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, borderRadius: 6,
+              background: '#cffafe', color: '#0e7490',
+              border: '1px solid #67e8f9',
+              cursor: 'pointer', textDecoration: 'none',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8" r="6"/>
+              <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+            </svg>
+          </a>
+        </Tooltip>
+      )}
     </div>
   );
 }
