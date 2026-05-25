@@ -208,10 +208,18 @@ class ProformaInvoiceController extends Controller
             [$customerName, $consigneeName, $oppCode, $oppDate, $bankLabel, $smName, $convertFromCode] =
                 $this->resolveCachedLabels($data);
 
+            // Resolve the effective pi_type for THIS update so the BT
+            // fields can be cleared in lock-step when the user flips
+            // from with_shipment → without_shipment. Without this,
+            // the old BT-NNN code stays on the row and corrupts both
+            // the table display and the printed PDF.
+            $effectiveType = $data['pi_type'] ?? $row->pi_type;
+            $isWithShipment = $effectiveType === ProformaInvoice::TYPE_WITH_SHIPMENT;
+
             $row->update([
-                'pi_type'             => $data['pi_type']           ?? $row->pi_type,
-                'bt_id'               => $data['bt_id']             ?? $row->bt_id,
-                'bt_date'             => $data['bt_date']           ?? $row->bt_date,
+                'pi_type'             => $effectiveType,
+                'bt_id'               => $isWithShipment ? ($data['bt_id']   ?? $row->bt_id)   : null,
+                'bt_date'             => $isWithShipment ? ($data['bt_date'] ?? $row->bt_date) : null,
                 'signing_mode'        => $data['signing_mode']      ?? $row->signing_mode,
                 'doc_type'            => $data['doc_type'],
                 'opp_id'              => $data['opp_id']            ?? null,
