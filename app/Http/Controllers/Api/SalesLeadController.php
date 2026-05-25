@@ -939,9 +939,28 @@ class SalesLeadController extends Controller
             ->where('client_id', $user->client_id)
             ->findOrFail($id);
 
+        // Tenant branding — every PDF is stamped with the caller's client
+        // org details (logo, address, GST/PAN/CIN, website) so each tenant
+        // gets a branded quotation document.
+        $client = \App\Models\Client::find($entry->client_id);
+
+        // Code-128 barcode encoding the quotation code (Q-#####). milon/barcode
+        // returns an HTML string we can embed inline in the Blade.
+        $quoteCode = 'Q-' . str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT);
+        $barcodeHtml = '';
+        try {
+            $generator = new \Milon\Barcode\DNS1D();
+            $barcodeHtml = $generator->getBarcodeHTML($quoteCode, 'C128', 1.4, 30);
+        } catch (\Throwable $e) {
+            $barcodeHtml = ''; // PDF still renders without the barcode
+        }
+
         $pdf = Pdf::loadView('pdf.shared_price_quotation', [
-            'entry'  => $entry,
-            'inline' => $request->boolean('inline'),
+            'entry'       => $entry,
+            'client'      => $client,
+            'quoteCode'   => $quoteCode,
+            'barcodeHtml' => $barcodeHtml,
+            'inline'      => $request->boolean('inline'),
         ])->setPaper('a4');
 
         $filename = 'quotation_' . str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT) . '.pdf';

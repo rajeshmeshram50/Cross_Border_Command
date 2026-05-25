@@ -1,151 +1,279 @@
+@php
+    // Resolve absolute path to the tenant's logo so dompdf can embed it as
+    // base64. Falls back to a text initials block when there's no logo.
+    $logoPath = null;
+    if (!empty($client?->logo)) {
+        $abs = public_path(ltrim((string) $client->logo, '/'));
+        if (file_exists($abs)) $logoPath = $abs;
+        else {
+            $storage = storage_path('app/public/' . ltrim((string) $client->logo, '/'));
+            if (file_exists($storage)) $logoPath = $storage;
+        }
+    }
+
+    $orgName     = $client?->org_name ?? 'Cross Border Command';
+    $orgAddress  = trim(implode(', ', array_filter([
+        $client?->address, $client?->city, $client?->state, $client?->country,
+    ])));
+    $orgPincode  = $client?->pincode;
+    $orgPhone    = $client?->phone;
+    $orgEmail    = $client?->email;
+    $orgGst      = $client?->gst_number;
+    $orgPan      = $client?->pan_number;
+    $orgWebsite  = $client?->website;
+    $watermark   = strtoupper(preg_replace('/[^A-Za-z0-9\s]/', '', $orgName));
+
+    $product   = $entry->leadProduct?->product;
+    $lp        = $entry->leadProduct;
+    $sharedAt  = \Carbon\Carbon::parse($entry->shared_at);
+@endphp
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>Quotation #{{ str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT) }}</title>
+    <title>Quotation {{ $quoteCode }}</title>
     <style>
-        @page { margin: 36px 40px; }
+        @page { margin: 30px 32px 60px; }
+        * { box-sizing: border-box; }
         body {
             font-family: 'DejaVu Sans', Arial, sans-serif;
-            font-size: 11px; color: #1e293b; margin: 0;
+            font-size: 9.5px; color: #1e293b; margin: 0;
+            position: relative;
         }
-        .head {
-            background: linear-gradient(180deg, #1e2a5e 0%, #2f4d9e 100%);
-            color: #fff; padding: 18px 22px; border-radius: 8px;
+
+        /* ── Diagonal watermark ─────────────────────────────────────── */
+        .watermark {
+            position: fixed;
+            top: 38%; left: 0; width: 100%;
+            text-align: center;
+            font-size: 70px;
+            font-weight: 800;
+            color: rgba(16, 185, 129, 0.12);
+            transform: rotate(-28deg);
+            transform-origin: center center;
+            letter-spacing: 6px;
+            z-index: -1;
+            white-space: nowrap;
+        }
+
+        /* ── Header (tenant logo + info on left, Quotation + barcode on right) ─── */
+        .header {
             display: table; width: 100%;
+            margin-bottom: 14px;
         }
-        .head-cell { display: table-cell; vertical-align: middle; }
-        .head-title { font-size: 18px; font-weight: 700; letter-spacing: .03em; }
-        .head-sub   { font-size: 11px; opacity: .85; margin-top: 4px; }
-        .head-right { text-align: right; }
-        .head-chip  {
-            display: inline-block; background: rgba(255,255,255,.18);
-            padding: 5px 12px; border-radius: 999px;
-            font-size: 11px; font-weight: 700;
+        .header-left, .header-right {
+            display: table-cell; vertical-align: top;
         }
-        .strip {
-            display: table; width: 100%; margin-top: 14px;
-            border: 1px solid #e5e7eb; border-radius: 8px;
-            border-collapse: collapse;
+        .header-left { width: 60%; }
+        .header-right { width: 40%; text-align: right; }
+
+        .logo-row { display: table; margin-bottom: 4px; }
+        .logo-cell { display: table-cell; vertical-align: middle; padding-right: 10px; }
+        .logo-img { max-height: 46px; max-width: 130px; }
+        .logo-initials {
+            width: 46px; height: 46px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #10b981, #047857);
+            color: #fff;
+            display: inline-block;
+            text-align: center;
+            line-height: 46px;
+            font-size: 18px;
+            font-weight: 800;
         }
-        .strip-cell {
-            display: table-cell; padding: 10px 14px;
-            border-right: 1px solid #e5e7eb;
-            border-bottom: 1px solid #e5e7eb;
-            vertical-align: top;
+        .org-name {
+            font-size: 13px; font-weight: 800; color: #0f172a;
+            margin-bottom: 1px;
         }
-        .strip-cell:last-child { border-right: none; }
-        .strip-cell:nth-last-child(-n+4) { border-bottom: none; }
-        .strip-label {
-            font-size: 9px; font-weight: 700; color: #64748b;
-            text-transform: uppercase; letter-spacing: .08em;
+        .org-line { font-size: 8.5px; color: #475569; line-height: 1.35; }
+        .org-info { margin-top: 6px; font-size: 8.5px; color: #334155; }
+        .org-info-row {
+            display: table; width: 100%;
+            margin-bottom: 1px;
         }
-        .strip-val { font-size: 12px; font-weight: 700; color: #1e2a5e; margin-top: 3px; }
-        .section-title {
-            margin-top: 22px; margin-bottom: 8px;
-            font-size: 13px; font-weight: 700; color: #1e2a5e;
-            border-bottom: 2px solid #2f4d9e; padding-bottom: 4px;
+        .org-info-label { display: table-cell; width: 90px; color: #64748b; font-weight: 600; }
+        .org-info-val   { display: table-cell; color: #1e293b; font-weight: 600; }
+
+        .doc-title {
+            font-size: 14px; font-weight: 800; color: #0f2a52;
+            letter-spacing: .04em; margin-bottom: 6px;
         }
-        table.detail { width: 100%; border-collapse: collapse; }
-        table.detail th, table.detail td {
-            padding: 9px 12px; text-align: left;
-            border-bottom: 1px solid #e5e7eb;
-            font-size: 11px;
+        .barcode-box {
+            display: inline-block; padding: 6px 10px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            margin-bottom: 4px;
         }
-        table.detail th {
-            background: #2f4d9e; color: #fff; font-weight: 700;
-            font-size: 10.5px; letter-spacing: .03em;
+        .barcode-box img, .barcode-box div { display: block; margin: 0 auto; }
+        .website-link {
+            font-size: 8.5px; color: #2563eb; word-break: break-all;
         }
-        .price-band {
-            margin-top: 20px;
-            background: #eff6ff;
-            border: 1.5px solid #bfdbfe;
+
+        /* ── Detail table ─────────────────────────────────────────── */
+        .detail-wrap {
+            margin-top: 4px;
+            border: 1.5px solid #10b981;
             border-radius: 8px;
-            padding: 14px 18px;
-            display: table; width: 100%;
+            padding: 10px;
+            background: #fff;
         }
-        .price-band-cell { display: table-cell; vertical-align: middle; }
-        .price-band-label {
-            font-size: 10px; font-weight: 700; color: #1e40af;
-            text-transform: uppercase; letter-spacing: .08em;
+        .detail-table { width: 100%; border-collapse: collapse; }
+        .detail-table tr td {
+            padding: 7px 12px;
+            font-size: 10px;
+            border-bottom: 1px solid #d1fae5;
         }
-        .price-band-val {
-            font-size: 24px; font-weight: 800; color: #1e2a5e; margin-top: 4px;
+        .detail-table tr:last-child td { border-bottom: none; }
+        .detail-table .label-cell {
+            width: 35%;
+            font-weight: 700; color: #047857;
+            background: #f0fdf4;
+            border-right: 1px solid #d1fae5;
         }
-        .price-band-cell-right { text-align: right; font-size: 10px; color: #475569; }
+        .detail-table .val-cell {
+            color: #0f172a; font-weight: 600;
+        }
+        .price-row td { font-weight: 800; color: #047857; }
+
+        /* ── Footer (fixed at page bottom) ─────────────────────────── */
         .footer {
-            position: fixed; bottom: 20px; left: 40px; right: 40px;
-            font-size: 9px; color: #94a3b8; text-align: center;
-            border-top: 1px solid #e5e7eb; padding-top: 8px;
+            position: fixed; bottom: 14px; left: 32px; right: 32px;
+            border-top: 1.5px solid #10b981;
+            padding-top: 6px;
+            font-size: 8px;
+            color: #475569;
+            text-align: center;
+            line-height: 1.4;
+        }
+        .footer-line1 { font-weight: 700; color: #1e293b; }
+        .footer-link  { color: #2563eb; }
+
+        .divider {
+            height: 1.5px; background: #10b981; margin: 8px 0 12px;
+            border-radius: 1px;
         }
     </style>
 </head>
 <body>
-    <div class="head">
-        <div class="head-cell">
-            <div class="head-title">QUOTATION</div>
-            <div class="head-sub">Cross Border Command · Shared Price Receipt</div>
+    <div class="watermark">{{ $watermark }}</div>
+
+    <!-- ── HEADER ── -->
+    <div class="header">
+        <div class="header-left">
+            <div class="logo-row">
+                <div class="logo-cell">
+                    @if ($logoPath)
+                        <img src="{{ $logoPath }}" alt="logo" class="logo-img">
+                    @else
+                        <span class="logo-initials">{{ strtoupper(substr($orgName, 0, 1)) }}</span>
+                    @endif
+                </div>
+                <div class="logo-cell">
+                    <div class="org-name">{{ $orgName }}</div>
+                    @if ($orgAddress)
+                        <div class="org-line">{{ $orgAddress }}{{ $orgPincode ? ' - ' . $orgPincode : '' }}</div>
+                    @endif
+                    @if ($orgPhone)  <div class="org-line">{{ $orgPhone }}</div>  @endif
+                    @if ($orgEmail)  <div class="org-line">{{ $orgEmail }}</div>  @endif
+                </div>
+            </div>
+
+            <div class="org-info">
+                @if ($orgGst)
+                    <div class="org-info-row">
+                        <span class="org-info-label">GST No.</span>
+                        <span class="org-info-val">{{ $orgGst }}</span>
+                    </div>
+                @endif
+                @if ($orgPan)
+                    <div class="org-info-row">
+                        <span class="org-info-label">PAN No.</span>
+                        <span class="org-info-val">{{ $orgPan }}</span>
+                    </div>
+                @endif
+                <div class="org-info-row">
+                    <span class="org-info-label">Issued By</span>
+                    <span class="org-info-val">{{ $entry->creator?->name ?? '—' }}</span>
+                </div>
+                <div class="org-info-row">
+                    <span class="org-info-label">Opportunity</span>
+                    <span class="org-info-val">{{ $entry->lead?->opp_code ?? $entry->lead?->unique_query_id ?? '—' }}</span>
+                </div>
+                @if ($entry->lead?->customer?->company_name)
+                    <div class="org-info-row">
+                        <span class="org-info-label">Customer</span>
+                        <span class="org-info-val">{{ $entry->lead->customer->company_name }}</span>
+                    </div>
+                @endif
+            </div>
         </div>
-        <div class="head-cell head-right">
-            <span class="head-chip">Q-{{ str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT) }}</span>
-            <div class="head-sub">{{ \Carbon\Carbon::parse($entry->shared_at)->format('d/m/Y H:i') }}</div>
+
+        <div class="header-right">
+            <div class="doc-title">Quotation Document</div>
+            <div class="barcode-box">
+                @if ($barcodeHtml)
+                    {!! $barcodeHtml !!}
+                @else
+                    <div style="font-family: monospace; font-size: 9px; color: #0f172a;">{{ $quoteCode }}</div>
+                @endif
+            </div>
+            @if ($orgWebsite)
+                <div class="website-link">{{ $orgWebsite }}</div>
+            @endif
         </div>
     </div>
 
-    <div class="strip">
-        <div class="strip-cell">
-            <div class="strip-label">Opportunity</div>
-            <div class="strip-val">{{ $entry->lead?->opp_code ?? $entry->lead?->unique_query_id ?? '—' }}</div>
-        </div>
-        <div class="strip-cell">
-            <div class="strip-label">Customer</div>
-            <div class="strip-val">{{ $entry->lead?->customer?->company_name ?? $entry->lead?->sender_name ?? '—' }}</div>
-        </div>
-        <div class="strip-cell">
-            <div class="strip-label">Customer Code</div>
-            <div class="strip-val">{{ $entry->lead?->customer?->customer_code ?? '—' }}</div>
-        </div>
-        <div class="strip-cell">
-            <div class="strip-label">Issued By</div>
-            <div class="strip-val">{{ $entry->creator?->name ?? '—' }}</div>
-        </div>
-    </div>
+    <div class="divider"></div>
 
-    <div class="section-title">Product</div>
-    <table class="detail">
-        <thead>
+    <!-- ── DETAIL TABLE ── -->
+    <div class="detail-wrap">
+        <table class="detail-table">
             <tr>
-                <th>Product Code</th>
-                <th>Product Name</th>
-                <th>Quantity</th>
-                <th>Target Price</th>
-                <th>Currency</th>
+                <td class="label-cell">Product Name</td>
+                <td class="val-cell">{{ $product?->name ?? '—' }}</td>
             </tr>
-        </thead>
-        <tbody>
             <tr>
-                <td>{{ $entry->leadProduct?->product?->product_code ?? '—' }}</td>
-                <td>{{ $entry->leadProduct?->product?->name ?? '—' }}</td>
-                <td>{{ $entry->leadProduct?->quantity !== null ? number_format((float) $entry->leadProduct->quantity, 0) : '—' }}</td>
-                <td>{{ $entry->leadProduct?->target_price !== null ? number_format((float) $entry->leadProduct->target_price, 2) : '—' }}</td>
-                <td>{{ $entry->leadProduct?->currency ?? '—' }}</td>
+                <td class="label-cell">Product Code</td>
+                <td class="val-cell">{{ $product?->product_code ?? '—' }}</td>
             </tr>
-        </tbody>
-    </table>
-
-    <div class="price-band">
-        <div class="price-band-cell">
-            <div class="price-band-label">Quoted Price</div>
-            <div class="price-band-val">{{ $entry->leadProduct?->currency ?? '' }} {{ number_format((float) $entry->quoted_price, 2) }}</div>
-        </div>
-        <div class="price-band-cell price-band-cell-right">
-            Effective on {{ \Carbon\Carbon::parse($entry->shared_at)->format('d M Y, H:i') }}<br>
-            Valid until withdrawn or replaced by a newer quotation
-        </div>
+            <tr>
+                <td class="label-cell">Quantity</td>
+                <td class="val-cell">{{ $lp?->quantity !== null ? number_format((float) $lp->quantity, 0) : '—' }}</td>
+            </tr>
+            <tr>
+                <td class="label-cell">Target Price</td>
+                <td class="val-cell">{{ $lp?->target_price !== null ? number_format((float) $lp->target_price, 2) : '—' }}</td>
+            </tr>
+            <tr class="price-row">
+                <td class="label-cell">Quoted Price</td>
+                <td class="val-cell">{{ number_format((float) $entry->quoted_price, 2) }}</td>
+            </tr>
+            <tr>
+                <td class="label-cell">Currency</td>
+                <td class="val-cell">{{ $lp?->currency ?? '—' }}</td>
+            </tr>
+            <tr>
+                <td class="label-cell">Shared Date</td>
+                <td class="val-cell">{{ $sharedAt->format('Y-m-d H:i:s') }}</td>
+            </tr>
+            <tr>
+                <td class="label-cell">Quotation ID</td>
+                <td class="val-cell">{{ $quoteCode }}</td>
+            </tr>
+        </table>
     </div>
 
+    <!-- ── FOOTER ── -->
     <div class="footer">
-        This quotation is generated by the Cross Border Command Sales Matrix · Entry ID {{ $entry->id }}
+        <div class="footer-line1">
+            {{ $orgName }}
+            @if ($orgGst) | GST: {{ $orgGst }} @endif
+            @if ($orgPan) | PAN: {{ $orgPan }} @endif
+        </div>
+        @if ($orgWebsite)
+            <div class="footer-link">{{ $orgWebsite }}</div>
+        @endif
     </div>
 </body>
 </html>
