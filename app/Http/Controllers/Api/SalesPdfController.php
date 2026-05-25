@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Mail\SalesDocumentEmail;
+use App\Mail\SalesReminderEmail;
 use App\Models\Branch;
 use App\Models\ProformaInvoice;
 use App\Models\Quotation;
@@ -518,17 +519,201 @@ class SalesPdfController extends Controller
                 'to'      => $to,
                 'error'   => $e->getMessage(),
             ]);
+            // Keep the user-facing message generic — raw driver errors
+            // (SMTP timeouts, auth failures, DB exceptions) leak server
+            // internals. The full trace is in laravel.log for ops.
             return response()->json([
                 'status'  => false,
-                'message' => 'Could not send email: ' . $e->getMessage(),
+                'message' => "Could not send {$kind} email. Please try again or contact support.",
             ], 500);
         }
         @unlink($pdfPath);
 
+        // 5) Stamp the first-send time so the frontend can flip the
+        //    Email button to "sent" + enable the Reminder button. Only
+        //    sets emailed_at if it's still null — repeat sends of the
+        //    initial document don't reset the anchor.
+        if (empty($record->emailed_at)) {
+            $record->forceFill(['emailed_at' => now()])->save();
+        }
+
         return response()->json([
-            'status'  => true,
-            'message' => "{$kind} emailed to {$to}",
-            'to'      => $to,
+            'status'         => true,
+            'message'        => "{$kind} emailed to {$to}",
+            'to'             => $to,
+            'emailed_at'     => optional($record->emailed_at)->toIso8601String(),
+            'reminder_count' => (int) ($record->reminder_count ?? 0),
+        ]);
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * REMINDER EMAIL endpoints — POST /sales/quotations/{id}/remind and
+     *                             /sales/proforma-invoices/{id}/remind
+     *
+     * Sends a polite follow-up email to the customer with the document
+     * PDF attached. The original document email MUST have been sent
+     * first (`emailed_at` set) — otherwise the request is rejected
+     * with 422 so the UI can prompt "send the initial email first".
+     *
+     * On success the row's `last_reminded_at` is updated and
+     * `reminder_count` is incremented; the new count is returned in
+     * the JSON so the frontend's reminder badge updates without a
+     * full reload.
+     * ────────────────────────────────────────────────────────────────── */
+    public function remindQuotation(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $quot = Quotation::with([
+            'items', 'branch',
+            'customer:id,customer_code,company_name,primary_email,website',
+            'customer.primaryAddress:id,customer_id,address_line,country,state,city,pin,cp_contact,cp_email',
+            'consignee:id,consignee_code,company_name,primary_email,website',
+            'consignee.primaryAddress:id,consignee_id,address_line,country,state,city,pin,cp_contact,cp_email',
+            'lead:id,opp_code,query_time',
+            'salesManager:id,name',
+        ])->findOrFail($id);
+
+        if ($user->user_type !== 'super_admin' &&
+            (!$user->client_id || (int) $quot->client_id !== (int) $user->client_id)) {
+            abort(404);
+        }
+
+        return $this->sendSalesReminderEmail(
+            $request, $quot,
+            kind: 'Quotation', pdfTitle: 'QUOTATION DOCUMENT', docLabel: 'QT',
+            filenamePrefix: 'Quotation',
+        );
+    }
+
+    public function remindProformaInvoice(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $pi = ProformaInvoice::with([
+            'items', 'branch',
+            'customer:id,customer_code,company_name,primary_email,website',
+            'customer.primaryAddress:id,customer_id,address_line,country,state,city,pin,cp_contact,cp_email',
+            'consignee:id,consignee_code,company_name,primary_email,website',
+            'consignee.primaryAddress:id,consignee_id,address_line,country,state,city,pin,cp_contact,cp_email',
+            'lead:id,opp_code,query_time',
+            'salesManager:id,name',
+        ])->findOrFail($id);
+
+        if ($user->user_type !== 'super_admin' &&
+            (!$user->client_id || (int) $pi->client_id !== (int) $user->client_id)) {
+            abort(404);
+        }
+
+        return $this->sendSalesReminderEmail(
+            $request, $pi,
+            kind: 'Proforma Invoice', pdfTitle: 'PROFORMA INVOICE', docLabel: 'PI',
+            filenamePrefix: 'PI',
+        );
+    }
+
+    /**
+     * Shared reminder sender — mirrors sendSalesDocumentEmail but uses
+     * the reminder Mailable + a different sequence rule:
+     *   1) The initial email must have already gone out (`emailed_at`
+     *      not null), otherwise 422.
+     *   2) PDF is re-rendered and attached so the customer doesn't
+     *      have to dig for the original.
+     *   3) On success `reminder_count` is bumped and `last_reminded_at`
+     *      is stamped — the response returns the new count so the
+     *      frontend can update its badge.
+     */
+    private function sendSalesReminderEmail(Request $request, $record, string $kind, string $pdfTitle, string $docLabel, string $filenamePrefix): JsonResponse
+    {
+        // Sequence guard — no reminder before the original email.
+        if (empty($record->emailed_at)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Send the initial email first — reminders go out only after the customer has received the document.',
+            ], 422);
+        }
+
+        // Recipient resolution — same chain as the initial send.
+        $override = trim((string) $request->input('to', ''));
+        if ($override !== '' && filter_var($override, FILTER_VALIDATE_EMAIL)) {
+            $to = $override;
+        } else {
+            $cust   = $record->customer;
+            $custAd = $cust?->primaryAddress;
+            $to     = $custAd?->cp_email ?? $cust?->primary_email ?? null;
+        }
+        if (!$to || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'No valid email address for this customer. Set a primary contact email on the customer first.',
+            ], 422);
+        }
+
+        $withSignature = $request->boolean('signature', true);
+
+        // Re-render the PDF so the reminder always carries the latest
+        // version of the document (price/terms may have been edited).
+        $viewData = $this->buildQuotationViewData($record, $withSignature, $pdfTitle, $docLabel);
+        $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
+            ->setPaper('A4', 'portrait')
+            ->setOption('isPhpEnabled', true);
+
+        $tmpDir = storage_path('app/tmp/sales-pdfs');
+        if (!is_dir($tmpDir)) @mkdir($tmpDir, 0775, true);
+        $safeCode = preg_replace('/[^A-Za-z0-9_-]/', '_', $record->code ?? ('id-' . $record->id));
+        $pdfFilename = $filenamePrefix . '-' . $safeCode . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
+        $pdfPath = $tmpDir . '/' . uniqid('remind-', true) . '-' . $pdfFilename;
+        $pdf->save($pdfPath);
+
+        $branch         = $record->branch;
+        $reminderNumber = (int) ($record->reminder_count ?? 0) + 1;
+
+        $payload = [
+            'docKind'        => $kind,
+            'docCode'        => $record->code,
+            'docDate'        => optional($record->created_at)->format('d/m/Y') ?: date('d/m/Y'),
+            'branchName'     => $branch?->name    ?: ($branch?->code ?: 'Sales Team'),
+            'branchEmail'    => $branch?->email   ?: null,
+            'branchWebsite'  => $branch?->website ?: null,
+            'customerName'   => $record->customer?->company_name ?: ($record->customer_name ?: 'Sir/Madam'),
+            'reminderNumber' => $reminderNumber,
+            'pdfPath'        => $pdfPath,
+            'pdfFilename'    => $pdfFilename,
+        ];
+
+        try {
+            Mail::to($to)->send(new SalesReminderEmail($payload));
+        } catch (\Throwable $e) {
+            @unlink($pdfPath);
+            Log::error('Sales reminder email failed', [
+                'kind'    => $kind,
+                'record'  => $record->code,
+                'to'      => $to,
+                'error'   => $e->getMessage(),
+            ]);
+            return response()->json([
+                'status'  => false,
+                'message' => 'Could not send reminder. Please try again or contact support.',
+            ], 500);
+        }
+        @unlink($pdfPath);
+
+        // Stamp reminder bookkeeping atomically — increment count and
+        // record the timestamp on the same row update so a race between
+        // two rapid clicks doesn't lose a count.
+        $record->forceFill([
+            'reminder_count'   => $reminderNumber,
+            'last_reminded_at' => now(),
+        ])->save();
+
+        return response()->json([
+            'status'           => true,
+            'message'          => "Reminder #{$reminderNumber} sent to {$to}",
+            'to'               => $to,
+            'reminder_count'   => $reminderNumber,
+            'last_reminded_at' => optional($record->last_reminded_at)->toIso8601String(),
         ]);
     }
 

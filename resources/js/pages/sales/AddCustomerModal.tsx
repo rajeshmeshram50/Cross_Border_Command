@@ -394,7 +394,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           id: number;
           status: TdSigStatus;
           trade_doc_ids: number[];
-          signed_document_paths?: Array<{ url?: string; path?: string }> | null;
+          signed_document_paths?: Array<{ url?: string; path?: string; file_url?: string }> | string[] | null;
+          signed_document_path?: string | null;
+          certificate_path?: string | null;
+          file_url?: string | null;
         }> = Array.isArray(r.data?.data) ? r.data.data : [];
 
         // Latest request wins when a single doc has been resent. The list
@@ -407,13 +410,28 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           for (let i = 0; i < ids.length; i++) {
             const docId = Number(ids[i]);
             if (!docId || map[docId]) continue;
-            const signedEntry = Array.isArray(row.signed_document_paths) ? row.signed_document_paths[i] : null;
+            // Resolve a usable URL from whatever the backend populated.
+            // Production sometimes returns signed_document_paths=null
+            // (the Zoho-download queue job hadn't run yet) while the
+            // webhook-set certificate_path is already there. Fall back
+            // through the chain so the View / Download buttons enable
+            // as soon as ANY signed artefact exists, instead of staying
+            // disabled until the queue worker catches up.
+            const signedArr = row.signed_document_paths;
+            let rawSignedUrl: string | null = null;
+            if (Array.isArray(signedArr)) {
+              const entry = signedArr[i] as { url?: string; path?: string; file_url?: string } | string | undefined;
+              if (typeof entry === 'string') rawSignedUrl = entry;
+              else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
+            }
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
+            if (!rawSignedUrl) rawSignedUrl = row.file_url || null;
+            if (!rawSignedUrl) rawSignedUrl = row.certificate_path || null;
             // Route the URL through resolveFileUrl so it picks up the
             // right base (VITE_API_URL on the deployed SPA, current
             // origin in dev), and so legacy /storage prefixes don't
             // double-stack. Prevents the "View / Download icons go
             // nowhere" bug when the SPA origin differs from the API.
-            const rawSignedUrl = signedEntry?.url || signedEntry?.path || null;
             map[docId] = {
               status: row.status,
               signatureRequestId: row.id,

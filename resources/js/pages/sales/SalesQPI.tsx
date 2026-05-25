@@ -38,6 +38,13 @@ export type Quotation = {
   // or because a PI was POSTed referencing it as source_quotation_id),
   // the button is locked into a "Converted" disabled chip.
   status?: string;     // draft | sent | approved | converted_to_pi | cancelled
+  // Email + reminder state — drives which of the two buttons (Email /
+  // Reminder) is enabled in the row's actions:
+  //   emailedAt == null → Email enabled, Reminder disabled
+  //   emailedAt != null → Email disabled (initial mail already went),
+  //                        Reminder enabled (badge shows count)
+  emailedAt?: string | null;
+  reminderCount?: number;
 };
 
 type PI = {
@@ -54,6 +61,9 @@ type PI = {
   docType: 'International' | 'Domestic';
   currency: string;
   salesManager: string;
+  // Same email/reminder state as Quotation rows above.
+  emailedAt?: string | null;
+  reminderCount?: number;
 };
 
 const ROWS_PER_PAGE = 10;
@@ -363,6 +373,8 @@ export default function SalesQPI() {
           currency:     r.currency ?? '',
           salesManager: r.sales_manager_name ?? r.salesManager?.name ?? '—',
           status:       r.status ?? 'draft',
+          emailedAt:    r.emailed_at ?? null,
+          reminderCount: Number(r.reminder_count ?? 0),
         }));
         setQuotations(rows);
       })
@@ -396,6 +408,8 @@ export default function SalesQPI() {
           docType:     (r.doc_type ?? 'International') as 'International' | 'Domestic',
           currency:    r.currency ?? '',
           salesManager: r.sales_manager_name ?? r.salesManager?.name ?? '—',
+          emailedAt:   r.emailed_at ?? null,
+          reminderCount: Number(r.reminder_count ?? 0),
           // Stash pi_type on the row so the sub-tab filter can split it.
           // Cast to any so we don't have to widen the public PI type.
           ...(r.pi_type ? { _piType: r.pi_type } : {}),
@@ -463,7 +477,11 @@ export default function SalesQPI() {
 
   /* Email PDF state — per-row busy flag (so only the clicked row shows
    * a spinner). Tagged with the kind so the same id can't collide
-   * between a Quotation row id and a PI row id. */
+   * between a Quotation row id and a PI row id.
+   *
+   * The same flag covers BOTH initial-email sends AND reminders,
+   * because the two actions are mutually exclusive per-row (the UI
+   * only enables one or the other based on emailedAt). */
   const [emailingFor, setEmailingFor] = useState<{ kind: 'quotation' | 'pi'; id: number } | null>(null);
   const sendDocEmail = async (kind: 'quotation' | 'pi', id: number, code: string) => {
     if (!id) { toast.error('Cannot email', 'This record has no server id yet.'); return; }
@@ -475,9 +493,43 @@ export default function SalesQPI() {
     try {
       const { data } = await api.post(url, { signature: true });
       toast.success('Email sent', `${code} → ${data?.to ?? 'customer'}`);
+      // Optimistically flip the row's emailedAt so the buttons swap
+      // immediately (Email → disabled, Reminder → enabled) without
+      // waiting for a full reload. Server response also carries the
+      // canonical timestamp; we prefer it when present.
+      const stamp = data?.emailed_at ?? new Date().toISOString();
+      const patch = (r: any) => r.id === id ? { ...r, emailedAt: stamp } : r;
+      if (kind === 'quotation') setQuotations(rows => rows.map(patch));
+      else                       setPis(rows => rows.map(patch));
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? 'Could not send email. Check the customer has a primary email.';
       toast.error('Email failed', String(msg));
+    } finally {
+      setEmailingFor(null);
+    }
+  };
+
+  /* Reminder follow-up — gated by emailedAt server-side (controller
+   * returns 422 if the initial email hasn't been sent yet). On success
+   * we patch the row's reminderCount locally so the badge updates
+   * without a full reload. */
+  const sendReminder = async (kind: 'quotation' | 'pi', id: number, code: string) => {
+    if (!id) { toast.error('Cannot remind', 'This record has no server id yet.'); return; }
+    if (emailingFor) return;
+    setEmailingFor({ kind, id });
+    const url = kind === 'quotation'
+      ? `/sales/quotations/${id}/remind`
+      : `/sales/proforma-invoices/${id}/remind`;
+    try {
+      const { data } = await api.post(url, { signature: true });
+      const n = Number(data?.reminder_count ?? 0);
+      toast.success('Reminder sent', `${code} → ${data?.to ?? 'customer'} (#${n})`);
+      const patch = (r: any) => r.id === id ? { ...r, reminderCount: n } : r;
+      if (kind === 'quotation') setQuotations(rows => rows.map(patch));
+      else                       setPis(rows => rows.map(patch));
+    } catch (e: any) {
+      const msg = e?.response?.data?.message ?? 'Could not send reminder.';
+      toast.error('Reminder failed', String(msg));
     } finally {
       setEmailingFor(null);
     }
@@ -566,17 +618,40 @@ export default function SalesQPI() {
   const [piMenuFor, setPiMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown> } | null>(null);
 
   /* Stable ActionBtn — matches the customer-page pattern: neutral tile,
-   * hover shifts border + icon to the column accent. */
-  const ActionBtn = (p: { title: string; icon: React.ReactNode; color: string; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; ariaLabel?: string }) => (
+   * hover shifts border + icon to the column accent.
+   * Optional `disabled` greys the tile and blocks the click handler.
+   * Optional `badge` overlays a small count chip in the top-right
+   * corner (used by the Reminder button to show how many reminders
+   * have already gone out). */
+  const ActionBtn = (p: {
+    title: string;
+    icon: React.ReactNode;
+    color: string;
+    onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+    ariaLabel?: string;
+    disabled?: boolean;
+    badge?: number;
+  }) => (
     <Tooltip label={p.title}>
       <button
         type="button"
         aria-label={p.ariaLabel ?? p.title}
-        className="qpi-act"
-        style={{ ['--qpi-act-accent' as any]: p.color }}
-        onClick={p.onClick}
+        className={`qpi-act${p.disabled ? ' qpi-act-disabled' : ''}`}
+        style={{ ['--qpi-act-accent' as any]: p.color, position: 'relative' }}
+        disabled={p.disabled}
+        onClick={p.disabled ? undefined : p.onClick}
       >
         {p.icon}
+        {p.badge !== undefined && p.badge > 0 && (
+          <span style={{
+            position: 'absolute', top: -6, right: -6,
+            minWidth: 16, height: 16, padding: '0 4px',
+            background: p.color, color: '#fff',
+            borderRadius: 8, fontSize: 9, fontWeight: 700,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            border: '1px solid #fff', lineHeight: 1,
+          }}>{p.badge}</span>
+        )}
       </button>
     </Tooltip>
   );
@@ -650,11 +725,39 @@ export default function SalesQPI() {
                 </span>
               </button>
             )}
+            {/* Email button — only enabled until the first send. After
+                emailedAt is set the button greys out and the Reminder
+                button to its right takes over. */}
             <ActionBtn
-              title={emailingFor?.kind === 'quotation' && emailingFor.id === r.id ? 'Sending…' : 'Email Quotation'}
+              title={
+                emailingFor?.kind === 'quotation' && emailingFor.id === r.id
+                  ? 'Sending…'
+                  : r.emailedAt
+                    ? 'Already emailed — use Reminder to follow up'
+                    : 'Email Quotation'
+              }
               icon={<IconMail />}
               color="#2563eb"
+              disabled={!!r.emailedAt || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
+            />
+            {/* Reminder button — opposite of Email: disabled until the
+                initial email has gone out, then enabled with a small
+                count badge showing how many reminders have already
+                been sent. */}
+            <ActionBtn
+              title={
+                emailingFor?.kind === 'quotation' && emailingFor.id === r.id
+                  ? 'Sending…'
+                  : r.emailedAt
+                    ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
+                    : 'Send initial email first to enable reminders'
+              }
+              icon={<IconBellSm />}
+              color="#f59e0b"
+              disabled={!r.emailedAt || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
+              badge={r.reminderCount ?? 0}
+              onClick={() => r.id && sendReminder('quotation', r.id, r.qtNo)}
             />
             <ActionBtn
               title="Edit Quotation"
@@ -736,11 +839,35 @@ export default function SalesQPI() {
         const r = info.row.original as PI;
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
+            {/* Email + Reminder pair — mirrors the Quotation row:
+                Email disabled once emailedAt is set; Reminder enabled
+                only after that, with a badge counting prior reminders. */}
             <ActionBtn
-              title={emailingFor?.kind === 'pi' && emailingFor.id === r.id ? 'Sending…' : 'Email PI'}
+              title={
+                emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                  ? 'Sending…'
+                  : r.emailedAt
+                    ? 'Already emailed — use Reminder to follow up'
+                    : 'Email PI'
+              }
               icon={<IconMail />}
               color="#2563eb"
+              disabled={!!r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
               onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
+            />
+            <ActionBtn
+              title={
+                emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                  ? 'Sending…'
+                  : r.emailedAt
+                    ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
+                    : 'Send initial email first to enable reminders'
+              }
+              icon={<IconBellSm />}
+              color="#f59e0b"
+              disabled={!r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+              badge={r.reminderCount ?? 0}
+              onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
             />
             <ActionBtn
               title="Edit PI"
@@ -1540,10 +1667,12 @@ export function CreateQuotationModal(props: {
       }
       onSubmit();   // Parent closes modal + reloads list.
     } catch (e: any) {
-      const msg = e?.response?.data?.message
-        || e?.response?.data?.errors
-            ? Object.values(e.response.data.errors).flat().join(' ')
-            : 'Could not save the quotation.';
+      // Use ?? + explicit parens to avoid the (|| ? :) precedence trap —
+      // the old code crashed when the API returned `{message: '...'}`
+      // without an `errors` map (it'd run `Object.values(undefined)`).
+      const data = e?.response?.data;
+      const msg = data?.message
+        ?? (data?.errors ? Object.values(data.errors).flat().join(' ') : 'Could not save the quotation.');
       toast.error('Save failed', String(msg));
     } finally {
       setSaving(false);
@@ -1551,7 +1680,31 @@ export function CreateQuotationModal(props: {
   };
 
   const addProduct = () => {
-    if (!draft.name || draft.qty <= 0 || draft.rate <= 0) return;
+    // Required-field validation with explicit feedback — the old silent
+    // `return` left the user wondering why the Add button "did nothing".
+    if (!draft.name) {
+      toast.error('Product required', 'Please select a product from the dropdown first.');
+      return;
+    }
+    if (!(draft.qty > 0)) {
+      toast.error('Quantity required', 'Enter a quantity greater than 0.');
+      return;
+    }
+    if (!(draft.rate > 0)) {
+      toast.error('Rate required', 'Enter a product rate greater than 0.');
+      return;
+    }
+    // Duplicate guard — the dropdown already filters out added products,
+    // so this is a backstop for free-text rows or race conditions. By
+    // productId for master-picked rows, by name as a fallback for
+    // free-text rows.
+    const dup = draft.productId
+      ? products.some(p => p.productId === draft.productId)
+      : products.some(p => p.name === draft.name);
+    if (dup) {
+      toast.error('Already added', `${draft.name} is already in the list. Remove it first to change quantity or rate.`);
+      return;
+    }
     setProducts(p => [...p, { ...draft, id: Date.now() }]);
     setDraft({ id:0, productId:null, hsn:null, name:'', qty:0, rate:0, taxPct:0 });
   };
@@ -1873,7 +2026,31 @@ export function CreatePIModal(props: {
   };
 
   const addProduct = () => {
-    if (!draft.name || draft.qty <= 0 || draft.rate <= 0) return;
+    // Required-field validation with explicit feedback — the old silent
+    // `return` left the user wondering why the Add button "did nothing".
+    if (!draft.name) {
+      toast.error('Product required', 'Please select a product from the dropdown first.');
+      return;
+    }
+    if (!(draft.qty > 0)) {
+      toast.error('Quantity required', 'Enter a quantity greater than 0.');
+      return;
+    }
+    if (!(draft.rate > 0)) {
+      toast.error('Rate required', 'Enter a product rate greater than 0.');
+      return;
+    }
+    // Duplicate guard — the dropdown already filters out added products,
+    // so this is a backstop for free-text rows or race conditions. By
+    // productId for master-picked rows, by name as a fallback for
+    // free-text rows.
+    const dup = draft.productId
+      ? products.some(p => p.productId === draft.productId)
+      : products.some(p => p.name === draft.name);
+    if (dup) {
+      toast.error('Already added', `${draft.name} is already in the list. Remove it first to change quantity or rate.`);
+      return;
+    }
     setProducts(p => [...p, { ...draft, id: Date.now() }]);
     setDraft({ id:0, productId:null, hsn:null, name:'', qty:0, rate:0, taxPct:0 });
   };
@@ -2452,14 +2629,41 @@ function ProductsStep(props: {
 
   // Narrowed dropdown — keeps the source of truth + lookup mapping in
   // sync without re-fetching the master.
+  // Two filters stack:
+  //   1) Lead-product restriction (when an opportunity is picked, only
+  //      products mapped to that opp are pickable).
+  //   2) Hide products already added to this quotation/PI so the user
+  //      can't add the same line twice. To change qty/rate on an
+  //      existing line, the user must remove it first — then the
+  //      product reappears in the dropdown.
   const visibleProductOptions = useMemo(() => {
-    if (!allowedProductIds || allowedProductIds.size === 0) return productOptions;
-    const allowedLabels = new Set(
-      productsRaw.filter(p => allowedProductIds.has(p.dbId))
-                 .map(p => `${p.code} – ${p.name}`)
+    let opts = productOptions;
+
+    if (allowedProductIds && allowedProductIds.size > 0) {
+      const allowedLabels = new Set(
+        productsRaw.filter(p => allowedProductIds.has(p.dbId))
+                   .map(p => `${p.code} – ${p.name}`)
+      );
+      opts = opts.filter(o => allowedLabels.has(o.value));
+    }
+
+    // Build a set of already-added productIds (skip free-text rows that
+    // have no productId, otherwise we'd over-filter).
+    const addedIds = new Set(
+      products.map(p => p.productId).filter((id): id is number => id != null)
     );
-    return productOptions.filter(o => allowedLabels.has(o.value));
-  }, [allowedProductIds, productOptions, productsRaw]);
+    if (addedIds.size > 0) {
+      opts = opts.filter(o => {
+        const code = (o.value || '').split(' – ')[0]?.trim() ?? '';
+        const master = productsRaw.find(pr => pr.code === code);
+        // Keep options without a master match (free-text edge case) and
+        // those whose productId is NOT already in the list.
+        return !master || !addedIds.has(master.dbId);
+      });
+    }
+
+    return opts;
+  }, [allowedProductIds, productOptions, productsRaw, products]);
 
   // On product selection, auto-fill hsn + (qty/rate/tax) from masters.
   // Priority for rate: lead-product target_price > product master base_price.
@@ -2648,6 +2852,12 @@ const IconUsers = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
     <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+);
+const IconBellSm = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
   </svg>
 );
 const IconFile = () => (
@@ -3252,6 +3462,23 @@ const SCOPED_CSS = `
 }
 .qpi-act:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(15,23,42,.06); }
 .qpi-act:active { transform: translateY(0); }
+/* Disabled state for action tiles (e.g. Email after first send, or
+   Reminder before first send). Greyed out, no hover lift, no pointer. */
+.qpi-act-disabled,
+.qpi-act:disabled,
+.qpi-act[disabled] {
+  cursor: not-allowed;
+  opacity: 0.45;
+  background: var(--vz-secondary-bg, #f3f3f9);
+  color: var(--vz-secondary-color, #878a99) !important;
+  border-color: var(--vz-border-color, #e9ecef) !important;
+}
+.qpi-act-disabled:hover,
+.qpi-act:disabled:hover,
+.qpi-act[disabled]:hover {
+  transform: none;
+  box-shadow: none;
+}
 .qpi-act:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgba(124,58,237,.18);
@@ -3890,6 +4117,18 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-act-edit:hover { border-color: #4ade80; color: #86efac; }
 [data-bs-theme="dark"] .qpi-act-menu:hover { border-color: #a78bfa; color: #e9d5ff; }
 [data-bs-theme="dark"] .qpi-act-del:hover  { border-color: #f87171; color: #fca5a5; }
+/* Disabled-state action tile in dark mode — keep the muted look that
+   reads as "not interactive" without going invisible against the dark
+   table row background. Targets both the explicit class (.qpi-act-disabled)
+   and the native :disabled / [disabled] selectors. */
+[data-bs-theme="dark"] .qpi-act-disabled,
+[data-bs-theme="dark"] .qpi-act:disabled,
+[data-bs-theme="dark"] .qpi-act[disabled] {
+  background: #1c2531 !important;
+  border-color: rgba(167,139,250,.18) !important;
+  color: rgba(196,181,253,.45) !important;
+  opacity: 0.55;
+}
 
 /* Convert button */
 [data-bs-theme="dark"] .qpi-convert-btn {

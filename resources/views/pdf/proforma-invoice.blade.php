@@ -4,16 +4,38 @@
 <meta charset="utf-8" />
 <title>{{ strtoupper($pdf_title ?? 'PROFORMA INVOICE') }} — {{ $quotation->pi_number ?? '' }}</title>
 <style>
-    @page { margin-bottom: 20px; }
+    @page { margin-bottom: 10px; }
 
     .pdf-footer {
         position: fixed;
-        margin-bottom: 30px;
+        /* Hugs the page edge so the page indicator (drawn at an
+           absolute Y by page_text) lands INSIDE the footer's white
+           background instead of floating below it. */
+        margin-bottom: 0;
         bottom: 0; left: 0; right: 0; width: 100%;
-        border-top: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};
-        padding: 5px 0;
+        /* Thin green top border per the reference spec (#8BC34A).
+           No bottom border — the reference shows only the top line. */
+        border-top: 1px solid #8BC34A;
+        padding: 5px 0 10px 0;
         background: white;
         z-index: 1000;
+        /* Typography per spec — Helvetica preferred, font-size 9px,
+           regular weight, neutral dark grey for the main strip. */
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 9px;
+        font-weight: 400;
+        color: #4d4d4d;
+    }
+    .pdf-footer .pf-pageindicator {
+        /* Pagination row — slightly larger and a touch lighter than
+           the main strip per the spec (10px, #666). Sits inside the
+           same white footer block as the company strip above (no
+           border or gap between the two rows). */
+        text-align: center;
+        font-size: 10px;
+        color: #666666;
+        padding: 2px 0 0 0;
+        height: 14px;
     }
 
     body {
@@ -95,33 +117,46 @@
 </head>
 <body>
 
-<!-- GLOBAL FOOTER — matches the reference Inorbvict letterhead layout:
-     LEFT: small barcode + URL beneath it (only when branch.website is set),
-     CENTER: company identity strip (Name | CIN | GST | IEC | PAN),
-     RIGHT: today's print date.
-     A "Page X of Y" line is drawn centered just beneath this footer
-     table via the <script type="text/php"> block at the bottom of this
-     file ({PAGE_COUNT} is only resolvable from page_text()). -->
+<!-- GLOBAL FOOTER — corporate export-document style, per spec.
+     One white block, two rows, one shared background.
+     ROW 1: barcode + URL centered beneath it (LEFT, rowspan=2 so it
+            vertically centers across both rows), company compliance
+            strip "Name | CIN | GST | IEC | PAN" (CENTER), document
+            date (RIGHT, rowspan=2 so it baseline-aligns with the
+            company strip).
+     ROW 2: "Page X of Y" pagination — actual text drawn via the
+            <script type="text/php"> block at the bottom of this file
+            ({PAGE_COUNT} only resolves there). The empty cell holds
+            the vertical space so the page indicator lands on the same
+            white background as the rest of the footer. -->
 <div class="pdf-footer">
     <table style="width: 100%; border-collapse: collapse; margin: 0;">
         <tr>
-            <td style="width: 15%; text-align: left; vertical-align: middle; padding-left: 10px;">
+            <td rowspan="2" style="width: 18%; text-align: center; vertical-align: middle; padding: 2px 6px 2px 10px;">
                 @if(!empty($barcodeData))
-                    <img src="{{ $barcodeData }}" alt="Barcode" width="100" height="22" style="width:100px; height:22px; display:block;">
-                    <div style="font-size:7px; color:#333; text-align:left; word-break:break-all; line-height:9px; margin-top:1px; max-width:120px;">
-                        {{ $companyDetails->website ?? '' }}
-                    </div>
+                    <img src="{{ $barcodeData }}" alt="Barcode" style="width:110px; height:35px; display:block; margin:0 auto;">
+                    @if(!empty($companyDetails->website))
+                        <div style="font-size:7px; color:#4d4d4d; text-align:center; word-break:break-all; line-height:9px; margin-top:2px;">
+                            {{ $companyDetails->website }}
+                        </div>
+                    @endif
                 @endif
             </td>
-            <td style="width: 70%; text-align: center; vertical-align: middle; font-size: 9px; color: #333; padding: 0 8px;">
+            <td style="width: 67%; text-align: center; vertical-align: top; padding: 8px 8px 0 8px; line-height: 13px;">
                 {{ $companyDetails->name }}
                 @if($companyDetails->cin)    | CIN: {{ $companyDetails->cin }}    @endif
                 @if($companyDetails->gst_no) | GST: {{ $companyDetails->gst_no }} @endif
                 @if($companyDetails->iec)    | IEC: {{ $companyDetails->iec }}    @endif
                 @if($companyDetails->pan_no) | PAN: {{ $companyDetails->pan_no }} @endif
             </td>
-            <td style="width: 15%; text-align: right; vertical-align: middle; padding-right: 10px; font-size: 9px; color: #333;">
+            <td rowspan="2" style="width: 15%; text-align: right; vertical-align: top; padding: 8px 10px 0 6px;">
                 {{ date('d/m/Y') }}
+            </td>
+        </tr>
+        <tr>
+            <td class="pf-pageindicator">
+                {{-- "Page X of Y" drawn here by the page_text() script. --}}
+                &nbsp;
             </td>
         </tr>
     </table>
@@ -635,6 +670,24 @@
                             </table>
                         </section>
                     @endif
+
+                    <!-- TERMS & CONDITIONS — sourced from the form's
+                         "Terms & Conditions" textarea (saved on the
+                         quotation/PI row as `terms`). Rendered AFTER
+                         the signature block per requirement. Only
+                         renders when non-empty. nl2br preserves line
+                         breaks the user typed (DomPDF collapses raw
+                         \n otherwise). -->
+                    @if(!empty(trim($quotation->terms_and_conditions ?? '')))
+                        <section style="margin-top: 14px; margin-bottom: 8px; page-break-inside: avoid;">
+                            <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
+                                Terms &amp; Conditions
+                            </div>
+                            <div style="font-size: 9px; color: #555; line-height: 14px;">
+                                {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
+                            </div>
+                        </section>
+                    @endif
                 </div>
             @endif
         </div>
@@ -790,6 +843,21 @@
                         </table>
                     </section>
                 @endif
+
+                {{-- TERMS & CONDITIONS — mirrors the inline render on the
+                     last-product-page footer above. Rendered AFTER the
+                     signature block per requirement. Same data source
+                     ($quotation->terms_and_conditions ← form's `terms`). --}}
+                @if(!empty(trim($quotation->terms_and_conditions ?? '')))
+                    <section style="margin-top: 14px; margin-bottom: 8px; page-break-inside: avoid;">
+                        <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
+                            Terms &amp; Conditions
+                        </div>
+                        <div style="font-size: 9px; color: #555; line-height: 14px;">
+                            {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
+                        </div>
+                    </section>
+                @endif
             </div>
         </div>
     @endif
@@ -819,15 +887,25 @@ if (isset($pdf)) {
     // Font is DejaVu Sans because it's the only font we can rely on
     // being registered in the DomPDF cache; "helvetica" silently
     // falls back to a default that doesn't always draw via page_text().
-    // Page indicator — "Page 1 of 3" centered just beneath the footer
-    // table, in the @page bottom margin area.
+    // Page indicator — "Page 1 of 3" inside the SECOND row of the footer
+    // table (same white background as the company strip above).
+    //
+    // Style: matches the company strip's *rendered* size. CSS "9px" in
+    // DomPDF (96 DPI) renders at ~6.75pt, while page_text() takes PDF
+    // points directly — so size 7 here visually matches the 9px HTML.
+    // Color #4d4d4d (RGB 0.30) matches the strip color.
+    //
+    // Width calc uses a REPRESENTATIVE rendered string ("Page 9 of 9"),
+    // not the literal placeholder "Page {PAGE_NUM} of {PAGE_COUNT}" —
+    // the placeholder is ~3× wider than the actual rendered text, which
+    // was offsetting the text left of true center.
     $font = $fontMetrics->get_font("DejaVu Sans", "normal");
-    $size = 9;
+    $size = 7;
     $text = "Page {PAGE_NUM} of {PAGE_COUNT}";
-    $width = $fontMetrics->get_text_width($text, $font, $size);
-    $x = ($pdf->get_width() - $width) / 2;
-    $y = $pdf->get_height() - 18;
-    $pdf->page_text($x, $y, $text, $font, $size, [0.2, 0.2, 0.2]);
+    $width = $fontMetrics->get_text_width("Page 9 of 9", $font, $size);
+    $x = ($pdf->get_width() - $width) / 2 + 2;
+    $y = $pdf->get_height() - 28;
+    $pdf->page_text($x, $y, $text, $font, $size, [0.30, 0.30, 0.30]);
 }
 </script>
 

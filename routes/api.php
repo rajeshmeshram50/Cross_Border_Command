@@ -336,6 +336,13 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/sales/quotations/{id}/email',         [SalesPdfController::class, 'emailQuotation']);
     Route::post  ('/sales/proforma-invoices/{id}/email',  [SalesPdfController::class, 'emailProformaInvoice']);
 
+    // Reminder follow-ups — gated behind the initial email (controller
+    // returns 422 if `emailed_at` is still null). Each send increments
+    // `reminder_count` and stamps `last_reminded_at` on the row so the
+    // UI badge stays in sync without a full reload.
+    Route::post  ('/sales/quotations/{id}/remind',        [SalesPdfController::class, 'remindQuotation']);
+    Route::post  ('/sales/proforma-invoices/{id}/remind', [SalesPdfController::class, 'remindProformaInvoice']);
+
     // Sales Matrix → Leads (My Workplace). Three feeders write here:
     //   - POST /sales/leads        manual capture (Add New Lead modal)
     //   - POST /sales/leads/sync   pull from IndiaMart CRM keys

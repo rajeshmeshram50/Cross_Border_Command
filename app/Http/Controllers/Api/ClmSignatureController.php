@@ -374,10 +374,25 @@ class ClmSignatureController extends Controller
         // still-`inprogress` rows and pull their live status from Zoho.
         // Newly-completed rows trigger a one-shot signed-PDF + certificate
         // download so the next list response carries the artefact paths.
+        //
+        // Recovery path — also retry the artifact fetch for rows already
+        // marked `completed` locally but missing `signed_document_paths`
+        // on disk. That happens when the initial fetchSignedArtifacts
+        // succeeded for the certificate (separate try/catch) but Zoho's
+        // per-document PDF download failed transiently (network blip,
+        // Zoho's signed PDF still processing in their pipeline, etc.).
+        // Without this, the user is stuck seeing the Certificate icon
+        // enabled and the View / Download icons disabled forever.
         if ($request->boolean('sync') && $this->zoho->isConfigured()) {
             $changed = false;
             foreach ($rows as $row) {
-                if ($row->status !== 'inprogress' || !$row->zoho_request_id) continue;
+                if (!$row->zoho_request_id) continue;
+
+                $isInProgress      = $row->status === 'inprogress';
+                $isCompletedNoFile = $row->status === 'completed'
+                    && empty($row->signed_document_paths);
+                if (!$isInProgress && !$isCompletedNoFile) continue;
+
                 try {
                     $details = $this->zoho->getRequest($row->zoho_request_id);
                     $newStatus = strtolower((string) data_get($details, 'requests.request_status', $row->status));
@@ -388,9 +403,18 @@ class ClmSignatureController extends Controller
                         }
                         $row->save();
                         $changed = true;
-                        if ($newStatus === 'completed') {
-                            $this->fetchSignedArtifacts($row, $details);
-                        }
+                    }
+                    // Retry artifact fetch on EVERY completed-with-no-file
+                    // pass too, not just on the status transition. Cheap
+                    // when files already exist (fetchSignedArtifacts
+                    // overwrites on success). The user's "View/Download
+                    // stuck disabled" stops as soon as the PDF download
+                    // succeeds.
+                    if ($newStatus === 'completed'
+                        && empty($row->fresh()->signed_document_paths)
+                    ) {
+                        $this->fetchSignedArtifacts($row, $details);
+                        $changed = true;
                     }
                 } catch (\Throwable $e) {
                     Log::warning("Zoho sync skipped for sig request {$row->id}: " . $e->getMessage());
@@ -680,8 +704,33 @@ class ClmSignatureController extends Controller
 
         if ($ns) {
             $addr = $party->primaryAddress;   // null-safe via PHP 8 ?->
+
+            // The three address tables don't share a shape:
+            //   CustomerAddress / ConsigneeAddress → `country`, `state`, `pin`
+            //                                        are plain string columns.
+            //   VendorAddress                      → `country` / `state` are
+            //                                        BelongsTo relationships
+            //                                        (Countries / States) and
+            //                                        pincode lives in `pincode`.
+            // If we hand a model to e() the default __toString() returns its
+            // JSON dump — that's why the rendered PDF was printing
+            // `[{"id":15159,"client_id":null, …,"name":"India", …}]` in the
+            // country / address cells. Coerce each value down to a plain
+            // string before composition.
+            $scalar = static function ($v): string {
+                if ($v === null) return '';
+                if (is_object($v)) return (string) ($v->name ?? '');
+                return (string) $v;
+            };
+
+            $contactPerson = $modelName === 'Vendor' ? ($addr?->contact_name ?? '') : ($addr?->cp_name ?? '');
+            $contactPhone  = $modelName === 'Vendor' ? ($addr?->contact_no  ?? '') : ($addr?->cp_contact ?? '');
+            $countryStr = $scalar($addr?->country);
+            $stateStr   = $scalar($addr?->state);
+            $pinStr     = $scalar($modelName === 'Vendor' ? ($addr?->pincode ?? null) : ($addr?->pin ?? null));
+
             $addressLine = trim(implode(', ', array_filter([
-                $addr?->address_line, $addr?->city, $addr?->state, $addr?->country, $addr?->pin,
+                $addr?->address_line, $addr?->city, $stateStr, $countryStr, $pinStr,
             ])));
 
             $codeAttr = $modelName === 'Customer'  ? 'customer_code'
@@ -692,10 +741,11 @@ class ClmSignatureController extends Controller
                 '{{' . $ns . '.name}}'            => e($party->company_name ?? ''),
                 '{{' . $ns . '.code}}'            => e($party->{$codeAttr} ?? ''),
                 '{{' . $ns . '.company}}'         => e(($party->legal_name ?: $party->company_name) ?? ''),
-                '{{' . $ns . '.contact_person}}'  => e($addr?->cp_name ?? ''),
-                '{{' . $ns . '.phone}}'           => e($addr?->cp_contact ?? ''),
+                '{{' . $ns . '.contact_person}}'  => e($contactPerson),
+                '{{' . $ns . '.phone}}'           => e($contactPhone),
                 '{{' . $ns . '.email}}'           => e($party->primary_email ?? ''),
-                '{{' . $ns . '.country}}'         => e($addr?->country ?? ''),
+                '{{' . $ns . '.country}}'         => e($countryStr),
+                '{{' . $ns . '.state}}'           => e($stateStr),
                 '{{' . $ns . '.address}}'         => e($addressLine),
                 '{{' . $ns . '.gst}}'             => '',
                 '{{' . $ns . '.pan}}'             => '',
@@ -769,13 +819,33 @@ class ClmSignatureController extends Controller
      * Pull every signed PDF + the completion certificate from Zoho into
      * Storage::disk('public') and update the row's path columns. Called
      * lazily — show()/viewFile()/viewCertificate() all converge here.
+     *
+     * The 'public' disk swaps driver based on FILESYSTEM_DISK:
+     *   local mode → storage/app/public/uploads/signed_documents/…
+     *   azure mode → blob:cbc-saas/uploads/signed_documents/…
+     * Both code paths use the same Storage::disk('public') call, so the
+     * diagnostic noise below is the only way to tell which step ate the
+     * signed doc when only the certificate landed. Without it, the silent
+     * try/catch produced an empty signed_document_paths array on server
+     * and no clue why.
      */
     private function fetchSignedArtifacts(ClmSignatureRequest $row, array $details): void
     {
         $modelFolder = strtolower($row->model_name);
         $basePath    = 'uploads/signed_documents/' . $modelFolder;
-        if (!Storage::disk('public')->exists($basePath)) {
-            Storage::disk('public')->makeDirectory($basePath);
+        $diskName    = config('filesystems.disks.public.driver');
+        $logCtx      = ['row_id' => $row->id, 'zoho_request_id' => $row->zoho_request_id, 'disk' => $diskName];
+
+        // makeDirectory is a no-op on the azure-storage-blob adapter (blob
+        // storage has no real directories — slashes in blob names are just
+        // path-style prefixes), and a real mkdir on the local driver. Either
+        // way, exists() before mkdir keeps the local path idempotent.
+        try {
+            if (!Storage::disk('public')->exists($basePath)) {
+                Storage::disk('public')->makeDirectory($basePath);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('signed_doc fetch: makeDirectory failed', $logCtx + ['err' => $e->getMessage()]);
         }
 
         $zohoDocs   = data_get($details, 'requests.document_ids', []);
@@ -789,19 +859,51 @@ class ClmSignatureController extends Controller
             $zohoIds[] = $zohoId;
 
             try {
+                // Step 1 — pull bytes from Zoho. This is the step that
+                // most often fails on production: per-document endpoint
+                // (/requests/{id}/documents/{docId}/pdf) needs the
+                // ZohoSign.documents.READ scope; older refresh tokens
+                // don't have it even when the certificate scope works.
                 $bytes = $this->zoho->downloadDocumentPdf($row->zoho_request_id, $zohoId);
-                $safe  = Str::slug(pathinfo((string) $name, PATHINFO_FILENAME)) ?: ('document_' . ($i + 1));
+                if (!is_string($bytes) || $bytes === '') {
+                    throw new RuntimeException('Zoho returned empty bytes');
+                }
+
+                // Step 2 — write to the active disk. put() returns false
+                // instead of throwing because the public disk is configured
+                // with throw=false, so we check the boolean explicitly.
+                // Without this the next line would record an unverified
+                // blob path and the UI would link to a 404.
+                $safe     = Str::slug(pathinfo((string) $name, PATHINFO_FILENAME)) ?: ('document_' . ($i + 1));
                 $fileName = sprintf('signed_%s_%d_%d.pdf', $safe, time(), $i);
-                $path  = $basePath . '/' . $fileName;
-                Storage::disk('public')->put($path, $bytes);
+                $path     = $basePath . '/' . $fileName;
+                $ok       = Storage::disk('public')->put($path, $bytes);
+                if ($ok === false) {
+                    throw new RuntimeException('Storage::put returned false (disk=' . $diskName . ')');
+                }
+
+                // Step 3 — capture both `url` (legacy) and `file_url`
+                // (new pattern used by other modules). On Azure the URL
+                // is the absolute blob URL; on local it's /storage/…
+                $publicUrl = Storage::disk('public')->url($path);
                 $savedPaths[] = [
                     'zoho_document_id' => $zohoId,
                     'document_name'    => $name,
                     'path'             => $path,
-                    'url'              => Storage::disk('public')->url($path),
+                    'url'              => $publicUrl,
+                    'file_url'         => $publicUrl,
+                    'size'             => strlen($bytes),
                 ];
+                Log::info('signed_doc saved', $logCtx + ['zoho_doc_id' => $zohoId, 'path' => $path, 'size' => strlen($bytes)]);
             } catch (\Throwable $e) {
-                Log::warning("Skipped signed doc {$zohoId}: " . $e->getMessage());
+                // Log loudly so a server-only failure (Zoho scope, blob
+                // container ACL, etc.) is visible in laravel.log instead
+                // of being eaten silently.
+                Log::error('signed_doc fetch failed', $logCtx + [
+                    'zoho_doc_id' => $zohoId,
+                    'err'         => $e->getMessage(),
+                    'class'       => get_class($e),
+                ]);
             }
         }
 
@@ -809,17 +911,28 @@ class ClmSignatureController extends Controller
             $row->zoho_document_ids      = $zohoIds;
             $row->signed_document_paths  = $savedPaths;
             $row->signed_document_path   = $savedPaths[0]['path'] ?? null;
+        } else {
+            // Surface the empty-result case in the log so prod diagnosis
+            // doesn't require diffing the row before/after every poll.
+            Log::warning('signed_doc fetch produced no saved paths', $logCtx + ['expected_count' => count($zohoIds)]);
         }
 
         // Completion certificate is always one per request.
         try {
             $cert = $this->zoho->downloadCertificate($row->zoho_request_id);
-            $safe = Str::slug($row->request_name) ?: 'request';
+            if (!is_string($cert) || $cert === '') {
+                throw new RuntimeException('Zoho returned empty certificate bytes');
+            }
+            $safe     = Str::slug($row->request_name) ?: 'request';
             $certPath = $basePath . '/' . sprintf('certificate_%s_%d.pdf', $safe, time());
-            Storage::disk('public')->put($certPath, $cert);
+            $ok       = Storage::disk('public')->put($certPath, $cert);
+            if ($ok === false) {
+                throw new RuntimeException('Storage::put returned false (disk=' . $diskName . ')');
+            }
             $row->certificate_path = $certPath;
+            Log::info('certificate saved', $logCtx + ['path' => $certPath, 'size' => strlen($cert)]);
         } catch (\Throwable $e) {
-            Log::warning('Certificate fetch failed: ' . $e->getMessage());
+            Log::error('certificate fetch failed', $logCtx + ['err' => $e->getMessage(), 'class' => get_class($e)]);
         }
 
         $row->save();

@@ -883,7 +883,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           id: number;
           status: TdSigStatus;
           trade_doc_ids: number[];
-          signed_document_paths?: Array<{ url?: string; path?: string }> | null;
+          signed_document_paths?: Array<{ url?: string; path?: string; file_url?: string }> | string[] | null;
+          signed_document_path?: string | null;
+          certificate_path?: string | null;
+          file_url?: string | null;
         }> = Array.isArray(r.data?.data) ? r.data.data : [];
         const map: Record<number, { status: TdSigStatus; signatureRequestId: number; signedUrl?: string }> = {};
         for (const row of rows) {
@@ -891,13 +894,28 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           for (let i = 0; i < ids.length; i++) {
             const docId = Number(ids[i]);
             if (!docId || map[docId]) continue;
-            const signedEntry = Array.isArray(row.signed_document_paths) ? row.signed_document_paths[i] : null;
+            // Resolve a usable URL from whatever the backend populated.
+            // Production sometimes returns signed_document_paths=null
+            // (the Zoho-download queue job hadn't run yet) while the
+            // webhook-set certificate_path is already there. Fall back
+            // through the chain so the View / Download buttons enable
+            // as soon as ANY signed artefact exists, instead of staying
+            // disabled until the queue worker catches up.
+            const signedArr = row.signed_document_paths;
+            let rawSignedUrl: string | null = null;
+            if (Array.isArray(signedArr)) {
+              const entry = signedArr[i] as { url?: string; path?: string; file_url?: string } | string | undefined;
+              if (typeof entry === 'string') rawSignedUrl = entry;
+              else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
+            }
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
+            if (!rawSignedUrl) rawSignedUrl = row.file_url || null;
+            if (!rawSignedUrl) rawSignedUrl = row.certificate_path || null;
             // Resolve via resolveFileUrl so the URL picks up the right
             // base (VITE_API_URL on the deployed SPA, current origin in
             // dev). Without this the View / Download icons get a bare
             // /storage/… relative URL that 404s when the SPA origin
             // differs from the API host.
-            const rawSignedUrl = signedEntry?.url || signedEntry?.path || null;
             map[docId] = {
               status: row.status,
               signatureRequestId: row.id,
@@ -5145,7 +5163,14 @@ const SCOPED_CSS = `
   flex: 1; min-height: 0; overflow-y: auto;
   padding: 6px 20px 14px;
   display: flex; flex-direction: column; gap: 8px;
+  /* Visible thin scrollbar mirroring [[AddVendorModal]]'s .avm-body so
+     Stage 2/3 tabs (Company DD, Owner KYC, Trade Licence, Evidence
+     Vault) show a styled rail when the table grows past the body. */
+  scrollbar-width: thin; scrollbar-color: #6ee7b7 transparent;
 }
+.acm-wiz-body::-webkit-scrollbar { width: 8px; }
+.acm-wiz-body::-webkit-scrollbar-thumb { background: #6ee7b7; border-radius: 99px; }
+.acm-wiz-body::-webkit-scrollbar-thumb:hover { background: #10b981; }
 
 /* Linked customer summary */
 .acm-linked {
@@ -5980,6 +6005,11 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 1px 2px rgba(15,42,35,.04);
+  /* Don't let the flex column body squash the card below its
+     intrinsic height — without this, the table can be clipped at
+     the bottom and .acm-wiz-body's overflow-y never trips, so the
+     user has no scrollbar to reach hidden rows. */
+  flex-shrink: 0;
 }
 .acm-kyc-head {
   background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
@@ -6318,7 +6348,9 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-btn-light:hover { background: #234d42; }
 
 [data-bs-theme="dark"] .acm-wiz        { background: #0f2a23; }
-[data-bs-theme="dark"] .acm-wiz-body   { background: #0a1f1a; }
+[data-bs-theme="dark"] .acm-wiz-body   { background: #0a1f1a; scrollbar-color: #047857 transparent; }
+[data-bs-theme="dark"] .acm-wiz-body::-webkit-scrollbar-thumb { background: #047857; }
+[data-bs-theme="dark"] .acm-wiz-body::-webkit-scrollbar-thumb:hover { background: #10b981; }
 [data-bs-theme="dark"] .acm-wiz-pinned-top { background: #0a1f1a; border-bottom-color: rgba(16,185,129,0.20); }
 [data-bs-theme="dark"] .acm-linked     { background: linear-gradient(110deg, #0f2a23, #103129, #134e3a); border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .acm-linked-label { color: #6ee7b7; }
