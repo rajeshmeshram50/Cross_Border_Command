@@ -374,10 +374,25 @@ class ClmSignatureController extends Controller
         // still-`inprogress` rows and pull their live status from Zoho.
         // Newly-completed rows trigger a one-shot signed-PDF + certificate
         // download so the next list response carries the artefact paths.
+        //
+        // Recovery path — also retry the artifact fetch for rows already
+        // marked `completed` locally but missing `signed_document_paths`
+        // on disk. That happens when the initial fetchSignedArtifacts
+        // succeeded for the certificate (separate try/catch) but Zoho's
+        // per-document PDF download failed transiently (network blip,
+        // Zoho's signed PDF still processing in their pipeline, etc.).
+        // Without this, the user is stuck seeing the Certificate icon
+        // enabled and the View / Download icons disabled forever.
         if ($request->boolean('sync') && $this->zoho->isConfigured()) {
             $changed = false;
             foreach ($rows as $row) {
-                if ($row->status !== 'inprogress' || !$row->zoho_request_id) continue;
+                if (!$row->zoho_request_id) continue;
+
+                $isInProgress      = $row->status === 'inprogress';
+                $isCompletedNoFile = $row->status === 'completed'
+                    && empty($row->signed_document_paths);
+                if (!$isInProgress && !$isCompletedNoFile) continue;
+
                 try {
                     $details = $this->zoho->getRequest($row->zoho_request_id);
                     $newStatus = strtolower((string) data_get($details, 'requests.request_status', $row->status));
@@ -388,9 +403,18 @@ class ClmSignatureController extends Controller
                         }
                         $row->save();
                         $changed = true;
-                        if ($newStatus === 'completed') {
-                            $this->fetchSignedArtifacts($row, $details);
-                        }
+                    }
+                    // Retry artifact fetch on EVERY completed-with-no-file
+                    // pass too, not just on the status transition. Cheap
+                    // when files already exist (fetchSignedArtifacts
+                    // overwrites on success). The user's "View/Download
+                    // stuck disabled" stops as soon as the PDF download
+                    // succeeds.
+                    if ($newStatus === 'completed'
+                        && empty($row->fresh()->signed_document_paths)
+                    ) {
+                        $this->fetchSignedArtifacts($row, $details);
+                        $changed = true;
                     }
                 } catch (\Throwable $e) {
                     Log::warning("Zoho sync skipped for sig request {$row->id}: " . $e->getMessage());
