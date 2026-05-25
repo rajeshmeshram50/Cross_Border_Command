@@ -54,6 +54,7 @@ class ProcurementController extends Controller
             'procurement_date'              => 'nullable|date',
             'assign_id'                     => 'nullable|integer|exists:users,id',
             'status'                        => 'nullable|in:inprogress,done',
+            'notes'                         => 'nullable|string|max:2000',
             'attachments'                   => 'nullable|array',
             'attachments.*'                 => 'file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
             'products'                      => 'required|array|min:1',
@@ -114,6 +115,7 @@ class ProcurementController extends Controller
                 'assign_id'        => $data['assign_id']        ?? null,
                 'status'           => $data['status']           ?? 'inprogress',
                 'attachments'      => $procAttachments ?: null,
+                'notes'            => $data['notes']            ?? null,
                 'created_by'       => $user->id,
             ]);
 
@@ -173,7 +175,8 @@ class ProcurementController extends Controller
 
         $proc = Procurement::with([
             'assignee:id,name',
-            'lead:id,unique_query_id',
+            'creator:id,name',
+            'lead:id,opp_code,unique_query_id,query_time,created_at',
             'products.product:id,product_code,name,status',
             'products.leadProduct:id,quantity,target_price,currency',
         ])

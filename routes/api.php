@@ -394,6 +394,19 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
         [SalesLeadController::class, 'markLeadProductSourced'])
         ->whereNumber('id')->whereNumber('mapping');
 
+    // Stage 4 — Price Shared. Append-only price-share history per
+    // (lead, product) plus a PDF export per entry.
+    Route::post('/sales/leads/{id}/products/{mapping}/shared-prices',
+        [SalesLeadController::class, 'storeSharedPrice'])
+        ->whereNumber('id')->whereNumber('mapping');
+    Route::get('/sales/leads/{id}/shared-prices',
+        [SalesLeadController::class, 'listSharedPrices'])->whereNumber('id');
+    Route::get('/sales/leads/{id}/products/{mapping}/shared-prices',
+        [SalesLeadController::class, 'listSharedPricesByProduct'])
+        ->whereNumber('id')->whereNumber('mapping');
+    Route::get('/sales/shared-prices/{id}/pdf',
+        [SalesLeadController::class, 'sharedPricePdf'])->whereNumber('id');
+
     // Stage 3 → Create Procurement modal posts here. Multi-tenant via
     // client_id; see ProcurementController for the body shape.
     Route::get   ('/procurements/next-number', [ProcurementController::class, 'nextNumber']);

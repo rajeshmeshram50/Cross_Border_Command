@@ -9,10 +9,12 @@ use App\Models\Lead;
 use App\Models\LeadAckReason;
 use App\Models\LeadAcknowledgement;
 use App\Models\LeadProduct;
+use App\Models\LeadProductSharedPrice;
 use App\Models\LeadTaskManager;
 use App\Models\Procurement;
 use App\Models\ProcurementProduct;
 use App\Models\Product;
+use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\User;
 use App\Services\IndiaMartLeadSyncService;
 use Illuminate\Http\Request;
@@ -795,6 +797,158 @@ class SalesLeadController extends Controller
             'sourcing_status'  => $row->sourcing_status,
             'procurement_done' => true,
         ]]);
+    }
+
+    /* ═════════════════════════════════════════════════════════════════
+     *  STAGE 4 — PRICE SHARED
+     *
+     *  POST   /sales/leads/{lead}/products/{mapping}/shared-prices
+     *           record a quoted price entry (append-only history)
+     *  GET    /sales/leads/{lead}/shared-prices
+     *           flat history list across all products on this lead
+     *  GET    /sales/leads/{lead}/products/{mapping}/shared-prices
+     *           history scoped to a single product mapping
+     *  GET    /sales/shared-prices/{id}/pdf
+     *           generate the quotation PDF (dompdf)
+     * ═════════════════════════════════════════════════════════════════ */
+
+    public function storeSharedPrice(Request $request, int $leadId, int $mappingId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
+        }
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $row = LeadProduct::with('product:id,status')
+            ->where('lead_id', $lead->id)
+            ->findOrFail($mappingId);
+
+        // Mirror IDIMS: incomplete product masters (draft / inactive) can't
+        // have a shared price recorded. The frontend disables the input but
+        // we double-check server-side so direct API hits don't slip past.
+        $productStatus = strtolower((string) ($row->product?->status ?? ''));
+        if (in_array($productStatus, ['draft', 'inactive', 'pending'], true)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Cannot share a price for an incomplete product. Activate it on the Product Master first.',
+            ], 422);
+        }
+
+        $data = $request->validate([
+            'quoted_price' => 'required|numeric|min:0',
+        ]);
+
+        $entry = LeadProductSharedPrice::create([
+            'client_id'       => $user->client_id,
+            'lead_id'         => $lead->id,
+            'lead_product_id' => $row->id,
+            'quoted_price'    => $data['quoted_price'],
+            'shared_at'       => now(),
+            'created_by'      => $user->id,
+        ]);
+
+        return response()->json([
+            'status' => true,
+            'data'   => $entry->load('creator:id,name'),
+        ], 201);
+    }
+
+    public function listSharedPrices(Request $request, int $leadId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $rows = LeadProductSharedPrice::with([
+            'leadProduct:id,product_id,currency,quantity,target_price',
+            'leadProduct.product:id,product_code,name,status',
+        ])
+            ->where('lead_id', $lead->id)
+            ->orderByDesc('shared_at')
+            ->get()
+            ->map(fn ($e) => [
+                'id'              => $e->id,
+                'lead_product_id' => $e->lead_product_id,
+                'product_id'      => $e->leadProduct?->product_id,
+                'product_code'    => $e->leadProduct?->product?->product_code,
+                'product_name'    => $e->leadProduct?->product?->name,
+                'product_status'  => $e->leadProduct?->product?->status,
+                'currency'        => $e->leadProduct?->currency,
+                'quantity'        => $e->leadProduct?->quantity,
+                'target_price'    => $e->leadProduct?->target_price,
+                'quoted_price'    => $e->quoted_price,
+                'shared_at'       => $e->shared_at,
+            ]);
+
+        return response()->json(['status' => true, 'data' => $rows]);
+    }
+
+    public function listSharedPricesByProduct(Request $request, int $leadId, int $mappingId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $product = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
+
+        $rows = LeadProductSharedPrice::where('lead_id', $lead->id)
+            ->where('lead_product_id', $product->id)
+            ->orderByDesc('shared_at')
+            ->get()
+            ->map(fn ($e) => [
+                'id'           => $e->id,
+                'quoted_price' => $e->quoted_price,
+                'shared_at'    => $e->shared_at,
+            ]);
+
+        return response()->json([
+            'status' => true,
+            'data'   => $rows,
+            'product' => [
+                'lead_product_id' => $product->id,
+                'currency'        => $product->currency,
+                'quantity'        => $product->quantity,
+                'target_price'    => $product->target_price,
+            ],
+        ]);
+    }
+
+    public function sharedPricePdf(Request $request, int $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $entry = LeadProductSharedPrice::with([
+            'lead:id,opp_code,unique_query_id,sender_name,sender_email,sender_mobile',
+            'lead.customer:id,company_name,customer_code',
+            'leadProduct:id,product_id,currency,quantity,target_price',
+            'leadProduct.product:id,product_code,name',
+            'creator:id,name',
+        ])
+            ->where('client_id', $user->client_id)
+            ->findOrFail($id);
+
+        $pdf = Pdf::loadView('pdf.shared_price_quotation', [
+            'entry'  => $entry,
+            'inline' => $request->boolean('inline'),
+        ])->setPaper('a4');
+
+        $filename = 'quotation_' . str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT) . '.pdf';
+
+        return $request->boolean('inline')
+            ? $pdf->stream($filename)
+            : $pdf->download($filename);
     }
 
     /* ─────────────────────────────────────────────────────────────────
