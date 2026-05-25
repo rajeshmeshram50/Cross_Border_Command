@@ -313,6 +313,17 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // inline so the page can preview it in a new tab via blob URL.
     Route::post  ('/sales/pi/preview-pdf',         [SalesPdfController::class, 'previewPi']);
 
+    // Sales Matrix → QUOTATION DOCUMENT PDF preview. Per-quotation variant —
+    // loads the real Quotation row (with items + branch + bank + parties) and
+    // renders the same Blade template with branch-derived letterhead. The
+    // `signature=1` body flag picks the with-signature variant.
+    Route::post  ('/sales/quotations/{id}/preview-pdf', [SalesPdfController::class, 'previewQuotation']);
+
+    // Sales Matrix → PROFORMA INVOICE PDF preview. Mirror of the Quotation
+    // variant — loads the real PI row, same branch letterhead, same template,
+    // labels swap to "PI No / PI Date".
+    Route::post  ('/sales/proforma-invoices/{id}/preview-pdf', [SalesPdfController::class, 'previewProformaInvoice']);
+
     // Sales Matrix → Leads (My Workplace). Three feeders write here:
     //   - POST /sales/leads        manual capture (Add New Lead modal)
     //   - POST /sales/leads/sync   pull from IndiaMart CRM keys
