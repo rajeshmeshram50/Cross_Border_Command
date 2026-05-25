@@ -2,9 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { SimpleNameModal } from './clmCommon';
 import ClmInsertPlaceholderModal from './ClmInsertPlaceholderModal';
+import ClmInsertTableModal from './ClmInsertTableModal';
+import ClmInsertHrModal from './ClmInsertHrModal';
+import HeaderFooterPanel, {
+  DEFAULT_HEADER, DEFAULT_FOOTER,
+  type HeaderConfig, type FooterConfig,
+} from '../hrms/doc-templates/HeaderFooterPanel';
 
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → Trade Documents Master → Draft New Trade Document (modal)
@@ -33,6 +40,11 @@ export type TdLib = {
   party: string;
   file_path: string | null;
   content: string | null;
+  /* Stage 2 page-shell config — mirror of hr_document_templates. Nullable
+   * on existing rows that pre-date the columns; the frontend layers each
+   * over DEFAULT_HEADER / DEFAULT_FOOTER so missing keys stay safe. */
+  header_config?: HeaderConfig | null;
+  footer_config?: FooterConfig | null;
 };
 
 const DOC_TYPES = ['Declaration', 'Undertaking', 'Authorization', 'Bond', 'Certificate', 'Letter'] as const;
@@ -87,9 +99,48 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   const [fontSize, setFontSizeState] = useState('14');
   const [block, setBlockState]       = useState('p');
   const [pickerOpen, setPickerOpen]  = useState(false);
+  /* Insert Table dialog — caret position is stashed via stashSelection()
+   * before opening so the generated HTML lands where the user was typing,
+   * not at the start of the editor. */
+  const [tablePickerOpen, setTablePickerOpen] = useState(false);
+  /* Insert Horizontal Line dialog — same caret-stash pattern as the table
+   * picker. Replaces document.execCommand('insertHorizontalRule') (which
+   * inserts an unstyled <hr> the dompdf renderer drops to a 1px grey
+   * line) with a styled <hr> the user picks colour + height + style for. */
+  const [hrPickerOpen, setHrPickerOpen] = useState(false);
   const lastRangeRef                 = useRef<Range | null>(null);
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+
+  /* Stage 2 page-shell — same UX as HR Document Templates. Defaults pre-fill
+   * the header with the user's branch (or client) logo + name so a fresh
+   * draft already looks branded; the user can edit / replace either side
+   * via the header popover. Saved values come back as `header_config` /
+   * `footer_config` on the row and layer over the defaults so a row that
+   * pre-dates these columns keeps rendering identically. */
+  const { user } = useAuth();
+  const brandedDefaults = useMemo(() => {
+    const headerLogoUrl = user?.branch_logo ?? user?.client_logo ?? null;
+    // The PDF renderer reads `logo_path` (storage-relative) to base64-
+    // encode the image at render time. /me only ships the public URL,
+    // so derive the path by stripping the public-disk prefix. Same
+    // pattern works for both `/storage/...` and `http(s)://.../storage/...`
+    // forms — anything after the first `/storage/` segment is the
+    // storage-relative path on the public disk.
+    const headerLogoPath = headerLogoUrl
+      ? (headerLogoUrl.match(/\/storage\/(.+)$/)?.[1] ?? null)
+      : null;
+    const headerTitle     = user?.branch_name ?? user?.client_name ?? DEFAULT_HEADER.title;
+    const footerLine      = user?.client_name
+      ? `${user.client_name}${user?.branch_name && user.branch_name !== user.client_name ? ' · ' + user.branch_name : ''}  |  Confidential`
+      : DEFAULT_FOOTER.text;
+    return {
+      header: { ...DEFAULT_HEADER, logo_path: headerLogoPath, logo_url: headerLogoUrl, title: headerTitle },
+      footer: { ...DEFAULT_FOOTER, text: footerLine },
+    };
+  }, [user?.branch_logo, user?.client_logo, user?.branch_name, user?.client_name]);
+  const [headerConfig, setHeaderConfig] = useState<HeaderConfig>(brandedDefaults.header);
+  const [footerConfig, setFooterConfig] = useState<FooterConfig>(brandedDefaults.footer);
 
   /* Rich-text helpers (step 2). execCommand is deprecated but still the
    * simplest path for contentEditable without pulling in an editor framework.
@@ -125,18 +176,61 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
       lastRangeRef.current = sel.getRangeAt(0).cloneRange();
+    }
+    // Don't clobber the previous stash if the new selection is OUTSIDE
+    // the editor — that happens while a modal (Placeholder / Table /
+    // HR) is open. We want to remember the LAST in-editor caret.
+  };
+  /* Restore the stashed caret BEFORE executing the insertion command.
+   * Falls back to the END of the editor (collapsed range) when no
+   * stash exists yet — happens when the user opens a Placeholder / HR /
+   * Table modal without first clicking inside the body. End-of-editor
+   * is closer to user intent than the top-default `editor.focus()`
+   * would otherwise produce. */
+  const restoreCaretForInsert = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const stash = lastRangeRef.current;
+    const sel = window.getSelection();
+    if (!sel) return;
+    if (stash && editor.contains(stash.startContainer)) {
+      sel.removeAllRanges();
+      sel.addRange(stash);
     } else {
-      lastRangeRef.current = null;
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);   // collapse to end
+      sel.removeAllRanges();
+      sel.addRange(range);
     }
   };
-  const insertAtCaret = (text: string) => {
-    editorRef.current?.focus();
-    if (lastRangeRef.current) {
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(lastRangeRef.current);
+  const rememberCaretAfterInsert = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+      lastRangeRef.current = sel.getRangeAt(0).cloneRange();
     }
+  };
+
+  const insertAtCaret = (text: string) => {
+    restoreCaretForInsert();
     document.execCommand('insertText', false, text);
+    rememberCaretAfterInsert();
+    syncContent();
+  };
+
+  /* Drop generated HTML at the stashed caret position. Used by the
+   * Insert Table + Insert HR modals — the rich-HTML insertion path
+   * execCommand's `insertHTML` is more reliable than splicing nodes
+   * by hand, and it cleanly handles the case where the user's
+   * selection spans multiple existing nodes (insertHTML replaces
+   * the selection). */
+  const insertHtmlAtCaret = (html: string) => {
+    restoreCaretForInsert();
+    document.execCommand('insertHTML', false, html);
+    rememberCaretAfterInsert();
     syncContent();
   };
 
@@ -198,6 +292,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setParties(new Set((existing.party ?? '').split(',').map(s => s.trim()).filter(Boolean)));
       setContent(existing.content ?? '');
       if (editorRef.current) editorRef.current.innerHTML = existing.content ?? '';
+      // Layer the saved zone config over the branded defaults. Rows that
+      // pre-date these columns hit the spread with null and keep the
+      // logged-in user's branch branding as their starting point.
+      setHeaderConfig({ ...brandedDefaults.header, ...(existing.header_config || {}) } as HeaderConfig);
+      setFooterConfig({ ...brandedDefaults.footer, ...(existing.footer_config || {}) } as FooterConfig);
     } else {
       setName('');
       setTitle('');
@@ -206,6 +305,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setParties(new Set());
       setContent('');
       if (editorRef.current) editorRef.current.innerHTML = '';
+      setHeaderConfig(brandedDefaults.header);
+      setFooterConfig(brandedDefaults.footer);
     }
   }, [open, existing]);
 
@@ -222,6 +323,25 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       editorRef.current.innerHTML = content ?? '';
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  /* Track the last caret position inside the body editor on every
+   * selectionchange. Without this, clicking a toolbar button that opens
+   * a modal (Placeholder / Table / HR) wouldn't capture the caret
+   * reliably — modal focus would clobber the in-editor selection
+   * before insertHtmlAtCaret could read it. The listener only updates
+   * when the new selection is INSIDE the editor, so modal openings
+   * leave the stash untouched. */
+  useEffect(() => {
+    if (step !== 2) return;
+    const onSel = () => {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
+        lastRangeRef.current = sel.getRangeAt(0).cloneRange();
+      }
+    };
+    document.addEventListener('selectionchange', onSel);
+    return () => document.removeEventListener('selectionchange', onSel);
   }, [step]);
 
   // Close on Escape
@@ -276,6 +396,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       party: Array.from(parties).join(','),
       file_path: null,
       content: editorRef.current?.innerHTML ?? content ?? null,
+      header_config: headerConfig,
+      footer_config: footerConfig,
     };
     try {
       if (editingId) {
@@ -494,6 +616,15 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
                       {'{}'} Placeholder
                     </button>
+                    <button
+                      type="button" className="tdw-editor-btn"
+                      onMouseDown={e => { e.preventDefault(); stashSelection(); }}
+                      onClick={() => setTablePickerOpen(true)}
+                      title="Insert table"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+                      Insert Table
+                    </button>
                     <button type="button" className="tdw-editor-btn">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
                       Clause Library
@@ -525,11 +656,26 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     <input type="color" defaultValue="#0c4a6e" onChange={e => exec('foreColor', e.target.value)}
                            style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
                   </label>
-                  <label className="tdw-toolbar-btn tdw-toolbar-color" title="Highlight color" style={{ position: 'relative', color: '#f59e0b' }}>
+                  {/* Highlight — system color picker (click the icon) + a
+                     quick-pick palette of 5 common highlights immediately
+                     to the right so the user doesn't have to dive into the
+                     OS picker for the everyday yellow / mint / pink etc. */}
+                  <label className="tdw-toolbar-btn tdw-toolbar-color" title="Custom highlight color" style={{ position: 'relative', color: '#f59e0b' }}>
                     ✎
                     <input type="color" defaultValue="#fde68a" onChange={e => exec('hiliteColor', e.target.value)}
                            style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
                   </label>
+                  {['#fde68a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#e9d5ff'].map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      className="tdw-toolbar-btn"
+                      title={`Highlight ${c}`}
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => exec('hiliteColor', c)}
+                      style={{ background: c, width: 22, padding: 0, border: '1px solid #cbd5e1' }}
+                    >&nbsp;</button>
+                  ))}
                   <span className="tdw-toolbar-sep" />
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyLeft')}    title="Align left">≡</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyCenter')}  title="Align center">≡</button>
@@ -543,21 +689,37 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                   <span className="tdw-toolbar-sep" />
                   <button type="button" className="tdw-toolbar-btn" onClick={insertLink}        title="Insert link">🔗</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('unlink')} title="Remove link">🔗⃠</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('insertHorizontalRule')} title="Horizontal rule">—</button>
+                  <button
+                    type="button" className="tdw-toolbar-btn"
+                    title="Insert horizontal line"
+                    onMouseDown={e => { e.preventDefault(); stashSelection(); }}
+                    onClick={() => setHrPickerOpen(true)}
+                  >—</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('undo')} title="Undo">↶</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('redo')} title="Redo">↷</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('removeFormat')} title="Clear formatting">🅣</button>
                 </div>
-                <div
-                  ref={editorRef}
-                  className="tdw-editor"
-                  contentEditable
-                  suppressContentEditableWarning
-                  onInput={(e) => setContent((e.target as HTMLElement).innerHTML)}
-                  role="textbox"
-                  aria-multiline="true"
-                  aria-label="Document content"
-                />
+                {/* Page-shell preview wraps the editor in a fixed header
+                   (logo + title + subtitle) and footer (text + page #).
+                   Same component the HR Document Templates Step 3 uses,
+                   so the look-and-feel stays uniform across modules.
+                   Logo upload posts to the trade-doc tenant folder. */}
+                <HeaderFooterPanel
+                  header={headerConfig} setHeader={setHeaderConfig}
+                  footer={footerConfig} setFooter={setFooterConfig}
+                  uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo"
+                >
+                  <div
+                    ref={editorRef}
+                    className="tdw-editor"
+                    contentEditable
+                    suppressContentEditableWarning
+                    onInput={(e) => setContent((e.target as HTMLElement).innerHTML)}
+                    role="textbox"
+                    aria-multiline="true"
+                    aria-label="Document content"
+                  />
+                </HeaderFooterPanel>
                 <div className="tdw-editor-foot">
                   <span className="tdw-editor-foot-hint">ℹ Placeholders auto-fill on document generation</span>
                   <span className="tdw-editor-foot-tag">{'{{PLACEHOLDER}}'}</span>
@@ -612,6 +774,18 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
           open={pickerOpen}
           onClose={() => setPickerOpen(false)}
           onInsert={(token) => { insertAtCaret(token); setPickerOpen(false); }}
+        />
+
+        <ClmInsertTableModal
+          open={tablePickerOpen}
+          onClose={() => setTablePickerOpen(false)}
+          onInsert={(html) => { insertHtmlAtCaret(html); setTablePickerOpen(false); }}
+        />
+
+        <ClmInsertHrModal
+          open={hrPickerOpen}
+          onClose={() => setHrPickerOpen(false)}
+          onInsert={(html) => { insertHtmlAtCaret(html); setHrPickerOpen(false); }}
         />
       </div>
     </div>,

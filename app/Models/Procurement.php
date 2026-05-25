@@ -10,7 +10,7 @@ class Procurement extends Model
 {
     protected $fillable = [
         'client_id', 'lead_id', 'procurement_date',
-        'assign_id', 'status', 'attachments', 'created_by',
+        'assign_id', 'status', 'attachments', 'notes', 'created_by',
     ];
 
     protected $casts = [
@@ -26,6 +26,11 @@ class Procurement extends Model
     public function assignee(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assign_id');
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function products(): HasMany

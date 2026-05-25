@@ -91,6 +91,7 @@ export default function HeaderFooterPanel({
   header, setHeader,
   footer, setFooter,
   readOnly = false,
+  uploadLogoEndpoint = '/hr-document-templates/upload-header-logo',
   children,
 }: {
   header: HeaderConfig;
@@ -98,6 +99,12 @@ export default function HeaderFooterPanel({
   footer: FooterConfig;
   setFooter: (next: FooterConfig) => void;
   readOnly?: boolean;
+  /* API path that accepts a multipart `logo` file and returns
+   * { path, url }. Defaults to the HR Document Templates endpoint so the
+   * existing caller stays untouched; the CLM Trade Document draft passes
+   * its own `/clm/trade-doc-library/upload-header-logo` so the file lands
+   * under that module's tenant folder. */
+  uploadLogoEndpoint?: string;
   children: ReactNode;
 }) {
   const [openZone, setOpenZone] = useState<'header' | 'footer' | null>(null);
@@ -108,7 +115,7 @@ export default function HeaderFooterPanel({
     const fd = new FormData();
     fd.append('logo', file);
     try {
-      const { data } = await api.post('/hr-document-templates/upload-header-logo', fd, {
+      const { data } = await api.post(uploadLogoEndpoint, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setHeader({ ...header, logo_path: data.path || null, logo_url: data.url || null, show_logo: true });

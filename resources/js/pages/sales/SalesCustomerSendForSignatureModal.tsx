@@ -8,6 +8,14 @@ import * as pdfjsLib from 'pdfjs-dist';
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import HeaderFooterPanel, {
+  DEFAULT_HEADER, DEFAULT_FOOTER,
+  type HeaderConfig, type FooterConfig,
+} from '../hrms/doc-templates/HeaderFooterPanel';
+import ClmInsertTableModal from '../clm/ClmInsertTableModal';
+import ClmInsertHrModal from '../clm/ClmInsertHrModal';
+import ClmInsertPlaceholderModal from '../clm/ClmInsertPlaceholderModal';
+import ClmRichTextToolbar from '../clm/ClmRichTextToolbar';
 
 // One-time pdfjs setup — the worker URL is the same for every modal
 // instance, so we set it at module scope to avoid re-assigning per open.
@@ -44,6 +52,12 @@ type TradeDoc = {
   doc_type?: string;
   purpose?: string;
   party?: string;
+  /* Page-shell config saved on the row. The Send-for-Signature modal
+   * seeds its editable copy from these so the user can tweak the
+   * header / footer + insert tables without leaving the wizard. */
+  content?: string | null;
+  header_config?: HeaderConfig | null;
+  footer_config?: FooterConfig | null;
 };
 
 type Signer = {
@@ -107,6 +121,140 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
 
   const [sending, setSending] = useState(false);
 
+  /* ── Per-doc page-shell overrides (header / footer / body content).
+   * Seeded from each trade-doc row's saved values when the user enters
+   * step 2 for that doc; mutated by the inline editor (Edit Header /
+   * Footer side panel + Insert Table modal) and POSTed alongside
+   * /preview + /send so the rendered PDF reflects the tweaks WITHOUT
+   * mutating the saved row.
+   *
+   * Per-doc rather than global because each trade-doc draft has its own
+   * brand band on Stage 2 — the user might want to keep their NDA
+   * footer one way and their Commercial Invoice footer another. */
+  const [headerOverrides, setHeaderOverrides] = useState<Record<number, HeaderConfig>>({});
+  const [footerOverrides, setFooterOverrides] = useState<Record<number, FooterConfig>>({});
+  const [contentOverrides, setContentOverrides] = useState<Record<number, string>>({});
+
+  /* Side-panel mode: when true the Signature Position pane swaps for the
+   * HeaderFooterPanel editor. User-visible Save / Cancel buttons commit
+   * the pending edits into the per-doc overrides and reload the preview. */
+  const [editingShell, setEditingShell] = useState(false);
+  const [pendingHeader, setPendingHeader] = useState<HeaderConfig>(DEFAULT_HEADER);
+  const [pendingFooter, setPendingFooter] = useState<FooterConfig>(DEFAULT_FOOTER);
+
+  /* Insert Table / HR / Placeholder modals — shared with the draft
+   * editor. Each stashes the current caret BEFORE opening so the
+   * inserted HTML lands at the right spot in the in-progress body edit. */
+  const [tablePickerOpen, setTablePickerOpen]       = useState(false);
+  const [hrPickerOpen, setHrPickerOpen]             = useState(false);
+  const [placeholderPickerOpen, setPlaceholderPickerOpen] = useState(false);
+  const contentEditorRef = useRef<HTMLDivElement | null>(null);
+  const contentLastRangeRef = useRef<Range | null>(null);
+  const stashContentSelection = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && contentEditorRef.current?.contains(sel.anchorNode)) {
+      contentLastRangeRef.current = sel.getRangeAt(0).cloneRange();
+    }
+    // Don't clobber the previous stash when the new selection is OUTSIDE
+    // the editor — that's the case while a modal is open (focus jumped
+    // to the modal). We want to remember the LAST in-editor caret so
+    // insertions land where the user was last typing.
+  };
+
+  /* Track the user's last caret position inside the body editor — every
+   * `selectionchange` event that lands inside the editor updates the
+   * stash. Without this, clicking the toolbar's HR / Table / Placeholder
+   * buttons would only stash if the user happened to right-click or
+   * hadn't yet moved focus to a modal, and a fresh popup with no body
+   * click would have no caret at all — causing insertions to default to
+   * the top of the editor. With the listener, every in-body click /
+   * keystroke updates contentLastRangeRef, and modal openings (which
+   * move focus AWAY from the editor) leave the stash untouched. */
+  useEffect(() => {
+    if (!editingShell) return;
+    const onSel = () => {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && contentEditorRef.current?.contains(sel.anchorNode)) {
+        contentLastRangeRef.current = sel.getRangeAt(0).cloneRange();
+      }
+    };
+    document.addEventListener('selectionchange', onSel);
+    return () => document.removeEventListener('selectionchange', onSel);
+  }, [editingShell]);
+
+  /* Seed the editor's innerHTML imperatively when the popup opens or
+   * the active doc changes. Intentionally NOT keyed on contentOverrides
+   * — pushing state-driven HTML back into the editor via React would
+   * wipe the DOM on every keystroke / execCommand, losing the caret +
+   * just-inserted nodes (which was the "HR lands at the top" bug).
+   * Once seeded, the editor owns its own DOM; user typing fires
+   * onInput → setContentOverrides one-way for the eventual /preview
+   * + /send payloads. */
+  useEffect(() => {
+    if (!editingShell || !activeDocId) return;
+    const editor = contentEditorRef.current;
+    if (!editor) return;
+    const seed = contentOverrides[activeDocId] ?? (docs.find(d => d.id === activeDocId)?.content ?? '');
+    editor.innerHTML = seed ?? '';
+    contentLastRangeRef.current = null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingShell, activeDocId]);
+
+  /* Drop HTML / a placeholder token at the stashed caret in the body
+   * editor, then push the new innerHTML into contentOverrides so the
+   * /preview re-render reflects it. Used by Insert Table / Insert HR /
+   * Insert Placeholder modals and by the rich-text toolbar's onChange
+   * sync. activeDocId is captured at call-time. */
+  const insertIntoBody = (html: string, mode: 'html' | 'text' = 'html') => {
+    if (!activeDocId) return;
+    const editor = contentEditorRef.current;
+    if (editor) {
+      editor.focus();
+      const stash = contentLastRangeRef.current;
+      const stashValid = stash && editor.contains(stash.startContainer);
+      const sel = window.getSelection();
+      if (stashValid && sel) {
+        // Restore the last in-editor caret so the insertion lands where
+        // the user was typing — not at the top of the editor (which is
+        // what `editor.focus()` defaults to when no selection is set).
+        sel.removeAllRanges();
+        sel.addRange(stash);
+      } else if (sel) {
+        // User never placed a caret in the body (opened the popup and
+        // jumped straight to a toolbar modal). Collapse the selection
+        // to the END of the editor's contents so the new HTML appends
+        // after existing text — much closer to user intent than the
+        // top-default.
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      document.execCommand(mode === 'text' ? 'insertText' : 'insertHTML', false, html);
+      // Re-stash so subsequent inserts during the same modal session
+      // chain naturally instead of all landing at the original caret.
+      const newSel = window.getSelection();
+      if (newSel && newSel.rangeCount > 0 && editor.contains(newSel.anchorNode)) {
+        contentLastRangeRef.current = newSel.getRangeAt(0).cloneRange();
+      }
+      setContentOverrides(prev => ({ ...prev, [activeDocId]: editor.innerHTML }));
+    } else {
+      // Editor not mounted yet (popup just opening) — append to the
+      // current override / saved content so the change still lands.
+      setContentOverrides(prev => {
+        const seed = prev[activeDocId] ?? (docs.find(d => d.id === activeDocId)?.content ?? '');
+        return { ...prev, [activeDocId]: (seed ?? '') + html };
+      });
+    }
+  };
+  const syncBodyFromEditor = () => {
+    if (!activeDocId) return;
+    const editor = contentEditorRef.current;
+    if (!editor) return;
+    setContentOverrides(prev => ({ ...prev, [activeDocId]: editor.innerHTML }));
+  };
+
   /* ── Reset when the modal opens. Trigger ONLY on the `open` edge and
    * when the bound customer.db_id actually changes — NOT on every parent
    * render. The parent (AddCustomerModal) recreates its `customer` prop
@@ -131,6 +279,12 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
     setActiveDocId(null);
     setPreviewUrl(null);
     userOverrodeRef.current.clear();
+    // Drop per-doc page-shell overrides — fresh modal open seeds from
+    // each row's saved config the first time it's previewed.
+    setHeaderOverrides({});
+    setFooterOverrides({});
+    setContentOverrides({});
+    setEditingShell(false);
   // preselectedDocIds and customer are read at open-time only —
   // intentionally excluded from deps. db_id captures "different customer".
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -197,8 +351,22 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
     let cancelled = false;
     setPreviewLoading(true);
     setPreviewUrl(null);
+    // Per-doc page-shell override carried along so the preview reflects
+    // whatever the user tweaked in the side panel + table inserts. The
+    // backend layers these over the saved row's config; no override =
+    // saved values render unchanged.
+    const headerOverride = headerOverrides[docId];
+    const footerOverride = footerOverrides[docId];
+    const contentOverride = contentOverrides[docId];
     api.post('/clm/signature-requests/preview',
-      { trade_doc_id: docId, party_id: customer.db_id, model_name: modelName },
+      {
+        trade_doc_id: docId,
+        party_id: customer.db_id,
+        model_name: modelName,
+        ...(headerOverride  ? { header_config_override:  headerOverride  } : {}),
+        ...(footerOverride  ? { footer_config_override:  footerOverride  } : {}),
+        ...(contentOverride !== undefined ? { content_override: contentOverride } : {}),
+      },
       { responseType: 'blob' },
     )
       .then(async r => {
@@ -233,7 +401,7 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, activeDocId, customer?.db_id]);
+  }, [step, activeDocId, customer?.db_id, headerOverrides, footerOverrides, contentOverrides]);
 
   /* ── Release blob URLs we created so we don't leak memory. */
   useEffect(() => {
@@ -289,6 +457,13 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
         expiry_days: expiryDays,
         notes: notes.trim(),
         document_settings: settings,
+        // Per-doc page-shell overrides — keys are trade_doc_id, payloads
+        // mirror the saved row's columns. Backend layers them over the
+        // saved config when rendering each doc to PDF, so each draft can
+        // carry its own brand band + body edits in a multi-doc send.
+        ...(Object.keys(headerOverrides).length  ? { header_config_overrides:  headerOverrides  } : {}),
+        ...(Object.keys(footerOverrides).length  ? { footer_config_overrides:  footerOverrides  } : {}),
+        ...(Object.keys(contentOverrides).length ? { content_overrides:        contentOverrides } : {}),
       };
       const r = await api.post('/clm/signature-requests', payload);
       const data = r.data?.data;
@@ -577,6 +752,21 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
                           className="ssf-sig-overlay"
                           style={{ left: leftPx, top: topPx, width: widthPx, height: heightPx }}
                           onPointerDown={e => onSigPointerDown(e, 'move')}
+                          /* Keyboard nudge for pixel-perfect placement —
+                             arrow keys move by 1pt, Shift = 5pt, Alt = 10pt.
+                             tabIndex makes the div focusable so keydown
+                             fires when the user clicks the overlay first
+                             (pointerdown gives it focus implicitly via
+                             setPointerCapture). */
+                          tabIndex={0}
+                          onKeyDown={e => {
+                            const step = e.altKey ? 10 : e.shiftKey ? 5 : 1;
+                            if (e.key === 'ArrowUp')    { e.preventDefault(); updateActiveSettings({ y: Math.max(0, activeSettings.y - step) }); }
+                            if (e.key === 'ArrowDown')  { e.preventDefault(); updateActiveSettings({ y: Math.max(0, activeSettings.y + step) }); }
+                            if (e.key === 'ArrowLeft')  { e.preventDefault(); updateActiveSettings({ x: Math.max(0, activeSettings.x - step) }); }
+                            if (e.key === 'ArrowRight') { e.preventDefault(); updateActiveSettings({ x: Math.max(0, activeSettings.x + step) }); }
+                          }}
+                          title="Drag to move, arrow keys to nudge by 1pt (Shift = 5, Alt = 10)"
                         >
                           <div className="ssf-sig-label">Signature</div>
                           <div className="ssf-sig-page">page {activeSettings.page + 1}</div>
@@ -601,6 +791,25 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
                   to switch.
                 </div>
 
+                {/* Opens the full-screen Edit Layout popup so the user
+                   has room to drag the logo, edit the title, change the
+                   footer text, and insert tables / lines into the body
+                   without fighting the cramped side-rail width. */}
+                <button
+                  type="button"
+                  className="ssf-reset-btn"
+                  style={{ marginTop: 4, background: 'linear-gradient(135deg,#0d9488,#14b8a6)', color: '#fff', borderColor: 'transparent', fontWeight: 700 }}
+                  onClick={() => {
+                    if (!activeDocId) return;
+                    const activeDoc = docs.find(d => d.id === activeDocId);
+                    setPendingHeader({ ...DEFAULT_HEADER, ...(activeDoc?.header_config ?? {}), ...(headerOverrides[activeDocId] ?? {}) } as HeaderConfig);
+                    setPendingFooter({ ...DEFAULT_FOOTER, ...(activeDoc?.footer_config ?? {}), ...(footerOverrides[activeDocId] ?? {}) } as FooterConfig);
+                    setEditingShell(true);
+                  }}
+                >
+                  Edit Header / Footer / Body
+                </button>
+
                 {activeSettings && (
                   <>
                     <label className="ssf-coord-row">
@@ -620,14 +829,43 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
                         }}
                       />
                     </label>
-                    <label className="ssf-coord-row">
-                      <span>X</span>
-                      <input type="number" min={0} value={Math.round(activeSettings.x)} onChange={e => updateActiveSettings({ x: Math.max(0, Number(e.target.value) || 0) })} />
-                    </label>
-                    <label className="ssf-coord-row">
-                      <span>Y</span>
-                      <input type="number" min={0} value={Math.round(activeSettings.y)} onChange={e => updateActiveSettings({ y: Math.max(0, Number(e.target.value) || 0) })} />
-                    </label>
+                    {/* Fine-tune: each row has explicit ▲ / ▼ nudge
+                       buttons so the user can dial pixel-perfect placement
+                       per page without having to repeatedly drag the
+                       overlay. The signature box on the iframe shows
+                       Chrome's PDF viewer chrome (≈3pt) which the drag
+                       conversion can't account for; these buttons cover
+                       that gap. Shift+click nudges by 5pt; Alt+click by
+                       10pt. Same modifiers work on arrow keys when the
+                       overlay is focused (handler below). */}
+                    {(['X', 'Y'] as const).map(axis => {
+                      const key = axis.toLowerCase() as 'x' | 'y';
+                      const value = Math.round(activeSettings[key] ?? 0);
+                      const step  = (mods: { shiftKey: boolean; altKey: boolean }) =>
+                        mods.altKey ? 10 : mods.shiftKey ? 5 : 1;
+                      return (
+                        <div className="ssf-coord-row ssf-coord-row-nudge" key={axis}>
+                          <span>{axis}</span>
+                          <div className="ssf-coord-nudge-group">
+                            <button
+                              type="button" className="ssf-nudge-btn"
+                              title={`Decrease ${axis} (Shift = -5, Alt = -10)`}
+                              onClick={e => updateActiveSettings({ [key]: Math.max(0, value - step(e)) } as any)}
+                            >▼</button>
+                            <input
+                              type="number" min={0} step={1}
+                              value={value}
+                              onChange={e => updateActiveSettings({ [key]: Math.max(0, Number(e.target.value) || 0) } as any)}
+                            />
+                            <button
+                              type="button" className="ssf-nudge-btn"
+                              title={`Increase ${axis} (Shift = +5, Alt = +10)`}
+                              onClick={e => updateActiveSettings({ [key]: Math.max(0, value + step(e)) } as any)}
+                            >▲</button>
+                          </div>
+                        </div>
+                      );
+                    })}
                     <label className="ssf-coord-row">
                       <span>Width</span>
                       <input type="number" min={20} value={Math.round(activeSettings.width)} onChange={e => updateActiveSettings({ width: Math.max(20, Number(e.target.value) || 20) })} />
@@ -636,6 +874,12 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
                       <span>Height</span>
                       <input type="number" min={20} value={Math.round(activeSettings.height)} onChange={e => updateActiveSettings({ height: Math.max(20, Number(e.target.value) || 20) })} />
                     </label>
+
+                    <div className="ssf-coord-hint">
+                      Drag the box, or click ▲/▼ to nudge by 1pt
+                      (Shift = 5, Alt = 10). When the signature box on the
+                      preview has focus, the keyboard arrow keys also nudge.
+                    </div>
 
                     <button type="button" className="ssf-reset-btn" onClick={() => updateActiveSettings(DEFAULTS)}>
                       Reset to default
@@ -678,11 +922,185 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
             )}
           </div>
         </div>
+
+        {/* Insertion modals — Table / HR / Placeholder. Each lands its
+           HTML at the stashed caret in the body editor via the shared
+           insertIntoBody helper, which also patches contentOverrides
+           so the preview useEffect picks up the change on next render. */}
+        <ClmInsertTableModal
+          open={tablePickerOpen}
+          onClose={() => setTablePickerOpen(false)}
+          onInsert={(html) => { insertIntoBody(html); setTablePickerOpen(false); }}
+        />
+        <ClmInsertHrModal
+          open={hrPickerOpen}
+          onClose={() => setHrPickerOpen(false)}
+          onInsert={(html) => { insertIntoBody(html); setHrPickerOpen(false); }}
+        />
+        <ClmInsertPlaceholderModal
+          open={placeholderPickerOpen}
+          onClose={() => setPlaceholderPickerOpen(false)}
+          onInsert={(token) => { insertIntoBody(token, 'text'); setPlaceholderPickerOpen(false); }}
+        />
       </div>
+
+      {/* ── Edit Layout popup — full-screen overlay so the HeaderFooterPanel
+         and the body editor have room to breathe. Cramming this into the
+         180-px right rail produced a squashed, unreadable preview. The
+         popup is a sibling of the main Send-for-Signature shell (same
+         portal root) so its own backdrop sits above the modal but below
+         the Insert Table dialog when both are open. */}
+      {editingShell && activeDocId && (() => {
+        const activeDoc = docs.find(d => d.id === activeDocId);
+        // seededBody is read ONLY at popup-open time via the
+        // initialiser useEffect below. The editor's innerHTML is then
+        // mutated directly by the user / by execCommand calls, and
+        // synced TO state via the onInput handler. We deliberately
+        // do NOT push state changes BACK into the editor via
+        // dangerouslySetInnerHTML — doing so would clobber the DOM
+        // (caret position + just-inserted nodes) on every keystroke,
+        // which is why earlier the HR appeared to land at the top:
+        // React was wiping the DOM after execCommand and re-rendering
+        // the old content. Same one-way binding pattern the draft
+        // editor uses.
+        const commit = () => {
+          setHeaderOverrides(prev => ({ ...prev, [activeDocId]: pendingHeader }));
+          setFooterOverrides(prev => ({ ...prev, [activeDocId]: pendingFooter }));
+          setEditingShell(false);
+          // contentOverrides was kept fresh on every keystroke via the
+          // editor's onInput, so no extra commit needed for the body.
+        };
+        return (
+          <div className="ssf-edit-overlay" onMouseDown={e => { if (e.target === e.currentTarget) setEditingShell(false); }}>
+            <style>{SSF_EDIT_CSS}</style>
+            <div className="ssf-edit-shell" onMouseDown={e => e.stopPropagation()}>
+              <div className="ssf-edit-head">
+                <div>
+                  <div className="ssf-edit-head-label">EDIT LAYOUT</div>
+                  <div className="ssf-edit-head-title">{activeDoc?.code} · {activeDoc?.name ?? 'Trade Document'}</div>
+                </div>
+                <div className="ssf-edit-head-actions">
+                  <button type="button" className="ssf-edit-btn ssf-edit-btn-ghost" onClick={() => setEditingShell(false)}>Cancel</button>
+                  <button type="button" className="ssf-edit-btn ssf-edit-btn-primary" onClick={commit}>Save &amp; Reload Preview</button>
+                </div>
+              </div>
+              <div className="ssf-edit-hint">
+                Click the header / footer band to edit colours, title, logo, and page-number style. Drag the logo / title inside the header. Use the toolbar to format body text — highlight, colour, alignment, lists, lines, tables, placeholders. Changes apply only to this send — the saved draft is untouched.
+              </div>
+
+              {/* Body-text formatting toolbar — same controls the draft
+                 editor uses (font size, block, B/I/U/strike, text colour,
+                 highlight palette, alignment, lists, indent, link, HR,
+                 table, placeholder, undo/redo, clear). The Insert HR /
+                 Table / Placeholder buttons hand off to the per-popup
+                 modal state. */}
+              <div className="ssf-edit-toolbar-wrap">
+                <ClmRichTextToolbar
+                  editorRef={contentEditorRef}
+                  onChange={syncBodyFromEditor}
+                  onStashSelection={stashContentSelection}
+                  onInsertTable={() => setTablePickerOpen(true)}
+                  onInsertHr={() => setHrPickerOpen(true)}
+                  onInsertPlaceholder={() => setPlaceholderPickerOpen(true)}
+                />
+              </div>
+
+              <div className="ssf-edit-canvas">
+                <HeaderFooterPanel
+                  header={pendingHeader} setHeader={setPendingHeader}
+                  footer={pendingFooter} setFooter={setPendingFooter}
+                  uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo"
+                >
+                  <div
+                    ref={contentEditorRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    className="ssf-edit-body"
+                    onInput={(e) => {
+                      const html = (e.target as HTMLElement).innerHTML;
+                      setContentOverrides(prev => ({ ...prev, [activeDocId]: html }));
+                    }}
+                  />
+                </HeaderFooterPanel>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>,
     document.body,
   );
 }
+
+/* Edit Layout popup — full-screen overlay sized for actual editing.
+ * Sits ABOVE the Send-for-Signature shell (z-index 265000) so its
+ * backdrop covers everything except the Insert Table dialog
+ * (z-index 270000) when both are open. */
+const SSF_EDIT_CSS = `
+.ssf-edit-overlay {
+  position: fixed; inset: 0; z-index: 265000;
+  background: rgba(7, 30, 50, .58);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+}
+.ssf-edit-shell {
+  width: 100%; max-width: 1000px;
+  height: calc(100vh - 48px);
+  background: #f3f4f6;
+  border-radius: 14px;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, .35);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.ssf-edit-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #0d9488 0%, #14b8a6 60%, #5eead4 100%);
+  color: #fff;
+}
+.ssf-edit-head-label { font-size: 10.5px; font-weight: 800; letter-spacing: 0.4px; opacity: 0.85; }
+.ssf-edit-head-title { font-size: 15px; font-weight: 800; margin-top: 2px; }
+.ssf-edit-head-actions { display: inline-flex; gap: 8px; align-items: center; }
+.ssf-edit-btn {
+  padding: 9px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 700;
+  border: 1px solid transparent; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.ssf-edit-btn-ghost   { background: rgba(255,255,255,0.18); color: #fff; border-color: rgba(255,255,255,0.30); }
+.ssf-edit-btn-ghost:hover { background: rgba(255,255,255,0.28); }
+.ssf-edit-btn-primary { background: #fff; color: #047857; }
+.ssf-edit-btn-primary:hover { background: #ecfdf5; }
+.ssf-edit-hint {
+  padding: 10px 18px;
+  background: #ecfeff; color: #0e7490;
+  font-size: 11.5px; font-weight: 600;
+  border-bottom: 1px solid #cffafe;
+}
+.ssf-edit-toolbar-wrap {
+  padding: 10px 18px 0;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+}
+.ssf-edit-canvas {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 22px;
+  background: #e5e7eb;
+}
+.ssf-edit-body {
+  min-height: 320px;
+  outline: none;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #1f2937;
+}
+.ssf-edit-body:focus { outline: 2px solid #14b8a6; outline-offset: 4px; border-radius: 4px; }
+[data-bs-theme="dark"] .ssf-edit-shell  { background: var(--vz-secondary-bg); }
+[data-bs-theme="dark"] .ssf-edit-canvas { background: var(--vz-body-bg); }
+[data-bs-theme="dark"] .ssf-edit-body   { color: var(--vz-body-color); }
+`;
 
 /**
  * Find the controller-embedded «CBC-SIG-{PARTY}-9417» marker in the
@@ -1032,6 +1450,33 @@ const SSF_CSS = `
   font-size: 12.5px; color: #0f172a; text-align: right;
 }
 .ssf-coord-row input:focus { border-color: #4338ca; outline: none; box-shadow: 0 0 0 3px rgba(67,56,202,.12); }
+/* Nudge group — X / Y rows pair the input with explicit ▼ / ▲ buttons
+   so pixel-perfect adjustment doesn't require dragging a 1pt distance. */
+.ssf-coord-row-nudge .ssf-coord-nudge-group {
+  display: inline-flex; align-items: center; gap: 2px;
+}
+.ssf-coord-row-nudge input {
+  width: 60px; text-align: center; border-radius: 0;
+  border-left-width: 0; border-right-width: 0;
+}
+.ssf-nudge-btn {
+  width: 26px; height: 30px;
+  background: #fff; border: 1.5px solid #e2e8f0; color: #475569;
+  font-size: 11px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.ssf-nudge-btn:first-child { border-radius: 7px 0 0 7px; }
+.ssf-nudge-btn:last-child  { border-radius: 0 7px 7px 0; }
+.ssf-nudge-btn:hover { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+.ssf-coord-hint {
+  font-size: 10.5px; color: #94a3b8; line-height: 1.4;
+  padding: 6px 8px; background: #f8fafc; border-radius: 6px;
+  border: 1px dashed #e2e8f0;
+}
+/* Focus ring on the signature overlay — only when the user has clicked
+   it, so the arrow-key nudge handler activates without the ring being
+   constantly visible. */
+.ssf-sig-overlay:focus { outline: 2px solid #4338ca; outline-offset: 2px; }
 .ssf-reset-btn {
   margin-top: 6px;
   background: #f8fafc; border: 1px solid #cbd5e1; color: #475569;

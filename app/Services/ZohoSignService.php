@@ -36,6 +36,24 @@ class ZohoSignService
     public const DEFAULT_FIELD_WIDTH  = 150;
     public const DEFAULT_FIELD_HEIGHT = 45;
 
+    /**
+     * Empirical sub-pt corrections applied to every signature field
+     * BEFORE it ships to Zoho. The SPA's drag overlay and Zoho's
+     * signature renderer don't share a pixel-perfect coordinate space
+     * (Chrome's PDF viewer chrome offsets the visible page inside the
+     * iframe by a few pt vs Zoho's own rasterisation), so a small
+     * fixed nudge closes the gap.
+     *   - SIG_X_NUDGE_PT  shifts the field horizontally (negative = left)
+     *   - SIG_Y_NUDGE_PT  shifts the field vertically   (positive = down,
+     *     since y_coord uses top-left origin after the +height bottom-
+     *     anchor fix in submitWithFields).
+     * Tune via per-page ▲/▼ in the SPA's Signature Position pane for
+     * one-off tweaks; change these constants only if every tenant's
+     * PDF template lands consistently off.
+     */
+    public const SIG_X_NUDGE_PT = -4;
+    public const SIG_Y_NUDGE_PT =  4;
+
     private string $clientId;
     private string $clientSecret;
     private string $refreshToken;
@@ -247,17 +265,44 @@ class ZohoSignService
                     // floats like 380.74832749827493, so round to whole pts
                     // before serialising. Sub-point precision is invisible
                     // to a signer anyway.
+                    //
+                    // Y-axis convention — Zoho Sign anchors the signature
+                    // field at its BOTTOM-LEFT (y_coord = pt-distance from
+                    // page top to the field's lower edge). The SPA drag
+                    // overlay treats (x, y) as the TOP-LEFT of the box,
+                    // which is also how the placeholder text on the PDF
+                    // is positioned. If we sent y unchanged, the signature
+                    // would render with its TOP at (y - height), i.e.
+                    // ~height pt ABOVE the dragged position. Offsetting
+                    // by +abs_height anchors the field's BOTTOM at
+                    // y + height, putting the field's TOP exactly at the
+                    // dragged y — matching the user's WYSIWYG intent.
+                    //
+                    // Empirical nudge — after the height correction, the
+                    // user reported the field still sits a couple of pt
+                    // right-and-above the dragged box (PDF-viewer chrome
+                    // in the SPA preview vs Zoho's renderer don't agree
+                    // pixel-for-pixel). Shift left + down by a few pt to
+                    // close the gap. Tune these via the per-page nudge
+                    // buttons in the SPA if a specific tenant's PDF
+                    // template needs more.
+                    $xPt = (float) ($c['x']      ?? self::DEFAULT_FIELD_X);
+                    $yPt = (float) ($c['y']      ?? self::DEFAULT_FIELD_Y);
+                    $wPt = (float) ($c['width']  ?? self::DEFAULT_FIELD_WIDTH);
+                    $hPt = (float) ($c['height'] ?? self::DEFAULT_FIELD_HEIGHT);
+                    $xPtAdj = $xPt + self::SIG_X_NUDGE_PT;
+                    $yPtAdj = $yPt + $hPt + self::SIG_Y_NUDGE_PT;
                     $fields[] = [
                         'document_id'     => $docId,
                         'field_name'      => 'Signature_' . ($aIdx + 1) . '_' . ($dIdx + 1),
                         'field_label'     => 'Signature',
                         'field_type_name' => 'Signature',
                         'field_category'  => 'image',
-                        'x_coord'         => (int) round((float) ($c['x']      ?? self::DEFAULT_FIELD_X)),
-                        'y_coord'         => (int) round((float) ($c['y']      ?? self::DEFAULT_FIELD_Y)),
-                        'abs_width'       => (int) round((float) ($c['width']  ?? self::DEFAULT_FIELD_WIDTH)),
-                        'abs_height'      => (int) round((float) ($c['height'] ?? self::DEFAULT_FIELD_HEIGHT)),
-                        'page_no'         => (int)        ($c['page']   ?? self::DEFAULT_FIELD_PAGE),
+                        'x_coord'         => (int) round(max(0.0, $xPtAdj)),
+                        'y_coord'         => (int) round(max(0.0, $yPtAdj)),
+                        'abs_width'       => (int) round($wPt),
+                        'abs_height'      => (int) round($hPt),
+                        'page_no'         => (int) ($c['page'] ?? self::DEFAULT_FIELD_PAGE),
                         'is_mandatory'    => true,
                     ];
                 }

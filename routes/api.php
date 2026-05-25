@@ -221,11 +221,15 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::delete('/clm/trade-doc-names/{id}', [ClmTradeDocumentController::class, 'namesDestroy']);
     Route::get   ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryIndex']);
     Route::post  ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryStore']);
-    Route::put   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryUpdate']);
-    Route::delete('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryDestroy']);
+    // Static-path endpoints declared BEFORE `{id}` so Laravel's router
+    // doesn't treat `upload-header-logo` / `for-party` as numeric ids
+    // and reject the request with 405 against the PUT/DELETE handlers.
+    Route::post  ('/clm/trade-doc-library/upload-header-logo',[ClmTradeDocumentController::class, 'uploadHeaderLogo']);
     Route::get   ('/clm/trade-doc-library/for-party/{party}', [ClmTradeDocumentController::class, 'libraryForParty']);
-    Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx']);
-    Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx']);
+    Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx'])->whereNumber('id');
+    Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx'])->whereNumber('id');
+    Route::put   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryUpdate'])->whereNumber('id');
+    Route::delete('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryDestroy'])->whereNumber('id');
 
     // Central CLM → Trade Documents → Send for Signature (Zoho Sign).
     // The preview endpoint renders the merged PDF without calling Zoho so the
@@ -411,6 +415,19 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::patch('/sales/leads/{id}/products/{mapping}/mark-sourced',
         [SalesLeadController::class, 'markLeadProductSourced'])
         ->whereNumber('id')->whereNumber('mapping');
+
+    // Stage 4 — Price Shared. Append-only price-share history per
+    // (lead, product) plus a PDF export per entry.
+    Route::post('/sales/leads/{id}/products/{mapping}/shared-prices',
+        [SalesLeadController::class, 'storeSharedPrice'])
+        ->whereNumber('id')->whereNumber('mapping');
+    Route::get('/sales/leads/{id}/shared-prices',
+        [SalesLeadController::class, 'listSharedPrices'])->whereNumber('id');
+    Route::get('/sales/leads/{id}/products/{mapping}/shared-prices',
+        [SalesLeadController::class, 'listSharedPricesByProduct'])
+        ->whereNumber('id')->whereNumber('mapping');
+    Route::get('/sales/shared-prices/{id}/pdf',
+        [SalesLeadController::class, 'sharedPricePdf'])->whereNumber('id');
 
     // Stage 3 → Create Procurement modal posts here. Multi-tenant via
     // client_id; see ProcurementController for the body shape.

@@ -71,13 +71,29 @@ class ClmSignatureController extends Controller
             'trade_doc_id' => 'required|integer|exists:clm_trade_doc_library,id',
             'party_id'     => 'required|integer',
             'model_name'   => 'nullable|string|in:Customer,Consignee,Vendor',
+            // Per-render overrides for the page-shell zones. When the
+            // Send-for-Signature modal lets the user tweak the header /
+            // footer / body inline (Insert Table, edit header colours,
+            // etc.), the SPA POSTs the in-progress config here so the
+            // preview reflects the edit before they hit Send. Saved
+            // trade-doc row is NOT mutated by this path — overrides
+            // only apply to this PDF render.
+            'header_config_override' => 'nullable|array',
+            'footer_config_override' => 'nullable|array',
+            'content_override'       => 'nullable|string',
         ]);
         $modelName = $data['model_name'] ?? 'Customer';
 
         $doc   = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($data['trade_doc_id']);
         $party = $this->loadParty($modelName, (int) $data['party_id'], $user);
 
-        $pdf = $this->renderPdf($doc, $party, $modelName, Str::uuid()->toString());
+        $pdf = $this->renderPdf(
+            $doc, $party, $modelName, Str::uuid()->toString(),
+            null,
+            $data['header_config_override'] ?? null,
+            $data['footer_config_override'] ?? null,
+            $data['content_override'] ?? null,
+        );
 
         return response($pdf->output(), 200, [
             'Content-Type'        => 'application/pdf',
@@ -126,6 +142,15 @@ class ClmSignatureController extends Controller
             'is_sequential'        => 'nullable|boolean',
             'notes'                => 'nullable|string|max:1000',
             'document_settings'    => 'nullable|array', // keyed by trade_doc_id → {x,y,page,width,height}
+            // Per-doc overrides — same keying convention as
+            // document_settings. Each map is { trade_doc_id: payload }
+            // so a multi-doc send can carry independent header/footer/
+            // body tweaks per draft. Saved trade-doc rows are NOT
+            // mutated by this path; overrides only apply to the PDFs
+            // shipped to Zoho for this send.
+            'header_config_overrides'   => 'nullable|array',
+            'footer_config_overrides'   => 'nullable|array',
+            'content_overrides'         => 'nullable|array',
         ]);
 
         $modelName = $data['model_name'] ?? 'Customer';
@@ -152,8 +177,18 @@ class ClmSignatureController extends Controller
 
         try {
             // 1. Render each draft to a temp PDF on disk.
+            $headerByDoc  = (array) ($data['header_config_overrides'] ?? []);
+            $footerByDoc  = (array) ($data['footer_config_overrides'] ?? []);
+            $contentByDoc = (array) ($data['content_overrides']       ?? []);
             foreach ($orderedDocs as $doc) {
-                $pdf  = $this->renderPdf($doc, $party, $modelName, $requestUuid, $data['signers']);
+                $docKey         = (string) $doc->id;
+                $headerOverride = is_array($headerByDoc[$docKey]  ?? null) ? $headerByDoc[$docKey]  : null;
+                $footerOverride = is_array($footerByDoc[$docKey]  ?? null) ? $footerByDoc[$docKey]  : null;
+                $contentOver    = is_string($contentByDoc[$docKey] ?? null) ? $contentByDoc[$docKey] : null;
+                $pdf  = $this->renderPdf(
+                    $doc, $party, $modelName, $requestUuid, $data['signers'],
+                    $headerOverride, $footerOverride, $contentOver,
+                );
                 $tmp  = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
                 file_put_contents($tmp, $pdf->output());
                 $tempPaths[]     = $tmp;
@@ -302,10 +337,31 @@ class ClmSignatureController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
 
+        // Same-as-customer read-through: a consignee flagged
+        // `same_as_customer = true` has no signature requests of its own —
+        // its Stage 3 Trade Documents tab needs to surface the linked
+        // customer's signed PDFs (and any inprogress requests) as if they
+        // were the consignee's. Swap the (party_id, model_name) filter
+        // before the where() clauses so the rest of the pipeline (status,
+        // sync polling, fetchSignedArtifacts) operates uniformly.
+        $filterPartyId   = $request->filled('party_id')   ? (int) $request->party_id : null;
+        $filterModelName = $request->filled('model_name') ? (string) $request->model_name : null;
+        if ($filterPartyId && $filterModelName === 'Consignee') {
+            $consignee = Consignee::query()->find($filterPartyId);
+            if ($consignee
+                && $consignee->same_as_customer
+                && $consignee->customer_id
+                && (!$user->client_id || (int) ($consignee->client_id ?? 0) === (int) $user->client_id)
+            ) {
+                $filterPartyId   = (int) $consignee->customer_id;
+                $filterModelName = 'Customer';
+            }
+        }
+
         $q = ClmSignatureRequest::query()->forUser($user)->latest();
 
-        if ($request->filled('party_id'))   $q->where('party_id', (int) $request->party_id);
-        if ($request->filled('model_name')) $q->where('model_name', $request->model_name);
+        if ($filterPartyId)   $q->where('party_id', $filterPartyId);
+        if ($filterModelName) $q->where('model_name', $filterModelName);
         if ($request->filled('status')) {
             $statuses = is_array($request->status) ? $request->status : [$request->status];
             $q->whereIn('status', $statuses);
@@ -500,21 +556,101 @@ class ClmSignatureController extends Controller
      * the customer's data merged into placeholder tokens. Centralised so
      * preview + send go through identical rendering.
      */
-    private function renderPdf(ClmTradeDocLibrary $doc, Model $party, string $modelName, string $requestUuid, ?array $signers = null)
-    {
-        $processedHtml = $this->replacePlaceholders((string) $doc->content, $party, $modelName);
+    private function renderPdf(
+        ClmTradeDocLibrary $doc,
+        Model $party,
+        string $modelName,
+        string $requestUuid,
+        ?array $signers = null,
+        ?array $headerOverride = null,
+        ?array $footerOverride = null,
+        ?string $contentOverride = null,
+    ) {
+        // Content override takes precedence over the row's saved HTML —
+        // used by the Send-for-Signature modal when the user pastes in
+        // a table via Insert Table or otherwise edits the body inline.
+        $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $doc->content;
+        $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName);
         $client = Client::find($doc->client_id);
 
+        // Saved Stage 2 page-shell config — drives the PDF's header/footer
+        // so the user's draft preview matches what gets sent. Cast pulls
+        // them back as arrays from the JSON column; missing on legacy
+        // rows → null (blade falls back to a minimal client-name header
+        // so older drafts still render).
+        //
+        // Per-render overrides win when present. The Send-for-Signature
+        // modal POSTs an in-progress header/footer config alongside the
+        // preview/send call so the user's inline tweaks render without
+        // mutating the saved row.
+        $headerConfig = is_array($headerOverride) ? $headerOverride
+            : (is_array($doc->header_config) ? $doc->header_config : []);
+        $footerConfig = is_array($footerOverride) ? $footerOverride
+            : (is_array($doc->footer_config) ? $doc->footer_config : []);
+
+        // dompdf can't fetch /storage URLs at render time, so resolve the
+        // saved header logo to a base64 data URL up-front. Prefer the
+        // per-doc header logo the user uploaded via HeaderFooterPanel.
+        // Fall back to the URL-encoded variant (rows seeded from /me's
+        // branch_logo only carry `logo_url`, not `logo_path`), then to
+        // the tenant client's branding logo for true legacy rows.
+        $headerLogoBase64 = $this->resolveLogoBase64(
+            $headerConfig['logo_path'] ?? null,
+            $this->pathFromStorageUrl($headerConfig['logo_url'] ?? null),
+            $client?->logo,
+        );
+
         return Pdf::loadView('pdf.clm-signature-document', [
-            'document'       => $doc,
-            'party'          => $party,
-            'modelName'      => $modelName,
-            'processedHtml'  => $processedHtml,
-            'generatedDate'  => now()->format('d/m/Y'),
-            'requestId'      => substr($requestUuid, 0, 8),
-            'signers'        => $signers ?? [],
-            'client'         => $client,
+            'document'         => $doc,
+            'party'            => $party,
+            'modelName'        => $modelName,
+            'processedHtml'    => $processedHtml,
+            'generatedDate'    => now()->format('d/m/Y'),
+            'requestId'        => substr($requestUuid, 0, 8),
+            'signers'          => $signers ?? [],
+            'client'           => $client,
+            'headerConfig'     => $headerConfig,
+            'footerConfig'     => $footerConfig,
+            'headerLogoBase64' => $headerLogoBase64,
         ])->setPaper('a4');
+    }
+
+    /**
+     * Walk candidate storage paths in priority order and return the
+     * first one that resolves to a file on the public disk, base64-
+     * encoded for inline embedding in the PDF. Returns '' when none of
+     * them resolve, so the blade renders a text-only header band.
+     */
+    private function resolveLogoBase64(?string ...$candidates): string
+    {
+        foreach ($candidates as $path) {
+            if (!$path) continue;
+            try {
+                if (\Illuminate\Support\Facades\Storage::disk('public')->exists($path)) {
+                    return base64_encode(\Illuminate\Support\Facades\Storage::disk('public')->get($path));
+                }
+            } catch (\Throwable $e) {
+                // try the next candidate
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Pull the storage-relative path out of a public-disk URL. Accepts
+     * both `/storage/foo/bar.png` and `https://example.com/storage/foo/bar.png`
+     * forms — anything after the first `/storage/` segment is the
+     * storage-relative path on the public disk. Used so existing trade-doc
+     * rows seeded from /me's branch_logo (URL only, no path) still render
+     * their logo in the PDF.
+     */
+    private function pathFromStorageUrl(?string $url): ?string
+    {
+        if (!$url) return null;
+        if (preg_match('#/storage/(.+)$#', $url, $m)) {
+            return $m[1];
+        }
+        return null;
     }
 
     /**
