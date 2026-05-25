@@ -1,180 +1,622 @@
+import { useEffect, useMemo, useState } from 'react';
+import api from '../../../../api';
+import { useToast } from '../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
+import CreateShipmentOrderModal, { type ShipmentInitialContext } from './CreateShipmentOrderModal';
 
-/* Sales Matrix → Stage 6 — Victory Stage
- * Celebratory landing with deal summary and Create Shipment ID CTA. */
+/* ─────────────────────────────────────────────────────────────────────────
+ * Sales Matrix → Stage 6: Victory Stage
+ *
+ *  Celebration view + Shipment Order flow:
+ *   1. Initial visit  → confetti burst + "Create Shipment ID" CTA
+ *   2. Click CTA      → opens the amber Shipment Order modal (ported
+ *                       from IDIMS's BT module)
+ *   3. After save     → CTA replaced by SHP-### details card with the
+ *                       full shipping + logistics block
+ *
+ *  Data sources:
+ *   GET /sales/leads/{id}                           lead + won_at
+ *   GET /sales/quotations?opp_id={id}&per_page=1    latest quote
+ *   GET /sales/proforma-invoices?opp_id={id}&p=1    latest PI
+ *   GET /sales/leads/{id}/shipment-order            shipment (if any)
+ * ───────────────────────────────────────────────────────────────────── */
+
+type LeadDetail = {
+  id:            number;
+  won_at:        string | null;
+  qualified:     boolean;
+  lead_stage_id: number;
+  sender_country_iso?: string | null;
+  customer?:     { id: number; company_name: string | null; customer_code: string | null } | null;
+  consignee?:    { id: number; company_name: string | null; consignee_code?: string | null } | null;
+};
+
+type DealDoc = {
+  id:         number;
+  code:       string | null;
+  currency:   string | null;
+  grand_total:number | string | null;
+  created_at: string;
+};
+
+type Shipment = {
+  id:                   number;
+  lead_id:              number;
+  proforma_invoice_id:  number | null;
+  shipping_liability:   string | null;
+  cold_chain:           boolean;
+  zip_code:             string | null;
+  freight_cost:         number | string | null;
+  shipping_mode:        string | null;
+  inco_term:            string | null;
+  port_of_loading:      string | null;
+  port_of_unloading:    string | null;
+  final_destination:    string | null;
+  origin_country:       string | null;
+  remarks:              string | null;
+  attachments:          string[] | null;
+  created_at:           string;
+  proforma_invoice?:    { id: number; code: string | null; created_at: string } | null;
+  creator?:             { id: number; name: string } | null;
+};
+
+const fmtDate = (s: string | null | undefined): string => {
+  if (!s) return '—';
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB');
+};
+
+const fmtMoney = (v: number | string | null | undefined, ccy: string | null | undefined): string => {
+  if (v == null) return '—';
+  const num = Number(v);
+  if (!Number.isFinite(num)) return '—';
+  return `${ccy ?? ''} ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim();
+};
+
+const fmtCcy = (v: number | string | null | undefined): string => {
+  if (v == null) return '—';
+  const num = Number(v);
+  if (!Number.isFinite(num)) return '—';
+  return `$ ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const celebratedLeads = new Set<number>();
 
 export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
-  const today = new Date().toLocaleDateString('en-GB');
+  const toast = useToast();
+  const leadId = header.leadId ?? null;
+
+  const [loading, setLoading]       = useState(false);
+  const [lead, setLead]             = useState<LeadDetail | null>(null);
+  const [latestQt, setLatestQt]     = useState<DealDoc | null>(null);
+  const [latestPi, setLatestPi]     = useState<DealDoc | null>(null);
+  const [shipment, setShipment]     = useState<Shipment | null>(null);
+  const [confetti, setConfetti]     = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const fetchAll = async (silent = false) => {
+    if (!leadId) return;
+    if (!silent) setLoading(true);
+    const [leadRes, qtRes, piRes, shpRes] = await Promise.allSettled([
+      api.get<{ status: boolean; data: LeadDetail }>(`/sales/leads/${leadId}`),
+      api.get<{ status: boolean; data: DealDoc[] }>('/sales/quotations',        { params: { opp_id: leadId, per_page: 1 } }),
+      api.get<{ status: boolean; data: DealDoc[] }>('/sales/proforma-invoices', { params: { opp_id: leadId, per_page: 1 } }),
+      api.get<{ status: boolean; data: Shipment | null }>(`/sales/leads/${leadId}/shipment-order`),
+    ]);
+    if (leadRes.status === 'fulfilled') setLead(leadRes.value.data.data);
+    else toast.error('Load failed', 'Could not load the lead summary.');
+    if (qtRes.status === 'fulfilled')   setLatestQt(qtRes.value.data.data?.[0] ?? null);
+    if (piRes.status === 'fulfilled')   setLatestPi(piRes.value.data.data?.[0] ?? null);
+    if (shpRes.status === 'fulfilled')  setShipment(shpRes.value.data.data ?? null);
+    if (!silent) setLoading(false);
+  };
+
+  useEffect(() => {
+    if (!leadId) return;
+    void fetchAll(false);
+    if (!celebratedLeads.has(leadId)) {
+      celebratedLeads.add(leadId);
+      setConfetti(true);
+      setTimeout(() => setConfetti(false), 5_000);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadId]);
+
+  const wonOn = useMemo(() => fmtDate(lead?.won_at ?? null), [lead?.won_at]);
+
+  const dealValue = useMemo(() => {
+    if (latestPi?.grand_total != null) return fmtMoney(latestPi.grand_total, latestPi.currency);
+    if (latestQt?.grand_total != null) return fmtMoney(latestQt.grand_total, latestQt.currency);
+    return '—';
+  }, [latestPi, latestQt]);
+
+  const shipmentInitialCtx: ShipmentInitialContext = useMemo(() => ({
+    oppCode:         header.oppId,
+    oppDate:         header.oppDate,
+    piCode:          latestPi?.code ?? null,
+    piDate:          latestPi?.created_at ?? null,
+    piId:            latestPi?.id ?? null,
+    customerCode:    lead?.customer?.customer_code ?? null,
+    customerName:    lead?.customer?.company_name ?? header.customer,
+    consigneeCode:   lead?.consignee?.consignee_code ?? null,
+    consigneeName:   lead?.consignee?.company_name ?? null,
+  }), [header.oppId, header.oppDate, header.customer, latestPi, lead]);
+
+  const onShipmentCreated = () => {
+    void fetchAll(true);
+  };
 
   return (
     <>
       <style>{SHARED_STAGE_CSS}{STAGE6_CSS}</style>
 
-      <div className="smd-stg-head">
+      <div className="smd-stg-head s6-head">
         <div className="smd-stg-head-left">
           <div className="smd-stg-head-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
-              <path d="M6 9a6 6 0 0 0 12 0V3H6z"/>
-              <path d="M9 21h6M12 17v4"/>
+              <path d="M6 9a6 6 0 0 0 12 0V3H6z" />
+              <path d="M9 21h6M12 17v4" />
+              <path d="M2 5h4M18 5h4" />
             </svg>
           </div>
           <div>
             <div className="smd-stg-head-title">Stage 6: Victory Stage</div>
-            <div className="smd-stg-head-sub">● Deal successfully won</div>
+            <div className="smd-stg-head-sub">● Deal closed successfully</div>
           </div>
         </div>
-        <span className="smd-stg-head-badge">● ACTIVE</span>
+        <span className="smd-stg-head-badge s6-badge">● DEAL WON</span>
       </div>
 
-      <div className="smd-stg-body smd-st6-body">
-        {/* Trophy + Congratulations */}
-        <div className="smd-st6-celebrate">
-          <div className="smd-st6-confetti">
-            <span style={{ left: '8%',  top: '12%', background: '#fbbf24' }} />
-            <span style={{ left: '20%', top: '40%', background: '#a78bfa' }} />
-            <span style={{ left: '85%', top: '20%', background: '#34d399' }} />
-            <span style={{ left: '92%', top: '55%', background: '#f87171' }} />
-            <span style={{ left: '15%', top: '80%', background: '#60a5fa' }} />
-            <span style={{ left: '78%', top: '78%', background: '#f59e0b' }} />
+      <div className="smd-stg-body s6-body">
+        {confetti && (
+          <div className="s6-confetti" aria-hidden="true">
+            {Array.from({ length: 60 }).map((_, i) => (
+              <span key={i} style={{
+                left: `${(i * 1.7) % 100}%`,
+                animationDelay: `${(i % 12) * 0.12}s`,
+                background: ['#fbbf24','#a78bfa','#34d399','#f87171','#60a5fa','#f59e0b','#ec4899','#06b6d4'][i % 8],
+              }} />
+            ))}
           </div>
+        )}
 
-          <div className="smd-st6-trophy">
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
-              <path d="M6 9a6 6 0 0 0 12 0V3H6z"/>
-              <path d="M9 21h6M12 17v4"/>
-              <path d="M2 5h4M18 5h4"/>
-            </svg>
+        {/* ── A. Pre-shipment view: celebration + Create CTA + Deal Summary ── */}
+        {!shipment && (
+          <>
+            <div className="s6-celebrate smd-fade-in">
+              <div className="s6-trophy">
+                <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
+                  <path d="M6 9a6 6 0 0 0 12 0V3H6z" />
+                  <path d="M9 21h6M12 17v4" />
+                  <path d="M2 5h4M18 5h4" />
+                </svg>
+              </div>
+              <div className="s6-title">Congratulations!</div>
+              <div className="s6-quote">"Every win counts — keep the momentum going."</div>
+
+              {loading ? (
+                <span className="smd-skel" style={{ width: 160, height: 24, marginTop: 12, borderRadius: 999 }} />
+              ) : (
+                <span className="s6-won-stamp">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                  </svg>
+                  Won on {wonOn}
+                </span>
+              )}
+
+              <button type="button" className="s6-cta" onClick={() => setCreateOpen(true)} disabled={loading}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                </svg>
+                Create Shipment ID
+              </button>
+            </div>
+
+            <DealSummary
+              loading={loading}
+              header={header}
+              wonOn={wonOn}
+              lead={lead}
+              latestQt={latestQt}
+              latestPi={latestPi}
+              dealValue={dealValue}
+            />
+          </>
+        )}
+
+        {/* ── B. Post-shipment view: success banner + details + logistics ── */}
+        {shipment && (
+          <div className="s6-shp-wrap smd-fade-in">
+            <div className="s6-success-banner">
+              <div className="s6-success-left">
+                <span className="s6-success-ico">🏆</span>
+                <div>
+                  <div className="s6-success-title">Deal Successfully Won!</div>
+                  <div className="s6-success-sub">Shipment ID created and saved</div>
+                </div>
+              </div>
+              <span className="s6-shp-code">SHP-{String(shipment.id).padStart(3, '0')}</span>
+            </div>
+
+            {/* SHIPMENT DETAILS */}
+            <div className="s6-shp-card">
+              <div className="s6-shp-card-head s6-shp-head-amber">
+                <span className="s6-shp-ico">📦</span>
+                SHIPMENT DETAILS
+              </div>
+              <div className="s6-shp-grid s6-shp-grid-4">
+                <Cell label="SHIPMENT ID"      value={`SHP-${String(shipment.id).padStart(3, '0')}`} amber />
+                <Cell label="SHIPMENT DATE"    value={fmtDate(shipment.created_at)} />
+                <Cell label="OPPORTUNITY ID"   value={header.oppId} amber />
+                <Cell label="OPPORTUNITY DATE" value={fmtDate(header.oppDate)} />
+                <Cell label="PI NUMBER"        value={shipment.proforma_invoice?.code ?? latestPi?.code ?? '—'} amber />
+                <Cell label="PI DATE"          value={fmtDate(shipment.proforma_invoice?.created_at ?? latestPi?.created_at ?? null)} />
+                <Cell label="CREATED BY"       value={shipment.creator?.name ?? '—'} />
+                <Cell label="DEAL VALUE"       value={dealValue} amber />
+              </div>
+            </div>
+
+            {/* INQUIRY DETAILS */}
+            <div className="s6-shp-card">
+              <div className="s6-shp-card-head s6-shp-head-blue">
+                <span className="s6-shp-ico">🔍</span>
+                INQUIRY DETAILS
+              </div>
+              <div className="s6-shp-grid s6-shp-grid-3">
+                <Cell label="CUSTOMER ID"      value={lead?.customer?.customer_code ?? '—'} blue />
+                <Cell label="CUSTOMER NAME"    value={lead?.customer?.company_name ?? header.customer ?? '—'} />
+                <Cell label="CUSTOMER COUNTRY" value={lead?.sender_country_iso ?? '—'} blue />
+                <Cell label="CONSIGNEE ID"     value={lead?.consignee?.consignee_code ?? '—'} blue />
+                <Cell label="CONSIGNEE NAME"   value={lead?.consignee?.company_name ?? '—'} />
+                <Cell label="CONSIGNEE COUNTRY" value={lead?.sender_country_iso ?? '—'} blue />
+              </div>
+            </div>
+
+            {/* LOGISTICS INSTRUCTIONS */}
+            <div className="s6-shp-card">
+              <div className="s6-shp-card-head s6-shp-head-emerald">
+                <span className="s6-shp-ico">🚢</span>
+                LOGISTICS INSTRUCTIONS
+              </div>
+              <div className="s6-shp-grid s6-shp-grid-3">
+                <Cell label="SHIPPING LIABILITY" value={shipment.shipping_liability ?? '—'} emerald />
+                <Cell label="COLD CHAIN"         value={shipment.cold_chain ? 'Yes — Required' : 'No — Not Required'} emerald />
+                <Cell label="ZIP CODE"           value={shipment.zip_code ?? '—'} />
+                <Cell label="FREIGHT COST"       value={fmtCcy(shipment.freight_cost)} emerald />
+                <Cell label="SHIPPING MODE"      value={shipment.shipping_mode ?? '—'} emerald />
+                <Cell label="INCO TERM"          value={shipment.inco_term ?? '—'} emerald />
+                <Cell label="PORT OF LOADING"    value={shipment.port_of_loading ?? '—'} />
+                <Cell label="PORT OF UNLOADING"  value={shipment.port_of_unloading ?? '—'} />
+                <Cell label="FINAL DESTINATION"  value={shipment.final_destination ?? '—'} amber />
+                <Cell label="ORIGIN COUNTRY"     value={shipment.origin_country ?? '—'} />
+                {shipment.remarks && (
+                  <div className="s6-shp-cell s6-shp-cell-wide">
+                    <div className="s6-shp-label">REMARKS</div>
+                    <div className="s6-shp-val">{shipment.remarks}</div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-
-          <div className="smd-st6-title">Congratulations!</div>
-          <div className="smd-st6-quote">"Every win counts! Keep the momentum going"</div>
-
-          <span className="smd-st6-won-badge">● DEAL MARKED AS WON</span>
-
-          <button className="smd-st6-cta">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3">
-              <rect x="3" y="3" width="18" height="18" rx="2"/>
-              <line x1="12" y1="8" x2="12" y2="16"/>
-              <line x1="8" y1="12" x2="16" y2="12"/>
-            </svg>
-            Create Shipment ID
-          </button>
-        </div>
-
-        {/* Deal Summary */}
-        <div className="smd-st6-summary">
-          <div className="smd-st6-summary-head">DEAL SUMMARY</div>
-          <div className="smd-st6-summary-grid">
-            <SummaryCell color="violet" icon="🪪"  label="OPPORTUNITY ID" value={header.oppId} />
-            <SummaryCell color="blue"   icon="🏢"  label="CUSTOMER"        value={header.customer} />
-            <SummaryCell color="amber"  icon="📅"  label="WON DATE"        value={today} />
-            <SummaryCell color="rose"   icon="📄"  label="QUOTATION NO"    value="QT/2025-26/4" />
-            <SummaryCell color="emerald" icon="🧾" label="PI NUMBER"       value="PI/2026-27/001" />
-            <SummaryCell color="green"  icon="$"  label="DEAL VALUE"       value="$ 2,500,000.00" />
-          </div>
-        </div>
+        )}
       </div>
 
       <div className="smd-stg-foot">
         <div className="smd-stg-foot-note">
-          ⚠ Note : Congratulations! Mark the deal as won to complete this opportunity.
+          {shipment
+            ? <>🏆 <strong>All set.</strong> Shipment order saved — logistics can dispatch.</>
+            : <>⚠ <strong>Note :</strong> Congratulations! Create the Shipment ID to complete this opportunity.</>}
         </div>
         <div className="smd-stg-btn-row">
-          <button className="smd-stg-btn" onClick={onPrev}>← Previous</button>
+          <button className="smd-stg-btn" onClick={onPrev} type="button">← Previous</button>
         </div>
       </div>
+
+      <CreateShipmentOrderModal
+        open={createOpen}
+        leadId={leadId}
+        context={shipmentInitialCtx}
+        onClose={() => setCreateOpen(false)}
+        onCreated={onShipmentCreated}
+      />
     </>
   );
 }
 
-function SummaryCell({ color, icon, label, value }: {
-  color: 'violet'|'blue'|'amber'|'rose'|'emerald'|'green'; icon: string; label: string; value: string;
+/* ── Deal Summary card (pre-shipment view) ── */
+function DealSummary({ loading, header, wonOn, lead, latestQt, latestPi, dealValue }: {
+  loading: boolean;
+  header: StageProps['header'];
+  wonOn: string;
+  lead: LeadDetail | null;
+  latestQt: DealDoc | null;
+  latestPi: DealDoc | null;
+  dealValue: string;
 }) {
   return (
-    <div className={`smd-st6-cell smd-st6-cell-${color}`}>
-      <div className="smd-st6-cell-head">
-        <span className="smd-st6-cell-icon">{icon}</span>
-        <span className="smd-st6-cell-label">{label}</span>
+    <div className="s6-summary smd-fade-in">
+      <div className="s6-summary-head">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+          <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
+        </svg>
+        <span>DEAL SUMMARY</span>
       </div>
-      <div className="smd-st6-cell-value">{value}</div>
+      <div className="s6-summary-grid">
+        <SummaryCell tone="violet" label="OPPORTUNITY ID">
+          {loading ? <span className="smd-skel smd-skel-chip" /> : (header.oppId || '—')}
+        </SummaryCell>
+        <SummaryCell tone="blue" label="CUSTOMER">
+          {loading ? <span className="smd-skel smd-skel-name" /> : (lead?.customer?.company_name ?? header.customer ?? '—')}
+        </SummaryCell>
+        <SummaryCell tone="amber" label="WON DATE">
+          {loading ? <span className="smd-skel" style={{ maxWidth: 90 }} /> : wonOn}
+        </SummaryCell>
+        <SummaryCell tone="rose" label="LATEST QUOTATION">
+          {loading ? <span className="smd-skel smd-skel-chip" /> : (
+            latestQt?.code ? <span className="s6-code">{latestQt.code}</span> : <span className="s6-muted">—</span>
+          )}
+        </SummaryCell>
+        <SummaryCell tone="emerald" label="LATEST PI">
+          {loading ? <span className="smd-skel smd-skel-chip" /> : (
+            latestPi?.code ? <span className="s6-code s6-code-emerald">{latestPi.code}</span> : <span className="s6-muted">—</span>
+          )}
+        </SummaryCell>
+        <SummaryCell tone="green" label="DEAL VALUE">
+          {loading ? <span className="smd-skel" style={{ maxWidth: 110 }} /> : (
+            <span className="s6-value">{dealValue}</span>
+          )}
+        </SummaryCell>
+        <SummaryCell tone="cyan" label="CONSIGNEE">
+          {loading ? <span className="smd-skel smd-skel-name" /> : (lead?.consignee?.company_name ?? '—')}
+        </SummaryCell>
+        <SummaryCell tone="slate" label="STATUS">
+          {loading ? <span className="smd-skel smd-skel-pill" /> : (
+            <span className="s6-status">● Won</span>
+          )}
+        </SummaryCell>
+      </div>
+    </div>
+  );
+}
+
+function SummaryCell({ tone, label, children }: {
+  tone: 'violet'|'blue'|'amber'|'rose'|'emerald'|'green'|'cyan'|'slate';
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`s6-cell s6-cell-${tone}`}>
+      <div className="s6-cell-label">{label}</div>
+      <div className="s6-cell-value">{children}</div>
+    </div>
+  );
+}
+
+function Cell({ label, value, amber, blue, emerald }: {
+  label: string; value: string;
+  amber?: boolean; blue?: boolean; emerald?: boolean;
+}) {
+  const tone = amber ? 's6-shp-amber' : blue ? 's6-shp-blue' : emerald ? 's6-shp-emerald' : '';
+  return (
+    <div className="s6-shp-cell">
+      <div className="s6-shp-label">{label}</div>
+      <div className={`s6-shp-val ${tone}`}>{value}</div>
     </div>
   );
 }
 
 const STAGE6_CSS = `
-.smd-st6-body { display: flex; flex-direction: column; align-items: center; padding: 30px 24px 18px; }
-.smd-st6-celebrate {
-  position: relative; width: 100%; max-width: 520px;
+.s6-head { background: linear-gradient(110deg, #d1fae5 0%, #a7f3d0 40%, #6ee7b7 100%); border-bottom: 1px solid #6ee7b7; }
+.s6-head .smd-stg-head-icon  { background: linear-gradient(135deg, #047857, #065f46); }
+.s6-head .smd-stg-head-title { color: #064e3b; }
+.s6-head .smd-stg-head-sub   { color: #047857; }
+.s6-badge {
+  background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+  box-shadow: 0 2px 10px rgba(245, 158, 11, .35) !important;
+}
+
+.s6-body {
   display: flex; flex-direction: column; align-items: center;
-  padding: 20px 16px 28px;
+  padding: 24px 22px 18px;
+  position: relative;
 }
-.smd-st6-confetti { position: absolute; inset: 0; pointer-events: none; }
-.smd-st6-confetti span {
-  position: absolute; width: 6px; height: 6px; border-radius: 2px;
-  opacity: .85;
+
+@keyframes s6-confetti-fall {
+  0%   { transform: translateY(-20px) rotate(0deg); opacity: 0; }
+  10%  { opacity: 1; }
+  100% { transform: translateY(620px) rotate(720deg); opacity: 0; }
 }
-.smd-st6-trophy {
-  width: 84px; height: 84px; border-radius: 24px;
-  background: linear-gradient(135deg,#fbbf24 0%,#f59e0b 60%,#d97706 100%);
+.s6-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 10; }
+.s6-confetti span {
+  position: absolute; top: 0;
+  width: 8px; height: 14px; border-radius: 2px;
+  animation: s6-confetti-fall 3.6s cubic-bezier(.21,.62,.42,1) forwards;
+}
+.s6-confetti span:nth-child(odd) { width: 6px; height: 6px; border-radius: 50%; }
+
+.s6-celebrate {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 560px;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 16px 16px 22px;
+}
+@keyframes s6-bob {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50%      { transform: translateY(-4px) rotate(2deg); }
+}
+.s6-trophy {
+  width: 88px; height: 88px; border-radius: 24px;
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 60%, #d97706 100%);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 12px 32px rgba(245,158,11,.4), inset 0 -4px 0 rgba(0,0,0,.1);
+  box-shadow: 0 14px 36px rgba(245, 158, 11, .45),
+              inset 0 -4px 0 rgba(0,0,0,.12),
+              inset 0 2px 0 rgba(255,255,255,.30);
+  animation: s6-bob 3.2s ease-in-out infinite;
 }
-.smd-st6-title {
-  margin-top: 18px;
-  font-size: 28px; font-weight: 800; letter-spacing: -.5px;
-  background: linear-gradient(135deg,#7c3aed,#6d28d9);
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-}
-.smd-st6-quote {
-  margin-top: 4px;
-  font-size: 13px; font-style: italic; color: #64748b;
-}
-.smd-st6-won-badge {
-  margin-top: 14px;
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 14px; border-radius: 20px;
-  background: #d1fae5; color: #047857; font-size: 11px; font-weight: 800; letter-spacing: .04em;
-  border: 1px solid #a7f3d0;
-}
-.smd-st6-cta {
+.s6-title {
   margin-top: 16px;
+  font-size: 28px; font-weight: 800; letter-spacing: -.5px;
+  background: linear-gradient(135deg, #047857, #065f46);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.s6-quote { margin-top: 4px; font-size: 13px; font-style: italic; color: #64748b; text-align: center; }
+.s6-won-stamp {
+  margin-top: 12px;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 999px;
+  background: #d1fae5; color: #047857;
+  border: 1.5px solid #6ee7b7;
+  font-size: 11.5px; font-weight: 800; letter-spacing: .02em;
+}
+.s6-cta {
+  margin-top: 14px;
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 11px 26px; border-radius: 12px;
-  background: linear-gradient(135deg,#f59e0b 0%,#d97706 100%);
-  color: #fff; font-size: 13.5px; font-weight: 800;
+  padding: 11px 24px; border-radius: 12px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #fff; font-family: inherit;
+  font-size: 13px; font-weight: 800;
   border: none; cursor: pointer;
-  box-shadow: 0 6px 18px rgba(245,158,11,.4);
+  box-shadow: 0 6px 18px rgba(245, 158, 11, .40);
+  transition: all .15s;
 }
-.smd-st6-cta:hover { transform: translateY(-1px); }
+.s6-cta:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(245, 158, 11, .55); }
+.s6-cta:disabled { opacity: .5; cursor: not-allowed; }
 
-.smd-st6-summary {
-  width: 100%; max-width: 600px; margin-top: 12px;
-  background: #fffbeb; border: 1px solid #fde68a; border-radius: 14px;
-  padding: 12px 14px;
+.s6-summary {
+  width: 100%; max-width: 760px; margin-top: 12px;
+  background: linear-gradient(180deg, #fffbeb, #ffffff);
+  border: 1.5px solid #fde68a; border-radius: 14px; padding: 14px 16px;
 }
-.smd-st6-summary-head {
-  font-size: 10.5px; font-weight: 800; letter-spacing: .12em; color: #92400e;
-  margin-bottom: 10px;
+.s6-summary-head { display: inline-flex; align-items: center; gap: 7px; font-size: 10.5px; font-weight: 800; letter-spacing: .12em; color: #92400e; margin-bottom: 11px; }
+.s6-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.s6-cell {
+  padding: 9px 11px; border-radius: 10px;
+  background: #fff;
+  border: 1.5px solid;
+  display: flex; flex-direction: column; gap: 4px;
+  min-height: 56px;
 }
-.smd-st6-summary-grid {
-  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+.s6-cell-violet  { border-color: #ddd6fe; }
+.s6-cell-blue    { border-color: #bfdbfe; }
+.s6-cell-amber   { border-color: #fde68a; }
+.s6-cell-rose    { border-color: #fecdd3; }
+.s6-cell-emerald { border-color: #a7f3d0; }
+.s6-cell-green   { border-color: #bbf7d0; }
+.s6-cell-cyan    { border-color: #a5f3fc; }
+.s6-cell-slate   { border-color: #cbd5e1; }
+.s6-cell-label   { font-size: 9px; font-weight: 800; letter-spacing: .1em; color: #94a3b8; text-transform: uppercase; }
+.s6-cell-value   { font-size: 12.5px; font-weight: 700; color: #1e293b; display: flex; align-items: center; min-height: 18px; }
+.s6-code {
+  font-family: 'Inter',monospace; font-size: 11px; font-weight: 800;
+  background: #fef3c7; color: #b45309;
+  padding: 3px 9px; border-radius: 6px; border: 1px solid #fde68a;
 }
-.smd-st6-cell {
-  padding: 8px 10px; border-radius: 10px; background: #fff;
-  border: 1px solid;
-}
-.smd-st6-cell-violet  { border-color: #ddd6fe; }
-.smd-st6-cell-blue    { border-color: #bfdbfe; }
-.smd-st6-cell-amber   { border-color: #fde68a; }
-.smd-st6-cell-rose    { border-color: #fecdd3; }
-.smd-st6-cell-emerald { border-color: #a7f3d0; }
-.smd-st6-cell-green   { border-color: #bbf7d0; }
-.smd-st6-cell-head { display: flex; align-items: center; gap: 6px; }
-.smd-st6-cell-icon { font-size: 11px; }
-.smd-st6-cell-label { font-size: 9.5px; font-weight: 800; letter-spacing: .08em; color: #94a3b8; }
-.smd-st6-cell-value { font-size: 12.5px; font-weight: 700; color: #1e293b; margin-top: 2px; }
+.s6-code-emerald { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+.s6-muted { color: #cbd5e1; font-weight: 600; }
+.s6-value { font-variant-numeric: tabular-nums; color: #047857; font-weight: 800; }
+.s6-status { display: inline-block; padding: 3px 11px; border-radius: 999px; background: #d1fae5; color: #047857; font-size: 10.5px; font-weight: 800; }
 
-@media (max-width: 720px) {
-  .smd-st6-summary-grid { grid-template-columns: 1fr 1fr; }
+/* ── Post-shipment view ── */
+.s6-shp-wrap { width: 100%; display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
+
+.s6-success-banner {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 13px 18px;
+  background: linear-gradient(135deg, #d1fae5, #ecfdf5);
+  border: 1.5px solid #6ee7b7; border-radius: 14px;
+  gap: 14px; flex-wrap: wrap;
+}
+.s6-success-left { display: flex; align-items: center; gap: 12px; }
+.s6-success-ico {
+  width: 38px; height: 38px; border-radius: 10px;
+  background: linear-gradient(135deg, #10b981, #047857);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 18px; box-shadow: 0 3px 10px rgba(16,185,129,.40);
+}
+.s6-success-title { font-size: 15px; font-weight: 800; color: #064e3b; }
+.s6-success-sub   { font-size: 11.5px; color: #047857; margin-top: 2px; }
+.s6-shp-code {
+  font-family: 'Inter', monospace; font-size: 13px; font-weight: 800;
+  padding: 6px 14px; border-radius: 8px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff; letter-spacing: .04em;
+  box-shadow: 0 3px 10px rgba(217,119,6,.35);
+}
+
+.s6-shp-card {
+  background: #fff;
+  border: 1.5px solid #e2e8f0; border-radius: 14px; overflow: hidden;
+}
+.s6-shp-card-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  font-size: 11px; font-weight: 800; letter-spacing: .1em;
+  border-bottom: 1.5px solid;
+}
+.s6-shp-head-amber {
+  background: linear-gradient(180deg, #fef3c7, #fef9c3);
+  color: #92400e; border-bottom-color: #fde68a;
+}
+.s6-shp-head-blue {
+  background: linear-gradient(180deg, #dbeafe, #eff6ff);
+  color: #1e40af; border-bottom-color: #bfdbfe;
+}
+.s6-shp-head-emerald {
+  background: linear-gradient(180deg, #d1fae5, #ecfdf5);
+  color: #047857; border-bottom-color: #a7f3d0;
+}
+.s6-shp-ico { font-size: 14px; }
+
+.s6-shp-grid { display: grid; gap: 12px; padding: 14px 18px; }
+.s6-shp-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.s6-shp-grid-4 { grid-template-columns: repeat(4, 1fr); }
+.s6-shp-cell { display: flex; flex-direction: column; gap: 3px; }
+.s6-shp-cell-wide { grid-column: 1 / -1; }
+.s6-shp-label { font-size: 9.5px; font-weight: 800; letter-spacing: .1em; color: #94a3b8; }
+.s6-shp-val   { font-size: 12.5px; font-weight: 700; color: #1e293b; }
+.s6-shp-val.s6-shp-amber   { color: #b45309; }
+.s6-shp-val.s6-shp-blue    { color: #1e40af; }
+.s6-shp-val.s6-shp-emerald { color: #047857; }
+
+/* Dark mode */
+[data-bs-theme="dark"] .s6-head { background: linear-gradient(110deg, #064e3b 0%, #065f46 40%, #047857 100%); border-bottom-color: rgba(110, 231, 183, .30); }
+[data-bs-theme="dark"] .s6-head .smd-stg-head-title { color: #d1fae5; }
+[data-bs-theme="dark"] .s6-head .smd-stg-head-sub   { color: #6ee7b7; }
+[data-bs-theme="dark"] .s6-title { background: linear-gradient(135deg, #6ee7b7, #34d399); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+[data-bs-theme="dark"] .s6-quote { color: rgba(196, 181, 253, .60); }
+[data-bs-theme="dark"] .s6-won-stamp { background: rgba(16, 185, 129, .18); color: #6ee7b7; border-color: rgba(110, 231, 183, .40); }
+[data-bs-theme="dark"] .s6-summary { background: #1a1538; border-color: rgba(252, 191, 36, .30); }
+[data-bs-theme="dark"] .s6-summary-head { color: #fde68a; }
+[data-bs-theme="dark"] .s6-cell { background: #14102a; }
+[data-bs-theme="dark"] .s6-cell-label { color: rgba(196, 181, 253, .55); }
+[data-bs-theme="dark"] .s6-cell-value { color: #ede9fe; }
+[data-bs-theme="dark"] .s6-code { background: rgba(252,191,36,.18); color: #fde68a; border-color: rgba(252,191,36,.40); }
+[data-bs-theme="dark"] .s6-code-emerald { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(110,231,183,.40); }
+[data-bs-theme="dark"] .s6-muted { color: rgba(167, 139, 250, .45); }
+[data-bs-theme="dark"] .s6-value { color: #6ee7b7; }
+[data-bs-theme="dark"] .s6-status { background: rgba(16,185,129,.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .s6-success-banner { background: rgba(16,185,129,.14); border-color: rgba(110,231,183,.40); }
+[data-bs-theme="dark"] .s6-success-title { color: #6ee7b7; }
+[data-bs-theme="dark"] .s6-success-sub   { color: rgba(110,231,183,.75); }
+[data-bs-theme="dark"] .s6-shp-card { background: #14102a; border-color: rgba(167, 139, 250, .25); }
+[data-bs-theme="dark"] .s6-shp-head-amber  { background: rgba(252,191,36,.14); color: #fde68a; border-bottom-color: rgba(252,191,36,.30); }
+[data-bs-theme="dark"] .s6-shp-head-blue   { background: rgba(96,165,250,.14); color: #93c5fd; border-bottom-color: rgba(96,165,250,.30); }
+[data-bs-theme="dark"] .s6-shp-head-emerald { background: rgba(16,185,129,.14); color: #6ee7b7; border-bottom-color: rgba(110,231,183,.30); }
+[data-bs-theme="dark"] .s6-shp-label { color: rgba(196,181,253,.55); }
+[data-bs-theme="dark"] .s6-shp-val { color: #ede9fe; }
+[data-bs-theme="dark"] .s6-shp-val.s6-shp-amber   { color: #fde68a; }
+[data-bs-theme="dark"] .s6-shp-val.s6-shp-blue    { color: #93c5fd; }
+[data-bs-theme="dark"] .s6-shp-val.s6-shp-emerald { color: #6ee7b7; }
+
+@media (max-width: 900px) {
+  .s6-summary-grid { grid-template-columns: 1fr 1fr; }
+  .s6-shp-grid-3, .s6-shp-grid-4 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 520px) {
+  .s6-summary-grid, .s6-shp-grid-3, .s6-shp-grid-4 { grid-template-columns: 1fr; }
+  .s6-title { font-size: 24px; }
 }
 `;

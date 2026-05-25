@@ -358,6 +358,15 @@ class SalesLeadController extends Controller
             'whatsapp_reason'    => 'nullable|string|max:1000',
         ]);
 
+        // Auto-mark the deal as won the FIRST time it lands on Stage 6
+        // (Victory). Keeping this server-side means we don't trust the
+        // client to send a timestamp, and the column is set exactly once
+        // — re-advancing to Stage 6 after a regression won't overwrite
+        // the original win date.
+        if (isset($data['lead_stage_id']) && (int) $data['lead_stage_id'] === 6 && $lead->won_at === null) {
+            $data['won_at'] = now();
+        }
+
         $lead->update($data);
 
         return response()->json(['status' => true, 'data' => $lead->fresh(['salesperson:id,name'])]);
