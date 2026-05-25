@@ -125,37 +125,49 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
   const [mapSubmitting, setMapSubmitting] = useState(false);
   const [mapLoading, setMapLoading] = useState(false);
 
-  const fetchProducts = useCallback(async () => {
+  /* Both fetches kicked off in parallel via Promise.allSettled so a single
+   * failure doesn't block the other from rendering — and the loading
+   * spinner only flips off once BOTH have settled. */
+  const fetchAll = useCallback(async () => {
     if (!leadId) return;
     setLoading(true);
-    try {
-      const { data } = await api.get<{ status: boolean; data: LeadProductRow[] }>(`/sales/leads/${leadId}/products`);
-      setProducts(data.data ?? []);
-    } catch {
-      toast.error('Load failed', 'Could not load the lead’s products');
-    } finally {
-      setLoading(false);
-    }
+    const [productsRes, sharedRes] = await Promise.allSettled([
+      api.get<{ status: boolean; data: LeadProductRow[] }>(`/sales/leads/${leadId}/products`),
+      api.get<{ status: boolean; data: SharedRow[] }>(`/sales/leads/${leadId}/shared-prices`),
+    ]);
+    if (productsRes.status === 'fulfilled') setProducts(productsRes.value.data.data ?? []);
+    else toast.error('Load failed', 'Could not load the lead’s products');
+    if (sharedRes.status === 'fulfilled')   setSharedRows(sharedRes.value.data.data ?? []);
+    else toast.error('Load failed', 'Could not load shared price history');
+    setLoading(false);
   }, [leadId, toast]);
 
-  const fetchShared = useCallback(async () => {
+  /* Lightweight reload for after a successful submit — only the shared
+   * price list needs refetching since products haven't changed. */
+  const reloadShared = useCallback(async () => {
     if (!leadId) return;
-    setLoading(true);
     try {
       const { data } = await api.get<{ status: boolean; data: SharedRow[] }>(`/sales/leads/${leadId}/shared-prices`);
       setSharedRows(data.data ?? []);
     } catch {
-      toast.error('Load failed', 'Could not load shared price history');
-    } finally {
-      setLoading(false);
+      toast.error('Load failed', 'Could not refresh shared price history');
+    }
+  }, [leadId, toast]);
+
+  const reloadProducts = useCallback(async () => {
+    if (!leadId) return;
+    try {
+      const { data } = await api.get<{ status: boolean; data: LeadProductRow[] }>(`/sales/leads/${leadId}/products`);
+      setProducts(data.data ?? []);
+    } catch {
+      toast.error('Load failed', 'Could not refresh products');
     }
   }, [leadId, toast]);
 
   useEffect(() => {
     if (!leadId) return;
-    void fetchProducts();
-    void fetchShared();
-  }, [leadId, fetchProducts, fetchShared]);
+    void fetchAll();
+  }, [leadId, fetchAll]);
 
   /* ── Submit a quoted price ───────────────────────────────────────── */
   /* Frontend validation mirrors IDIMS exactly: required + numeric. Backend
@@ -164,17 +176,17 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
   const onSubmitQuoted = async (row: LeadProductRow) => {
     if (!leadId) return;
     if (isIncompleteStatus(row.product_status)) {
-      toast.warning('Cannot share price', 'Complete the product status first');
+      toast.warning('Activate this product first', 'Drafts and inactive products cannot have a shared price.');
       return;
     }
     const raw = (quotedDraft[row.id] ?? '').trim();
     if (!raw) {
-      toast.warning('Quoted price required', 'Type a price before submitting');
+      toast.warning('Type a quoted price', 'Enter a price in the input box before submitting.');
       return;
     }
     const num = Number(raw);
     if (Number.isNaN(num)) {
-      toast.warning('Invalid price', 'Quoted price must be a number');
+      toast.warning('Numbers only', 'Quoted price must be a number — remove any letters or symbols.');
       return;
     }
     setSubmittingId(row.id);
@@ -182,7 +194,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
       await api.post(`/sales/leads/${leadId}/products/${row.id}/shared-prices`, { quoted_price: num });
       toast.success('Quoted price recorded', `${row.product_name ?? 'Product'} · ${row.currency} ${num.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
       setQuotedDraft(prev => ({ ...prev, [row.id]: '' }));
-      await fetchShared();
+      await reloadShared();
     } catch (e: any) {
       toast.error('Submit failed', e?.response?.data?.message ?? 'Could not record the quoted price');
     } finally {
@@ -274,7 +286,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
       setMapOpen(false);
       setTab('to_share');
       setView('list');
-      await fetchProducts();
+      await reloadProducts();
     } catch (e: any) {
       toast.error('Map failed', e?.response?.data?.message ?? 'Could not map this product');
     } finally {
@@ -316,21 +328,22 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
   /* ── Save & Next ─────────────────────────────────────────────────── */
   const onSaveAndNext = async () => {
     if (!leadId) {
-      toast.warning('No lead in context', 'Open this stage from the Lead Worksheet to enable advancing');
+      toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
       return;
     }
     if (sharedRows.length === 0) {
-      toast.warning('Share at least one price', 'Record at least one quoted price before advancing to Stage 5');
+      toast.warning('Share a price first', 'Submit at least one quoted price before advancing to Stage 5.');
       setTab('to_share');
       return;
     }
     setAdvancing(true);
     try {
       await api.put(`/sales/leads/${leadId}`, { lead_stage_id: 5 });
+      toast.success('Stage advanced', 'Moving to Quotation vs PI (Stage 5)…');
       reloadLead?.();
       onNext();
     } catch (e: any) {
-      toast.error('Advance failed', e?.response?.data?.message ?? 'Could not move to Stage 5');
+      toast.error('Could not advance', e?.response?.data?.message ?? 'Network or server error — please try again.');
     } finally {
       setAdvancing(false);
     }
@@ -373,7 +386,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
       <div className="smd-stg-body">
         {/* ── HISTORY VIEW ── */}
         {view === 'history' && (
-          <div className="s4-card s4-card-navy">
+          <div className="s4-card s4-card-navy smd-fade-in" key="history">
             <div className="s4-card-head s4-card-head-navy">
               <button type="button" className="s4-back-btn" onClick={goBackToList}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
@@ -406,9 +419,18 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
                   </tr>
                 </thead>
                 <tbody>
-                  {historyLoading && (
-                    <tr><td colSpan={8} className="s4-empty">Loading history…</td></tr>
-                  )}
+                  {historyLoading && Array.from({ length: 2 }).map((_, i) => (
+                    <tr key={`skh-${i}`} className="smd-fade-in">
+                      <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-chip" /></td>
+                      <td><span className="smd-skel smd-skel-name" /></td>
+                      <td><span className="smd-skel" style={{ maxWidth: 110 }} /></td>
+                      <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-btn" /></td>
+                    </tr>
+                  ))}
                   {!historyLoading && historyRows.length === 0 && (
                     <tr><td colSpan={8} className="s4-empty">No price history for this product yet.</td></tr>
                   )}
@@ -497,7 +519,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
 
             {/* ── PRICE TO BE SHARE TAB ── */}
             {tab === 'to_share' && (
-              <div className="s4-card s4-card-navy">
+              <div className="s4-card s4-card-navy smd-fade-in" key="t-share">
                 <div className="s4-card-head s4-card-head-navy">
                   <div className="s4-card-head-titlewrap">
                     <div className="s4-card-icon s4-card-icon-navy">
@@ -528,7 +550,18 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
                       </tr>
                     </thead>
                     <tbody>
-                      {loading && <tr><td colSpan={8} className="s4-empty">Loading…</td></tr>}
+                      {loading && Array.from({ length: 3 }).map((_, i) => (
+                        <tr key={`skt-${i}`} className="smd-fade-in">
+                          <td><span className="smd-skel smd-skel-num" /></td>
+                          <td><span className="smd-skel smd-skel-chip" /></td>
+                          <td><span className="smd-skel smd-skel-name" /></td>
+                          <td><span className="smd-skel smd-skel-pill" /></td>
+                          <td><span className="smd-skel smd-skel-num" /></td>
+                          <td><span className="smd-skel smd-skel-num" /></td>
+                          <td><span className="smd-skel smd-skel-input" /></td>
+                          <td><span className="smd-skel smd-skel-btn" /></td>
+                        </tr>
+                      ))}
                       {!loading && products.length === 0 && (
                         <tr><td colSpan={8} className="s4-empty">No products mapped to this lead yet.</td></tr>
                       )}
@@ -602,7 +635,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
 
             {/* ── SHARED PRICE TAB ── */}
             {tab === 'shared' && (
-              <div className="s4-card s4-card-emerald">
+              <div className="s4-card s4-card-emerald smd-fade-in" key="t-shared">
                 <div className="s4-card-head s4-card-head-emerald">
                   <div className="s4-card-head-titlewrap">
                     <div className="s4-card-icon s4-card-icon-emerald">
@@ -643,7 +676,18 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
                       </tr>
                     </thead>
                     <tbody>
-                      {loading && <tr><td colSpan={8} className="s4-empty">Loading…</td></tr>}
+                      {loading && Array.from({ length: 3 }).map((_, i) => (
+                        <tr key={`sks-${i}`} className="smd-fade-in">
+                          <td><span className="smd-skel smd-skel-num" /></td>
+                          <td><span className="smd-skel smd-skel-chip" /></td>
+                          <td><span className="smd-skel smd-skel-name" /></td>
+                          <td><span className="smd-skel" style={{ maxWidth: 110 }} /></td>
+                          <td><span className="smd-skel smd-skel-num" /></td>
+                          <td><span className="smd-skel smd-skel-num" /></td>
+                          <td><span className="smd-skel smd-skel-num" /></td>
+                          <td><span className="smd-skel smd-skel-btn" /></td>
+                        </tr>
+                      ))}
                       {!loading && filteredShared.length === 0 && (
                         <tr><td colSpan={8} className="s4-empty">
                           {sharedRows.length === 0 ? 'No prices shared yet.' : 'No rows match this search.'}

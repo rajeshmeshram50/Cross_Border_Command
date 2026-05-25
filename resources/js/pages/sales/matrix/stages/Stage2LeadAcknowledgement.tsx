@@ -105,23 +105,24 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
   // button up front so the user gets a fast no-op + actionable toast.
   const onSaveAndNext = async () => {
     if (!header.leadId) {
-      toast.warning('No lead in context', 'Open this stage from the Lead Worksheet to enable advancing');
+      toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
       return;
     }
     if (latestBucket !== 'qualified') {
       toast.warning(
-        'Cannot advance',
-        'The latest acknowledgement must be "Qualified Lead" to move to Stage 3',
+        'Qualify the lead first',
+        'The latest acknowledgement must be "Qualified Lead" before moving on.',
       );
       return;
     }
     setAdvancing(true);
     try {
       await api.put(`/sales/leads/${header.leadId}`, { lead_stage_id: 3 });
+      toast.success('Stage advanced', 'Moving to Product Sourcing (Stage 3)…');
       reloadLead?.();
       onNext();
     } catch (e: any) {
-      toast.error('Advance failed', e?.response?.data?.message ?? 'Could not move to Stage 3');
+      toast.error('Could not advance', e?.response?.data?.message ?? 'Network or server error — please try again.');
     } finally {
       setAdvancing(false);
     }
@@ -301,7 +302,13 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
             </div>
 
             <div className="st2-pick-body">
-              {mastersLoading && <div className="st2-pick-empty">Loading reasons…</div>}
+              {mastersLoading && (
+                <div className="smd-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <span key={`pk-sk-${i}`} className="smd-skel" style={{ height: 36, borderRadius: 9 }} />
+                  ))}
+                </div>
+              )}
               {!mastersLoading && pickerOptions.length === 0 && (
                 <div className="st2-pick-empty">
                   No active reasons configured for this bucket. Add some in <strong>Master → Lead Acknowledgement</strong>.

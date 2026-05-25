@@ -13,6 +13,51 @@ export type StageProps = {
 
 /* Shared stage shell styles — each stage imports SHARED_STAGE_CSS once. */
 export const SHARED_STAGE_CSS = `
+/* ─── Shimmer skeleton system (re-used by every stage table) ─────── */
+@keyframes smd-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+.smd-skel {
+  display: inline-block;
+  background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+  background-size: 800px 100%;
+  animation: smd-shimmer 1.4s ease-in-out infinite;
+  border-radius: 6px;
+  height: 14px;
+  width: 100%;
+  vertical-align: middle;
+}
+.smd-skel-pill   { height: 22px; border-radius: 999px; max-width: 70px; }
+.smd-skel-chip   { height: 22px; border-radius: 7px;   max-width: 80px; }
+.smd-skel-input  { height: 30px; border-radius: 8px;   max-width: 130px; }
+.smd-skel-btn    { height: 30px; border-radius: 8px;   max-width: 84px; }
+.smd-skel-circle { height: 26px; width: 26px; border-radius: 8px; }
+.smd-skel-num    { height: 14px; max-width: 32px; }
+.smd-skel-name   { height: 14px; max-width: 70%; }
+.smd-skel-cell   { padding: 12px 14px; }
+
+[data-bs-theme="dark"] .smd-skel,
+[data-layout-mode="dark"] .smd-skel {
+  background: linear-gradient(90deg, rgba(167,139,250,.12) 0%, rgba(167,139,250,.22) 50%, rgba(167,139,250,.12) 100%);
+  background-size: 800px 100%;
+}
+
+/* ─── Smooth fade-in for tab content + cards ──────────────────────── */
+@keyframes smd-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.smd-fade-in {
+  animation: smd-fade-in .22s ease-out both;
+}
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .smd-fade-in { animation: none; }
+  .smd-skel    { animation: none; background: #e2e8f0; }
+}
+
+
 .smd-stg-head {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;

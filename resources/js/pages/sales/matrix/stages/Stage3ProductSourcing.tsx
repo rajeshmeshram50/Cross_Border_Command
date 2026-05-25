@@ -53,20 +53,24 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
   const leadId = header.leadId;
 
-  const fetchRows = useCallback(async () => {
+  /* Initial-mount fetch flips the loading flag (shows skeleton). For
+   * after-action refreshes (post Create Procurement, post Mark Sourced)
+   * we want the table to update silently so users don't see a jarring
+   * full-table skeleton flash for what is actually a single-row change. */
+  const fetchRows = useCallback(async (showSkeleton = true) => {
     if (!leadId) { setRows([]); return; }
-    setLoading(true);
+    if (showSkeleton) setLoading(true);
     try {
       const { data } = await api.get<{ status: boolean; data: Row[] }>(`/sales/leads/${leadId}/products`);
       setRows(data.data ?? []);
     } catch {
       toast.error('Load failed', 'Could not load the lead’s product directory');
     } finally {
-      setLoading(false);
+      if (showSkeleton) setLoading(false);
     }
   }, [leadId, toast]);
 
-  useEffect(() => { void fetchRows(); }, [fetchRows]);
+  useEffect(() => { void fetchRows(true); }, [fetchRows]);
 
   /* ── Bucketed views ─────────────────────────────────────────────── */
   const detailsRows     = useMemo(() => rows.filter(r => r.sourcing_status === null),         [rows]);
@@ -151,7 +155,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   const onProcurementCreated = () => {
     setSelectedIds(new Set());
     setProcModalRows([]);
-    void fetchRows();
+    void fetchRows(false); // silent reload — no table-wide skeleton flash
   };
 
   /* ── Mark Sourced ────────────────────────────────────────────────── */
@@ -172,35 +176,45 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   /* ── Save & Next ─────────────────────────────────────────────────── */
   const onSaveAndNext = async () => {
     if (!leadId) {
-      toast.warning('No lead in context', 'Open this stage from the Lead Worksheet to enable advancing');
+      toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
       return;
     }
     if (rows.length === 0) {
-      toast.warning('No products mapped', 'Open the Product Directory toolbar and map at least one product first');
+      toast.warning('Map a product first', 'Use the toolbar Product Directory to add at least one product.');
       return;
     }
     if (detailsRows.length > 0) {
-      toast.warning('Sourcing status pending', `${detailsRows.length} product(s) still need a sourcing status`);
+      toast.warning(
+        `${detailsRows.length} product${detailsRows.length === 1 ? '' : 's'} need a sourcing status`,
+        'Choose Yes or No for every product on the Product Details tab.',
+      );
       setTab('details');
       return;
     }
     if (inactiveRows.length > 0) {
-      toast.warning('Inactive products', `${inactiveRows.length} product(s) are inactive or draft. Activate them on the Product Master first.`);
+      toast.warning(
+        `${inactiveRows.length} product${inactiveRows.length === 1 ? '' : 's'} not active`,
+        'Activate them on the Product Master before advancing.',
+      );
       return;
     }
     const unsourced = requiredRows.filter(r => !r.procurement_done);
     if (unsourced.length > 0) {
-      toast.warning('Procurement incomplete', `${unsourced.length} Sourcing Required product(s) still need to be marked done`);
+      toast.warning(
+        `${unsourced.length} product${unsourced.length === 1 ? '' : 's'} still pending`,
+        'Click "Mark as Done" on each Sourcing Required row to advance.',
+      );
       setTab('required');
       return;
     }
     setAdvancing(true);
     try {
       await api.put(`/sales/leads/${leadId}`, { lead_stage_id: 4 });
+      toast.success('Stage advanced', 'Moving to Price Shared (Stage 4)…');
       reloadLead?.();
       onNext();
     } catch (e: any) {
-      toast.error('Advance failed', e?.response?.data?.message ?? 'Could not move to Stage 4');
+      toast.error('Could not advance', e?.response?.data?.message ?? 'Network or server error — please try again.');
     } finally {
       setAdvancing(false);
     }
@@ -274,7 +288,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
         {/* ─── PRODUCT DETAILS TAB ─── */}
         {tab === 'details' && (
-          <div className="s3-card s3-card-violet">
+          <div className="s3-card s3-card-violet smd-fade-in" key="t-details">
             <div className="s3-card-head">
               <div className="s3-card-head-left">
                 <div className="s3-card-icon s3-card-icon-violet">
@@ -311,7 +325,19 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                   </tr>
                 </thead>
                 <tbody>
-                  {loading && <tr><td colSpan={9} className="s3-empty">Loading…</td></tr>}
+                  {loading && Array.from({ length: 3 }).map((_, i) => (
+                    <tr key={`skd-${i}`} className="smd-fade-in">
+                      <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-chip" /></td>
+                      <td><span className="smd-skel smd-skel-name" /></td>
+                      <td><span className="smd-skel smd-skel-pill" /></td>
+                      <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-chip" /></td>
+                      <td><span className="smd-skel smd-skel-input" /></td>
+                      <td><span className="smd-skel smd-skel-pill" /></td>
+                    </tr>
+                  ))}
                   {!loading && rows.length === 0 && (
                     <tr><td colSpan={9} className="s3-empty">No products mapped — use the toolbar Product Directory to add some.</td></tr>
                   )}
@@ -381,7 +407,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
         {/* ─── SOURCING REQUIRED TAB ─── */}
         {tab === 'required' && (
-          <>
+          <div className="smd-fade-in" key="t-required">
             <div className="s3-warn">
               <span className="s3-warn-ico">⚠</span>
               <span>Complete procurement for all required products before proceeding to the next stage.</span>
@@ -425,7 +451,22 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                     </tr>
                   </thead>
                   <tbody>
-                    {loading && <tr><td colSpan={12} className="s3-empty">Loading…</td></tr>}
+                    {loading && Array.from({ length: 3 }).map((_, i) => (
+                      <tr key={`skr-${i}`} className="smd-fade-in">
+                        <td><span className="smd-skel" style={{ width: 16, height: 16, borderRadius: 4 }} /></td>
+                        <td><span className="smd-skel smd-skel-num" /></td>
+                        <td><span className="smd-skel smd-skel-chip" /></td>
+                        <td><span className="smd-skel smd-skel-name" /></td>
+                        <td><span className="smd-skel smd-skel-pill" /></td>
+                        <td><span className="smd-skel smd-skel-num" /></td>
+                        <td><span className="smd-skel smd-skel-num" /></td>
+                        <td><span className="smd-skel smd-skel-chip" /></td>
+                        <td><span className="smd-skel smd-skel-chip" /></td>
+                        <td><span className="smd-skel smd-skel-btn" /></td>
+                        <td><span className="smd-skel smd-skel-num" /></td>
+                        <td><span className="smd-skel smd-skel-btn" /></td>
+                      </tr>
+                    ))}
                     {!loading && requiredRows.length === 0 && (
                       <tr><td colSpan={12} className="s3-empty">No products marked Sourcing Required yet.</td></tr>
                     )}
@@ -526,12 +567,12 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                 </button>
               </div>
             )}
-          </>
+          </div>
         )}
 
         {/* ─── SOURCING NOT REQUIRED TAB ─── */}
         {tab === 'not_required' && (
-          <div className="s3-card s3-card-mint">
+          <div className="s3-card s3-card-mint smd-fade-in" key="t-notreq">
             <div className="s3-card-head s3-card-head-mint">
               <div className="s3-card-head-left">
                 <div className="s3-card-icon s3-card-icon-mint">
@@ -563,7 +604,18 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                   </tr>
                 </thead>
                 <tbody>
-                  {loading && <tr><td colSpan={8} className="s3-empty">Loading…</td></tr>}
+                  {loading && Array.from({ length: 2 }).map((_, i) => (
+                    <tr key={`skn-${i}`} className="smd-fade-in">
+                      <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-chip" /></td>
+                      <td><span className="smd-skel smd-skel-name" /></td>
+                      <td><span className="smd-skel smd-skel-pill" /></td>
+                      <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-chip" /></td>
+                      <td><span className="smd-skel smd-skel-pill" /></td>
+                    </tr>
+                  ))}
                   {!loading && notRequiredRows.length === 0 && (
                     <tr><td colSpan={8} className="s3-empty">No products marked Not Required.</td></tr>
                   )}
