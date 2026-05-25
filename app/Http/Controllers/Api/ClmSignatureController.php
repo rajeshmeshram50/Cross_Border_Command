@@ -425,6 +425,44 @@ class ClmSignatureController extends Controller
             }
         }
 
+        // Resolve every stored file path into a public URL the SPA can
+        // open directly. We can't ship raw `uploads/…` paths in the JSON
+        // because on the deployed environment the files live in Azure
+        // (cbc-saas blob container) while the SPA is served from a
+        // different origin — a relative `/uploads/…` would 404 against
+        // the API host. Using file_url() (app/helpers.php) mirrors the
+        // pattern every other controller already uses (CustomerOwner,
+        // ConsigneeDocument, EmployeeDocument, …) so the frontend sees
+        // the same shape of URL on every endpoint.
+        $rows->transform(function (ClmSignatureRequest $row) {
+            // Per-document URLs. Saved-paths shape is:
+            //   [ { zoho_document_id, document_name, path, url, file_url, size? }, … ]
+            // Older rows may carry only `path`. Resolve each into a fresh
+            // `file_url` so the frontend never has to know about disks.
+            $multi = is_array($row->signed_document_paths) ? $row->signed_document_paths : [];
+            $resolvedMulti = array_map(function ($entry) {
+                if (!is_array($entry)) return $entry;
+                $abs = $entry['url'] ?? $entry['file_url'] ?? null;
+                $path = $entry['path'] ?? null;
+                $resolved = (is_string($abs) && preg_match('#^https?://#i', $abs))
+                    ? $abs
+                    : file_url($path);
+                $entry['url']      = $resolved;
+                $entry['file_url'] = $resolved;
+                return $entry;
+            }, $multi);
+
+            // Surface the resolved URLs alongside the path columns so the
+            // frontend's polling loop (and any future consumer) can read
+            // them directly without re-resolving against another origin.
+            // Single-doc convenience pointer mirrors the multi array shape.
+            $row->setAttribute('signed_document_url',  file_url($row->signed_document_path));
+            $row->setAttribute('certificate_url',      file_url($row->certificate_path));
+            $row->setAttribute('signed_document_paths', $resolvedMulti);
+            $row->setAttribute('file_url', file_url($row->signed_document_path) ?: file_url($row->certificate_path));
+            return $row;
+        });
+
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 

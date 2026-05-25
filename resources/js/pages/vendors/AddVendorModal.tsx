@@ -317,6 +317,55 @@ export default function AddVendorModal(props: {
     });
   };
 
+  /* Company Name / Company Legal Name input sanitiser. Strip XSS angle
+   * brackets and SQL-injection signatures before they reach state, then
+   * enforce a name whitelist (letters, digits, spaces, and the few
+   * punctuation marks real company names use: . , - ( ) & / ' %). 100-char
+   * cap matches the backend column. Inline error surfaces when a paste
+   * lands disallowed input so the user knows what was stripped. */
+  const COMPANY_NAME_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
+  const COMPANY_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+  const COMPANY_NAME_MAX = 100;
+  const handleCompanyNameChange = (
+    raw: string,
+    fieldKey: 'companyName' | 'legalName',
+    setter: (v: string) => void,
+  ) => {
+    let cleaned = raw.replace(/[<>]/g, '');
+    const afterAngles = cleaned;
+    cleaned = cleaned.replace(COMPANY_NAME_SQL_RE, '');
+    const afterSql = cleaned;
+    cleaned = cleaned.replace(COMPANY_NAME_INVALID_RE, '');
+    if (cleaned.length > COMPANY_NAME_MAX) cleaned = cleaned.slice(0, COMPANY_NAME_MAX);
+    setter(cleaned);
+    if (cleaned === raw) {
+      clearFieldError(fieldKey);
+      return;
+    }
+    let msg: string;
+    if (afterAngles !== raw)        msg = 'HTML characters (< or >) are not allowed';
+    else if (afterSql !== afterAngles) msg = 'SQL-like patterns are not allowed';
+    else                            msg = "Use letters, numbers, spaces, and . , - ( ) & / ' % only";
+    setFieldErrors(prev => ({ ...prev, [fieldKey]: msg }));
+  };
+
+  /* Generic sanitised-change wrapper. Pipes the raw keystroke through
+   * the supplied sanitiser, writes the cleaned value back to state, and
+   * surfaces / clears the inline error on the matching Field. Lets the
+   * Registered Office / City / Contact Person / Designation inputs all
+   * share one bind-site without each growing their own handler. */
+  const applySanitizer = (
+    raw: string,
+    fieldKey: string,
+    setter: (v: string) => void,
+    sanitizer: (raw: string) => SanitizeResult,
+  ) => {
+    const { cleaned, error } = sanitizer(raw);
+    setter(cleaned);
+    if (error) setFieldErrors(prev => ({ ...prev, [fieldKey]: error }));
+    else clearFieldError(fieldKey);
+  };
+
   /* ─── Master Quick-Add state (matches the Add Product wizard pattern) ─── */
   const [quickAdd, setQuickAdd] = useState<VendorMasterSlug | null>(null);
 
@@ -603,6 +652,9 @@ export default function AddVendorModal(props: {
   };
   const EMPTY_MAP_DRAFT: MapDraft = { productId: '', productCode: '', productName: '', hsnSacCode: '', segment: '', batchSerialLot: '', purchasePrice: '', gstPercentage: '', gstAmount: '', totalAmount: '' };
   const [mapDraft,       setMapDraft]       = useState<MapDraft>(EMPTY_MAP_DRAFT);
+  /* When set, the Map Products popup is editing this existing mapping
+   * row (saveMapDraft updates in place instead of appending a new one). */
+  const [mapEditingId,   setMapEditingId]   = useState<string | null>(null);
 
   /* ─── Body scroll lock ─── */
   useEffect(() => {
@@ -812,7 +864,9 @@ export default function AddVendorModal(props: {
           trade_doc_ids: number[];
           signed_document_paths?: Array<{ url?: string; path?: string; file_url?: string }> | string[] | null;
           signed_document_path?: string | null;
+          signed_document_url?: string | null;
           certificate_path?: string | null;
+          certificate_url?: string | null;
           file_url?: string | null;
         }> = Array.isArray(r.data?.data) ? r.data.data : [];
         const map: Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string }> = {};
@@ -828,6 +882,11 @@ export default function AddVendorModal(props: {
             // through the chain so the View / Download buttons enable
             // as soon as ANY signed artefact exists, instead of staying
             // disabled until the queue worker catches up.
+            // Backend transforms the response with file_url() now (see
+            // ClmSignatureController::index), so .url / .file_url on each
+            // signed_document_paths entry is already absolute (Azure blob
+            // URL on prod, /storage/… on local). Prefer those over raw
+            // paths so we don't double-resolve.
             const signedArr = row.signed_document_paths;
             let rawSignedUrl: string | null = null;
             if (Array.isArray(signedArr)) {
@@ -835,9 +894,10 @@ export default function AddVendorModal(props: {
               if (typeof entry === 'string') rawSignedUrl = entry;
               else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
             }
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
             if (!rawSignedUrl) rawSignedUrl = row.file_url || null;
-            if (!rawSignedUrl) rawSignedUrl = row.certificate_path || null;
+            if (!rawSignedUrl) rawSignedUrl = row.certificate_url || row.certificate_path || null;
             // Resolve via resolveFileUrl so the URL gets the right
             // base prefix (VITE_API_URL on the deployed SPA, current
             // origin in dev). Bare /storage/… relative URLs 404 when
@@ -1050,13 +1110,16 @@ export default function AddVendorModal(props: {
           redFlags: r.red_flags ?? '',
         })));
 
-        // Step 4 — product mappings
+        // Step 4 — product mappings. HSN/SAC + Segment aren't echoed in
+        // the vendor show payload, so they're seeded empty here and a
+        // later effect backfills them once productOpts loads (kicked off
+        // by the void call right after).
         setProductMappings((v.product_mappings ?? []).map(m => ({
           id: String(m.id),
           productId: m.product_id ?? null,
           productCode: m.product_code ?? '',
           productName: m.product_name ?? '',
-          hsnSacCode: '',  // not echoed in the index/show shape; refetched if user re-edits
+          hsnSacCode: '',
           segment: '',
           batchSerialLot: m.batch_serial_lot ?? '',
           purchasePrice: Number(m.purchase_price ?? 0),
@@ -1064,6 +1127,11 @@ export default function AddVendorModal(props: {
           gstAmount: Number(m.gst_amount ?? 0),
           totalAmount: Number(m.total_amount ?? 0),
         })));
+        // Trigger the products fetch immediately on edit-load so the
+        // Map Products table can show HSN / Segment without waiting for
+        // the user to open Step 4 first. The backfill effect joins on
+        // productId once both arrays are populated.
+        void fetchProductOptsIfNeeded();
       } catch {
         toast.error('Load failed', 'Could not load the supplier — closing the form.');
         onClose();
@@ -1630,6 +1698,7 @@ export default function AddVendorModal(props: {
   };
 
   const openMapPopup = () => {
+    setMapEditingId(null);
     setMapDraft(EMPTY_MAP_DRAFT);
     setMapPopupOpen(true);
     void fetchProductOptsIfNeeded();
@@ -1658,8 +1727,30 @@ export default function AddVendorModal(props: {
     if (!mapDraft.purchasePrice.trim())  { toast.error('Missing field', 'Purchase Price is required'); return; }
     const price = parseFloat(mapDraft.purchasePrice);
     if (!isFinite(price) || price < 0)   { toast.error('Invalid price', 'Purchase Price must be a non-negative number'); return; }
-    if (productMappings.some(m => m.productId === Number(mapDraft.productId))) {
+    // Duplicate-mapping check only fires for ADD mode — in edit mode the
+    // row already exists for this productId, so we exclude the row being
+    // edited from the check.
+    if (productMappings.some(m => m.productId === Number(mapDraft.productId) && m.id !== mapEditingId)) {
       toast.error('Already mapped', `${mapDraft.productCode} is already mapped to this vendor`);
+      return;
+    }
+    if (mapEditingId) {
+      setProductMappings(prev => prev.map(r => r.id !== mapEditingId ? r : {
+        ...r,
+        productId:    Number(mapDraft.productId),
+        productCode:  mapDraft.productCode,
+        productName:  mapDraft.productName,
+        hsnSacCode:   mapDraft.hsnSacCode,
+        segment:      mapDraft.segment,
+        batchSerialLot: mapDraft.batchSerialLot,
+        purchasePrice: price,
+        gstPercentage: parseFloat(mapDraft.gstPercentage) || 0,
+        gstAmount:    parseFloat(mapDraft.gstAmount) || 0,
+        totalAmount:  parseFloat(mapDraft.totalAmount) || price,
+      }));
+      setMapEditingId(null);
+      setMapPopupOpen(false);
+      toast.success('Mapping updated', `${mapDraft.productCode} ${mapDraft.productName} updated`);
       return;
     }
     const row: ProductMappingRow = {
@@ -1681,8 +1772,77 @@ export default function AddVendorModal(props: {
   };
   const removeMapRow = (id: string) => setProductMappings(prev => prev.filter(r => r.id !== id));
 
+  /* Backfill HSN / Segment on existing mappings once productOpts arrive.
+   * Edit-load seeds these as empty (the vendor show payload doesn't
+   * include the joined master rows), so the Map Products table renders
+   * blank cells until the user re-edits each mapping. This effect joins
+   * each mapping back to its product by productId and writes the master
+   * values in. Skips rows that already have data so a user-edited value
+   * isn't clobbered. */
+  useEffect(() => {
+    if (productOpts.length === 0 || productMappings.length === 0) return;
+    let dirty = false;
+    const next = productMappings.map(m => {
+      if (m.hsnSacCode && m.segment) return m;
+      const opt = productOpts.find(o => Number(o.value) === Number(m.productId));
+      if (!opt) return m;
+      if ((m.hsnSacCode || '') === (opt.hsn || '') && (m.segment || '') === (opt.segment || '')) return m;
+      dirty = true;
+      return { ...m, hsnSacCode: m.hsnSacCode || opt.hsn || '', segment: m.segment || opt.segment || '' };
+    });
+    if (dirty) setProductMappings(next);
+  }, [productOpts, productMappings]);
+
+  /* Open the Map Products popup in edit mode for an existing row.
+   * Prefills the draft from the row, sets mapEditingId so saveMapDraft
+   * updates in place rather than appending, and ensures the product /
+   * GST option lists are loaded so the dropdowns aren't blank. */
+  const openMapEdit = (id: string) => {
+    const row = productMappings.find(r => r.id === id);
+    if (!row) return;
+    setMapEditingId(id);
+    setMapDraft({
+      productId: row.productId != null ? String(row.productId) : '',
+      productCode: row.productCode,
+      productName: row.productName,
+      hsnSacCode: row.hsnSacCode,
+      segment: row.segment,
+      batchSerialLot: row.batchSerialLot,
+      purchasePrice: String(row.purchasePrice ?? ''),
+      gstPercentage: String(row.gstPercentage ?? ''),
+      gstAmount: String(row.gstAmount ?? ''),
+      totalAmount: String(row.totalAmount ?? ''),
+    });
+    setMapPopupOpen(true);
+    void fetchProductOptsIfNeeded();
+    void fetchGstPctOptsIfNeeded();
+  };
+
+  /* Tracks which extra contact the popup is currently editing. null in
+   * add-mode (popup appends a new row), set to a contact id in edit-mode
+   * (saveContactDraft updates that row in place rather than creating a
+   * duplicate). Lets the Edit icon on each secondary contact reuse the
+   * same ContactAddPopup component. */
+  const [contactEditingId, setContactEditingId] = useState<number | null>(null);
   const openContactPopup = () => {
+    setContactEditingId(null);
     setContactDraft({ name: '', designation: '', phone: '', email: '', whatsapp: true, attachmentName: '', attachmentFile: null });
+    setContactPopupOpen(true);
+  };
+  const openContactEdit = (id: number) => {
+    const c = extraContacts.find(x => x.id === id);
+    if (!c) return;
+    setContactEditingId(id);
+    setContactDraft({
+      name: c.name,
+      designation: c.designation,
+      phone: c.phone,
+      email: c.email,
+      whatsapp: c.whatsapp,
+      attachmentName: c.attachmentName,
+      attachmentFile: c.attachmentFile ?? null,
+      attachmentPath: c.attachmentPath,
+    });
     setContactPopupOpen(true);
   };
   const saveContactDraft = () => {
@@ -1701,9 +1861,15 @@ export default function AddVendorModal(props: {
     const emailErr = validateEmail(contactDraft.email);
     if (emailErr) { toast.error('Invalid Email', emailErr); return; }
 
-    setExtraContacts(prev => [...prev, { id: Date.now(), ...contactDraft }]);
+    if (contactEditingId !== null) {
+      setExtraContacts(prev => prev.map(c => c.id === contactEditingId ? { ...c, ...contactDraft } : c));
+      toast.success('Contact updated', `${contactDraft.name} updated`);
+    } else {
+      setExtraContacts(prev => [...prev, { id: Date.now(), ...contactDraft }]);
+      toast.success('Contact added', `${contactDraft.name} added to the list`);
+    }
     setContactPopupOpen(false);
-    toast.success('Contact added', `${contactDraft.name} added to the list`);
+    setContactEditingId(null);
   };
   const removeExtraContact = (id: number) => setExtraContacts(prev => prev.filter(c => c.id !== id));
 
@@ -1755,6 +1921,31 @@ export default function AddVendorModal(props: {
 
         {/* ─── Body ─── */}
         <div className="avm-body">
+          {loadingEdit && (
+            <div className="avm-load-overlay" role="status" aria-live="polite">
+              <div className="avm-load-card">
+                <span className="avm-spinner avm-spinner-lg" aria-hidden="true" />
+                <div className="avm-load-title">Loading supplier…</div>
+                <div className="avm-load-sub">Fetching identity, contacts, KYC documents and product mappings.</div>
+              </div>
+              {/* Shimmer placeholders behind the spinner card so the form
+                  geometry doesn't pop in suddenly when the fetch resolves. */}
+              <div className="avm-load-skeleton">
+                <div className="avm-load-bar" style={{ width: '60%' }} />
+                <div className="avm-load-grid">
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                </div>
+                <div className="avm-load-bar" style={{ width: '40%', marginTop: 12 }} />
+                <div className="avm-load-grid">
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                </div>
+              </div>
+            </div>
+          )}
           {step > 1 && (() => {
             /* Carried-over summary of everything captured in earlier
                steps. Each entry is a `Label : value` pair flowed
@@ -1929,10 +2120,22 @@ export default function AddVendorModal(props: {
                 <SectionCard tone="violet" icon={<i className="ri-building-line" />} title="Basic Company Details" subtitle="Identity, classification & sourcing readiness">
                   <div className="avm-grid-2">
                     <Field label="Company Name" required error={fieldErrors.companyName}>
-                      <input className="avm-input" placeholder="e.g. ABC Logistics" value={companyName} onChange={e => { setCompanyName(e.target.value); clearFieldError('companyName'); }} />
+                      <input
+                        className="avm-input"
+                        placeholder="e.g. ABC Logistics"
+                        value={companyName}
+                        maxLength={COMPANY_NAME_MAX}
+                        onChange={e => handleCompanyNameChange(e.target.value, 'companyName', setCompanyName)}
+                      />
                     </Field>
-                    <Field label="Company Legal Name">
-                      <input className="avm-input" placeholder="ABC Logistics Pvt Ltd" value={legalName} onChange={e => setLegalName(e.target.value)} />
+                    <Field label="Company Legal Name" error={fieldErrors.legalName}>
+                      <input
+                        className="avm-input"
+                        placeholder="ABC Logistics Pvt Ltd"
+                        value={legalName}
+                        maxLength={COMPANY_NAME_MAX}
+                        onChange={e => handleCompanyNameChange(e.target.value, 'legalName', setLegalName)}
+                      />
                     </Field>
                   </div>
                   <div className="avm-grid-3">
@@ -1972,7 +2175,13 @@ export default function AddVendorModal(props: {
               {idTab === 'identification' && (
                 <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Company Address & Contact Person Details" subtitle="Registered office and primary KYC contact">
                   <Field label="Registered Office Address" required error={fieldErrors.registeredOffice}>
-                    <input className="avm-input" placeholder="Plot 21, Industrial Area" value={registeredOffice} onChange={e => { setRegisteredOffice(e.target.value); clearFieldError('registeredOffice'); }} />
+                    <input
+                      className="avm-input"
+                      placeholder="Plot 21, Industrial Area"
+                      value={registeredOffice}
+                      maxLength={200}
+                      onChange={e => applySanitizer(e.target.value, 'registeredOffice', setRegisteredOffice, sanitizeKycAddress)}
+                    />
                   </Field>
                   <div className="avm-grid-4">
                     <Field label="Country" required addNew onAdd={() => setQuickAdd('countries')} error={fieldErrors.country}>
@@ -2011,15 +2220,33 @@ export default function AddVendorModal(props: {
                       />
                     </Field>
                     <Field label="City" required error={fieldErrors.city}>
-                      <input className="avm-input" placeholder="e.g. Pune" value={city} onChange={e => { setCity(e.target.value); clearFieldError('city'); }} />
+                      <input
+                        className="avm-input"
+                        placeholder="e.g. Pune"
+                        value={city}
+                        maxLength={60}
+                        onChange={e => applySanitizer(e.target.value, 'city', setCity, raw => sanitizeKycAlpha(raw, 60))}
+                      />
                     </Field>
                   </div>
                   <div className="avm-grid-4">
                     <Field label="Contact Person Name" required error={fieldErrors.contactName}>
-                      <input className="avm-input" placeholder="Rahul Sharma" value={contactName} onChange={e => { setContactName(e.target.value); clearFieldError('contactName'); }} />
+                      <input
+                        className="avm-input"
+                        placeholder="Rahul Sharma"
+                        value={contactName}
+                        maxLength={60}
+                        onChange={e => applySanitizer(e.target.value, 'contactName', setContactName, raw => sanitizeKycAlpha(raw, 60))}
+                      />
                     </Field>
                     <Field label="Designation" required error={fieldErrors.designation}>
-                      <input className="avm-input" placeholder="admin" value={designation} onChange={e => { setDesignation(e.target.value); clearFieldError('designation'); }} />
+                      <input
+                        className="avm-input"
+                        placeholder="admin"
+                        value={designation}
+                        maxLength={60}
+                        onChange={e => applySanitizer(e.target.value, 'designation', setDesignation, raw => sanitizeKycDesignation(raw, 60))}
+                      />
                     </Field>
                     <Field label="Contact No" required error={fieldErrors.contactNo}>
                       <input
@@ -2213,9 +2440,14 @@ export default function AddVendorModal(props: {
                                       {r.isPrimary ? (
                                         <span className="text-muted fs-13" title="Edit on the Vendor Identification tab">—</span>
                                       ) : (
-                                        <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} title="Remove">
-                                          <i className="ri-delete-bin-line" />
-                                        </button>
+                                        <>
+                                          <button type="button" className="btn btn-sm btn-soft-info" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} title="Edit">
+                                            <i className="ri-pencil-line" />
+                                          </button>
+                                          <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} title="Remove">
+                                            <i className="ri-delete-bin-line" />
+                                          </button>
+                                        </>
                                       )}
                                     </div>
                                   </td>
@@ -2419,7 +2651,7 @@ export default function AddVendorModal(props: {
             <SectionCard tone="green" icon={<i className="ri-box-3-line" />} title="Products Details" subtitle="Link products to this vendor with purchase price & GST" headerAction={
               <button className="avm-section-add-btn" onClick={openMapPopup}>+ Add More Products</button>
             }>
-              <ProductMappingTable rows={productMappings} onRemove={removeMapRow} />
+              <ProductMappingTable rows={productMappings} onRemove={removeMapRow} onEdit={openMapEdit} />
             </SectionCard>
           )}
         </div>
@@ -2431,11 +2663,19 @@ export default function AddVendorModal(props: {
             {step > 1 && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
             {step < 4 ? (
               <button className="avm-btn-primary" onClick={goNext} disabled={saving}>
-                {saving ? 'Saving…' : <>Save &amp; Next →</>}
+                {saving ? (
+                  <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+                ) : (
+                  <>Save &amp; Next →</>
+                )}
               </button>
             ) : (
               <button className="avm-btn-primary" onClick={submitAll} disabled={saving}>
-                <i className="ri-check-line" /> {saving ? 'Saving…' : 'Save Vendor'}
+                {saving ? (
+                  <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+                ) : (
+                  <><i className="ri-check-line" /> Save Supplier</>
+                )}
               </button>
             )}
           </div>
@@ -2641,9 +2881,39 @@ function MasterQuickAddPopup(props: {
 
   const submit = async () => {
     const errs: Record<string, string> = {};
+    /* Same defence layer the main vendor form uses on its Company Name —
+     * Quick Add writes straight to /master/{slug} so without this an
+     * attacker could plant `<script>` / `' OR 1=1 --` into a Risk Level
+     * or Compliance Behaviour and have it render verbatim everywhere
+     * those masters are surfaced. */
+    const QA_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i;
+    const QA_NAME_WHITELIST = /^[A-Za-z0-9\s\-.,()&/'%]+$/;
     schema.fields.forEach(f => {
-      if (f.required && !(values[f.name] ?? '').toString().trim()) {
+      const raw = (values[f.name] ?? '').toString().trim();
+      if (f.required && !raw) {
         errs[f.name] = `${f.label} is required`;
+        return;
+      }
+      if (!raw || f.type === 'number') return;
+      if (/[<>]/.test(raw)) {
+        errs[f.name] = `${f.label} cannot contain HTML characters (< or >)`;
+        return;
+      }
+      if (QA_SQL_RE.test(raw)) {
+        errs[f.name] = `${f.label} contains disallowed patterns (possible SQL/JS injection)`;
+        return;
+      }
+      if (!/[A-Za-z0-9]/.test(raw)) {
+        errs[f.name] = `${f.label} must contain meaningful text (letters or numbers)`;
+        return;
+      }
+      if (!QA_NAME_WHITELIST.test(raw)) {
+        errs[f.name] = `${f.label} may only contain letters, numbers, spaces, and . , - ( ) & / ' %`;
+        return;
+      }
+      if (raw.length > 80) {
+        errs[f.name] = `${f.label} must be 80 characters or fewer`;
+        return;
       }
     });
     if (Object.keys(errs).length) {
@@ -2744,6 +3014,17 @@ function ContactAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof ContactDraft>(k: K, v: ContactDraft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ name?: string; designation?: string }>({});
+  const handleNameChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycAlpha(raw, 60);
+    setDraft({ ...draft, name: cleaned });
+    setErrors(prev => ({ ...prev, name: error }));
+  };
+  const handleDesignationChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycDesignation(raw, 60);
+    setDraft({ ...draft, designation: cleaned });
+    setErrors(prev => ({ ...prev, designation: error }));
+  };
   return createPortal((
     /* Backdrop click is intentionally NOT wired to onClose so an
        accidental outside click doesn't wipe an in-flight contact entry.
@@ -2761,11 +3042,23 @@ function ContactAddPopup(props: {
 
         <div className="avm-cp-body">
           <div className="avm-grid-4">
-            <Field label="Contact Person Name" required>
-              <input className="avm-input" placeholder="Enter name" value={draft.name} onChange={e => set('name', e.target.value)} />
+            <Field label="Contact Person Name" required error={errors.name}>
+              <input
+                className="avm-input"
+                placeholder="Enter name"
+                value={draft.name}
+                maxLength={60}
+                onChange={e => handleNameChange(e.target.value)}
+              />
             </Field>
-            <Field label="Designation" required>
-              <input className="avm-input" placeholder="Enter designation" value={draft.designation} onChange={e => set('designation', e.target.value)} />
+            <Field label="Designation" required error={errors.designation}>
+              <input
+                className="avm-input"
+                placeholder="Enter designation"
+                value={draft.designation}
+                maxLength={60}
+                onChange={e => handleDesignationChange(e.target.value)}
+              />
             </Field>
             <Field label="Contact No" required>
               <input
@@ -2945,9 +3238,15 @@ function SelectInput(props: {
  *  `existingPath` is set on rows hydrated from /vendors/{id} so the
  *  View link works on previously-uploaded files without re-uploading.
  */
-const FILE_ACCEPT     = '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf';
+const FILE_ACCEPT     = '.jpg,.jpeg,.png,.pdf,.doc,.docx,image/jpeg,image/png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const FILE_MAX_BYTES  = 2 * 1024 * 1024; // 2 MB
-const FILE_TYPE_LABEL = 'JPG / PNG / PDF';
+const FILE_TYPE_LABEL = 'JPG / PNG / PDF / DOC / DOCX';
+const FILE_ALLOWED_EXT_RE   = /\.(jpe?g|png|pdf|docx?)$/i;
+const FILE_ALLOWED_MIME_RE  = /^(image\/(jpeg|png)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document))$/i;
+/* Dangerous extension blacklist — script-style and executable files that
+ * must never reach storage even if a mistuned MIME-sniff or an empty type
+ * lets them past the allow-list. Belt-and-suspenders behind the whitelist. */
+const FILE_DENY_EXT_RE = /\.(exe|bat|cmd|com|scr|msi|js|jse|vbs|vbe|ws[hf]?|ps1|psm1|jar|sh|app|apk|dll|deb|rpm|html?|svg|php|asp[x]?|jsp)$/i;
 
 function FileChooser(props: {
   file: File | null;
@@ -2966,12 +3265,22 @@ function FileChooser(props: {
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0] ?? null;
     if (!picked) { onPick(null); return; }
-    // Validate format — picker MIME filter is advisory, native dialog
-    // lets the user override it.
-    const ok =
-      /^(image\/(jpeg|png)|application\/pdf)$/i.test(picked.type) ||
-      /\.(jpe?g|png|pdf)$/i.test(picked.name);
-    if (!ok) {
+    /* Three-layer validation — the native `accept` attribute is advisory
+     * (users can override via the OS dialog), so we enforce on JS too:
+     *   1. Hard-deny dangerous extensions (.exe, .bat, .js, .html, …)
+     *      even if the MIME somehow claims otherwise.
+     *   2. Allow only the whitelisted business formats (PDF/JPG/PNG/DOC/DOCX)
+     *      by MIME *or* by extension. The OR is necessary because some
+     *      browsers / OSes ship an empty `picked.type` for valid files. */
+    const name = picked.name;
+    if (FILE_DENY_EXT_RE.test(name)) {
+      toast.error('Unsafe file type blocked', `${name} — executable / script files are not allowed`);
+      e.target.value = '';
+      return;
+    }
+    const mimeOk = picked.type && FILE_ALLOWED_MIME_RE.test(picked.type);
+    const extOk  = FILE_ALLOWED_EXT_RE.test(name);
+    if (!mimeOk && !extOk) {
       toast.error('Unsupported file', `Only ${FILE_TYPE_LABEL} files are allowed`);
       e.target.value = '';
       return;
@@ -3103,8 +3412,8 @@ function SupplierSegmentRefTable(props: {
     void persistUpload(refKey, f, docName);
   };
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3244,8 +3553,8 @@ function DdTable(props: {
 }) {
   if (props.rows.length === 0) return <EmptyTable label="No due-diligence documents added yet. Use “+ Add More Due Diligence” to begin." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3319,8 +3628,8 @@ function OwnerKycTable(props: {
 }) {
   if (props.rows.length === 0) return <EmptyTable label="No owner-KYC documents added yet. Use “+ Add Owner KYC” to begin." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3383,8 +3692,8 @@ function TradeLicenseTable(props: {
 }) {
   if (props.rows.length === 0) return <EmptyTable label="No trade licenses added yet. Use “+ Add Trade License” to begin." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3451,8 +3760,8 @@ function TradeLicenseTable(props: {
 function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; onClearFile?: (id: string) => void }) {
   if (props.rows.length === 0) return <EmptyTable label="No bank records added yet." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3499,8 +3808,8 @@ function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; on
 function GstScrutinyTable(props: { rows: GstScrutinyRow[]; onRemove?: (id: string) => void }) {
   if (props.rows.length === 0) return <EmptyTable label="No GST scrutiny entries added yet." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3681,11 +3990,11 @@ function TradeDocsTable(props: {
  * with purchase price + GST + total. Empty state until "+ Add More
  * Products" is clicked.
  * ────────────────────────────────────────────────────────────────────── */
-function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void }) {
+function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void }) {
   if (props.rows.length === 0) return <EmptyTable label="No products mapped yet. Use “+ Add More Products” to link this vendor to one or more products." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3694,10 +4003,10 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
             <th>HSN / SAC</th>
             <th>SEGMENT</th>
             <th>BATCH / LOT</th>
-            <th>PRICE (₹)</th>
-            <th>GST %</th>
-            <th>GST AMT (₹)</th>
-            <th>TOTAL (₹)</th>
+            <th className="text-end">PRICE (₹)</th>
+            <th className="text-end">GST %</th>
+            <th className="text-end">GST AMT (₹)</th>
+            <th className="text-end">TOTAL (₹)</th>
             <th>ACTIONS</th>
           </tr>
         </thead>
@@ -3715,9 +4024,16 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td className="text-end font-monospace fs-13">{r.gstAmount.toFixed(2)}</td>
               <td className="text-end font-monospace fs-13"><strong>{r.totalAmount.toFixed(2)}</strong></td>
               <td>
-                <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove(r.id)} title="Remove">
-                  <i className="ri-delete-bin-line" />
-                </button>
+                <div className="hstack gap-1">
+                  {props.onEdit && (
+                    <button type="button" className="btn btn-sm btn-soft-info" onClick={() => props.onEdit?.(r.id)} title="Edit">
+                      <i className="ri-pencil-line" />
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove(r.id)} title="Remove">
+                    <i className="ri-delete-bin-line" />
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -3854,6 +4170,108 @@ function PopupShell(props: {
 }
 
 type DdAddPopupDraft = { documentName: string; issuingAuthority: string; expiry: string; mandatory: boolean; file: File | null; fileName: string };
+
+/* ─── Vendor KYC popup field sanitisers ────────────────────────────────
+ * Shared by the DD, Owner KYC, Trade License, and Bank popups. Each
+ * helper strips XSS angle brackets and SQL-injection signatures, then
+ * enforces a per-field-type charset and length cap, returning the
+ * cleaned value along with a context-aware error message when input
+ * was modified. The Field component renders the error inline. */
+const VENDOR_KYC_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
+
+type SanitizeResult = { cleaned: string; error?: string };
+
+const stripXssAndSql = (raw: string): { cleaned: string; afterAngles: string; afterSql: string } => {
+  const afterAngles = raw.replace(/[<>]/g, '');
+  const afterSql = afterAngles.replace(VENDOR_KYC_SQL_RE, '');
+  return { cleaned: afterSql, afterAngles, afterSql };
+};
+
+/* Name-like fields — DD Document Name, KYC Document Name, Issuing
+ * Authority, Bank Name. Allows letters, digits, spaces, and the basic
+ * punctuation real names use (. , - ( ) & / ' %). */
+const VENDOR_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+const sanitizeKycName = (raw: string, maxLen = 120): SanitizeResult => {
+  const { cleaned: stripped, afterAngles, afterSql } = stripXssAndSql(raw);
+  let cleaned = stripped.replace(VENDOR_NAME_INVALID_RE, '');
+  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  let error: string;
+  if (afterAngles !== raw)          error = 'HTML characters (< or >) are not allowed';
+  else if (afterSql !== afterAngles) error = 'SQL-like patterns are not allowed';
+  else                              error = "Use letters, numbers, spaces, and . , - ( ) & / ' % only";
+  return { cleaned, error };
+};
+
+/* Identifier fields — Document Number, License Number. These are
+ * machine-readable codes like PAN (AABCT1234F), FSSAI (10019011000123),
+ * Aadhaar masks; allow letters, digits, hyphens, and slashes only. */
+const VENDOR_ID_INVALID_RE = /[^A-Za-z0-9\-/]/g;
+const sanitizeKycId = (raw: string, maxLen = 40): SanitizeResult => {
+  const { cleaned: stripped, afterAngles, afterSql } = stripXssAndSql(raw);
+  let cleaned = stripped.replace(VENDOR_ID_INVALID_RE, '');
+  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  let error: string;
+  if (afterAngles !== raw)          error = 'HTML characters (< or >) are not allowed';
+  else if (afterSql !== afterAngles) error = 'SQL-like patterns are not allowed';
+  else                              error = 'Only letters, digits, hyphens and slashes are allowed';
+  return { cleaned, error };
+};
+
+/* Alphabetic-only fields — Bank Branch, City, Contact Person Name.
+ * Letters + spaces, plus the few punctuation marks real values use
+ * (e.g. "M.G. Road", "St. Louis", "Mr. Rahul Sharma"). */
+const VENDOR_ALPHA_INVALID_RE = /[^A-Za-z\s.,'-]/g;
+const sanitizeKycAlpha = (raw: string, maxLen = 60): SanitizeResult => {
+  const cleaned = raw.replace(VENDOR_ALPHA_INVALID_RE, '').slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  return { cleaned, error: 'Only alphabetic characters are allowed' };
+};
+
+/* Designation — same alphabet base, plus `/` for combined titles
+ * (e.g. "CEO/Director", "Sr. Manager - Ops"). */
+const VENDOR_DESIGNATION_INVALID_RE = /[^A-Za-z\s.,'/-]/g;
+const sanitizeKycDesignation = (raw: string, maxLen = 60): SanitizeResult => {
+  const cleaned = raw.replace(VENDOR_DESIGNATION_INVALID_RE, '').slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  return { cleaned, error: 'Only letters, spaces, and . , - / are allowed' };
+};
+
+/* Address — broader charset than a name (plot numbers, flat numbers
+ * etc. include `#` and `/`), but still no `<` / `>` / SQL signatures.
+ * Allows letters, digits, spaces, and . , - ( ) & / ' # %. */
+const VENDOR_ADDRESS_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'#%]/g;
+const sanitizeKycAddress = (raw: string, maxLen = 200): SanitizeResult => {
+  const { cleaned: stripped, afterAngles, afterSql } = stripXssAndSql(raw);
+  let cleaned = stripped.replace(VENDOR_ADDRESS_INVALID_RE, '');
+  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  let error: string;
+  if (afterAngles !== raw)          error = 'HTML characters (< or >) are not allowed';
+  else if (afterSql !== afterAngles) error = 'SQL-like patterns are not allowed';
+  else                              error = "Use letters, numbers, spaces, and . , - ( ) & / ' # % only";
+  return { cleaned, error };
+};
+
+/* Expiry — MM/YYYY or N/A. As the user types, only digits, slash,
+ * and N/A letters survive. 7-char cap (MM/YYYY length). Save-time
+ * format validation is left to the parent saver — this just blocks
+ * the obviously-invalid keystrokes that the screenshots called out
+ * (random text, special characters). */
+const VENDOR_EXPIRY_INVALID_RE = /[^0-9NA/]/gi;
+const sanitizeKycExpiry = (raw: string): SanitizeResult => {
+  let cleaned = raw.replace(VENDOR_EXPIRY_INVALID_RE, '');
+  if (cleaned.length > 7) cleaned = cleaned.slice(0, 7);
+  if (cleaned === raw) return { cleaned };
+  return { cleaned, error: 'Enter MM/YYYY (e.g. 12/2026) or N/A' };
+};
+
+/* Back-compat alias — earlier turn introduced sanitizeDdDocName and the
+ * DdAddPopup body still references it. Wire it to the new generic. */
+const sanitizeDdDocName = (raw: string) => sanitizeKycName(raw, 120);
+const DD_DOC_NAME_MAX = 120;
+
 function DdAddPopup(props: {
   nextCodePreview: string;
   draft: DdAddPopupDraft;
@@ -3863,22 +4281,56 @@ function DdAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave, nextCodePreview } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ documentName?: string; issuingAuthority?: string; expiry?: string }>({});
+  const handleDocNameChange = (raw: string) => {
+    const { cleaned, error } = sanitizeDdDocName(raw);
+    setDraft({ ...draft, documentName: cleaned });
+    setErrors(prev => ({ ...prev, documentName: error }));
+  };
+  const handleAuthorityChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycName(raw, 120);
+    setDraft({ ...draft, issuingAuthority: cleaned });
+    setErrors(prev => ({ ...prev, issuingAuthority: error }));
+  };
+  const handleExpiryChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycExpiry(raw);
+    setDraft({ ...draft, expiry: cleaned });
+    setErrors(prev => ({ ...prev, expiry: error }));
+  };
   return (
     <PopupShell title="Add Due Diligence Document" icon="ri-file-text-line" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-2">
         <Field label="Auto Code">
           <input className="avm-input" value={nextCodePreview} readOnly style={{ color: '#d97706', fontFamily: 'monospace', fontWeight: 600 }} />
         </Field>
-        <Field label="DD Document Name" required>
-          <input className="avm-input" placeholder="e.g. Memorandum of Association" value={draft.documentName} onChange={e => set('documentName', e.target.value)} />
+        <Field label="DD Document Name" required error={errors.documentName}>
+          <input
+            className="avm-input"
+            placeholder="e.g. Memorandum of Association"
+            value={draft.documentName}
+            maxLength={DD_DOC_NAME_MAX}
+            onChange={e => handleDocNameChange(e.target.value)}
+          />
         </Field>
       </div>
       <div className="avm-grid-2">
-        <Field label="Issuing Authority" required>
-          <input className="avm-input" placeholder="e.g. Registrar of Companies (ROC)" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
+        <Field label="Issuing Authority" required error={errors.issuingAuthority}>
+          <input
+            className="avm-input"
+            placeholder="e.g. Registrar of Companies (ROC)"
+            value={draft.issuingAuthority}
+            maxLength={120}
+            onChange={e => handleAuthorityChange(e.target.value)}
+          />
         </Field>
-        <Field label="Expiry">
-          <input className="avm-input" placeholder="MM/YYYY or N/A" value={draft.expiry} onChange={e => set('expiry', e.target.value)} />
+        <Field label="Expiry" error={errors.expiry}>
+          <input
+            className="avm-input"
+            placeholder="MM/YYYY or N/A"
+            value={draft.expiry}
+            maxLength={7}
+            onChange={e => handleExpiryChange(e.target.value)}
+          />
         </Field>
       </div>
       <div className="avm-grid-2">
@@ -3908,22 +4360,61 @@ function OwnerKycAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave, nextCodePreview } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ documentName?: string; issuingAuthority?: string; documentNumber?: string; expiry?: string }>({});
+  const handleDocNameChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycName(raw, 120);
+    setDraft({ ...draft, documentName: cleaned });
+    setErrors(prev => ({ ...prev, documentName: error }));
+  };
+  const handleAuthorityChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycName(raw, 120);
+    setDraft({ ...draft, issuingAuthority: cleaned });
+    setErrors(prev => ({ ...prev, issuingAuthority: error }));
+  };
+  const handleDocNumberChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycId(raw, 40);
+    setDraft({ ...draft, documentNumber: cleaned });
+    setErrors(prev => ({ ...prev, documentNumber: error }));
+  };
+  const handleExpiryChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycExpiry(raw);
+    setDraft({ ...draft, expiry: cleaned });
+    setErrors(prev => ({ ...prev, expiry: error }));
+  };
   return (
     <PopupShell title="Add Owner KYC Document" icon="ri-user-add-line" subtitle="Upload an identity, address, or compliance document for the owner" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-2">
         <Field label="Auto Code">
           <input className="avm-input" value={nextCodePreview} readOnly style={{ color: '#d97706', fontFamily: 'monospace', fontWeight: 600 }} />
         </Field>
-        <Field label="KYC Document Name" required>
-          <input className="avm-input" placeholder="e.g. PAN Card, Aadhaar Card, Passport" value={draft.documentName} onChange={e => set('documentName', e.target.value)} />
+        <Field label="KYC Document Name" required error={errors.documentName}>
+          <input
+            className="avm-input"
+            placeholder="e.g. PAN Card, Aadhaar Card, Passport"
+            value={draft.documentName}
+            maxLength={120}
+            onChange={e => handleDocNameChange(e.target.value)}
+          />
         </Field>
       </div>
       <div className="avm-grid-2">
-        <Field label="Issuing Authority" required>
-          <input className="avm-input" placeholder="e.g. Income Tax Department" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
+        <Field label="Issuing Authority" required error={errors.issuingAuthority}>
+          <input
+            className="avm-input"
+            placeholder="e.g. Income Tax Department"
+            value={draft.issuingAuthority}
+            maxLength={120}
+            onChange={e => handleAuthorityChange(e.target.value)}
+          />
         </Field>
-        <Field label="Document Number">
-          <input className="avm-input" placeholder="e.g. AABCT1234F" value={draft.documentNumber} onChange={e => set('documentNumber', e.target.value)} />
+        <Field label="Document Number" error={errors.documentNumber}>
+          <input
+            className="avm-input"
+            placeholder="e.g. AABCT1234F"
+            value={draft.documentNumber}
+            maxLength={40}
+            onChange={e => handleDocNumberChange(e.target.value)}
+          />
         </Field>
       </div>
       <div className="avm-grid-3">
@@ -3935,8 +4426,14 @@ function OwnerKycAddPopup(props: {
             maxDate={new Date().toISOString().slice(0, 10)}
           />
         </Field>
-        <Field label="Expiry">
-          <input className="avm-input" placeholder="MM/YYYY or N/A" value={draft.expiry} onChange={e => set('expiry', e.target.value)} />
+        <Field label="Expiry" error={errors.expiry}>
+          <input
+            className="avm-input"
+            placeholder="MM/YYYY or N/A"
+            value={draft.expiry}
+            maxLength={7}
+            onChange={e => handleExpiryChange(e.target.value)}
+          />
         </Field>
         <Field label="Status">
           <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Inactive')} options={['Active', 'Inactive']} />
@@ -3964,6 +4461,17 @@ function TradeLicenseAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave, typeOpts } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ licenseNumber?: string; issuingAuthority?: string }>({});
+  const handleLicenseNumberChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycId(raw, 40);
+    setDraft({ ...draft, licenseNumber: cleaned });
+    setErrors(prev => ({ ...prev, licenseNumber: error }));
+  };
+  const handleAuthorityChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycName(raw, 120);
+    setDraft({ ...draft, issuingAuthority: cleaned });
+    setErrors(prev => ({ ...prev, issuingAuthority: error }));
+  };
   return (
     <PopupShell title="Add Trade License" icon="ri-file-list-3-line" subtitle="Register a regulatory license, certification, or trade authorization" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-2">
@@ -3972,13 +4480,25 @@ function TradeLicenseAddPopup(props: {
             ? <SelectInput value={draft.licenseType} onChange={v => set('licenseType', v)} placeholder="Select License Type" options={typeOpts} />
             : <input className="avm-input" placeholder="e.g. FSSAI License" value={draft.licenseType} onChange={e => set('licenseType', e.target.value)} />}
         </Field>
-        <Field label="License Number" required>
-          <input className="avm-input" placeholder="e.g. 10019011000123" value={draft.licenseNumber} onChange={e => set('licenseNumber', e.target.value)} />
+        <Field label="License Number" required error={errors.licenseNumber}>
+          <input
+            className="avm-input"
+            placeholder="e.g. 10019011000123"
+            value={draft.licenseNumber}
+            maxLength={40}
+            onChange={e => handleLicenseNumberChange(e.target.value)}
+          />
         </Field>
       </div>
       <div className="avm-grid-3">
-        <Field label="Issuing Authority" required>
-          <input className="avm-input" placeholder="e.g. FSSAI, Govt. of India" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
+        <Field label="Issuing Authority" required error={errors.issuingAuthority}>
+          <input
+            className="avm-input"
+            placeholder="e.g. FSSAI, Govt. of India"
+            value={draft.issuingAuthority}
+            maxLength={120}
+            onChange={e => handleAuthorityChange(e.target.value)}
+          />
         </Field>
         <Field label="Issue Date" required>
           <MasterDatePicker
@@ -4018,14 +4538,42 @@ function BankAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ bankName?: string; branchName?: string; branchAddress?: string }>({});
+  const handleBankNameChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycName(raw, 80);
+    setDraft({ ...draft, bankName: cleaned });
+    setErrors(prev => ({ ...prev, bankName: error }));
+  };
+  const handleBranchChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycAlpha(raw, 60);
+    setDraft({ ...draft, branchName: cleaned });
+    setErrors(prev => ({ ...prev, branchName: error }));
+  };
+  const handleBranchAddressChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycAddress(raw, 200);
+    setDraft({ ...draft, branchAddress: cleaned });
+    setErrors(prev => ({ ...prev, branchAddress: error }));
+  };
   return (
     <PopupShell title="Add Bank Details" icon="ri-bank-line" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-4">
-        <Field label="Bank Name" required>
-          <input className="avm-input" placeholder="Enter bank name" value={draft.bankName} onChange={e => set('bankName', e.target.value)} />
+        <Field label="Bank Name" required error={errors.bankName}>
+          <input
+            className="avm-input"
+            placeholder="Enter bank name"
+            value={draft.bankName}
+            maxLength={80}
+            onChange={e => handleBankNameChange(e.target.value)}
+          />
         </Field>
-        <Field label="Branch" required>
-          <input className="avm-input" placeholder="Enter branch" value={draft.branchName} onChange={e => set('branchName', e.target.value)} />
+        <Field label="Branch" required error={errors.branchName}>
+          <input
+            className="avm-input"
+            placeholder="Enter branch"
+            value={draft.branchName}
+            maxLength={60}
+            onChange={e => handleBranchChange(e.target.value)}
+          />
         </Field>
         <Field label="Account Number" required>
           <input className="avm-input" placeholder="Enter account number" value={draft.accountNumber} onChange={e => set('accountNumber', e.target.value)} />
@@ -4035,8 +4583,14 @@ function BankAddPopup(props: {
         </Field>
       </div>
       <div className="avm-grid-2">
-        <Field label="Branch Address">
-          <input className="avm-input" placeholder="Enter branch address" value={draft.branchAddress} onChange={e => set('branchAddress', e.target.value)} />
+        <Field label="Branch Address" error={errors.branchAddress}>
+          <input
+            className="avm-input"
+            placeholder="Enter branch address"
+            value={draft.branchAddress}
+            maxLength={200}
+            onChange={e => handleBranchAddressChange(e.target.value)}
+          />
         </Field>
         <Field label="Cancelled Cheque" required>
           <FileChooser
@@ -4060,11 +4614,43 @@ function GstScrutinyAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ gstNumber?: string; prevNonGst2aInvoice?: string; redFlags?: string }>({});
+  /* GST number is strictly alphanumeric (15 chars: 27AADCI6120M1ZH style).
+   * Strip everything else and uppercase; backend still validates the full
+   * regex, this just keeps obvious garbage out of the picker. */
+  const handleGstNumberChange = (raw: string) => {
+    const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15);
+    set('gstNumber', cleaned);
+    if (cleaned !== raw.toUpperCase().slice(0, 15)) {
+      setErrors(prev => ({ ...prev, gstNumber: 'Only letters and digits (e.g. 27AADCI6120M1ZH)' }));
+    } else {
+      setErrors(prev => ({ ...prev, gstNumber: undefined }));
+    }
+  };
+  const handlePrevInvoiceChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycId(raw, 50);
+    set('prevNonGst2aInvoice', cleaned);
+    setErrors(prev => ({ ...prev, prevNonGst2aInvoice: error }));
+  };
+  /* Red Flags is free-form prose — explanation text like "GSTR-1 not filed
+   * for Q3 2024". Strip XSS/SQL but keep the broader address-style
+   * charset so the user can type sentences naturally. */
+  const handleRedFlagsChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycAddress(raw, 300);
+    set('redFlags', cleaned);
+    setErrors(prev => ({ ...prev, redFlags: error }));
+  };
   return (
     <PopupShell title="Add GST Scrutiny" icon="ri-shield-check-line" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-3">
-        <Field label="GST Number" required>
-          <input className="avm-input" placeholder="Enter GST number" value={draft.gstNumber} onChange={e => set('gstNumber', e.target.value.toUpperCase())} />
+        <Field label="GST Number" required error={errors.gstNumber}>
+          <input
+            className="avm-input"
+            placeholder="Enter GST number"
+            value={draft.gstNumber}
+            maxLength={15}
+            onChange={e => handleGstNumberChange(e.target.value)}
+          />
         </Field>
         <Field label="GST Status" required>
           <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Suspended' | 'Cancelled')} placeholder="Select GST status" options={['Active', 'Suspended', 'Cancelled']} />
@@ -4079,11 +4665,23 @@ function GstScrutinyAddPopup(props: {
         </Field>
       </div>
       <div className="avm-grid-2">
-        <Field label="Previous Non-GST 2A Reflected Invoice">
-          <input className="avm-input" placeholder="Enter invoice reference (optional)" value={draft.prevNonGst2aInvoice} onChange={e => set('prevNonGst2aInvoice', e.target.value)} />
+        <Field label="Previous Non-GST 2A Reflected Invoice" error={errors.prevNonGst2aInvoice}>
+          <input
+            className="avm-input"
+            placeholder="Enter invoice reference (optional)"
+            value={draft.prevNonGst2aInvoice}
+            maxLength={50}
+            onChange={e => handlePrevInvoiceChange(e.target.value)}
+          />
         </Field>
-        <Field label="Red Flags">
-          <input className="avm-input" placeholder="Enter red flags (optional)" value={draft.redFlags} onChange={e => set('redFlags', e.target.value)} />
+        <Field label="Red Flags" error={errors.redFlags}>
+          <input
+            className="avm-input"
+            placeholder="Enter red flags (optional)"
+            value={draft.redFlags}
+            maxLength={300}
+            onChange={e => handleRedFlagsChange(e.target.value)}
+          />
         </Field>
       </div>
     </PopupShell>
@@ -4254,6 +4852,7 @@ const SCOPED_CSS = `
   padding: 18px 22px 22px;
   background: #fff;
   scrollbar-width: thin; scrollbar-color: #c0cffb transparent;
+  position: relative;  /* anchor for the .avm-load-overlay during edit-load */
 }
 .avm-body::-webkit-scrollbar { width: 8px; }
 .avm-body::-webkit-scrollbar-thumb { background: #c0cffb; border-radius: 99px; }
@@ -4792,8 +5391,17 @@ const SCOPED_CSS = `
   border-radius: 10px;
   transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
 }
-.avm-btn-ghost { background: #fff; border: 1.5px solid #e2e8f0; color: #475569; }
-.avm-btn-ghost:hover { background: #f1f5f9; border-color: #cbd5e1; }
+/* Cancel button — the old #e2e8f0 border was nearly invisible against
+ * the modal's white surface, so the button read as a floating label.
+ * Use a stronger slate border + subtle shadow so it's recognisable as
+ * a clickable affordance without competing with the primary CTA. */
+.avm-btn-ghost {
+  background: #fff;
+  border: 1.5px solid #94a3b8;
+  color: #334155;
+  box-shadow: 0 1px 2px rgba(15,23,42,.06);
+}
+.avm-btn-ghost:hover { background: #f1f5f9; border-color: #64748b; color: #1e293b; }
 .avm-btn-outline { background: #fff; border: 1.5px solid #c0cffb; color: #405189; }
 .avm-btn-outline:hover { background: #eef2ff; border-color: #405189; }
 .avm-btn-primary {
@@ -4801,6 +5409,103 @@ const SCOPED_CSS = `
   box-shadow: 0 4px 12px rgba(64,81,137,.4);
 }
 .avm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(64,81,137,.5); }
+.avm-btn-primary:disabled { transform: none; opacity: .85; cursor: progress; box-shadow: 0 4px 12px rgba(64,81,137,.32); }
+
+/* Inline spinner shown in Save & Next / Save Vendor while the network
+ * call is in flight. Same size/curve as Bootstrap's spinner-border-sm
+ * so it sits flush with the 13px button text. */
+.avm-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: avm-spinner-spin .7s linear infinite;
+  vertical-align: -2px;
+}
+@keyframes avm-spinner-spin { to { transform: rotate(360deg); } }
+.avm-spinner-lg {
+  width: 36px; height: 36px;
+  border-width: 3px;
+  border-color: rgba(64,81,137,.20);
+  border-top-color: #405189;
+}
+
+/* Edit-mode loading overlay — shown over the form while /vendors/{id}
+ * is fetched. Combines a centred spinner card with shimmering form-shaped
+ * bars so the layout doesn't jump when the data lands. */
+.avm-load-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,.85);
+  backdrop-filter: blur(2px);
+  z-index: 5;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-start;
+  padding: 32px 40px;
+  gap: 18px;
+}
+[data-bs-theme="dark"] .avm-load-overlay { background: rgba(20,16,42,.85); }
+.avm-load-card {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 24px 28px; border-radius: 14px;
+  background: #fff; border: 1px solid #e2e8f0;
+  box-shadow: 0 12px 28px rgba(15,23,42,.10);
+  min-width: 320px; text-align: center;
+}
+[data-bs-theme="dark"] .avm-load-card { background: #1c2531; border-color: rgba(255,255,255,.08); box-shadow: 0 12px 28px rgba(0,0,0,.5); }
+.avm-load-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-top: 4px; }
+.avm-load-sub   { font-size: 12px; color: #64748b; max-width: 320px; }
+[data-bs-theme="dark"] .avm-load-title { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-load-sub   { color: #adb5bd; }
+.avm-load-skeleton { width: 100%; max-width: 680px; display: flex; flex-direction: column; gap: 10px; }
+.avm-load-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.avm-load-bar {
+  height: 38px; border-radius: 8px;
+  background: linear-gradient(90deg, #eef2f7 0%, #f8fafc 50%, #eef2f7 100%);
+  background-size: 200% 100%;
+  animation: avm-skel-shimmer 1.2s ease-in-out infinite;
+}
+[data-bs-theme="dark"] .avm-load-bar {
+  background: linear-gradient(90deg, #221940 0%, #1a1430 50%, #221940 100%);
+  background-size: 200% 100%;
+}
+@keyframes avm-skel-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* KYC table layout — Bootstrap's table-nowrap was forcing every cell
+ * onto a single line, so long document names / addresses / red flags
+ * would overflow the column and break the table layout. Allow text
+ * cells to wrap with sane per-cell limits, but keep nowrap for the
+ * status badges and the action button column so they stay aligned. */
+.avm-kyc-table-wrap { overflow-x: auto; }
+.avm-kyc-table {
+  table-layout: auto;
+}
+.avm-kyc-table th, .avm-kyc-table td {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+  max-width: 280px;
+}
+.avm-kyc-table th { white-space: nowrap; }  /* headers stay on one line */
+.avm-kyc-table td .badge,
+.avm-kyc-table td .avm-pill,
+.avm-kyc-table td .btn,
+.avm-kyc-table td .hstack,
+.avm-kyc-table td .font-monospace { white-space: nowrap; }
+/* Action / SR / status columns stay narrow so they don't fight the
+ * text columns for horizontal space. The last column is action icons
+ * across every KYC table; first is the row number. */
+.avm-kyc-table th:first-child, .avm-kyc-table td:first-child,
+.avm-kyc-table th:last-child,  .avm-kyc-table td:last-child {
+  white-space: nowrap;
+  max-width: none;
+  width: 1%;
+}
 
 @media (max-width: 880px) {
   .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr 1fr; }

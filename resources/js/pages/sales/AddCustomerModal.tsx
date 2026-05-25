@@ -396,7 +396,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           trade_doc_ids: number[];
           signed_document_paths?: Array<{ url?: string; path?: string; file_url?: string }> | string[] | null;
           signed_document_path?: string | null;
+          signed_document_url?: string | null;
           certificate_path?: string | null;
+          certificate_url?: string | null;
           file_url?: string | null;
         }> = Array.isArray(r.data?.data) ? r.data.data : [];
 
@@ -417,6 +419,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
             // through the chain so the View / Download buttons enable
             // as soon as ANY signed artefact exists, instead of staying
             // disabled until the queue worker catches up.
+            // Backend transforms the response with file_url() now (see
+            // ClmSignatureController::index), so .url / .file_url on each
+            // signed_document_paths entry is already an absolute URL —
+            // Azure blob URL on the deployed SPA, /storage/… on local.
+            // Prefer those over raw paths so we don't double-resolve.
             const signedArr = row.signed_document_paths;
             let rawSignedUrl: string | null = null;
             if (Array.isArray(signedArr)) {
@@ -424,14 +431,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               if (typeof entry === 'string') rawSignedUrl = entry;
               else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
             }
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
             if (!rawSignedUrl) rawSignedUrl = row.file_url || null;
-            if (!rawSignedUrl) rawSignedUrl = row.certificate_path || null;
-            // Route the URL through resolveFileUrl so it picks up the
-            // right base (VITE_API_URL on the deployed SPA, current
-            // origin in dev), and so legacy /storage prefixes don't
-            // double-stack. Prevents the "View / Download icons go
-            // nowhere" bug when the SPA origin differs from the API.
+            if (!rawSignedUrl) rawSignedUrl = row.certificate_url || row.certificate_path || null;
+            // resolveFileUrl is a no-op when the URL is already absolute
+            // (http(s)://…), so passing the pre-resolved URL through it
+            // is safe. It still adds the API base for any legacy row
+            // that only has the bare `uploads/…` path on disk.
             map[docId] = {
               status: row.status,
               signatureRequestId: row.id,
