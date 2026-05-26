@@ -452,14 +452,37 @@ class ClmSignatureController extends Controller
                 return $entry;
             }, $multi);
 
+            /* Disk-scan fallback. When status === 'completed' but
+             * signed_document_paths is empty, the actual signed PDFs
+             * frequently DO exist in the customer/consignee/vendor
+             * signed_documents folder — fetchSignedArtifacts wrote them
+             * successfully in a prior run but a later partial-fail or DB
+             * blip left the column unset.
+             *
+             * Rather than fight Zoho for another download, just list the
+             * folder and match by document-name slug (the same slug
+             * fetchSignedArtifacts uses when naming the blob:
+             * `signed_<slug>_<ts>_<i>.pdf`). Most-recent file per doc
+             * wins, surfacing the latest send.
+             *
+             * Results are merged into $resolvedMulti at READ time only —
+             * we don't persist them, so the next successful Zoho retry
+             * (which writes a richer payload with zoho_document_id +
+             * size) is still authoritative when it lands. */
+            if (empty($resolvedMulti) && $row->status === 'completed') {
+                $fromDisk = $this->adoptSignedDocsFromDisk($row);
+                if (!empty($fromDisk)) $resolvedMulti = $fromDisk;
+            }
+
             // Surface the resolved URLs alongside the path columns so the
             // frontend's polling loop (and any future consumer) can read
             // them directly without re-resolving against another origin.
             // Single-doc convenience pointer mirrors the multi array shape.
-            $row->setAttribute('signed_document_url',  file_url($row->signed_document_path));
+            $firstSignedFromDisk = $resolvedMulti[0]['file_url'] ?? null;
+            $row->setAttribute('signed_document_url',  file_url($row->signed_document_path) ?: $firstSignedFromDisk);
             $row->setAttribute('certificate_url',      file_url($row->certificate_path));
             $row->setAttribute('signed_document_paths', $resolvedMulti);
-            $row->setAttribute('file_url', file_url($row->signed_document_path) ?: file_url($row->certificate_path));
+            $row->setAttribute('file_url', file_url($row->signed_document_path) ?: $firstSignedFromDisk ?: file_url($row->certificate_path));
             return $row;
         });
 
@@ -974,5 +997,94 @@ class ClmSignatureController extends Controller
         }
 
         $row->save();
+    }
+
+    /**
+     * Disk-scan fallback for completed rows that have no
+     * `signed_document_paths` recorded in the DB.
+     *
+     * Production has hit a state where fetchSignedArtifacts uploads the
+     * signed PDFs to Azure successfully (the blob container has files
+     * like `signed_td-001-customer-trade-document_1779706863_0.pdf`)
+     * but the row never gets the JSON column populated — the most
+     * likely cause is a Zoho retry that throws AFTER the prior call's
+     * blobs were written but BEFORE the save() runs. We can't fix that
+     * race retroactively, so instead we recover at read time: list the
+     * party's signed_documents folder, match each blob filename against
+     * the request's document-name slugs, and synthesise the entries the
+     * frontend expects.
+     *
+     * Cost: one Storage::allFiles() call per affected row. On Azure this
+     * is a single LIST blob call against a tiny prefix
+     * (`uploads/signed_documents/{party}/`), well within free-tier IOPS.
+     *
+     * Returns an empty array when nothing matches — caller falls back
+     * to the existing "no attachment yet" UI without surprising the
+     * user with files from a different request.
+     *
+     * @return array<int, array{path:string, url:?string, file_url:?string, document_name:string, zoho_document_id:?string}>
+     */
+    private function adoptSignedDocsFromDisk(ClmSignatureRequest $row): array
+    {
+        $names = is_array($row->document_names) ? $row->document_names : [];
+        if (empty($names)) return [];
+
+        $modelFolder = strtolower((string) $row->model_name);
+        $basePath    = 'uploads/signed_documents/' . $modelFolder;
+
+        try {
+            if (!Storage::disk('public')->exists($basePath)) return [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+
+        // Pull every signed_*.pdf in the party folder once. allFiles on
+        // the Azure adapter returns absolute prefixes (no leading slash),
+        // matching what fetchSignedArtifacts writes.
+        try {
+            $all = Storage::disk('public')->files($basePath);
+        } catch (\Throwable $e) {
+            Log::warning('adopt-from-disk: list failed', ['row_id' => $row->id, 'err' => $e->getMessage()]);
+            return [];
+        }
+
+        $signedOnly = array_values(array_filter(
+            $all,
+            fn ($p) => is_string($p)
+                && str_contains($p, '/signed_')
+                && str_ends_with(strtolower($p), '.pdf'),
+        ));
+        if (empty($signedOnly)) return [];
+
+        $out = [];
+        $zohoDocIds = is_array($row->zoho_document_ids) ? $row->zoho_document_ids : [];
+
+        foreach ($names as $i => $rawName) {
+            $slug = Str::slug(pathinfo((string) $rawName, PATHINFO_FILENAME));
+            if ($slug === '') $slug = 'document-' . ($i + 1);
+            $needle = '/signed_' . $slug . '_';
+
+            // Newest match wins — fetchSignedArtifacts encodes the run
+            // timestamp into the filename, so a higher numeric suffix is
+            // always a later send.
+            $candidates = array_values(array_filter(
+                $signedOnly,
+                fn ($p) => str_contains($p, $needle),
+            ));
+            if (empty($candidates)) continue;
+            usort($candidates, fn ($a, $b) => strcmp($b, $a));
+            $path = $candidates[0];
+
+            $url = file_url($path);
+            $out[] = [
+                'zoho_document_id' => $zohoDocIds[$i] ?? null,
+                'document_name'    => $rawName,
+                'path'             => $path,
+                'url'              => $url,
+                'file_url'         => $url,
+            ];
+        }
+
+        return $out;
     }
 }

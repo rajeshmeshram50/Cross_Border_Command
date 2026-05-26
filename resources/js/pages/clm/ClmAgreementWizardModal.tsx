@@ -1,9 +1,53 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useEditor, EditorContent, Editor } from '@tiptap/react';
+import { useEditor, EditorContent, Editor, Mark, mergeAttributes } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
+import TextStyle from '@tiptap/extension-text-style';
+import Color from '@tiptap/extension-color';
+import Highlight from '@tiptap/extension-highlight';
+import Link from '@tiptap/extension-link';
+import Subscript from '@tiptap/extension-subscript';
+import Superscript from '@tiptap/extension-superscript';
+
+/**
+ * Custom FontSize mark — TipTap ships no first-party font-size extension,
+ * but the Trade Document editor has one in its toolbar (size 1–7), so to
+ * match parity we add a tiny mark that emits `<span style="font-size:Npt">`.
+ * Lives in this file because it's a one-line semantic addition; promoting
+ * it to a shared util would just be churn.
+ */
+const FontSize = Mark.create({
+  name: 'fontSize',
+  addAttributes() {
+    return {
+      size: {
+        default: null,
+        parseHTML: (el) => el.style.fontSize?.replace(/['"]/g, '') || null,
+        renderHTML: (attrs) => (attrs.size ? { style: `font-size: ${attrs.size}` } : {}),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ style: 'font-size' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', mergeAttributes(HTMLAttributes), 0];
+  },
+  addCommands() {
+    return {
+      setFontSize:
+        (size: string) =>
+        ({ commands }: any) =>
+          commands.setMark(this.name, { size }),
+      unsetFontSize:
+        () =>
+        ({ commands }: any) =>
+          commands.unsetMark(this.name),
+    } as any;
+  },
+});
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
