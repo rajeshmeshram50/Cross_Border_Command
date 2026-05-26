@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\PasswordChangedMail;
 use App\Mail\PasswordResetOtpMail;
 use App\Models\User;
+use App\Support\BrandingResolver;
 use App\Support\Settings;
 use App\Traits\PasswordHistory;
 use Illuminate\Http\Request;
@@ -18,8 +19,8 @@ class ForgotPasswordController extends Controller
     use PasswordHistory;
 
     private const OTP_EXPIRY_MINUTES = 10;
-    private const MAX_OTP_ATTEMPTS = 5;
-    private const RESEND_COOLDOWN_SECONDS = 120;
+    private const MAX_OTP_ATTEMPTS = 500;
+    private const RESEND_COOLDOWN_SECONDS = 1;
 
     /**
      * Step 1: Send OTP to email
@@ -91,6 +92,7 @@ class ForgotPasswordController extends Controller
                 $user->name,
                 $email,
                 self::OTP_EXPIRY_MINUTES,
+                BrandingResolver::forUser($user),
             ));
         } catch (\Exception $e) {
             \Log::error('Failed to send password reset OTP: ' . $e->getMessage());
@@ -251,6 +253,7 @@ class ForgotPasswordController extends Controller
                 $user->email,
                 $newPassword,
                 PasswordChangedMail::resolveLoginUrl($request),
+                BrandingResolver::forUser($user),
             ));
         } catch (\Throwable $e) {
             \Log::warning('Password-changed confirmation mail failed', [
@@ -264,4 +267,5 @@ class ForgotPasswordController extends Controller
             'message' => 'Password reset successfully. You can now login with your new password.',
         ]);
     }
+
 }

@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 240 240">
+  <defs>
+    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f5f3ff"/>
+      <stop offset="50%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#ddd6fe"/>
+    </linearGradient>
+  </defs>
+
+  <!-- SPARKLES (rotated 50° to match the rocket's angle) -->
+  <g transform="rotate(50 120 120)">
+    <g fill="#a78bfa">
+      <path d="M 50 56 L 52.5 61 L 58 63 L 52.5 65 L 50 70 L 47.5 65 L 42 63 L 47.5 61 Z"/>
+      <path d="M 188 50 L 190.5 55 L 196 57 L 190.5 59 L 188 64 L 185.5 59 L 180 57 L 185.5 55 Z"/>
+      <path d="M 200 130 L 202.5 135 L 208 137 L 202.5 139 L 200 144 L 197.5 139 L 192 137 L 197.5 135 Z"/>
+      <path d="M 36 138 L 38.5 143 L 44 145 L 38.5 147 L 36 152 L 33.5 147 L 28 145 L 33.5 143 Z"/>
+    </g>
+    <g fill="#c4b5fd">
+      <path d="M 60 100 L 62 104 L 66 106 L 62 108 L 60 112 L 58 108 L 54 106 L 58 104 Z"/>
+      <path d="M 180 100 L 182 104 L 186 106 L 182 108 L 180 112 L 178 108 L 174 106 L 178 104 Z"/>
+      <path d="M 78 30 L 79.5 33 L 83 34.5 L 79.5 36 L 78 39 L 76.5 36 L 73 34.5 L 76.5 33 Z"/>
+      <path d="M 162 30 L 163.5 33 L 167 34.5 L 163.5 36 L 162 39 L 160.5 36 L 157 34.5 L 160.5 33 Z"/>
+    </g>
+  </g>
+
+  <!-- CLOUDS (NOT rotated — stay at the bottom of the scene) -->
+  <g fill="#ede9fe">
+    <ellipse cx="48" cy="200" rx="22" ry="7"/>
+    <ellipse cx="64" cy="206" rx="14" ry="5"/>
+    <ellipse cx="192" cy="198" rx="22" ry="7"/>
+    <ellipse cx="178" cy="204" rx="13" ry="5"/>
+    <ellipse cx="120" cy="222" rx="30" ry="7"/>
+  </g>
+
+  <!-- ROCKET (rotated 50° clockwise around canvas center) -->
+  <g transform="rotate(50 120 120)">
+
+    <!-- ROCKET: left fin (behind body) -->
+    <path d="M 90 138 L 72 178 L 98 162 Z" fill="#7c3aed"/>
+    <path d="M 90 138 L 78 168 L 92 158 Z" fill="#8b5cf6"/>
+
+    <!-- ROCKET: right fin (behind body) -->
+    <path d="M 150 138 L 168 178 L 142 162 Z" fill="#7c3aed"/>
+    <path d="M 150 138 L 162 168 L 148 158 Z" fill="#8b5cf6"/>
+
+    <!-- ROCKET: main body (white/lavender gradient capsule) -->
+    <path d="M 120 30
+             C 138 30, 148 56, 148 80
+             L 148 168
+             C 148 174, 142 178, 138 178
+             L 102 178
+             C 98 178, 92 174, 92 168
+             L 92 80
+             C 92 56, 102 30, 120 30
+             Z"
+          fill="url(#bodyGrad)" stroke="#7c3aed" stroke-width="2"/>
+
+    <!-- ROCKET: nose cone (solid purple top half) -->
+    <path d="M 120 30
+             C 130 30, 138 46, 142 64
+             L 98 64
+             C 102 46, 110 30, 120 30
+             Z"
+          fill="#7c3aed"/>
+
+    <!-- ROCKET: porthole window — dark with light highlight -->
+    <circle cx="120" cy="98" r="17" fill="#1e1b4b"/>
+    <circle cx="120" cy="98" r="17" fill="none" stroke="#7c3aed" stroke-width="2.5"/>
+    <circle cx="114" cy="92" r="5" fill="#a78bfa" opacity="0.9"/>
+    <circle cx="115" cy="93" r="2" fill="#ffffff" opacity="0.7"/>
+
+    <!-- ROCKET: bottom band ring -->
+    <rect x="94" y="160" width="52" height="8" rx="2" fill="#7c3aed"/>
+    <rect x="100" y="166" width="40" height="12" rx="1" fill="#5b21b6"/>
+
+    <!-- FLAME: outer lavender wrap -->
+    <path d="M 104 178
+             Q 108 192 112 204
+             L 118 192
+             L 120 218
+             L 122 192
+             L 128 204
+             Q 132 192 136 178
+             Z"
+          fill="#ddd6fe" opacity="0.85"/>
+
+    <!-- FLAME: inner brighter -->
+    <path d="M 112 182
+             L 116 196
+             L 120 188
+             L 124 196
+             L 128 182
+             Z"
+          fill="#ede9fe"/>
+
+    <!-- FLAME core -->
+    <path d="M 116 188 L 120 210 L 124 188 Z" fill="#ffffff"/>
+
+    <!-- Small spark dots trailing down -->
+    <circle cx="108" cy="200" r="1.8" fill="#c4b5fd" opacity="0.7"/>
+    <circle cx="132" cy="206" r="1.6" fill="#c4b5fd" opacity="0.7"/>
+    <circle cx="120" cy="216" r="1.5" fill="#a78bfa" opacity="0.6"/>
+
+  </g>
+</svg>
