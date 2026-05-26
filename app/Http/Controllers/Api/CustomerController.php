@@ -73,10 +73,35 @@ class CustomerController extends Controller
             });
         }
 
-        // Tab filter (fresh / recurring) is a frontend bucketing concept
-        // — keep it on the response for now but don't filter rows so the
-        // list keeps working until "consignees" linkage lands.
+        /* Tab filter — buckets the list by whether the customer has at
+         * least one lead pointing at them (leads.customer_id):
+         *   - `recurring` → customer has been linked to ≥ 1 lead in the
+         *     Sales Matrix (the "we've worked with them before" bucket).
+         *   - `fresh`     → customer has NO leads yet (newly added but
+         *     not yet engaged via the opp pipeline).
+         * Defaults to `fresh` to match the frontend's initial tab state.
+         *
+         * Implemented via a sub-select EXISTS so we don't need to add a
+         * `leads()` HasMany relation on Customer (keeps the model lean).
+         * Soft-deleted leads are excluded — a deleted lead doesn't keep
+         * the customer in the recurring bucket. */
         $tab = $request->query('tab', 'fresh');
+        if ($tab === 'recurring') {
+            $q->whereExists(function ($w) {
+                $w->select(\DB::raw(1))
+                    ->from('leads')
+                    ->whereColumn('leads.customer_id', 'customers.id')
+                    ->whereNull('leads.deleted_at');
+            });
+        } elseif ($tab === 'fresh') {
+            $q->whereNotExists(function ($w) {
+                $w->select(\DB::raw(1))
+                    ->from('leads')
+                    ->whereColumn('leads.customer_id', 'customers.id')
+                    ->whereNull('leads.deleted_at');
+            });
+        }
+        // 'all' or anything else → no tab filter
 
         /* Optional server-side pagination — kicks in when the client
          * sends `?page` or `?per_page`. Defaults preserve the legacy

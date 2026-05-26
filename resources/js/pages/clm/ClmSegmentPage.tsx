@@ -120,12 +120,15 @@ export default function ClmSegmentPage() {
               <span className="clm-tab-dot" style={{ background: '#0d9488', boxShadow: '0 0 5px rgba(13,148,136,.5)' }} />
               Less Regulated <span className="clm-tab-count">{counts.less}</span>
             </button>
-            <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
               <div className="clm-search">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                 <input type="text" placeholder="Search segments…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
               </div>
-            </div>
+              <div className="clm-total">
+            <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
+            <div className="clm-total-lbl">Total Segments</div>
+            <div className="clm-total-num">{2}</div>
+          </div>
           </div>
 
           <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>

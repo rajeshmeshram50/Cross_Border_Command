@@ -277,6 +277,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/clm/agreement-library',      [ClmAgreementController::class, 'libraryStore']);
     Route::put   ('/clm/agreement-library/{id}', [ClmAgreementController::class, 'libraryUpdate']);
     Route::delete('/clm/agreement-library/{id}', [ClmAgreementController::class, 'libraryDestroy']);
+    Route::get   ('/clm/agreement-library/{id}/download',    [ClmAgreementController::class, 'downloadDocx'])->whereNumber('id');
+    Route::post  ('/clm/agreement-library/{id}/upload-docx', [ClmAgreementController::class, 'uploadDocx'])->whereNumber('id');
+    Route::post  ('/clm/agreement-library/upload-header-logo', [ClmAgreementController::class, 'uploadHeaderLogo']);
+    Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
+    Route::post  ('/clm/signature-requests/agreement-preview',   [ClmSignatureController::class, 'agreementPreview']);
+    Route::post  ('/clm/signature-requests/agreement-send',      [ClmSignatureController::class, 'agreementSend']);
 
     // Central CLM → Clause Library (two tabs: types + library).
     Route::get   ('/clm/clause-types',      [ClmClauseController::class, 'typesIndex']);

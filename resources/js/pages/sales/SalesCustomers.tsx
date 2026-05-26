@@ -965,10 +965,74 @@ const SCOPED_CSS = `
   color: #c4b5fd;
   border-color: var(--vz-border-color);
 }
-[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item.active .page-link {
-  background: linear-gradient(135deg,#6d28d9,#4c1d95);
-  border-color: #7c3aed;
-  color: #fff;
+/* Active page — force purple in both modes. The TableContainer
+   sets backgroundColor / borderColor via an INLINE style that
+   resolves to var(--vz-secondary) (which is red in dark mode), so
+   we need !important to beat it. */
+.smc-table-wrap .pagination .page-item.active .page-link,
+.smc-table-wrap .pagination .page-link.active {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9) !important;
+  border-color: #7c3aed !important;
+  color: #fff !important;
+  box-shadow: 0 2px 6px rgba(109,40,217,.25);
+}
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item.active .page-link,
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-link.active {
+  background: linear-gradient(135deg, #6d28d9, #4c1d95) !important;
+  border-color: #7c3aed !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(124,58,237,.35);
+}
+
+/* Pagination arrows (prev / next) — distinct from the numbered
+   buttons. Light: soft lavender wash, purple chevron. Dark: a
+   raised slate tile with a clear lavender chevron so the arrow
+   reads as an action button instead of a black square. */
+.smc-table-wrap .pagination .page-item:first-child .page-link,
+.smc-table-wrap .pagination .page-item:last-child .page-link {
+  background: #f5f1ff;
+  border-color: #d8ccff;
+  color: #6d28d9;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+}
+.smc-table-wrap .pagination .page-item:first-child .page-link i,
+.smc-table-wrap .pagination .page-item:last-child .page-link i {
+  font-size: 16px;
+  line-height: 1;
+}
+.smc-table-wrap .pagination .page-item:first-child:not(.disabled) .page-link:hover,
+.smc-table-wrap .pagination .page-item:last-child:not(.disabled) .page-link:hover {
+  background: #ede4ff;
+  border-color: #c4b5fd;
+  color: #5b21b6;
+}
+.smc-table-wrap .pagination .page-item.disabled:first-child .page-link,
+.smc-table-wrap .pagination .page-item.disabled:last-child .page-link {
+  background: #fafafa;
+  border-color: #ececec;
+  color: #cbd5e1;
+}
+
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item:first-child .page-link,
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item:last-child .page-link {
+  background: rgba(124,58,237,0.14);
+  border-color: rgba(167,139,250,0.35);
+  color: #d8b4fe;
+}
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item:first-child:not(.disabled) .page-link:hover,
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item:last-child:not(.disabled) .page-link:hover {
+  background: rgba(124,58,237,0.28);
+  border-color: rgba(167,139,250,0.55);
+  color: #ede9fe;
+}
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item.disabled:first-child .page-link,
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item.disabled:last-child .page-link {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.28);
 }
 /* Action button tiles in dark mode — lavender border/icon on a
    slate background so they pop against the dark row. Inline styles

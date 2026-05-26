@@ -96,6 +96,12 @@ type PI = {
   createdById?: number | null;
   creatorUserType?: string;
   creatorBranchIsMain?: boolean;
+  // True when the source opportunity has reached Stage 6 (Victory
+  // Stage) — i.e. shipment is considered complete. Drives the
+  // With Shipment vs Without Shipment tab split. PIs whose
+  // opportunity hasn't won yet stay in Without-Shipment until the
+  // deal closes upstream.
+  victoryReached?: boolean;
 };
 
 const ROWS_PER_PAGE = 10;
@@ -545,6 +551,14 @@ export default function SalesQPI() {
           createdById: r.created_by ?? r.creator?.id ?? null,
           creatorUserType:     r.creator_user_type ?? r.creator?.user_type ?? '',
           creatorBranchIsMain: Boolean(r.creator_branch_is_main),
+          // Server-computed: opportunity reached Stage 6 (Victory).
+          // Fallback to checking the eager-loaded lead.lead_stage_id /
+          // lead.won_at directly so an older API response that doesn't
+          // ship the flag yet still bucketizes correctly.
+          victoryReached: Boolean(
+            r.victory_reached
+            ?? ((Number(r.lead?.lead_stage_id ?? 0) >= 6) || !!r.lead?.won_at)
+          ),
           // Stash pi_type on the row so the sub-tab filter can split it.
           // Cast to any so we don't have to widen the public PI type.
           ...(r.pi_type ? { _piType: r.pi_type } : {}),
@@ -556,13 +570,18 @@ export default function SalesQPI() {
   };
   useEffect(() => { reloadPis(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Split the single PI list into With/Without buckets via pi_type.
+  // Split the single PI list into With/Without buckets by the
+  // opportunity's stage progress. A PI lands in "With Shipment" only
+  // when its source opportunity has reached Stage 6 (Victory Stage) —
+  // i.e. all six stages of the Sales Matrix are complete. Anything
+  // still working through Stage 1–5 stays in "Without Shipment" until
+  // the deal closes upstream.
   const piWithShipment = useMemo(
-    () => pis.filter((r: any) => (r._piType ?? 'with_shipment') === 'with_shipment'),
+    () => pis.filter(r => r.victoryReached === true),
     [pis],
   );
   const piWithoutShipment = useMemo(
-    () => pis.filter((r: any) => r._piType === 'without_shipment'),
+    () => pis.filter(r => r.victoryReached !== true),
     [pis],
   );
 
@@ -2946,7 +2965,9 @@ function ProductsStep(props: {
                   <td>{c.rateWithTax.toFixed(2)}</td>
                   <td className="qpi-amt">{c.amount.toFixed(2)}</td>
                   <td>
-                    <button className="qpi-prod-remove" onClick={() => removeProduct(p.id)} aria-label="Remove product"><IconTrash /></button>
+                    <Tooltip label="Remove product">
+                      <button className="qpi-prod-remove" onClick={() => removeProduct(p.id)} aria-label="Remove product"><IconTrash /></button>
+                    </Tooltip>
                   </td>
                 </tr>
               );
@@ -4068,14 +4089,54 @@ const SCOPED_CSS = `
 }
 .qpi-product-warn-icon { color: #dc2626; display: inline-flex; }
 
-/* Products table */
-.qpi-products-wrap { overflow-x: auto; margin-bottom: 18px; }
+/* Products table — caps at ~5 product rows + header + input row,
+   anything beyond that scrolls vertically inside the wrap so the
+   modal footer stays on-screen. Horizontal scroll still kicks in
+   when the table's min-width exceeds the modal width. */
+.qpi-products-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  /* 36px header + 5 × ~42px product rows + ~52px input row ≈ 298px.
+     Bumped to 320 to give a small breathing margin so the input
+     row isn't right against the scroll edge. */
+  max-height: 320px;
+  margin-bottom: 18px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.qpi-products-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
+.qpi-products-wrap::-webkit-scrollbar-thumb {
+  background: rgba(124,58,237,.35); border-radius: 999px;
+}
+.qpi-products-wrap::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.55); }
 .qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 800px; }
 .qpi-products-table thead tr { background: linear-gradient(90deg, #312e81, #4c1d95); }
-.qpi-products-table thead th { color: #fff; font-size: 9.5px; font-weight: 800; padding: 11px 12px; text-transform: uppercase; letter-spacing: .06em; text-align: left; }
+/* Sticky header — keep column labels visible while rows scroll.
+   position:sticky needs an OWN background on the <th> (the <tr>'s
+   gradient doesn't follow a positioned cell), so we paint the
+   gradient directly here. z-index 5 keeps it above the input row's
+   sticky background below. */
+.qpi-products-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: linear-gradient(90deg, #312e81, #4c1d95);
+  color: #fff; font-size: 9.5px; font-weight: 800;
+  padding: 11px 12px;
+  text-transform: uppercase; letter-spacing: .06em; text-align: left;
+}
 .qpi-products-table tbody td { padding: 10px 12px; border-bottom: 1px solid #f1f0fc; vertical-align: middle; color: #475569; }
 .qpi-products-table tbody tr:last-child td { border-bottom: none; }
-.qpi-products-input-row td { background: #faf5ff; }
+/* Add-product row stays anchored to the bottom of the scroll wrap
+   so the "+ Add" button is always reachable without scrolling
+   through every existing line. */
+.qpi-products-input-row td {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  background: #faf5ff;
+  box-shadow: inset 0 1px 0 0 #ede9fe;
+}
 .qpi-amt { font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; }
 .qpi-prod-remove {
   width: 30px; height: 30px; border-radius: 8px;
@@ -4500,7 +4561,23 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-products-table tbody td {
   border-bottom-color: rgba(167,139,250,.15); color: #d4d1de;
 }
-[data-bs-theme="dark"] .qpi-products-input-row td { background: rgba(124,58,237,.12); }
+/* Sticky thead in dark mode — needs its own opaque background so
+   scrolling rows don't show through. Slightly deeper purple
+   gradient so the strip still feels like a header band against
+   the modal's dark canvas. */
+[data-bs-theme="dark"] .qpi-products-table thead th {
+  background: linear-gradient(90deg, #1e1b4b, #312e81);
+}
+[data-bs-theme="dark"] .qpi-products-input-row td {
+  background: #1c1538;
+  box-shadow: inset 0 1px 0 0 rgba(167,139,250,.25);
+}
+[data-bs-theme="dark"] .qpi-products-wrap::-webkit-scrollbar-thumb {
+  background: rgba(167,139,250,.35);
+}
+[data-bs-theme="dark"] .qpi-products-wrap::-webkit-scrollbar-thumb:hover {
+  background: rgba(167,139,250,.55);
+}
 [data-bs-theme="dark"] .qpi-amt { color: #f1f5f9; }
 [data-bs-theme="dark"] .qpi-prod-remove {
   background: rgba(220,38,38,.18); border-color: rgba(239,68,68,.40); color: #fca5a5;

@@ -22,6 +22,7 @@ import TaskManagerPanel, { type TaskManagerRow } from './TaskManagerPanel';
 import WhatsAppStatusModal from './WhatsAppStatusModal';
 import RemindersListModal from './RemindersListModal';
 import MeetingsListModal from './MeetingsListModal';
+import LeadAgreementSendModal, { type ApplicablePayload as AgreementApplicablePayload } from './LeadAgreementSendModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Opportunity Detail
@@ -145,6 +146,14 @@ export default function SalesMatrixDetail() {
   const [remindersOpen, setRemindersOpen] = useState(false);
   const [meetingsOpen, setMeetingsOpen] = useState(false);
   const [ownerOpts, setOwnerOpts] = useState<Array<{ value: string; label: string }>>([]);
+
+  /* Agreement send-for-signature popup. Powered by
+   * GET /api/clm/leads/{leadId}/agreement-applicable — fetched once
+   * per lead so the Segment Details card can show real counts and
+   * the popup opens instantly on row click. */
+  const [agreementApplicable, setAgreementApplicable] = useState<AgreementApplicablePayload | null>(null);
+  const [agreementModalOpen, setAgreementModalOpen] = useState(false);
+  const [agreementModalTier, setAgreementModalTier] = useState<'highly' | 'less'>('highly');
 
   /* Side-rail collapsing — clicking the chevron in either side card collapses
    * it to a thin vertical rail so the stage form gets more breathing room.
@@ -424,6 +433,22 @@ export default function SalesMatrixDetail() {
       .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
     return () => { cancelled = true; };
   }, [serverHeader.consigneeId, clmRefreshTick]);
+
+  /* Applicable agreements for this lead → drives the Segment Details
+   * card counts + powers LeadAgreementSendModal. Refetched on
+   * clmRefreshTick so a successful Send / Recall in the modal can
+   * trigger a refresh that ripples back into the card. */
+  useEffect(() => {
+    if (!resolvedLeadId) { setAgreementApplicable(null); return; }
+    let cancelled = false;
+    api.get(`/clm/leads/${resolvedLeadId}/agreement-applicable`, { timeout: 8000 })
+      .then(res => {
+        if (cancelled) return;
+        setAgreementApplicable((res.data?.data ?? null) as AgreementApplicablePayload | null);
+      })
+      .catch(() => { if (!cancelled) setAgreementApplicable(null); });
+    return () => { cancelled = true; };
+  }, [resolvedLeadId, clmRefreshTick]);
 
   /* "Marked as key" is sourced live from the server (leads.key_opportunity)
    * so it survives navigation / refresh. Toggling fires a PUT and the
@@ -814,20 +839,42 @@ export default function SalesMatrixDetail() {
               </div>
             </div>
 
-            <ClmRow
-              icon={<IconShieldSm />}
-              tone="rose"
-              title="Highly Regulated Segments"
-              sub="3 of 6 segments"
-              progress={50}
-            />
-            <ClmRow
-              icon={<IconShieldSm />}
-              tone="orange"
-              title="Less Regulated Segments"
-              sub="7 of 10 segments"
-              progress={70}
-            />
+            {/* Agreement send is unlocked when a Proforma Invoice has
+                been mapped to the lead — without a PI we don't know
+                which products (and therefore which segments) apply, so
+                the segment rows would have nothing to filter on. While
+                no PI is mapped we show the same dashed empty-state
+                pattern the KYC/DD group uses above; once a PI exists
+                the two regulatory rows render with live counts and the
+                row click opens the agreement send modal. */}
+            {agreementApplicable?.pi ? (
+              <>
+                <ClmRow
+                  icon={<IconShieldSm />}
+                  tone="rose"
+                  title="Highly Regulated Segments"
+                  sub={`${agreementApplicable.totals.highly.matched} of ${agreementApplicable.totals.highly.total} segments`}
+                  progress={agreementApplicable.totals.highly.total > 0
+                    ? Math.round((agreementApplicable.totals.highly.matched / agreementApplicable.totals.highly.total) * 100)
+                    : 0}
+                  onClick={() => { setAgreementModalTier('highly'); setAgreementModalOpen(true); }}
+                />
+                <ClmRow
+                  icon={<IconShieldSm />}
+                  tone="orange"
+                  title="Less Regulated Segments"
+                  sub={`${agreementApplicable.totals.less.matched} of ${agreementApplicable.totals.less.total} segments`}
+                  progress={agreementApplicable.totals.less.total > 0
+                    ? Math.round((agreementApplicable.totals.less.matched / agreementApplicable.totals.less.total) * 100)
+                    : 0}
+                  onClick={() => { setAgreementModalTier('less'); setAgreementModalOpen(true); }}
+                />
+              </>
+            ) : (
+              <div className="smd-clm-empty">
+                Map a Proforma Invoice to this lead to fetch segment-applicable agreements here.
+              </div>
+            )}
           </div>
         </aside>
         )}
@@ -1145,6 +1192,20 @@ export default function SalesMatrixDetail() {
           ?? undefined
         }
         onClose={() => setMeetingsOpen(false)}
+      />
+
+      {/* ── Lead-scoped agreement send-for-signature popup ──
+          Opened from the left CLM card's "Highly / Less Regulated
+          Segments" rows. Pre-loaded payload is passed through so the
+          modal renders instantly; the modal also re-fetches after
+          each Send so the row status badges stay live. */}
+      <LeadAgreementSendModal
+        open={agreementModalOpen}
+        leadId={resolvedLeadId}
+        tier={agreementModalTier}
+        data={agreementApplicable}
+        onClose={() => setAgreementModalOpen(false)}
+        onSent={() => setClmRefreshTick(t => t + 1)}
       />
 
       {/* ── Key Opportunity confirm popup ──

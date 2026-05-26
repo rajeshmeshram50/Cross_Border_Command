@@ -16,7 +16,7 @@ type AgrLib = {
   regulatory: 'highly'|'less'; signing: boolean; segment: string | null;
   agr_status: string; content: string | null;
 };
-type Seg = { id: number; code: string; name: string };
+type Seg = { id: number; code: string; name: string; regulatory_status: 'highly' | 'less' };
 
 export default function ClmAgreementsPage() {
   const toast = useToast();
@@ -206,13 +206,27 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
   };
 
-  // Real segments from /clm/segments unioned with anything historically saved
-  // on existing rows so older data still surfaces if the master was edited.
+  /* Real segments from /clm/segments, kept as objects so the wizard
+   * can filter by regulatory tier (high-reg shows only highly-regulated
+   * segments + single-select; less-reg shows only less-regulated +
+   * multi-select). Names that exist on saved agreement rows but no
+   * longer in the segment master are merged in with an 'unknown'
+   * regulatory tier so legacy data still surfaces in the dropdown. */
   const knownSegments = useMemo(() => {
-    const set = new Set<string>();
-    segs.forEach(s => { if (s.name) set.add(s.name); });
-    rows.forEach(r => { if (r.segment) set.add(r.segment); });
-    return Array.from(set);
+    const byName = new Map<string, { name: string; regulatory_status: 'highly' | 'less' }>();
+    segs.forEach(s => { if (s.name) byName.set(s.name, { name: s.name, regulatory_status: s.regulatory_status }); });
+    rows.forEach(r => {
+      if (!r.segment) return;
+      // r.segment may be a CSV ("Tobacco, Rice") on multi-segment less-reg
+      // agreements — split and add each individually so the wizard's
+      // single-name selector still finds them.
+      r.segment.split(',').map(s => s.trim()).filter(Boolean).forEach(name => {
+        if (!byName.has(name)) {
+          byName.set(name, { name, regulatory_status: r.regulatory ?? 'less' });
+        }
+      });
+    });
+    return Array.from(byName.values());
   }, [rows, segs]);
 
   // Download the agreement's content as an .html file (Word opens .html

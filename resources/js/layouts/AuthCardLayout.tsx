@@ -125,7 +125,6 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
               }
               .cbc-w3 {
                 font-weight: 900;
-                font-style: italic;
                 background: linear-gradient(120deg,
                   #ffffff 0%,
                   #d8dcff 35%,
@@ -160,21 +159,10 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
 
 
             <p className="text-base text-white/70 font-medium leading-relaxed max-w-md">
-              An intelligent platform connecting Operations, Procurement, Logistics, Finance, and Compliance in one unified ecosystem.
+              An intelligent platform connecting Operations, Procurement, Logistics, Finance and Compliance in one unified ecosystem.
             </p>
 
-            <div className="mt-8 flex items-center gap-6">
-              {[
-                { label: 'Latency', value: '<14ms' },
-                { label: 'Availability', value: '99.9%' },
-                { label: 'Security', value: 'SOC-2' },
-              ].map((item) => (
-                <div key={item.label} className="flex flex-col hover-lift p-2 rounded-lg hover:bg-white/5 transition-all">
-                  <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-white/40">{item.label}</span>
-                  <span className="text-sm font-bold text-white">{item.value}</span>
-                </div>
-              ))}
-            </div>
+            
           </div>
 
           <div className="flex flex-col gap-4">

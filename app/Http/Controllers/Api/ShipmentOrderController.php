@@ -53,9 +53,11 @@ class ShipmentOrderController extends Controller
             'port_of_loading'     => 'required|string|max:128',
             'port_of_unloading'   => 'nullable|string|max:128',
             'final_destination'   => 'nullable|string|max:128',
-            // B16: origin_country must be an ISO-3166 alpha-2 code (2 caps).
-            // Free-text 64 chars was unparseable by downstream carriers.
-            'origin_country'      => 'nullable|string|size:2|regex:/^[A-Z]{2}$/',
+            // origin_country accepts either a full name (e.g. "India") or
+            // an ISO code — the field is free-text on the frontend so the
+            // strict ISO-2 rule blocked perfectly valid input. Carriers
+            // receive a downstream normalisation step elsewhere.
+            'origin_country'      => 'nullable|string|max:64',
             'attachments'         => 'nullable|array',
             'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:5120',
             'remarks'             => 'nullable|string|max:2000',
@@ -188,7 +190,7 @@ class ShipmentOrderController extends Controller
             'port_of_loading'     => 'sometimes|required|string|max:128',
             'port_of_unloading'   => 'nullable|string|max:128',
             'final_destination'   => 'nullable|string|max:128',
-            'origin_country'      => 'nullable|string|size:2|regex:/^[A-Z]{2}$/',
+            'origin_country'      => 'nullable|string|max:64',
             'attachments'         => 'nullable|array',
             'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:5120',
             'remarks'             => 'nullable|string|max:2000',

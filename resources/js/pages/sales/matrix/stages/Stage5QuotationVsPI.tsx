@@ -34,11 +34,15 @@ type QuotationRow = {
   opp_code:       string | null;
   customer:       { id: number; customer_code: string | null; company_name: string | null } | null;
   consignee:      { id: number; consignee_code: string | null; company_name: string | null } | null;
-  document_type:  string | null;
+  /* G1: backend column is `doc_type` not `document_type` — earlier
+   *  shape always rendered "—" in the Doc Type column. */
+  doc_type:       string | null;
   currency:       string | null;
   grand_total:    number | string | null;
   status:         string | null;
   created_at:     string;
+  /* G8: included so "Latest" reflects edits, not just inserts. */
+  updated_at?:    string;
 };
 
 type PIRow = {
@@ -49,11 +53,12 @@ type PIRow = {
   source_quotation_id:    number | null;
   customer:               { id: number; customer_code: string | null; company_name: string | null } | null;
   consignee:              { id: number; consignee_code: string | null; company_name: string | null } | null;
-  document_type:          string | null;
+  doc_type:               string | null;
   currency:               string | null;
   grand_total:            number | string | null;
   status:                 string | null;
   created_at:             string;
+  updated_at?:            string;
 };
 
 const fmtDate = (s: string | null): string => {
@@ -173,9 +178,13 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         `/sales/proforma-invoices/from-quotation/${q.id}`,
       );
       const code = data?.data?.code ?? 'PI';
-      toast.success('Converted to PI', `New proforma invoice ${code} created from ${q.code ?? 'this quotation'}.`);
-      setDocType('pi');
+      /* G4: refetch FIRST, then flip the tab. If we flip first the
+       *  user sees the PI tab momentarily empty before the new row
+       *  paints; refetch-then-switch lands them on the populated PI
+       *  list immediately. */
       await fetchAll(true);
+      setDocType('pi');
+      toast.success('Converted to PI', `New proforma invoice ${code} created from ${q.code ?? 'this quotation'}.`);
     } catch (e: any) {
       const msg = e?.response?.data?.message;
       // The PI controller blocks duplicate PIs per opportunity — surface
@@ -222,8 +231,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
       return;
     }
-    if (quotations.length === 0 && pis.length === 0) {
-      toast.warning('Create a quotation or PI first', 'Stage 5 needs at least one quotation or proforma invoice before advancing.');
+    /* G7: live = not-cancelled. A lead whose only quotations/PIs are
+     *  cancelled has nothing to advance with — the cancelled rows
+     *  represent rejected deals, not progress. */
+    if (liveQuotationsCount === 0 && livePisCount === 0) {
+      toast.warning('Create a quotation or PI first', 'Stage 5 needs at least one active quotation or proforma invoice before advancing.');
       return;
     }
     setAdvancing(true);
@@ -241,9 +253,55 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
   /* ── Derived ───────────────────────────────────────────────────── */
   const rows = docType === 'quotation' ? quotations : pis;
-  const totalValue = useMemo(
-    () => rows.reduce((acc, r) => acc + (Number(r.grand_total) || 0), 0),
-    [rows],
+
+  /* G6: previously each row checked `actingId === r.id` to disable
+   *  its own buttons only — so clicking on row 1 (action in flight)
+   *  then clicking on row 2 reassigned actingId to row 2, silently
+   *  re-enabling row 1's buttons mid-flight. Now a single page-wide
+   *  flag locks every action button while ANY row is in flight,
+   *  killing the race and matching the user expectation of "I just
+   *  clicked something, the page is busy". */
+  const anyActing = actingId !== null;
+
+  /* G2: group totals by currency so a mix of INR + USD doesn't get
+   *  summed under a single (and wrong) currency label. Result shape:
+   *  Map<currency, sum>. The render picks the unique currency when
+   *  exactly one is present, otherwise shows "Mixed". */
+  const totalsByCurrency = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      const n = Number(r.grand_total);
+      if (!Number.isFinite(n)) continue;
+      const ccy = (r.currency ?? '').toUpperCase() || '—';
+      map.set(ccy, (map.get(ccy) ?? 0) + n);
+    }
+    return map;
+  }, [rows]);
+
+  /* G8: "Latest" reflects the most recently TOUCHED row, not the
+   *  highest-id one. Falls back to created_at when updated_at is
+   *  missing (older rows pre-dating the API exposing updated_at). */
+  const latestTimestamp = useMemo(() => {
+    let best: string | null = null;
+    let bestMs = -Infinity;
+    for (const r of rows) {
+      const ts = r.updated_at ?? r.created_at;
+      const ms = ts ? new Date(ts).getTime() : NaN;
+      if (Number.isFinite(ms) && ms > bestMs) { bestMs = ms; best = ts; }
+    }
+    return best;
+  }, [rows]);
+
+  /* G7: Save & Next blocks when there's no LIVE (non-cancelled) doc
+   *  on the lead. Counting `length` alone let an all-cancelled lead
+   *  advance to Stage 6 with nothing of substance to show. */
+  const liveQuotationsCount = useMemo(
+    () => quotations.filter(q => (q.status ?? '').toLowerCase() !== 'cancelled').length,
+    [quotations],
+  );
+  const livePisCount = useMemo(
+    () => pis.filter(p => (p.status ?? '').toLowerCase() !== 'cancelled').length,
+    [pis],
   );
 
   return (
@@ -315,15 +373,29 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           </div>
           <div className="s5-summary-cell">
             <span className="s5-summary-label">Combined Value</span>
-            <span className="s5-summary-val">{loading ? <span className="smd-skel" style={{ maxWidth: 110 }} /> : (
-              rows.length > 0 ? fmtMoney(totalValue, rows[0]?.currency ?? null) : '—'
-            )}</span>
+            <span className="s5-summary-val">{loading ? <span className="smd-skel" style={{ maxWidth: 110 }} /> : (() => {
+              /* G2: when the rows share a single currency, render the
+               *  sum with that currency. When two or more currencies
+               *  are mixed, render each total on its own line + a
+               *  "Mixed" label so the user isn't misled by a single
+               *  number that adds INR + USD together. */
+              if (totalsByCurrency.size === 0) return '—';
+              if (totalsByCurrency.size === 1) {
+                const [ccy, sum] = totalsByCurrency.entries().next().value as [string, number];
+                return fmtMoney(sum, ccy);
+              }
+              return (
+                <span className="s5-summary-mixed" title="Multiple currencies in use — totals shown per currency">
+                  {Array.from(totalsByCurrency.entries()).map(([ccy, sum]) => (
+                    <span key={ccy} className="s5-summary-mixed-row">{fmtMoney(sum, ccy)}</span>
+                  ))}
+                </span>
+              );
+            })()}</span>
           </div>
           <div className="s5-summary-cell">
             <span className="s5-summary-label">Latest</span>
-            <span className="s5-summary-val">{loading ? <span className="smd-skel" style={{ maxWidth: 110 }} /> : (
-              rows.length > 0 ? fmtDate(rows[0].created_at) : '—'
-            )}</span>
+            <span className="s5-summary-val">{loading ? <span className="smd-skel" style={{ maxWidth: 110 }} /> : fmtDate(latestTimestamp)}</span>
           </div>
         </div>
 
@@ -388,16 +460,21 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                 )}
 
                 {!loading && rows.map((r, idx) => (
-                  <tr key={r.id}>
+                  <tr key={r.id} className={anyActing && actingId === r.id ? 's5-row-acting' : undefined}>
                     <td><span className="s5-sr">{idx + 1}</span></td>
                     <td>
+                      {/* G5: if the code is missing, show the row id as
+                       *  a stable fallback so the user knows what they
+                       *  would be editing. Button stays clickable since
+                       *  edit still works by id. */}
                       <button
                         type="button"
                         className="s5-code s5-code-link"
                         onClick={() => onEdit(docType, r.id)}
-                        title="Edit this document"
+                        title={r.code ? 'Edit this document' : `Edit document #${r.id} (no code assigned)`}
+                        disabled={anyActing}
                       >
-                        {r.code ?? '—'}
+                        {r.code ?? `#${r.id}`}
                       </button>
                     </td>
                     <td>{fmtDate(r.created_at)}</td>
@@ -407,7 +484,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                         {r.customer?.customer_code && <span className="s5-cust-code">{r.customer.customer_code}</span>}
                       </div>
                     </td>
-                    <td><span className="s5-doctype">{r.document_type ?? '—'}</span></td>
+                    <td><span className="s5-doctype">{r.doc_type ?? '—'}</span></td>
                     <td><span className="s5-ccy">{r.currency ?? '—'}</span></td>
                     <td className="s5-value">{fmtMoney(r.grand_total, r.currency)}</td>
                     <td><span className={`s5-status ${statusClass(r.status)}`}>{r.status ?? '—'}</span></td>
@@ -416,7 +493,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                         <button
                           type="button" className="s5-act-btn" title="View PDF"
                           onClick={() => void onViewPdf(docType, r.id)}
-                          disabled={actingId === r.id}
+                          disabled={anyActing}
                         >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
@@ -425,7 +502,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                         <button
                           type="button" className="s5-act-btn" title="Download PDF"
                           onClick={() => void onDownloadPdf(docType, r.id, r.code)}
-                          disabled={actingId === r.id}
+                          disabled={anyActing}
                         >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
@@ -434,18 +511,25 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                         <button
                           type="button" className="s5-act-btn" title="Email to customer"
                           onClick={() => void onEmail(docType, r.id, r.code)}
-                          disabled={actingId === r.id}
+                          disabled={anyActing}
                         >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                             <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
                             <polyline points="22,6 12,13 2,6"/>
                           </svg>
                         </button>
-                        {docType === 'quotation' && (
+                        {/* G3: hide Convert on terminal states. A
+                         *  `converted_to_pi` quote is already done; a
+                         *  `cancelled` quote can't be revived. Either
+                         *  click would trigger a server 409, so don't
+                         *  bait the user. */}
+                        {docType === 'quotation'
+                          && (r.status ?? '').toLowerCase() !== 'converted_to_pi'
+                          && (r.status ?? '').toLowerCase() !== 'cancelled' && (
                           <button
                             type="button" className="s5-act-btn s5-act-convert" title="Convert to PI"
                             onClick={() => void onConvertToPi(r as QuotationRow)}
-                            disabled={actingId === r.id}
+                            disabled={anyActing}
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                               <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
@@ -576,6 +660,11 @@ const STAGE5_CSS = `
 .s5-summary-cell:last-child { border-right: none; }
 .s5-summary-label { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; color: #0e7490; text-transform: uppercase; }
 .s5-summary-val { font-size: 16px; font-weight: 800; color: #155e75; min-height: 22px; display: inline-flex; align-items: center; }
+/* G2: stacked per-currency totals when the rows mix INR/USD/etc. */
+.s5-summary-mixed { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.s5-summary-mixed-row { font-size: 13px; font-weight: 800; color: #155e75; line-height: 1.2; }
+/* G6: row whose action is in flight gets a subtle highlight */
+.s5-row-acting { background: #f0fdfa; }
 
 /* ─── Card / table ─── */
 .s5-card {
