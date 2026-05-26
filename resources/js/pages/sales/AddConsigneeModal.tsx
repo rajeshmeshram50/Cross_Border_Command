@@ -204,6 +204,12 @@ interface Props {
    *  mirror per customer" guard — beats the /customers withCount
    *  which can lag behind during a session. */
   existingMirrorCount?: number;
+  /** Optional landing stage. When set (typically 2 for KYC or 3 for
+   *  Trade Docs/Evidence Vault), the modal opens on that stage instead
+   *  of Stage 1 — used by the CLM panel deep-link from the opportunity
+   *  detail page. Only respected in Edit mode (consignee present);
+   *  ignored on create. */
+  initialStage?: Stage;
 }
 
 type Phase = 'pick-customer' | 'wizard';
@@ -219,7 +225,7 @@ type VaultTab = 'kyc' | 'trade';
 type ConsigneeStageMemoryEntry = { stage: Stage; idTab: IdentityTab; kycSub: KycSubTab; vaultTab: VaultTab };
 const consigneeStageMemory = new Map<number, ConsigneeStageMemoryEntry>();
 
-export default function AddConsigneeModal({ open, consignee, onClose, onSaved, preselectedCustomerId, preselectedCustomerDbId, existingMirrorCount }: Props) {
+export default function AddConsigneeModal({ open, consignee, onClose, onSaved, preselectedCustomerId, preselectedCustomerDbId, existingMirrorCount, initialStage }: Props) {
   const toast = useToast();
 
   const [phase, setPhase]   = useState<Phase>('pick-customer');
@@ -482,7 +488,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * if they manually advance again. */
     const memKey = consignee?.db_id ?? null;
     const remembered = memKey ? consigneeStageMemory.get(memKey) : null;
-    setStage   (1);
+    /* Deep-link: when a consignee is present and the caller wants to
+     * land on Stage 2 (KYC) or Stage 3 (Trade Docs), honour it. Create
+     * mode always lands on Stage 1 — there's no identity to skip past
+     * yet. */
+    const landing: Stage = (consignee ? (initialStage ?? 1) : 1);
+    setStage   (landing);
     setIdTab   ('identification');
     setKycSub  (remembered?.kycSub   ?? 'company-dd');
     setVaultTab(remembered?.vaultTab ?? 'kyc');

@@ -152,10 +152,15 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
     setProcModalOpen(true);
   };
 
-  const onProcurementCreated = () => {
-    setSelectedIds(new Set());
+  const onProcurementCreated = async () => {
+    /* B25: clear selection AFTER the refetch resolves so a slow server
+     *  doesn't leave the table briefly showing stale "checked" rows
+     *  alongside a "Create Procurement" CTA that has already fired. The
+     *  silent reload still drives the table content; we just gate the
+     *  UI reset on its completion. */
     setProcModalRows([]);
-    void fetchRows(false); // silent reload — no table-wide skeleton flash
+    await fetchRows(false);
+    setSelectedIds(new Set());
   };
 
   /* ── Mark Sourced ────────────────────────────────────────────────── */
@@ -163,11 +168,23 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
     if (!leadId) return;
     setMarkingId(row.id);
     try {
-      await api.patch(`/sales/leads/${leadId}/products/${row.id}/mark-sourced`);
-      setRows(prev => prev.map(r => r.id === row.id ? { ...r, procurement_done: true } : r));
+      /* B26: trust the server's echo for `procurement_done` instead of
+       *  optimistically flipping to true. If the API actually rejected
+       *  the call (e.g., 409 idempotency from B24) but the catch branch
+       *  is swallowed, the optimistic update would have left the UI
+       *  permanently lying. Reading the response body keeps state in
+       *  lock-step with the DB. */
+      const res = await api.patch<{ data?: { procurement_done?: boolean } }>(
+        `/sales/leads/${leadId}/products/${row.id}/mark-sourced`,
+      );
+      const done = res.data?.data?.procurement_done === true;
+      setRows(prev => prev.map(r => r.id === row.id ? { ...r, procurement_done: done } : r));
       toast.success('Sourced', `"${row.product_name ?? 'Product'}" marked done`);
     } catch (e: any) {
       toast.error('Mark failed', e?.response?.data?.message ?? 'Could not mark as done');
+      /* On failure, refetch the row so the UI never lies. Cheap because
+       * fetchRows hits a single endpoint with a small payload. */
+      void fetchRows(false);
     } finally {
       setMarkingId(null);
     }

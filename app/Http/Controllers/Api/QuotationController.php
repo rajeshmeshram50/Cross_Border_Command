@@ -179,6 +179,28 @@ class QuotationController extends Controller
         }
 
         $data = $this->validatePayload($request);
+
+        /* B31: enforce status transition order. Without this any payload
+         * could regress an `approved` quote back to `draft`, or skip
+         * straight from `draft` to `converted_to_pi` without going
+         * through `sent` + `approved`. Allowed forward-edges only — a
+         * `cancelled` quote is terminal. */
+        if (array_key_exists('status', $data) && $data['status'] !== null && $data['status'] !== $row->status) {
+            static $allowed = [
+                Quotation::STATUS_DRAFT            => [Quotation::STATUS_SENT, Quotation::STATUS_CANCELLED],
+                Quotation::STATUS_SENT             => [Quotation::STATUS_APPROVED, Quotation::STATUS_CANCELLED],
+                Quotation::STATUS_APPROVED         => [Quotation::STATUS_CONVERTED_TO_PI, Quotation::STATUS_CANCELLED],
+                Quotation::STATUS_CONVERTED_TO_PI  => [],
+                Quotation::STATUS_CANCELLED        => [],
+            ];
+            $next = $allowed[$row->status] ?? [];
+            if (!in_array($data['status'], $next, true)) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => "Cannot move quotation from '{$row->status}' to '{$data['status']}'.",
+                ], 422);
+            }
+        }
         $items = $this->prepareItems($data['items']);
         $totals = $this->aggregateTotals($items, (float) ($data['shipping'] ?? 0));
 
@@ -344,9 +366,15 @@ class QuotationController extends Controller
             'items.*.product_id'   => 'nullable|integer',
             'items.*.product_name' => 'required|string|max:255',
             'items.*.hsn_code'     => 'nullable|string|max:16',
-            'items.*.quantity'     => 'required|numeric|min:0.0001',
+            // B13: 0.0001 lower bound rounds away to 0 at decimal:4 cast,
+            // creating an "empty" line that still inflates the line count.
+            // 0.01 is the smallest sensible business quantity (1 paisa /
+            // 1 cent of a unit) and survives the cast.
+            'items.*.quantity'     => 'required|numeric|min:0.01',
             'items.*.unit'         => 'nullable|string|max:16',
-            'items.*.rate'         => 'required|numeric|min:0',
+            // B12 sibling: quote rate of zero would render "₹ 0.00 / unit"
+            // to the customer. gt:0 mirrors the shared-price fix.
+            'items.*.rate'         => 'required|numeric|gt:0',
             'items.*.tax_pct'      => 'nullable|numeric|min:0|max:100',
         ];
 
@@ -389,16 +417,28 @@ class QuotationController extends Controller
         }, $items);
     }
 
-    /** Sum prepared item amounts + add shipping. */
+    /** Sum prepared item amounts + add shipping.
+     *
+     *  B35: each item's stored `amount` is already rounded to 2dp in
+     *  computeAmount() — those rounded numbers go into the line table
+     *  so the customer sees them. But for the grand_total we re-derive
+     *  the EXACT (unrounded) sum from qty*rate*(1+tax/100) here so a
+     *  spread of `*.005` line subtotals doesn't accumulate banker's-
+     *  rounding error in the header. Round once at the very end. */
     private function aggregateTotals(array $items, float $shipping): array
     {
-        $sub = 0.0;
-        foreach ($items as $it) $sub += (float) $it['amount'];
-        $grand = $sub + $shipping;
+        $rawSub = 0.0;
+        foreach ($items as $it) {
+            $qty  = (float) ($it['quantity'] ?? 0);
+            $rate = (float) ($it['rate']     ?? 0);
+            $tax  = (float) ($it['tax_pct']  ?? 0);
+            $rawSub += $qty * $rate * (1 + ($tax / 100));
+        }
+        $rawGrand = $rawSub + $shipping;
         return [
-            'sub_total'   => round($sub, 2),
+            'sub_total'   => round($rawSub, 2),
             'shipping'    => round($shipping, 2),
-            'grand_total' => round($grand, 2),
+            'grand_total' => round($rawGrand, 2),
         ];
     }
 
@@ -466,12 +506,26 @@ class QuotationController extends Controller
     /**
      * Allocate the next code for a client. Format: QT/YYYY-NN/SEQ
      * where YYYY-NN is the financial year and SEQ resets each year.
-     * Caller is expected to be inside a row-locked transaction
-     * (see store/duplicate above).
+     *
+     * B20: takes its OWN Postgres advisory lock keyed by (client_id, FY)
+     * so the read-then-write sequence is serialized at the connection
+     * level regardless of whether the caller wrapped this in a row lock.
+     * The outer `lockForUpdate('clients')` in store/duplicate continues
+     * to work for transaction-scoped serialization; this advisory lock
+     * adds a second safety net that follows the code allocation itself
+     * so a future caller (console command, queued job, etc.) that
+     * forgets the outer lock can't allocate a duplicate code.
      */
     private function nextCode(int $clientId): string
     {
         $fy = $this->currentFinancialYear();
+
+        // Advisory-lock key: hashed (clientId, FY) → 32-bit int. Released
+        // automatically at session end or when explicitly unlocked.
+        $lockKey = crc32("qt-code:{$clientId}:{$fy}");
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('SELECT pg_advisory_xact_lock(?)', [$lockKey]);
+        }
 
         // Walk through existing codes for this client + FY and find the
         // highest SEQ. Increment past any gap so we never collide with

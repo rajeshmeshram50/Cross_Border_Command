@@ -80,7 +80,35 @@ const fmtCcy = (v: number | string | null | undefined): string => {
   return `$ ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-const celebratedLeads = new Set<number>();
+/* B28: persist "already celebrated" leads in localStorage so the
+ *  confetti fires exactly once per lead across tab reloads / navigation
+ *  away and back. The earlier module-Set lived only for the lifetime
+ *  of the SPA session, so closing + reopening the tab re-confetti'd
+ *  every won deal. */
+const CELEBRATED_KEY = 'cbc_stage6_celebrated_leads';
+const loadCelebrated = (): Set<number> => {
+  try {
+    const raw = localStorage.getItem(CELEBRATED_KEY);
+    if (!raw) return new Set<number>();
+    const arr = JSON.parse(raw);
+    return new Set<number>(Array.isArray(arr) ? arr.filter(n => typeof n === 'number') : []);
+  } catch {
+    return new Set<number>();
+  }
+};
+const persistCelebrated = (s: Set<number>): void => {
+  try {
+    /* Cap the stored list at 500 entries so a long-lived user doesn't
+     *  bloat localStorage. FIFO eviction keeps the most recent N. */
+    const arr = Array.from(s);
+    const trimmed = arr.length > 500 ? arr.slice(-500) : arr;
+    localStorage.setItem(CELEBRATED_KEY, JSON.stringify(trimmed));
+  } catch {
+    /* Quota errors or private-mode → silent no-op; worst case is the
+     *  user re-sees confetti next session. Not worth blocking the UI. */
+  }
+};
+const celebratedLeads = loadCelebrated();
 
 export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
   const toast = useToast();
@@ -116,6 +144,7 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
     void fetchAll(false);
     if (!celebratedLeads.has(leadId)) {
       celebratedLeads.add(leadId);
+      persistCelebrated(celebratedLeads);
       setConfetti(true);
       setTimeout(() => setConfetti(false), 5_000);
     }

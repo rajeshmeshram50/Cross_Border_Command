@@ -202,9 +202,14 @@ interface Props {
   customer?: EditCustomer | null;
   /** Fired after a successful POST or PUT so the parent list can refetch. */
   onSaved?: () => void;
+  /** Optional landing stage. When set (typically 2 for KYC or 3 for Trade
+   * Docs), the modal opens on that stage instead of Stage 1 — used by the
+   * CLM panel deep-link from the opportunity detail page. Only respected
+   * in Edit mode (customer present); ignored on create. */
+  initialStage?: Stage;
 }
 
-export default function AddCustomerModal({ open, onClose, customer, onSaved }: Props) {
+export default function AddCustomerModal({ open, onClose, customer, onSaved, initialStage }: Props) {
   const isEdit = !!customer;
   const toast = useToast();
   const [stage, setStage] = useState<Stage>(1);
@@ -613,8 +618,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
      * isn't lost if the user advances back to Stage 2/3 manually. */
     const memKey = customer?.db_id ?? null;
     const remembered = memKey ? stageMemory.get(memKey) : null;
-    setStage   (1);
-    setMaxStage(remembered?.maxStage ?? 1);
+    /* Deep-link: when the caller asked us to land on a specific stage
+     * (and we're in Edit mode, so identity is already captured), honour
+     * it and bump maxStage so the tracker lets us be there. */
+    const landing: Stage = (isEdit && initialStage) ? initialStage : 1;
+    setStage   (landing);
+    setMaxStage(Math.max(remembered?.maxStage ?? 1, landing) as Stage);
     setTab     ('identification');
     setKycSub  (remembered?.kycSub   ?? 'company-dd');
     setEvTab   (remembered?.evTab    ?? 'kyc-documents');

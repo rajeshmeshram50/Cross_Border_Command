@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
@@ -19,6 +19,11 @@ import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 export default function Stage1InquiryReceived({ header, onNext, reloadLead }: StageProps) {
   const toast = useToast();
   const [advancing, setAdvancing] = useState(false);
+  /* B22: synchronous re-entry lock. `setAdvancing(true)` is async — a
+   *  fast double-click can fire the handler twice before React re-renders
+   *  with `disabled`. The ref flips on the very first call and any second
+   *  invocation hits the early-return below before any network request. */
+  const inFlightRef = useRef(false);
   const tm = header.taskManager ?? null;
 
   /* Persist Stage 1 → 2 advance. Without this PUT, the lead's
@@ -26,12 +31,14 @@ export default function Stage1InquiryReceived({ header, onNext, reloadLead }: St
    * so the Lead Worksheet would always reopen the lead at Stage 1.
    * Mirrors Stage 2/3/4's onSaveAndNext pattern. */
   const onSaveAndNext = async () => {
+    if (inFlightRef.current || advancing) return;
     if (!header.leadId) {
       // No lead id in context (deep-link without backing row) — just
       // navigate, nothing to persist.
       onNext();
       return;
     }
+    inFlightRef.current = true;
     setAdvancing(true);
     try {
       await api.put(`/sales/leads/${header.leadId}`, { lead_stage_id: 2 });
@@ -41,6 +48,7 @@ export default function Stage1InquiryReceived({ header, onNext, reloadLead }: St
     } catch (e: any) {
       toast.error('Could not advance', e?.response?.data?.message ?? 'Network or server error — please try again.');
     } finally {
+      inFlightRef.current = false;
       setAdvancing(false);
     }
   };
