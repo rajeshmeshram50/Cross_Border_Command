@@ -29,6 +29,7 @@ class PasswordChangedMail extends Mailable
     public string $changedAt;
     public string $loginUrl;
     public string $appName;
+    public array $branding;
 
     /**
      * @param string|null $loginUrl Pre-resolved SPA login URL. Pass the result
@@ -37,15 +38,28 @@ class PasswordChangedMail extends Mailable
      *   host in production). When null, falls back to `APP_FRONTEND_URL`/
      *   `APP_URL` from config — which is correct for queued jobs that run
      *   without an HTTP request.
+     * @param array $branding Optional per-tenant overrides. Same keys as
+     *   PasswordResetOtpMail (brandName, brandShort, brandTagline, logoUrl,
+     *   supportEmail, supportPhone, websiteUrl, social URLs). Anything omitted
+     *   falls back to the platform default in the blade template.
      */
-    public function __construct(string $userName, string $userEmail, string $newPassword, ?string $loginUrl = null)
-    {
+    public function __construct(
+        string $userName,
+        string $userEmail,
+        string $newPassword,
+        ?string $loginUrl = null,
+        array $branding = []
+    ) {
         $this->userName    = $userName;
         $this->userEmail   = $userEmail;
         $this->newPassword = $newPassword;
         $this->changedAt   = now()->format('M d, Y \· h:i A');
         $this->loginUrl    = $loginUrl ?: self::defaultLoginUrl();
-        $this->appName     = config('mail.from.name', 'Cross Border Command');
+        $this->appName     = $branding['brandName'] ?? config('mail.from.name', 'Cross Border Command');
+        // Keep empty strings — callers use '' to *intentionally suppress* a
+        // template default (e.g. client orgs hiding the IGC subline). Only
+        // drop true nulls.
+        $this->branding    = array_filter($branding, fn ($v) => $v !== null);
     }
 
    
@@ -102,6 +116,14 @@ class PasswordChangedMail extends Mailable
     {
         return new Content(
             view: 'emails.password-changed',
+            with: array_merge([
+                'userName'    => $this->userName,
+                'userEmail'   => $this->userEmail,
+                'newPassword' => $this->newPassword,
+                'changedAt'   => $this->changedAt,
+                'loginUrl'    => $this->loginUrl,
+                'appName'     => $this->appName,
+            ], $this->branding),
         );
     }
 }

@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use App\Mail\PasswordChangedMail;
 use App\Mail\WelcomeCredentialsMail;
+use App\Support\BrandingResolver;
 use App\Support\Settings;
 
 class ClientController extends Controller
@@ -265,17 +266,41 @@ class ClientController extends Controller
                 'users',
             ]);
 
-            // Send welcome email — gated by Settings → Notifications → newUser
+            // Send welcome email — gated by Settings → Notifications → newUser.
+            // We dispatch TWO sends with swapped TO/CC so BOTH the organisation
+            // inbox AND the client_admin user see the credentials with their
+            // own address in the "To" line (not CC). Mail filters in some
+            // clients route CC differently, and this pattern guarantees both
+            // mailboxes treat it as a primary message. When the two addresses
+            // match (case-insensitive), we collapse to a single send.
             if (Settings::shouldSendMail('newUser')) {
+                $orgEmail   = trim((string) $request->email);
+                $adminEmail = trim((string) $request->admin_email);
+                $loginUrl   = PasswordChangedMail::resolveLoginUrl($request);
+
+                // $orgName here is the SENDER's brand (IGC) because this
+                // email is from us welcoming the new customer onto our
+                // platform — NOT the new client's own org name. Branch /
+                // employee welcomes flow the other way (the client welcoming
+                // their own user) and pass the client's org_name instead.
+                $buildMail = fn () => new WelcomeCredentialsMail(
+                    $request->admin_name,
+                    $request->admin_email,
+                    $request->admin_password,
+                    'client_admin',
+                    config('app.vendor_name', 'Inorbvict Group of Companies'),
+                    $loginUrl,
+                );
+
                 try {
-                    Mail::to($request->admin_email)->send(new WelcomeCredentialsMail(
-                        $request->admin_name,
-                        $request->admin_email,
-                        $request->admin_password,
-                        'client_admin',
-                        $request->org_name,
-                        PasswordChangedMail::resolveLoginUrl($request),
-                    ));
+                    if ($orgEmail !== '' && strcasecmp($orgEmail, $adminEmail) !== 0) {
+                        // Two distinct addresses: send twice with swapped TO/CC.
+                        Mail::to($orgEmail)->cc($adminEmail)->send($buildMail());
+                        Mail::to($adminEmail)->cc($orgEmail)->send($buildMail());
+                    } else {
+                        // Same address (or org email missing): single send.
+                        Mail::to($adminEmail)->send($buildMail());
+                    }
                 } catch (\Exception $e) {
                     // Don't fail the request if email fails
                 }
@@ -479,11 +504,16 @@ class ClientController extends Controller
                 // email so a simultaneous email change goes to the new mailbox.
                 if ($passwordChanged && Settings::shouldSendMail()) {
                     try {
+                        // Super admin initiated this password change, so the
+                        // email is FROM us (IGC) — override the recipient-
+                        // based branding resolver so the email reads as a
+                        // platform-side action, not the client's own org.
                         Mail::to($adminUser->email)->send(new PasswordChangedMail(
                             $adminUser->name,
                             $adminUser->email,
                             $request->admin_password,
                             PasswordChangedMail::resolveLoginUrl($request),
+                            ['brandName' => config('app.vendor_name', 'Inorbvict Group of Companies')],
                         ));
                     } catch (\Throwable $e) {
                         Log::warning('Password-changed confirmation mail failed (client admin update)', [

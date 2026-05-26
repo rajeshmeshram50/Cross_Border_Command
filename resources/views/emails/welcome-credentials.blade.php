@@ -6,7 +6,7 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="color-scheme" content="light" />
   <meta name="supported-color-schemes" content="light" />
-  <title>Welcome — Your Login Credentials</title>
+  <title>Welcome to {{ $appName }}</title>
   <!--[if mso]>
   <noscript>
     <xml>
@@ -17,197 +17,256 @@
   </noscript>
   <![endif]-->
 </head>
-<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+<body style="margin:0;padding:0;background-color:#eef2f7;font-family:'Inter','Segoe UI',Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;color:#0f172a;">
 
-<!-- Wrapper -->
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f6f9;padding:40px 16px;">
+{{-- Preheader --}}
+<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#eef2f7;">
+  Welcome to {{ $orgName }} on {{ $appName }}. Your account is ready.
+</div>
+
+{{-- ============ WRAPPER ============ --}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#eef2f7;padding:40px 16px;">
 <tr><td align="center">
 
-<!-- Container -->
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+{{-- ============ CONTAINER ============ --}}
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;width:100%;background-color:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 40px rgba(15,23,42,0.06);">
 
-  <!-- Top Accent Bar -->
-  <tr><td style="height:4px;background:linear-gradient(90deg,#4F46E5,#7C3AED,#6366F1);font-size:0;line-height:0;">&nbsp;</td></tr>
+  {{-- ============ TOP DECORATIVE BAND (corner-fold approximation) ============ --}}
+  <tr><td style="padding:0;background:linear-gradient(225deg,#2563eb 0%,#2563eb 70px,transparent 70px),linear-gradient(225deg,#3b82f6 0%,#3b82f6 110px,transparent 110px);background-color:#ffffff;background-repeat:no-repeat;background-position:top right;">
 
-  <!-- Header -->
-  <tr><td style="padding:32px 40px 24px;text-align:center;border-bottom:1px solid #f0f0f5;">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
-    <tr>
-      <td style="width:40px;height:40px;background:linear-gradient(135deg,#4F46E5,#7C3AED);border-radius:12px;text-align:center;vertical-align:middle;">
-        <span style="font-size:20px;line-height:40px;color:#ffffff;">&#9889;</span>
-      </td>
-      <td style="padding-left:12px;font-size:18px;font-weight:800;color:#1e293b;letter-spacing:-0.3px;">{{ $appName }}</td>
-    </tr>
-    </table>
-  </td></tr>
-
-  <!-- Hero -->
-  <tr><td style="padding:40px 40px 24px;text-align:center;">
-    <!-- Icon -->
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin-bottom:20px;">
-    <tr><td style="width:72px;height:72px;background:linear-gradient(135deg,#EEF2FF,#E0E7FF);border-radius:20px;text-align:center;vertical-align:middle;">
-      <span style="font-size:32px;line-height:72px;">&#128075;</span>
+    {{-- HEADER --- org name as text wordmark --}}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr><td style="padding:30px 40px 16px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="width:6px;background-color:#2563eb;border-radius:3px;font-size:0;line-height:0;">&nbsp;</td>
+        <td style="padding-left:12px;vertical-align:middle;">
+          <div style="font-size:20px;font-weight:900;color:#0f172a;letter-spacing:-0.4px;line-height:1.2;">{{ $orgName }}</div>
+          <div style="font-size:11px;font-weight:600;color:#64748b;letter-spacing:0.4px;margin-top:2px;">Powered by {{ $appName }}</div>
+        </td>
+      </tr>
+      </table>
     </td></tr>
     </table>
 
-    <h1 style="margin:0 0 8px;font-size:24px;font-weight:800;color:#1e293b;letter-spacing:-0.5px;">Welcome aboard!</h1>
-    <p style="margin:0;font-size:15px;color:#64748b;line-height:1.6;">
-      Your account on <strong style="color:#4F46E5;">{{ $appName }}</strong> is ready.
-    </p>
-  </td></tr>
+    {{-- HERO --}}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr><td style="padding:36px 40px 16px;">
+      <h1 style="margin:0;font-size:42px;font-weight:900;color:#0f172a;line-height:1.05;letter-spacing:-1px;text-transform:uppercase;">
+        Welcome<br/>
+        To The <span style="color:#2563eb;">Team</span>
+      </h1>
+      <div style="width:42px;height:3px;background-color:#2563eb;border-radius:2px;margin:16px 0 28px;font-size:0;line-height:0;">&nbsp;</div>
 
-  <!-- Greeting -->
-  <tr><td style="padding:0 40px 24px;">
-    <p style="margin:0;font-size:15px;color:#475569;line-height:1.7;">
-      Hi <strong style="color:#1e293b;">{{ $userName }}</strong>,<br/>
-      You've been added to <strong style="color:#1e293b;">{{ $orgName }}</strong> as a
-      <span style="display:inline-block;background:#EEF2FF;color:#4F46E5;font-size:12px;font-weight:700;padding:2px 10px;border-radius:6px;margin:0 2px;">{{ str_replace('_', ' ', ucwords($userType, '_')) }}</span>.
-      Use the credentials below to sign in.
-    </p>
-  </td></tr>
-
-  <!-- Credentials Card -->
-  <tr><td style="padding:0 40px 28px;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
-      <!-- Email -->
-      <tr>
-        <td style="padding:20px 24px;border-bottom:1px solid #e2e8f0;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr>
-            <td>
-              <p style="margin:0 0 6px;font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:1.5px;text-transform:uppercase;">Email / Username</p>
-              <p style="margin:0;font-size:16px;font-weight:600;color:#1e293b;font-family:'Courier New',monospace;">{{ $userEmail }}</p>
-            </td>
-          </tr>
-          </table>
-        </td>
-      </tr>
-      <!-- Password -->
-      <tr>
-        <td style="padding:20px 24px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-          <tr>
-            <td>
-              <p style="margin:0 0 6px;font-size:10px;font-weight:700;color:#94a3b8;letter-spacing:1.5px;text-transform:uppercase;">Temporary Password</p>
-              <p style="margin:0;font-size:16px;font-weight:600;color:#1e293b;font-family:'Courier New',monospace;letter-spacing:2px;">{{ $password }}</p>
-            </td>
-            <td style="text-align:right;vertical-align:middle;">
-              <span style="display:inline-block;background:#FEF3C7;color:#B45309;font-size:10px;font-weight:700;padding:4px 10px;border-radius:6px;">Temporary</span>
-            </td>
-          </tr>
-          </table>
-        </td>
-      </tr>
+      <div style="font-size:15px;font-weight:700;color:#0f172a;">Hi {{ $userName }},</div>
+      <p style="margin:8px 0 6px;font-size:14px;color:#475569;line-height:1.6;">
+        Your account on <strong style="color:#2563eb;font-weight:700;">{{ $appName }}</strong> is ready.
+      </p>
+      <p style="margin:0;font-size:14px;color:#475569;line-height:1.6;">
+        Use the credentials below to access your account.
+      </p>
+    </td></tr>
     </table>
   </td></tr>
 
-  <!-- CTA Button -->
-  <tr><td style="padding:0 40px 32px;text-align:center;">
+  {{-- ============ CREDENTIALS ROWS ============ --}}
+  <tr><td style="padding:28px 40px 0;">
+
+    {{-- Email card --}}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f3f4f6;border-radius:14px;margin-bottom:14px;">
+    <tr><td style="padding:18px 20px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="width:54px;vertical-align:middle;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td style="width:44px;height:44px;background-color:#dbeafe;border-radius:50%;text-align:center;vertical-align:middle;">
+              <img src="{{ asset('images/email-icons/avatar.png') }}" alt="" width="22" height="22" style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;" />
+            </td>
+          </tr></table>
+        </td>
+        <td style="padding-left:14px;vertical-align:middle;">
+          <div style="font-size:12px;color:#64748b;line-height:1.3;">Email / Username</div>
+          <div style="font-size:15px;font-weight:800;color:#0f172a;margin-top:4px;letter-spacing:-0.2px;">{{ $userEmail }}</div>
+        </td>
+        <td valign="middle" align="right" style="width:28px;">
+          <img src="{{ asset('images/email-icons/copy.png') }}" alt="" width="20" height="20" style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;" />
+        </td>
+      </tr>
+      </table>
+    </td></tr>
+    </table>
+
+    @if (!empty($password))
+    {{-- Password card --}}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f3f4f6;border-radius:14px;">
+    <tr><td style="padding:18px 20px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="width:54px;vertical-align:middle;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td style="width:44px;height:44px;background-color:#dbeafe;border-radius:50%;text-align:center;vertical-align:middle;">
+              <img src="{{ asset('images/email-icons/lock.png') }}" alt="" width="20" height="20" style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;" />
+            </td>
+          </tr></table>
+        </td>
+        <td style="padding-left:14px;vertical-align:middle;">
+          <div style="font-size:12px;color:#64748b;line-height:1.3;">Temporary Password</div>
+          <div style="font-size:15px;font-weight:800;color:#0f172a;margin-top:4px;letter-spacing:-0.2px;">{{ $password }}</div>
+        </td>
+        <td valign="middle" align="right" style="padding-right:10px;">
+          <span style="display:inline-block;background-color:#dbeafe;color:#2563eb;font-size:11px;font-weight:700;padding:5px 12px;border-radius:8px;letter-spacing:0.2px;">Temporary</span>
+        </td>
+        <td valign="middle" align="right" style="width:28px;">
+          <img src="{{ asset('images/email-icons/copy.png') }}" alt="" width="20" height="20" style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;" />
+        </td>
+      </tr>
+      </table>
+    </td></tr>
+    </table>
+    @endif
+
+  </td></tr>
+
+  {{-- ============ CTA ============ --}}
+  <tr><td style="padding:32px 40px 8px;text-align:center;">
+    <!--[if mso]>
+    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ $loginUrl }}" style="height:52px;v-text-anchor:middle;width:320px;" arcsize="20%" stroke="f" fillcolor="#2563eb">
+      <w:anchorlock/>
+      <center style="color:#ffffff;font-family:sans-serif;font-size:15px;font-weight:bold;">Access Your Account &nbsp; &rarr;</center>
+    </v:roundrect>
+    <![endif]-->
+    <!--[if !mso]><!-- -->
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
-    <tr><td style="background:linear-gradient(135deg,#4F46E5,#7C3AED);border-radius:10px;">
-      <a href="{{ $loginUrl }}" target="_blank" style="display:inline-block;padding:14px 40px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;letter-spacing:0.2px;">
-        Sign In to Your Account &rarr;
+    <tr><td style="background-color:#2563eb;border-radius:10px;box-shadow:0 6px 20px rgba(37,99,235,0.30);">
+      <a href="{{ $loginUrl }}" target="_blank" style="display:inline-block;padding:16px 60px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;letter-spacing:0.2px;">
+        Access Your Account &nbsp;&nbsp;&rarr;
       </a>
     </td></tr>
     </table>
-    <p style="margin:12px 0 0;font-size:12px;color:#94a3b8;">
-      Or visit: <a href="{{ $loginUrl }}" style="color:#4F46E5;text-decoration:none;">{{ str_replace(['http://','https://'], '', $loginUrl) }}</a>
+    <!--<![endif]-->
+    <p style="margin:14px 0 0;font-size:13px;color:#475569;">
+      Or visit: <a href="{{ $loginUrl }}" style="color:#2563eb;text-decoration:none;font-weight:700;">{{ str_replace(['http://','https://'], '', $loginUrl) }}</a>
     </p>
   </td></tr>
 
-  <!-- Divider -->
-  <tr><td style="padding:0 40px;"><div style="height:1px;background-color:#f0f0f5;"></div></td></tr>
-
-  <!-- Getting Started Tips -->
-  <tr><td style="padding:28px 40px;">
-    <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:#94a3b8;letter-spacing:1.5px;text-transform:uppercase;">Getting Started</p>
-
+  {{-- ============ 3 FEATURE CARDS ============ --}}
+  <tr><td style="padding:32px 40px 8px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-      <tr>
-        <td style="padding-bottom:14px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td style="width:32px;vertical-align:top;">
-              <div style="width:28px;height:28px;background:#EEF2FF;border-radius:8px;text-align:center;line-height:28px;font-size:14px;">&#128273;</div>
-            </td>
-            <td style="padding-left:12px;">
-              <p style="margin:0;font-size:13px;color:#475569;line-height:1.6;"><strong style="color:#1e293b;">Change your password</strong> on first login — this one is temporary.</p>
-            </td>
-          </tr></table>
-        </td>
-      </tr>
-      <tr>
-        <td style="padding-bottom:14px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td style="width:32px;vertical-align:top;">
-              <div style="width:28px;height:28px;background:#FEF2F2;border-radius:8px;text-align:center;line-height:28px;font-size:14px;">&#128274;</div>
-            </td>
-            <td style="padding-left:12px;">
-              <p style="margin:0;font-size:13px;color:#475569;line-height:1.6;"><strong style="color:#1e293b;">Keep credentials private</strong> — never share them with anyone.</p>
-            </td>
-          </tr></table>
-        </td>
-      </tr>
-      <tr>
-        <td>
-          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td style="width:32px;vertical-align:top;">
-              <div style="width:28px;height:28px;background:#ECFDF5;border-radius:8px;text-align:center;line-height:28px;font-size:14px;">&#127919;</div>
-            </td>
-            <td style="padding-left:12px;">
-              <p style="margin:0;font-size:13px;color:#475569;line-height:1.6;"><strong style="color:#1e293b;">Explore the dashboard</strong> — set up your profile and get started.</p>
-            </td>
-          </tr></table>
-        </td>
-      </tr>
+    <tr>
+
+      {{-- Card 1 --}}
+      <td valign="top" align="center" width="33%" style="padding:0 10px;border-right:1px solid #e2e8f0;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+        <tr><td align="center" style="padding-bottom:12px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+          <tr><td style="width:54px;height:54px;background-color:#dbeafe;border-radius:50%;text-align:center;vertical-align:middle;">
+            <img src="{{ asset('images/email-icons/key.png') }}" alt="" width="24" height="24" style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;" />
+          </td></tr>
+          </table>
+        </td></tr>
+        <tr><td align="center" style="font-size:13.5px;font-weight:800;color:#0f172a;line-height:1.3;padding-bottom:5px;letter-spacing:-0.2px;">Change your<br/>password</td></tr>
+        <tr><td align="center" style="font-size:11.5px;color:#94a3b8;line-height:1.5;">On first login</td></tr>
+        </table>
+      </td>
+
+      {{-- Card 2 --}}
+      <td valign="top" align="center" width="33%" style="padding:0 10px;border-right:1px solid #e2e8f0;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+        <tr><td align="center" style="padding-bottom:12px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+          <tr><td style="width:54px;height:54px;background-color:#dbeafe;border-radius:50%;text-align:center;vertical-align:middle;">
+            <img src="{{ asset('images/email-icons/shield-lock.png') }}" alt="" width="24" height="24" style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;" />
+          </td></tr>
+          </table>
+        </td></tr>
+        <tr><td align="center" style="font-size:13.5px;font-weight:800;color:#0f172a;line-height:1.3;padding-bottom:5px;letter-spacing:-0.2px;">Keep credentials<br/>private</td></tr>
+        <tr><td align="center" style="font-size:11.5px;color:#94a3b8;line-height:1.5;">Never share them</td></tr>
+        </table>
+      </td>
+
+      {{-- Card 3 --}}
+      <td valign="top" align="center" width="33%" style="padding:0 10px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+        <tr><td align="center" style="padding-bottom:12px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+          <tr><td style="width:54px;height:54px;background-color:#dbeafe;border-radius:50%;text-align:center;vertical-align:middle;">
+            <img src="{{ asset('images/email-icons/grid.png') }}" alt="" width="24" height="24" style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;" />
+          </td></tr>
+          </table>
+        </td></tr>
+        <tr><td align="center" style="font-size:13.5px;font-weight:800;color:#0f172a;line-height:1.3;padding-bottom:5px;letter-spacing:-0.2px;">Explore the<br/>dashboard</td></tr>
+        <tr><td align="center" style="font-size:11.5px;color:#94a3b8;line-height:1.5;">Set up your profile</td></tr>
+        </table>
+      </td>
+
+    </tr>
     </table>
   </td></tr>
 
-  <!-- Security Note -->
-  <tr><td style="padding:0 40px 28px;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;">
-    <tr><td style="padding:14px 18px;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td style="width:24px;vertical-align:top;font-size:16px;">&#9888;&#65039;</td>
-        <td style="padding-left:10px;">
-          <p style="margin:0;font-size:13px;color:#92400E;line-height:1.6;">
-            <strong>Didn't expect this?</strong> If you didn't request this account, please
-            <a href="mailto:{{ config('mail.from.address') }}" style="color:#B45309;font-weight:700;text-decoration:none;">contact us</a> immediately.
-          </p>
+  {{-- ============ NEED HELP ============ --}}
+  <tr><td style="padding:32px 40px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f3f4f6;border-radius:14px;">
+    <tr><td style="padding:18px 20px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td style="width:54px;vertical-align:middle;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td style="width:44px;height:44px;background-color:#dbeafe;border-radius:50%;text-align:center;vertical-align:middle;">
+              <img src="{{ asset('images/email-icons/headset.png') }}" alt="" width="20" height="20" style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;" />
+            </td>
+          </tr></table>
         </td>
-      </tr></table>
+        <td style="padding-left:14px;vertical-align:middle;">
+          <div style="font-size:14px;font-weight:800;color:#0f172a;letter-spacing:-0.2px;">Need help?</div>
+          <div style="font-size:12px;color:#475569;line-height:1.5;margin-top:3px;">
+            Contact our <a href="mailto:{{ config('mail.from.address') }}" style="color:#2563eb;text-decoration:none;font-weight:700;">support team</a>.
+          </div>
+        </td>
+        <td valign="middle" align="right" style="width:24px;">
+          <img src="{{ asset('images/email-icons/chevron-right.png') }}" alt="" width="18" height="18" style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;" />
+        </td>
+      </tr>
+      </table>
     </td></tr>
     </table>
   </td></tr>
 
-  <!-- Footer -->
-  <tr><td style="background-color:#f8fafc;padding:28px 40px;text-align:center;border-top:1px solid #f0f0f5;">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin-bottom:12px;">
+  {{-- ============ FOOTER (with bottom-left corner fold + dot grid) ============ --}}
+  <tr><td style="padding:0;background:linear-gradient(45deg,#2563eb 0%,#2563eb 60px,transparent 60px),linear-gradient(45deg,#3b82f6 0%,#3b82f6 95px,transparent 95px);background-color:#ffffff;background-repeat:no-repeat;background-position:bottom left;">
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
     <tr>
-      <td style="width:32px;height:32px;background:linear-gradient(135deg,#4F46E5,#7C3AED);border-radius:8px;text-align:center;vertical-align:middle;">
-        <span style="font-size:16px;line-height:32px;color:#ffffff;">&#9889;</span>
+      <td valign="middle" align="center" style="padding:36px 40px 30px;">
+        <p style="margin:0;font-size:12px;color:#94a3b8;letter-spacing:0.2px;">
+          &copy; {{ date('Y') }} {{ $orgName }}. All rights reserved.
+        </p>
       </td>
-      <td style="padding-left:8px;font-size:14px;font-weight:700;color:#1e293b;">{{ $appName }}</td>
+    </tr>
+    <tr>
+      {{-- Dot grid in bottom-right --}}
+      <td align="right" style="padding:0 28px 22px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right">
+          @for ($r = 0; $r < 5; $r++)
+          <tr>
+            @for ($c = 0; $c < 5; $c++)
+            <td style="width:7px;height:7px;padding:2px;font-size:0;line-height:0;">
+              <div style="width:4px;height:4px;background-color:#2563eb;border-radius:50%;font-size:0;line-height:0;">&nbsp;</div>
+            </td>
+            @endfor
+          </tr>
+          @endfor
+        </table>
+      </td>
     </tr>
     </table>
-
-    <p style="margin:0 0 6px;font-size:12px;color:#94a3b8;line-height:1.6;">
-      Need help? <a href="mailto:{{ config('mail.from.address') }}" style="color:#4F46E5;text-decoration:none;font-weight:600;">{{ config('mail.from.address') }}</a>
-    </p>
-    <p style="margin:0;font-size:11px;color:#cbd5e1;line-height:1.6;">
-      You received this email because an account was created for you.<br/>
-      &copy; {{ date('Y') }} {{ $appName }}. All rights reserved.
-    </p>
   </td></tr>
 
-  <!-- Bottom Accent Bar -->
-  <tr><td style="height:4px;background:linear-gradient(90deg,#4F46E5,#7C3AED,#6366F1);font-size:0;line-height:0;">&nbsp;</td></tr>
-
 </table>
-<!-- /Container -->
+{{-- /Container --}}
 
 </td></tr>
 </table>
-<!-- /Wrapper -->
+{{-- /Wrapper --}}
 
 </body>
 </html>

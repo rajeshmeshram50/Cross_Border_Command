@@ -19,6 +19,7 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Database\QueryException;
 use App\Mail\PasswordChangedMail;
 use App\Mail\WelcomeCredentialsMail;
+use App\Support\BrandingResolver;
 
 class BranchController extends Controller
 {
@@ -538,6 +539,7 @@ class BranchController extends Controller
                             $branchUser->email,
                             $request->user_password,
                             PasswordChangedMail::resolveLoginUrl($request),
+                            BrandingResolver::forUser($branchUser),
                         ));
                     } catch (\Throwable $e) {
                         Log::warning('Password-changed confirmation mail failed (branch update)', [
