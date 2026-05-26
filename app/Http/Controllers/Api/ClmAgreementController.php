@@ -3,11 +3,24 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\HandlesDocxHtmlRoundtrip;
 use App\Models\ClmAgreementLibrary;
 use App\Models\ClmAgreementType;
+use App\Models\ClmSegment;
+use App\Models\ClmSignatureRequest;
+use App\Models\Consignee;
+use App\Models\Customer;
+use App\Models\Lead;
+use App\Models\ProformaInvoice;
+use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use PhpOffice\PhpWord\IOFactory;
+use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\Shared\Html;
 
 /**
  * Agreements master — covers both tabs:
@@ -17,6 +30,10 @@ use Illuminate\Validation\Rule;
  */
 class ClmAgreementController extends Controller
 {
+    use HandlesDocxHtmlRoundtrip;
+
+    private const DOCX_MAX_KB = 20 * 1024;
+
     /* ── TYPES ── */
 
     public function typesIndex(Request $request)
@@ -97,9 +114,11 @@ class ClmAgreementController extends Controller
             'party'          => 'required|string|max:255',
             'regulatory'     => ['nullable', Rule::in(ClmAgreementLibrary::REG_VALUES)],
             'signing'        => 'nullable|boolean',
-            'segment'        => 'nullable|string|max:64',
+            'segment'        => 'nullable|string|max:1024',
             'agr_status'     => 'nullable|string|max:32',
             'content'        => 'nullable|string',
+            'header_config'  => 'nullable|array',
+            'footer_config'  => 'nullable|array',
         ]);
 
         $row = DB::transaction(function () use ($user, $data) {
@@ -116,6 +135,8 @@ class ClmAgreementController extends Controller
                 'segment'        => $data['segment']     ?? null,
                 'agr_status'     => $data['agr_status']  ?? 'Active',
                 'content'        => $data['content']     ?? null,
+                'header_config'  => $data['header_config'] ?? null,
+                'footer_config'  => $data['footer_config'] ?? null,
                 'created_by'     => $user->id,
                 'updated_by'     => $user->id,
             ]);
@@ -133,13 +154,40 @@ class ClmAgreementController extends Controller
             'party'          => 'sometimes|required|string|max:255',
             'regulatory'     => ['nullable', Rule::in(ClmAgreementLibrary::REG_VALUES)],
             'signing'        => 'nullable|boolean',
-            'segment'        => 'nullable|string|max:64',
+            'segment'        => 'nullable|string|max:1024',
             'agr_status'     => 'nullable|string|max:32',
             'content'        => 'nullable|string',
+            'header_config'  => 'nullable|array',
+            'footer_config'  => 'nullable|array',
         ]);
         $data['updated_by'] = $user->id;
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
+    }
+
+    /**
+     * Stage 2 page-shell logo upload for the agreement wizard. Mirrors
+     * ClmTradeDocumentController::uploadHeaderLogo but stores under the
+     * agreement_library/<client> folder so per-doc-type cleanup stays
+     * straightforward. Returns { path, url } in the shape
+     * [[HeaderFooterPanel]] expects.
+     */
+    public function uploadHeaderLogo(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $request->validate(['logo' => 'required|file|mimes:png,jpg,jpeg,svg,webp|max:5120']);
+
+        $clientSlug = $user->client_id ? 'c' . $user->client_id : 'public';
+        $folder = "agreement_library/{$clientSlug}/logos";
+        $file   = $request->file('logo');
+        $ext    = strtolower($file->getClientOriginalExtension() ?: 'png');
+        $filename = Str::random(16) . '.' . $ext;
+        $path = $file->storeAs($folder, $filename, 'public');
+
+        return response()->json([
+            'path' => $path,
+            'url'  => file_url($path),
+        ]);
     }
 
     public function libraryDestroy(Request $request, $id)
@@ -148,5 +196,288 @@ class ClmAgreementController extends Controller
         $row  = ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($id);
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
+    }
+
+    /* ── APPLICABLE AGREEMENTS FOR A LEAD ──
+     *
+     * GET /api/clm/leads/{leadId}/agreement-applicable
+     *
+     * Drives the Sales Matrix lead detail "Segment Details" card. Given a
+     * lead, walks its latest non-cancelled Proforma Invoice → line-item
+     * product IDs → product.segment_id → clm_segments. For each segment,
+     * pulls the matching agreement-library rows (filtered by segment name
+     * + regulatory tier), and returns everything grouped by regulatory
+     * tier so the frontend can render High / Less popups directly.
+     *
+     * Also surfaces the existing clm_signature_requests for this lead so
+     * each agreement row can show its current send status ('draft' if no
+     * request yet, otherwise 'inprogress' / 'completed' / etc.).
+     */
+    public function applicableForLead(Request $request, $leadId)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+
+        $lead = Lead::where('client_id', $user->client_id)->findOrFail((int) $leadId);
+
+        // Stage 5 = "Quotation vs PI". Stage 5 complete ⇒ lead has moved
+        // to stage 6+ (Victory). The button on the Sales Matrix detail
+        // card stays disabled until then.
+        $stage5Complete = (int) ($lead->lead_stage_id ?? 1) >= 6;
+
+        // Latest Proforma Invoice tied to this lead. Cancelled rows don't
+        // count toward agreement-send eligibility — but draft/sent/etc do.
+        $pi = ProformaInvoice::where('client_id', $user->client_id)
+            ->where('opp_id', $lead->id)
+            ->where('status', '!=', 'cancelled')
+            ->orderByDesc('id')
+            ->first();
+
+        $piItems = $pi
+            ? $pi->items()->whereNotNull('product_id')->get(['product_id'])
+            : collect();
+        $productIds = $piItems->pluck('product_id')->filter()->unique()->values();
+
+        // Map products → segment_id. soft FK (no DB constraint per the
+        // products migration comment), so we tolerate missing references.
+        $segmentIds = Product::where('client_id', $user->client_id)
+            ->whereIn('id', $productIds)
+            ->whereNotNull('segment_id')
+            ->pluck('segment_id')
+            ->unique()
+            ->values();
+
+        $segments = ClmSegment::where('client_id', $user->client_id)
+            ->whereIn('id', $segmentIds)
+            ->orderBy('regulatory_status')
+            ->orderBy('code')
+            ->get();
+
+        // Existing signature requests for this lead so the rows show live
+        // status badges instead of always "Draft". Gated on `$pi` — when
+        // no PI is mapped there are no segments to render either, so the
+        // signature lookup would be wasted work.
+        $sigRows = $pi
+            ? ClmSignatureRequest::where('client_id', $user->client_id)
+                ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
+                ->where('lead_id', $lead->id)
+                ->whereNull('deleted_at')
+                ->orderByDesc('id')
+                ->get()
+            : collect();
+
+        // Index sig requests by agreement-id so we can look up the most
+        // recent send per agreement in O(1). Map "agreement_id => row".
+        $latestPerAgreement = [];
+        foreach ($sigRows as $r) {
+            $ids = is_array($r->trade_doc_ids) ? $r->trade_doc_ids : [];
+            foreach ($ids as $aid) {
+                if (!isset($latestPerAgreement[$aid])) {
+                    $latestPerAgreement[$aid] = $r;
+                }
+            }
+        }
+
+        // Build the per-segment agreement list.
+        $segmentsOut = [];
+        foreach ($segments as $seg) {
+            // Less-reg agreements can be saved against multiple
+            // segments (stored as a comma-separated string in the
+            // `segment` column), so we LIKE-match the needle against
+            // the CSV instead of doing an exact equality check. The
+            // patterns wrap the needle in comma separators so
+            // "Tobacco" can't accidentally match a row tagged
+            // "Tobacco Stripping" while still hitting first/middle/
+            // last/sole positions in the list.
+            $name = $seg->name;
+            $code = $seg->code;
+            $agreements = ClmAgreementLibrary::where('client_id', $user->client_id)
+                ->where('regulatory', $seg->regulatory_status)
+                ->where(function ($q) use ($name, $code) {
+                    foreach ([$name, $code] as $needle) {
+                        $q->orWhere('segment', $needle)
+                          ->orWhere('segment', 'LIKE', $needle . ',%')
+                          ->orWhere('segment', 'LIKE', $needle . ', %')
+                          ->orWhere('segment', 'LIKE', '%,' . $needle)
+                          ->orWhere('segment', 'LIKE', '%, ' . $needle)
+                          ->orWhere('segment', 'LIKE', '%,' . $needle . ',%')
+                          ->orWhere('segment', 'LIKE', '%, ' . $needle . ',%');
+                    }
+                })
+                ->where('agr_status', 'Active')
+                ->orderBy('id')
+                ->get();
+
+            $agreementsOut = $agreements->map(function (ClmAgreementLibrary $a) use ($latestPerAgreement) {
+                $req = $latestPerAgreement[$a->id] ?? null;
+                $sigOut = null;
+                if ($req) {
+                    $signedPaths = is_array($req->signed_document_paths) ? $req->signed_document_paths : [];
+                    $first = $signedPaths[0] ?? [];
+                    $sigOut = [
+                        'id'              => $req->id,
+                        'status'          => $req->status,
+                        'sent_at'         => optional($req->created_at)->toIso8601String(),
+                        'completed_at'    => optional($req->completed_at)->toIso8601String(),
+                        'signed_url'      => $first['file_url'] ?? $first['url'] ?? null,
+                        'certificate_url' => $req->certificate_path ? file_url($req->certificate_path) : null,
+                    ];
+                }
+                return [
+                    'id'             => $a->id,
+                    'code'           => $a->code,
+                    'title'          => $a->title,
+                    'agreement_type' => $a->agreement_type,
+                    'party'          => $a->party,
+                    'regulatory'     => $a->regulatory,
+                    'segment'        => $a->segment,
+                    'required'       => $a->regulatory === 'highly' ? 'REQ' : 'OPT',
+                    'updated_at'     => optional($a->updated_at)->toDateString(),
+                    'signature_request' => $sigOut,
+                ];
+            })->values();
+
+            $segmentsOut[] = [
+                'id'         => $seg->id,
+                'code'       => $seg->code,
+                'name'       => $seg->name,
+                'regulatory' => $seg->regulatory_status,
+                'agreements' => $agreementsOut,
+            ];
+        }
+
+        // Totals for the segment-details card. "Segments in this lead"
+        // (X) vs "Total segments configured in master" (Y) per tier.
+        $masterCounts = ClmSegment::where('client_id', $user->client_id)
+            ->where('status', 'active')
+            ->selectRaw('regulatory_status, COUNT(*) as c')
+            ->groupBy('regulatory_status')
+            ->pluck('c', 'regulatory_status');
+        $leadCounts = collect($segments)->groupBy('regulatory_status')->map->count();
+
+        // Customer + consignee snapshot — the frontend uses these to
+        // resolve signers based on the agreement's `party` CSV.
+        $customer  = $lead->customer_id  ? Customer::find($lead->customer_id)   : null;
+        $consignee = $lead->consignee_id ? Consignee::find($lead->consignee_id) : null;
+
+        return response()->json([
+            'status' => true,
+            'data'   => [
+                'stage5Complete' => $stage5Complete,
+                'lead' => [
+                    'id'   => $lead->id,
+                    'code' => $lead->opportunity_code ?? null,
+                    'customer' => $customer ? [
+                        'id'    => $customer->id,
+                        'name'  => $customer->company_name,
+                        'email' => $customer->primary_email,
+                    ] : null,
+                    'consignee' => $consignee ? [
+                        'id'    => $consignee->id,
+                        'name'  => $consignee->company_name,
+                        'email' => $consignee->primary_email,
+                    ] : null,
+                ],
+                'pi' => $pi ? [
+                    'id'     => $pi->id,
+                    'code'   => $pi->code ?? null,
+                    'status' => $pi->status ?? null,
+                ] : null,
+                'totals' => [
+                    'highly' => [
+                        'matched' => (int) ($leadCounts['highly'] ?? 0),
+                        'total'   => (int) ($masterCounts['highly'] ?? 0),
+                    ],
+                    'less' => [
+                        'matched' => (int) ($leadCounts['less'] ?? 0),
+                        'total'   => (int) ($masterCounts['less'] ?? 0),
+                    ],
+                ],
+                'segments' => $segmentsOut,
+            ],
+        ]);
+    }
+
+    /* ── DOCX round-trip ──
+     *   GET  /clm/agreement-library/{id}/download    → returns the user's
+     *        uploaded DOCX when present, otherwise generates a fresh one
+     *        from the row's `content` HTML.
+     *   POST /clm/agreement-library/{id}/upload-docx → stores the user's
+     *        revised Word doc and refreshes `content` from its HTML so the
+     *        web editor stays in sync.
+     */
+    public function downloadDocx(Request $request, $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($id);
+
+        // Prefer the user-uploaded DOCX (it's the source of truth after a
+        // Word round-trip — preserves header/footer/styling we can't fully
+        // reproduce from HTML alone).
+        if ($row->docx_path && Storage::disk('public')->exists($row->docx_path)) {
+            $abs  = Storage::disk('public')->path($row->docx_path);
+            $name = $row->docx_original_name ?: ($row->code ?: 'agreement') . '.docx';
+            return response()->download($abs, $name);
+        }
+
+        $phpWord = new PhpWord();
+        $phpWord->setDefaultFontName('Calibri');
+        $phpWord->setDefaultFontSize(11);
+        $section = $phpWord->addSection();
+
+        $title = trim((string) $row->title) ?: 'Agreement';
+        $section->addTitle(htmlspecialchars($title, ENT_QUOTES), 1);
+        $section->addTextBreak(1);
+
+        $html = trim((string) $row->content);
+        if ($html === '') $html = '<p></p>';
+
+        $html    = $this->normaliseEditorHtml($html);
+        $wrapped = '<!DOCTYPE html><html><body>' . $html . '</body></html>';
+
+        try {
+            Html::addHtml($section, $wrapped, true, false);
+        } catch (\Throwable $e) {
+            $section->addText(strip_tags($html));
+        }
+
+        $filename = ($row->code ?: 'agreement') . '.docx';
+        $tmp      = tempnam(sys_get_temp_dir(), 'agrdocx_');
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tmp);
+
+        return response()->download($tmp, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ])->deleteFileAfterSend(true);
+    }
+
+    public function uploadDocx(Request $request, $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($id);
+
+        $request->validate(['docx' => 'required|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB]);
+
+        $file       = $request->file('docx');
+        $clientSlug = $user->client_id ? 'c' . $user->client_id : 'public';
+        $folder     = "agreement_library/{$clientSlug}/a{$row->id}";
+        $ext        = strtolower($file->getClientOriginalExtension() ?: 'docx');
+        $filename   = Str::random(16) . '.' . $ext;
+        $path       = $file->storeAs($folder, $filename, 'public');
+
+        // Best-effort DOCX → HTML so the web editor reflects the upload.
+        $html = $row->content;
+        try {
+            $html = $this->docxToHtml(Storage::disk('public')->path($path)) ?: $row->content;
+        } catch (\Throwable $e) {
+            // ignore — keep the previous HTML if parsing failed
+        }
+
+        $row->update([
+            'docx_path'          => $path,
+            'docx_original_name' => $file->getClientOriginalName(),
+            'content'            => $html,
+            'updated_by'         => $user->id,
+        ]);
+
+        return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 }

@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Client;
+use App\Models\ClmAgreementLibrary;
 use App\Models\ClmSignatureRequest;
 use App\Models\ClmTradeDocLibrary;
 use App\Models\Consignee;
 use App\Models\Customer;
+use App\Models\Lead;
 use App\Models\Vendor;
 use App\Services\ZohoSignService;
 use Illuminate\Database\Eloquent\Model;
@@ -329,6 +331,326 @@ class ClmSignatureController extends Controller
         } finally {
             foreach ($tempPaths as $p) { @unlink($p); }
         }
+    }
+
+    /* ─────────────────────── AGREEMENT PREVIEW / SEND ───────────────────────
+     *
+     * Variant of preview/send that operates on `clm_agreement_library`
+     * rows scoped to a Sales Matrix lead instead of `clm_trade_doc_library`
+     * scoped to a single party. The agreement's `party` CSV
+     * (e.g. "Buyer, Consignee") + the lead's customer/consignee FK auto-
+     * compose the signer list, so one Zoho request can carry the buyer
+     * and consignee as parallel signers on the same PDF.
+     *
+     * Frontend hits these from the Lead detail "Segment Details" popup
+     * (LeadAgreementSendModal). Each agreement row gets its own Send,
+     * one Zoho request per agreement.
+     */
+
+    public function agreementPreview(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+
+        $data = $request->validate([
+            'agreement_id' => 'required|integer|exists:clm_agreement_library,id',
+            'lead_id'      => 'required|integer|exists:leads,id',
+        ]);
+
+        $agreement = ClmAgreementLibrary::where('client_id', $user->client_id)
+            ->findOrFail($data['agreement_id']);
+        $lead = Lead::where('client_id', $user->client_id)->findOrFail($data['lead_id']);
+
+        // Resolve the primary party for placeholder replacement — buyer
+        // always wins when present, otherwise consignee. Suppliers aren't
+        // in the lead-side flow.
+        [$primary, $primaryModel, $signers] = $this->resolveAgreementSigners($agreement, $lead, $user);
+
+        if (!$primary) {
+            return response()->json(['status' => false, 'message' => 'No customer/consignee on this lead to render the agreement against.'], 422);
+        }
+
+        $pdf = $this->renderAgreementPdf($agreement, $primary, $primaryModel, Str::uuid()->toString(), $signers);
+
+        return response($pdf->output(), 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="preview-' . ($agreement->code ?: $agreement->id) . '.pdf"',
+            'Cache-Control'       => 'no-store',
+        ]);
+    }
+
+    public function agreementSend(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
+
+        if (!$this->zoho->isConfigured()) {
+            return response()->json(['status' => false, 'message' => 'Zoho Sign is not configured. Contact your administrator.'], 503);
+        }
+
+        $data = $request->validate([
+            'agreement_id'      => 'required|integer|exists:clm_agreement_library,id',
+            'lead_id'           => 'required|integer|exists:leads,id',
+            'expiry_days'       => 'nullable|integer|min:1|max:180',
+            'is_sequential'     => 'nullable|boolean',
+            'notes'             => 'nullable|string|max:1000',
+            /* Per-doc signature placement, same shape as the trade-doc
+             * send. Keyed by agreement_id → { x, y, page, width, height }.
+             * Single-doc per request here so the map will only ever
+             * carry one entry — but keeping the shape parallel lets the
+             * existing mapClientCoordsToZohoDocIds helper drive both
+             * flows without forking. */
+            'document_settings' => 'nullable|array',
+        ]);
+
+        $agreement = ClmAgreementLibrary::where('client_id', $user->client_id)
+            ->findOrFail($data['agreement_id']);
+        $lead = Lead::where('client_id', $user->client_id)->findOrFail($data['lead_id']);
+
+        [$primary, $primaryModel, $signers] = $this->resolveAgreementSigners($agreement, $lead, $user);
+
+        if (!$primary || empty($signers)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'No signer could be resolved — the agreement\'s applicable party (' . $agreement->party . ') does not match a customer/consignee on this lead.',
+            ], 422);
+        }
+
+        $requestUuid = (string) Str::uuid();
+        $tempPaths   = [];
+
+        try {
+            // 1. Render the agreement to a temp PDF.
+            $pdf = $this->renderAgreementPdf($agreement, $primary, $primaryModel, $requestUuid, $signers);
+            $tmp = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
+            file_put_contents($tmp, $pdf->output());
+            $tempPaths[] = $tmp;
+
+            $docName = $agreement->code ? "{$agreement->code} {$agreement->title}" : $agreement->title;
+
+            // 2. Build Zoho request payload.
+            $expiryDays = (int) ($data['expiry_days'] ?? 30);
+            $actions = [];
+            foreach ($signers as $i => $signer) {
+                $actions[] = [
+                    'recipient_email'  => $signer['email'],
+                    'recipient_name'   => $signer['name'],
+                    'action_type'      => 'SIGN',
+                    'signing_order'    => $signer['order'] ?? ($i + 1),
+                    'verify_recipient' => false,
+                ];
+            }
+
+            $requestBody = [
+                'requests' => [
+                    'request_name'    => (string) $agreement->title,
+                    'is_sequential'   => (bool) ($data['is_sequential'] ?? false),
+                    'expiration_days' => $expiryDays,
+                    'notes'           => (string) ($data['notes'] ?? 'Please review and sign this agreement.'),
+                    'actions'         => $actions,
+                ],
+            ];
+
+            $filename = Str::slug($docName) ?: ('agreement_' . $agreement->id);
+
+            // 3. Create Zoho request (multipart).
+            $createResp    = $this->zoho->createRequestMultipart($tempPaths, [$filename], $requestBody);
+            $zohoRequestId = data_get($createResp, 'requests.request_id');
+            if (!$zohoRequestId) {
+                throw new RuntimeException('Zoho create-request did not return a request_id: ' . json_encode($createResp));
+            }
+
+            // 4. Fetch the created request and submit with signature fields.
+            $details         = $this->zoho->getRequest($zohoRequestId);
+            $zohoActions     = data_get($details, 'requests.actions',      []);
+            $zohoDocumentIds = data_get($details, 'requests.document_ids', []);
+
+            $perDocCoords = $this->mapClientCoordsToZohoDocIds(
+                (array) ($data['document_settings'] ?? []),
+                [$agreement->id],
+                $zohoDocumentIds
+            );
+
+            $submitResp = $this->zoho->submitWithFields($zohoRequestId, $zohoActions, $zohoDocumentIds, $perDocCoords);
+            $submitted  = isset($submitResp['requests']);
+
+            // 5. Read back final status.
+            $finalStatus = 'draft';
+            if ($submitted) {
+                try {
+                    sleep(1);
+                    $after = $this->zoho->getRequest($zohoRequestId);
+                    $finalStatus = strtolower((string) data_get($after, 'requests.request_status', 'inprogress'));
+                } catch (\Throwable $e) {
+                    Log::warning('Zoho post-submit status fetch failed: ' . $e->getMessage());
+                    $finalStatus = 'inprogress';
+                }
+            }
+
+            // 6. Persist. `trade_doc_id`/`trade_doc_ids` reuse for agreement
+            //    ids — the polymorphic discriminator is `document_type`.
+            $sigReq = new ClmSignatureRequest();
+            $sigReq->client_id         = $user->client_id;
+            $sigReq->branch_id         = $user->branch_id ?? null;
+            $sigReq->document_type     = ClmSignatureRequest::DOC_AGREEMENT;
+            $sigReq->lead_id           = $lead->id;
+            $sigReq->trade_doc_id      = $agreement->id;
+            $sigReq->trade_doc_ids     = [$agreement->id];
+            $sigReq->document_names    = [$docName];
+            $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn ($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
+            $sigReq->model_name        = $primaryModel;
+            $sigReq->party_id          = $primary->id;
+            $sigReq->zoho_request_id   = $zohoRequestId;
+            $sigReq->request_name      = (string) $agreement->title;
+            $sigReq->status            = $finalStatus;
+            $sigReq->signers           = $signers;
+            $sigReq->expiry_date       = now()->addDays($expiryDays);
+            $sigReq->metadata          = [
+                'sent_at'           => now()->toIso8601String(),
+                'document_type'     => 'agreement',
+                'agreement_id'      => $agreement->id,
+                'agreement_code'    => $agreement->code,
+                'agreement_party'   => $agreement->party,
+                'agreement_segment' => $agreement->segment,
+                'lead_id'           => $lead->id,
+                'primary_party'     => [
+                    'model' => $primaryModel,
+                    'id'    => $primary->id,
+                    'name'  => $primary->company_name ?? null,
+                    'email' => $primary->primary_email ?? null,
+                ],
+                'document_settings' => $data['document_settings'] ?? null,
+                'request_uuid'      => $requestUuid,
+            ];
+            $sigReq->created_by = Auth::id();
+            $sigReq->save();
+
+            $message = $finalStatus === 'inprogress'
+                ? 'Agreement sent for signature successfully.'
+                : 'Agreement created in Zoho but submission did not flip to inprogress.';
+            if ($this->zoho->isTestingMode()) {
+                $message .= ' (Sandbox mode — signer emails are only delivered if the recipient is a Zoho Sign user on this org.)';
+            }
+
+            return response()->json([
+                'status'  => true,
+                'message' => $message,
+                'data'    => [
+                    'signature_request_id' => $sigReq->id,
+                    'zoho_request_id'      => $zohoRequestId,
+                    'status'               => $finalStatus,
+                    'agreement_id'         => $agreement->id,
+                    'document_name'        => $docName,
+                    'signers'              => $sigReq->signers,
+                    'expiry_date'          => $sigReq->expiry_date,
+                    'auto_submitted'       => $submitted,
+                    'testing_mode'         => $this->zoho->isTestingMode(),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('CLM agreement send failed', [
+                'error'   => $e->getMessage(),
+                'trace'   => $e->getTraceAsString(),
+                'request' => $request->all(),
+            ]);
+            return response()->json(['status' => false, 'message' => 'Failed to send agreement: ' . $e->getMessage()], 500);
+        } finally {
+            foreach ($tempPaths as $p) { @unlink($p); }
+        }
+    }
+
+    /**
+     * Decode the agreement's `party` CSV against the lead's customer +
+     * consignee and produce a signer list ready for Zoho. Returns
+     *   [primaryPartyModel, 'Customer'|'Consignee', signersArray]
+     *
+     * Primary party is the buyer when present (customer), else consignee.
+     * Both are added as signers when the CSV calls for them. Supplier-*
+     * tokens are skipped — supplier signing belongs to procure-to-pay.
+     */
+    private function resolveAgreementSigners(ClmAgreementLibrary $agreement, Lead $lead, $user): array
+    {
+        $partyTokens = collect(explode(',', (string) $agreement->party))
+            ->map(fn ($s) => trim($s))
+            ->filter()
+            ->values();
+
+        $wantsBuyer     = $partyTokens->contains(fn ($t) => strcasecmp($t, 'Buyer') === 0);
+        $wantsConsignee = $partyTokens->contains(fn ($t) => strcasecmp($t, 'Consignee') === 0);
+
+        $customer  = $lead->customer_id  ? Customer::query()->forUser($user)->find($lead->customer_id)   : null;
+        $consignee = $lead->consignee_id ? Consignee::query()->forUser($user)->find($lead->consignee_id) : null;
+
+        $signers = [];
+        $order   = 1;
+        if ($wantsBuyer && $customer && $customer->primary_email) {
+            $signers[] = [
+                'email' => $customer->primary_email,
+                'name'  => $customer->company_name ?: 'Buyer',
+                'order' => $order++,
+            ];
+        }
+        if ($wantsConsignee && $consignee && $consignee->primary_email) {
+            $signers[] = [
+                'email' => $consignee->primary_email,
+                'name'  => $consignee->company_name ?: 'Consignee',
+                'order' => $order++,
+            ];
+        }
+
+        // Primary party = whichever side will own the signature_requests
+        // row (for tenant + visibility scoping). Prefer customer.
+        if ($customer)      return [$customer,  'Customer',  $signers];
+        if ($consignee)     return [$consignee, 'Consignee', $signers];
+        return [null, 'Customer', $signers];
+    }
+
+    /**
+     * Render an agreement-library row as a PDF with placeholders merged
+     * against the primary party. Reuses the trade-doc blade since the
+     * structural shape (title + processed HTML + signer table) is
+     * identical — agreement-specific header/footer styling can be added
+     * later if needed.
+     */
+    private function renderAgreementPdf(
+        ClmAgreementLibrary $agreement,
+        Model $party,
+        string $modelName,
+        string $requestUuid,
+        ?array $signers = null,
+    ) {
+        $sourceHtml    = (string) $agreement->content;
+        $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName);
+        $client        = Client::find($agreement->client_id);
+
+        // Read the row's saved page-shell config (Stage 2 wizard) so the
+        // PDF matches what the user composed in the editor. Missing on
+        // pre-migration rows → empty array; blade falls back to a
+        // minimal client-name header so older agreements still render.
+        $headerConfig = is_array($agreement->header_config) ? $agreement->header_config : [];
+        $footerConfig = is_array($agreement->footer_config) ? $agreement->footer_config : [];
+
+        $headerLogoBase64 = $this->resolveLogoBase64(
+            $headerConfig['logo_path'] ?? null,
+            $this->pathFromStorageUrl($headerConfig['logo_url'] ?? null),
+            $client?->logo,
+        );
+
+        // Build a stand-in object that the trade-doc blade can read with
+        // its existing `$document->title ?? $document->name ?? 'Document'`
+        // contract. We pass the agreement directly — title is present.
+        return Pdf::loadView('pdf.clm-signature-document', [
+            'document'         => $agreement,
+            'party'            => $party,
+            'modelName'        => $modelName,
+            'processedHtml'    => $processedHtml,
+            'generatedDate'    => now()->format('d/m/Y'),
+            'requestId'        => substr($requestUuid, 0, 8),
+            'signers'          => $signers ?? [],
+            'client'           => $client,
+            'headerConfig'     => $headerConfig,
+            'footerConfig'     => $footerConfig,
+            'headerLogoBase64' => $headerLogoBase64,
+        ])->setPaper('a4');
     }
 
     /* ─────────────────────── LIST / SHOW ─────────────────────── */
