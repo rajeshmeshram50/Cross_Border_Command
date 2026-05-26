@@ -686,10 +686,10 @@ class EmployeeController extends Controller
          * Recipient: $row->user->email — the personal email captured
          * by the wizard's "Personal Email" field. */
         if (
-            $newStep >= 4
+            $oldStep < 4
+            && $newStep >= 4
             && Settings::shouldSendMail('newUser')
             && $row->user
-            && empty($row->user->password_encrypted)
             && !$row->user->last_login_at
         ) {
             try {
