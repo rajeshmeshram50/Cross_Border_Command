@@ -388,44 +388,100 @@ class ClmSignatureController extends Controller
         }
 
         $data = $request->validate([
-            'agreement_id'      => 'required|integer|exists:clm_agreement_library,id',
+            // Bulk-aware: callers can pass `agreement_ids[]` for a bulk send,
+            // or the legacy single `agreement_id` for one-shot. Both end up
+            // normalised into $ids below.
+            'agreement_id'      => 'nullable|integer|exists:clm_agreement_library,id',
+            'agreement_ids'     => 'nullable|array|min:1|max:10',
+            'agreement_ids.*'   => 'integer|exists:clm_agreement_library,id',
             'lead_id'           => 'required|integer|exists:leads,id',
             'expiry_days'       => 'nullable|integer|min:1|max:180',
             'is_sequential'     => 'nullable|boolean',
             'notes'             => 'nullable|string|max:1000',
-            /* Per-doc signature placement, same shape as the trade-doc
-             * send. Keyed by agreement_id → { x, y, page, width, height }.
-             * Single-doc per request here so the map will only ever
-             * carry one entry — but keeping the shape parallel lets the
-             * existing mapClientCoordsToZohoDocIds helper drive both
-             * flows without forking. */
+            /* Per-doc signature placement keyed by agreement_id →
+             * { x, y, page, width, height }. Single map covers both
+             * single + bulk sends. mapClientCoordsToZohoDocIds expands
+             * it into per-Zoho-doc field entries. */
             'document_settings' => 'nullable|array',
         ]);
 
-        $agreement = ClmAgreementLibrary::where('client_id', $user->client_id)
-            ->findOrFail($data['agreement_id']);
-        $lead = Lead::where('client_id', $user->client_id)->findOrFail($data['lead_id']);
+        // Normalise the input — frontend may pass `agreement_ids` (bulk)
+        // or `agreement_id` (single). Either path lands in an ordered
+        // unique int[] preserving caller order.
+        $rawIds = !empty($data['agreement_ids'])
+            ? array_map('intval', $data['agreement_ids'])
+            : (!empty($data['agreement_id']) ? [(int) $data['agreement_id']] : []);
+        $ids = array_values(array_unique(array_filter($rawIds, fn ($v) => $v > 0)));
+        if (empty($ids)) {
+            return response()->json(['status' => false, 'message' => 'No agreement_ids supplied'], 422);
+        }
 
-        [$primary, $primaryModel, $signers] = $this->resolveAgreementSigners($agreement, $lead, $user);
+        $lead       = Lead::where('client_id', $user->client_id)->findOrFail($data['lead_id']);
+        $agreements = ClmAgreementLibrary::where('client_id', $user->client_id)
+            ->whereIn('id', $ids)
+            ->get()
+            ->keyBy('id');
+
+        if ($agreements->isEmpty()) {
+            return response()->json(['status' => false, 'message' => 'No accessible agreements in the selection.'], 422);
+        }
+
+        // Preserve caller order (DB returns rows in arbitrary order).
+        $orderedAgreements = collect($ids)
+            ->map(fn ($id) => $agreements->get($id))
+            ->filter()
+            ->values();
+
+        // Same-party constraint — every selected agreement must have an
+        // identical applicable_party CSV so the signer list resolves
+        // consistently across the bundle. Whitespace + casing are
+        // normalised before comparison so "Buyer, Consignee" and
+        // "buyer,consignee" group together.
+        $normaliseParty = function (?string $p): string {
+            return collect(explode(',', (string) $p))
+                ->map(fn ($s) => strtolower(trim($s)))
+                ->filter()
+                ->sort()
+                ->values()
+                ->implode(',');
+        };
+        $partyKeys = $orderedAgreements->map(fn ($a) => $normaliseParty($a->party))->unique()->values();
+        if ($partyKeys->count() > 1) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Bulk send requires every selected agreement to share the same applicable party. Found: '
+                    . $orderedAgreements->pluck('party')->unique()->implode(' | '),
+            ], 422);
+        }
+
+        // Resolve signers from the first agreement (same party for all
+        // selected, so signer composition is identical).
+        $headAgreement = $orderedAgreements->first();
+        [$primary, $primaryModel, $signers] = $this->resolveAgreementSigners($headAgreement, $lead, $user);
 
         if (!$primary || empty($signers)) {
             return response()->json([
                 'status'  => false,
-                'message' => 'No signer could be resolved — the agreement\'s applicable party (' . $agreement->party . ') does not match a customer/consignee on this lead.',
+                'message' => 'No signer could be resolved — the agreement\'s applicable party (' . $headAgreement->party . ') does not match a customer/consignee on this lead.',
             ], 422);
         }
 
-        $requestUuid = (string) Str::uuid();
-        $tempPaths   = [];
+        $requestUuid  = (string) Str::uuid();
+        $tempPaths    = [];
+        $localDocMeta = [];
 
         try {
-            // 1. Render the agreement to a temp PDF.
-            $pdf = $this->renderAgreementPdf($agreement, $primary, $primaryModel, $requestUuid, $signers);
-            $tmp = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
-            file_put_contents($tmp, $pdf->output());
-            $tempPaths[] = $tmp;
-
-            $docName = $agreement->code ? "{$agreement->code} {$agreement->title}" : $agreement->title;
+            // 1. Render every agreement to a temp PDF.
+            foreach ($orderedAgreements as $a) {
+                $pdf = $this->renderAgreementPdf($a, $primary, $primaryModel, $requestUuid, $signers);
+                $tmp = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
+                file_put_contents($tmp, $pdf->output());
+                $tempPaths[]    = $tmp;
+                $localDocMeta[] = [
+                    'id'            => $a->id,
+                    'document_name' => $a->code ? "{$a->code} {$a->title}" : $a->title,
+                ];
+            }
 
             // 2. Build Zoho request payload.
             $expiryDays = (int) ($data['expiry_days'] ?? 30);
@@ -440,20 +496,25 @@ class ClmSignatureController extends Controller
                 ];
             }
 
+            $requestName = $orderedAgreements->count() > 1
+                ? 'Agreements: ' . $orderedAgreements->pluck('title')->take(3)->implode(', ')
+                  . ($orderedAgreements->count() > 3 ? '…' : '')
+                : (string) $headAgreement->title;
+
             $requestBody = [
                 'requests' => [
-                    'request_name'    => (string) $agreement->title,
+                    'request_name'    => $requestName,
                     'is_sequential'   => (bool) ($data['is_sequential'] ?? false),
                     'expiration_days' => $expiryDays,
-                    'notes'           => (string) ($data['notes'] ?? 'Please review and sign this agreement.'),
+                    'notes'           => (string) ($data['notes'] ?? 'Please review and sign these agreements.'),
                     'actions'         => $actions,
                 ],
             ];
 
-            $filename = Str::slug($docName) ?: ('agreement_' . $agreement->id);
+            $filenames = array_map(fn ($m) => Str::slug($m['document_name']) ?: ('agreement_' . $m['id']), $localDocMeta);
 
-            // 3. Create Zoho request (multipart).
-            $createResp    = $this->zoho->createRequestMultipart($tempPaths, [$filename], $requestBody);
+            // 3. Create Zoho request (multipart — JSON + N PDFs).
+            $createResp    = $this->zoho->createRequestMultipart($tempPaths, $filenames, $requestBody);
             $zohoRequestId = data_get($createResp, 'requests.request_id');
             if (!$zohoRequestId) {
                 throw new RuntimeException('Zoho create-request did not return a request_id: ' . json_encode($createResp));
@@ -466,7 +527,7 @@ class ClmSignatureController extends Controller
 
             $perDocCoords = $this->mapClientCoordsToZohoDocIds(
                 (array) ($data['document_settings'] ?? []),
-                [$agreement->id],
+                $orderedAgreements->pluck('id')->all(),
                 $zohoDocumentIds
             );
 
@@ -493,39 +554,43 @@ class ClmSignatureController extends Controller
             $sigReq->branch_id         = $user->branch_id ?? null;
             $sigReq->document_type     = ClmSignatureRequest::DOC_AGREEMENT;
             $sigReq->lead_id           = $lead->id;
-            $sigReq->trade_doc_id      = $agreement->id;
-            $sigReq->trade_doc_ids     = [$agreement->id];
-            $sigReq->document_names    = [$docName];
+            $sigReq->trade_doc_id      = $orderedAgreements->first()->id;
+            $sigReq->trade_doc_ids     = $orderedAgreements->pluck('id')->values()->all();
+            $sigReq->document_names    = collect($localDocMeta)->pluck('document_name')->values()->all();
             $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn ($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
             $sigReq->model_name        = $primaryModel;
             $sigReq->party_id          = $primary->id;
             $sigReq->zoho_request_id   = $zohoRequestId;
-            $sigReq->request_name      = (string) $agreement->title;
+            $sigReq->request_name      = $requestName;
             $sigReq->status            = $finalStatus;
             $sigReq->signers           = $signers;
             $sigReq->expiry_date       = now()->addDays($expiryDays);
             $sigReq->metadata          = [
-                'sent_at'           => now()->toIso8601String(),
-                'document_type'     => 'agreement',
-                'agreement_id'      => $agreement->id,
-                'agreement_code'    => $agreement->code,
-                'agreement_party'   => $agreement->party,
-                'agreement_segment' => $agreement->segment,
-                'lead_id'           => $lead->id,
-                'primary_party'     => [
+                'sent_at'             => now()->toIso8601String(),
+                'document_type'       => 'agreement',
+                'is_bulk'             => $orderedAgreements->count() > 1,
+                'agreement_ids'       => $orderedAgreements->pluck('id')->values()->all(),
+                'agreement_codes'     => $orderedAgreements->pluck('code')->values()->all(),
+                'agreement_party'     => $headAgreement->party,
+                'agreement_segments'  => $orderedAgreements->pluck('segment')->unique()->values()->all(),
+                'lead_id'             => $lead->id,
+                'primary_party'       => [
                     'model' => $primaryModel,
                     'id'    => $primary->id,
                     'name'  => $primary->company_name ?? null,
                     'email' => $primary->primary_email ?? null,
                 ],
-                'document_settings' => $data['document_settings'] ?? null,
-                'request_uuid'      => $requestUuid,
+                'document_settings'   => $data['document_settings'] ?? null,
+                'request_uuid'        => $requestUuid,
             ];
             $sigReq->created_by = Auth::id();
             $sigReq->save();
 
+            $isBulk = $orderedAgreements->count() > 1;
             $message = $finalStatus === 'inprogress'
-                ? 'Agreement sent for signature successfully.'
+                ? ($isBulk
+                    ? $orderedAgreements->count() . ' agreements sent for signature successfully.'
+                    : 'Agreement sent for signature successfully.')
                 : 'Agreement created in Zoho but submission did not flip to inprogress.';
             if ($this->zoho->isTestingMode()) {
                 $message .= ' (Sandbox mode — signer emails are only delivered if the recipient is a Zoho Sign user on this org.)';
@@ -538,8 +603,9 @@ class ClmSignatureController extends Controller
                     'signature_request_id' => $sigReq->id,
                     'zoho_request_id'      => $zohoRequestId,
                     'status'               => $finalStatus,
-                    'agreement_id'         => $agreement->id,
-                    'document_name'        => $docName,
+                    'agreement_ids'        => $sigReq->trade_doc_ids,
+                    'document_names'       => $sigReq->document_names,
+                    'document_count'       => $orderedAgreements->count(),
                     'signers'              => $sigReq->signers,
                     'expiry_date'          => $sigReq->expiry_date,
                     'auto_submitted'       => $submitted,
