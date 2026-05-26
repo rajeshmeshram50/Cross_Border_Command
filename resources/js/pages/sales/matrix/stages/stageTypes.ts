@@ -7,8 +7,11 @@ export type StageProps = {
   onNext: () => void;
   /* Tells the parent to re-fetch the lead. Stage 2 calls this after
    * saving acknowledgements so the Activity Report reflects the
-   * append-only history (and the lead's qualified flag flips). */
-  reloadLead?: () => void;
+   * append-only history (and the lead's qualified flag flips).
+   * Returns the in-flight promise so callers can await it before
+   * reading dependent state (e.g., Stage 2's submitPicker awaits this
+   * so a click on Save & Next immediately afterwards sees fresh data). */
+  reloadLead?: () => Promise<unknown> | void;
 };
 
 /* Shared stage shell styles — each stage imports SHARED_STAGE_CSS once. */

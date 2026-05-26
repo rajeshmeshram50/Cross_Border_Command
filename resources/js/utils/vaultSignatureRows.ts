@@ -35,7 +35,14 @@ export interface SigReqRow {
    *  Used as a last-resort fallback when the JSON array is missing
    *  entries for a particular doc index. */
   signed_document_path?: string | null;
+  /** Backend-computed absolute URL for the single-file signed PDF
+   *  (top-level companion to signed_document_path). Already routes
+   *  through file_url() server-side so it's Azure-aware. */
+  signed_document_url?: string | null;
   certificate_path?: string | null;
+  /** Backend-computed absolute URL for the completion certificate
+   *  (top-level companion to certificate_path). Azure-aware. */
+  certificate_url?: string | null;
   signers?: Array<{ name?: string; email?: string; order?: number }> | null;
   created_at?: string | null;
   completed_at?: string | null;
@@ -90,19 +97,22 @@ export function signatureRequestsToVaultDocs(rows: SigReqRow[]): VaultDocLike[] 
      * Attach the same URL to every doc-row in this request so each
      * row's Actions column can render its own "Certificate of
      * Completion" icon — mirrors New_IDIMS_6.0's per-row action menu
-     * exactly (see Stage3Tab2DocumentationArchive's faCertificate
-     * button). Hidden by the renderer when the request isn't
-     * completed.
+     * exactly.
      *
-     * URL resolution — certificate_path is a disk-relative path
-     * ("uploads/signed_documents/customer/cert_…pdf"). resolveFileUrl
-     * prefixes the VITE_API_URL (so it works whether the SPA runs from
-     * the Vite dev server, the Laravel app, or a deployed CDN host)
-     * and routes legacy "storage/" / "uploads/" prefixes consistently.
-     * Plain string concatenation produced relative `/storage/…` URLs
-     * that 404'd whenever the SPA origin differed from the API. */
-    const certUrl = isSigned && req.certificate_path
-      ? resolveFileUrl(req.certificate_path)
+     * URL resolution priority:
+     *   1. `certificate_url` — backend-computed absolute URL routed
+     *      through file_url() server-side. This is Azure-aware: when
+     *      the disk is Azure, this is the blob URL; when local, it's
+     *      /storage/... on the API origin. ALWAYS prefer this.
+     *   2. `certificate_path` via resolveFileUrl — only used when the
+     *      top-level certificate_url is absent (older rows). Note that
+     *      resolveFileUrl can only construct {api_base}/uploads/...
+     *      paths, which are WRONG when the disk is Azure — so this
+     *      is purely a fallback for local-disk legacy rows. */
+    const certUrl = isSigned
+      ? (req.certificate_url
+          ? resolveFileUrl(req.certificate_url)
+          : (req.certificate_path ? resolveFileUrl(req.certificate_path) : null))
       : null;
 
     for (let i = 0; i < ids.length; i++) {
@@ -113,25 +123,29 @@ export function signatureRequestsToVaultDocs(rows: SigReqRow[]): VaultDocLike[] 
       seenDocs.add(seenKey);
 
       const signedEntry = paths[i] ?? null;
-      /* Resolve from `path` FIRST (just like the certificate above),
-       * not from the cached `url`. The cached URL goes stale across
-       * disk-config flips: a row whose fetchSignedArtifacts ran under
-       * the local disk stored `url = "/storage/uploads/…"`, but after
-       * the disk is switched to Azure the actual file lives at
-       * https://<container>.blob.core.windows.net/cbc-saas/uploads/…
-       * and the cached `/storage/…` URL 404s. Re-resolving from the
-       * disk-relative `path` via resolveFileUrl + VITE_API_URL keeps
-       * the link in sync with the current backend config every render.
-       * Falls through to `file_url`, `url`, and the legacy single-file
-       * `signed_document_path` column for older rows that only stored
-       * one of those.
+      /* URL resolution priority — mirror the certificate logic:
+       *   1. Per-entry absolute URL (`file_url` / `url`) — these are
+       *      backend-resolved at fetch time via file_url() and are
+       *      Azure-aware (the blob's canonical https URL). ALWAYS
+       *      prefer them.
+       *   2. Top-level `signed_document_url` for legacy single-file
+       *      rows where signed_document_paths is empty.
+       *   3. Disk-relative `path` via resolveFileUrl — only correct
+       *      when the disk is local (resolveFileUrl can't know the
+       *      Azure container URL, so it'd produce a wrong
+       *      `{api_base}/uploads/...` that 404s). Pure fallback.
+       *   4. Top-level legacy `signed_document_path` (first doc only).
        */
-      const rawPath = signedEntry?.path
-        || signedEntry?.file_url
+      const rawAbs  = signedEntry?.file_url
         || signedEntry?.url
+        || (i === 0 ? req.signed_document_url ?? null : null)
+        || null;
+      const rawPath = signedEntry?.path
         || (i === 0 ? req.signed_document_path ?? null : null)
         || null;
-      const url  = rawPath ? resolveFileUrl(rawPath) : null;
+      const url = rawAbs
+        ? resolveFileUrl(rawAbs)
+        : (rawPath ? resolveFileUrl(rawPath) : null);
       const name = names[i] ?? `Document ${docId}`;
 
       out.push({

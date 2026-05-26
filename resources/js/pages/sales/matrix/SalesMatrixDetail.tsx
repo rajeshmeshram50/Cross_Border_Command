@@ -152,6 +152,35 @@ export default function SalesMatrixDetail() {
   const [clmCollapsed, setClmCollapsed] = useState(false);
   const [dealCollapsed, setDealCollapsed] = useState(false);
 
+  /* CLM doc counts — pulled live from /customers/{id}/documents and
+   * /consignees/{id}/documents (sum of dd + tl rows). Falls back to 0
+   * when the row hasn't loaded yet so the progress bar starts empty
+   * instead of stale. Total is 14 = 6 DD + 8 TL per party — must match
+   * the DD_DOCS + TL_DOCS catalogs in AddCustomerModal / AddConsigneeModal. */
+  /* CLM doc tally — sourced from /segment-uploads/{customer|consignee}/{id}/vault
+   * which is the SAME endpoint Stage 3 Evidence Vault uses. It returns
+   * `total_documents` (the catalog: Company DD + Owner KYC + Trade Licence
+   * + Trade Documents, expanded from the party's segment rules) and
+   * `verified_signed` (how many of those have an actual upload on file).
+   * `error` distinguishes a failed fetch from a legitimate empty catalog —
+   * without it the UI conflates "server failed" with "no segments yet". */
+  type ClmTally = { total: number; verified: number; error?: boolean; loading?: boolean } | null;
+  const [custTally, setCustTally] = useState<ClmTally>(null);
+  const [consTally, setConsTally] = useState<ClmTally>(null);
+  /* Refetch trigger — bumped after a modal SAVE (not just close) so the
+   * tally effects re-run even though the customer/consignee FK hasn't
+   * changed. Without this the CLM panel would keep showing the pre-upload
+   * count until the user navigates away and back. Note: when the same
+   * onSaved also re-maps the customer FK via reloadLead, both effects
+   * will fire — the cancel flag below ensures only the latest setState
+   * wins, so it's safe (one extra network round-trip in that rare case). */
+  const [clmRefreshTick, setClmRefreshTick] = useState(0);
+  /* Click → open the existing Customer/Consignee modal pre-positioned at
+   * the requested stage (2 = KYC, 3 = Trade Docs / Evidence Vault). Stage
+   * selection comes from which CLM row the user clicked — both currently
+   * deep-link to Stage 2 since the panel labels them "KYC / DD / Trade". */
+  const [clmInitialStage, setClmInitialStage] = useState<1 | 2 | 3 | undefined>(undefined);
+
   useEffect(() => {
     if (!changeOwnerOpen || ownerOpts.length > 0) return;
     api.get<{ status: boolean; data: Array<{ id: number; name: string; code: string; subtitle: string }> }>(
@@ -341,6 +370,60 @@ export default function SalesMatrixDetail() {
   }, [resolvedLeadId, toast]);
 
   useEffect(() => { reloadLead(); }, [reloadLead]);
+
+  /* Vault-tally fetch — one call per party, hitting the same endpoint
+   * the Stage 3 Evidence Vault uses. `data.total_documents` is the
+   * catalog size (driven by the party's segment rules: DD + Owner KYC
+   * + TL + Trade Docs combined); `data.verified_signed` is how many of
+   * those have an actual upload. */
+  type VaultResponse = {
+    data?: {
+      total_documents?: number;
+      verified_signed?: number;
+    };
+  };
+
+  useEffect(() => {
+    const cid = serverHeader.customerId;
+    if (!cid) { setCustTally(null); return; }
+    /* Reset to loading state on every effect-fire so a customer-switch
+     * (re-mapped in the toolbar) doesn't leave the previous customer's
+     * count visible while the new fetch is in flight. */
+    setCustTally({ total: 0, verified: 0, loading: true });
+    let cancelled = false;
+    /* 8s timeout — beyond that the vault is probably stuck (slow query,
+     * server unresponsive). Falling into the catch puts the panel in
+     * error state with a retry CTA instead of showing "Loading…" forever. */
+    api.get<VaultResponse>(`/segment-uploads/customer/${cid}/vault`, { timeout: 8000 })
+      .then(res => {
+        if (cancelled) return;
+        const d = res.data?.data;
+        setCustTally({
+          total:    Number(d?.total_documents  ?? 0),
+          verified: Number(d?.verified_signed ?? 0),
+        });
+      })
+      .catch(() => { if (!cancelled) setCustTally({ total: 0, verified: 0, error: true }); });
+    return () => { cancelled = true; };
+  }, [serverHeader.customerId, clmRefreshTick]);
+
+  useEffect(() => {
+    const cid = serverHeader.consigneeId;
+    if (!cid) { setConsTally(null); return; }
+    setConsTally({ total: 0, verified: 0, loading: true });
+    let cancelled = false;
+    api.get<VaultResponse>(`/segment-uploads/consignee/${cid}/vault`, { timeout: 8000 })
+      .then(res => {
+        if (cancelled) return;
+        const d = res.data?.data;
+        setConsTally({
+          total:    Number(d?.total_documents  ?? 0),
+          verified: Number(d?.verified_signed ?? 0),
+        });
+      })
+      .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
+    return () => { cancelled = true; };
+  }, [serverHeader.consigneeId, clmRefreshTick]);
 
   /* "Marked as key" is sourced live from the server (leads.key_opportunity)
    * so it survives navigation / refresh. Toggling fires a PUT and the
@@ -639,20 +722,82 @@ export default function SalesMatrixDetail() {
               </div>
             </div>
 
-            <ClmRow
-              icon={<IconUserSm />}
-              tone="amber"
-              title="Customer Details"
-              sub="8 of 12 documents"
-              progress={67}
-            />
-            <ClmRow
-              icon={<IconTruckSm />}
-              tone="emerald"
-              title="Consignee Details"
-              sub="6 of 12 documents"
-              progress={50}
-            />
+            {/* Customer row — only renders when a customer is mapped
+             *  to this lead. Click opens AddCustomerModal at Stage 3
+             *  (Evidence Vault) — that's the stage whose uploads feed
+             *  the same `segment_doc_uploads` table the CLM count reads
+             *  from. Landing on Stage 2 instead would let users upload
+             *  via the "Add Document" button without ever moving the
+             *  count, since Stage 2's primary button writes to a
+             *  different table (`customer_documents`). */}
+            {serverHeader.customerId && serverHeader.customerRow && (
+              <ClmRow
+                icon={<IconUserSm />}
+                tone="amber"
+                title="Customer Details"
+                sub={renderClmSub(custTally)}
+                progress={renderClmProgress(custTally)}
+                state={custTally?.error ? 'error' : custTally?.loading ? 'loading' : 'ready'}
+                onRetry={custTally?.error ? () => setClmRefreshTick(t => t + 1) : undefined}
+                disabled={customerAddOpen || consigneeAddOpen}
+                onClick={() => {
+                  if (customerAddOpen || consigneeAddOpen) return;
+                  const row = serverHeader.customerRow as Record<string, unknown>;
+                  setCustomerEditing({
+                    ...row,
+                    db_id: typeof row.id === 'number' ? (row.id as number) : serverHeader.customerId,
+                  } as unknown as EditCustomer);
+                  setClmInitialStage(3);
+                  setCustomerAddOpen(true);
+                }}
+              />
+            )}
+            {/* Consignee row — same gating + Stage 3 deep-link. The
+             *  customer_code/consignee_code passed to the modal is the
+             *  REAL value from the eager-loaded row only; we no longer
+             *  synthesise a `C-${padStart(3)}` fallback because that
+             *  hard-codes a padding the system doesn't actually use. */}
+            {serverHeader.consigneeId && serverHeader.consigneeRow && (
+              <ClmRow
+                icon={<IconTruckSm />}
+                tone="emerald"
+                title="Consignee Details"
+                sub={renderClmSub(consTally)}
+                progress={renderClmProgress(consTally)}
+                state={consTally?.error ? 'error' : consTally?.loading ? 'loading' : 'ready'}
+                onRetry={consTally?.error ? () => setClmRefreshTick(t => t + 1) : undefined}
+                disabled={customerAddOpen || consigneeAddOpen}
+                onClick={() => {
+                  if (customerAddOpen || consigneeAddOpen) return;
+                  const raw = serverHeader.consigneeRow as Record<string, unknown>;
+                  const customerCode =
+                    (serverHeader.customerRow as Record<string, unknown> | null | undefined)?.customer_code as string | undefined;
+                  const consigneeCode = raw.consignee_code as string | undefined;
+                  setConsigneeEditing({
+                    id:             consigneeCode ?? '',
+                    db_id:          serverHeader.consigneeId,
+                    customerId:     customerCode ?? '',
+                    customer_db_id: serverHeader.customerId ?? undefined,
+                    initials:       String(raw.company_name ?? '?').slice(0, 2).toUpperCase(),
+                    name:           (raw.company_name as string | undefined) ?? '',
+                    legalName:      (raw.legal_name   as string | undefined) ?? '',
+                    segment:        (raw.segment      as string | undefined) ?? '',
+                    type:           (raw.type         as string | undefined) ?? '',
+                    classification: (raw.classification as string | undefined) ?? '',
+                  } as unknown as Parameters<typeof setConsigneeEditing>[0]);
+                  setClmInitialStage(3);
+                  setConsigneeAddOpen(true);
+                }}
+              />
+            )}
+            {/* Empty-state hint — shown only when NEITHER party is
+             *  mapped yet, so the user knows what unlocks this panel.
+             *  Once either is mapped, the row(s) replace it. */}
+            {!serverHeader.customerId && !serverHeader.consigneeId && (
+              <div className="smd-clm-empty">
+                Map a customer or consignee from the toolbar above to track their KYC + Trade documents here.
+              </div>
+            )}
           </div>
 
           {/* Segment group */}
@@ -802,10 +947,16 @@ export default function SalesMatrixDetail() {
       <AddCustomerModal
         open={customerAddOpen}
         customer={customerEditing}
-        onClose={() => { setCustomerAddOpen(false); setCustomerEditing(null); }}
+        initialStage={clmInitialStage}
+        /* onClose intentionally does NOT bump clmRefreshTick — closing
+         * without saving can't have changed any uploads, so a refetch
+         * would just be a wasted round-trip. The tick only fires on
+         * onSaved below. */
+        onClose={() => { setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined); }}
         onSaved={() => {
           setCustomerOpts([]); setCustomerRows({});
-          setCustomerAddOpen(false); setCustomerEditing(null);
+          setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined);
+          setClmRefreshTick(t => t + 1);
           void reloadLead();
         }}
       />
@@ -865,10 +1016,13 @@ export default function SalesMatrixDetail() {
         preselectedCustomerDbId={
           !consigneeEditing ? (serverHeader.customerId ?? undefined) : undefined
         }
-        onClose={() => { setConsigneeAddOpen(false); setConsigneeEditing(null); }}
+        initialStage={clmInitialStage}
+        /* See AddCustomerModal note above — no tick bump on plain close. */
+        onClose={() => { setConsigneeAddOpen(false); setConsigneeEditing(null); setClmInitialStage(undefined); }}
         onSaved={() => {
           setConsigneeOpts([]); setConsigneeRows({});
-          setConsigneeAddOpen(false); setConsigneeEditing(null);
+          setConsigneeAddOpen(false); setConsigneeEditing(null); setClmInitialStage(undefined);
+          setClmRefreshTick(t => t + 1);
           void reloadLead();
         }}
       />
@@ -1056,22 +1210,70 @@ function ActionBtn({ icon, label, trailing, className, onClick }: {
   );
 }
 
-function ClmRow({ icon, tone, title, sub, progress }: {
+/* Helpers for the CLM row sub-text + progress — kept module-scope so
+ * the JSX above stays readable. `tally === null` = no party mapped
+ * (row shouldn't render at all); `error` = fetch failed; `loading` =
+ * fetch in flight; otherwise the catalog tally. */
+type ClmTallyState = { total: number; verified: number; error?: boolean; loading?: boolean } | null;
+function renderClmSub(t: ClmTallyState): string {
+  if (t == null || t.loading) return 'Loading documents…';
+  if (t.error)                return 'Couldn’t load — tap to retry';
+  if (t.total === 0)          return 'No segment rules set';
+  return `${t.verified} of ${t.total} documents`;
+}
+function renderClmProgress(t: ClmTallyState): number {
+  if (t == null || t.loading || t.error || t.total === 0) return 0;
+  return Math.min(100, Math.round((t.verified / t.total) * 100));
+}
+
+function ClmRow({ icon, tone, title, sub, progress, state, onClick, onRetry, disabled }: {
   icon: React.ReactNode; tone: 'amber'|'emerald'|'rose'|'orange';
   title: string; sub: string; progress: number;
+  state?: 'ready' | 'loading' | 'error';
+  onClick?: () => void;
+  onRetry?: () => void;
+  disabled?: boolean;
 }) {
+  const clickable = typeof onClick === 'function' && !disabled;
+  const handleClick = onRetry ? onRetry : onClick;
   return (
-    <div className="smd-clm-row">
+    <div
+      className={[
+        'smd-clm-row',
+        clickable ? 'smd-clm-row-clickable' : '',
+        disabled  ? 'smd-clm-row-disabled' : '',
+        state === 'error'   ? 'smd-clm-row-error'   : '',
+        state === 'loading' ? 'smd-clm-row-loading' : '',
+      ].filter(Boolean).join(' ')}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      aria-disabled={disabled || undefined}
+      onClick={clickable ? handleClick : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick?.(); } } : undefined}
+    >
       <div className="smd-clm-row-head">
         <div className={`smd-clm-row-icon smd-clm-row-icon-${tone}`}>{icon}</div>
         <div className="smd-clm-row-text">
           <div className="smd-clm-row-title">{title}</div>
           <div className="smd-clm-row-sub">{sub}</div>
         </div>
-        <button className="smd-clm-row-go" aria-label="Open">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-            <path d="M7 17 17 7M7 7h10v10" />
-          </svg>
+        <button
+          className="smd-clm-row-go"
+          aria-label={state === 'error' ? 'Retry' : 'Open'}
+          disabled={disabled}
+          onClick={clickable ? (e) => { e.stopPropagation(); handleClick?.(); } : undefined}
+        >
+          {state === 'error' ? (
+            // Retry / refresh icon
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+          ) : (
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+              <path d="M7 17 17 7M7 7h10v10" />
+            </svg>
+          )}
         </button>
       </div>
       <div className="smd-clm-progress">

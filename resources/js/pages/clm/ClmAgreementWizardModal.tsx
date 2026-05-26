@@ -1,9 +1,53 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useEditor, EditorContent, Editor } from '@tiptap/react';
+import { useEditor, EditorContent, Editor, Mark, mergeAttributes } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
+import TextStyle from '@tiptap/extension-text-style';
+import Color from '@tiptap/extension-color';
+import Highlight from '@tiptap/extension-highlight';
+import Link from '@tiptap/extension-link';
+import Subscript from '@tiptap/extension-subscript';
+import Superscript from '@tiptap/extension-superscript';
+
+/**
+ * Custom FontSize mark — TipTap ships no first-party font-size extension,
+ * but the Trade Document editor has one in its toolbar (size 1–7), so to
+ * match parity we add a tiny mark that emits `<span style="font-size:Npt">`.
+ * Lives in this file because it's a one-line semantic addition; promoting
+ * it to a shared util would just be churn.
+ */
+const FontSize = Mark.create({
+  name: 'fontSize',
+  addAttributes() {
+    return {
+      size: {
+        default: null,
+        parseHTML: (el) => el.style.fontSize?.replace(/['"]/g, '') || null,
+        renderHTML: (attrs) => (attrs.size ? { style: `font-size: ${attrs.size}` } : {}),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ style: 'font-size' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', mergeAttributes(HTMLAttributes), 0];
+  },
+  addCommands() {
+    return {
+      setFontSize:
+        (size: string) =>
+        ({ commands }: any) =>
+          commands.setMark(this.name, { size }),
+      unsetFontSize:
+        () =>
+        ({ commands }: any) =>
+          commands.unsetMark(this.name),
+    } as any;
+  },
+});
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
@@ -745,44 +789,6 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
     { label: 'City',           token: '{{supplier.city}}' },
     { label: 'Category',       token: '{{supplier.category}}' },
     { label: 'Risk Level',     token: '{{supplier.risk_level}}' },
-  ] },
-  { id: 'transaction', label: 'Transaction', iconEmoji: '💼', iconColor: '#7c3aed', fields: [
-    { label: 'Shipment ID',       token: '{{transaction.shipment_id}}' },
-    { label: 'OPP ID',            token: '{{transaction.opp_id}}' },
-    { label: 'Product',           token: '{{transaction.product}}' },
-    { label: 'Quantity',          token: '{{transaction.quantity}}' },
-    { label: 'Invoice Date',      token: '{{transaction.invoice_date}}' },
-    { label: 'Invoice No',        token: '{{transaction.invoice_no}}' },
-    { label: 'Amount',            token: '{{transaction.amount}}' },
-    { label: 'Currency',          token: '{{transaction.currency}}' },
-    { label: 'Tax Date',          token: '{{transaction.tax_date}}' },
-    { label: 'Port of Loading',   token: '{{transaction.port_of_loading}}' },
-    { label: 'Port of Discharge', token: '{{transaction.port_of_discharge}}' },
-    { label: 'Vessel Name',       token: '{{transaction.vessel_name}}' },
-  ] },
-  { id: 'contract', label: 'Contract', iconEmoji: '📄', iconColor: '#0e7490', fields: [
-    { label: 'Contract No',     token: '{{contract.contract_no}}' },
-    { label: 'Contract Date',   token: '{{contract.contract_date}}' },
-    { label: 'Start Date',      token: '{{contract.start_date}}' },
-    { label: 'End Date',        token: '{{contract.end_date}}' },
-    { label: 'Payment Terms',   token: '{{contract.payment_terms}}' },
-    { label: 'Delivery Terms',  token: '{{contract.delivery_terms}}' },
-    { label: 'Incoterms',       token: '{{contract.incoterms}}' },
-    { label: 'Governing Law',   token: '{{contract.governing_law}}' },
-  ] },
-  { id: 'agreement', label: 'Agreement', iconEmoji: '🤝', iconColor: '#be185d', fields: [
-    { label: 'Agreement No',    token: '{{agreement.agreement_no}}' },
-    { label: 'Agreement Title', token: '{{agreement.agreement_title}}' },
-    { label: 'Agreement Type',  token: '{{agreement.agreement_type}}' },
-    { label: 'Agreement Date',  token: '{{agreement.agreement_date}}' },
-    { label: 'Effective Date',  token: '{{agreement.effective_date}}' },
-    { label: 'Expiry Date',     token: '{{agreement.expiry_date}}' },
-    { label: 'Renewal Date',    token: '{{agreement.renewal_date}}' },
-    { label: 'Signing Party',   token: '{{agreement.signing_party}}' },
-    { label: 'Counter Party',   token: '{{agreement.counter_party}}' },
-    { label: 'Governing Law',   token: '{{agreement.governing_law}}' },
-    { label: 'Jurisdiction',    token: '{{agreement.jurisdiction}}' },
-    { label: 'Notice Period',   token: '{{agreement.notice_period}}' },
   ] },
 ];
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\PasswordChangedMail;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\BrandingResolver;
 use App\Support\Settings;
 use App\Traits\PasswordHistory;
 use Illuminate\Http\Request;
@@ -362,6 +363,7 @@ class AuthController extends Controller
                     $user->email,
                     $newPassword,
                     PasswordChangedMail::resolveLoginUrl($request),
+                    BrandingResolver::forUser($user),
                 ));
             } catch (\Throwable $e) {
                 Log::warning('Password-changed confirmation mail failed (in-app change)', [

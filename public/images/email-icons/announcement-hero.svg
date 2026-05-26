@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320" viewBox="0 0 240 160">
+  <defs>
+    <linearGradient id="envBack" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#c4b5fd"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="envFront" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="envFlap" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Confetti diamonds and sparkles scattered around -->
+  <g fill="#a78bfa">
+    <rect x="22" y="62" width="7" height="7" transform="rotate(45 25.5 65.5)"/>
+    <rect x="34" y="34" width="5" height="5" transform="rotate(45 36.5 36.5)"/>
+    <rect x="18" y="100" width="6" height="6" transform="rotate(45 21 103)"/>
+  </g>
+  <g fill="#c4b5fd">
+    <rect x="48" y="20" width="5" height="5" transform="rotate(45 50.5 22.5)"/>
+    <rect x="200" y="36" width="7" height="7" transform="rotate(45 203.5 39.5)"/>
+    <rect x="216" y="72" width="5" height="5" transform="rotate(45 218.5 74.5)"/>
+    <rect x="210" y="110" width="6" height="6" transform="rotate(45 213 113)"/>
+    <rect x="186" y="22" width="4" height="4" transform="rotate(45 188 24)"/>
+  </g>
+  <g fill="#7c3aed">
+    <circle cx="58" cy="52" r="1.6"/>
+    <circle cx="182" cy="64" r="1.6"/>
+    <circle cx="44" cy="120" r="2"/>
+    <circle cx="196" cy="120" r="1.8"/>
+  </g>
+
+  <!-- Envelope back panel (rectangle with rounded top) -->
+  <path d="M 60 76 L 60 144 Q 60 148 64 148 L 176 148 Q 180 148 180 144 L 180 76 Z" fill="url(#envBack)"/>
+
+  <!-- White letter/card poking up out of envelope -->
+  <rect x="78" y="44" width="84" height="78" rx="4" fill="#ffffff" stroke="#ede9fe" stroke-width="1.2"/>
+
+  <!-- Megaphone on the letter -->
+  <g transform="translate(98 60)">
+    <!-- Megaphone cone (filled) -->
+    <path d="M 4 14 L 32 4 L 32 28 L 4 18 Z" fill="#7c3aed"/>
+    <!-- Megaphone darker face for depth -->
+    <path d="M 4 14 L 32 4 L 32 16 L 4 14 Z" fill="#6d28d9"/>
+    <!-- Megaphone handle/base -->
+    <rect x="0" y="13" width="6" height="6" rx="1" fill="#5b21b6"/>
+    <!-- Sound waves -->
+    <path d="M 36 6 L 41 2" stroke="#a78bfa" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+    <path d="M 36 16 L 42 16" stroke="#a78bfa" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+    <path d="M 36 26 L 41 30" stroke="#a78bfa" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+  </g>
+
+  <!-- Text lines on letter -->
+  <rect x="90" y="100" width="60" height="3" rx="1.5" fill="#c4b5fd"/>
+  <rect x="90" y="108" width="46" height="3" rx="1.5" fill="#ddd6fe"/>
+
+  <!-- Envelope front panel (V shape, on top of letter bottom) -->
+  <path d="M 60 76 L 120 124 L 180 76 L 180 144 Q 180 148 176 148 L 64 148 Q 60 148 60 144 Z" fill="url(#envFront)"/>
+
+  <!-- Envelope inner triangle (slight shadow at the V crease) -->
+  <path d="M 60 78 L 120 124 L 180 78" fill="none" stroke="#6d28d9" stroke-width="0.6" opacity="0.4"/>
+</svg>

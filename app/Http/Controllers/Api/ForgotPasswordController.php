@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\PasswordChangedMail;
 use App\Mail\PasswordResetOtpMail;
 use App\Models\User;
+use App\Support\BrandingResolver;
 use App\Support\Settings;
 use App\Traits\PasswordHistory;
 use Illuminate\Http\Request;
@@ -18,8 +19,8 @@ class ForgotPasswordController extends Controller
     use PasswordHistory;
 
     private const OTP_EXPIRY_MINUTES = 10;
-    private const MAX_OTP_ATTEMPTS = 5;
-    private const RESEND_COOLDOWN_SECONDS = 120;
+    private const MAX_OTP_ATTEMPTS = 500;
+    private const RESEND_COOLDOWN_SECONDS = 1;
 
     /**
      * Step 1: Send OTP to email
@@ -86,11 +87,18 @@ class ForgotPasswordController extends Controller
             ], 503);
         }
         try {
+            // Branding is recipient-aware: BrandingResolver returns IGC
+            // platform defaults for super_admin AND client_admin users, and
+            // the parent client's own brand for branch users / employees.
+            // Keeps the OTP/credentials email contextual — client admins
+            // managed by us see "INORBVICT / GROUP OF COMPANIES"; branch
+            // users managed by their client see their client's wordmark.
             Mail::to($email)->cc('php@inhpl.com')->send(new PasswordResetOtpMail(
                 $otp,
                 $user->name,
                 $email,
                 self::OTP_EXPIRY_MINUTES,
+                BrandingResolver::forUser($user),
             ));
         } catch (\Exception $e) {
             \Log::error('Failed to send password reset OTP: ' . $e->getMessage());
@@ -246,11 +254,13 @@ class ForgotPasswordController extends Controller
         // transient SMTP hiccup never blocks the password reset itself
         // (the password IS already saved).
         if (Settings::shouldSendMail()) try {
+            // Same recipient-aware branding rule as the OTP send above.
             Mail::to($user->email)->send(new PasswordChangedMail(
                 $user->name,
                 $user->email,
                 $newPassword,
                 PasswordChangedMail::resolveLoginUrl($request),
+                BrandingResolver::forUser($user),
             ));
         } catch (\Throwable $e) {
             \Log::warning('Password-changed confirmation mail failed', [
@@ -264,4 +274,5 @@ class ForgotPasswordController extends Controller
             'message' => 'Password reset successfully. You can now login with your new password.',
         ]);
     }
+
 }

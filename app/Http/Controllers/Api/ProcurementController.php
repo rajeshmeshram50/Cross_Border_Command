@@ -56,14 +56,21 @@ class ProcurementController extends Controller
             'status'                        => 'nullable|in:inprogress,done',
             'notes'                         => 'nullable|string|max:2000',
             'attachments'                   => 'nullable|array',
-            'attachments.*'                 => 'file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
+            // B36: magic_mime checks the actual file signature, NOT the
+            // client-supplied Content-Type (which a forged upload can lie
+            // about). See AppServiceProvider for the rule definition.
+            'attachments.*'                 => 'file|magic_mime:jpg,jpeg,png,webp,pdf|max:5120',
             'products'                      => 'required|array|min:1',
             'products.*.product_id'         => 'required|integer|exists:products,id',
             'products.*.lead_product_id'    => 'nullable|integer|exists:lead_products,id',
-            'products.*.qty'                => 'nullable|numeric|min:0',
-            'products.*.target_price'       => 'nullable|numeric|min:0',
+            // B10/B11: zero qty / zero target_price are nonsensical for
+            // procurement (you can't "buy 0 units" or "buy at ₹0"). The
+            // earlier `min:0` permitted them. Use `gt:0` so an explicit
+            // null is the only way to leave the field blank.
+            'products.*.qty'                => 'nullable|numeric|gt:0',
+            'products.*.target_price'       => 'nullable|numeric|gt:0',
             'products.*.attachment'         => 'nullable|array',
-            'products.*.attachment.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf|max:5120',
+            'products.*.attachment.*'       => 'file|magic_mime:jpg,jpeg,png,webp,pdf|max:5120',
         ]);
 
         // Tenant gate — if a lead is provided it must belong to the same client.

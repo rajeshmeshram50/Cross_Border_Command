@@ -163,9 +163,15 @@ export default function CreateShipmentOrderModal({
     }
   };
 
-  if (!open) return null;
-
+  /* MUST stay above the early-return below — Hooks must run in the
+   * same order on every render. Moving this useMemo after `if (!open)
+   * return null` caused React to detect a hook-count change when the
+   * modal first opened (closed render = N hooks, open render = N+1)
+   * and crashed the Stage 6 page with the "change in the order of
+   * Hooks" warning. */
   const previewShpCode = useMemo(() => 'SHP-' + String(Math.floor(Date.now() / 1000) % 1000).padStart(3, '0'), []);
+
+  if (!open) return null;
 
   return createPortal((
     <div className="cso-backdrop" onClick={onClose}>

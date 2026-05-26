@@ -4,6 +4,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
+import { MasterSelect } from '../../components/ui/MasterSelect';
 
 /* Central CLM → Document Control Panel.
  *
@@ -538,10 +539,13 @@ function SegmentRuleModal(props: {
                         </div>
                       )
                     ) : (
-                      <select className="clm-select" value={segCode} onChange={e => setSegCodes(e.target.value ? [e.target.value] : [])} disabled={!!existing}>
-                        <option value="">— Choose a {reg === 'highly' ? 'Highly' : 'Less'} Regulated Segment —</option>
-                        {segments.map(s => <option key={s.id} value={s.code}>{s.name} ({s.code})</option>)}
-                      </select>
+                      <MasterSelect
+                        value={segCode}
+                        onChange={(v) => setSegCodes(v ? [v] : [])}
+                        disabled={!!existing}
+                        placeholder={`— Choose a ${reg === 'highly' ? 'Highly' : 'Less'} Regulated Segment —`}
+                        options={segments.map(s => ({ value: s.code, label: `${s.name} (${s.code})` }))}
+                      />
                     )}
 
                     {!existing && matchedRules.length > 0 && (
