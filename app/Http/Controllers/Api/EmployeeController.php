@@ -75,9 +75,9 @@ class EmployeeController extends Controller
         if ($search = $request->query('search')) {
             $q->where(function ($w) use ($search) {
                 $w->where('display_name', 'ilike', "%{$search}%")
-                  ->orWhere('emp_code', 'ilike', "%{$search}%")
-                  ->orWhere('email', 'ilike', "%{$search}%")
-                  ->orWhere('mobile', 'ilike', "%{$search}%");
+                    ->orWhere('emp_code', 'ilike', "%{$search}%")
+                    ->orWhere('email', 'ilike', "%{$search}%")
+                    ->orWhere('mobile', 'ilike', "%{$search}%");
             });
         }
         if ($status = $request->query('status')) {
@@ -171,12 +171,12 @@ class EmployeeController extends Controller
             ->with(['designation:id,name'])
             ->orderBy('display_name')
             ->get()
-            ->map(fn ($e) => [
+            ->map(fn($e) => [
                 'id'    => $e->id,
                 'kind'  => 'employee',
                 'label' => trim(($e->display_name ?: trim($e->first_name . ' ' . $e->last_name))
-                          . ($e->designation?->name ? ' — ' . $e->designation->name : '')
-                          . ' (Employee)'),
+                    . ($e->designation?->name ? ' — ' . $e->designation->name : '')
+                    . ' (Employee)'),
             ]);
 
         // Tenant login users that could plausibly act as managers — only
@@ -197,12 +197,12 @@ class EmployeeController extends Controller
             ->select(['id', 'name', 'user_type', 'designation'])
             ->orderBy('name')
             ->get()
-            ->map(fn ($u) => [
+            ->map(fn($u) => [
                 'id'    => $u->id,
                 'kind'  => $u->user_type,
                 'label' => trim($u->name
-                          . ($u->designation ? ' — ' . $u->designation : '')
-                          . ' (' . ucfirst(str_replace('_', ' ', $u->user_type)) . ')'),
+                    . ($u->designation ? ' — ' . $u->designation : '')
+                    . ' (' . ucfirst(str_replace('_', ' ', $u->user_type)) . ')'),
             ]);
 
         return response()->json([
@@ -395,7 +395,7 @@ class EmployeeController extends Controller
 
         return response()->json(
             $assets
-                ->reject(fn ($a) => $bookedSet->has($a->id))
+                ->reject(fn($a) => $bookedSet->has($a->id))
                 ->map(function ($a) {
                     // Label format: "AST-#### — Asset Name". Prefer the
                     // auto-generated `code` (the public asset ID shown
@@ -458,16 +458,10 @@ class EmployeeController extends Controller
                 // was deliberately held Inactive — a hole QA flagged.
                 $rawPassword = $this->generatePassword();
                 $loginUser = User::create([
-                    'name'          => Employee::composeDisplayName($data['first_name'], $data['middle_name'] ?? null, $data['last_name'] ?? null),
-                    'email'         => $data['email'],
-                    'password'      => Hash::make($rawPassword),
-                    /* Reversibly-encrypted copy of the generated password so
-                     * the welcome / credentials email can be sent later from
-                     * update() (after the admin completes ALL four wizard
-                     * steps), not eagerly from store() at Step 1. The
-                     * BranchController uses the same pattern for branch
-                     * users. Decrypted in update() via Crypt::decryptString. */
-                    'password_encrypted' => Crypt::encryptString($rawPassword),
+                    'name' => Employee::composeDisplayName($data['first_name'], $data['middle_name'] ?? null, $data['last_name'] ?? null),
+                    'email' => $data['email'],
+                    'password' => Hash::make(Str::random(40)),
+                    'password_encrypted' => null,
                     'phone'         => $data['mobile'] ?? null,
                     'user_type'     => 'employee',
                     'client_id'     => $clientId,
@@ -537,16 +531,14 @@ class EmployeeController extends Controller
                 /* Welcome email is intentionally NOT sent here. Step 1
                  * only captures basic identity — sending credentials
                  * before the admin has finished assets / payroll / KYC
-                 * meant the employee logged in to a half-built profile
-                 * and asked HR what was happening. The mail is now
-                 * triggered from update() the moment the wizard's
-                 * watermark crosses Step 4 (see the
-                 * `wizard_step_completed` transition block there). The
-                 * raw password is preserved via password_encrypted on
-                 * the user row so update() can decrypt + send. */
+                 * means the employee logs in to a half-built profile.
+                 * The mail fires from update() when the wizard hits
+                 * Step 4 (final step). password_encrypted on the user row
+                 * preserves the random password generated above so we can
+                 * decrypt + include it in the welcome body later. */
 
                 return response()->json([
-                    'message'  => 'Employee created. Welcome email will be sent once the full wizard is complete.',
+                    'message'  => 'Employee created. Welcome email will be sent once the wizard completes Step 4.',
                     'employee' => $employee,
                 ], 201);
             });
@@ -604,11 +596,9 @@ class EmployeeController extends Controller
         $stepFromRequest = (int) $request->input('wizard_step_completed', 0);
         $oldStep = (int) $row->wizard_step_completed;
         $newStep = max($oldStep, $stepFromRequest);
-        // Detect the moment the wizard transitions from "incomplete"
-        // (<4) to "complete" (≥4). We fire the welcome / credentials
-        // email exactly once on this transition — see the post-commit
-        // send block below.
-        $justCompletedWizard = $oldStep < 4 && $newStep >= 4;
+        // (Welcome-email-on-Step-4 transition logic removed — email is now
+        // sent immediately from store(). Step transition tracking below is
+        // still used by the macro stage tracker.)
 
         // Same high-watermark rule for the macro 6-stage tracker.
         $macroFromRequest = (int) $request->input('onboarding_stage_completed', 0);
@@ -679,39 +669,58 @@ class EmployeeController extends Controller
 
         $row->load(self::WITH);
 
-        /* Send the welcome / credentials email when the wizard is
-         * actually finished — i.e. the watermark just crossed from <4
-         * to ≥4 on this PUT. password_encrypted on the user row
-         * preserves the original random password generated in store();
-         * we decrypt it here so the body of the mail can show it. The
-         * whole block is wrapped in try/catch + gated by the global
-         * notification setting so a mail outage never blocks the
-         * "wizard saved" response. */
-        if ($justCompletedWizard && Settings::shouldSendMail('newUser') && $row->user) {
+        /* Welcome / credentials email fires when the wizard reaches
+         * Step 4 (the final step). We use password_encrypted as the
+         * "haven't sent yet" marker — once the welcome goes out, we
+         * clear that column so subsequent Step 4 PUTs don't re-send.
+         *
+         * Trigger condition is intentionally lenient: $newStep >= 4
+         * (not the strict $oldStep < 4 && $newStep >= 4 transition the
+         * old code used). That strict transition silently failed when
+         * the frontend updated Step 4 without bumping the watermark
+         * cleanly — admins reported "no welcome ever arrived". With
+         * the lenient check + password_encrypted clear, we get a
+         * single, reliable send the first time the wizard saves at
+         * Step 4 or higher.
+         *
+         * Recipient: $row->user->email — the personal email captured
+         * by the wizard's "Personal Email" field. */
+        if (
+            $newStep >= 4
+            && Settings::shouldSendMail('newUser')
+            && $row->user
+            && empty($row->user->password_encrypted)
+            && !$row->user->last_login_at
+        ) {
             try {
-                $rawPassword = $row->user->password_encrypted
-                    ? Crypt::decryptString($row->user->password_encrypted)
-                    : null;
-                if ($rawPassword) {
-                    $clientName = \App\Models\Client::find($row->client_id)?->org_name ?? 'Your Organization';
-                    Mail::to($row->user->email)->send(new WelcomeCredentialsMail(
-                        $row->user->name,
-                        $row->user->email,
-                        $rawPassword,
-                        'employee',
-                        $clientName,
-                        PasswordChangedMail::resolveLoginUrl($request),
-                    ));
-                }
+                $rawPassword = $this->generatePassword();
+
+                $row->user->forceFill([
+                    'password' => Hash::make($rawPassword),
+                    'password_encrypted' => Crypt::encryptString($rawPassword),
+                ])->save();
+
+                $clientName = \App\Models\Client::find($row->client_id)?->org_name ?? 'Your Organization';
+
+                Mail::to($row->user->email)->send(new WelcomeCredentialsMail(
+                    $row->user->name,
+                    $row->user->email,
+                    $rawPassword,
+                    'employee',
+                    $clientName,
+                    PasswordChangedMail::resolveLoginUrl($request),
+                ));
+
+                $row->user->forceFill(['password_encrypted' => null])->save();
             } catch (\Throwable $e) {
-                Log::warning('Employee welcome mail (deferred) failed', [
+                Log::warning('Employee welcome mail (Step 4) failed', [
                     'employee_id' => $row->id,
-                    'email'       => $row->user->email ?? null,
-                    'error'       => $e->getMessage(),
+                    'email' => $row->user->email ?? null,
+                    'new_step' => $newStep,
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
-
         return response()->json(['message' => 'Updated', 'employee' => $row]);
     }
 
@@ -903,9 +912,9 @@ class EmployeeController extends Controller
             // stay visible — they're system rows, not tenant data.
             $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId) {
-                      $ww->where('client_id', $clientId)->where('branch_id', $branchId);
-                  });
+                    ->orWhere(function ($ww) use ($clientId, $branchId) {
+                        $ww->where('client_id', $clientId)->where('branch_id', $branchId);
+                    });
             });
             // Sub-branch users can't switch — ignore any incoming branch_id.
             return;
@@ -965,9 +974,9 @@ class EmployeeController extends Controller
             throw ValidationException::withMessages([
                 'email' => [
                     "This branch is configured for at most {$cap} user"
-                    . ($cap === 1 ? '' : 's')
-                    . " and is already at the cap ({$current})."
-                    . ' Raise the limit on the branch first, or remove an existing user.',
+                        . ($cap === 1 ? '' : 's')
+                        . " and is already at the cap ({$current})."
+                        . ' Raise the limit on the branch first, or remove an existing user.',
                 ],
             ]);
         }
@@ -979,7 +988,7 @@ class EmployeeController extends Controller
         if (!$user || $user->user_type === 'super_admin' || !$row->created_by) return;
         if ($row->created_by === $user->id) return;
 
-        $rank = fn (?string $t) => match ($t) {
+        $rank = fn(?string $t) => match ($t) {
             'super_admin'  => 4,
             'client_admin' => 3,
             'client_user'  => 3,
@@ -1043,7 +1052,7 @@ class EmployeeController extends Controller
         $emailRule = $isUpdate ? ['nullable', 'email', 'max:191'] : ['required', 'email', 'max:191'];
         $emailRule[] = Rule::unique('users', 'email')
             ->whereNull('deleted_at')
-            ->where(fn ($q) => $q->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))]))
+            ->where(fn($q) => $q->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))]))
             ->ignore($ignoreUserId);
 
         // Step 4 (Compensation) is the wizard's terminal save — salary fields
@@ -1225,7 +1234,7 @@ class EmployeeController extends Controller
         $existing = \App\Models\Masters\Assets::query()
             ->whereIn('id', $candidates->unique()->all())
             ->pluck('id')
-            ->map(fn ($x) => (int) $x)
+            ->map(fn($x) => (int) $x)
             ->flip();
 
         $merge = [];
@@ -1237,8 +1246,8 @@ class EmployeeController extends Controller
         }
         if (!empty($others)) {
             $cleaned = array_values(array_filter(
-                array_map(fn ($v) => is_numeric($v) ? (int) $v : null, $others),
-                fn ($v) => $v !== null && $existing->has($v),
+                array_map(fn($v) => is_numeric($v) ? (int) $v : null, $others),
+                fn($v) => $v !== null && $existing->has($v),
             ));
             $merge['other_master_asset_ids'] = $cleaned;
         }
@@ -1260,7 +1269,7 @@ class EmployeeController extends Controller
     private function mirrorAncillaryRoles(array $data): array
     {
         if (array_key_exists('ancillary_role_ids', $data)) {
-            $ids = array_values(array_filter((array) $data['ancillary_role_ids'], fn ($v) => $v !== null && $v !== ''));
+            $ids = array_values(array_filter((array) $data['ancillary_role_ids'], fn($v) => $v !== null && $v !== ''));
             $ids = array_map('intval', $ids);
             $data['ancillary_role_ids'] = $ids;
             $data['ancillary_role_id']  = $ids[0] ?? null;
