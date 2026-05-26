@@ -1061,7 +1061,11 @@ class SalesLeadController extends Controller
 
         $data = $request->validate([
             'product_id'   => 'required|integer|exists:products,id',
-            'currency'     => 'nullable|string|max:8',
+            // Currency stored as free-form code (USD, INR, EUR …). No
+            // length cap because the lock-banner pre-fills the value
+            // from existing rows and a longer string shouldn't fail
+            // the save — the column itself takes whatever fits.
+            'currency'     => 'nullable|string',
             'quantity'     => 'nullable|numeric|min:0',
             'target_price' => 'nullable|numeric|min:0',
             'notes'        => 'nullable|string|max:1000',
@@ -1077,11 +1081,32 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
+        /* Single-currency-per-lead rule. Every LeadProduct row on the
+         * same lead must share one currency — mixing INR + USD on the
+         * same opportunity breaks every downstream total (shared price
+         * PDF, quotation, PI, shipment) because we have no FX rate to
+         * collapse them. The first product mapped sets the currency;
+         * later additions are pinned to it. */
+        $lockedCurrency = LeadProduct::where('lead_id', $lead->id)
+            ->whereNotNull('currency')
+            ->value('currency');
+        $picked = $data['currency'] ?? null;
+        if ($lockedCurrency && $picked && strtoupper($picked) !== strtoupper($lockedCurrency)) {
+            return response()->json([
+                'status'  => false,
+                'message' => "This opportunity is already using {$lockedCurrency}. All products on a lead must share one currency — remove the existing rows first if you want to switch.",
+                'locked_currency' => $lockedCurrency,
+            ], 422);
+        }
+        /* Default to the locked currency when the client didn't send one,
+         * otherwise fall back to USD (the pre-existing default). */
+        $effectiveCurrency = $picked ?? $lockedCurrency ?? 'USD';
+
         $row = LeadProduct::create([
             'client_id'    => $user->client_id,
             'lead_id'      => $lead->id,
             'product_id'   => $data['product_id'],
-            'currency'     => $data['currency']     ?? 'USD',
+            'currency'     => $effectiveCurrency,
             'quantity'     => $data['quantity']     ?? null,
             'target_price' => $data['target_price'] ?? null,
             'notes'        => $data['notes']        ?? null,
@@ -1110,11 +1135,37 @@ class SalesLeadController extends Controller
         $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
 
         $data = $request->validate([
-            'currency'     => 'nullable|string|max:8',
+            // No max length on currency — see storeLeadProduct above.
+            'currency'     => 'nullable|string',
             'quantity'     => 'nullable|numeric|min:0',
             'target_price' => 'nullable|numeric|min:0',
             'notes'        => 'nullable|string|max:1000',
         ]);
+
+        /* Same single-currency-per-lead rule as storeLeadProduct, but
+         * on edit. Allowed transitions:
+         *   • This is the ONLY mapping on the lead → free to change.
+         *   • Otherwise the picked currency must match every OTHER
+         *     mapping's currency on the same lead.
+         * Set the field to null/empty to leave currency unchanged. */
+        if (array_key_exists('currency', $data) && $data['currency'] !== null && $data['currency'] !== '') {
+            $picked = strtoupper($data['currency']);
+            $others = LeadProduct::where('lead_id', $lead->id)
+                ->where('id', '!=', $row->id)
+                ->whereNotNull('currency')
+                ->pluck('currency')
+                ->map(fn ($c) => strtoupper((string) $c))
+                ->unique()
+                ->values();
+            if ($others->isNotEmpty() && !$others->contains($picked)) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => "This opportunity already uses {$others->first()}. All products on a lead must share one currency — change the other rows first or remove them.",
+                    'locked_currency' => $others->first(),
+                ], 422);
+            }
+            $data['currency'] = $picked;
+        }
 
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh(['product:id,product_code,name'])]);

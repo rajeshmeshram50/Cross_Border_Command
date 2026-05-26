@@ -383,7 +383,8 @@ class QuotationController extends Controller
             'customer_id'       => 'required|integer|exists:customers,id',
             'consignee_id'      => 'nullable|integer|exists:consignees,id',
             'bank_account_id'   => 'nullable|integer',
-            'currency'          => 'nullable|string|max:8',
+            // No length cap on currency — free-form code (USD, INR, EUR…).
+            'currency'          => 'nullable|string',
             'exchange_rate'     => 'nullable|numeric|min:0',
             'sales_manager_id'  => 'nullable|integer|exists:users,id',
             'shipping'          => 'nullable|numeric|min:0',
@@ -402,7 +403,8 @@ class QuotationController extends Controller
             // B12 sibling: quote rate of zero would render "₹ 0.00 / unit"
             // to the customer. gt:0 mirrors the shared-price fix.
             'items.*.rate'         => 'required|numeric|gt:0',
-            'items.*.tax_pct'      => 'nullable|numeric|min:0|max:100',
+            // No upper cap on tax_pct — see ProformaInvoiceController.
+            'items.*.tax_pct'      => 'nullable|numeric|min:0',
         ];
 
         if ($docType === Quotation::DOC_INTERNATIONAL) {

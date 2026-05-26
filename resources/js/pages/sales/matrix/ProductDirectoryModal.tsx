@@ -108,6 +108,27 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
     [products, mappedIds, editDraft.product_id],
   );
 
+  /* Single-currency-per-lead. The first product mapped sets the
+   * currency for the whole opportunity; subsequent rows are pinned to
+   * the same value. Returns `null` when the directory is empty so the
+   * user is free to pick any currency for the first row. The backend
+   * enforces the same rule and returns a 422 with `locked_currency`
+   * if a mismatch slips through. */
+  const lockedCurrency = useMemo<string | null>(() => {
+    for (const r of rows) {
+      if (r.currency) return String(r.currency).toUpperCase();
+    }
+    return null;
+  }, [rows]);
+
+  /* Whenever the directory is reloaded and a locked currency emerges,
+   * pre-seed the draft's currency field to match so the user doesn't
+   * have to change it manually before saving. */
+  useEffect(() => {
+    if (!lockedCurrency) return;
+    setDraft(p => p.currency === lockedCurrency ? p : { ...p, currency: lockedCurrency });
+  }, [lockedCurrency]);
+
   if (!open) return null;
 
   /* ── Save (map new) ─────────────────────────────────────────── */
@@ -248,6 +269,17 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
         </div>
 
         <div className="pdm-body">
+          {lockedCurrency && (
+            <div className="pdm-curr-lock-banner" role="status">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <span>
+                This opportunity is in <strong>{lockedCurrency}</strong>. All new mappings will be added in the same currency — remove every product first if you want to switch.
+              </span>
+            </div>
+          )}
           <div className="pdm-table-wrap">
             <table className="pdm-table">
               <thead>
@@ -275,11 +307,20 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                       />
                     </td>
                     <td>
+                      {/* When a currency is already locked by an existing
+                       *  mapping, show ONLY that option and disable the
+                       *  picker so the user can't try to mix INR + USD on
+                       *  one lead. Hover hint explains why. */}
                       <MasterSelect
                         value={draft.currency}
                         onChange={(v) => setDraft(p => ({ ...p, currency: v }))}
-                        options={CURRENCIES.map(c => ({ value: c, label: c }))}
+                        options={
+                          lockedCurrency
+                            ? [{ value: lockedCurrency, label: lockedCurrency }]
+                            : CURRENCIES.map(c => ({ value: c, label: c }))
+                        }
                         placeholder="Currency"
+                        disabled={!!lockedCurrency}
                       />
                     </td>
                     <td>
@@ -335,11 +376,27 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                           </div>
                         </td>
                         <td>
+                          {/* Edit-mode currency lock: if there's ONLY one
+                           *  row on the lead (this one), the user can
+                           *  switch freely. If there are OTHER rows with
+                           *  a currency set, the picker is restricted to
+                           *  that currency so the lead stays unimixed.
+                           *  Matches the backend rule in
+                           *  SalesLeadController::updateLeadProduct. */}
                           <MasterSelect
                             value={editDraft.currency}
                             onChange={(v) => setEditDraft(p => ({ ...p, currency: v }))}
-                            options={CURRENCIES.map(c => ({ value: c, label: c }))}
+                            options={(() => {
+                              const others = rows.filter(x => x.id !== r.id && x.currency).map(x => String(x.currency).toUpperCase());
+                              const otherCurrency = others[0] ?? null;
+                              if (otherCurrency) {
+                                // Only the locked option is selectable.
+                                return [{ value: otherCurrency, label: otherCurrency }];
+                              }
+                              return CURRENCIES.map(c => ({ value: c, label: c }));
+                            })()}
                             placeholder="Currency"
+                            disabled={rows.some(x => x.id !== r.id && !!x.currency)}
                           />
                         </td>
                         <td>
@@ -492,6 +549,17 @@ const SCOPED_CSS = `
   display: inline-block; padding: 2px 10px; border-radius: 999px;
   background: #ede9fe; color: #6d28d9; font-size: 10.5px; font-weight: 700;
 }
+/* Currency-lock banner — shown above the table when at least one
+ * product is mapped, explaining why the currency picker is disabled. */
+.pdm-curr-lock-banner {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 12px;
+  padding: 9px 12px; border-radius: 8px;
+  background: #fef3c7; border: 1px solid #fcd34d;
+  color: #92400e; font-size: 11.5px; line-height: 1.45;
+}
+.pdm-curr-lock-banner svg { flex-shrink: 0; color: #b45309; }
+.pdm-curr-lock-banner strong { color: #78350f; }
 .pdm-num { font-variant-numeric: tabular-nums; }
 .pdm-status {
   text-align: center; padding: 24px 14px;

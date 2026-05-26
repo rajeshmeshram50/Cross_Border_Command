@@ -489,7 +489,8 @@ class ProformaInvoiceController extends Controller
             'customer_id'        => 'required|integer|exists:customers,id',
             'consignee_id'       => 'nullable|integer|exists:consignees,id',
             'bank_account_id'    => 'nullable|integer',
-            'currency'           => 'nullable|string|max:8',
+            // No length cap on currency — free-form code (USD, INR, EUR…).
+            'currency'           => 'nullable|string',
             'exchange_rate'      => 'nullable|numeric|min:0',
             'sales_manager_id'   => 'nullable|integer|exists:users,id',
             'shipping'           => 'nullable|numeric|min:0',
@@ -502,7 +503,9 @@ class ProformaInvoiceController extends Controller
             'items.*.quantity'     => 'required|numeric|min:0.0001',
             'items.*.unit'         => 'nullable|string|max:16',
             'items.*.rate'         => 'required|numeric|min:0',
-            'items.*.tax_pct'      => 'nullable|numeric|min:0|max:100',
+            // No upper cap on tax_pct — handles cess-stacked rates (>100%
+            // possible for compound taxes or special-jurisdiction surcharges).
+            'items.*.tax_pct'      => 'nullable|numeric|min:0',
         ];
 
         if ($docType === ProformaInvoice::DOC_INTERNATIONAL) {
