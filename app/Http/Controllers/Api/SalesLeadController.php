@@ -68,11 +68,14 @@ class SalesLeadController extends Controller
         if (!$user) abort(401);
 
         // ── Build the LIST query: scope + status tab + active filters + search.
+        // `withTrashed()` on customer/consignee/salesperson so soft-deleted
+        // mapped rows still surface (with their saved labels) instead of
+        // turning into blank/null entries on the worksheet. Source of B2.
         $q = Lead::query()
             ->with([
-                'salesperson:id,name',
-                'customer:id,company_name,customer_code',
-                'consignee:id,company_name',
+                'salesperson' => fn ($r) => $r->select('id', 'name')->withTrashed(),
+                'customer'    => fn ($r) => $r->select('id', 'company_name', 'customer_code')->withTrashed(),
+                'consignee'   => fn ($r) => $r->select('id', 'company_name')->withTrashed(),
             ])
             ->orderByDesc('id');
 
@@ -250,7 +253,10 @@ class SalesLeadController extends Controller
             'sender_pincode'      => 'nullable|string|max:32',
             'customer_id'         => 'nullable|integer|exists:customers,id',
             'consignee_id'        => 'nullable|integer|exists:consignees,id',
-            'query_message'       => 'nullable|string',
+            // B9: cap query_message at 10k chars — Postgres TEXT happily
+            // stores gigabytes, but accepting them lets a single payload
+            // wreck the worksheet list response shape + memory.
+            'query_message'       => 'nullable|string|max:10000',
             'product_quantity'    => 'nullable|string|max:64',
             'query_product_name'  => 'nullable|string|max:255',
         ]);
@@ -304,11 +310,16 @@ class SalesLeadController extends Controller
         if (!$user) abort(401);
 
         $q = Lead::with([
-            'salesperson:id,name',
+            'salesperson' => fn ($r) => $r->withTrashed(),
             // Full customer + consignee rows — the matrix-detail toolbar
             // reads these to decide whether to open the Edit form or the
-            // Picker for each button.
-            'customer', 'consignee', 'ackReason',
+            // Picker for each button. withTrashed() so a soft-deleted but
+            // still-mapped customer / consignee surfaces (showing its
+            // legacy company_name) instead of returning a NULL relation
+            // that breaks the toolbar + CLM panel display.
+            'customer'  => fn ($r) => $r->withTrashed(),
+            'consignee' => fn ($r) => $r->withTrashed(),
+            'ackReason',
             // Stage 1 form pre-populates from this. One-to-one row created
             // / updated by POST /sales/leads/{lead}/task-manager.
             'taskManager',
@@ -343,12 +354,20 @@ class SalesLeadController extends Controller
             'sender_country_iso' => 'nullable|string|max:8',
             'qualified'          => 'nullable|boolean',
             'disqualified'       => 'nullable|boolean',
-            'lead_stage_id'      => 'nullable|integer|between:1,8',
-            'salesperson_id'     => 'nullable|integer|exists:users,id',
+            // B5: stage range is 1–6 (Inquiry → Victory). Earlier `between:1,8`
+            // allowed nonexistent stages 7/8 in via direct API hits.
+            'lead_stage_id'      => 'nullable|integer|between:1,6',
+            // B4: must point at a salesperson that is NOT soft-deleted.
+            'salesperson_id'     => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->whereNull('deleted_at')],
             'key_opportunity'    => 'nullable|boolean',
-            'remark'             => 'nullable|string',
+            // B8: cap remark at 5000 chars — the worksheet renders it
+            // inline and a 10MB note breaks the list render + indexing.
+            'remark'             => 'nullable|string|max:5000',
             'price'              => 'nullable|string|max:64',
-            'lead_ack_reason_id' => 'nullable|integer|exists:lead_ack_reasons,id',
+            // B3: lead_ack_reason must be active. The reasons table has no
+            // soft-delete column (admin removes reasons by flipping status
+            // to 'inactive'), so the where() filter is the gate.
+            'lead_ack_reason_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('lead_ack_reasons', 'id')->where(fn ($w) => $w->where('status', 'active'))],
             'customer_id'        => 'nullable|integer|exists:customers,id',
             'consignee_id'       => 'nullable|integer|exists:consignees,id',
             // WhatsApp text-only updates ride along on the same endpoint;
@@ -358,6 +377,16 @@ class SalesLeadController extends Controller
             'whatsapp_reason'    => 'nullable|string|max:1000',
         ]);
 
+        // B6: qualified + disqualified must be mutually exclusive. If the
+        // payload sets both true the lead drops off BOTH tabs (each tab
+        // filters by one of the flags). Reject explicitly.
+        if (!empty($data['qualified']) && !empty($data['disqualified'])) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'A lead cannot be both Qualified and Disqualified at the same time.',
+            ], 422);
+        }
+
         // Auto-mark the deal as won the FIRST time it lands on Stage 6
         // (Victory). Keeping this server-side means we don't trust the
         // client to send a timestamp, and the column is set exactly once
@@ -365,6 +394,12 @@ class SalesLeadController extends Controller
         // the original win date.
         if (isset($data['lead_stage_id']) && (int) $data['lead_stage_id'] === 6 && $lead->won_at === null) {
             $data['won_at'] = now();
+        }
+        // B7: regressing OUT of Stage 6 must clear won_at — otherwise the
+        // lead reads as "won" while it's actually back in the pipeline,
+        // and reports filter on won_at IS NOT NULL.
+        if (isset($data['lead_stage_id']) && (int) $data['lead_stage_id'] < 6 && $lead->won_at !== null) {
+            $data['won_at'] = null;
         }
 
         $lead->update($data);
@@ -789,6 +824,22 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
+        // B24: idempotency gate. Calling this endpoint twice in a row
+        // used to silently succeed both times, masking double-submits
+        // (which often signal a UI bug worth surfacing). Return 409 on
+        // the second call so the client can detect and stop retrying.
+        if ($row->procurement_done) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This product is already marked sourced.',
+                'data'    => [
+                    'id'               => $row->id,
+                    'sourcing_status'  => $row->sourcing_status,
+                    'procurement_done' => true,
+                ],
+            ], 409);
+        }
+
         // Mirror IDIMS: cannot mark sourced unless a procurement has been
         // created for this row (Sourcing Required + procurement linked).
         $hasProcurement = ProcurementProduct::where('lead_product_id', $row->id)->exists();
@@ -849,7 +900,10 @@ class SalesLeadController extends Controller
         }
 
         $data = $request->validate([
-            'quoted_price' => 'required|numeric|min:0',
+            // B12: zero quoted price would render "₹ 0.00" to the customer.
+            // gt:0 forces a real number; if a free sample is intended, that
+            // belongs in a separate "complimentary" flag, not the price.
+            'quoted_price' => 'required|numeric|gt:0',
         ]);
 
         $entry = LeadProductSharedPrice::create([
@@ -881,6 +935,11 @@ class SalesLeadController extends Controller
             'leadProduct.product:id,product_code,name,status',
         ])
             ->where('lead_id', $lead->id)
+            // Defense-in-depth: the lead-scope check above already rejects
+            // cross-tenant leadIds, but if a shared-price row ever drifted
+            // to the wrong client_id (data corruption / bad backfill), the
+            // extra filter here keeps it from leaking out.
+            ->when($user->client_id, fn ($q) => $q->where('client_id', $user->client_id))
             ->orderByDesc('shared_at')
             ->get()
             ->map(fn ($e) => [
@@ -913,6 +972,8 @@ class SalesLeadController extends Controller
 
         $rows = LeadProductSharedPrice::where('lead_id', $lead->id)
             ->where('lead_product_id', $product->id)
+            // Defense-in-depth tenant filter — see listSharedPrices comment.
+            ->when($user->client_id, fn ($q) => $q->where('client_id', $user->client_id))
             ->orderByDesc('shared_at')
             ->get()
             ->map(fn ($e) => [
@@ -1386,23 +1447,29 @@ class SalesLeadController extends Controller
             ->select('query_type')->whereNotNull('query_type')
             ->distinct()->orderBy('query_type')->pluck('query_type')->values();
 
-        // Country list — group by ISO so we don't get duplicate buckets
-        // when one row has the name populated and another doesn't, then
-        // fall back to a built-in ISO→name dictionary for any row that
-        // never had the name persisted (IndiaMart sometimes omits it).
-        $countries = (clone $base)
+        /* P1: previously this loop fired one extra SELECT per distinct
+         * ISO code to resolve the human-readable country name. A tenant
+         * with 20 countries paid 20 round-trips just to render the
+         * Filter modal. Bulk-resolve the ISO→name map in a single
+         * grouped query, then lookup in PHP. */
+        $isoCodes = (clone $base)
             ->select('sender_country_iso')
             ->whereNotNull('sender_country_iso')
             ->groupBy('sender_country_iso')
             ->orderBy('sender_country_iso')
-            ->pluck('sender_country_iso')
-            ->map(function ($iso) use ($base) {
-                // Prefer the persisted name if any row has one for this ISO.
-                $name = (clone $base)
-                    ->where('sender_country_iso', $iso)
-                    ->whereNotNull('sender_country_name')
-                    ->value('sender_country_name');
-                if (!$name) $name = self::ISO_COUNTRY_NAMES[$iso] ?? $iso;
+            ->pluck('sender_country_iso');
+
+        $nameByIso = (clone $base)
+            ->whereIn('sender_country_iso', $isoCodes)
+            ->whereNotNull('sender_country_name')
+            ->select('sender_country_iso', 'sender_country_name')
+            ->groupBy('sender_country_iso', 'sender_country_name')
+            ->pluck('sender_country_name', 'sender_country_iso')
+            ->all();
+
+        $countries = $isoCodes
+            ->map(function ($iso) use ($nameByIso) {
+                $name = $nameByIso[$iso] ?? self::ISO_COUNTRY_NAMES[$iso] ?? $iso;
                 return ['value' => $iso, 'label' => $name];
             })
             ->sortBy('label')

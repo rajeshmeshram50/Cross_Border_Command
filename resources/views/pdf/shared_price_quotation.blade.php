@@ -21,7 +21,14 @@
     $orgGst      = $client?->gst_number;
     $orgPan      = $client?->pan_number;
     $orgWebsite  = $client?->website;
-    $watermark   = strtoupper(preg_replace('/[^A-Za-z0-9\s]/', '', $orgName));
+    /* B37: keep unicode letters + digits in the watermark text.
+     * Previously `[^A-Za-z0-9\s]` stripped Ñ / ü / CJK characters
+     * (e.g. "Müller GmbH" → "Mller GmbH"), and a name composed
+     * entirely of non-ASCII produced an empty watermark. Using
+     * the Unicode property classes with the /u flag preserves
+     * every letter and number in any script while still removing
+     * punctuation / control characters that could choke dompdf. */
+    $watermark   = mb_strtoupper((string) preg_replace('/[^\p{L}\p{N}\s]/u', '', (string) $orgName));
 
     $product   = $entry->leadProduct?->product;
     $lp        = $entry->leadProduct;

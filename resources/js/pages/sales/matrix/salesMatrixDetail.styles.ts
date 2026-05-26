@@ -643,6 +643,57 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-clm-progress-fill-orange  { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
 .smd-clm-progress-label { font-size: 8.5px; font-weight: 700; color: #7c6f9a; text-align: right; margin-top: 3px; }
 
+/* Clickable rows (Customer / Consignee deep-link to Evidence Vault) — pointer + lift */
+.smd-clm-row-clickable { cursor: pointer; outline: none; }
+.smd-clm-row-clickable:focus-visible { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.20); }
+.smd-clm-row-clickable:active { transform: translateY(1px); }
+
+/* Disabled — while any modal is open, prevent both rows from opening
+ * a second modal underneath. Reduces opacity, removes pointer cursor,
+ * and pulls focusability via aria-disabled (set on the row itself). */
+.smd-clm-row-disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
+.smd-clm-row-disabled .smd-clm-row-go { cursor: not-allowed; }
+
+/* Loading — subtle shimmer on the sub-text only so the row layout
+ * doesn't shift during the vault fetch. The 0% progress bar already
+ * communicates "nothing yet." */
+.smd-clm-row-loading .smd-clm-row-sub {
+  color: transparent;
+  background: linear-gradient(90deg, #e9e3fe 0%, #d8ceff 50%, #e9e3fe 100%);
+  background-size: 200% 100%;
+  animation: smd-clm-shimmer 1.4s linear infinite;
+  border-radius: 4px;
+  min-height: 9px;
+}
+@keyframes smd-clm-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .smd-clm-row-loading .smd-clm-row-sub { animation: none; }
+}
+
+/* Error — soft red border + slightly tinted background, retry icon
+ * already swapped in the JSX. The whole row stays clickable so the
+ * onRetry handler triggers from anywhere on it. */
+.smd-clm-row-error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  box-shadow: 0 1px 3px rgba(220,38,38,.10);
+}
+.smd-clm-row-error .smd-clm-row-sub { color: #b91c1c; }
+.smd-clm-row-error .smd-clm-row-go  { color: #b91c1c; }
+.smd-clm-row-error:hover {
+  border-color: #ef4444;
+  background: #fee2e2;
+  box-shadow: 0 3px 8px rgba(220,38,38,.18);
+}
+
+/* Empty state — only when neither customer nor consignee is mapped yet */
+.smd-clm-empty {
+  padding: 14px 12px; border-radius: 8px;
+  background: #fbfaff; border: 1.5px dashed #ddd6fe;
+  font-size: 10px; font-weight: 600; color: #7c6f9a; line-height: 1.45;
+  text-align: center;
+}
+
 /* ── Deal panel ── */
 .smd-deal-card { border: 1px solid #ede9fe; }
 .smd-deal-header {

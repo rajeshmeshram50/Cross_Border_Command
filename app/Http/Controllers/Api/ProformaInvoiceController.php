@@ -222,6 +222,23 @@ class ProformaInvoiceController extends Controller
         }
 
         $data  = $this->validatePayload($request);
+
+        /* B32: a PI created from a quotation must keep the source quote's
+         * currency. The items still hold quote-era prices in that currency;
+         * letting the user flip to USD here would render totals in the new
+         * currency while the line items keep INR (or vice-versa), creating
+         * a customer-visible discrepancy. The check is INSIDE update() so
+         * the validator's other rules still pass — we just early-out before
+         * the write if the currency changed AND a source quote is locked. */
+        if ($row->source_quotation_id
+            && array_key_exists('currency', $data)
+            && $data['currency'] !== null
+            && $data['currency'] !== $row->currency) {
+            return response()->json([
+                'status'  => false,
+                'message' => "This PI was created from a quotation and is locked to {$row->currency}. Use a fresh PI to invoice in a different currency.",
+            ], 422);
+        }
         $items = $this->prepareItems($data['items']);
         $totals = $this->aggregateTotals($items, (float) ($data['shipping'] ?? 0));
 
@@ -526,14 +543,24 @@ class ProformaInvoiceController extends Controller
         }, $items);
     }
 
+    /** B35: see QuotationController::aggregateTotals for the rationale —
+     *  derive the grand_total from the EXACT (unrounded) item math and
+     *  round once at the end so a spread of *.005 amounts don't drift
+     *  banker's-rounding errors into the header. */
     private function aggregateTotals(array $items, float $shipping): array
     {
-        $sub = 0.0;
-        foreach ($items as $it) $sub += (float) $it['amount'];
+        $rawSub = 0.0;
+        foreach ($items as $it) {
+            $qty  = (float) ($it['quantity'] ?? 0);
+            $rate = (float) ($it['rate']     ?? 0);
+            $tax  = (float) ($it['tax_pct']  ?? 0);
+            $rawSub += $qty * $rate * (1 + ($tax / 100));
+        }
+        $rawGrand = $rawSub + $shipping;
         return [
-            'sub_total'   => round($sub, 2),
+            'sub_total'   => round($rawSub, 2),
             'shipping'    => round($shipping, 2),
-            'grand_total' => round($sub + $shipping, 2),
+            'grand_total' => round($rawGrand, 2),
         ];
     }
 
@@ -588,6 +615,10 @@ class ProformaInvoiceController extends Controller
     private function nextCode(int $clientId): string
     {
         $fy = $this->currentFinancialYear();
+        // B20: defense-in-depth advisory lock — see QuotationController::nextCode.
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32("pi-code:{$clientId}:{$fy}")]);
+        }
         $codes = ProformaInvoice::where('client_id', $clientId)
             ->where('code', 'like', "INV/{$fy}/%")
             ->pluck('code')->all();
@@ -604,9 +635,19 @@ class ProformaInvoiceController extends Controller
         return $code;
     }
 
-    /** BT-NN — global per-client sequence for with_shipment PIs. */
+    /** BT-NNNN — global per-client sequence for with_shipment PIs.
+     *
+     *  B34: 4-digit zero-pad. The earlier `%02d` produced "BT-99" then
+     *  "BT-100" (3 digits), breaking the 2-digit regex below. Padding
+     *  to 4 keeps the format stable up to BT-9999 — still matches the
+     *  same `^BT-(\d+)$` so legacy 2-digit codes continue to parse.
+     */
     private function nextBtCode(int $clientId): string
     {
+        // B20: defense-in-depth advisory lock for BT sequence.
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32("pi-bt:{$clientId}")]);
+        }
         $codes = ProformaInvoice::where('client_id', $clientId)
             ->whereNotNull('bt_id')
             ->pluck('bt_id')->all();
@@ -619,7 +660,7 @@ class ProformaInvoiceController extends Controller
             $taken[$c] = true;
         }
         $n = $max;
-        do { $n++; $code = sprintf('BT-%02d', $n); } while (isset($taken[$code]));
+        do { $n++; $code = sprintf('BT-%04d', $n); } while (isset($taken[$code]));
         return $code;
     }
 

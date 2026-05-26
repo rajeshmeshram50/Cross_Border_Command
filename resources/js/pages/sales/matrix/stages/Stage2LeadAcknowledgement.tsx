@@ -92,9 +92,21 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
       });
       toast.success('Saved', `${selected.size} acknowledgement(s) recorded`);
       closePicker();
-      reloadLead?.();
+      /* B23: await the reload so any code after this point (e.g., the
+       *  user immediately hitting Save & Next) sees the FRESH
+       *  acknowledgement list rather than the stale snapshot from the
+       *  pre-save header. Without the await, latestBucket would still
+       *  reflect the previous state for ~200ms after this returns. */
+      await reloadLead?.();
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save acknowledgements');
+      /* B30: close the picker on error too. The previous flow left the
+       *  modal open with the user's selections intact — but with no
+       *  reloadLead fired the activity table didn't refresh, leaving
+       *  the user unsure whether the save partially succeeded. Closing
+       *  + showing the toast makes the failure unambiguous; the user
+       *  can re-open the picker if they want to retry. */
+      closePicker();
     } finally {
       setSaving(false);
     }
