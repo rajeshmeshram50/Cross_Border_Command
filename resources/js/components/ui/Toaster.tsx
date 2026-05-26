@@ -89,9 +89,11 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
           /* Above every modal in the app. Customer / Consignee / Vendor
              modals sit at 10000-10002, sub-modals at 10500, confirm
              dialogs at 10050-11050, dropdown portals at 11000-11200.
-             100000 keeps the toaster above all of them so users see
-             validation feedback even when a stacked modal is open. */
-          z-index: 100000;
+             CLM modals sit at 200000 and master-select menus at 250000,
+             so the toaster needs to outrank those too — 500000 keeps it
+             above all of them so users see validation feedback even when
+             a stacked modal is open. */
+          z-index: 500000;
           display: flex;
           flex-direction: column;
           gap: 12px;
