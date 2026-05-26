@@ -595,17 +595,20 @@ class SalesPdfController extends Controller
         } catch (\Throwable $e) {
             @unlink($pdfPath);
             Log::error('Sales document email failed', [
-                'kind'    => $kind,
-                'record'  => $record->code,
-                'to'      => $to,
-                'error'   => $e->getMessage(),
+                'kind'       => $kind,
+                'record'     => $record->code,
+                'to'         => $to,
+                'pdfPath'    => $pdfPath,
+                'logoPath'   => $payload['logoPath'] ?? null,
+                'errorClass' => get_class($e),
+                'error'      => $e->getMessage(),
+                'trace'      => $e->getTraceAsString(),
             ]);
-            // Keep the user-facing message generic — raw driver errors
-            // (SMTP timeouts, auth failures, DB exceptions) leak server
-            // internals. The full trace is in laravel.log for ops.
             return response()->json([
                 'status'  => false,
-                'message' => "Could not send {$kind} email. Please try again or contact support.",
+                'message' => config('app.debug')
+                    ? "Could not send {$kind} email: {$e->getMessage()}"
+                    : "Could not send {$kind} email. Please try again or contact support.",
             ], 500);
         }
         @unlink($pdfPath);
@@ -784,14 +787,20 @@ class SalesPdfController extends Controller
         } catch (\Throwable $e) {
             @unlink($pdfPath);
             Log::error('Sales reminder email failed', [
-                'kind'    => $kind,
-                'record'  => $record->code,
-                'to'      => $to,
-                'error'   => $e->getMessage(),
+                'kind'       => $kind,
+                'record'     => $record->code,
+                'to'         => $to,
+                'pdfPath'    => $pdfPath,
+                'logoPath'   => $payload['logoPath'] ?? null,
+                'errorClass' => get_class($e),
+                'error'      => $e->getMessage(),
+                'trace'      => $e->getTraceAsString(),
             ]);
             return response()->json([
                 'status'  => false,
-                'message' => 'Could not send reminder. Please try again or contact support.',
+                'message' => config('app.debug')
+                    ? "Could not send reminder email: {$e->getMessage()}"
+                    : 'Could not send reminder. Please try again or contact support.',
             ], 500);
         }
         @unlink($pdfPath);
