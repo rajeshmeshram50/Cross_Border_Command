@@ -380,7 +380,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    * `sync=true` so the backend pulls each inprogress row from Zoho on the
    * same request — that's how completed signings, declines and recalls
    * appear in the table without the user having to reload. */
-  type SigInfo = { status: TdSigStatus; signatureRequestId: number; signedUrl?: string };
+  type SigInfo = { status: TdSigStatus; signatureRequestId: number; signedUrl?: string; certificateUrl?: string };
   const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, SigInfo>>({});
 
   useEffect(() => {
@@ -401,7 +401,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           trade_doc_ids: number[];
           signed_document_paths?: Array<{ url?: string; path?: string; file_url?: string }> | string[] | null;
           signed_document_path?: string | null;
+          signed_document_url?: string | null;
           certificate_path?: string | null;
+          certificate_url?: string | null;
           file_url?: string | null;
         }> = Array.isArray(r.data?.data) ? r.data.data : [];
 
@@ -422,6 +424,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             // through the chain so the View / Download buttons enable
             // as soon as ANY signed artefact exists, instead of staying
             // disabled until the queue worker catches up.
+            // Backend transforms the response with file_url() now (see
+            // ClmSignatureController::index), so .url / .file_url on each
+            // signed_document_paths entry is already an absolute URL —
+            // Azure blob URL on the deployed SPA, /storage/… on local.
+            // Prefer those over raw paths so we don't double-resolve.
             const signedArr = row.signed_document_paths;
             let rawSignedUrl: string | null = null;
             if (Array.isArray(signedArr)) {
@@ -429,18 +436,27 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               if (typeof entry === 'string') rawSignedUrl = entry;
               else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
             }
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
-            if (!rawSignedUrl) rawSignedUrl = row.file_url || null;
-            if (!rawSignedUrl) rawSignedUrl = row.certificate_path || null;
-            // Route the URL through resolveFileUrl so it picks up the
-            // right base (VITE_API_URL on the deployed SPA, current
-            // origin in dev), and so legacy /storage prefixes don't
-            // double-stack. Prevents the "View / Download icons go
-            // nowhere" bug when the SPA origin differs from the API.
+            /* file_url and certificate_* are NOT fallbacks here. When
+             * the certificate is minted but the signed PDF hasn't been
+             * fetched yet (signed_document_paths === []), Laravel's
+             * model accessor often returns the cert URL via file_url,
+             * which would silently link the "View signed document"
+             * button to the certificate. Keep them strictly separate:
+             * rawSignedUrl stays null → View/Download show "No
+             * attachment yet" until the signed PDF lands; certificate
+             * gets its own URL + button below. */
+            const rawCertUrl = row.certificate_url || row.certificate_path || null;
+            // resolveFileUrl is a no-op when the URL is already absolute
+            // (http(s)://…), so passing the pre-resolved URL through it
+            // is safe. It still adds the API base for any legacy row
+            // that only has the bare `uploads/…` path on disk.
             map[docId] = {
               status: row.status,
               signatureRequestId: row.id,
-              signedUrl: rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
+              signedUrl:      rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
+              certificateUrl: rawCertUrl   ? resolveFileUrl(rawCertUrl)   : undefined,
             };
           }
         }
@@ -469,7 +485,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         sent: d.sent || info.status !== 'idle',
         status: info.status,
         signature_request_id: info.signatureRequestId,
-        signed_url: info.signedUrl ?? d.signed_url,
+        signed_url:      info.signedUrl      ?? d.signed_url,
+        certificate_url: info.certificateUrl ?? d.certificate_url,
       };
     }));
   }, [sigStatusByDoc]);
@@ -2611,6 +2628,12 @@ type TdDocRow = {
   status?: TdSigStatus;
   signature_request_id?: number;
   signed_url?: string;
+  /* Zoho Sign completion-certificate URL — populated by the polling
+   * effect from clm_signature_requests.certificate_path on completed
+   * rows, resolved through resolveFileUrl so the same value works on
+   * local + Azure. Drives the third action-column button when the
+   * row's status is 'completed'. */
+  certificate_url?: string;
   /* Set by the parent right before rendering — true when this row's
    * signature_request_id is inside the active 60-second Resend
    * cooldown. The button disables to stop a multi-doc bundle from
@@ -2717,6 +2740,13 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                     })()}
                   </td>
                   <td className="td-actions">
+                    {/* Action set is status-driven:
+                        • completed  → View signed | Download signed | Download certificate
+                        • anything else → View | Download (both disabled until a signed
+                          URL exists, e.g. inprogress rows).
+                        The certificate button only appears for completed rows because
+                        Zoho only mints the certificate after the recipient finishes
+                        signing — earlier statuses have no certificate to fetch. */}
                     <div className="acm-row-actions">
                       <Tooltip label={d.signed_url ? 'View signed document' : 'View document'}>
                         <a
@@ -2743,6 +2773,30 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                         </a>
                       </Tooltip>
+                      {d.status === 'completed' && d.certificate_url && (
+                        <Tooltip label="Download Certificate of Completion">
+                          <a
+                            href={d.certificate_url}
+                            download=""
+                            target="_blank"
+                            rel="noreferrer"
+                            className="acm-doc-action acm-doc-action-cert"
+                            aria-label="Download Certificate"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: 28, height: 28, borderRadius: 6,
+                              background: '#cffafe', color: '#0e7490',
+                              border: '1px solid #67e8f9',
+                              cursor: 'pointer', textDecoration: 'none',
+                            }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="8" r="6"/>
+                              <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+                            </svg>
+                          </a>
+                        </Tooltip>
+                      )}
                     </div>
                   </td>
                 </tr>

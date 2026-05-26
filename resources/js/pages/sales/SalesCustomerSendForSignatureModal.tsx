@@ -1134,13 +1134,16 @@ async function detectSignatureMarker(
   const BOX_WIDTH_PT  = 165;
   const BOX_HEIGHT_PT = 60;
   // Distance from the marker's text BASELINE to the sig-box's TOP edge.
-  // The placeholder div has padding: 32px 0 (= 24pt top), and the body
-  // text baseline sits ~10pt below the top of the line at our 12pt /
-  // 1.55-line-height defaults — so baseline ≈ box_top + 34pt. PDF.js
-  // hands us the baseline; Zoho wants the field's top, so we subtract
-  // this offset. A few pt of slop here doesn't matter — the user can
-  // drag-adjust on the preview and the dragged value sticks.
-  const BASELINE_TO_BOX_TOP_PT = 34;
+  // As of the position-absolute fix on .sig-marker (see
+  // clm-signature-document.blade.php) the marker is anchored to the box's
+  // top-left corner — so its baseline sits ~0.4pt below the box top
+  // (0.5pt font, ~80% ascent). The legacy 34pt offset existed because
+  // the marker was previously inline with the visible "[ Signature ]"
+  // label, riding the 10pt font's baseline ~34pt below the box top.
+  // That value moved with the surrounding draft's text-alignment, which
+  // is why Vendor (centred context) landed off and Customer (left-aligned
+  // context) happened to work.
+  const BASELINE_TO_BOX_TOP_PT = 0.5;
 
   try {
     for (let pageIdx = 1; pageIdx <= pdf.numPages; pageIdx++) {

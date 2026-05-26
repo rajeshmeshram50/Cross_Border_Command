@@ -111,6 +111,18 @@ export default function Branches({ onNavigate }: Props) {
         'Phone': b.phone || '',
         'City': b.city || '',
         'State': b.state || '',
+        // Letterhead / export-house compliance — included so the export
+        // is a complete branch snapshot (audit, compliance teams need it).
+        'GST Number': b.gst_number || '',
+        'GST State Code': b.gst_state_code || '',
+        'PAN Number': b.pan_number || '',
+        'CIN': b.cin || '',
+        'IEC': b.iec || '',
+        'Drug License': b.drug_license || '',
+        'PCPNDT No': b.pcpndt_no || '',
+        'AEO Code': b.aeo_code || '',
+        'One Star File No': b.one_star_file_no || '',
+        'One Star UDIN No': b.one_star_udin_no || '',
         'Users': b.users_count ?? 0,
         'Status': b.status,
       }));

@@ -41,6 +41,14 @@ class ProformaInvoiceController extends Controller
                 'lead:id,opp_code',
                 'sourceQuotation:id,code',
                 'salesManager:id,name',
+                // Branch name + is_main flag for the BRANCH column in
+                // the QPI list (lets multi-branch users identify the
+                // record's owning branch at a glance).
+                'branch:id,name,code,is_main',
+                // Creator (+ creator's branch) drives the "Created By"
+                // column. Mirrors the Master Details pattern.
+                'creator:id,name,user_type,branch_id',
+                'creator.branch:id,is_main',
             ])
             ->orderByDesc('id');
 
@@ -51,9 +59,22 @@ class ProformaInvoiceController extends Controller
         $page    = max((int) $request->query('page', 1), 1);
         $paginator = $q->paginate($perPage, ['*'], 'page', $page);
 
+        // Stamp per-row `can_modify` — mirrors the Quotation API. Drives
+        // the frontend's edit/delete/email/reminder enable-state on rows
+        // visible-but-read-only (main-branch rows seen by normal users).
+        $rows = collect($paginator->items())->map(function ($r) use ($user) {
+            $r->can_modify = $this->userCanModify($r, $user);
+            // Flatten creator info for the "Created By" column — same
+            // shape as the Quotation list.
+            $r->creator_name           = $r->creator?->name;
+            $r->creator_user_type      = $r->creator?->user_type;
+            $r->creator_branch_is_main = (bool) ($r->creator?->branch?->is_main);
+            return $r;
+        })->all();
+
         return response()->json([
             'status' => true,
-            'data'   => $paginator->items(),
+            'data'   => $rows,
             'pagination' => [
                 'current_page' => $paginator->currentPage(),
                 'last_page'    => $paginator->lastPage(),
@@ -192,7 +213,7 @@ class ProformaInvoiceController extends Controller
         if (!$user) abort(401);
 
         $row = ProformaInvoice::findOrFail($id);
-        $this->assertScope($row, $user);
+        $this->assertScope($row, $user, 'write');
         if ($row->status === ProformaInvoice::STATUS_CONVERTED_TO_CONTRACT) {
             return response()->json([
                 'status'  => false,
@@ -285,7 +306,7 @@ class ProformaInvoiceController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
         $row = ProformaInvoice::findOrFail($id);
-        $this->assertScope($row, $user);
+        $this->assertScope($row, $user, 'write');
         if ($row->status === ProformaInvoice::STATUS_CONVERTED_TO_CONTRACT) {
             return response()->json([
                 'status'  => false,
@@ -653,24 +674,96 @@ class ProformaInvoiceController extends Controller
     }
 
     /* ── Authorisation ──────────────────────────────────────── */
+
+    /**
+     * Branch-aware read scope. Same rule as QuotationController:
+     *   - super_admin / client_admin / client_user / main_branch_user
+     *     → all branches under their client
+     *   - normal_branch_user → OWN branch + MAIN branch only
+     */
     private function applyScope($q, $user): void
     {
         if ($user->user_type === 'super_admin') return;
-        if ($user->client_id) {
-            $q->where('client_id', $user->client_id);
-        } else {
+        if (!$user->client_id) {
             $q->whereRaw('1 = 0');
+            return;
         }
+        $q->where('client_id', $user->client_id);
+
+        if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
+        if ($user->branch && (bool) $user->branch->is_main) return;
+
+        $mainBranchId = \DB::table('branches')
+            ->where('client_id', $user->client_id)
+            ->where('is_main', true)
+            ->whereNull('deleted_at')
+            ->value('id');
+
+        $q->where(function ($w) use ($user, $mainBranchId) {
+            $w->where('branch_id', $user->branch_id);
+            if ($mainBranchId) {
+                $w->orWhere('branch_id', $mainBranchId);
+            }
+        });
     }
-    private function assertScope(ProformaInvoice $row, $user): void
+
+    /**
+     * Single-row auth. $action = 'read' allows main-branch records;
+     * $action = 'write' rejects them for normal branch users (403).
+     */
+    private function assertScope(ProformaInvoice $row, $user, string $action = 'read'): void
     {
         if ($user->user_type === 'super_admin') return;
         if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) abort(404);
+
+        if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
+        if ($user->branch && (bool) $user->branch->is_main) return;
+        if ((int) $row->branch_id === (int) $user->branch_id) return;
+
+        $isFromMainBranch = \DB::table('branches')
+            ->where('id', $row->branch_id)
+            ->where('client_id', $user->client_id)
+            ->value('is_main');
+
+        if ($isFromMainBranch) {
+            if ($action === 'read') return;
+            abort(403, 'Main-branch records are view-only for branch users.');
+        }
+        abort(404);
     }
+
+    /**
+     * Source-quotation auth (used by fromQuotation conversion). We
+     * allow main-branch quotations to be converted-to-PI by a normal
+     * branch user — the PI then belongs to the converting user's
+     * branch. Writes on the source quotation itself still go through
+     * QuotationController's stricter assertScope.
+     */
     private function assertQuotationScope(Quotation $row, $user): void
     {
         if ($user->user_type === 'super_admin') return;
         if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) abort(404);
+
+        if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
+        if ($user->branch && (bool) $user->branch->is_main) return;
+        if ((int) $row->branch_id === (int) $user->branch_id) return;
+
+        $isFromMainBranch = \DB::table('branches')
+            ->where('id', $row->branch_id)
+            ->where('client_id', $user->client_id)
+            ->value('is_main');
+        if ($isFromMainBranch) return;
+        abort(404);
+    }
+
+    /** UI hint flag — see QuotationController::userCanModify. */
+    private function userCanModify(ProformaInvoice $row, $user): bool
+    {
+        if ($user->user_type === 'super_admin') return true;
+        if (!$user->client_id || (int) $row->client_id !== (int) $user->client_id) return false;
+        if ($user->user_type !== 'branch_user' || !$user->branch_id) return true;
+        if ($user->branch && (bool) $user->branch->is_main) return true;
+        return (int) $row->branch_id === (int) $user->branch_id;
     }
 
     /* ── List filters ───────────────────────────────────────── */

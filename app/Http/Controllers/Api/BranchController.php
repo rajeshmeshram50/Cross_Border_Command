@@ -144,6 +144,16 @@ class BranchController extends Controller
                     ->whereNull('deleted_at'),
             ],
             'registration_number' => 'nullable|string|max:50',
+            // Letterhead / export-house compliance fields — all optional,
+            // surface on the Quotation/PI PDF when filled.
+            'gst_state_code'   => 'nullable|string|max:10',
+            'cin'              => 'nullable|string|max:30',
+            'iec'              => 'nullable|string|max:30',
+            'drug_license'     => 'nullable|string|max:60',
+            'pcpndt_no'        => 'nullable|string|max:60',
+            'aeo_code'         => 'nullable|string|max:60',
+            'one_star_file_no' => 'nullable|string|max:60',
+            'one_star_udin_no' => 'nullable|string|max:60',
             'address' => 'nullable|string',
             'city' => 'nullable|string|max:100',
             'district' => 'nullable|string|max:100',
@@ -158,6 +168,10 @@ class BranchController extends Controller
             'notes' => 'nullable|string',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+            // Authorised-signatory image (signature + stamp combined).
+            // Goes on the with-signature PDF variant. PNG preferred so
+            // transparent background blends with the branded footer.
+            'signature_path' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
 
@@ -207,6 +221,14 @@ class BranchController extends Controller
                 'gst_number' => $request->gst_number,
                 'pan_number' => $request->pan_number,
                 'registration_number' => $request->registration_number,
+                'gst_state_code'   => $request->gst_state_code,
+                'cin'              => $request->cin,
+                'iec'              => $request->iec,
+                'drug_license'     => $request->drug_license,
+                'pcpndt_no'        => $request->pcpndt_no,
+                'aeo_code'         => $request->aeo_code,
+                'one_star_file_no' => $request->one_star_file_no,
+                'one_star_udin_no' => $request->one_star_udin_no,
                 'address' => $request->address,
                 'city' => $request->city,
                 'district' => $request->district,
@@ -234,6 +256,14 @@ class BranchController extends Controller
             if ($request->hasFile('profile_photo')) {
                 $branch->update([
                     'profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public'),
+                ]);
+            }
+            // Authorised-signatory image — used by the Quotation/PI PDF's
+            // with-signature variant. PNG with transparent background works
+            // best because the stamp + signature sit on the branded footer.
+            if ($request->hasFile('signature_path')) {
+                $branch->update([
+                    'signature_path' => $request->file('signature_path')->store('branches/signatures', 'public'),
                 ]);
             }
 
@@ -410,6 +440,14 @@ class BranchController extends Controller
                     ->whereNull('deleted_at'),
             ],
             'registration_number' => 'nullable|string|max:50',
+            'gst_state_code'   => 'nullable|string|max:10',
+            'cin'              => 'nullable|string|max:30',
+            'iec'              => 'nullable|string|max:30',
+            'drug_license'     => 'nullable|string|max:60',
+            'pcpndt_no'        => 'nullable|string|max:60',
+            'aeo_code'         => 'nullable|string|max:60',
+            'one_star_file_no' => 'nullable|string|max:60',
+            'one_star_udin_no' => 'nullable|string|max:60',
             'address' => 'nullable|string',
             'city' => 'nullable|string|max:100',
             'district' => 'nullable|string|max:100',
@@ -424,6 +462,10 @@ class BranchController extends Controller
             'notes' => 'nullable|string',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+            // Authorised-signatory image (signature + stamp combined).
+            // Goes on the with-signature PDF variant. PNG preferred so
+            // transparent background blends with the branded footer.
+            'signature_path' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
             'user_name' => 'nullable|string|max:255',
@@ -469,6 +511,9 @@ class BranchController extends Controller
                 'name', 'code', 'email', 'phone', 'website', 'contact_person',
                 'branch_type', 'industry', 'description',
                 'gst_number', 'pan_number', 'registration_number',
+                'gst_state_code', 'cin', 'iec',
+                'drug_license', 'pcpndt_no', 'aeo_code',
+                'one_star_file_no', 'one_star_udin_no',
                 'address', 'city', 'district', 'taluka', 'state', 'pincode', 'country',
                 'is_main', 'max_users', 'established_at', 'status', 'notes',
                 'primary_color', 'secondary_color',
@@ -485,6 +530,14 @@ class BranchController extends Controller
                     Storage::disk('public')->delete($this->relativePath($branch->profile_photo));
                 }
                 $branch->update(['profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public')]);
+            }
+            // Replace the signature image when a new file comes in;
+            // the old one is deleted from storage so we don't leak files.
+            if ($request->hasFile('signature_path')) {
+                if ($branch->signature_path) {
+                    Storage::disk('public')->delete($this->relativePath($branch->signature_path));
+                }
+                $branch->update(['signature_path' => $request->file('signature_path')->store('branches/signatures', 'public')]);
             }
 
             if ($statusBecomingInactive) {

@@ -4,6 +4,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
+import { MasterSelect } from '../../components/ui/MasterSelect';
 
 /* Central CLM → Document Control Panel.
  *
@@ -538,10 +539,13 @@ function SegmentRuleModal(props: {
                         </div>
                       )
                     ) : (
-                      <select className="clm-select" value={segCode} onChange={e => setSegCodes(e.target.value ? [e.target.value] : [])} disabled={!!existing}>
-                        <option value="">— Choose a {reg === 'highly' ? 'Highly' : 'Less'} Regulated Segment —</option>
-                        {segments.map(s => <option key={s.id} value={s.code}>{s.name} ({s.code})</option>)}
-                      </select>
+                      <MasterSelect
+                        value={segCode}
+                        onChange={(v) => setSegCodes(v ? [v] : [])}
+                        disabled={!!existing}
+                        placeholder={`— Choose a ${reg === 'highly' ? 'Highly' : 'Less'} Regulated Segment —`}
+                        options={segments.map(s => ({ value: s.code, label: `${s.name} (${s.code})` }))}
+                      />
                     )}
 
                     {!existing && matchedRules.length > 0 && (
@@ -566,19 +570,19 @@ function SegmentRuleModal(props: {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 0 }}>
                     <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
-                      <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 4 }}>Segment ID</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Segment ID</div>
                       <div style={{ fontFamily: "'Geist Mono', monospace", fontSize: 14, fontWeight: 800, color: '#0c4a6e' }}>{selSeg.code}</div>
                     </div>
                     <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
-                      <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 4 }}>Segment Name</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Segment Name</div>
                       <div style={{ fontSize: 12, fontWeight: 700, color: '#0c4a6e' }}>{selSeg.name}</div>
                     </div>
                     <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
-                      <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 5 }}>Regulatory</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>Regulatory</div>
                       <span className={`clm-badge ${reg === 'highly' ? 'clm-badge-red' : 'clm-badge-emerald'}`}><span className="clm-badge-dot" />{reg === 'highly' ? 'High' : 'Less'}</span>
                     </div>
                     <div style={{ padding: '10px 14px' }}>
-                      <div style={{ fontSize: 7.5, fontWeight: 800, color: '#0891b2', opacity: .5, textTransform: 'uppercase', marginBottom: 5 }}>Buyer ≠ Consignee</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>Buyer ≠ Consignee</div>
                       <span className={`clm-badge ${selSeg.buyer_consignee === 'allowed' ? 'clm-badge-green' : 'clm-badge-red'}`}>{selSeg.buyer_consignee === 'allowed' ? 'Allowed' : 'Not Allowed'}</span>
                     </div>
                   </div>
@@ -601,7 +605,7 @@ function SegmentRuleModal(props: {
                 })}
               </div>
 
-              <div style={{ marginTop: 8, background: '#fff', border: '1.5px solid rgba(6,182,212,.15)', borderRadius: 14, overflow: 'hidden' }}>
+              <div className="dcp-doc-card" style={{ marginTop: 8, border: '1.5px solid rgba(6,182,212,.15)', borderRadius: 14, overflow: 'hidden' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'linear-gradient(110deg, #0891b2, #0e7490)', color: '#fff' }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.25px' }}>{CAT_LABELS[activeCat]} Documents</div>
@@ -618,10 +622,10 @@ function SegmentRuleModal(props: {
                       <tr style={{ background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1.5px solid rgba(6,182,212,.12)' }}>
                         <th style={{ width: 36, padding: '9px 4px 9px 14px', textAlign: 'left' }}></th>
                         <th style={{ width: 36, padding: '9px 4px', textAlign: 'center' }}></th>
-                        <th style={{ width: 100, padding: '9px 8px', textAlign: 'left' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#0891b2', opacity: .65 }}>Code</span></th>
-                        <th style={{ padding: '9px 12px', textAlign: 'left' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#0891b2', opacity: .65 }}>Document Name</span></th>
-                        <th style={{ padding: '9px 12px', textAlign: 'left' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#0891b2', opacity: .65 }}>Authority / Type</span></th>
-                        <th style={{ width: 200, padding: '9px 16px', textAlign: 'right' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#0891b2', opacity: .65 }}>Requirement</span></th>
+                        <th style={{ width: 100, padding: '9px 8px', textAlign: 'left' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2' }}>Code</span></th>
+                        <th style={{ padding: '9px 12px', textAlign: 'left' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2' }}>Document Name</span></th>
+                        <th style={{ padding: '9px 12px', textAlign: 'left' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2' }}>Authority / Type</span></th>
+                        <th style={{ width: 200, padding: '9px 16px', textAlign: 'right' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2' }}>Requirement</span></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -769,7 +773,7 @@ function DocListPopup(props: {
   const catLabel = isAll ? 'All' : CAT_LABELS[cat as keyof DocSelections];
 
   const renderRow = (d: Row, idx: number, isLast: boolean) => (
-    <div key={`${d.__cat}-${d.code}`} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 22px', background: '#fff', borderBottom: isLast ? 'none' : '1px solid rgba(6,182,212,.07)' }}>
+    <div key={`${d.__cat}-${d.code}`} className="dcp-doc-row" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 22px', borderBottom: isLast ? 'none' : '1px solid rgba(6,182,212,.07)' }}>
       <span style={{ fontSize: 10, fontWeight: 700, color: '#c0d4e0', width: 22, textAlign: 'right', flexShrink: 0 }}>{String(idx + 1).padStart(2, '0')}</span>
       <span className="clm-code-pill" style={{ flexShrink: 0 }}>{d.code}</span>
       {isAll && (
@@ -822,7 +826,7 @@ function DocListPopup(props: {
           </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', maxHeight: '60vh', background: '#fff' }}>
+        <div className="dcp-doc-card" style={{ flex: 1, overflowY: 'auto', maxHeight: '60vh' }}>
           {totalSel === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '48px 24px' }}>
               <div style={{ width: 52, height: 52, borderRadius: 15, background: 'rgba(8,145,178,.07)', border: '1.5px solid rgba(6,182,212,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0891b2' }}>

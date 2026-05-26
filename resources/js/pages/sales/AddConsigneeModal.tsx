@@ -19,6 +19,10 @@ type TdDocRow = {
   status?: TdSigStatus;
   signature_request_id?: number;
   signed_url?: string;
+  /* Zoho Sign completion-certificate URL — populated by the polling
+   * effect from clm_signature_requests.certificate_path on completed
+   * rows. Drives the third action-column button. */
+  certificate_url?: string;
   /* Set by the parent right before rendering — true when this row's
    * signature_request_id is inside the active 60-second Resend
    * cooldown. The button locks so a multi-doc bundle can't fire one
@@ -303,7 +307,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * just clicked Send on so the wizard pops with them pre-checked. */
   const [tdDocs, setTdDocs] = useState<TdDocRow[]>([]);
   const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
-  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TdSigStatus; signatureRequestId: number; signedUrl?: string }>>({});
+  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TdSigStatus; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }>>({});
 
   /* Resend cooldown — Zoho's remind API operates per-REQUEST; one
    * 3-doc bundle gets ONE reminder email no matter which row in it
@@ -896,10 +900,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           trade_doc_ids: number[];
           signed_document_paths?: Array<{ url?: string; path?: string; file_url?: string }> | string[] | null;
           signed_document_path?: string | null;
+          signed_document_url?: string | null;
           certificate_path?: string | null;
+          certificate_url?: string | null;
           file_url?: string | null;
         }> = Array.isArray(r.data?.data) ? r.data.data : [];
-        const map: Record<number, { status: TdSigStatus; signatureRequestId: number; signedUrl?: string }> = {};
+        const map: Record<number, { status: TdSigStatus; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }> = {};
         for (const row of rows) {
           const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
           for (let i = 0; i < ids.length; i++) {
@@ -912,6 +918,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             // through the chain so the View / Download buttons enable
             // as soon as ANY signed artefact exists, instead of staying
             // disabled until the queue worker catches up.
+            // Backend transforms the response with file_url() now (see
+            // ClmSignatureController::index), so .url / .file_url on each
+            // signed_document_paths entry is already absolute (Azure blob
+            // URL on prod, /storage/… on local). Prefer those over raw
+            // paths so we don't double-resolve.
             const signedArr = row.signed_document_paths;
             let rawSignedUrl: string | null = null;
             if (Array.isArray(signedArr)) {
@@ -919,9 +930,17 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               if (typeof entry === 'string') rawSignedUrl = entry;
               else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
             }
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
-            if (!rawSignedUrl) rawSignedUrl = row.file_url || null;
-            if (!rawSignedUrl) rawSignedUrl = row.certificate_path || null;
+            /* file_url and certificate_* are NOT fallbacks here. When
+             * Zoho mints the certificate before the signed PDF lands
+             * (signed_document_paths: []), Laravel's model accessor
+             * fills file_url with the cert URL — using that as a signed
+             * URL fallback silently routes the View / Download buttons
+             * to the certificate. Keep them strictly separate so the
+             * signed-doc buttons stay disabled until the real signed
+             * PDF appears, and the cert lives only on its own button. */
+            const rawCertUrl = row.certificate_url || row.certificate_path || null;
             // Resolve via resolveFileUrl so the URL picks up the right
             // base (VITE_API_URL on the deployed SPA, current origin in
             // dev). Without this the View / Download icons get a bare
@@ -930,7 +949,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             map[docId] = {
               status: row.status,
               signatureRequestId: row.id,
-              signedUrl: rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
+              signedUrl:      rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
+              certificateUrl: rawCertUrl   ? resolveFileUrl(rawCertUrl)   : undefined,
             };
           }
         }
@@ -953,7 +973,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         sent:   d.sent || info.status !== 'idle',
         status: info.status,
         signature_request_id: info.signatureRequestId,
-        signed_url: info.signedUrl ?? d.signed_url,
+        signed_url:      info.signedUrl      ?? d.signed_url,
+        certificate_url: info.certificateUrl ?? d.certificate_url,
       };
     }));
   }, [sigStatusByDoc]);
@@ -3189,6 +3210,33 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                         </a>
                       </Tooltip>
+                      {/* Certificate of Completion — third action button,
+                          only shown once the request is completed and Zoho
+                          has minted the certificate. Distinct cyan styling
+                          so it doesn't blend with the View / Download
+                          buttons that target the signed PDF. */}
+                      {d.status === 'completed' && d.certificate_url && (
+                        <Tooltip label="Download Certificate of Completion">
+                          <a
+                            href={d.certificate_url}
+                            download=""
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: 26, height: 26, borderRadius: 6,
+                              background: '#cffafe', color: '#0e7490',
+                              border: '1px solid #67e8f9',
+                              cursor: 'pointer', textDecoration: 'none',
+                            }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="8" r="6"/>
+                              <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+                            </svg>
+                          </a>
+                        </Tooltip>
+                      )}
                     </div>
                   </td>
                 </tr>

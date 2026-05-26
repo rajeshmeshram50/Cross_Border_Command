@@ -412,9 +412,17 @@ export const MASTER_MODAL_CSS = `
     height: 38px;
     border-radius: 10px;
     background: var(--vz-card-bg);
-    border: 1px solid var(--vz-border-color);
+    /* Stronger default border so inputs/selects don't disappear into the
+     * card background in light mode — Velzon's default --vz-border-color
+     * is too pale (#e9ebec) and users reported they couldn't see where
+     * to type. Dark mode keeps the variable. */
+    border: 1.5px solid #94a3b8;
     box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
     transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+  }
+  [data-bs-theme="dark"] .master-modal .form-control,
+  [data-bs-theme="dark"] .master-modal .form-select {
+    border-color: var(--vz-border-color);
   }
   .master-modal textarea.form-control {
     height: auto;

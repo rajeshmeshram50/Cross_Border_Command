@@ -2,6 +2,82 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 
 /* ─────────────────────────────────────────────────────────────────────────
+ * Shared CLM input validators.
+ *
+ * Every CLM master form (Authority, KYC, DD, QC, Trade License, Agreement
+ * Type, T&C Category, Trade Document, …) accepts free-text names and
+ * descriptions that previously had no client-side validation, letting
+ * users save XSS payloads, SQL injection strings, emoji-only entries,
+ * symbol soup, and 1000-char garbage.
+ *
+ * The helpers below are exported so any modal can drop in matching
+ * defence in a few lines instead of duplicating the regex set.
+ *   sanitizeClmName       — XSS strip → SQL strip → name whitelist (`A-Z0-9 .,-()&/'%`)
+ *   sanitizeClmDescription — XSS strip → SQL strip → address-style whitelist
+ *                            (broader; permits #, _, : for prose)
+ *   validateClmDuplicate  — case-insensitive uniqueness against an existing
+ *                            list of rows, excluding the row being edited
+ * ───────────────────────────────────────────────────────────────────────── */
+export const CLM_NAME_MAX = 100;
+export const CLM_DESC_MAX = 255;
+const CLM_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
+const CLM_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+const CLM_DESC_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%#:_!?]/g;
+
+export type ClmSanitizeResult = { cleaned: string; error?: string };
+
+const stripXssAndSql = (raw: string) => {
+  const afterAngles = raw.replace(/[<>]/g, '');
+  const afterSql = afterAngles.replace(CLM_SQL_RE, '');
+  return { stripped: afterSql, afterAngles, afterSql };
+};
+
+export function sanitizeClmName(raw: string, maxLen = CLM_NAME_MAX): ClmSanitizeResult {
+  const { stripped, afterAngles, afterSql } = stripXssAndSql(raw);
+  let cleaned = stripped.replace(CLM_NAME_INVALID_RE, '');
+  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  let error: string;
+  if (afterAngles !== raw)          error = 'HTML characters (< or >) are not allowed';
+  else if (afterSql !== afterAngles) error = 'SQL-like patterns are not allowed';
+  else                              error = "Use letters, numbers, spaces, and . , - ( ) & / ' % only";
+  return { cleaned, error };
+}
+
+export function sanitizeClmDescription(raw: string, maxLen = CLM_DESC_MAX): ClmSanitizeResult {
+  const { stripped, afterAngles, afterSql } = stripXssAndSql(raw);
+  let cleaned = stripped.replace(CLM_DESC_INVALID_RE, '');
+  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  let error: string;
+  if (afterAngles !== raw)          error = 'HTML characters (< or >) are not allowed';
+  else if (afterSql !== afterAngles) error = 'SQL-like patterns are not allowed';
+  else                              error = `Description may only contain letters, numbers, spaces, and basic punctuation (max ${maxLen} chars)`;
+  return { cleaned, error };
+}
+
+/** Required-field meaningful-input check. Rejects whitespace-only,
+ * symbol-only, or emoji-only entries that bypass `if (!value.trim())`. */
+export function isMeaningfulClmValue(raw: string): boolean {
+  return /[A-Za-z0-9]/.test(raw);
+}
+
+/** Case-insensitive duplicate check against the existing list. */
+export function findClmDuplicate<T extends { id?: string | number; name?: string; description?: string; title?: string }>(
+  rows: T[],
+  field: 'name' | 'description' | 'title',
+  value: string,
+  editingId?: string | number | null,
+): T | undefined {
+  const target = value.trim().toLowerCase();
+  if (!target) return undefined;
+  return rows.find(r => {
+    if (editingId != null && r.id === editingId) return false;
+    return String((r as Record<string, unknown>)[field] ?? '').trim().toLowerCase() === target;
+  });
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
  * Shared modal shells used by every 2-tab CLM master page.
  *
  *   SimpleNameModal    — one-field add/edit (Trade Doc Name, etc.)
@@ -24,16 +100,32 @@ export function SimpleNameModal(props: {
   headIconSvg?: React.ReactNode;
   onClose: () => void;
   onSave: (name: string) => void;
+  /** Optional list of existing rows for client-side duplicate check.
+   *  When omitted, only XSS/SQL/charset/length validation runs. */
+  existingRows?: Array<{ id?: string | number; name?: string }>;
+  editingId?: string | number | null;
 }) {
-  const { title, placeholder, code, isEdit, initial, headIconSvg, onClose, onSave } = props;
+  const { title, placeholder, code, isEdit, initial, headIconSvg, onClose, onSave, existingRows, editingId } = props;
   const [name, setName]     = useState(initial);
   const [error, setError]   = useState('');
   const [saving, setSaving] = useState(false);
 
+  const handleChange = (raw: string) => {
+    const { cleaned, error: e } = sanitizeClmName(raw);
+    setName(cleaned);
+    setError(e ?? '');
+  };
+
   const handleSave = async () => {
-    if (!name.trim()) { setError('Name is required'); return; }
+    const trimmed = name.trim();
+    if (!trimmed) { setError('Name is required'); return; }
+    if (!isMeaningfulClmValue(trimmed)) { setError('Name must contain letters or numbers, not only symbols'); return; }
+    if (existingRows && findClmDuplicate(existingRows, 'name', trimmed, editingId)) {
+      setError(`"${trimmed}" already exists — pick a different name`);
+      return;
+    }
     setSaving(true);
-    try { await Promise.resolve(onSave(name.trim())); }
+    try { await Promise.resolve(onSave(trimmed)); }
     finally { setSaving(false); }
   };
 
@@ -67,7 +159,7 @@ export function SimpleNameModal(props: {
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Name <span className="clm-req">*</span></label>
-            <input className={`clm-input ${error ? 'clm-input-err' : ''}`} placeholder={placeholder} value={name} onChange={e => { setName(e.target.value); setError(''); }} autoFocus />
+            <input className={`clm-input ${error ? 'clm-input-err' : ''}`} placeholder={placeholder} value={name} maxLength={CLM_NAME_MAX} onChange={e => handleChange(e.target.value)} autoFocus />
             {error && <div className="clm-err">{error}</div>}
           </div>
         </div>
@@ -94,21 +186,42 @@ export function SimpleDescModal(props: {
   headIconSvg?: React.ReactNode;
   onClose: () => void;
   onSave: (form: { name: string; description: string }) => void;
+  /** Optional list of existing rows for client-side duplicate name check. */
+  existingRows?: Array<{ id?: string | number; name?: string }>;
+  editingId?: string | number | null;
 }) {
-  const { title, namePlaceholder, descPlaceholder, code, isEdit, initialName, initialDesc, headIconSvg, onClose, onSave } = props;
+  const { title, namePlaceholder, descPlaceholder, code, isEdit, initialName, initialDesc, headIconSvg, onClose, onSave, existingRows, editingId } = props;
   const [name, setName] = useState(initialName);
   const [desc, setDesc] = useState(initialDesc);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
+  const handleNameChange = (raw: string) => {
+    const { cleaned, error } = sanitizeClmName(raw);
+    setName(cleaned);
+    setErrors(p => ({ ...p, name: error ?? '' }));
+  };
+  const handleDescChange = (raw: string) => {
+    const { cleaned, error } = sanitizeClmDescription(raw);
+    setDesc(cleaned);
+    setErrors(p => ({ ...p, desc: error ?? '' }));
+  };
+
   const handleSave = async () => {
     const next: Record<string, string> = {};
-    if (!name.trim()) next.name = 'Name is required';
-    if (!desc.trim()) next.desc = 'Description is required';
+    const trimmedName = name.trim();
+    const trimmedDesc = desc.trim();
+    if (!trimmedName) next.name = 'Name is required';
+    else if (!isMeaningfulClmValue(trimmedName)) next.name = 'Name must contain letters or numbers, not only symbols';
+    else if (existingRows && findClmDuplicate(existingRows, 'name', trimmedName, editingId)) {
+      next.name = `"${trimmedName}" already exists — pick a different name`;
+    }
+    if (!trimmedDesc) next.desc = 'Description is required';
+    else if (!isMeaningfulClmValue(trimmedDesc)) next.desc = 'Description must contain letters or numbers, not only symbols';
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
-    try { await Promise.resolve(onSave({ name: name.trim(), description: desc.trim() })); }
+    try { await Promise.resolve(onSave({ name: trimmedName, description: trimmedDesc })); }
     finally { setSaving(false); }
   };
 
@@ -142,13 +255,14 @@ export function SimpleDescModal(props: {
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Name <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder={namePlaceholder} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
+            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder={namePlaceholder} value={name} maxLength={CLM_NAME_MAX} onChange={e => handleNameChange(e.target.value)} autoFocus />
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Description <span className="clm-req">*</span></label>
-            <textarea className={`clm-textarea ${errors.desc ? 'clm-input-err' : ''}`} placeholder={descPlaceholder} value={desc} onChange={e => { setDesc(e.target.value); setErrors(p => ({ ...p, desc: '' })); }} />
+            <textarea className={`clm-textarea ${errors.desc ? 'clm-input-err' : ''}`} placeholder={descPlaceholder} value={desc} maxLength={CLM_DESC_MAX} onChange={e => handleDescChange(e.target.value)} />
             {errors.desc && <div className="clm-err">{errors.desc}</div>}
+            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{desc.length}/{CLM_DESC_MAX}</div>
           </div>
         </div>
         <div className="clm-modal-foot">

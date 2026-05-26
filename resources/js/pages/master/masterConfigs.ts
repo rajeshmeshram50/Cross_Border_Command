@@ -696,7 +696,11 @@ const C: Record<string, MasterConfig> = {
     desc: 'GST tax slabs applied on product invoices',
     cat: 'Trade & Commercial',
     fields: [
-      { n: 'percentage', l: 'GST %', t: 'number', r: true, p: 'e.g. 18' },
+      // GST slabs are 0..28% in practice; backend column is DECIMAL(5,2)
+      // so anything ≥ 1000 throws a raw SQL overflow. Cap at 100 on the
+      // frontend so the user sees "GST % must be at most 100" instead of
+      // a stack trace, and 0 is a valid slab (e.g. exempt goods).
+      { n: 'percentage', l: 'GST %', t: 'number', r: true, p: 'e.g. 18', min: 0, max: 100 } as any,
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
     cols: ['percentage', 'status'],
