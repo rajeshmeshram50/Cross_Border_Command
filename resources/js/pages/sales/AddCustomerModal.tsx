@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../api';
-import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
-import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
+import { MasterSelect, MasterDatePicker, MasterMultiSelect } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
+import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Customer — 3-stage modal
@@ -320,10 +320,171 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   // rule when the user picks a segment in Stage 1 (see segment-template
   // effect below). Falls back to the original two-row placeholder when
   // the segment has no rule (or no `td` selections).
-  const [tdDocs, setTdDocs] = useState<{ id:string; name:string; selected:boolean; sent:boolean }[]>([
-    { id:'td1', name:'Bill of Lading',           selected:true, sent:false },
-    { id:'td2', name:'Phytosanitary Certificate', selected:true, sent:false },
+  /* `db_id` is the numeric clm_trade_doc_library.id — required by the
+   * Zoho Sign send modal. It's null on the legacy placeholder rows and
+   * populated when the segment-rule merge below joins against the
+   * /clm/trade-doc-library/for-party/buyer endpoint. */
+  const [tdDocs, setTdDocs] = useState<TdDocRow[]>([
+    { id:'td1', db_id:null, name:'Bill of Lading',           selected:true, sent:false, status: 'idle' },
+    { id:'td2', db_id:null, name:'Phytosanitary Certificate', selected:true, sent:false, status: 'idle' },
   ]);
+
+  /* "Send for Signature" launch state — when non-null, the Zoho Sign
+   * wizard pops with the listed clm_trade_doc_library ids pre-checked.
+   * The Stage 3 Trade Documents tab's per-row "Send" button (single id)
+   * and the "Send Selected Documents for Signature" footer button
+   * (all currently-checked ids) both write to this state. */
+  const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
+
+  /* Resend cooldown — Zoho's remind API operates per-REQUEST (one request
+   * may bundle 1..10 docs), so clicking Resend on any row in a bundle
+   * triggers ONE email covering every unsigned doc in that request.
+   * To stop a 3-doc bundle from triggering 3 reminder emails, every
+   * successful remind seeds a 60-second cooldown keyed by zoho-side
+   * signature_request_id; the Resend button on every sibling row in
+   * the same bundle disables for the cooldown window.
+   *
+   * Stored as { signature_request_id: expiresAtMs }. A self-pruning
+   * setTimeout schedules cleanup at the earliest expiry; the resulting
+   * state change re-renders the table so the button auto-enables. */
+  const [recentReminds, setRecentReminds] = useState<Record<number, number>>({});
+  useEffect(() => {
+    const expiries = Object.values(recentReminds);
+    if (expiries.length === 0) return;
+    const earliest = Math.min(...expiries);
+    const wait = Math.max(50, earliest - Date.now() + 50);
+    const id = window.setTimeout(() => {
+      setRecentReminds(prev => {
+        const now = Date.now();
+        const fresh: Record<number, number> = {};
+        for (const k in prev) if (prev[k] > now) fresh[+k] = prev[k];
+        return fresh;
+      });
+    }, wait);
+    return () => window.clearTimeout(id);
+  }, [recentReminds]);
+  const isReminderCooldown = (reqId?: number): boolean => !!reqId && (recentReminds[reqId] ?? 0) > Date.now();
+  const reminderCooldownSeconds = (reqId?: number): number => {
+    if (!reqId) return 0;
+    return Math.max(0, Math.ceil(((recentReminds[reqId] ?? 0) - Date.now()) / 1000));
+  };
+
+  /* Signature-request status, keyed by clm_trade_doc_library.id. Hydrated
+   * from /clm/signature-requests?party_id=N and refreshed every 15s while
+   * the user is on the Stage 3 Trade Documents tab. The poller passes
+   * `sync=true` so the backend pulls each inprogress row from Zoho on the
+   * same request — that's how completed signings, declines and recalls
+   * appear in the table without the user having to reload. */
+  type SigInfo = { status: TdSigStatus; signatureRequestId: number; signedUrl?: string; certificateUrl?: string };
+  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, SigInfo>>({});
+
+  useEffect(() => {
+    const partyId = customer?.db_id ?? savedDbId;
+    if (!open || stage !== 3 || evTab !== 'trade-documents' || !partyId) return;
+
+    let cancelled = false;
+
+    const fetchAndUpdate = async (withSync: boolean) => {
+      try {
+        const r = await api.get('/clm/signature-requests', {
+          params: { party_id: partyId, model_name: 'Customer', sync: withSync ? 1 : 0 },
+        });
+        if (cancelled) return;
+        const rows: Array<{
+          id: number;
+          status: TdSigStatus;
+          trade_doc_ids: number[];
+          signed_document_paths?: Array<{ url?: string; path?: string; file_url?: string }> | string[] | null;
+          signed_document_path?: string | null;
+          signed_document_url?: string | null;
+          certificate_path?: string | null;
+          certificate_url?: string | null;
+          file_url?: string | null;
+        }> = Array.isArray(r.data?.data) ? r.data.data : [];
+
+        // Latest request wins when a single doc has been resent. The list
+        // endpoint returns rows newest-first (per the controller's ->latest()
+        // ordering), so the first row we see for a doc id is the most
+        // recent — `if (!map.has(docId))` keeps it that way.
+        const map: Record<number, SigInfo> = {};
+        for (const row of rows) {
+          const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
+          for (let i = 0; i < ids.length; i++) {
+            const docId = Number(ids[i]);
+            if (!docId || map[docId]) continue;
+            // Resolve a usable URL from whatever the backend populated.
+            // Production sometimes returns signed_document_paths=null
+            // (the Zoho-download queue job hadn't run yet) while the
+            // webhook-set certificate_path is already there. Fall back
+            // through the chain so the View / Download buttons enable
+            // as soon as ANY signed artefact exists, instead of staying
+            // disabled until the queue worker catches up.
+            // Backend transforms the response with file_url() now (see
+            // ClmSignatureController::index), so .url / .file_url on each
+            // signed_document_paths entry is already an absolute URL —
+            // Azure blob URL on the deployed SPA, /storage/… on local.
+            // Prefer those over raw paths so we don't double-resolve.
+            const signedArr = row.signed_document_paths;
+            let rawSignedUrl: string | null = null;
+            if (Array.isArray(signedArr)) {
+              const entry = signedArr[i] as { url?: string; path?: string; file_url?: string } | string | undefined;
+              if (typeof entry === 'string') rawSignedUrl = entry;
+              else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
+            }
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
+            /* file_url and certificate_* are NOT fallbacks here. When
+             * the certificate is minted but the signed PDF hasn't been
+             * fetched yet (signed_document_paths === []), Laravel's
+             * model accessor often returns the cert URL via file_url,
+             * which would silently link the "View signed document"
+             * button to the certificate. Keep them strictly separate:
+             * rawSignedUrl stays null → View/Download show "No
+             * attachment yet" until the signed PDF lands; certificate
+             * gets its own URL + button below. */
+            const rawCertUrl = row.certificate_url || row.certificate_path || null;
+            // resolveFileUrl is a no-op when the URL is already absolute
+            // (http(s)://…), so passing the pre-resolved URL through it
+            // is safe. It still adds the API base for any legacy row
+            // that only has the bare `uploads/…` path on disk.
+            map[docId] = {
+              status: row.status,
+              signatureRequestId: row.id,
+              signedUrl:      rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
+              certificateUrl: rawCertUrl   ? resolveFileUrl(rawCertUrl)   : undefined,
+            };
+          }
+        }
+        setSigStatusByDoc(map);
+      } catch {
+        // Silent — polling failures shouldn't toast every 15s.
+      }
+    };
+
+    fetchAndUpdate(false);
+    const iv = window.setInterval(() => fetchAndUpdate(true), 15000);
+    return () => { cancelled = true; window.clearInterval(iv); };
+  }, [open, stage, evTab, customer?.db_id, savedDbId]);
+
+  // Project the polled status into the tdDocs rows so the table renders
+  // live state. Kept as an effect (not a useMemo on render) because we
+  // also want the `sent` flag to flip permanently once a doc has been
+  // sent, even if the polling response transiently drops it.
+  useEffect(() => {
+    setTdDocs(prev => prev.map(d => {
+      if (!d.db_id) return d;
+      const info = sigStatusByDoc[d.db_id];
+      if (!info) return d;
+      return {
+        ...d,
+        sent: d.sent || info.status !== 'idle',
+        status: info.status,
+        signature_request_id: info.signatureRequestId,
+        signed_url:      info.signedUrl      ?? d.signed_url,
+        certificate_url: info.certificateUrl ?? d.certificate_url,
+      };
+    }));
+  }, [sigStatusByDoc]);
 
   /* Segment-rule template — resolved KYC / DD / TL / TD / QC master rows
    * for the currently-selected segment. The Stage 2 Trade Licence sub-
@@ -341,8 +502,55 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
    * `${sub-tab}::${doc.code}` so codes don't collide across categories.
    * Value carries the File plus a blob URL for View/Download links —
    * the URL stays valid as long as the modal session lives. */
-  type SegRefUpload = { file: File; url: string; name: string };
+  type SegRefUpload = { file: File | null; url: string; name: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
+
+  /* Persist a segment-rule reference upload to the server. refKey
+   * shape is `${sub-tab}::${doc.code}` — we split the sub-tab back into
+   * its (kyc|dd|tl) category and POST FormData to the SegmentDocUpload
+   * endpoint that the Evidence Vault reads from. Without this round-
+   * trip the upload only lives in browser memory and disappears the
+   * next time the modal opens. */
+  const SUB_TO_CAT_C: Record<string, 'kyc' | 'dd' | 'tl'> = {
+    'company-dd':    'dd',
+    'owner-kyc':     'kyc',
+    'trade-license': 'tl',
+  };
+  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
+    const ownerId = savedDbId || customer?.db_id || null;
+    if (!ownerId) {
+      toast.error('Save first', 'Save the customer before attaching reference documents.');
+      return;
+    }
+    const [sub, doc_code] = refKey.split('::');
+    const category = SUB_TO_CAT_C[sub];
+    if (!category || !doc_code) return;
+    const fd = new FormData();
+    fd.append('category', category);
+    fd.append('doc_code', doc_code);
+    fd.append('doc_name', docName || doc_code);
+    fd.append('attachment', file);
+    try {
+      const { data } = await api.post(`/segment-uploads/customer/${ownerId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const row = data?.data;
+      if (row?.attachment_url) {
+        setSegmentRefUploads(prev => {
+          const existing = prev[refKey];
+          if (existing?.url && existing.url.startsWith('blob:')) {
+            try { URL.revokeObjectURL(existing.url); } catch {}
+          }
+          return {
+            ...prev,
+            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name },
+          };
+        });
+      }
+    } catch (err: any) {
+      toast.error('Upload failed', err?.response?.data?.message ?? 'Could not save the attachment.');
+    }
+  };
 
   // Sub-modal — single one now since address and contact share the same
   // fields. `editing` carries the location row id when re-opening for edit.
@@ -464,8 +672,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     // same modal session.
     setSavedDbId(customer?.db_id ?? null);
     setTdDocs([
-      { id:'td1', name:'Bill of Lading',           selected:true, sent:false },
-      { id:'td2', name:'Phytosanitary Certificate', selected:true, sent:false },
+      { id:'td1', db_id:null, name:'Bill of Lading',           selected:true, sent:false, status: 'idle' },
+      { id:'td2', db_id:null, name:'Phytosanitary Certificate', selected:true, sent:false, status: 'idle' },
     ]);
     setSegmentDocs(EMPTY_SEG_DOCS);
     /* Revoke any previously-issued blob URLs so the browser releases
@@ -572,10 +780,28 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     Promise.all([
       api.get(`/customers/${customer.db_id}/documents`).catch(() => ({ data: { data: [] } })),
       api.get(`/customers/${customer.db_id}/owners`).catch(() => ({ data: { data: [] } })),
-    ]).then(([docsRes, ownersRes]) => {
+      /* Segment-rule reference uploads (Stage 2 KYC/DD/TL tables + Stage
+       * 3 Evidence Vault). Hydrate from the same `segment_doc_uploads`
+       * table that the Vault reads so re-open Edit shows what was
+       * previously attached. */
+      api.get(`/segment-uploads/customer/${customer.db_id}`).catch(() => ({ data: { data: [] } })),
+    ]).then(([docsRes, ownersRes, refsRes]) => {
       if (cancelled) return;
       setKycDocs(Array.isArray(docsRes.data?.data) ? docsRes.data.data : []);
       setKycOwners(Array.isArray(ownersRes.data?.data) ? ownersRes.data.data : []);
+      const refs = Array.isArray(refsRes.data?.data) ? refsRes.data.data : [];
+      const hydrated: Record<string, SegRefUpload> = {};
+      const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-license' };
+      for (const r of refs) {
+        const sub = CAT_TO_SUB[r.category];
+        if (!sub || !r.doc_code) continue;
+        hydrated[`${sub}::${r.doc_code}`] = {
+          file: null as unknown as File,
+          url:  r.attachment_url || '',
+          name: r.attachment_name || '',
+        };
+      }
+      if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
     });
 
     return () => { cancelled = true; };
@@ -605,13 +831,22 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
 
     let cancelled = false;
-    Promise.all(
-      segRows.map(s =>
-        api.get(`/clm/segment-rules/for-segment/${s.id}`)
-          .then(r => r.data?.data ?? {})
-          .catch(() => ({}))
-      )
-    ).then(results => {
+    Promise.all([
+      Promise.all(
+        segRows.map(s =>
+          api.get(`/clm/segment-rules/for-segment/${s.id}`)
+            .then(r => r.data?.data ?? {})
+            .catch(() => ({}))
+        )
+      ),
+      /* Party filter for the customer form: only trade docs whose
+       * `party` CSV mentions "Buyer" reach Stage 3. The endpoint scopes
+       * to the current client. We intersect against the segment-rule td
+       * set below so the union of (segments × party=Buyer) renders. */
+      api.get('/clm/trade-doc-library/for-party/buyer')
+        .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
+        .catch(() => [] as Array<{ code: string }>),
+    ]).then(([results, partyDocs]) => {
       if (cancelled) return;
       /* Per-category merge + dedupe. Key = code; Mandatory > Optional
        * so a doc that's mandatory in any rule stays mandatory in the
@@ -640,15 +875,21 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       };
       setSegmentDocs(merged);
       /* Pre-populate Stage 3 Trade Documents from the merged td
-       * selections. Mandatory rows arrive pre-checked. The legacy
-       * two-row placeholder only kicks in when the merged set is
-       * empty (preserved for backward compatibility). */
-      if (merged.td.length > 0) {
-        setTdDocs(merged.td.map(d => ({
+       * intersected with the party=Buyer library. Mandatory rows arrive
+       * pre-checked. The legacy two-row placeholder only kicks in when
+       * the merged set is empty (preserved for backward compatibility). */
+      const partyById = new Map<string, number>(
+        (partyDocs as Array<{ code: string; id: number }>).map(p => [p.code, p.id]),
+      );
+      const buyerTd = merged.td.filter(d => partyById.has(d.code));
+      if (buyerTd.length > 0) {
+        setTdDocs(buyerTd.map(d => ({
           id: `td_${d.code}`,
+          db_id: partyById.get(d.code) ?? null,
           name: d.name,
           selected: d.requirement === 'M',
           sent: false,
+          status: 'idle' as TdSigStatus,
         })));
       }
     });
@@ -1004,10 +1245,27 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               <div className="acm-subtitle">{isEdit ? 'Update customer details, KYC, and trade documents.' : 'Capture, verify, and onboard customers with complete compliance and product readiness.'}</div>
             </div>
           </div>
+          {hydrating && (
+            <div className="acm-loading-pill" aria-live="polite">
+              <span className="acm-loading-spinner" aria-hidden>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                  <path d="M12 2a10 10 0 0 1 10 10" />
+                </svg>
+              </span>
+              Loading customer details…
+            </div>
+          )}
           <button type="button" className="acm-close" onClick={onClose} aria-label="Close">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
+
+        {/* Indeterminate top progress bar — gives the user immediate
+            "actively loading" feedback while the parallel /customers,
+            /documents, /owners and /segment-uploads fetches resolve. The
+            shimmer skeletons below fill in the visual scaffold; this bar
+            is the kinetic cue that they're not stuck. */}
+        {hydrating && <div className="acm-top-progress" role="progressbar" aria-label="Loading"><span /></div>}
 
         {/* STEPPER — swap to skeleton during edit-mode hydration so
             the whole top of the modal reads as "loading" instead of
@@ -1124,6 +1382,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               segmentDocs={segmentDocs}
               segmentRefUploads={segmentRefUploads}
               setSegmentRefUploads={setSegmentRefUploads}
+              persistSegmentRefUpload={persistSegmentRefUpload}
               customerSaved={!!savedDbId}
               onEditDoc={(id) => {
                 const row = kycDocs.find(d => d.id === id);
@@ -1151,11 +1410,67 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           )}
           {stage === 3 && !hydrating && evTab === 'trade-documents' && (
             <Stage3TradeDocs
-              docs={tdDocs}
+              docs={tdDocs.map(d => ({ ...d, cooldownActive: isReminderCooldown(d.signature_request_id) }))}
               onToggle={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, selected: !d.selected } : d))}
               onToggleAll={(checked) => setTdDocs(prev => prev.map(d => ({ ...d, selected: checked })))}
-              onSend={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, sent: true } : d))}
-              onSendSelected={() => setTdDocs(prev => prev.map(d => d.selected ? { ...d, sent: true } : d))}
+              onSend={(id) => {
+                const row = tdDocs.find(d => d.id === id);
+                if (!row?.db_id) {
+                  toast.info('Not a library document', 'This row is a placeholder. Pick a segment with mapped trade documents to enable signature sending.');
+                  return;
+                }
+                if (!(customer?.db_id || savedDbId)) {
+                  toast.info('Save customer first', 'Save the customer before sending documents for signature.');
+                  return;
+                }
+                /* Resend semantics — when the doc is already sitting in
+                 * Zoho `inprogress`, the user clicking "Resend" wants to
+                 * NUDGE the existing signer, not re-pick recipients +
+                 * re-position the signature. Hit the remind endpoint
+                 * directly (same flow New_IDIMS_6.0 uses) and toast.
+                 * For declined / recalled / expired / never-sent rows
+                 * fall through to the wizard so the user can re-cast a
+                 * fresh request.
+                 *
+                 * Bundle handling — Zoho's remind API operates per-
+                 * REQUEST; a 3-doc bundle gets ONE email when any of
+                 * its rows is reminded. We seed a 60s cooldown on the
+                 * signature_request_id so accidentally clicking
+                 * Resend on the other two rows in the bundle doesn't
+                 * fire three reminder emails. */
+                const reqId = row.signature_request_id;
+                if (row.sent && reqId && row.status === 'inprogress') {
+                  if (isReminderCooldown(reqId)) {
+                    toast.info('Already reminded', `One reminder covers every document in this bundle. Try again in ${reminderCooldownSeconds(reqId)}s.`);
+                    return;
+                  }
+                  const bundleCount = tdDocs.filter(d => d.signature_request_id === reqId).length;
+                  api.post(`/clm/signature-requests/${reqId}/remind`)
+                    .then(() => {
+                      setRecentReminds(prev => ({ ...prev, [reqId]: Date.now() + 60_000 }));
+                      toast.success('Reminder sent',
+                        bundleCount > 1
+                          ? `The signer was notified about all ${bundleCount} documents in this signature request.`
+                          : 'The signer has been notified.',
+                      );
+                    })
+                    .catch(err => toast.error('Reminder failed', err?.response?.data?.message ?? 'Could not send the reminder. Try again later.'));
+                  return;
+                }
+                setSendForSignature([row.db_id]);
+              }}
+              onSendSelected={() => {
+                const ids = tdDocs.filter(d => d.selected && d.db_id).map(d => d.db_id!);
+                if (ids.length === 0) {
+                  toast.info('Nothing selected', 'Tick one or more documents under "Send for Signature" first.');
+                  return;
+                }
+                if (!(customer?.db_id || savedDbId)) {
+                  toast.info('Save customer first', 'Save the customer before sending documents for signature.');
+                  return;
+                }
+                setSendForSignature(ids.slice(0, 10));
+              }}
             />
           )}
         </div>
@@ -1337,6 +1652,41 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
           }}
         />
       )}
+
+      {/* Stage 3 Trade Documents → Send for Signature.
+          Opens the Zoho Sign wizard pre-checked with whichever
+          documents the user picked (single id from a row's "Send"
+          button, or the multi-id list from the footer button).
+          The wizard's onSent flips those rows' `sent` flags so
+          they show "Resend" thereafter. */}
+      <SalesCustomerSendForSignatureModal
+        open={Array.isArray(sendForSignature)}
+        customer={(() => {
+          // The Zoho send modal needs the saved DB id. In edit mode it
+          // comes from the `customer` prop; in create mode it shows up
+          // after the Stage 1 → 2 auto-save POST. The Stage 3 handlers
+          // already block when this id is missing, so this null-return
+          // is defensive only.
+          const partyId = (customer?.db_id ?? savedDbId) ?? null;
+          if (!partyId) return null;
+          return {
+            id:      customer?.id ?? `c-${partyId}`,
+            db_id:   partyId,
+            company: form.coName || customer?.company || '',
+            contact: form.cpName || customer?.contact || '',
+            email:   form.cpEmail || customer?.email || '',
+          };
+        })()}
+        preselectedDocIds={sendForSignature ?? undefined}
+        onClose={() => setSendForSignature(null)}
+        onSent={(sentDocIds) => {
+          const sentSet = new Set(sentDocIds);
+          setTdDocs(prev => prev.map(d => (d.db_id && sentSet.has(d.db_id))
+            ? { ...d, sent: true, status: 'inprogress' as TdSigStatus }
+            : d));
+          setSendForSignature(null);
+        }}
+      />
     </div>
   );
 }
@@ -1560,11 +1910,14 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
           <div className="acm-row acm-row-4">
             <Field label="Company Website"><input value={form.coWeb} onChange={e => setF('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
             <Field label="Customer Segment" required error={errors.coSeg} fieldKey="coSeg">
+              {/* masterFormKit's MasterMultiSelect renders visible violet
+                  chips with × buttons + a checkbox-marked dropdown so
+                  multi-select is obvious. `value` prop is plural despite
+                  the singular name. */}
               <MasterMultiSelect
-                values={form.coSeg}
+                value={form.coSeg}
                 options={toSelectOpts(masters.segments)}
                 placeholder="Select segment"
-                addMorePlaceholder="+ Add another segment"
                 invalid={!!errors.coSeg}
                 onChange={vs => set('coSeg', vs)}
               />
@@ -1805,22 +2158,28 @@ function SegmentRequiredBanner({ segmentName, label, rows }: {
  * by a blob URL the parent component holds onto. Delete revokes the
  * URL and drops the entry from the upload map, returning the cell to
  * its initial Upload state. */
-function SegmentRefRowActions({ refKey, uploads, setUploads }: {
+function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpload }: {
   refKey: string;
-  uploads: Record<string, { file: File; url: string; name: string }>;
-  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+  docName: string;
+  uploads: Record<string, { file: File | null; url: string; name: string }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+  persistUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
 }) {
   const uploaded = uploads[refKey];
-  /* Re-using `onPick` for both first-time upload and re-upload — the
-   * setter already revokes the previous blob URL before replacing it,
-   * so swapping a file is just another pick from the user's POV. */
+  /* Re-using `onPick` for both first-time upload and re-upload. We
+   * show the blob URL immediately for instant feedback, then fire the
+   * server upload — the persist callback swaps the blob URL for a
+   * permanent attachment_url once the row hits segment_doc_uploads. */
   const onPick = (f: File | undefined) => {
     if (!f) return;
     setUploads(prev => {
       const existing = prev[refKey];
-      if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+      if (existing?.url && existing.url.startsWith('blob:')) {
+        try { URL.revokeObjectURL(existing.url); } catch {}
+      }
       return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
     });
+    void persistUpload(refKey, f, docName);
   };
 
   if (!uploaded) {
@@ -1858,7 +2217,7 @@ function SegmentRefRowActions({ refKey, uploads, setUploads }: {
 }
 
 /* ───── Stage 2 — KYC sub-tabs + doc table ───── */
-function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs, owners, segmentName, segmentDocs, segmentRefUploads, setSegmentRefUploads, customerSaved, onEditDoc, onDeleteDoc, onEditOwner, onDeleteOwner }:
+function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs, owners, segmentName, segmentDocs, segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload, customerSaved, onEditDoc, onDeleteDoc, onEditOwner, onDeleteOwner }:
   { sub: KycSubTab; setSub: (s: KycSubTab) => void;
     page: Record<KycSubTab, number>; setPage: (s: KycSubTab, p: number) => void;
     search: string; setSearch: (s: string) => void;
@@ -1876,8 +2235,11 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
      *  Key is `${sub}::${doc.code}`; value carries the File + a blob URL
      *  used by the View / Download actions. Lifted to the parent so it
      *  survives sub-tab switches. */
-    segmentRefUploads: Record<string, { file: File; url: string; name: string }>;
-    setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+    segmentRefUploads: Record<string, { file: File | null; url: string; name: string }>;
+    setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+    /** Fires the actual POST /segment-uploads/customer/{id} so the
+     *  Evidence Vault sees the attachment. */
+    persistSegmentRefUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
     /** True only when the parent customer has a db_id (i.e. has been saved). */
     customerSaved: boolean;
     onEditDoc:     (id:number) => void;
@@ -2019,32 +2381,27 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
               <table className="acm-table">
                 <thead><tr>
                   <th>Sr No</th><th>Auto Code</th><th>Document Name</th>
-                  <th>Issuing Authority</th><th>Expiry</th><th>Status</th><th>Actions</th>
+                  <th>Issuing Authority</th><th>Actions</th>
                 </tr></thead>
                 <tbody>
                   {totalRows === 0 ? (
-                    <tr className="acm-empty-row"><td colSpan={7}>No reference documents match your search.</td></tr>
+                    <tr className="acm-empty-row"><td colSpan={5}>No reference documents match your search.</td></tr>
                   ) : legacySlice.map((dl, i) => {
                     const sr = start + i + 1;
                     const srPad = String(sr).padStart(2, '0');
-                    const expClass = dl.expiry === 'N/A' ? 'acm-expiry-na' : 'acm-expiry-date';
                     return (
                       <tr key={dl.code}>
                         <td>{srPad}</td>
                         <td><span className="acm-doc-code">{dl.code}</span></td>
                         <td style={{ fontWeight: 700, color: '#1f2937' }}>{dl.name}</td>
                         <td style={{ color: '#6b7280' }}>{dl.authority}</td>
-                        <td><span className={expClass}>{dl.expiry}</span></td>
-                        <td>
-                          {dl.status === 'mandatory'
-                            ? <span className="acm-status-toggle"><span className="acm-status-mandatory is-on">✓ Mandatory</span><span className="acm-status-optional">Optional</span></span>
-                            : <span className="acm-status-toggle"><span className="acm-status-mandatory">Mandatory</span><span className="acm-status-optional is-on">Optional</span></span>}
-                        </td>
                         <td>
                           <SegmentRefRowActions
                             refKey={`${sub}::${dl.code}`}
+                            docName={dl.name}
                             uploads={segmentRefUploads}
                             setUploads={setSegmentRefUploads}
+                            persistUpload={persistSegmentRefUpload}
                           />
                         </td>
                       </tr>
@@ -2250,9 +2607,42 @@ function Stage3KycDocs({ sub, setSub, segmentDocs, segmentRefUploads }: {
   );
 }
 
-/* ───── Stage 3 — Trade Documents ───── */
+/* ───── Stage 3 — Trade Documents ─────
+ * Per-row signature status. `status` mirrors clm_signature_requests.status
+ * exactly so it stays consistent across the front- and back-end; the badge
+ * style + label below is the only place where status → human-readable copy
+ * lives. */
+type TdSigStatus = 'idle' | 'inprogress' | 'completed' | 'declined' | 'recalled' | 'expired';
+type TdDocRow = {
+  id: string; db_id: number | null;
+  name: string; selected: boolean; sent: boolean;
+  status?: TdSigStatus;
+  signature_request_id?: number;
+  signed_url?: string;
+  /* Zoho Sign completion-certificate URL — populated by the polling
+   * effect from clm_signature_requests.certificate_path on completed
+   * rows, resolved through resolveFileUrl so the same value works on
+   * local + Azure. Drives the third action-column button when the
+   * row's status is 'completed'. */
+  certificate_url?: string;
+  /* Set by the parent right before rendering — true when this row's
+   * signature_request_id is inside the active 60-second Resend
+   * cooldown. The button disables to stop a multi-doc bundle from
+   * firing one reminder per doc. */
+  cooldownActive?: boolean;
+};
+
+const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: string }> = {
+  idle:       { label: 'N/A',                 bg: '#f1f5f9', fg: '#94a3b8' },
+  inprogress: { label: 'Awaiting Signature',  bg: '#fef3c7', fg: '#92400e' },
+  completed:  { label: 'Signed',              bg: '#dcfce7', fg: '#166534' },
+  declined:   { label: 'Declined',            bg: '#fee2e2', fg: '#991b1b' },
+  recalled:   { label: 'Recalled',            bg: '#e0e7ff', fg: '#3730a3' },
+  expired:    { label: 'Expired',             bg: '#fee2e2', fg: '#7f1d1d' },
+};
+
 function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }:
-  { docs: { id:string; name:string; selected:boolean; sent:boolean }[]; onToggle:(id:string)=>void; onToggleAll:(c:boolean)=>void; onSend:(id:string)=>void; onSendSelected:()=>void }) {
+  { docs: TdDocRow[]; onToggle:(id:string)=>void; onToggleAll:(c:boolean)=>void; onSend:(id:string)=>void; onSendSelected:()=>void }) {
   const selCount = docs.filter(d => d.selected).length;
   const allChecked = selCount === docs.length;
   return (
@@ -2288,30 +2678,116 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                   <td style={{ color: '#9ca3af', fontWeight: 600 }}>{i + 1}</td>
                   <td style={{ fontWeight: 600, color: '#1f2937' }}>{d.name}</td>
                   <td>
-                    <div className="acm-td-cell-check">
-                      <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} />
-                      {d.sent ? (
-                        <button type="button" className="acm-btn-resend" onClick={() => onSend(d.id)}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
-                          Resend
-                        </button>
-                      ) : (
-                        <button type="button" className="acm-btn-send" onClick={() => onSend(d.id)}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                          Send
-                        </button>
-                      )}
-                    </div>
+                    {(() => {
+                      // Once a doc is `completed` (signer finished signing),
+                      // resending is a footgun — it would create a brand-new
+                      // signature request against the already-archived PDF.
+                      // declined / recalled / expired stay re-sendable so
+                      // the user can retry with a different recipient or
+                      // window.
+                      const isSigned = d.status === 'completed';
+                      const onCooldown = !!d.cooldownActive;
+                      const resendLocked = isSigned || onCooldown;
+                      return (
+                        <div className="acm-td-cell-check">
+                          <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} disabled={isSigned} />
+                          {d.sent ? (
+                            <button
+                              type="button"
+                              className="acm-btn-resend"
+                              onClick={() => { if (!resendLocked) onSend(d.id); }}
+                              disabled={resendLocked}
+                              title={
+                                isSigned   ? 'This document has already been signed.'
+                                : onCooldown ? 'Reminder just sent — one reminder covers every document in this bundle.'
+                                : 'Resend for signature'
+                              }
+                              style={resendLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                            >
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+                              {onCooldown ? 'Sent ✓' : 'Resend'}
+                            </button>
+                          ) : (
+                            <button type="button" className="acm-btn-send" onClick={() => onSend(d.id)}>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                              Send
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
-                  <td className="td-status"><span className="acm-expiry-na">N/A</span></td>
+                  <td className="td-status">
+                    {(() => {
+                      const s = d.status ?? 'idle';
+                      const b = TD_STATUS_BADGE[s];
+                      return (
+                        <span style={{
+                          display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+                          fontSize: 11, fontWeight: 700,
+                          background: b.bg, color: b.fg,
+                        }}>{b.label}</span>
+                      );
+                    })()}
+                  </td>
                   <td className="td-actions">
+                    {/* Action set is status-driven:
+                        • completed  → View signed | Download signed | Download certificate
+                        • anything else → View | Download (both disabled until a signed
+                          URL exists, e.g. inprogress rows).
+                        The certificate button only appears for completed rows because
+                        Zoho only mints the certificate after the recipient finishes
+                        signing — earlier statuses have no certificate to fetch. */}
                     <div className="acm-row-actions">
-                      <Tooltip label="View document">
-                        <button type="button" className="acm-doc-action acm-doc-action-view" aria-label="View"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                      <Tooltip label={d.signed_url ? 'View signed document' : 'View document'}>
+                        <a
+                          href={d.signed_url || '#'}
+                          target={d.signed_url ? '_blank' : undefined}
+                          rel={d.signed_url ? 'noreferrer' : undefined}
+                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          className="acm-doc-action acm-doc-action-view"
+                          aria-label="View"
+                          style={{ opacity: d.signed_url ? 1 : 0.5, cursor: d.signed_url ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </a>
                       </Tooltip>
-                      <Tooltip label="Download document">
-                        <button type="button" className="acm-doc-action acm-doc-action-download" aria-label="Download"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+                      <Tooltip label={d.signed_url ? 'Download signed document' : 'Download document'}>
+                        <a
+                          href={d.signed_url || '#'}
+                          download={d.signed_url ? '' : undefined}
+                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          className="acm-doc-action acm-doc-action-download"
+                          aria-label="Download"
+                          style={{ opacity: d.signed_url ? 1 : 0.5, cursor: d.signed_url ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        </a>
                       </Tooltip>
+                      {d.status === 'completed' && d.certificate_url && (
+                        <Tooltip label="Download Certificate of Completion">
+                          <a
+                            href={d.certificate_url}
+                            download=""
+                            target="_blank"
+                            rel="noreferrer"
+                            className="acm-doc-action acm-doc-action-cert"
+                            aria-label="Download Certificate"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: 28, height: 28, borderRadius: 6,
+                              background: '#cffafe', color: '#0e7490',
+                              border: '1px solid #67e8f9',
+                              cursor: 'pointer', textDecoration: 'none',
+                            }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="8" r="6"/>
+                              <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+                            </svg>
+                          </a>
+                        </Tooltip>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -3582,6 +4058,45 @@ const SCOPED_CSS = `
 }
 .acm-close:hover { background: rgba(255,255,255,0.28); transform: rotate(90deg); }
 
+/* ── Hydration feedback ───────────────────────────────────────────
+ * A small "Loading…" pill in the modal header + an indeterminate
+ * progress bar under the header so users get clear active-loading
+ * feedback the moment they click Edit. Shimmer skeletons below fill
+ * in the scaffold — these two cues confirm "yes, fetching now". */
+.acm-loading-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 11px; border-radius: 999px;
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.30);
+  color: #fff;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .01em;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  position: relative; z-index: 1;
+  animation: acmPillFade .2s ease both;
+}
+@keyframes acmPillFade { from { opacity: 0; transform: translateY(-2px) } to { opacity: 1; transform: none } }
+.acm-loading-spinner {
+  display: inline-flex; width: 12px; height: 12px;
+  animation: acmSpin .8s linear infinite;
+}
+@keyframes acmSpin { to { transform: rotate(360deg); } }
+
+.acm-top-progress {
+  position: relative; height: 3px;
+  background: rgba(124,58,237,.10);
+  overflow: hidden; flex-shrink: 0;
+}
+.acm-top-progress > span {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 30%;
+  background: linear-gradient(90deg, transparent, #7c3aed 30%, #a855f7 70%, transparent);
+  border-radius: 2px;
+  animation: acmTopSlide 1.1s cubic-bezier(.4,0,.2,1) infinite;
+}
+@keyframes acmTopSlide {
+  0%   { left: -35%; }
+  100% { left: 100%; }
+}
+
 /* Stepper */
 .acm-stepper { padding: 16px 22px 14px; display: flex; align-items: center; gap: 0; flex-shrink: 0; background: #fff; border-bottom: 1px solid #ede9fe; }
 .acm-step-connector { flex: 0 0 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; z-index: 0; }
@@ -4382,6 +4897,9 @@ const SCOPED_CSS = `
   border-color: #a78bfa;
   color: #e9d5ff;
 }
+[data-bs-theme="dark"] .acm-loading-pill { background: rgba(167,139,250,.18); border-color: rgba(167,139,250,.35); color: #ede9fe; }
+[data-bs-theme="dark"] .acm-top-progress { background: rgba(167,139,250,.14); }
+[data-bs-theme="dark"] .acm-top-progress > span { background: linear-gradient(90deg, transparent, #a78bfa 30%, #c4b5fd 70%, transparent); }
 
 /* Stepper — keep colored states but darken pending */
 [data-bs-theme="dark"] .acm-step-active { background: linear-gradient(135deg, rgba(76,29,149,0.45) 0%, rgba(109,40,217,0.30) 100%); border-color: #a78bfa; box-shadow: 0 6px 22px rgba(0,0,0,.4), 0 0 0 1px rgba(167,139,250,.15) inset; }

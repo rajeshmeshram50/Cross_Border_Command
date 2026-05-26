@@ -58,6 +58,29 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* Shimmer placeholder shown while the dropdown's master is fetching —
+   * cleaner than the grey "Loading…" text and signals to the user that
+   * the field is populating, not stuck. */
+  @keyframes master-select-shimmer-kf {
+    0%   { background-position: -260px 0; }
+    100% { background-position:  260px 0; }
+  }
+  .master-select-shimmer {
+    flex-grow: 1;
+    height: 14px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+    background-size: 520px 100%;
+    animation: master-select-shimmer-kf 1.4s ease-in-out infinite;
+  }
+  [data-bs-theme="dark"] .master-select-shimmer,
+  [data-layout-mode="dark"] .master-select-shimmer {
+    background: linear-gradient(90deg, rgba(167,139,250,.12) 0%, rgba(167,139,250,.22) 50%, rgba(167,139,250,.12) 100%);
+    background-size: 520px 100%;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .master-select-shimmer { animation: none; background: #e2e8f0; }
+  }
   .master-select-chev {
     font-size: 18px;
     color: var(--vz-secondary-color);

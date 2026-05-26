@@ -6,6 +6,14 @@ import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import {
+  CLM_NAME_MAX,
+  CLM_DESC_MAX,
+  sanitizeClmName,
+  sanitizeClmDescription,
+  isMeaningfulClmValue,
+  findClmDuplicate,
+} from './clmCommon';
 
 /* Central CLM → Authority Master. 3-card faithful port of the prototype. */
 

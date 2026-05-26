@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\ClmKycController;
 use App\Http\Controllers\Api\ClmQcController;
 use App\Http\Controllers\Api\ClmSegmentController;
 use App\Http\Controllers\Api\ClmSegmentRuleController;
+use App\Http\Controllers\Api\ClmSignatureController;
 use App\Http\Controllers\Api\SegmentDocUploadController;
 use App\Http\Controllers\Api\ClmTncController;
 use App\Http\Controllers\Api\ClmTradeDocumentController;
@@ -27,6 +28,7 @@ use App\Http\Controllers\Api\EmployeeDocumentController;
 use App\Http\Controllers\Api\ExitController;
 use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
+use App\Http\Controllers\Api\ProcurementController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
@@ -35,6 +37,8 @@ use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrGeneratedDocumentController;
 use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\LeadAckReasonController;
+use App\Http\Controllers\Api\ProformaInvoiceController;
+use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\SalesLeadController;
 use App\Http\Controllers\Api\SalesPdfController;
 use App\Http\Controllers\Api\SalesTodoController;
@@ -77,6 +81,18 @@ Route::post('/forgot-password/send-otp', [ForgotPasswordController::class, 'send
 Route::post('/forgot-password/verify-otp', [ForgotPasswordController::class, 'verifyOtp']);
 Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'resetPassword']);
 Route::post('/razorpay/webhook', [RazorpayWebhookController::class, 'handle']);
+
+// Public PDF view links — the "View Quotation" / "View PI" button in
+// our outbound customer emails hits these. No app login (the customer
+// isn't a user), authenticated via Laravel's `signed` middleware: the
+// URL is signed at email-send time and expires after 60 days. Replays
+// + URL tampering get 403.
+Route::get('/sales/quotations/{id}/view',        [SalesPdfController::class, 'publicViewQuotation'])
+    ->middleware('signed')
+    ->name('sales.quotation.view');
+Route::get('/sales/proforma-invoices/{id}/view', [SalesPdfController::class, 'publicViewProformaInvoice'])
+    ->middleware('signed')
+    ->name('sales.pi.view');
 
 // Protected
 Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
@@ -215,10 +231,32 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/clm/trade-doc-names',      [ClmTradeDocumentController::class, 'namesStore']);
     Route::put   ('/clm/trade-doc-names/{id}', [ClmTradeDocumentController::class, 'namesUpdate']);
     Route::delete('/clm/trade-doc-names/{id}', [ClmTradeDocumentController::class, 'namesDestroy']);
-    Route::get   ('/clm/trade-doc-library',      [ClmTradeDocumentController::class, 'libraryIndex']);
-    Route::post  ('/clm/trade-doc-library',      [ClmTradeDocumentController::class, 'libraryStore']);
-    Route::put   ('/clm/trade-doc-library/{id}', [ClmTradeDocumentController::class, 'libraryUpdate']);
-    Route::delete('/clm/trade-doc-library/{id}', [ClmTradeDocumentController::class, 'libraryDestroy']);
+    Route::get   ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryIndex']);
+    Route::post  ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryStore']);
+    // Static-path endpoints declared BEFORE `{id}` so Laravel's router
+    // doesn't treat `upload-header-logo` / `for-party` as numeric ids
+    // and reject the request with 405 against the PUT/DELETE handlers.
+    Route::post  ('/clm/trade-doc-library/upload-header-logo',[ClmTradeDocumentController::class, 'uploadHeaderLogo']);
+    Route::get   ('/clm/trade-doc-library/for-party/{party}', [ClmTradeDocumentController::class, 'libraryForParty']);
+    Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx'])->whereNumber('id');
+    Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx'])->whereNumber('id');
+    Route::put   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryUpdate'])->whereNumber('id');
+    Route::delete('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryDestroy'])->whereNumber('id');
+
+    // Central CLM → Trade Documents → Send for Signature (Zoho Sign).
+    // The preview endpoint renders the merged PDF without calling Zoho so the
+    // wizard's step-3 iframe stays snappy; send + status + reminder + recall +
+    // signed-file streaming all live behind the same controller for one
+    // tenant-scoping place.
+    Route::post  ('/clm/signature-requests/preview',                       [ClmSignatureController::class, 'preview']);
+    Route::post  ('/clm/signature-requests',                               [ClmSignatureController::class, 'send']);
+    Route::get   ('/clm/signature-requests',                               [ClmSignatureController::class, 'index']);
+    Route::get   ('/clm/signature-requests/{id}',                          [ClmSignatureController::class, 'show'])->whereNumber('id');
+    Route::post  ('/clm/signature-requests/{id}/remind',                   [ClmSignatureController::class, 'remind'])->whereNumber('id');
+    Route::post  ('/clm/signature-requests/{id}/recall',                   [ClmSignatureController::class, 'recall'])->whereNumber('id');
+    Route::get   ('/clm/signature-requests/{id}/download-file/{index}',    [ClmSignatureController::class, 'downloadFile'])->whereNumber('id')->whereNumber('index');
+    Route::get   ('/clm/signature-requests/{id}/view-file/{index}',        [ClmSignatureController::class, 'viewFile'])->whereNumber('id')->whereNumber('index');
+    Route::get   ('/clm/signature-requests/{id}/certificate',              [ClmSignatureController::class, 'viewCertificate'])->whereNumber('id');
 
     // Central CLM → Terms & Conditions (two tabs: categories + library).
     Route::get   ('/clm/tnc-categories',      [ClmTncController::class, 'categoriesIndex']);
@@ -292,6 +330,31 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // inline so the page can preview it in a new tab via blob URL.
     Route::post  ('/sales/pi/preview-pdf',         [SalesPdfController::class, 'previewPi']);
 
+    // Sales Matrix → QUOTATION DOCUMENT PDF preview. Per-quotation variant —
+    // loads the real Quotation row (with items + branch + bank + parties) and
+    // renders the same Blade template with branch-derived letterhead. The
+    // `signature=1` body flag picks the with-signature variant.
+    Route::post  ('/sales/quotations/{id}/preview-pdf', [SalesPdfController::class, 'previewQuotation']);
+
+    // Sales Matrix → PROFORMA INVOICE PDF preview. Mirror of the Quotation
+    // variant — loads the real PI row, same branch letterhead, same template,
+    // labels swap to "PI No / PI Date".
+    Route::post  ('/sales/proforma-invoices/{id}/preview-pdf', [SalesPdfController::class, 'previewProformaInvoice']);
+
+    // Sales Matrix → email the PDF to the customer's primary email.
+    // Body: { signature?: bool, to?: string } — `to` overrides the
+    // customer's email when provided. Returns 422 if no recipient
+    // can be resolved so the frontend can prompt the user.
+    Route::post  ('/sales/quotations/{id}/email',         [SalesPdfController::class, 'emailQuotation']);
+    Route::post  ('/sales/proforma-invoices/{id}/email',  [SalesPdfController::class, 'emailProformaInvoice']);
+
+    // Reminder follow-ups — gated behind the initial email (controller
+    // returns 422 if `emailed_at` is still null). Each send increments
+    // `reminder_count` and stamps `last_reminded_at` on the row so the
+    // UI badge stays in sync without a full reload.
+    Route::post  ('/sales/quotations/{id}/remind',        [SalesPdfController::class, 'remindQuotation']);
+    Route::post  ('/sales/proforma-invoices/{id}/remind', [SalesPdfController::class, 'remindProformaInvoice']);
+
     // Sales Matrix → Leads (My Workplace). Three feeders write here:
     //   - POST /sales/leads        manual capture (Add New Lead modal)
     //   - POST /sales/leads/sync   pull from IndiaMart CRM keys
@@ -312,6 +375,40 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/sales/leads/{id}',          [SalesLeadController::class, 'show'])->whereNumber('id');
     Route::put   ('/sales/leads/{id}',          [SalesLeadController::class, 'update'])->whereNumber('id');
     Route::delete('/sales/leads/{id}',          [SalesLeadController::class, 'destroy'])->whereNumber('id');
+
+    // Sales Matrix → Quotations. Outgoing-quotation header + line items,
+    // backed by the `quotations` / `quotation_items` tables. Code sequence
+    // QT/YYYY-NN/SEQ allocated atomically per client per financial year.
+    Route::get   ('/sales/quotations',                          [QuotationController::class, 'index']);
+    Route::post  ('/sales/quotations',                          [QuotationController::class, 'store']);
+    Route::get   ('/sales/quotations/{id}',                     [QuotationController::class, 'show'])->whereNumber('id');
+    Route::put   ('/sales/quotations/{id}',                     [QuotationController::class, 'update'])->whereNumber('id');
+    Route::delete('/sales/quotations/{id}',                     [QuotationController::class, 'destroy'])->whereNumber('id');
+    Route::post  ('/sales/quotations/{id}/duplicate',           [QuotationController::class, 'duplicate'])->whereNumber('id');
+    Route::post  ('/sales/quotations/{id}/convert-to-pi',       [QuotationController::class, 'convertToPi'])->whereNumber('id');
+
+    // Sales Matrix → Proforma Invoices. Mirror of Quotations + BT
+    // reference + signature mode + source_quotation_id traceback.
+    Route::get   ('/sales/proforma-invoices',                                   [ProformaInvoiceController::class, 'index']);
+    Route::post  ('/sales/proforma-invoices',                                   [ProformaInvoiceController::class, 'store']);
+    // Literal segment before {id} so Laravel doesn't try to capture
+    // 'from-quotation' as the numeric id.
+    Route::post  ('/sales/proforma-invoices/from-quotation/{quotationId}',      [ProformaInvoiceController::class, 'fromQuotation'])->whereNumber('quotationId');
+    Route::get   ('/sales/proforma-invoices/{id}',                              [ProformaInvoiceController::class, 'show'])->whereNumber('id');
+    Route::put   ('/sales/proforma-invoices/{id}',                              [ProformaInvoiceController::class, 'update'])->whereNumber('id');
+    Route::delete('/sales/proforma-invoices/{id}',                              [ProformaInvoiceController::class, 'destroy'])->whereNumber('id');
+    Route::post  ('/sales/proforma-invoices/{id}/duplicate',                    [ProformaInvoiceController::class, 'duplicate'])->whereNumber('id');
+
+    // Sales Matrix → Stage 6 (Victory) → Shipment Order. One per won
+    // opportunity. Ported from IDIMS's `bt` (Business Task) module.
+    Route::post('/sales/shipment-orders',
+        [\App\Http\Controllers\Api\ShipmentOrderController::class, 'store']);
+    Route::get ('/sales/shipment-orders/{id}',
+        [\App\Http\Controllers\Api\ShipmentOrderController::class, 'show'])->whereNumber('id');
+    Route::post('/sales/shipment-orders/{id}',
+        [\App\Http\Controllers\Api\ShipmentOrderController::class, 'update'])->whereNumber('id');
+    Route::get ('/sales/leads/{leadId}/shipment-order',
+        [\App\Http\Controllers\Api\ShipmentOrderController::class, 'getByLead'])->whereNumber('leadId');
     // Stage 1 → Task Manager save (multipart for the optional attachment).
     // POST + _method=PUT-friendly: accepts both POST and PUT since file
     // uploads under PUT can't be parsed by PHP without enableHttpMethodParameterOverride.
@@ -338,6 +435,36 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
         [SalesLeadController::class, 'updateLeadProduct'])->whereNumber('id')->whereNumber('mapping');
     Route::delete('/sales/leads/{id}/products/{mapping}',
         [SalesLeadController::class, 'destroyLeadProduct'])->whereNumber('id')->whereNumber('mapping');
+
+    // Stage 3 (Product Sourcing) — per-row sourcing status + mark-sourced
+    // action. These are the IDIMS "set sourcing_status" + "mark as done"
+    // operations on the lead⇄product mapping, scaled down to CBC's model.
+    Route::patch('/sales/leads/{id}/products/{mapping}/sourcing-status',
+        [SalesLeadController::class, 'updateLeadProductSourcingStatus'])
+        ->whereNumber('id')->whereNumber('mapping');
+    Route::patch('/sales/leads/{id}/products/{mapping}/mark-sourced',
+        [SalesLeadController::class, 'markLeadProductSourced'])
+        ->whereNumber('id')->whereNumber('mapping');
+
+    // Stage 4 — Price Shared. Append-only price-share history per
+    // (lead, product) plus a PDF export per entry.
+    Route::post('/sales/leads/{id}/products/{mapping}/shared-prices',
+        [SalesLeadController::class, 'storeSharedPrice'])
+        ->whereNumber('id')->whereNumber('mapping');
+    Route::get('/sales/leads/{id}/shared-prices',
+        [SalesLeadController::class, 'listSharedPrices'])->whereNumber('id');
+    Route::get('/sales/leads/{id}/products/{mapping}/shared-prices',
+        [SalesLeadController::class, 'listSharedPricesByProduct'])
+        ->whereNumber('id')->whereNumber('mapping');
+    Route::get('/sales/shared-prices/{id}/pdf',
+        [SalesLeadController::class, 'sharedPricePdf'])->whereNumber('id');
+
+    // Stage 3 → Create Procurement modal posts here. Multi-tenant via
+    // client_id; see ProcurementController for the body shape.
+    Route::get   ('/procurements/next-number', [ProcurementController::class, 'nextNumber']);
+    Route::get   ('/procurements',             [ProcurementController::class, 'index']);
+    Route::post  ('/procurements',             [ProcurementController::class, 'store']);
+    Route::get   ('/procurements/{id}',        [ProcurementController::class, 'show'])->whereNumber('id');
 
     // Sales Matrix → Productivity Tracker (/sales/todo). Two parallel
     // sub-resources behind one controller — reminders + meetings — with

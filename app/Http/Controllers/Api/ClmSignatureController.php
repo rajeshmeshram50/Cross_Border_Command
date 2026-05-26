@@ -1,0 +1,1090 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\Client;
+use App\Models\ClmSignatureRequest;
+use App\Models\ClmTradeDocLibrary;
+use App\Models\Consignee;
+use App\Models\Customer;
+use App\Models\Vendor;
+use App\Services\ZohoSignService;
+use Illuminate\Database\Eloquent\Model;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use RuntimeException;
+
+/**
+ * CLM Trade Document → Send for Signature (Zoho Sign).
+ *
+ * Backs the "Send for Signature" modal on Sales → Customers. Picks up one
+ * or more [[ClmTradeDocLibrary]] drafts, renders each as a PDF with the
+ * customer's data merged into the {{customer.*}} placeholders, ships them
+ * to Zoho Sign in a single request, then tracks the status + signed PDFs
+ * + completion certificate in clm_signature_requests.
+ *
+ * Mirrors the New_IDIMS_6.0 DocumentController flow but split across:
+ *   - [[ZohoSignService]] (token cache + low-level HTTP)
+ *   - this controller (validation, PDF generation, persistence)
+ */
+class ClmSignatureController extends Controller
+{
+    public function __construct(private ZohoSignService $zoho)
+    {
+        $this->ensureTempDir();
+        $this->ensureStorageDirs();
+    }
+
+    private function ensureTempDir(): void
+    {
+        $tmp = storage_path('app/temp');
+        if (!is_dir($tmp)) @mkdir($tmp, 0775, true);
+    }
+
+    private function ensureStorageDirs(): void
+    {
+        foreach (['uploads/signed_documents/customer', 'uploads/signed_documents/consignee', 'uploads/signed_documents/vendor'] as $p) {
+            if (!Storage::disk('public')->exists($p)) Storage::disk('public')->makeDirectory($p);
+        }
+    }
+
+    /* ─────────────────────── PREVIEW ─────────────────────── */
+
+    /**
+     * Render a single draft as a PDF with the customer's data merged in.
+     * Used by the frontend modal step 3 to show what's about to be sent
+     * and to let the user position the Signature field. **Does NOT call
+     * Zoho** — the goal is a fast local render so the preview is snappy.
+     *
+     * Body: { trade_doc_id, party_id, model_name? }
+     */
+    public function preview(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+
+        $data = $request->validate([
+            'trade_doc_id' => 'required|integer|exists:clm_trade_doc_library,id',
+            'party_id'     => 'required|integer',
+            'model_name'   => 'nullable|string|in:Customer,Consignee,Vendor',
+            // Per-render overrides for the page-shell zones. When the
+            // Send-for-Signature modal lets the user tweak the header /
+            // footer / body inline (Insert Table, edit header colours,
+            // etc.), the SPA POSTs the in-progress config here so the
+            // preview reflects the edit before they hit Send. Saved
+            // trade-doc row is NOT mutated by this path — overrides
+            // only apply to this PDF render.
+            'header_config_override' => 'nullable|array',
+            'footer_config_override' => 'nullable|array',
+            'content_override'       => 'nullable|string',
+        ]);
+        $modelName = $data['model_name'] ?? 'Customer';
+
+        $doc   = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($data['trade_doc_id']);
+        $party = $this->loadParty($modelName, (int) $data['party_id'], $user);
+
+        $pdf = $this->renderPdf(
+            $doc, $party, $modelName, Str::uuid()->toString(),
+            null,
+            $data['header_config_override'] ?? null,
+            $data['footer_config_override'] ?? null,
+            $data['content_override'] ?? null,
+        );
+
+        return response($pdf->output(), 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="preview-' . ($doc->code ?: $doc->id) . '.pdf"',
+            'Cache-Control'       => 'no-store',
+        ]);
+    }
+
+    /**
+     * Resolve a party row for the given `model_name`. The three party
+     * models share a `forUser($user)` scope (via App\Support\MasterVisibility)
+     * so they all honour the same sub-branch visibility rules — abort with
+     * 404 if the caller's tier can't see the requested id.
+     */
+    private function loadParty(string $modelName, int $partyId, $user): Model
+    {
+        switch ($modelName) {
+            case 'Customer':  return Customer::query()->forUser($user)->findOrFail($partyId);
+            case 'Consignee': return Consignee::query()->forUser($user)->findOrFail($partyId);
+            case 'Vendor':    return Vendor::query()->forUser($user)->findOrFail($partyId);
+        }
+        abort(422, "Unsupported model_name: {$modelName}");
+    }
+
+    /* ─────────────────────── SEND ─────────────────────── */
+
+    public function send(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
+
+        if (!$this->zoho->isConfigured()) {
+            return response()->json(['status' => false, 'message' => 'Zoho Sign is not configured. Contact your administrator.'], 503);
+        }
+
+        $data = $request->validate([
+            'trade_doc_ids'        => 'required|array|min:1|max:10',
+            'trade_doc_ids.*'      => 'integer|exists:clm_trade_doc_library,id',
+            'party_id'             => 'required|integer',
+            'model_name'           => 'nullable|string|in:Customer,Consignee,Vendor',
+            'signers'              => 'required|array|min:1|max:5',
+            'signers.*.email'      => 'required|email',
+            'signers.*.name'       => 'required|string|max:255',
+            'signers.*.order'      => 'nullable|integer|min:1',
+            'expiry_days'          => 'nullable|integer|min:1|max:180',
+            'is_sequential'        => 'nullable|boolean',
+            'notes'                => 'nullable|string|max:1000',
+            'document_settings'    => 'nullable|array', // keyed by trade_doc_id → {x,y,page,width,height}
+            // Per-doc overrides — same keying convention as
+            // document_settings. Each map is { trade_doc_id: payload }
+            // so a multi-doc send can carry independent header/footer/
+            // body tweaks per draft. Saved trade-doc rows are NOT
+            // mutated by this path; overrides only apply to the PDFs
+            // shipped to Zoho for this send.
+            'header_config_overrides'   => 'nullable|array',
+            'footer_config_overrides'   => 'nullable|array',
+            'content_overrides'         => 'nullable|array',
+        ]);
+
+        $modelName = $data['model_name'] ?? 'Customer';
+        $party     = $this->loadParty($modelName, (int) $data['party_id'], $user);
+
+        $docs = ClmTradeDocLibrary::where('client_id', $user->client_id)
+            ->whereIn('id', $data['trade_doc_ids'])
+            ->get()
+            ->keyBy('id');
+
+        if ($docs->isEmpty()) {
+            return response()->json(['status' => false, 'message' => 'No accessible documents in the selection.'], 422);
+        }
+
+        // Preserve the user's chosen order, not whatever DB order we got back.
+        $orderedDocs = collect($data['trade_doc_ids'])
+            ->map(fn ($id) => $docs->get($id))
+            ->filter()
+            ->values();
+
+        $tempPaths    = [];
+        $localDocMeta = [];   // parallel meta we'll use after Zoho returns
+        $requestUuid  = (string) Str::uuid();
+
+        try {
+            // 1. Render each draft to a temp PDF on disk.
+            $headerByDoc  = (array) ($data['header_config_overrides'] ?? []);
+            $footerByDoc  = (array) ($data['footer_config_overrides'] ?? []);
+            $contentByDoc = (array) ($data['content_overrides']       ?? []);
+            foreach ($orderedDocs as $doc) {
+                $docKey         = (string) $doc->id;
+                $headerOverride = is_array($headerByDoc[$docKey]  ?? null) ? $headerByDoc[$docKey]  : null;
+                $footerOverride = is_array($footerByDoc[$docKey]  ?? null) ? $footerByDoc[$docKey]  : null;
+                $contentOver    = is_string($contentByDoc[$docKey] ?? null) ? $contentByDoc[$docKey] : null;
+                $pdf  = $this->renderPdf(
+                    $doc, $party, $modelName, $requestUuid, $data['signers'],
+                    $headerOverride, $footerOverride, $contentOver,
+                );
+                $tmp  = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
+                file_put_contents($tmp, $pdf->output());
+                $tempPaths[]     = $tmp;
+                $localDocMeta[]  = [
+                    'id'            => $doc->id,
+                    'document_name' => $doc->code ? "{$doc->code} {$doc->name}" : $doc->name,
+                ];
+            }
+
+            // 2. Build the Zoho request body — recipient actions + metadata.
+            $expiryDays = (int) ($data['expiry_days'] ?? 30);
+            $actions = [];
+            foreach ($data['signers'] as $i => $signer) {
+                $actions[] = [
+                    'recipient_email'  => $signer['email'],
+                    'recipient_name'   => $signer['name'],
+                    'action_type'      => 'SIGN',
+                    'signing_order'    => $signer['order'] ?? ($i + 1),
+                    'verify_recipient' => false,
+                ];
+            }
+
+            $requestName = $orderedDocs->count() > 1
+                ? 'Multiple Documents: ' . $orderedDocs->pluck('name')->take(3)->implode(', ')
+                  . ($orderedDocs->count() > 3 ? '…' : '')
+                : (string) $orderedDocs->first()->name;
+
+            $requestBody = [
+                'requests' => [
+                    'request_name'     => $requestName,
+                    'is_sequential'    => (bool) ($data['is_sequential'] ?? false),
+                    'expiration_days'  => $expiryDays,
+                    'notes'            => (string) ($data['notes'] ?? 'Please review and sign these documents.'),
+                    'actions'          => $actions,
+                ],
+            ];
+
+            $filenames = array_map(fn ($m) => Str::slug($m['document_name']) ?: ('document_' . $m['id']), $localDocMeta);
+
+            // 3. Create the Zoho request (multipart — JSON + N PDFs).
+            $createResp     = $this->zoho->createRequestMultipart($tempPaths, $filenames, $requestBody);
+            $zohoRequestId  = data_get($createResp, 'requests.request_id');
+            if (!$zohoRequestId) {
+                throw new RuntimeException('Zoho create-request did not return a request_id: ' . json_encode($createResp));
+            }
+
+            // 4. Fetch the created request so we know its action_ids + document_ids.
+            $details          = $this->zoho->getRequest($zohoRequestId);
+            $zohoActions      = data_get($details, 'requests.actions',       []);
+            $zohoDocumentIds  = data_get($details, 'requests.document_ids',  []);
+
+            // 5. Build the per-document signature field coords and submit.
+            $perDocCoords = $this->mapClientCoordsToZohoDocIds(
+                (array) ($data['document_settings'] ?? []),
+                $orderedDocs->pluck('id')->all(),
+                $zohoDocumentIds
+            );
+
+            $submitResp = $this->zoho->submitWithFields($zohoRequestId, $zohoActions, $zohoDocumentIds, $perDocCoords);
+            $submitted  = isset($submitResp['requests']);
+
+            // 6. Read back the final status. Zoho takes a tick to flip from
+            // 'draft' to 'inprogress' so we briefly sleep before re-fetching.
+            $finalStatus = 'draft';
+            if ($submitted) {
+                try {
+                    sleep(1);
+                    $after = $this->zoho->getRequest($zohoRequestId);
+                    $finalStatus = strtolower((string) data_get($after, 'requests.request_status', 'inprogress'));
+                } catch (\Throwable $e) {
+                    Log::warning('Zoho post-submit status fetch failed: ' . $e->getMessage());
+                    $finalStatus = 'inprogress';
+                }
+            }
+
+            // 7. Persist.
+            $sigReq = new ClmSignatureRequest();
+            $sigReq->client_id           = $user->client_id;
+            $sigReq->branch_id           = $user->branch_id ?? null;
+            $sigReq->trade_doc_id        = $orderedDocs->first()->id;
+            $sigReq->trade_doc_ids       = $orderedDocs->pluck('id')->values()->all();
+            $sigReq->document_names      = collect($localDocMeta)->pluck('document_name')->values()->all();
+            $sigReq->zoho_document_ids   = array_values(array_filter(array_map(fn ($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
+            $sigReq->model_name          = $modelName;
+            $sigReq->party_id            = $party->id;
+            $sigReq->zoho_request_id     = $zohoRequestId;
+            $sigReq->request_name        = $requestName;
+            $sigReq->status              = $finalStatus;
+            $sigReq->signers             = $data['signers'];
+            $sigReq->expiry_date         = now()->addDays($expiryDays);
+            $sigReq->metadata            = [
+                'sent_at'           => now()->toIso8601String(),
+                'is_multi_document' => $orderedDocs->count() > 1,
+                'document_ids'      => $orderedDocs->pluck('id')->values()->all(),
+                'document_names'    => collect($localDocMeta)->pluck('document_name')->values()->all(),
+                'document_count'    => $orderedDocs->count(),
+                'party'             => [
+                    'id'             => $party->id,
+                    'company_name'   => $party->company_name,
+                    'primary_email'  => $party->primary_email,
+                ],
+                'document_settings' => $data['document_settings'] ?? null,
+                'request_uuid'      => $requestUuid,
+            ];
+            $sigReq->created_by          = Auth::id();
+            $sigReq->save();
+
+            $message = $finalStatus === 'inprogress'
+                ? 'Documents sent for signature successfully.'
+                : 'Documents created in Zoho but submission did not flip to inprogress.';
+            if ($this->zoho->isTestingMode()) {
+                $message .= ' (Sandbox mode — signer emails are only delivered if the recipient is a Zoho Sign user on this org.)';
+            }
+
+            return response()->json([
+                'status'  => true,
+                'message' => $message,
+                'data'    => [
+                    'signature_request_id' => $sigReq->id,
+                    'zoho_request_id'      => $zohoRequestId,
+                    'status'               => $finalStatus,
+                    'document_count'       => $orderedDocs->count(),
+                    'document_ids'         => $sigReq->trade_doc_ids,
+                    'document_names'       => $sigReq->document_names,
+                    'signers'              => $sigReq->signers,
+                    'expiry_date'          => $sigReq->expiry_date,
+                    'auto_submitted'       => $submitted,
+                    'testing_mode'         => $this->zoho->isTestingMode(),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('CLM signature send failed', [
+                'error'   => $e->getMessage(),
+                'trace'   => $e->getTraceAsString(),
+                'request' => $request->except(['signers']),
+            ]);
+            return response()->json(['status' => false, 'message' => 'Failed to send documents: ' . $e->getMessage()], 500);
+        } finally {
+            foreach ($tempPaths as $p) { @unlink($p); }
+        }
+    }
+
+    /* ─────────────────────── LIST / SHOW ─────────────────────── */
+
+    public function index(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+
+        // Same-as-customer read-through: a consignee flagged
+        // `same_as_customer = true` has no signature requests of its own —
+        // its Stage 3 Trade Documents tab needs to surface the linked
+        // customer's signed PDFs (and any inprogress requests) as if they
+        // were the consignee's. Swap the (party_id, model_name) filter
+        // before the where() clauses so the rest of the pipeline (status,
+        // sync polling, fetchSignedArtifacts) operates uniformly.
+        $filterPartyId   = $request->filled('party_id')   ? (int) $request->party_id : null;
+        $filterModelName = $request->filled('model_name') ? (string) $request->model_name : null;
+        if ($filterPartyId && $filterModelName === 'Consignee') {
+            $consignee = Consignee::query()->find($filterPartyId);
+            if ($consignee
+                && $consignee->same_as_customer
+                && $consignee->customer_id
+                && (!$user->client_id || (int) ($consignee->client_id ?? 0) === (int) $user->client_id)
+            ) {
+                $filterPartyId   = (int) $consignee->customer_id;
+                $filterModelName = 'Customer';
+            }
+        }
+
+        $q = ClmSignatureRequest::query()->forUser($user)->latest();
+
+        if ($filterPartyId)   $q->where('party_id', $filterPartyId);
+        if ($filterModelName) $q->where('model_name', $filterModelName);
+        if ($request->filled('status')) {
+            $statuses = is_array($request->status) ? $request->status : [$request->status];
+            $q->whereIn('status', $statuses);
+        }
+
+        $rows = $q->limit(200)->get();
+
+        // Polling-mode refresh — when the caller passes ?sync=true (the
+        // Stage 3 Trade Documents tab does this every 15s), iterate any
+        // still-`inprogress` rows and pull their live status from Zoho.
+        // Newly-completed rows trigger a one-shot signed-PDF + certificate
+        // download so the next list response carries the artefact paths.
+        //
+        // Recovery path — also retry the artifact fetch for rows already
+        // marked `completed` locally but missing `signed_document_paths`
+        // on disk. That happens when the initial fetchSignedArtifacts
+        // succeeded for the certificate (separate try/catch) but Zoho's
+        // per-document PDF download failed transiently (network blip,
+        // Zoho's signed PDF still processing in their pipeline, etc.).
+        // Without this, the user is stuck seeing the Certificate icon
+        // enabled and the View / Download icons disabled forever.
+        if ($request->boolean('sync') && $this->zoho->isConfigured()) {
+            $changed = false;
+            foreach ($rows as $row) {
+                if (!$row->zoho_request_id) continue;
+
+                $isInProgress      = $row->status === 'inprogress';
+                $isCompletedNoFile = $row->status === 'completed'
+                    && empty($row->signed_document_paths);
+                if (!$isInProgress && !$isCompletedNoFile) continue;
+
+                try {
+                    $details = $this->zoho->getRequest($row->zoho_request_id);
+                    $newStatus = strtolower((string) data_get($details, 'requests.request_status', $row->status));
+                    if ($newStatus !== $row->status) {
+                        $row->status = $newStatus;
+                        if ($newStatus === 'completed' && !$row->completed_at) {
+                            $row->completed_at = now();
+                        }
+                        $row->save();
+                        $changed = true;
+                    }
+                    // Retry artifact fetch on EVERY completed-with-no-file
+                    // pass too, not just on the status transition. Cheap
+                    // when files already exist (fetchSignedArtifacts
+                    // overwrites on success). The user's "View/Download
+                    // stuck disabled" stops as soon as the PDF download
+                    // succeeds.
+                    if ($newStatus === 'completed'
+                        && empty($row->fresh()->signed_document_paths)
+                    ) {
+                        $this->fetchSignedArtifacts($row, $details);
+                        $changed = true;
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning("Zoho sync skipped for sig request {$row->id}: " . $e->getMessage());
+                }
+            }
+            if ($changed) {
+                $rows = $q->limit(200)->get();
+            }
+        }
+
+        // Resolve every stored file path into a public URL the SPA can
+        // open directly. We can't ship raw `uploads/…` paths in the JSON
+        // because on the deployed environment the files live in Azure
+        // (cbc-saas blob container) while the SPA is served from a
+        // different origin — a relative `/uploads/…` would 404 against
+        // the API host. Using file_url() (app/helpers.php) mirrors the
+        // pattern every other controller already uses (CustomerOwner,
+        // ConsigneeDocument, EmployeeDocument, …) so the frontend sees
+        // the same shape of URL on every endpoint.
+        $rows->transform(function (ClmSignatureRequest $row) {
+            // Per-document URLs. Saved-paths shape is:
+            //   [ { zoho_document_id, document_name, path, url, file_url, size? }, … ]
+            // Older rows may carry only `path`. Resolve each into a fresh
+            // `file_url` so the frontend never has to know about disks.
+            $multi = is_array($row->signed_document_paths) ? $row->signed_document_paths : [];
+            $resolvedMulti = array_map(function ($entry) {
+                if (!is_array($entry)) return $entry;
+                $abs = $entry['url'] ?? $entry['file_url'] ?? null;
+                $path = $entry['path'] ?? null;
+                $resolved = (is_string($abs) && preg_match('#^https?://#i', $abs))
+                    ? $abs
+                    : file_url($path);
+                $entry['url']      = $resolved;
+                $entry['file_url'] = $resolved;
+                return $entry;
+            }, $multi);
+
+            /* Disk-scan fallback. When status === 'completed' but
+             * signed_document_paths is empty, the actual signed PDFs
+             * frequently DO exist in the customer/consignee/vendor
+             * signed_documents folder — fetchSignedArtifacts wrote them
+             * successfully in a prior run but a later partial-fail or DB
+             * blip left the column unset.
+             *
+             * Rather than fight Zoho for another download, just list the
+             * folder and match by document-name slug (the same slug
+             * fetchSignedArtifacts uses when naming the blob:
+             * `signed_<slug>_<ts>_<i>.pdf`). Most-recent file per doc
+             * wins, surfacing the latest send.
+             *
+             * Results are merged into $resolvedMulti at READ time only —
+             * we don't persist them, so the next successful Zoho retry
+             * (which writes a richer payload with zoho_document_id +
+             * size) is still authoritative when it lands. */
+            if (empty($resolvedMulti) && $row->status === 'completed') {
+                $fromDisk = $this->adoptSignedDocsFromDisk($row);
+                if (!empty($fromDisk)) $resolvedMulti = $fromDisk;
+            }
+
+            // Surface the resolved URLs alongside the path columns so the
+            // frontend's polling loop (and any future consumer) can read
+            // them directly without re-resolving against another origin.
+            // Single-doc convenience pointer mirrors the multi array shape.
+            $firstSignedFromDisk = $resolvedMulti[0]['file_url'] ?? null;
+            $row->setAttribute('signed_document_url',  file_url($row->signed_document_path) ?: $firstSignedFromDisk);
+            $row->setAttribute('certificate_url',      file_url($row->certificate_path));
+            $row->setAttribute('signed_document_paths', $resolvedMulti);
+            $row->setAttribute('file_url', file_url($row->signed_document_path) ?: $firstSignedFromDisk ?: file_url($row->certificate_path));
+            return $row;
+        });
+
+        return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
+    }
+
+    /**
+     * Sync status from Zoho. When the request has just completed, this is
+     * also the point at which we pull the signed PDFs + completion
+     * certificate down into local storage.
+     */
+    public function show(Request $request, $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
+
+        try {
+            $details   = $this->zoho->getRequest($row->zoho_request_id);
+            $zohoState = strtolower((string) data_get($details, 'requests.request_status', $row->status));
+
+            if ($zohoState !== $row->status) {
+                $row->status = $zohoState;
+                if ($zohoState === 'completed' && !$row->completed_at) {
+                    $row->completed_at = now();
+                }
+                $row->save();
+
+                if ($zohoState === 'completed') {
+                    $this->fetchSignedArtifacts($row, $details);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Zoho status sync failed: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'status' => true,
+            'data'   => $row->fresh(),
+        ]);
+    }
+
+    public function remind(Request $request, $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
+
+        try {
+            $live   = $this->zoho->getRequest($row->zoho_request_id);
+            $state  = strtolower((string) data_get($live, 'requests.request_status', $row->status));
+            if ($state !== $row->status) { $row->status = $state; $row->save(); }
+            if ($state !== 'inprogress') {
+                return response()->json(['status' => false, 'message' => "Reminder cannot be sent. Current status is '{$state}'."], 400);
+            }
+
+            $resp = $this->zoho->remind($row->zoho_request_id);
+            $row->last_reminder_sent_at = now();
+            $row->reminder_count        = (int) $row->reminder_count + 1;
+            $row->save();
+
+            return response()->json(['status' => true, 'message' => 'Reminder sent', 'data' => $resp]);
+        } catch (\Throwable $e) {
+            return response()->json(['status' => false, 'message' => 'Failed to send reminder: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function recall(Request $request, $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $data = $request->validate(['reason' => 'required|string|max:500']);
+        $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
+
+        if ($row->status === 'completed') {
+            return response()->json(['status' => false, 'message' => 'Cannot recall a completed document'], 400);
+        }
+
+        try {
+            $resp = $this->zoho->recall($row->zoho_request_id, $data['reason']);
+            $row->status        = 'recalled';
+            $row->recalled_at   = now();
+            $row->recall_reason = $data['reason'];
+            $row->save();
+            return response()->json(['status' => true, 'message' => 'Recalled', 'data' => $resp]);
+        } catch (\Throwable $e) {
+            return response()->json(['status' => false, 'message' => 'Failed to recall: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /* ─────────────────────── Signed-file streaming ─────────────────────── */
+
+    public function downloadFile(Request $request, $id, $index)
+    {
+        return $this->streamSignedFile($request, $id, (int) $index, 'attachment');
+    }
+
+    public function viewFile(Request $request, $id, $index)
+    {
+        return $this->streamSignedFile($request, $id, (int) $index, 'inline');
+    }
+
+    private function streamSignedFile(Request $request, $id, int $index, string $disposition)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
+
+        $paths = is_array($row->signed_document_paths) ? $row->signed_document_paths : [];
+        if (empty($paths)) {
+            // Lazy-pull from Zoho if the row says completed but local files are missing.
+            if ($row->status === 'completed') {
+                $details = $this->zoho->getRequest($row->zoho_request_id);
+                $this->fetchSignedArtifacts($row, $details);
+                $row->refresh();
+                $paths = is_array($row->signed_document_paths) ? $row->signed_document_paths : [];
+            }
+        }
+
+        $entry = $paths[$index] ?? null;
+        $path  = is_array($entry) ? ($entry['path'] ?? null) : null;
+
+        if (!$path || !Storage::disk('public')->exists($path)) {
+            return response()->json(['status' => false, 'message' => 'Signed document not found'], 404);
+        }
+
+        return response(Storage::disk('public')->get($path), 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => $disposition . '; filename="' . basename($path) . '"',
+        ]);
+    }
+
+    public function viewCertificate(Request $request, $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
+
+        $path = $row->certificate_path;
+        if ((!$path || !Storage::disk('public')->exists($path)) && $row->status === 'completed') {
+            $details = $this->zoho->getRequest($row->zoho_request_id);
+            $this->fetchSignedArtifacts($row, $details);
+            $row->refresh();
+            $path = $row->certificate_path;
+        }
+
+        if (!$path || !Storage::disk('public')->exists($path)) {
+            return response()->json(['status' => false, 'message' => 'Certificate not available'], 404);
+        }
+
+        return response(Storage::disk('public')->get($path), 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="' . basename($path) . '"',
+        ]);
+    }
+
+    /* ─────────────────────── Helpers ─────────────────────── */
+
+    /**
+     * Render a single ClmTradeDocLibrary draft into a DomPDF instance with
+     * the customer's data merged into placeholder tokens. Centralised so
+     * preview + send go through identical rendering.
+     */
+    private function renderPdf(
+        ClmTradeDocLibrary $doc,
+        Model $party,
+        string $modelName,
+        string $requestUuid,
+        ?array $signers = null,
+        ?array $headerOverride = null,
+        ?array $footerOverride = null,
+        ?string $contentOverride = null,
+    ) {
+        // Content override takes precedence over the row's saved HTML —
+        // used by the Send-for-Signature modal when the user pastes in
+        // a table via Insert Table or otherwise edits the body inline.
+        $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $doc->content;
+        $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName);
+        $client = Client::find($doc->client_id);
+
+        // Saved Stage 2 page-shell config — drives the PDF's header/footer
+        // so the user's draft preview matches what gets sent. Cast pulls
+        // them back as arrays from the JSON column; missing on legacy
+        // rows → null (blade falls back to a minimal client-name header
+        // so older drafts still render).
+        //
+        // Per-render overrides win when present. The Send-for-Signature
+        // modal POSTs an in-progress header/footer config alongside the
+        // preview/send call so the user's inline tweaks render without
+        // mutating the saved row.
+        $headerConfig = is_array($headerOverride) ? $headerOverride
+            : (is_array($doc->header_config) ? $doc->header_config : []);
+        $footerConfig = is_array($footerOverride) ? $footerOverride
+            : (is_array($doc->footer_config) ? $doc->footer_config : []);
+
+        // dompdf can't fetch /storage URLs at render time, so resolve the
+        // saved header logo to a base64 data URL up-front. Prefer the
+        // per-doc header logo the user uploaded via HeaderFooterPanel.
+        // Fall back to the URL-encoded variant (rows seeded from /me's
+        // branch_logo only carry `logo_url`, not `logo_path`), then to
+        // the tenant client's branding logo for true legacy rows.
+        $headerLogoBase64 = $this->resolveLogoBase64(
+            $headerConfig['logo_path'] ?? null,
+            $this->pathFromStorageUrl($headerConfig['logo_url'] ?? null),
+            $client?->logo,
+        );
+
+        return Pdf::loadView('pdf.clm-signature-document', [
+            'document'         => $doc,
+            'party'            => $party,
+            'modelName'        => $modelName,
+            'processedHtml'    => $processedHtml,
+            'generatedDate'    => now()->format('d/m/Y'),
+            'requestId'        => substr($requestUuid, 0, 8),
+            'signers'          => $signers ?? [],
+            'client'           => $client,
+            'headerConfig'     => $headerConfig,
+            'footerConfig'     => $footerConfig,
+            'headerLogoBase64' => $headerLogoBase64,
+        ])->setPaper('a4');
+    }
+
+    /**
+     * Walk candidate storage paths in priority order and return the
+     * first one that resolves to a file on the public disk, base64-
+     * encoded for inline embedding in the PDF. Returns '' when none of
+     * them resolve, so the blade renders a text-only header band.
+     */
+    private function resolveLogoBase64(?string ...$candidates): string
+    {
+        foreach ($candidates as $path) {
+            if (!$path) continue;
+            try {
+                if (\Illuminate\Support\Facades\Storage::disk('public')->exists($path)) {
+                    return base64_encode(\Illuminate\Support\Facades\Storage::disk('public')->get($path));
+                }
+            } catch (\Throwable $e) {
+                // try the next candidate
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Pull the storage-relative path out of a public-disk URL. Accepts
+     * both `/storage/foo/bar.png` and `https://example.com/storage/foo/bar.png`
+     * forms — anything after the first `/storage/` segment is the
+     * storage-relative path on the public disk. Used so existing trade-doc
+     * rows seeded from /me's branch_logo (URL only, no path) still render
+     * their logo in the PDF.
+     */
+    private function pathFromStorageUrl(?string $url): ?string
+    {
+        if (!$url) return null;
+        if (preg_match('#/storage/(.+)$#', $url, $m)) {
+            return $m[1];
+        }
+        return null;
+    }
+
+    /**
+     * Replace the {{customer.*}} / {{consignee.*}} / {{supplier.*}} tokens
+     * the [[ClmInsertPlaceholderModal]] picker writes into the draft.
+     *
+     * Only the token namespace matching the request's $modelName is
+     * resolved from real data — the other two stay literal so they're
+     * visible to the human reviewer (and obvious when the wrong template
+     * is paired with the wrong party). The signature tokens for ALL
+     * three parties always become sig-boxes since visual placement is
+     * independent of which signer actually completes them.
+     *
+     * Customer / Consignee / Vendor share the same shape (company_name,
+     * primary_email, primaryAddress with cp_*), so a single resolver
+     * over the relevant party works for all three.
+     */
+    private function replacePlaceholders(string $html, Model $party, string $modelName): string
+    {
+        if ($html === '') return '<p></p>';
+
+        // Maps the Eloquent class to the token-namespace prefix the draft
+        // editor uses. Vendor → supplier matches the ClmInsertPlaceholderModal
+        // picker (the user-facing label is "Supplier", the model is "Vendor").
+        $partyToTokenNs = ['Customer' => 'customer', 'Consignee' => 'consignee', 'Vendor' => 'supplier'];
+        $ns = $partyToTokenNs[$modelName] ?? null;
+
+        if ($ns) {
+            $addr = $party->primaryAddress;   // null-safe via PHP 8 ?->
+
+            // The three address tables don't share a shape:
+            //   CustomerAddress / ConsigneeAddress → `country`, `state`, `pin`
+            //                                        are plain string columns.
+            //   VendorAddress                      → `country` / `state` are
+            //                                        BelongsTo relationships
+            //                                        (Countries / States) and
+            //                                        pincode lives in `pincode`.
+            // If we hand a model to e() the default __toString() returns its
+            // JSON dump — that's why the rendered PDF was printing
+            // `[{"id":15159,"client_id":null, …,"name":"India", …}]` in the
+            // country / address cells. Coerce each value down to a plain
+            // string before composition.
+            $scalar = static function ($v): string {
+                if ($v === null) return '';
+                if (is_object($v)) return (string) ($v->name ?? '');
+                return (string) $v;
+            };
+
+            $contactPerson = $modelName === 'Vendor' ? ($addr?->contact_name ?? '') : ($addr?->cp_name ?? '');
+            $contactPhone  = $modelName === 'Vendor' ? ($addr?->contact_no  ?? '') : ($addr?->cp_contact ?? '');
+            $countryStr = $scalar($addr?->country);
+            $stateStr   = $scalar($addr?->state);
+            $pinStr     = $scalar($modelName === 'Vendor' ? ($addr?->pincode ?? null) : ($addr?->pin ?? null));
+
+            $addressLine = trim(implode(', ', array_filter([
+                $addr?->address_line, $addr?->city, $stateStr, $countryStr, $pinStr,
+            ])));
+
+            $codeAttr = $modelName === 'Customer'  ? 'customer_code'
+                      : ($modelName === 'Consignee' ? 'consignee_code'
+                      : 'vendor_code');
+
+            $map = [
+                '{{' . $ns . '.name}}'            => e($party->company_name ?? ''),
+                '{{' . $ns . '.code}}'            => e($party->{$codeAttr} ?? ''),
+                '{{' . $ns . '.company}}'         => e(($party->legal_name ?: $party->company_name) ?? ''),
+                '{{' . $ns . '.contact_person}}'  => e($contactPerson),
+                '{{' . $ns . '.phone}}'           => e($contactPhone),
+                '{{' . $ns . '.email}}'           => e($party->primary_email ?? ''),
+                '{{' . $ns . '.country}}'         => e($countryStr),
+                '{{' . $ns . '.state}}'           => e($stateStr),
+                '{{' . $ns . '.address}}'         => e($addressLine),
+                '{{' . $ns . '.gst}}'             => '',
+                '{{' . $ns . '.pan}}'             => '',
+                '{{' . $ns . '.iec}}'             => '',
+            ];
+
+            $html = strtr($html, $map);
+        }
+
+        // Signature placeholders — every party variant becomes a styled
+        // sig-box. The unique invisible marker (rendered at 0.5pt in a
+        // near-white colour) is picked up by the frontend PDF.js detector
+        // so it can use the placeholder's rendered position as the default
+        // for the draggable signature overlay. Zoho's real signature
+        // widget is positioned by the (x, y, page) coords in the submit
+        // payload — the box here is purely visual + detection scaffolding.
+        foreach (['customer', 'consignee', 'supplier'] as $party) {
+            $token  = self::sigMarkerToken($party);
+            $sigBox = '<div class="sig-box">'
+                    . '<span class="sig-marker">' . $token . '</span>'
+                    . '[ Signature ]'
+                    . '</div>';
+            $html = str_replace('{{' . $party . '.signature}}', $sigBox, $html);
+        }
+
+        return $html;
+    }
+
+    /**
+     * Unique marker text embedded inside each signature placeholder. The
+     * frontend's PDF.js detector greps each page's text content for these
+     * tokens to figure out the rendered coordinates of every sig-box and
+     * uses them as the default signature-field position per party.
+     *
+     * Format chosen to be vanishingly unlikely to appear in user-typed
+     * draft content (double-guillemets + uppercase party slug + numeric
+     * salt). Kept as a small constant so the PHP side and the JS regex
+     * stay aligned — see SIG_MARKER_REGEX in SalesCustomerSendForSignatureModal.
+     */
+    public static function sigMarkerToken(string $party): string
+    {
+        return '«CBC-SIG-' . strtoupper($party) . '-9417»';
+    }
+
+    /**
+     * The frontend keys document_settings by CBC's clm_trade_doc_library.id,
+     * but the Zoho submit payload wants the Zoho-side document_id. This
+     * walks the parallel arrays (same order, guaranteed by how we built
+     * the createRequestMultipart() call) and rewrites the map.
+     *
+     * @param  array<int|string, array{x?:float, y?:float, page?:int, width?:float, height?:float}>  $clientMap
+     * @param  array<int, int>     $cbcDocIdsOrdered
+     * @param  array<int, array{document_id?:string}>  $zohoDocsOrdered
+     * @return array<string, array<string, float|int>>
+     */
+    private function mapClientCoordsToZohoDocIds(array $clientMap, array $cbcDocIdsOrdered, array $zohoDocsOrdered): array
+    {
+        $out = [];
+        foreach ($cbcDocIdsOrdered as $i => $cbcId) {
+            $zohoId = $zohoDocsOrdered[$i]['document_id'] ?? null;
+            if (!$zohoId) continue;
+            $settings = $clientMap[$cbcId] ?? $clientMap[(string) $cbcId] ?? null;
+            if (is_array($settings)) {
+                $out[$zohoId] = $settings;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Pull every signed PDF + the completion certificate from Zoho into
+     * Storage::disk('public') and update the row's path columns. Called
+     * lazily — show()/viewFile()/viewCertificate() all converge here.
+     *
+     * The 'public' disk swaps driver based on FILESYSTEM_DISK:
+     *   local mode → storage/app/public/uploads/signed_documents/…
+     *   azure mode → blob:cbc-saas/uploads/signed_documents/…
+     * Both code paths use the same Storage::disk('public') call, so the
+     * diagnostic noise below is the only way to tell which step ate the
+     * signed doc when only the certificate landed. Without it, the silent
+     * try/catch produced an empty signed_document_paths array on server
+     * and no clue why.
+     */
+    private function fetchSignedArtifacts(ClmSignatureRequest $row, array $details): void
+    {
+        $modelFolder = strtolower($row->model_name);
+        $basePath    = 'uploads/signed_documents/' . $modelFolder;
+        $diskName    = config('filesystems.disks.public.driver');
+        $logCtx      = ['row_id' => $row->id, 'zoho_request_id' => $row->zoho_request_id, 'disk' => $diskName];
+
+        // makeDirectory is a no-op on the azure-storage-blob adapter (blob
+        // storage has no real directories — slashes in blob names are just
+        // path-style prefixes), and a real mkdir on the local driver. Either
+        // way, exists() before mkdir keeps the local path idempotent.
+        try {
+            if (!Storage::disk('public')->exists($basePath)) {
+                Storage::disk('public')->makeDirectory($basePath);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('signed_doc fetch: makeDirectory failed', $logCtx + ['err' => $e->getMessage()]);
+        }
+
+        $zohoDocs   = data_get($details, 'requests.document_ids', []);
+        $savedPaths = [];
+        $zohoIds    = [];
+
+        foreach ($zohoDocs as $i => $doc) {
+            $zohoId = $doc['document_id'] ?? null;
+            $name   = $doc['document_name'] ?? ('document_' . ($i + 1));
+            if (!$zohoId) continue;
+            $zohoIds[] = $zohoId;
+
+            try {
+                // Step 1 — pull bytes from Zoho. This is the step that
+                // most often fails on production: per-document endpoint
+                // (/requests/{id}/documents/{docId}/pdf) needs the
+                // ZohoSign.documents.READ scope; older refresh tokens
+                // don't have it even when the certificate scope works.
+                $bytes = $this->zoho->downloadDocumentPdf($row->zoho_request_id, $zohoId);
+                if (!is_string($bytes) || $bytes === '') {
+                    throw new RuntimeException('Zoho returned empty bytes');
+                }
+
+                // Step 2 — write to the active disk. put() returns false
+                // instead of throwing because the public disk is configured
+                // with throw=false, so we check the boolean explicitly.
+                // Without this the next line would record an unverified
+                // blob path and the UI would link to a 404.
+                $safe     = Str::slug(pathinfo((string) $name, PATHINFO_FILENAME)) ?: ('document_' . ($i + 1));
+                $fileName = sprintf('signed_%s_%d_%d.pdf', $safe, time(), $i);
+                $path     = $basePath . '/' . $fileName;
+                $ok       = Storage::disk('public')->put($path, $bytes);
+                if ($ok === false) {
+                    throw new RuntimeException('Storage::put returned false (disk=' . $diskName . ')');
+                }
+
+                // Step 3 — capture both `url` (legacy) and `file_url`
+                // (new pattern used by other modules). On Azure the URL
+                // is the absolute blob URL; on local it's /storage/…
+                $publicUrl = Storage::disk('public')->url($path);
+                $savedPaths[] = [
+                    'zoho_document_id' => $zohoId,
+                    'document_name'    => $name,
+                    'path'             => $path,
+                    'url'              => $publicUrl,
+                    'file_url'         => $publicUrl,
+                    'size'             => strlen($bytes),
+                ];
+                Log::info('signed_doc saved', $logCtx + ['zoho_doc_id' => $zohoId, 'path' => $path, 'size' => strlen($bytes)]);
+            } catch (\Throwable $e) {
+                // Log loudly so a server-only failure (Zoho scope, blob
+                // container ACL, etc.) is visible in laravel.log instead
+                // of being eaten silently.
+                Log::error('signed_doc fetch failed', $logCtx + [
+                    'zoho_doc_id' => $zohoId,
+                    'err'         => $e->getMessage(),
+                    'class'       => get_class($e),
+                ]);
+            }
+        }
+
+        if (!empty($savedPaths)) {
+            $row->zoho_document_ids      = $zohoIds;
+            $row->signed_document_paths  = $savedPaths;
+            $row->signed_document_path   = $savedPaths[0]['path'] ?? null;
+        } else {
+            // Surface the empty-result case in the log so prod diagnosis
+            // doesn't require diffing the row before/after every poll.
+            Log::warning('signed_doc fetch produced no saved paths', $logCtx + ['expected_count' => count($zohoIds)]);
+        }
+
+        // Completion certificate is always one per request.
+        try {
+            $cert = $this->zoho->downloadCertificate($row->zoho_request_id);
+            if (!is_string($cert) || $cert === '') {
+                throw new RuntimeException('Zoho returned empty certificate bytes');
+            }
+            $safe     = Str::slug($row->request_name) ?: 'request';
+            $certPath = $basePath . '/' . sprintf('certificate_%s_%d.pdf', $safe, time());
+            $ok       = Storage::disk('public')->put($certPath, $cert);
+            if ($ok === false) {
+                throw new RuntimeException('Storage::put returned false (disk=' . $diskName . ')');
+            }
+            $row->certificate_path = $certPath;
+            Log::info('certificate saved', $logCtx + ['path' => $certPath, 'size' => strlen($cert)]);
+        } catch (\Throwable $e) {
+            Log::error('certificate fetch failed', $logCtx + ['err' => $e->getMessage(), 'class' => get_class($e)]);
+        }
+
+        $row->save();
+    }
+
+    /**
+     * Disk-scan fallback for completed rows that have no
+     * `signed_document_paths` recorded in the DB.
+     *
+     * Production has hit a state where fetchSignedArtifacts uploads the
+     * signed PDFs to Azure successfully (the blob container has files
+     * like `signed_td-001-customer-trade-document_1779706863_0.pdf`)
+     * but the row never gets the JSON column populated — the most
+     * likely cause is a Zoho retry that throws AFTER the prior call's
+     * blobs were written but BEFORE the save() runs. We can't fix that
+     * race retroactively, so instead we recover at read time: list the
+     * party's signed_documents folder, match each blob filename against
+     * the request's document-name slugs, and synthesise the entries the
+     * frontend expects.
+     *
+     * Cost: one Storage::allFiles() call per affected row. On Azure this
+     * is a single LIST blob call against a tiny prefix
+     * (`uploads/signed_documents/{party}/`), well within free-tier IOPS.
+     *
+     * Returns an empty array when nothing matches — caller falls back
+     * to the existing "no attachment yet" UI without surprising the
+     * user with files from a different request.
+     *
+     * @return array<int, array{path:string, url:?string, file_url:?string, document_name:string, zoho_document_id:?string}>
+     */
+    private function adoptSignedDocsFromDisk(ClmSignatureRequest $row): array
+    {
+        $names = is_array($row->document_names) ? $row->document_names : [];
+        if (empty($names)) return [];
+
+        $modelFolder = strtolower((string) $row->model_name);
+        $basePath    = 'uploads/signed_documents/' . $modelFolder;
+
+        try {
+            if (!Storage::disk('public')->exists($basePath)) return [];
+        } catch (\Throwable $e) {
+            return [];
+        }
+
+        // Pull every signed_*.pdf in the party folder once. allFiles on
+        // the Azure adapter returns absolute prefixes (no leading slash),
+        // matching what fetchSignedArtifacts writes.
+        try {
+            $all = Storage::disk('public')->files($basePath);
+        } catch (\Throwable $e) {
+            Log::warning('adopt-from-disk: list failed', ['row_id' => $row->id, 'err' => $e->getMessage()]);
+            return [];
+        }
+
+        $signedOnly = array_values(array_filter(
+            $all,
+            fn ($p) => is_string($p)
+                && str_contains($p, '/signed_')
+                && str_ends_with(strtolower($p), '.pdf'),
+        ));
+        if (empty($signedOnly)) return [];
+
+        $out = [];
+        $zohoDocIds = is_array($row->zoho_document_ids) ? $row->zoho_document_ids : [];
+
+        foreach ($names as $i => $rawName) {
+            $slug = Str::slug(pathinfo((string) $rawName, PATHINFO_FILENAME));
+            if ($slug === '') $slug = 'document-' . ($i + 1);
+            $needle = '/signed_' . $slug . '_';
+
+            // Newest match wins — fetchSignedArtifacts encodes the run
+            // timestamp into the filename, so a higher numeric suffix is
+            // always a later send.
+            $candidates = array_values(array_filter(
+                $signedOnly,
+                fn ($p) => str_contains($p, $needle),
+            ));
+            if (empty($candidates)) continue;
+            usort($candidates, fn ($a, $b) => strcmp($b, $a));
+            $path = $candidates[0];
+
+            $url = file_url($path);
+            $out[] = [
+                'zoho_document_id' => $zohoDocIds[$i] ?? null,
+                'document_name'    => $rawName,
+                'path'             => $path,
+                'url'              => $url,
+                'file_url'         => $url,
+            ];
+        }
+
+        return $out;
+    }
+}

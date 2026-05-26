@@ -11,6 +11,7 @@ export function MasterSelect({
   placeholder = 'Select…',
   disabled,
   invalid,
+  loading,
   onChange,
   onOpen,
 }: {
@@ -21,6 +22,11 @@ export function MasterSelect({
   placeholder?: string;
   disabled?: boolean;
   invalid?: boolean;
+  /* When true, the toggle renders a shimmer block instead of the
+   * placeholder text. Use this on dropdowns whose options come from an
+   * async master fetch — gives users a polished "fetching the master"
+   * cue instead of the grey "Loading…" placeholder. */
+  loading?: boolean;
   onChange?: (value: string) => void;
   onOpen?: () => void;
 }) {
@@ -92,9 +98,13 @@ export function MasterSelect({
           disabled={disabled}
           className="master-select-toggle"
         >
-          <span className={selected ? 'master-select-value' : 'master-select-placeholder'}>
-            {selected ? selected.label : placeholder}
-          </span>
+          {selected ? (
+            <span className="master-select-value">{selected.label}</span>
+          ) : loading ? (
+            <span className="master-select-shimmer" aria-label="Loading" />
+          ) : (
+            <span className="master-select-placeholder">{placeholder}</span>
+          )}
           <i className="ri-arrow-down-s-line master-select-chev" />
         </DropdownToggle>
         {/* container="body" + strategy="fixed" portals the menu to <body>

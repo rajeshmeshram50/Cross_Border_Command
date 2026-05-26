@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { CheckCircle, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -66,7 +67,13 @@ const VARIANTS: Record<ToastType, ToastVariant> = {
 };
 
 export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; onDismiss: (id: number) => void }) {
-  return (
+  /* Portal to <body> so the toast wrap escapes any ancestor that
+   * created a new stacking context (e.g. master modals with backdrop
+   * filters or transformed wizard shells). Without this, even a
+   * z-index of 100000 stays trapped under the modal's portal layer
+   * and the validation toast lands behind the open modal. */
+  if (typeof document === 'undefined') return null;
+  return createPortal((
     <>
       {/* One stylesheet for the whole toaster — bound to the .cbc-toast
           class names emitted below. Centralising it here keeps the JSX
@@ -82,9 +89,11 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
           /* Above every modal in the app. Customer / Consignee / Vendor
              modals sit at 10000-10002, sub-modals at 10500, confirm
              dialogs at 10050-11050, dropdown portals at 11000-11200.
-             100000 keeps the toaster above all of them so users see
-             validation feedback even when a stacked modal is open. */
-          z-index: 100000;
+             CLM modals sit at 200000 and master-select menus at 250000,
+             so the toaster needs to outrank those too — 500000 keeps it
+             above all of them so users see validation feedback even when
+             a stacked modal is open. */
+          z-index: 500000;
           display: flex;
           flex-direction: column;
           gap: 12px;
@@ -219,7 +228,7 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
         ))}
       </div>
     </>
-  );
+  ), document.body);
 }
 
 function ToastCard({ toast, onClose }: { toast: ToastItemType; onClose: () => void }) {

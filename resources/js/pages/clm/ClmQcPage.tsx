@@ -7,6 +7,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { SimpleDescModal } from './clmCommon';
 
 /* Central CLM → Quality & Compliance Documents Master. 3-card faithful port. */
 
@@ -128,11 +129,10 @@ export default function ClmQcPage() {
                   <th>QC DOCUMENT NAME</th>
                   <th>PURPOSE</th>
                   <th style={{ width: 150, textAlign: 'center' }}>ISSUED BY</th>
-                  <th style={{ width: 130, textAlign: 'center' }}>TYPE</th>
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <tr><td colSpan={7} className="clm-status">Loading…</td></tr>}
+                  {loading && <tr><td colSpan={6} className="clm-status">Loading…</td></tr>}
                   {!loading && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
@@ -141,11 +141,6 @@ export default function ClmQcPage() {
                       <td className="clm-td-desc">{r.purpose}</td>
                       <td style={{ textAlign: 'center' }}>
                         <span className="clm-badge clm-badge-teal"><span className="clm-badge-dot" />{r.issued_by}</span>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <span className={`clm-badge ${r.doc_type === 'cert' ? 'clm-badge-teal' : 'clm-badge-violet'}`}>
-                          {r.doc_type === 'cert' ? 'Certificate' : 'Compliance Doc'}
-                        </span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
@@ -186,16 +181,22 @@ export default function ClmQcPage() {
 }
 
 function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCode: string; onClose: () => void; onSave: (f: Omit<Qc, 'id'|'code'|'status'>) => void; }) {
-  const { existing, authorities, nextCode, onClose, onSave } = props;
+  const { existing, authorities: initialAuthorities, nextCode, onClose, onSave } = props;
+  const toast = useToast();
   const isEdit = !!existing;
   const [name, setName]         = useState(existing?.name ?? '');
   const [purpose, setPurpose]   = useState(existing?.purpose ?? '');
   const [issuedBy, setIssuedBy] = useState(existing?.issued_by ?? '');
-  const [type, setType]         = useState<'cert'|'comp'>(existing?.doc_type ?? 'cert');
+  // Type dropdown removed from the form — preserve the existing value on
+  // edit, default to 'cert' on add. Backend still receives doc_type.
+  const type: 'cert'|'comp'     = existing?.doc_type ?? 'cert';
   const [qaParams, setQaParams] = useState(existing?.qa_params ?? '');
   const [minCrit, setMinCrit]   = useState(existing?.min_criteria ?? '');
   const [errors, setErrors]     = useState<Record<string, string>>({});
   const [saving, setSaving]     = useState(false);
+  const [authorities, setAuthorities] = useState<Authority[]>(initialAuthorities);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  useEffect(() => { setAuthorities(initialAuthorities); }, [initialAuthorities]);
 
   const handleSave = async () => {
     const next: Record<string, string> = {};
@@ -211,6 +212,20 @@ function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCod
         doc_type: type, qa_params: qaParams?.trim() || null, min_criteria: minCrit?.trim() || null,
       }));
     } finally { setSaving(false); }
+  };
+
+  const onAddNewAuthority = async (form: { name: string; description: string }) => {
+    try {
+      const r = await api.post<{ status: boolean; data: Authority }>('/clm/authorities', form);
+      const created = r.data.data;
+      setAuthorities(prev => [...prev, created]);
+      setIssuedBy(created.name);
+      setErrors(p => ({ ...p, issuedBy: '' }));
+      setQuickAddOpen(false);
+      toast.success('Added', created.name);
+    } catch (e: any) {
+      toast.error('Save failed', e?.response?.data?.message ?? 'Could not add authority');
+    }
   };
 
   return createPortal((
@@ -245,33 +260,30 @@ function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCod
             <input className={`clm-input ${errors.purpose ? 'clm-input-err' : ''}`} placeholder="What this certificate is for…" value={purpose} onChange={e => { setPurpose(e.target.value); setErrors(p => ({ ...p, purpose: '' })); }} />
             {errors.purpose && <div className="clm-err">{errors.purpose}</div>}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <div className="clm-field">
-              <label className="clm-field-label">Issued By (Authority) <span className="clm-req">*</span></label>
-              <MasterSelect
-                key={`qc-issuedBy-${authorities.length}`}
-                value={issuedBy}
-                invalid={!!errors.issuedBy}
-                placeholder="— Select —"
-                options={[
-                  ...authorities.map(a => ({ value: a.name, label: a.name })),
-                  ...(issuedBy && !authorities.find(a => a.name === issuedBy) ? [{ value: issuedBy, label: issuedBy }] : []),
-                ]}
-                onChange={(v) => { setIssuedBy(v); setErrors(p => ({ ...p, issuedBy: '' })); }}
-              />
-              {errors.issuedBy && <div className="clm-err">{errors.issuedBy}</div>}
+          <div className="clm-field">
+            <label className="clm-field-label">Issued By (Authority) <span className="clm-req">*</span></label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <MasterSelect
+                  key={`qc-issuedBy-${authorities.length}`}
+                  value={issuedBy}
+                  invalid={!!errors.issuedBy}
+                  placeholder="— Select —"
+                  options={[
+                    ...authorities.map(a => ({ value: a.name, label: a.name })),
+                    ...(issuedBy && !authorities.find(a => a.name === issuedBy) ? [{ value: issuedBy, label: issuedBy }] : []),
+                  ]}
+                  onChange={(v) => { setIssuedBy(v); setErrors(p => ({ ...p, issuedBy: '' })); }}
+                />
+              </div>
+              <Tooltip label="Add new authority">
+                <button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+              </Tooltip>
             </div>
-            <div className="clm-field">
-              <label className="clm-field-label">Type</label>
-              <MasterSelect
-                value={type}
-                options={[
-                  { value: 'cert', label: 'Certificate' },
-                  { value: 'comp', label: 'Compliance Document' },
-                ]}
-                onChange={(v) => setType(v as 'cert'|'comp')}
-              />
-            </div>
+            <div className="clm-field-hint">Pulls from Authority Master — click + to add a new authority.</div>
+            {errors.issuedBy && <div className="clm-err">{errors.issuedBy}</div>}
           </div>
           <div className="clm-field">
             <label className="clm-field-label">QA Testing Parameters</label>
@@ -290,6 +302,19 @@ function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCod
           </button>
         </div>
       </div>
+      {quickAddOpen && (
+        <SimpleDescModal
+          title="Add New Authority"
+          namePlaceholder="e.g. Income Tax Department, DGFT, GSTN"
+          descPlaceholder="What this authority issues / regulates"
+          code={`A-${String(authorities.length + 1).padStart(3, '0')}`}
+          isEdit={false}
+          initialName=""
+          initialDesc=""
+          onClose={() => setQuickAddOpen(false)}
+          onSave={(f) => void onAddNewAuthority(f)}
+        />
+      )}
     </div>
   ), document.body);
 }

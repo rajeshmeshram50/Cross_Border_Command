@@ -2,11 +2,41 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
-import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
+import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
+import { MasterMultiSelect } from '../master/masterFormKit';
+
+/* Stage 3 → Trade Documents → Send for Signature.
+ * Same shape used by AddCustomerModal / AddVendorModal so the Zoho
+ * Sign send modal accepts any of the three flows interchangeably. */
+type TdSigStatus = 'idle' | 'inprogress' | 'completed' | 'declined' | 'recalled' | 'expired';
+type TdDocRow = {
+  id: string; db_id: number | null;
+  name: string; selected: boolean; sent: boolean;
+  status?: TdSigStatus;
+  signature_request_id?: number;
+  signed_url?: string;
+  /* Zoho Sign completion-certificate URL — populated by the polling
+   * effect from clm_signature_requests.certificate_path on completed
+   * rows. Drives the third action-column button. */
+  certificate_url?: string;
+  /* Set by the parent right before rendering — true when this row's
+   * signature_request_id is inside the active 60-second Resend
+   * cooldown. The button locks so a multi-doc bundle can't fire one
+   * reminder per doc. */
+  cooldownActive?: boolean;
+};
+const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: string }> = {
+  idle:       { label: 'N/A',                bg: '#f1f5f9', fg: '#94a3b8' },
+  inprogress: { label: 'Awaiting Signature', bg: '#fef3c7', fg: '#92400e' },
+  completed:  { label: 'Signed',             bg: '#dcfce7', fg: '#166534' },
+  declined:   { label: 'Declined',           bg: '#fee2e2', fg: '#991b1b' },
+  recalled:   { label: 'Recalled',           bg: '#e0e7ff', fg: '#3730a3' },
+  expired:    { label: 'Expired',            bg: '#fee2e2', fg: '#7f1d1d' },
+};
 
 /* Each row in the Address & Contact Details table — mirrors the
  * shape used by AddCustomerModal so the JSX patterns line up. */
@@ -265,6 +295,43 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * the user saw on rapid clicks. */
   const inFlightRef = useRef(false);
 
+  /* Stage 3 → Trade Documents → Send for Signature. Mirrors what
+   * [[AddCustomerModal]] does — tdDocs is the table state (per-row
+   * checkbox + status badge), sendForSignature holds the IDs the user
+   * just clicked Send on so the wizard pops with them pre-checked. */
+  const [tdDocs, setTdDocs] = useState<TdDocRow[]>([]);
+  const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
+  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TdSigStatus; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }>>({});
+
+  /* Resend cooldown — Zoho's remind API operates per-REQUEST; one
+   * 3-doc bundle gets ONE reminder email no matter which row in it
+   * the user clicks Resend on. To stop that bundle from firing three
+   * separate reminders if the user clicks each row, we seed a 60s
+   * cooldown on the signature_request_id; every sibling row's Resend
+   * button locks visually until the timer expires. Same pattern as
+   * the customer modal. */
+  const [recentReminds, setRecentReminds] = useState<Record<number, number>>({});
+  useEffect(() => {
+    const expiries = Object.values(recentReminds);
+    if (expiries.length === 0) return;
+    const earliest = Math.min(...expiries);
+    const wait = Math.max(50, earliest - Date.now() + 50);
+    const id = window.setTimeout(() => {
+      setRecentReminds(prev => {
+        const now = Date.now();
+        const fresh: Record<number, number> = {};
+        for (const k in prev) if (prev[k] > now) fresh[+k] = prev[k];
+        return fresh;
+      });
+    }, wait);
+    return () => window.clearTimeout(id);
+  }, [recentReminds]);
+  const isReminderCooldown = (reqId?: number): boolean => !!reqId && (recentReminds[reqId] ?? 0) > Date.now();
+  const reminderCooldownSeconds = (reqId?: number): number => {
+    if (!reqId) return 0;
+    return Math.max(0, Math.ceil(((recentReminds[reqId] ?? 0) - Date.now()) / 1000));
+  };
+
   /* True while the edit-mode hydration fetch is in flight. Renders a
    * shimmer skeleton over Stage 1 so the user sees the form shape
    * resolving in rather than empty inputs flashing into populated. */
@@ -343,8 +410,52 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * Key: `${sub-tab}::${doc.code}`. Value: File + blob URL used by the
    * View / Download actions. Lifted here (parent) so sub-tab switches
    * don't drop in-progress uploads. */
-  type SegRefUpload = { file: File; url: string; name: string };
+  type SegRefUpload = { file: File | null; url: string; name: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
+
+  /* Persist a segment-rule reference upload to /segment-uploads/consignee/{id}
+   * so the Evidence Vault sees it. Mirrors AddCustomerModal's helper —
+   * without this round-trip the upload only lives in browser memory. */
+  const SUB_TO_CAT_CO: Record<string, 'kyc' | 'dd' | 'tl'> = {
+    'company-dd':    'dd',
+    'owner-kyc':     'kyc',
+    'trade-license': 'tl',
+  };
+  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
+    const ownerId = savedDbId || consignee?.db_id || null;
+    if (!ownerId) {
+      toast.error('Save first', 'Save the consignee before attaching reference documents.');
+      return;
+    }
+    const [sub, doc_code] = refKey.split('::');
+    const category = SUB_TO_CAT_CO[sub];
+    if (!category || !doc_code) return;
+    const fd = new FormData();
+    fd.append('category', category);
+    fd.append('doc_code', doc_code);
+    fd.append('doc_name', docName || doc_code);
+    fd.append('attachment', file);
+    try {
+      const { data } = await api.post(`/segment-uploads/consignee/${ownerId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const row = data?.data;
+      if (row?.attachment_url) {
+        setSegmentRefUploads(prev => {
+          const existing = prev[refKey];
+          if (existing?.url && existing.url.startsWith('blob:')) {
+            try { URL.revokeObjectURL(existing.url); } catch {}
+          }
+          return {
+            ...prev,
+            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name },
+          };
+        });
+      }
+    } catch (err: any) {
+      toast.error('Upload failed', err?.response?.data?.message ?? 'Could not save the attachment.');
+    }
+  };
 
   // Reset everything when modal opens fresh.
   useEffect(() => {
@@ -699,13 +810,21 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
 
     let cancelled = false;
-    Promise.all(
-      segRows.map(s =>
-        api.get(`/clm/segment-rules/for-segment/${s.id}`)
-          .then(r => r.data?.data ?? {})
-          .catch(() => ({}))
-      )
-    ).then(results => {
+    Promise.all([
+      Promise.all(
+        segRows.map(s =>
+          api.get(`/clm/segment-rules/for-segment/${s.id}`)
+            .then(r => r.data?.data ?? {})
+            .catch(() => ({}))
+        )
+      ),
+      /* Party filter for the consignee form: only trade docs whose
+       * `party` CSV mentions "Consignee" reach the td bucket. We
+       * intersect with segment-rule td below. */
+      api.get('/clm/trade-doc-library/for-party/consignee')
+        .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
+        .catch(() => [] as Array<{ code: string }>),
+    ]).then(([results, partyDocs]) => {
       if (cancelled) return;
       const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc'): SegDocRow[] => {
         const map = new Map<string, SegDocRow>();
@@ -721,17 +840,133 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         }
         return Array.from(map.values());
       };
+      const partyById = new Map<string, number>(
+        (partyDocs as Array<{ code: string; id: number }>).map(p => [p.code, p.id]),
+      );
+      const mergedTd = mergeCat('td').filter(d => partyById.has(d.code));
       setSegmentDocs({
         kyc: mergeCat('kyc'),
         dd:  mergeCat('dd'),
         tl:  mergeCat('tl'),
-        td:  mergeCat('td'),
+        td:  mergedTd,
         qc:  mergeCat('qc'),
       });
+      // Parallel state for the Send-for-Signature flow — same shape
+      // as in [[AddCustomerModal]] so Stage3TradeDocs is portable.
+      setTdDocs(mergedTd.map(d => ({
+        id: `td_${d.code}`,
+        db_id: partyById.get(d.code) ?? null,
+        name: d.name,
+        // No default selection — the user explicitly ticks the rows they
+        // want to send. Pre-checking Mandatory rows surprised users who
+        // opened the tab and saw signatures queued up without intent.
+        selected: false,
+        sent: false,
+        status: 'idle' as TdSigStatus,
+      })));
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, form1.segment, mSegmentIds]);
+
+  /* Poll the live signature-request list every 15s while the user is on
+   * Stage 3 → Trade Documents. The backend's ?sync=true triggers a Zoho
+   * round-trip per inprogress row, so completed signings, declines and
+   * recalls show up in the badges without the user having to refresh. */
+  useEffect(() => {
+    const partyId = consignee?.db_id ?? savedDbId;
+    if (!open || stage !== 3 || vaultTab !== 'trade' || !partyId) return;
+    let cancelled = false;
+    const fetchAndUpdate = async (withSync: boolean) => {
+      try {
+        const r = await api.get('/clm/signature-requests', {
+          params: { party_id: partyId, model_name: 'Consignee', sync: withSync ? 1 : 0 },
+        });
+        if (cancelled) return;
+        const rows: Array<{
+          id: number;
+          status: TdSigStatus;
+          trade_doc_ids: number[];
+          signed_document_paths?: Array<{ url?: string; path?: string; file_url?: string }> | string[] | null;
+          signed_document_path?: string | null;
+          signed_document_url?: string | null;
+          certificate_path?: string | null;
+          certificate_url?: string | null;
+          file_url?: string | null;
+        }> = Array.isArray(r.data?.data) ? r.data.data : [];
+        const map: Record<number, { status: TdSigStatus; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }> = {};
+        for (const row of rows) {
+          const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
+          for (let i = 0; i < ids.length; i++) {
+            const docId = Number(ids[i]);
+            if (!docId || map[docId]) continue;
+            // Resolve a usable URL from whatever the backend populated.
+            // Production sometimes returns signed_document_paths=null
+            // (the Zoho-download queue job hadn't run yet) while the
+            // webhook-set certificate_path is already there. Fall back
+            // through the chain so the View / Download buttons enable
+            // as soon as ANY signed artefact exists, instead of staying
+            // disabled until the queue worker catches up.
+            // Backend transforms the response with file_url() now (see
+            // ClmSignatureController::index), so .url / .file_url on each
+            // signed_document_paths entry is already absolute (Azure blob
+            // URL on prod, /storage/… on local). Prefer those over raw
+            // paths so we don't double-resolve.
+            const signedArr = row.signed_document_paths;
+            let rawSignedUrl: string | null = null;
+            if (Array.isArray(signedArr)) {
+              const entry = signedArr[i] as { url?: string; path?: string; file_url?: string } | string | undefined;
+              if (typeof entry === 'string') rawSignedUrl = entry;
+              else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
+            }
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
+            /* file_url and certificate_* are NOT fallbacks here. When
+             * Zoho mints the certificate before the signed PDF lands
+             * (signed_document_paths: []), Laravel's model accessor
+             * fills file_url with the cert URL — using that as a signed
+             * URL fallback silently routes the View / Download buttons
+             * to the certificate. Keep them strictly separate so the
+             * signed-doc buttons stay disabled until the real signed
+             * PDF appears, and the cert lives only on its own button. */
+            const rawCertUrl = row.certificate_url || row.certificate_path || null;
+            // Resolve via resolveFileUrl so the URL picks up the right
+            // base (VITE_API_URL on the deployed SPA, current origin in
+            // dev). Without this the View / Download icons get a bare
+            // /storage/… relative URL that 404s when the SPA origin
+            // differs from the API host.
+            map[docId] = {
+              status: row.status,
+              signatureRequestId: row.id,
+              signedUrl:      rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
+              certificateUrl: rawCertUrl   ? resolveFileUrl(rawCertUrl)   : undefined,
+            };
+          }
+        }
+        setSigStatusByDoc(map);
+      } catch { /* silent — polling failures shouldn't toast every 15s */ }
+    };
+    fetchAndUpdate(false);
+    const iv = window.setInterval(() => fetchAndUpdate(true), 15000);
+    return () => { cancelled = true; window.clearInterval(iv); };
+  }, [open, stage, vaultTab, consignee?.db_id, savedDbId]);
+
+  // Project the polled status into the tdDocs rows.
+  useEffect(() => {
+    setTdDocs(prev => prev.map(d => {
+      if (!d.db_id) return d;
+      const info = sigStatusByDoc[d.db_id];
+      if (!info) return d;
+      return {
+        ...d,
+        sent:   d.sent || info.status !== 'idle',
+        status: info.status,
+        signature_request_id: info.signatureRequestId,
+        signed_url:      info.signedUrl      ?? d.signed_url,
+        certificate_url: info.certificateUrl ?? d.certificate_url,
+      };
+    }));
+  }, [sigStatusByDoc]);
 
   // useMemo MUST come before any conditional return — React enforces a
   // stable hook order across renders. Putting `if (!open) return null;`
@@ -801,10 +1036,20 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const refetchKyc = async (id: number | null = savedDbId) => {
     if (!id) return;
     try {
-      const [docsR, ownersR] = await Promise.all([
+      const [docsR, ownersR, refsR] = await Promise.all([
         api.get(`/consignees/${id}/documents`),
         api.get(`/consignees/${id}/owners`),
+        api.get(`/segment-uploads/consignee/${id}`).catch(() => ({ data: { data: [] } })),
       ]);
+      const refs: any[] = Array.isArray(refsR.data?.data) ? refsR.data.data : [];
+      const hydrated: Record<string, SegRefUpload> = {};
+      const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-license' };
+      for (const r of refs) {
+        const sub = CAT_TO_SUB[r.category];
+        if (!sub || !r.doc_code) continue;
+        hydrated[`${sub}::${r.doc_code}`] = { file: null, url: r.attachment_url || '', name: r.attachment_name || '' };
+      }
+      if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
       const docs: any[] = Array.isArray(docsR.data?.data) ? docsR.data.data : [];
       const owners: any[] = Array.isArray(ownersR.data?.data) ? ownersR.data.data : [];
       setKycDocs(docs.map((x: any) => ({
@@ -1455,6 +1700,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               segmentDocs={segmentDocs}
               segmentRefUploads={segmentRefUploads}
               setSegmentRefUploads={setSegmentRefUploads}
+              persistSegmentRefUpload={persistSegmentRefUpload}
             />
           )}
           {stage === 3 && (
@@ -1470,6 +1716,45 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               sameAsCustomer={sameAsCustomer}
               segmentDocs={segmentDocs}
               segmentRefUploads={segmentRefUploads}
+              tdDocs={tdDocs.map(d => ({ ...d, cooldownActive: isReminderCooldown(d.signature_request_id) }))}
+              onToggleTd={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, selected: !d.selected } : d))}
+              onToggleAllTd={(checked) => setTdDocs(prev => prev.map(d => ({ ...d, selected: checked })))}
+              onSendTd={(id) => {
+                const row = tdDocs.find(d => d.id === id);
+                if (!row?.db_id) { toast.info('Not a library document', 'Pick a segment with mapped trade documents to enable signature sending.'); return; }
+                if (!(consignee?.db_id || savedDbId)) { toast.info('Save consignee first', 'Save the consignee before sending documents for signature.'); return; }
+                /* Resend semantics — see comment in AddCustomerModal's
+                 * matching handler. inprogress → nudge via remind API +
+                 * toast; everything else → re-open the wizard. Bundle-
+                 * aware cooldown stops a 3-doc bundle from triggering
+                 * three reminder emails. */
+                const reqId = row.signature_request_id;
+                if (row.sent && reqId && row.status === 'inprogress') {
+                  if (isReminderCooldown(reqId)) {
+                    toast.info('Already reminded', `One reminder covers every document in this bundle. Try again in ${reminderCooldownSeconds(reqId)}s.`);
+                    return;
+                  }
+                  const bundleCount = tdDocs.filter(d => d.signature_request_id === reqId).length;
+                  api.post(`/clm/signature-requests/${reqId}/remind`)
+                    .then(() => {
+                      setRecentReminds(prev => ({ ...prev, [reqId]: Date.now() + 60_000 }));
+                      toast.success('Reminder sent',
+                        bundleCount > 1
+                          ? `The signer was notified about all ${bundleCount} documents in this signature request.`
+                          : 'The signer has been notified.',
+                      );
+                    })
+                    .catch(err => toast.error('Reminder failed', err?.response?.data?.message ?? 'Could not send the reminder. Try again later.'));
+                  return;
+                }
+                setSendForSignature([row.db_id]);
+              }}
+              onSendSelectedTd={() => {
+                const ids = tdDocs.filter(d => d.selected && d.db_id).map(d => d.db_id!);
+                if (ids.length === 0) { toast.info('Nothing selected', 'Tick one or more documents under "Send for Signature" first.'); return; }
+                if (!(consignee?.db_id || savedDbId)) { toast.info('Save consignee first', 'Save the consignee before sending documents for signature.'); return; }
+                setSendForSignature(ids.slice(0, 10));
+              }}
             />
           )}
         </div>
@@ -1643,6 +1928,35 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           else if (kind === 'doc') setKycDocs(prev => prev.filter(d => d.id !== id));
           setKycDelModal({ open: false, kind: null, id: null });
         }
+      }}
+    />
+
+    {/* Stage 3 Trade Documents → Send for Signature (Zoho Sign).
+        Opens the Zoho Sign wizard pre-checked with the docs the user
+        picked. modelName='Consignee' tells the backend to resolve the
+        {{consignee.*}} token namespace from this consignee's data. */}
+    <SalesCustomerSendForSignatureModal
+      open={Array.isArray(sendForSignature)}
+      modelName="Consignee"
+      customer={(() => {
+        const partyId = (consignee?.db_id ?? savedDbId) ?? null;
+        if (!partyId) return null;
+        return {
+          id:      consignee?.id ?? `g-${partyId}`,
+          db_id:   partyId,
+          company: form1.companyName || '',
+          contact: form1.contactName || '',
+          email:   form1.email || '',
+        };
+      })()}
+      preselectedDocIds={sendForSignature ?? undefined}
+      onClose={() => setSendForSignature(null)}
+      onSent={(sentDocIds) => {
+        const sentSet = new Set(sentDocIds);
+        setTdDocs(prev => prev.map(d => (d.db_id && sentSet.has(d.db_id))
+          ? { ...d, sent: true, status: 'inprogress' as TdSigStatus }
+          : d));
+        setSendForSignature(null);
       }}
     />
     </>
@@ -1949,11 +2263,14 @@ const Stage1 = ({
               <input className="acm-input" placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
             </Field>
             <Field label="Consignee Segment" required error={errors.segment} fieldKey="segment">
+              {/* masterFormKit's MasterMultiSelect renders visible violet
+                  chips with × buttons + a checkbox-marked dropdown so
+                  multi-select is obvious. `value` prop is plural despite
+                  the singular name. */}
               <MasterMultiSelect
-                values={Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : [])}
+                value={Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : [])}
                 options={masters.segments.map(o => ({ value: o.value, label: o.label }))}
                 placeholder="Select Segment"
-                addMorePlaceholder="+ Add another segment"
                 invalid={!!errors.segment}
                 disabled={lock}
                 onChange={vs => set('segment', vs)}
@@ -2258,25 +2575,47 @@ const TL_PLACEHOLDER: TradePlaceholderRow[] = [
  * a single Upload icon; on file pick it flips to View / Download /
  * Delete using a blob URL the parent caches. Delete revokes the URL
  * and restores the initial Upload state. */
-function ConsigneeSegmentRefActions({ refKey, uploads, setUploads }: {
+function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, persistUpload, disabled = false }: {
   refKey: string;
-  uploads: Record<string, { file: File; url: string; name: string }>;
-  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+  docName: string;
+  uploads: Record<string, { file: File | null; url: string; name: string }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+  persistUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
+  /* When true (Same as Customer on), hide the Upload / Re-upload labels
+   * and show only View / Download — the consignee's segment-rule uploads
+   * are mirrored read-through from the linked customer, so writing here
+   * would split the mirror. */
+  disabled?: boolean;
 }) {
   const uploaded = uploads[refKey];
-  /* Single picker handler — also drives the Re-upload action after
-   * the initial file. The setter revokes the previous blob URL before
-   * swapping so we never leak. */
+  /* Single picker — drives both first-time Upload and Re-upload. Shows
+   * the blob URL immediately for snappy feedback and fires the server
+   * upload; the persist callback swaps the blob URL for the permanent
+   * attachment_url once it lands in segment_doc_uploads. */
   const onPick = (f: File | undefined) => {
     if (!f) return;
     setUploads(prev => {
       const existing = prev[refKey];
-      if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+      if (existing?.url && existing.url.startsWith('blob:')) {
+        try { URL.revokeObjectURL(existing.url); } catch {}
+      }
       return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
     });
+    void persistUpload(refKey, f, docName);
   };
 
   if (!uploaded) {
+    if (disabled) {
+      return (
+        <div className="acm-loc-actions">
+          <Tooltip label="Same as Customer is on — manage from the customer side.">
+            <span className="acm-loc-btn" style={{ opacity: 0.4, cursor: 'not-allowed' }} aria-label="Locked">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </span>
+          </Tooltip>
+        </div>
+      );
+    }
     return (
       <div className="acm-loc-actions">
         <Tooltip label="Upload">
@@ -2300,12 +2639,14 @@ function ConsigneeSegmentRefActions({ refKey, uploads, setUploads }: {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </a>
       </Tooltip>
-      <Tooltip label="Re-upload (replace file)">
-        <label className="acm-loc-btn" aria-label="Re-upload" style={{ cursor: 'pointer' }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
-        </label>
-      </Tooltip>
+      {!disabled && (
+        <Tooltip label="Re-upload (replace file)">
+          <label className="acm-loc-btn" aria-label="Re-upload" style={{ cursor: 'pointer' }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+          </label>
+        </Tooltip>
+      )}
     </div>
   );
 }
@@ -2354,7 +2695,7 @@ const Stage2 = ({
   sub, setSub, search, setSearch, docs, owners,
   onAddDoc, onEditDoc, onDeleteDoc, onAddOwner, onEditOwner, onDeleteOwner,
   form1, locations, consigneeCode, sameAsCustomer, segmentName, segmentDocs,
-  segmentRefUploads, setSegmentRefUploads,
+  segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload,
 }: {
   sub: KycSubTab;
   setSub: (s: KycSubTab) => void;
@@ -2378,8 +2719,9 @@ const Stage2 = ({
    *  uses segmentRefUploads for per-row file pickers. */
   segmentName: string;
   segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
-  segmentRefUploads: Record<string, { file: File; url: string; name: string }>;
-  setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+  segmentRefUploads: Record<string, { file: File | null; url: string; name: string }>;
+  setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+  persistSegmentRefUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
 }) => {
   const meta = KYC_SUB_META[sub];
   const isOwners = sub === 'owner-kyc';
@@ -2515,8 +2857,11 @@ const Stage2 = ({
                         <td>
                           <ConsigneeSegmentRefActions
                             refKey={refKey}
+                            docName={d.name}
                             uploads={segmentRefUploads}
                             setUploads={setSegmentRefUploads}
+                            persistUpload={persistSegmentRefUpload}
+                            disabled={sameAsCustomer}
                           />
                         </td>
                       </tr>
@@ -2628,8 +2973,11 @@ const Stage2 = ({
                           <td>
                             <ConsigneeSegmentRefActions
                               refKey={refKey}
+                              docName={tl.name}
                               uploads={segmentRefUploads}
                               setUploads={setSegmentRefUploads}
+                              persistUpload={persistSegmentRefUpload}
+                              disabled={sameAsCustomer}
                             />
                           </td>
                         </tr>
@@ -2697,7 +3045,224 @@ const Stage2 = ({
 };
 
 /* ─── Stage 3 — Evidence Vault ─── */
-const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwners, locations, sameAsCustomer, segmentDocs, segmentRefUploads }: {
+/* Stage 3 → Trade Documents → interactive table. Mirrors the Customer
+ * modal's Stage3TradeDocs — same row shape, same status badge styling,
+ * different launch context (signs as Consignee). Per-row Send and footer
+ * "Send Selected Documents for Signature" both open the Zoho wizard
+ * with the chosen library ids pre-checked. */
+function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSelected, sameAsCustomer }: {
+  docs: TdDocRow[];
+  onToggle: (id: string) => void;
+  onToggleAll: (checked: boolean) => void;
+  onSend: (id: string) => void;
+  onSendSelected: () => void;
+  /* When the consignee is flagged "Same as Customer", its Stage 3 Trade
+   * Documents come straight from the linked customer (the backend swaps
+   * party_id transparently). Sending a fresh signature request from the
+   * consignee side would split the mirror, so the Send / Send Selected
+   * controls are locked here too. */
+  sameAsCustomer: boolean;
+}) {
+  const selCount = docs.filter(d => d.selected).length;
+  // Roll-up "all signed" — every TD row has hit Zoho's completed state.
+  // When that's true, no further send is meaningful (Resend on a signed
+  // doc creates a fresh request against the archived PDF, which the
+  // per-row button already blocks). Use this to lock the bulk controls
+  // too — header select-all checkbox and footer "Send Selected" button.
+  const allSigned = docs.length > 0 && docs.every(d => d.status === 'completed');
+  const bulkLocked = sameAsCustomer || allSigned;
+  // Suppress the "all checked" visual once everything's signed so the
+  // header checkbox doesn't render ticked-but-disabled (confusing UX —
+  // looks like there's still work queued).
+  const allChecked = !allSigned && docs.length > 0 && selCount === docs.length;
+  return (
+    <div className="acm-kyc-card" style={{ marginTop: 12 }}>
+      {sameAsCustomer && (
+        <div style={{
+          padding: '10px 14px', background: '#ecfeff', borderBottom: '1px solid #cffafe',
+          color: '#155e75', fontSize: 12, fontWeight: 600,
+        }}>
+          Same as Customer is on — Trade Document signatures mirror the linked customer. Sending is disabled here; manage signatures on the customer side.
+        </div>
+      )}
+      <div className="acm-loc-table-wrap">
+        <table className="acm-loc-table">
+          <thead>
+            <tr>
+              <th>SR NO</th>
+              <th>DOCUMENT NAME</th>
+              <th>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    disabled={bulkLocked}
+                    ref={el => { if (el) el.indeterminate = !allSigned && selCount > 0 && selCount < docs.length; }}
+                    onChange={e => onToggleAll(e.target.checked)}
+                  />
+                  SEND FOR SIGNATURE
+                </label>
+              </th>
+              <th>DOCUMENT STATUS</th>
+              <th>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {docs.length === 0 && (
+              <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: 18 }}>
+                No buyer/consignee-applicable trade documents — pick a segment with mapped TD docs on Stage 1.
+              </td></tr>
+            )}
+            {docs.map((d, i) => {
+              const s = d.status ?? 'idle';
+              const b = TD_STATUS_BADGE[s];
+              return (
+                <tr key={d.id}>
+                  <td style={{ color: '#9ca3af', fontWeight: 600 }}>{i + 1}</td>
+                  <td style={{ fontWeight: 600, color: '#1f2937' }}>{d.name}</td>
+                  <td>
+                    {(() => {
+                      // Once `completed` the signer has finished — a
+                      // Resend would create a brand-new request against
+                      // the archived PDF. Lock the button + checkbox.
+                      // declined / recalled / expired stay re-sendable.
+                      // Same-as-Customer also locks the controls — see
+                      // the banner above for the rationale.
+                      const isSigned   = d.status === 'completed';
+                      const onCooldown = !!d.cooldownActive;
+                      const locked     = isSigned || sameAsCustomer || onCooldown;
+                      return (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                          <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} disabled={locked} />
+                          <button
+                            type="button"
+                            onClick={() => { if (!locked) onSend(d.id); }}
+                            disabled={locked}
+                            title={
+                              sameAsCustomer ? 'Same as Customer is on — manage signatures on the customer side.'
+                              : isSigned     ? 'This document has already been signed.'
+                              : onCooldown   ? 'Reminder just sent — one reminder covers every document in this bundle.'
+                              : (d.sent ? 'Resend for signature' : 'Send for signature')
+                            }
+                            style={{
+                              padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                              background: locked ? '#f1f5f9' : (d.sent ? '#f1f5f9' : 'linear-gradient(135deg, #047857 0%, #059669 25%, #10b981 55%, #2dd4bf 85%, #5eead4 100%)'),
+                              color:      locked ? '#94a3b8' : (d.sent ? '#475569' : '#fff'),
+                              border: '1px solid ' + (locked ? '#e2e8f0' : (d.sent ? '#cbd5e1' : '#059669')),
+                              cursor: locked ? 'not-allowed' : 'pointer',
+                              opacity: locked ? 0.6 : 1,
+                            }}
+                          >{onCooldown ? 'Sent ✓' : (d.sent ? 'Resend' : 'Send')}</button>
+                        </div>
+                      );
+                    })()}
+                  </td>
+                  <td>
+                    <span style={{
+                      display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+                      fontSize: 11, fontWeight: 700,
+                      background: b.bg, color: b.fg,
+                    }}>{b.label}</span>
+                  </td>
+                  <td>
+                    <div style={{ display: 'inline-flex', gap: 6 }}>
+                      <Tooltip label={d.signed_url ? 'View signed document' : 'View document'}>
+                        <a
+                          href={d.signed_url || '#'}
+                          target={d.signed_url ? '_blank' : undefined}
+                          rel={d.signed_url ? 'noreferrer' : undefined}
+                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 26, height: 26, borderRadius: 6,
+                            background: '#eef2ff', color: '#4338ca',
+                            opacity: d.signed_url ? 1 : 0.5,
+                            cursor: d.signed_url ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </a>
+                      </Tooltip>
+                      <Tooltip label={d.signed_url ? 'Download signed document' : 'Download document'}>
+                        <a
+                          href={d.signed_url || '#'}
+                          download={d.signed_url ? '' : undefined}
+                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 26, height: 26, borderRadius: 6,
+                            background: '#ecfdf5', color: '#10b981',
+                            opacity: d.signed_url ? 1 : 0.5,
+                            cursor: d.signed_url ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        </a>
+                      </Tooltip>
+                      {/* Certificate of Completion — third action button,
+                          only shown once the request is completed and Zoho
+                          has minted the certificate. Distinct cyan styling
+                          so it doesn't blend with the View / Download
+                          buttons that target the signed PDF. */}
+                      {d.status === 'completed' && d.certificate_url && (
+                        <Tooltip label="Download Certificate of Completion">
+                          <a
+                            href={d.certificate_url}
+                            download=""
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: 26, height: 26, borderRadius: 6,
+                              background: '#cffafe', color: '#0e7490',
+                              border: '1px solid #67e8f9',
+                              cursor: 'pointer', textDecoration: 'none',
+                            }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="8" r="6"/>
+                              <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+                            </svg>
+                          </a>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {docs.length > 0 && !sameAsCustomer && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, padding: 14 }}>
+          <button
+            type="button"
+            onClick={() => { if (!bulkLocked) onSendSelected(); }}
+            disabled={bulkLocked}
+            title={allSigned ? 'All documents have already been signed.' : undefined}
+            style={{
+              padding: '9px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700,
+              background: bulkLocked
+                ? '#f1f5f9'
+                : 'linear-gradient(135deg, #047857 0%, #059669 25%, #10b981 55%, #2dd4bf 85%, #5eead4 100%)',
+              color: bulkLocked ? '#94a3b8' : '#fff',
+              border: bulkLocked ? '1px solid #e2e8f0' : 'none',
+              cursor: bulkLocked ? 'not-allowed' : 'pointer',
+              opacity: bulkLocked ? 0.7 : 1,
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            Send Selected Documents for Signature
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwners, locations, sameAsCustomer, segmentDocs, segmentRefUploads, tdDocs, onToggleTd, onToggleAllTd, onSendTd, onSendSelectedTd }: {
   locations: LocationRow[];
   vaultTab: VaultTab;
   setVaultTab: (t: VaultTab) => void;
@@ -2708,7 +3273,12 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
   kycOwners: KycOwnerRow[];
   sameAsCustomer: boolean;
   segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
-  segmentRefUploads: Record<string, { file: File; url: string; name: string }>;
+  segmentRefUploads: Record<string, { file: File | null; url: string; name: string }>;
+  tdDocs: TdDocRow[];
+  onToggleTd: (id: string) => void;
+  onToggleAllTd: (checked: boolean) => void;
+  onSendTd: (id: string) => void;
+  onSendSelectedTd: () => void;
 }) => {
   const ddCount = kycDocs.filter(d => d.kind === 'dd').length;
   const tlCount = kycDocs.filter(d => d.kind === 'tl').length;
@@ -2833,43 +3403,15 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
 
       {vaultTab === 'trade' && (
         <>
-          <SectionHeader icon={<IconVault />} title="Trade Documents" sub="Shipping bills, BL/AWB, packing lists & export evidence" accent="#10b981" />
-          {/* Design-only Trade Documents reference table — same TL
-              placeholder set the Stage 2 Trade Licence sub-tab uses
-              so the user gets a consistent reference across the
-              wizard. Real trade documents will populate this table
-              once the PI / Invoice / Shipping flows execute against
-              this consignee. */}
-          <div className="acm-kyc-card" style={{ marginTop: 12 }}>
-            <div className="acm-loc-table-wrap">
-              <table className="acm-loc-table">
-                <thead>
-                  <tr>
-                    <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-                    <th>ISSUING AUTHORITY</th><th>EXPIRY</th><th>ATTACHMENT</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {TL_PLACEHOLDER.map((tl, i) => (
-                    <tr key={tl.code} className="acm-loc-placeholder-row">
-                      <td>{String(i + 1).padStart(2, '0')}</td>
-                      <td><span className="acm-kyc-code">{tl.code}</span></td>
-                      <td style={{ fontWeight: 700 }}>{tl.name}</td>
-                      <td>{tl.authority}</td>
-                      <td><span className={tl.expiry === 'N/A' ? 'acm-kyc-exp na' : 'acm-kyc-exp'}>{tl.expiry}</span></td>
-                      <td><span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Pending upload</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <div className="acm-trade-empty" style={{ marginTop: 12, fontSize: 12 }}>
-            <IconVault size={20} />
-            <div className="acm-trade-empty-sub" style={{ marginLeft: 8 }}>
-              Above is the standard reference list. Real trade documents will populate automatically as PI / Invoice / Shipping flows execute against this consignee.
-            </div>
-          </div>
+          <SectionHeader icon={<IconVault />} title="Trade Documents" sub="Send for digital signature via Zoho Sign" accent="#10b981" />
+          <ConsigneeTradeDocsTable
+            docs={tdDocs}
+            onToggle={onToggleTd}
+            onToggleAll={onToggleAllTd}
+            onSend={onSendTd}
+            onSendSelected={onSendSelectedTd}
+            sameAsCustomer={sameAsCustomer}
+          />
         </>
       )}
     </>
@@ -4669,7 +5211,14 @@ const SCOPED_CSS = `
   flex: 1; min-height: 0; overflow-y: auto;
   padding: 6px 20px 14px;
   display: flex; flex-direction: column; gap: 8px;
+  /* Visible thin scrollbar mirroring [[AddVendorModal]]'s .avm-body so
+     Stage 2/3 tabs (Company DD, Owner KYC, Trade Licence, Evidence
+     Vault) show a styled rail when the table grows past the body. */
+  scrollbar-width: thin; scrollbar-color: #6ee7b7 transparent;
 }
+.acm-wiz-body::-webkit-scrollbar { width: 8px; }
+.acm-wiz-body::-webkit-scrollbar-thumb { background: #6ee7b7; border-radius: 99px; }
+.acm-wiz-body::-webkit-scrollbar-thumb:hover { background: #10b981; }
 
 /* Linked customer summary */
 .acm-linked {
@@ -5504,6 +6053,11 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 1px 2px rgba(15,42,35,.04);
+  /* Don't let the flex column body squash the card below its
+     intrinsic height — without this, the table can be clipped at
+     the bottom and .acm-wiz-body's overflow-y never trips, so the
+     user has no scrollbar to reach hidden rows. */
+  flex-shrink: 0;
 }
 .acm-kyc-head {
   background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
@@ -5669,23 +6223,16 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   background: rgba(16,185,129,.35); border-radius: 999px;
 }
 .acm-loc-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
-/* Stage 2 KYC tables — cap the body height so a long list of
-   documents / owners scrolls inside the card instead of pushing the
-   modal footer off-screen. The header strip stays sticky so the user
-   can always see which column they're scrolling through. Both axes
-   scroll: vertical for many rows, horizontal for many columns on
-   narrow viewports. */
+/* Stage 2 KYC tables — let the table grow with its rows and rely on
+   the outer .acm-wiz-body as the single scroll surface. An inner
+   max-height here used to capture wheel events when the cursor was
+   over the table, so users on Stage 2 (especially edit mode with many
+   rows) couldn't scroll the modal at all. The footer stays anchored
+   because .acm-wiz-footer is outside .acm-wiz-body with flex-shrink: 0.
+   Horizontal scroll is still local to the wrap on narrow viewports. */
 .acm-kyc-body .acm-loc-table-wrap {
-  max-height: 360px;
-  overflow-y: auto;
   overflow-x: auto;
   scrollbar-width: thin;
-}
-.acm-kyc-body .acm-loc-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: #f9fafb;
 }
 [data-bs-theme="dark"] .acm-kyc-body .acm-loc-table thead th { background: #103129; }
 .acm-loc-table {
@@ -5849,7 +6396,9 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-btn-light:hover { background: #234d42; }
 
 [data-bs-theme="dark"] .acm-wiz        { background: #0f2a23; }
-[data-bs-theme="dark"] .acm-wiz-body   { background: #0a1f1a; }
+[data-bs-theme="dark"] .acm-wiz-body   { background: #0a1f1a; scrollbar-color: #047857 transparent; }
+[data-bs-theme="dark"] .acm-wiz-body::-webkit-scrollbar-thumb { background: #047857; }
+[data-bs-theme="dark"] .acm-wiz-body::-webkit-scrollbar-thumb:hover { background: #10b981; }
 [data-bs-theme="dark"] .acm-wiz-pinned-top { background: #0a1f1a; border-bottom-color: rgba(16,185,129,0.20); }
 [data-bs-theme="dark"] .acm-linked     { background: linear-gradient(110deg, #0f2a23, #103129, #134e3a); border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .acm-linked-label { color: #6ee7b7; }

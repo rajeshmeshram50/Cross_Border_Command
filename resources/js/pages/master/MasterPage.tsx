@@ -657,6 +657,61 @@ function MasterPageInner({
           continue;
         }
       }
+      /* ── Security validators (text + textarea only) ──────────────
+       * XSS — angle brackets never legitimately appear in master
+       * names, descriptions, codes, etc. Blocking them at the form
+       * boundary kills <script>…</script>, <img onerror=…>, and
+       * every other HTML-injection payload regardless of which master
+       * is being edited.
+       *
+       * SQL injection — block the signature patterns a tester would
+       * paste (' OR 1=1 --, ; DROP …, UNION SELECT, javascript:,
+       * inline event handlers). Backend ORM already parameterises
+       * queries, but rejecting the payload up front prevents the
+       * data from being stored verbatim and surfacing later in
+       * exports / reports.
+       *
+       * Meaningful input — required free-text fields can be bypassed
+       * by submitting "...", "!!!", "---", or other symbol-only
+       * strings (raw.trim() leaves them non-empty). Require at least
+       * one letter or digit so "Segment Name" can't be saved as ":::".
+       *
+       * Name whitelist — per-slug list of fields that must stay in a
+       * conservative letters/digits/space/basic-punctuation charset
+       * (covers Segment Name, UOM Title & Short Code, Condition
+       * Title, Haz Class Name, Packaging Material). Other free-text
+       * fields (descriptions, addresses, action-required notes,
+       * incoterm full names) keep their broader charset. */
+      if (f.t === 'text' || f.t === 'textarea') {
+        if (/[<>]/.test(raw)) {
+          errs[f.n] = `${f.l} cannot contain HTML characters (< or >)`;
+          continue;
+        }
+        if (/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i.test(raw)) {
+          errs[f.n] = `${f.l} contains disallowed patterns (possible SQL/JS injection)`;
+          continue;
+        }
+        if (f.r && !/[A-Za-z0-9]/.test(raw)) {
+          errs[f.n] = `${f.l} must contain meaningful text (letters or numbers, not only symbols)`;
+          continue;
+        }
+        /* Identifier-style fields (name, title, code, short_code, role
+         * names, etc.) get a stricter charset whitelist so users can't
+         * paste emoji, symbol soup, or anything outside basic Latin
+         * punctuation into the master's primary label. The list is by
+         * field name rather than slug, so the rule auto-extends to any
+         * future master that uses one of these conventional names. */
+        const NAME_FIELD_NAMES = new Set([
+          'name', 'title', 'role_name', 'behaviour_name', 'category_name',
+          'short_code', 'code', 'license_code', 'cat_code', 'iso_code', 'state_code',
+        ]);
+        if (NAME_FIELD_NAMES.has(f.n)) {
+          if (!/^[A-Za-z0-9\s\-.,()&/'%]+$/.test(raw)) {
+            errs[f.n] = `${f.l} may only contain letters, numbers, spaces, and . , - ( ) & / ' %`;
+            continue;
+          }
+        }
+      }
       // Future-only date guard — kicks in for fields like Warranty
       // Expiry where a backdated value doesn't make sense. Lexical
       // YYYY-MM-DD compare is fine because that's what the picker
@@ -699,8 +754,44 @@ function MasterPageInner({
          * rule (^[0-9]{4,10}$) so the user sees an instant inline error
          * instead of a server-side 422 round-trip. */
         errs[f.n] = 'Invalid HSN / SAC — 4 to 10 digit numeric code';
+      } else if (cfg.slug === 'hsn_codes' && f.n === 'description') {
+        /* HSN/SAC commodity descriptions are short product names like
+         * "Almonds — Shelled" or "Sesame Seeds, Whole". Allow letters,
+         * digits, spaces, and the punctuation real descriptions actually
+         * use (hyphen, em/en dash, period, comma, parentheses, ampersand,
+         * slash, apostrophe, percent). Block everything else so a user
+         * can't paste markup, control characters, or symbol soup. */
+        if (!/^[A-Za-z0-9\s\-—–.,()&/'%]+$/.test(raw)) {
+          errs[f.n] = "Description may only contain letters, numbers, spaces, and . , - ( ) & / ' %";
+        } else if (raw.length > 150) {
+          errs[f.n] = 'Description must be 150 characters or fewer';
+        }
       }
     }
+
+    /* Duplicate-row check — every master config lists its unique columns
+     * in cfg.uFields (e.g. segments uFields=['title']). Before the form
+     * hits the server, scan the in-memory `records` list and reject if
+     * another row already has the same value (case-insensitive). Edit-
+     * mode skips the row being edited so its own name doesn't collide
+     * with itself. Surfaces a clear inline error on the duplicate field
+     * instead of waiting for a 422 round-trip. */
+    if (cfg.uFields && cfg.uFields.length > 0 && records.length > 0) {
+      for (const uName of cfg.uFields) {
+        if (errs[uName]) continue; // already failed an earlier check
+        const dupRaw = String(fd.get(uName) ?? '').trim();
+        if (!dupRaw) continue;
+        const dup = records.some(r => {
+          if (editingId != null && r.id === editingId) return false;
+          return String(r[uName] ?? '').trim().toLowerCase() === dupRaw.toLowerCase();
+        });
+        if (dup) {
+          const fLabel = cfg.fields.find(ff => ff.n === uName)?.l || uName;
+          errs[uName] = `${fLabel} "${dupRaw}" already exists — pick a different value`;
+        }
+      }
+    }
+
     return errs;
   };
 
@@ -1678,6 +1769,30 @@ function MasterPageInner({
         }
         [data-bs-theme="dark"] .mp-creator-sub,
         [data-layout-mode="dark"] .mp-creator-sub { color: rgba(255,255,255,0.55) !important; }
+
+        /* Master list table — clamp long cell values to one line with
+         * ellipsis so a 500-char Segment Name (or pasted SQL payload)
+         * doesn't blow the row height out and break the table grid.
+         * The first-column renderer already adds a hover tooltip for its
+         * truncated value; for other columns, browsers show the title
+         * attribute on hover when it's present. */
+        .master-list-card .table tbody td,
+        .master-list-card .table thead th { vertical-align: middle; }
+        .master-list-card .table tbody td {
+          max-width: 260px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        /* Action / status / pill columns stay nowrap with no width clamp
+         * so the buttons and badges aren't truncated. */
+        .master-list-card .table tbody td:has(.btn),
+        .master-list-card .table tbody td:has(.badge),
+        .master-list-card .table tbody td:has(.mp-status-active),
+        .master-list-card .table tbody td:has(.mp-status-inactive) {
+          max-width: none;
+          overflow: visible;
+        }
       `}</style>
 
 
@@ -1917,7 +2032,7 @@ function MasterPageInner({
       {/* Main card — search + Add New row, then table */}
       <Row>
         <Col xs={12}>
-          <Card className={`shadow-sm ${(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities') ? 'master-page-card' : ''}`} style={{ borderRadius: 16 }}>
+          <Card className={`shadow-sm master-list-card ${(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities') ? 'master-page-card' : ''}`} style={{ borderRadius: 16 }}>
             <CardBody>
               {/* Designations-only: KPI strip + hierarchy chips. */}
               {cfg.slug === 'designations' && (
@@ -3965,7 +4080,10 @@ function renderField(
               className="d-flex align-items-start gap-2"
               style={{
                 padding: '10px 12px',
-                border: `1px solid ${checked ? 'var(--vz-primary)' : 'var(--vz-border-color)'}`,
+                // Stronger unchecked border in light mode so each option
+                // reads as a tappable card, not a label floating in space.
+                // Dark mode still uses the theme variable.
+                border: `1.5px solid ${checked ? 'var(--vz-primary)' : '#94a3b8'}`,
                 background: checked ? 'rgba(64,81,137,0.05)' : 'transparent',
                 borderRadius: 8,
                 cursor: viewOnly ? 'not-allowed' : 'pointer',

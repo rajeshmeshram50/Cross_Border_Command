@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClmSegment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 /**
@@ -66,6 +67,18 @@ class ClmSegmentController extends Controller
             'status'            => ['nullable', Rule::in(ClmSegment::STATUSES)],
         ]);
 
+        // Reject duplicate segment name per client (case-insensitive).
+        $name = trim($data['name']);
+        $exists = ClmSegment::where('client_id', $user->client_id)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->exists();
+        if ($exists) {
+            return response()->json([
+                'status'  => false,
+                'message' => "A segment named \"{$name}\" already exists. Pick a different name.",
+            ], 409);
+        }
+
         $row = DB::transaction(function () use ($user, $data) {
             return ClmSegment::create([
                 'client_id'         => $user->client_id,
@@ -104,6 +117,21 @@ class ClmSegmentController extends Controller
         ]);
 
         if (isset($data['name'])) $data['name'] = trim($data['name']);
+
+        // Reject rename to a duplicate (case-insensitive, excluding self).
+        if (isset($data['name'])) {
+            $clash = ClmSegment::where('client_id', $user->client_id)
+                ->where('id', '!=', $row->id)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
+                ->exists();
+            if ($clash) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => "Another segment named \"{$data['name']}\" already exists. Pick a different name.",
+                ], 409);
+            }
+        }
+
         $data['updated_by'] = $user->id;
         $row->update($data);
 
@@ -118,6 +146,68 @@ class ClmSegmentController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
         $row  = ClmSegment::where('client_id', $user->client_id)->findOrFail($id);
+
+        // Block delete if this segment is referenced anywhere else in the
+        // project. Each check is guarded by Schema::hasTable so the endpoint
+        // doesn't crash in environments that haven't run a particular
+        // migration yet (e.g. staging without consolidate-segments).
+        $usedIn = [];
+        if (Schema::hasTable('clm_segment_rules')
+            && DB::table('clm_segment_rules')->where('segment_id', $row->id)->exists()) {
+            $usedIn[] = 'Segment Rules';
+        }
+        if (Schema::hasTable('vendors')
+            && Schema::hasColumn('vendors', 'segment_id')
+            && DB::table('vendors')->where('segment_id', $row->id)->exists()) {
+            $usedIn[] = 'Vendors';
+        }
+        if (Schema::hasTable('products')
+            && Schema::hasColumn('products', 'segment_id')
+            && DB::table('products')->where('segment_id', $row->id)->exists()) {
+            $usedIn[] = 'Products';
+        }
+        if (Schema::hasTable('customers')
+            && Schema::hasColumn('customers', 'segment_id')
+            && DB::table('customers')->where('segment_id', $row->id)->exists()) {
+            $usedIn[] = 'Customers';
+        }
+        // Some legacy tables store segment as a string (name or id-as-string).
+        if (Schema::hasTable('master_vendor_directory')
+            && Schema::hasColumn('master_vendor_directory', 'segment_id')
+            && DB::table('master_vendor_directory')
+                ->where(function ($q) use ($row) {
+                    $q->where('segment_id', (string) $row->id)
+                      ->orWhere('segment_id', $row->name);
+                })
+                ->exists()) {
+            $usedIn[] = 'Vendor Directory';
+        }
+
+        // String-typed `segment` columns — these store the segment NAME
+        // (case-sensitive match — the segment name itself is the canonical
+        // string key these tables capture).
+        $nameStringTables = [
+            ['table' => 'customers',              'col' => 'segment', 'label' => 'Customers'],
+            ['table' => 'consignees',             'col' => 'segment', 'label' => 'Consignees'],
+            ['table' => 'clm_tnc_library',        'col' => 'segment', 'label' => 'T&C Library'],
+            ['table' => 'clm_agreement_library',  'col' => 'segment', 'label' => 'Agreement Library'],
+        ];
+        foreach ($nameStringTables as $t) {
+            if (Schema::hasTable($t['table'])
+                && Schema::hasColumn($t['table'], $t['col'])
+                && DB::table($t['table'])->where($t['col'], $row->name)->exists()) {
+                $usedIn[] = $t['label'];
+            }
+        }
+
+        if (!empty($usedIn)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This segment is in use by ' . implode(', ', $usedIn) . '. Remove or reassign those records before deleting.',
+                'used_in' => $usedIn,
+            ], 409);
+        }
+
         $row->delete();
 
         return response()->json(['status' => true, 'message' => 'Deleted']);
@@ -136,12 +226,26 @@ class ClmSegmentController extends Controller
     private function nextCode(int $clientId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-
-        $maxNum = (int) ClmSegment::where('client_id', $clientId)
-            ->where('code', 'like', 'S-%')
-            ->selectRaw("COALESCE(MAX(CAST(SUBSTRING(code FROM 3) AS INTEGER)), 0) AS max_num")
-            ->value('max_num');
-
-        return sprintf('S-%03d', $maxNum + 1);
+        // Don't rely on count(+1) — the sequence can have gaps (e.g. after
+        // the consolidate-segments migration merged rows from the legacy
+        // master_segments table, or when a user has deleted+re-added).
+        // Pull the actual max S-NNN and increment past it; skip any
+        // collisions just to be doubly safe.
+        $codes = ClmSegment::where('client_id', $clientId)->pluck('code')->all();
+        $maxN  = 0;
+        $taken = [];
+        foreach ($codes as $c) {
+            if (preg_match('/^S-(\d+)$/', (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $maxN) $maxN = $n;
+            }
+            $taken[(string) $c] = true;
+        }
+        $n = $maxN;
+        do {
+            $n++;
+            $code = sprintf('S-%03d', $n);
+        } while (isset($taken[$code]));
+        return $code;
     }
 }

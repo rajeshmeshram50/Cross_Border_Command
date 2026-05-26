@@ -1,9 +1,53 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useEditor, EditorContent, Editor } from '@tiptap/react';
+import { useEditor, EditorContent, Editor, Mark, mergeAttributes } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
+import TextStyle from '@tiptap/extension-text-style';
+import Color from '@tiptap/extension-color';
+import Highlight from '@tiptap/extension-highlight';
+import Link from '@tiptap/extension-link';
+import Subscript from '@tiptap/extension-subscript';
+import Superscript from '@tiptap/extension-superscript';
+
+/**
+ * Custom FontSize mark — TipTap ships no first-party font-size extension,
+ * but the Trade Document editor has one in its toolbar (size 1–7), so to
+ * match parity we add a tiny mark that emits `<span style="font-size:Npt">`.
+ * Lives in this file because it's a one-line semantic addition; promoting
+ * it to a shared util would just be churn.
+ */
+const FontSize = Mark.create({
+  name: 'fontSize',
+  addAttributes() {
+    return {
+      size: {
+        default: null,
+        parseHTML: (el) => el.style.fontSize?.replace(/['"]/g, '') || null,
+        renderHTML: (attrs) => (attrs.size ? { style: `font-size: ${attrs.size}` } : {}),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ style: 'font-size' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', mergeAttributes(HTMLAttributes), 0];
+  },
+  addCommands() {
+    return {
+      setFontSize:
+        (size: string) =>
+        ({ commands }: any) =>
+          commands.setMark(this.name, { size }),
+      unsetFontSize:
+        () =>
+        ({ commands }: any) =>
+          commands.unsetMark(this.name),
+    } as any;
+  },
+});
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
@@ -41,22 +85,24 @@ export type AgrLib = {
   content: string | null;
 };
 
-const BUYER_SIDE = [
-  { value: 'Buyer',             label: 'Buyer',            icon: '👤' },
-  { value: 'Consignee Only',    label: 'Consignee Only',   icon: '🚚' },
-  { value: 'Buyer + Consignee', label: 'Buyer + Consignee',icon: '👥' },
+/* Applicable Party — identical to the Trade Document Draft page's
+ * checkbox grid (`PARTY_BUYER_CONSIGNEE` / `PARTY_SUPPLIER`) so the
+ * Agreement and Trade Document forms read as a single visual family.
+ * Selected values concatenate into the agreement_library.party CSV. */
+const PARTY_BUYER_CONSIGNEE = [
+  { value: 'Buyer',     label: 'Buyer',     icon: '👤' },
+  { value: 'Consignee', label: 'Consignee', icon: '🚚' },
 ];
-const SUPPLIER_SIDE = [
-  { value: 'Supplier — Material', label: 'Supplier — Material', icon: '📦' },
-  { value: 'Supplier — Logistic', label: 'Supplier — Logistic', icon: '🚛' },
-];
-const COMBINED_SCOPE = [
-  { value: 'Buyer + Supplier (Material)',       label: 'Buyer + Supplier (Material)',     icon: '🤝' },
-  { value: 'Buyer + Consignee + Supplier',      label: 'Buyer + Consignee + Supplier',    icon: '🌐' },
+const PARTY_SUPPLIER = [
+  { value: 'Supplier-Material',       label: 'Material',       icon: '📦' },
+  { value: 'Supplier-Logistic',       label: 'Logistic',       icon: '🚛' },
+  { value: 'Supplier-Tech',           label: 'Tech',           icon: '💻' },
+  { value: 'Supplier-Advisory',       label: 'Advisory',       icon: '📊' },
+  { value: 'Supplier-Strategic Risk', label: 'Strategic Risk', icon: '⚠️' },
 ];
 
 const STEPS = [
-  { key: 1, label: 'Agreement Basic Details', sub: 'Type, title, parties & signing' },
+  { key: 1, label: 'Agreement Basic Details', sub: 'Type, title, parties' },
   { key: 2, label: 'Draft Agreement Content', sub: 'Rich text editor & placeholders' },
 ];
 
@@ -87,15 +133,6 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   const [purpose, setPurpose]             = useState('');
   const [parties, setParties]             = useState<Set<string>>(new Set());
   const [segment, setSegment]             = useState<string>('');
-
-  // Signing workflow — backend `signing` is derived from these UI-facing
-  // flags. The rest are presentation-only and travel with the content as a
-  // small metadata block so they're not lost on save.
-  const [sequential, setSequential]       = useState(true);
-  const [digitalSig, setDigitalSig]       = useState(true);
-  const [validityPeriod, setValidityPeriod] = useState('1 Year');
-  const [renewalType, setRenewalType]     = useState('Auto-Renew');
-  const [noticePeriod, setNoticePeriod]   = useState('30 Days');
 
   // Step 2 fields
   const [content, setContent]                 = useState('');
@@ -129,15 +166,6 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       setParties(new Set((existing.party ?? '').split(',').map(s => s.trim()).filter(Boolean)));
       setSegment(existing.segment ?? '');
       setContent(existing.content ?? '');
-      // Try to recover the previously-saved signing metadata from the
-      // leading <!-- AGW-META: {...} --> comment we embed on save. If the
-      // comment isn't present (older rows), keep the defaults.
-      const meta = parseMetaFromContent(existing.content ?? '');
-      setSequential(meta?.sequential ?? (existing.signing ?? true));
-      setDigitalSig(meta?.digitalSig ?? (existing.signing ?? true));
-      setValidityPeriod(meta?.validityPeriod ?? '1 Year');
-      setRenewalType(meta?.renewalType ?? 'Auto-Renew');
-      setNoticePeriod(meta?.noticePeriod ?? '30 Days');
     } else {
       setAgreementType('');
       setTitle('');
@@ -146,11 +174,6 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       setParties(new Set());
       setSegment('');
       setContent('');
-      setSequential(true);
-      setDigitalSig(true);
-      setValidityPeriod('1 Year');
-      setRenewalType('Auto-Renew');
-      setNoticePeriod('30 Days');
     }
     if (editor) editor.commands.setContent(existing?.content || '<p></p>', { emitUpdate: false });
   }, [open, existing, editor]);
@@ -193,7 +216,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   };
 
   const allPartyValues = useMemo(
-    () => [...BUYER_SIDE, ...SUPPLIER_SIDE, ...COMBINED_SCOPE].map(p => p.value),
+    () => [...PARTY_BUYER_CONSIGNEE, ...PARTY_SUPPLIER].map(p => p.value),
     [],
   );
   const allPartiesSelected = useMemo(
@@ -228,23 +251,25 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     setSaving(true);
     // Strip any previous meta comment from the editor's content so we don't
     // accumulate duplicates on every edit, then prepend a fresh one.
+    // The Signing Workflow / Expiry Conditions section was removed from
+    // the wizard — agreements no longer carry signing metadata in their
+    // content blob. stripMetaFromContent still runs so legacy rows
+    // (drafted before the cut) load cleanly without the embedded
+    // <!-- AGW-META --> comment leaking back into the editor.
     const strippedContent = stripMetaFromContent(content?.trim() || '');
-    const meta = { sequential, digitalSig, validityPeriod, renewalType, noticePeriod };
-    const metaComment = `<!-- AGW-META: ${JSON.stringify(meta)} -->`;
     const purposeBlock = purpose.trim()
       ? `<p><strong>Purpose:</strong> ${escapeHtml(purpose.trim())}</p>`
       : '';
-    const signingLabel = [sequential ? 'Sequential' : null, digitalSig ? 'Digital' : null].filter(Boolean).join(' · ') || 'None';
-    const signingBlock = `<p><strong>Signing:</strong> ${signingLabel} · <strong>Validity:</strong> ${escapeHtml(validityPeriod)} · <strong>Renewal:</strong> ${escapeHtml(renewalType)} · <strong>Notice:</strong> ${escapeHtml(noticePeriod)}</p>`;
-    const finalContent = (metaComment + purposeBlock + signingBlock + strippedContent) || null;
-    // Backend `signing` is true whenever any signing flow is enabled
-    const signingFlag = sequential || digitalSig;
+    const finalContent = (purposeBlock + strippedContent) || null;
     const payload: Omit<AgrLib, 'id' | 'code'> = {
       agreement_type: agreementType.trim(),
       title:          title.trim(),
       party:          Array.from(parties).join(', '),
       regulatory,
-      signing:        signingFlag,
+      // Backend column still exists but is hard-coded false since the
+      // wizard no longer exposes a signing-workflow toggle. A separate
+      // Send-for-Signature flow drives Zoho Sign when needed.
+      signing:        false,
       segment:        regulatory === 'highly' ? (segment.trim() || null) : null,
       agr_status:     'Active',
       content:        finalContent,
@@ -457,9 +482,9 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 </div>
 
                 <div className="agw-party-row">
-                  <div className="agw-party-label agw-party-label-buyer">BUYER SIDE</div>
+                  <div className="agw-party-label agw-party-label-buyer">BUYER &amp; CONSIGNEE</div>
                   <div className="agw-party-options">
-                    {BUYER_SIDE.map(p => (
+                    {PARTY_BUYER_CONSIGNEE.map(p => (
                       <label key={p.value} className={`agw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>
                         <input type="checkbox" checked={parties.has(p.value)} onChange={() => toggleParty(p.value)} />
                         <span className="agw-checkbox-emoji">{p.icon}</span>
@@ -470,9 +495,9 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 </div>
 
                 <div className="agw-party-row">
-                  <div className="agw-party-label agw-party-label-supplier">SUPPLIER SIDE</div>
+                  <div className="agw-party-label agw-party-label-supplier">SUPPLIER</div>
                   <div className="agw-party-options">
-                    {SUPPLIER_SIDE.map(p => (
+                    {PARTY_SUPPLIER.map(p => (
                       <label key={p.value} className={`agw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>
                         <input type="checkbox" checked={parties.has(p.value)} onChange={() => toggleParty(p.value)} />
                         <span className="agw-checkbox-emoji">{p.icon}</span>
@@ -482,79 +507,13 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                   </div>
                 </div>
 
-                <div className="agw-party-row">
-                  <div className="agw-party-label agw-party-label-combined">COMBINED SCOPE</div>
-                  <div className="agw-party-options">
-                    {COMBINED_SCOPE.map(p => (
-                      <label key={p.value} className={`agw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>
-                        <input type="checkbox" checked={parties.has(p.value)} onChange={() => toggleParty(p.value)} />
-                        <span className="agw-checkbox-emoji">{p.icon}</span>
-                        <span className="agw-checkbox-label">{p.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="agw-party-hint">Tick "ALL" to apply to every party · or pick specific ones</div>
+                <div className="agw-party-hint">Select all parties this agreement applies to.</div>
                 {errors.party && <div className="agw-err">{errors.party}</div>}
               </div>
-
-              {/* Signing Workflow card */}
-              <div className="agw-signing">
-                <div className="agw-signing-head">
-                  <div className="agw-signing-head-title">
-                    <span className="agw-signing-ico">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-                    </span>
-                    SIGNING WORKFLOW
-                  </div>
-                  <div className="agw-signing-head-toggles">
-                    <label className={`agw-mini-check ${sequential ? 'is-on' : ''}`}>
-                      <input type="checkbox" checked={sequential} onChange={(e) => setSequential(e.target.checked)} />
-                      <span>Sequential</span>
-                    </label>
-                    <label className={`agw-mini-check ${digitalSig ? 'is-on' : ''}`}>
-                      <input type="checkbox" checked={digitalSig} onChange={(e) => setDigitalSig(e.target.checked)} />
-                      <span>Digital Signature</span>
-                    </label>
-                  </div>
-                </div>
-                <div className="agw-signing-hint">
-                  {parties.size === 0
-                    ? 'Select applicable parties above to configure signing order'
-                    : `Signing order will follow the ${parties.size} selected ${parties.size === 1 ? 'party' : 'parties'} above`}
-                </div>
-
-                {/* Expiry Conditions sub-card */}
-                <div className="agw-expiry">
-                  <div className="agw-expiry-head">
-                    <span className="agw-expiry-ico">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    </span>
-                    EXPIRY CONDITIONS
-                  </div>
-                  <div className="agw-expiry-grid">
-                    <div className="agw-field">
-                      <label className="agw-mini-label">Validity Period</label>
-                      <select className="agw-input agw-select" value={validityPeriod} onChange={(e) => setValidityPeriod(e.target.value)}>
-                        {['6 Months', '1 Year', '2 Years', '3 Years', '5 Years', 'Perpetual'].map(v => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-                    <div className="agw-field">
-                      <label className="agw-mini-label">Renewal Type</label>
-                      <select className="agw-input agw-select" value={renewalType} onChange={(e) => setRenewalType(e.target.value)}>
-                        {['Auto-Renew', 'Manual Renewal', 'No Renewal'].map(v => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-                    <div className="agw-field">
-                      <label className="agw-mini-label">Notice Period</label>
-                      <select className="agw-input agw-select" value={noticePeriod} onChange={(e) => setNoticePeriod(e.target.value)}>
-                        {['15 Days', '30 Days', '60 Days', '90 Days', '120 Days'].map(v => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              {/* Signing Workflow + Expiry Conditions card removed —
+                  agreements no longer carry signing/validity/renewal/
+                  notice settings. Send-for-Signature lives in a
+                  separate flow when needed. */}
             </div>
           ) : (
             <div className="agw-step-body">
@@ -831,44 +790,6 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
     { label: 'Category',       token: '{{supplier.category}}' },
     { label: 'Risk Level',     token: '{{supplier.risk_level}}' },
   ] },
-  { id: 'transaction', label: 'Transaction', iconEmoji: '💼', iconColor: '#7c3aed', fields: [
-    { label: 'Shipment ID',       token: '{{transaction.shipment_id}}' },
-    { label: 'OPP ID',            token: '{{transaction.opp_id}}' },
-    { label: 'Product',           token: '{{transaction.product}}' },
-    { label: 'Quantity',          token: '{{transaction.quantity}}' },
-    { label: 'Invoice Date',      token: '{{transaction.invoice_date}}' },
-    { label: 'Invoice No',        token: '{{transaction.invoice_no}}' },
-    { label: 'Amount',            token: '{{transaction.amount}}' },
-    { label: 'Currency',          token: '{{transaction.currency}}' },
-    { label: 'Tax Date',          token: '{{transaction.tax_date}}' },
-    { label: 'Port of Loading',   token: '{{transaction.port_of_loading}}' },
-    { label: 'Port of Discharge', token: '{{transaction.port_of_discharge}}' },
-    { label: 'Vessel Name',       token: '{{transaction.vessel_name}}' },
-  ] },
-  { id: 'contract', label: 'Contract', iconEmoji: '📄', iconColor: '#0e7490', fields: [
-    { label: 'Contract No',     token: '{{contract.contract_no}}' },
-    { label: 'Contract Date',   token: '{{contract.contract_date}}' },
-    { label: 'Start Date',      token: '{{contract.start_date}}' },
-    { label: 'End Date',        token: '{{contract.end_date}}' },
-    { label: 'Payment Terms',   token: '{{contract.payment_terms}}' },
-    { label: 'Delivery Terms',  token: '{{contract.delivery_terms}}' },
-    { label: 'Incoterms',       token: '{{contract.incoterms}}' },
-    { label: 'Governing Law',   token: '{{contract.governing_law}}' },
-  ] },
-  { id: 'agreement', label: 'Agreement', iconEmoji: '🤝', iconColor: '#be185d', fields: [
-    { label: 'Agreement No',    token: '{{agreement.agreement_no}}' },
-    { label: 'Agreement Title', token: '{{agreement.agreement_title}}' },
-    { label: 'Agreement Type',  token: '{{agreement.agreement_type}}' },
-    { label: 'Agreement Date',  token: '{{agreement.agreement_date}}' },
-    { label: 'Effective Date',  token: '{{agreement.effective_date}}' },
-    { label: 'Expiry Date',     token: '{{agreement.expiry_date}}' },
-    { label: 'Renewal Date',    token: '{{agreement.renewal_date}}' },
-    { label: 'Signing Party',   token: '{{agreement.signing_party}}' },
-    { label: 'Counter Party',   token: '{{agreement.counter_party}}' },
-    { label: 'Governing Law',   token: '{{agreement.governing_law}}' },
-    { label: 'Jurisdiction',    token: '{{agreement.jurisdiction}}' },
-    { label: 'Notice Period',   token: '{{agreement.notice_period}}' },
-  ] },
 ];
 
 function PlaceholderPicker({ onClose, onPick }: { onClose: () => void; onPick: (token: string) => void }) {
@@ -959,27 +880,16 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/* Signing-workflow metadata lives in an HTML comment at the very start of
- * `content` so the rich-text editor never shows it but we can still recover
- * the user's last picks on edit. */
+/* Legacy AGW-META comment scrubber. Rows drafted before the Signing
+ * Workflow section was cut had a leading
+ *   <!-- AGW-META: {"sequential":…,"digitalSig":…,"validityPeriod":…} -->
+ * plus auto-prepended Purpose / Signing paragraphs. Edit-mode strips
+ * them out so re-saves don't accumulate duplicates and the editor
+ * doesn't render the hidden comment as visible text. The metadata
+ * itself is intentionally NOT re-hydrated — those fields no longer
+ * exist on the UI. */
 const META_RE = /^\s*<!--\s*AGW-META:\s*(\{[\s\S]*?\})\s*-->\s*/;
-function parseMetaFromContent(content: string): { sequential: boolean; digitalSig: boolean; validityPeriod: string; renewalType: string; noticePeriod: string } | null {
-  const m = content.match(META_RE);
-  if (!m) return null;
-  try {
-    const obj = JSON.parse(m[1]);
-    return {
-      sequential:     !!obj.sequential,
-      digitalSig:     !!obj.digitalSig,
-      validityPeriod: typeof obj.validityPeriod === 'string' ? obj.validityPeriod : '1 Year',
-      renewalType:    typeof obj.renewalType    === 'string' ? obj.renewalType    : 'Auto-Renew',
-      noticePeriod:   typeof obj.noticePeriod   === 'string' ? obj.noticePeriod   : '30 Days',
-    };
-  } catch { return null; }
-}
 function stripMetaFromContent(content: string): string {
-  // Remove leading meta comment + any auto-prepended Purpose / Signing
-  // paragraphs so re-saves don't accumulate duplicates.
   let out = content.replace(META_RE, '');
   out = out.replace(/^\s*<p>\s*<strong>\s*Purpose\s*:?\s*<\/strong>[\s\S]*?<\/p>\s*/i, '');
   out = out.replace(/^\s*<p>\s*<strong>\s*Signing\s*:?\s*<\/strong>[\s\S]*?<\/p>\s*/i, '');
@@ -1140,38 +1050,7 @@ const AGW_CSS = `
 .agw-checkbox.is-on { background: #f0fdff; border-color: #0891b2; color: #0e7490; box-shadow: 0 2px 8px rgba(8,145,178,.18); }
 .agw-checkbox-all { padding: 6px 12px; font-size: 12px; letter-spacing: .04em; font-weight: 800; }
 .agw-party-hint { font-size: 11.5px; color: #94a3b8; }
-
-/* Signing Workflow card */
-.agw-signing { border: 1.5px solid rgba(6,182,212,.20); border-radius: 14px; background: linear-gradient(180deg, #ffffff 0%, #f7feff 100%); padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
-.agw-signing-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.agw-signing-head-title { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #0891b2; }
-.agw-signing-ico { width: 22px; height: 22px; border-radius: 7px; background: rgba(8,145,178,.10); display: inline-flex; align-items: center; justify-content: center; color: #0891b2; }
-.agw-signing-head-toggles { display: inline-flex; gap: 14px; align-items: center; }
-.agw-mini-check { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; font-size: 12.5px; font-weight: 700; color: #475569; padding: 4px 6px; border-radius: 6px; transition: color .15s ease; user-select: none; }
-.agw-mini-check input { width: 15px; height: 15px; accent-color: #0891b2; cursor: pointer; margin: 0; }
-.agw-mini-check.is-on { color: #0c4a6e; }
-.agw-mini-check:hover { color: #0891b2; }
-
-.agw-signing-hint {
-  text-align: center;
-  font-size: 11.5px; color: #94a3b8;
-  font-style: italic;
-  padding: 8px 12px; border-radius: 8px;
-  border: 1px dashed rgba(6,182,212,.32);
-  background: rgba(240,253,255,.6);
-}
-
-.agw-expiry {
-  border: 1px solid rgba(245,158,11,.30);
-  border-radius: 10px;
-  background: rgba(255,251,235,.45);
-  padding: 12px 14px;
-  display: flex; flex-direction: column; gap: 10px;
-}
-.agw-expiry-head { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #b45309; }
-.agw-expiry-ico { width: 18px; height: 18px; border-radius: 5px; background: rgba(245,158,11,.18); display: inline-flex; align-items: center; justify-content: center; color: #b45309; }
-.agw-expiry-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
-.agw-mini-label { font-size: 11px; font-weight: 800; color: #0c4a6e; }
+/* Signing Workflow + Expiry Conditions CSS removed — markup is gone. */
 .agw-select {
   appearance: none; -webkit-appearance: none;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
@@ -1311,17 +1190,8 @@ const AGW_CSS = `
 [data-bs-theme="dark"] .agw-checkbox { background: #1e293b; border-color: rgba(6,182,212,.22); color: #cbd5e1; }
 [data-bs-theme="dark"] .agw-checkbox:hover { background: rgba(8,145,178,.10); border-color: rgba(103,232,249,.45); }
 [data-bs-theme="dark"] .agw-checkbox.is-on { background: rgba(8,145,178,.22); border-color: #67e8f9; color: #cffafe; }
-[data-bs-theme="dark"] .agw-signing { background: linear-gradient(180deg, #0f172a 0%, #102234 100%); border-color: rgba(6,182,212,.22); }
-[data-bs-theme="dark"] .agw-signing-head-title { color: #67e8f9; }
-[data-bs-theme="dark"] .agw-signing-ico { background: rgba(8,145,178,.20); color: #67e8f9; }
-[data-bs-theme="dark"] .agw-mini-check { color: #cbd5e1; }
-[data-bs-theme="dark"] .agw-mini-check.is-on { color: #cffafe; }
-[data-bs-theme="dark"] .agw-mini-check:hover { color: #67e8f9; }
-[data-bs-theme="dark"] .agw-signing-hint { background: rgba(8,145,178,.10); border-color: rgba(6,182,212,.30); color: #94a3b8; }
-[data-bs-theme="dark"] .agw-expiry { background: rgba(245,158,11,.08); border-color: rgba(245,158,11,.30); }
-[data-bs-theme="dark"] .agw-expiry-head { color: #fbbf24; }
-[data-bs-theme="dark"] .agw-expiry-ico { background: rgba(245,158,11,.22); color: #fbbf24; }
-[data-bs-theme="dark"] .agw-mini-label { color: #cffafe; }
+/* Dark-mode rules for the removed signing-workflow + expiry-conditions
+ * blocks are dropped along with the markup they targeted. */
 [data-bs-theme="dark"] .agw-select { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2367e8f9' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>"); }
 [data-bs-theme="dark"] .agw-editor-shell { background: #0f172a; border-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .agw-toolbar { background: rgba(8,145,178,.06); border-bottom-color: rgba(6,182,212,.22); }
@@ -1362,8 +1232,6 @@ const AGW_CSS = `
   .agw-step-line { display: none; }
   .agw-grid-2 { grid-template-columns: minmax(0,1fr); }
   .agw-reg-grid { grid-template-columns: 1fr; }
-  .agw-expiry-grid { grid-template-columns: 1fr; }
-  .agw-signing-head { flex-direction: column; align-items: flex-start; }
   .agw-party-row { grid-template-columns: 1fr; }
   .agw-ph-body { grid-template-columns: 1fr; }
   .agw-ph-sidebar { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; border-right: 0; border-bottom: 1px solid rgba(6,182,212,.18); }

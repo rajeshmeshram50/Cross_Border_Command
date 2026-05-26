@@ -145,6 +145,23 @@ export interface Branch {
   gst_number: string | null;
   pan_number: string | null;
   registration_number: string | null;
+  // Letterhead / export-house compliance fields — all optional, surface
+  // on the Quotation/PI PDF when populated. Mirrors the columns
+  // added by 2026_05_26_000100_add_letterhead_fields_to_branches_table.
+  gst_state_code: string | null;
+  cin: string | null;
+  iec: string | null;
+  drug_license: string | null;
+  pcpndt_no: string | null;
+  aeo_code: string | null;
+  one_star_file_no: string | null;
+  one_star_udin_no: string | null;
+  // Authorized-signatory image (signature + stamp). Used by the
+  // with-signature variant of Quotation / PI PDFs. The model also
+  // exposes `signature_path_url` as an accessor so the frontend can
+  // render the image directly without re-resolving the storage path.
+  signature_path: string | null;
+  signature_path_url?: string | null;
   logo: string | null;
   address: string | null;
   city: string | null;

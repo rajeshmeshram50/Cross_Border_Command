@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
+import { signatureRequestsToVaultDocs, type SigReqRow } from '../../utils/vaultSignatureRows';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Consignee Evidence Vault — read-only compliance archive
@@ -38,6 +39,13 @@ export interface VaultDoc {
    *  attachment cell render as a clickable link. */
   attachment_url?: string | null;
   status: VaultStatus;
+  /** Master doc-code (DD-001, KYC-002, …). Required by the Actions
+   *  column so a re-upload can POST against the right SegmentDocUpload row. */
+  doc_code?: string | null;
+  /** URL to the Zoho-issued Certificate of Completion. Set on rows
+   *  that came from a completed Zoho Sign request; renders the
+   *  certificate icon button in the Actions column. */
+  certificate_url?: string | null;
 }
 
 export interface VaultShipmentRow {
@@ -165,6 +173,11 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
    * db_id (unsaved record). */
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
   const [loading, setLoading] = useState(false);
+  /* Zoho Sign signature requests for this consignee — fetched in parallel
+   * with the vault payload and merged into the Trade Documents tab as
+   * "Signed" / "Pending" rows + a separate "Certificate of Completion"
+   * row per completed request (matches the New_IDIMS_6.0 evidence panel). */
+  const [signatureRows, setSignatureRows] = useState<SigReqRow[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -174,6 +187,17 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     setShipmentFilter('all');
     return () => window.removeEventListener('keydown', onKey);
   }, [open, consignee?.db_id, onClose]);
+
+  /* Re-fetch helper — invoked after the Actions column re-uploads a
+   * file so the row picks up the fresh attachment_url. */
+  const reloadVault = useCallback(() => {
+    if (!consignee?.db_id) return Promise.resolve();
+    setLoading(true);
+    return api.get(`/segment-uploads/consignee/${consignee.db_id}/vault`)
+      .then(r => { setVaultLive((r.data?.data ?? null) as VaultData | null); })
+      .catch(() => { /* swallow transient errors — previous state stays */ })
+      .finally(() => setLoading(false));
+  }, [consignee?.db_id]);
 
   /* Fetch the vault payload when the modal opens. Skips when (a) the
    * parent passed an override via `data` or (b) consignee has no
@@ -192,6 +216,25 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [open, consignee?.db_id, data]);
+
+  /* Fetch signature requests for this consignee in parallel with the
+   * vault. sync=true triggers a Zoho round-trip for any still-inprogress
+   * rows so the vault reflects "Signed" the moment the recipient
+   * finishes signing, not just on the next vault open. */
+  useEffect(() => {
+    if (!open || !consignee?.db_id) { setSignatureRows([]); return; }
+    let cancelled = false;
+    api.get('/clm/signature-requests', {
+      params: { party_id: consignee.db_id, model_name: 'Consignee', sync: 1 },
+    })
+      .then(r => {
+        if (cancelled) return;
+        const rows = Array.isArray(r.data?.data) ? (r.data.data as SigReqRow[]) : [];
+        setSignatureRows(rows);
+      })
+      .catch(() => { if (!cancelled) setSignatureRows([]); });
+    return () => { cancelled = true; };
+  }, [open, consignee?.db_id]);
 
   /* Auto-scroll the KPI ribbon — continuous one-way drift. Tiles
    * rendered twice, scrollLeft wraps invisibly at the halfway mark.
@@ -216,8 +259,33 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const vault: VaultData | null = useMemo(() => {
     if (!consignee) return null;
     /* Priority: explicit `data` prop > live API > demo fallback. */
-    return data ?? vaultLive ?? buildDemoVault(consignee);
-  }, [consignee, data, vaultLive]);
+    const base = data ?? vaultLive ?? buildDemoVault(consignee);
+    if (!base) return null;
+    // Trade Documents tab is SIGNATURE-ONLY for consignees — segment-rule
+    // "expected TD" rows (rendered with manual Upload buttons by the
+    // /segment-uploads vault endpoint) are explicitly dropped, since a
+    // trade document only enters this tab via the Zoho Sign send flow.
+    // Each signed row carries its own `certificate_url` so the Actions
+    // column renders a Certificate-of-Completion button alongside
+    // View/Download — mirrors New_IDIMS_6.0's faCertificate action.
+    const sigRows         = signatureRequestsToVaultDocs(signatureRows);
+    const baseSegmentTd   = (base.trade_documents ?? []) as VaultDoc[];
+    const baseSegmentSigned  = baseSegmentTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
+    const baseSegmentPending = baseSegmentTd.filter(r => r.status === 'Pending').length;
+    const sigSignedDelta  = sigRows.filter(r => r.status === 'Signed').length;
+    const sigPendingDelta = sigRows.filter(r => r.status === 'Pending').length;
+    return {
+      ...base,
+      trade_documents: sigRows as typeof base.trade_documents,
+      trade_documents_count: sigRows.length,
+      // KPI roll-ups: subtract whatever the segment-rule TD bucket
+      // contributed (we no longer show those rows), then add in the
+      // signature-flow numbers.
+      verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + sigSignedDelta,
+      pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + sigPendingDelta,
+      total_documents: Math.max(0, (base.total_documents ?? 0) - baseSegmentTd.length) + sigRows.length,
+    };
+  }, [consignee, data, vaultLive, signatureRows]);
 
   if (!open || !consignee || !vault) return null;
 
@@ -380,17 +448,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             </div>
           </div>
 
-          {tab !== 'shipment-agreements' && (
-            <div className="cnev-filter-row">
-              <span className="cnev-filter cnev-filter-verified">● Verified {counts.Verified}</span>
-              <span className="cnev-filter cnev-filter-expiring">● Expiring {counts.Expiring}</span>
-              <span className="cnev-filter cnev-filter-pending">● Pending {counts.Pending}</span>
-            </div>
-          )}
-
           {tab === 'shipment-agreements'
             ? <ShipmentTable rows={vault.shipment_agreements} filter={shipmentFilter} setFilter={setShipmentFilter} />
-            : <DocsTable rows={docsForTab} tab={tab} StatusPill={StatusPill} />}
+            : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault} />}
         </div>
 
         {/* ─── FOOTER ─── */}
@@ -430,11 +490,16 @@ function KpiTile({ label, value, icon, gradient }: { label: string; value: numbe
   );
 }
 
-function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; StatusPill: (p: { s: VaultStatus }) => ReactElement }) {
+function DocsTable({ rows, tab, ownerType, ownerId, onReload }: {
+  rows: VaultDoc[];
+  tab: TabKey;
+  ownerType: 'customer' | 'consignee' | 'supplier';
+  ownerId: number | null;
+  onReload: () => Promise<void> | void;
+}) {
   const numberHeader = tab === 'company-dd' ? 'License / Number' : tab === 'owner-kyc' ? 'Document Number' : tab === 'trade-licenses' ? 'License Number' : 'Reference No';
-  const issueLabel   = tab === 'trade-documents' ? 'Signed Date' : 'Issue Date';
-  const expiryLabel  = tab === 'trade-documents' ? 'Valid Till'  : 'Expiry';
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
+  const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
   return (
     <div className="cnev-table-wrap">
       <div className="cnev-table-scroll">
@@ -445,23 +510,19 @@ function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; S
             <th>Document Name</th>
             <th>{numberHeader}</th>
             <th>{authorityLbl}</th>
-            <th>{issueLabel}</th>
-            <th>{expiryLabel}</th>
             <th>Attachment</th>
-            <th>Status</th>
+            <th style={{ width: 140 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={8} className="cnev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={6} className="cnev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={d.id}>
               <td>{i + 1}</td>
               <td className="cnev-doc-name">{d.name}</td>
               <td className="cnev-mono">{d.reference || '—'}</td>
               <td>{d.authority || '—'}</td>
-              <td><span className="cnev-date">{d.issue_date || '—'}</span></td>
-              <td><span className="cnev-date cnev-date-expiry" data-status={d.status.toLowerCase()}>{d.expiry || '—'}</span></td>
               <td>
                 {d.attachment ? (
                   d.attachment_url ? (
@@ -481,12 +542,134 @@ function DocsTable({ rows, tab, StatusPill }: { rows: VaultDoc[]; tab: TabKey; S
                   )
                 ) : <span className="cnev-muted">Not uploaded</span>}
               </td>
-              <td><StatusPill s={d.status} /></td>
+              <td>
+                <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} />
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
       </div>
+    </div>
+  );
+}
+
+function VaultRowActions({ doc, ownerType, ownerId, category, onReload }: {
+  doc: VaultDoc;
+  ownerType: 'customer' | 'consignee' | 'supplier';
+  ownerId: number | null;
+  category: 'kyc' | 'dd' | 'tl' | 'td';
+  onReload: () => Promise<void> | void;
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const canViewOrDownload = !!doc.attachment_url;
+  const canReupload = !!ownerId && !!doc.doc_code;
+
+  const download = () => {
+    if (!doc.attachment_url) return;
+    const a = document.createElement('a');
+    a.href = doc.attachment_url;
+    a.download = doc.attachment || '';
+    a.target = '_blank';
+    a.rel = 'noreferrer';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  const onPick = async (f: File | undefined) => {
+    if (!f || !ownerId || !doc.doc_code) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('category', category);
+      fd.append('doc_code', doc.doc_code);
+      fd.append('doc_name', doc.name || doc.doc_code);
+      fd.append('attachment', f);
+      await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      await onReload();
+    } catch {
+      // silent — user can retry; toast threading not in scope here
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="cnev-row-actions">
+      <input
+        ref={fileRef}
+        type="file"
+        hidden
+        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+        onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }}
+      />
+      <Tooltip label={canViewOrDownload ? `View ${doc.attachment}` : 'No attachment yet'}>
+        <a
+          href={canViewOrDownload ? doc.attachment_url! : undefined}
+          target={canViewOrDownload ? '_blank' : undefined}
+          rel="noreferrer"
+          aria-disabled={!canViewOrDownload}
+          className={`cnev-row-act cnev-row-act-view ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          onClick={e => { if (!canViewOrDownload) e.preventDefault(); }}
+          aria-label="View"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </a>
+      </Tooltip>
+      <Tooltip label={canViewOrDownload ? `Download ${doc.attachment}` : 'No attachment yet'}>
+        <button
+          type="button"
+          disabled={!canViewOrDownload}
+          onClick={download}
+          className={`cnev-row-act cnev-row-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          aria-label="Download"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+      </Tooltip>
+      <Tooltip label={canReupload ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload')) : 'Save the record first'}>
+        <button
+          type="button"
+          disabled={!canReupload || busy}
+          onClick={() => fileRef.current?.click()}
+          className={`cnev-row-act cnev-row-act-upload ${(!canReupload || busy) ? 'is-disabled' : ''}`}
+          aria-label={doc.attachment ? 'Re-upload' : 'Upload'}
+        >
+          {busy
+            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            : doc.attachment
+              ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}
+        </button>
+      </Tooltip>
+      {/* Certificate of Completion — only rendered when this row came
+          from a completed Zoho Sign request. Mirrors the faCertificate
+          action in New_IDIMS_6.0's Stage3Tab2DocumentationArchive. */}
+      {doc.certificate_url && (
+        <Tooltip label="Certificate of Completion">
+          <a
+            href={doc.certificate_url}
+            target="_blank"
+            rel="noreferrer"
+            className="cnev-row-act cnev-row-act-cert"
+            aria-label="Certificate of Completion"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, borderRadius: 6,
+              background: '#cffafe', color: '#0e7490',
+              border: '1px solid #67e8f9',
+              cursor: 'pointer', textDecoration: 'none',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8" r="6"/>
+              <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+            </svg>
+          </a>
+        </Tooltip>
+      )}
     </div>
   );
 }
@@ -927,11 +1110,14 @@ const CNEV_CSS = `
   flex: 1; min-height: 0; overflow-y: auto;
   padding: 18px 24px 22px;
   display: flex; flex-direction: column; gap: 14px;
-  scrollbar-width: thin;
+  /* Match the visible scrollbar pattern used by [[AddVendorModal]]'s
+     .avm-body so the rail is obvious when a tab's table grows past
+     the body. Solid emerald replaces the prior near-invisible rgba(.30). */
+  scrollbar-width: thin; scrollbar-color: #6ee7b7 transparent;
 }
 .cnev-body::-webkit-scrollbar { width: 8px; }
-.cnev-body::-webkit-scrollbar-thumb { background: rgba(16,185,129,.30); border-radius: 999px; }
-.cnev-body::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
+.cnev-body::-webkit-scrollbar-thumb { background: #6ee7b7; border-radius: 99px; }
+.cnev-body::-webkit-scrollbar-thumb:hover { background: #10b981; }
 
 .cnev-section {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -968,11 +1154,16 @@ const CNEV_CSS = `
   overflow: hidden;
   scrollbar-width: thin;
   position: relative;
+  /* Don't let the flex column body squash this wrap below its
+     intrinsic height — without this, extra rows can be clipped at
+     the bottom and .cnev-body's overflow-y never trips, so the user
+     has no scrollbar to reach hidden documents. */
+  flex-shrink: 0;
 }
+.cnev-section { flex-shrink: 0; }
 .cnev-table-scroll {
-  max-height: 480px;
   overflow-x: auto;
-  overflow-y: auto;
+  overflow-y: visible;
   scrollbar-width: thin;
 }
 .cnev-table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -1018,6 +1209,23 @@ const CNEV_CSS = `
   font-size: 11.5px; font-weight: 600;
   border: 1px solid rgba(16,185,129,.30);
 }
+
+/* Row Actions — View / Download / Re-upload icons. */
+.cnev-row-actions { display: inline-flex; align-items: center; gap: 6px; }
+.cnev-row-act {
+  width: 28px; height: 28px; border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; background: transparent;
+  cursor: pointer; text-decoration: none;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+}
+.cnev-row-act-view     { color: #2563eb; background: rgba(37,99,235,.08);  border-color: rgba(37,99,235,.20); }
+.cnev-row-act-view:hover:not(.is-disabled)     { background: rgba(37,99,235,.18); transform: translateY(-1px); }
+.cnev-row-act-download { color: #0891b2; background: rgba(8,145,178,.08);  border-color: rgba(8,145,178,.20); }
+.cnev-row-act-download:hover:not(.is-disabled) { background: rgba(8,145,178,.18); transform: translateY(-1px); }
+.cnev-row-act-upload   { color: #047857; background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.30); }
+.cnev-row-act-upload:hover:not(.is-disabled)   { background: rgba(16,185,129,.20); transform: translateY(-1px); }
+.cnev-row-act.is-disabled, .cnev-row-act:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
 
 .cnev-pill {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1162,7 +1370,9 @@ const CNEV_CSS = `
 [data-bs-theme="dark"] .cnev-kpi-tile:hover { border-color: rgba(16,185,129,.45); box-shadow: 0 6px 18px rgba(0,0,0,0.40); }
 [data-bs-theme="dark"] .cnev-kpi-label { color: #94a3b8; }
 [data-bs-theme="dark"] .cnev-kpi-value { color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-body { background: #0c2218; }
+[data-bs-theme="dark"] .cnev-body { background: #0c2218; scrollbar-color: #047857 transparent; }
+[data-bs-theme="dark"] .cnev-body::-webkit-scrollbar-thumb { background: #047857; }
+[data-bs-theme="dark"] .cnev-body::-webkit-scrollbar-thumb:hover { background: #10b981; }
 [data-bs-theme="dark"] .cnev-section { background: linear-gradient(110deg, rgba(16,185,129,.14), rgba(110,231,183,.10)); border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .cnev-section-title { color: #d1fae5; }
 [data-bs-theme="dark"] .cnev-section-sub { color: #6ee7b7; }

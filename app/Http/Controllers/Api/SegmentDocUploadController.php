@@ -12,6 +12,7 @@ use App\Models\ClmTradeDocLibrary;
 use App\Models\ClmTradeLicense;
 use App\Models\Consignee;
 use App\Models\Customer;
+use App\Models\Product;
 use App\Models\SegmentDocUpload;
 use App\Models\Vendor;
 use Illuminate\Database\Eloquent\Model;
@@ -53,6 +54,10 @@ class SegmentDocUploadController extends Controller
         // alias kept for backward compatibility with any callers that
         // pass `vendor` instead of the user-facing rename.
         'vendor'    => Vendor::class,
+        // Products carry a single `segment_id` FK so QC reference rows
+        // can attach against the product's chosen segment, the same way
+        // the customer/consignee/vendor forms upload their KYC/DD/TL.
+        'product'   => Product::class,
     ];
 
     private const CATEGORIES = ['kyc', 'dd', 'tl', 'td', 'qc'];
@@ -346,6 +351,17 @@ class SegmentDocUploadController extends Controller
     /**
      * Resolve `{type}/{id}` to a tenant-scoped entity. Throws 404 if the
      * type isn't supported or the user can't see this record.
+     *
+     * Same-as-customer read-through: when the resolved row is a Consignee
+     * with `same_as_customer = true` and the caller is performing a READ
+     * (`$action === 'view'`), we transparently swap to the linked Customer
+     * so the consignee's Stage 3 Evidence Vault — segment-rule uploads
+     * across all five categories (kyc/dd/tl/td/qc) — surfaces the
+     * customer's documents instead of the consignee's empty bucket.
+     * Writes ('edit') intentionally do NOT swap: the UI locks Stage 3
+     * editing while the toggle is on, so attempting a store/destroy here
+     * is a programming error that should fail loudly against the
+     * consignee's own row (not silently mutate the customer's uploads).
      */
     private function resolveOwner(Request $request, string $type, int $id, string $action = 'view'): Model
     {
@@ -364,6 +380,26 @@ class SegmentDocUploadController extends Controller
         if ($user->client_id && (int) ($row->client_id ?? 0) !== (int) $user->client_id) {
             abort(404);
         }
+
+        if ($row instanceof Consignee && $row->same_as_customer && $row->customer_id) {
+            if ($action === 'view') {
+                $linked = Customer::query()->find($row->customer_id);
+                if ($linked && (!$user->client_id || (int) ($linked->client_id ?? 0) === (int) $user->client_id)) {
+                    return $linked;
+                }
+            } else {
+                // Defense-in-depth: the consignee's own segment_doc_uploads
+                // bucket must stay empty while same_as_customer is on, or
+                // the reads (which transparently swap to the customer)
+                // would silently orphan the writes. The UI hides the
+                // upload buttons under this flag — a 409 here only fires
+                // against direct/legacy API callers.
+                abort(response()->json([
+                    'message' => 'This consignee is flagged Same as Customer. Manage uploads on the linked customer instead.',
+                ], 409));
+            }
+        }
+
         return $row;
     }
 
@@ -376,7 +412,7 @@ class SegmentDocUploadController extends Controller
      */
     private function resolveSegmentIds(Model $owner, string $type, int $cid): array
     {
-        if (in_array($type, ['supplier', 'vendor'], true)) {
+        if (in_array($type, ['supplier', 'vendor', 'product'], true)) {
             return $owner->segment_id ? [(int) $owner->segment_id] : [];
         }
         // customer / consignee — comma-joined name string. Empty

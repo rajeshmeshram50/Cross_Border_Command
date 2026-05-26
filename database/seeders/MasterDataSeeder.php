@@ -364,17 +364,20 @@ class MasterDataSeeder extends Seeder
             /* ───────────── TRADE & COMMERCIAL ───────────── */
 
             case 'segments':
+                // Column was renamed `title` → `name` in the
+                // consolidate-segments-into-clm migration; data block
+                // updated to match so re-seeding doesn't 42703.
                 return [
-                    ['title' => 'Dry Fruits',          'status' => 'Active'],
-                    ['title' => 'Agro-Chemicals',      'status' => 'Active'],
-                    ['title' => 'Spices & Condiments', 'status' => 'Active'],
-                    ['title' => 'Oil Seeds',           'status' => 'Active'],
-                    ['title' => 'Pulses',              'status' => 'Active'],
-                    ['title' => 'Fresh Produce',       'status' => 'Active'],
-                    ['title' => 'Food Grains',         'status' => 'Active'],
-                    ['title' => 'Dairy Products',      'status' => 'Active'],
-                    ['title' => 'Processed Foods',     'status' => 'Active'],
-                    ['title' => 'Handicrafts',         'status' => 'Active'],
+                    ['name' => 'Dry Fruits',          'status' => 'Active'],
+                    ['name' => 'Agro-Chemicals',      'status' => 'Active'],
+                    ['name' => 'Spices & Condiments', 'status' => 'Active'],
+                    ['name' => 'Oil Seeds',           'status' => 'Active'],
+                    ['name' => 'Pulses',              'status' => 'Active'],
+                    ['name' => 'Fresh Produce',       'status' => 'Active'],
+                    ['name' => 'Food Grains',         'status' => 'Active'],
+                    ['name' => 'Dairy Products',      'status' => 'Active'],
+                    ['name' => 'Processed Foods',     'status' => 'Active'],
+                    ['name' => 'Handicrafts',         'status' => 'Active'],
                 ];
 
             case 'hsn_codes':
@@ -774,7 +777,7 @@ class MasterDataSeeder extends Seeder
                 ];
 
             case 'vendor_directory':
-                $seg = fn (string $n) => $this->refIdByField($MODELS, 'segments', 'title', $n);
+                $seg = fn (string $n) => $this->refIdByField($MODELS, 'segments', 'name', $n);
                 $st  = fn (string $n) => $this->refIdByField($MODELS, 'states', 'name', $n);
                 return [
                     ['vendor_company_name' => 'TechParts India Pvt Ltd',    'contact_person' => 'Ramesh Joshi',   'mobile_number' => '9876543210', 'email_id' => 'ramesh@techparts.in',  'segment_id' => $seg('Processed Foods'),      'address' => '101, Business Park, MG Road',   'country' => 'India', 'state' => $st('Maharashtra'), 'city' => 'Pune',      'mapping_mode' => 'Map from Vendor Master', 'status' => 'Active'],

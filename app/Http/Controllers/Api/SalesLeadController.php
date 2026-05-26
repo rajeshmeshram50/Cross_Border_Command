@@ -9,8 +9,12 @@ use App\Models\Lead;
 use App\Models\LeadAckReason;
 use App\Models\LeadAcknowledgement;
 use App\Models\LeadProduct;
+use App\Models\LeadProductSharedPrice;
 use App\Models\LeadTaskManager;
+use App\Models\Procurement;
+use App\Models\ProcurementProduct;
 use App\Models\Product;
+use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\User;
 use App\Services\IndiaMartLeadSyncService;
 use Illuminate\Http\Request;
@@ -354,6 +358,15 @@ class SalesLeadController extends Controller
             'whatsapp_reason'    => 'nullable|string|max:1000',
         ]);
 
+        // Auto-mark the deal as won the FIRST time it lands on Stage 6
+        // (Victory). Keeping this server-side means we don't trust the
+        // client to send a timestamp, and the column is set exactly once
+        // — re-advancing to Stage 6 after a regression won't overwrite
+        // the original win date.
+        if (isset($data['lead_stage_id']) && (int) $data['lead_stage_id'] === 6 && $lead->won_at === null) {
+            $data['won_at'] = now();
+        }
+
         $lead->update($data);
 
         return response()->json(['status' => true, 'data' => $lead->fresh(['salesperson:id,name'])]);
@@ -667,25 +680,307 @@ class SalesLeadController extends Controller
         $rows = LeadProduct::with(['product:id,product_code,name,status'])
             ->where('lead_id', $lead->id)
             ->orderByDesc('id')
+            ->get();
+
+        // Latest procurement_id per lead_product (Stage 3 Required tab uses
+        // this to swap the row between "select to procure" and "Mark Sourced").
+        $procByLeadProduct = ProcurementProduct::query()
+            ->whereIn('lead_product_id', $rows->pluck('id'))
+            ->orderByDesc('id')
             ->get()
-            ->map(fn ($r) => [
-                'id'             => $r->id,
-                'product_id'     => $r->product_id,
-                'product_code'   => $r->product?->product_code,
-                'product_name'   => $r->product?->name,
-                'product_status' => $r->product?->status,
-                'currency'       => $r->currency,
-                'quantity'       => $r->quantity,
-                'target_price'   => $r->target_price,
-                'notes'          => $r->notes,
-                'created_at'     => $r->created_at,
+            ->groupBy('lead_product_id')
+            ->map(fn ($g) => $g->first()->procurement_id);
+
+        $mapped = $rows->map(fn ($r) => [
+            'id'               => $r->id,
+            'product_id'       => $r->product_id,
+            'product_code'     => $r->product?->product_code,
+            'product_name'     => $r->product?->name,
+            'product_status'   => $r->product?->status,
+            'currency'         => $r->currency,
+            'quantity'         => $r->quantity,
+            'target_price'     => $r->target_price,
+            'notes'            => $r->notes,
+            'sourcing_status'  => $r->sourcing_status,
+            'procurement_done' => (bool) $r->procurement_done,
+            'procurement_id'   => $procByLeadProduct[$r->id] ?? null,
+            'created_at'       => $r->created_at,
+        ]);
+
+        return response()->json(['status' => true, 'data' => $mapped]);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  LEAD PRODUCTS — PATCH /sales/leads/{lead}/products/{mapping}/sourcing-status
+     *
+     *  Stage 3 sub-flow. Salesperson labels each mapped product as
+     *  `required` (needs procurement) or `not_required`. The business
+     *  rule mirrors IDIMS: inactive / draft product masters cannot be
+     *  marked not_required — they have no current selling price so they
+     *  always need procurement before they can be quoted.
+     * ───────────────────────────────────────────────────────────────── */
+    public function updateLeadProductSourcingStatus(Request $request, int $leadId, int $mappingId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $row = LeadProduct::with('product:id,status')
+            ->where('lead_id', $lead->id)
+            ->findOrFail($mappingId);
+
+        $data = $request->validate([
+            'sourcing_status' => 'required|in:required,not_required',
+        ]);
+
+        $productStatus = strtolower((string) ($row->product?->status ?? ''));
+        if (in_array($productStatus, ['inactive', 'draft'], true)
+            && $data['sourcing_status'] !== 'required'
+        ) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Inactive or draft products must be marked Sourcing Required',
+            ], 422);
+        }
+
+        $row->update([
+            'sourcing_status'  => $data['sourcing_status'],
+            // Flipping to "not required" wipes any prior mark-sourced state
+            // so the row can't sneak past Stage 4 gating later.
+            'procurement_done' => $data['sourcing_status'] === 'required'
+                ? $row->procurement_done
+                : false,
+        ]);
+
+        return response()->json(['status' => true, 'data' => [
+            'id'               => $row->id,
+            'sourcing_status'  => $row->sourcing_status,
+            'procurement_done' => (bool) $row->procurement_done,
+        ]]);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  LEAD PRODUCTS — PATCH /sales/leads/{lead}/products/{mapping}/mark-sourced
+     *
+     *  Equivalent to IDIMS's "Mark as Done" on product_directories. Only
+     *  meaningful on rows already labelled sourcing_status = required. We
+     *  don't yet have a procurement-orders module in CBC, so the action
+     *  collapses to a single boolean flip — the IDIMS gate on vendor
+     *  mapping has no analogue here and is deliberately omitted.
+     * ───────────────────────────────────────────────────────────────── */
+    public function markLeadProductSourced(Request $request, int $leadId, int $mappingId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
+
+        if ($row->sourcing_status !== 'required') {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Only Sourcing Required products can be marked sourced',
+            ], 422);
+        }
+
+        // Mirror IDIMS: cannot mark sourced unless a procurement has been
+        // created for this row (Sourcing Required + procurement linked).
+        $hasProcurement = ProcurementProduct::where('lead_product_id', $row->id)->exists();
+        if (!$hasProcurement) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Create a procurement for this product before marking it sourced',
+            ], 422);
+        }
+
+        $row->update(['procurement_done' => true]);
+
+        return response()->json(['status' => true, 'data' => [
+            'id'               => $row->id,
+            'sourcing_status'  => $row->sourcing_status,
+            'procurement_done' => true,
+        ]]);
+    }
+
+    /* ═════════════════════════════════════════════════════════════════
+     *  STAGE 4 — PRICE SHARED
+     *
+     *  POST   /sales/leads/{lead}/products/{mapping}/shared-prices
+     *           record a quoted price entry (append-only history)
+     *  GET    /sales/leads/{lead}/shared-prices
+     *           flat history list across all products on this lead
+     *  GET    /sales/leads/{lead}/products/{mapping}/shared-prices
+     *           history scoped to a single product mapping
+     *  GET    /sales/shared-prices/{id}/pdf
+     *           generate the quotation PDF (dompdf)
+     * ═════════════════════════════════════════════════════════════════ */
+
+    public function storeSharedPrice(Request $request, int $leadId, int $mappingId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
+        }
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $row = LeadProduct::with('product:id,status')
+            ->where('lead_id', $lead->id)
+            ->findOrFail($mappingId);
+
+        // Mirror IDIMS: incomplete product masters (draft / inactive) can't
+        // have a shared price recorded. The frontend disables the input but
+        // we double-check server-side so direct API hits don't slip past.
+        $productStatus = strtolower((string) ($row->product?->status ?? ''));
+        if (in_array($productStatus, ['draft', 'inactive', 'pending'], true)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Cannot share a price for an incomplete product. Activate it on the Product Master first.',
+            ], 422);
+        }
+
+        $data = $request->validate([
+            'quoted_price' => 'required|numeric|min:0',
+        ]);
+
+        $entry = LeadProductSharedPrice::create([
+            'client_id'       => $user->client_id,
+            'lead_id'         => $lead->id,
+            'lead_product_id' => $row->id,
+            'quoted_price'    => $data['quoted_price'],
+            'shared_at'       => now(),
+            'created_by'      => $user->id,
+        ]);
+
+        return response()->json([
+            'status' => true,
+            'data'   => $entry->load('creator:id,name'),
+        ], 201);
+    }
+
+    public function listSharedPrices(Request $request, int $leadId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $rows = LeadProductSharedPrice::with([
+            'leadProduct:id,product_id,currency,quantity,target_price',
+            'leadProduct.product:id,product_code,name,status',
+        ])
+            ->where('lead_id', $lead->id)
+            ->orderByDesc('shared_at')
+            ->get()
+            ->map(fn ($e) => [
+                'id'              => $e->id,
+                'lead_product_id' => $e->lead_product_id,
+                'product_id'      => $e->leadProduct?->product_id,
+                'product_code'    => $e->leadProduct?->product?->product_code,
+                'product_name'    => $e->leadProduct?->product?->name,
+                'product_status'  => $e->leadProduct?->product?->status,
+                'currency'        => $e->leadProduct?->currency,
+                'quantity'        => $e->leadProduct?->quantity,
+                'target_price'    => $e->leadProduct?->target_price,
+                'quoted_price'    => $e->quoted_price,
+                'shared_at'       => $e->shared_at,
             ]);
 
         return response()->json(['status' => true, 'data' => $rows]);
     }
 
+    public function listSharedPricesByProduct(Request $request, int $leadId, int $mappingId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $leadQ = Lead::query();
+        $this->applyScope($leadQ, $user);
+        $lead = $leadQ->findOrFail($leadId);
+
+        $product = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
+
+        $rows = LeadProductSharedPrice::where('lead_id', $lead->id)
+            ->where('lead_product_id', $product->id)
+            ->orderByDesc('shared_at')
+            ->get()
+            ->map(fn ($e) => [
+                'id'           => $e->id,
+                'quoted_price' => $e->quoted_price,
+                'shared_at'    => $e->shared_at,
+            ]);
+
+        return response()->json([
+            'status' => true,
+            'data'   => $rows,
+            'product' => [
+                'lead_product_id' => $product->id,
+                'currency'        => $product->currency,
+                'quantity'        => $product->quantity,
+                'target_price'    => $product->target_price,
+            ],
+        ]);
+    }
+
+    public function sharedPricePdf(Request $request, int $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $entry = LeadProductSharedPrice::with([
+            'lead:id,opp_code,unique_query_id,sender_name,sender_email,sender_mobile',
+            'lead.customer:id,company_name,customer_code',
+            'leadProduct:id,product_id,currency,quantity,target_price',
+            'leadProduct.product:id,product_code,name',
+            'creator:id,name',
+        ])
+            ->where('client_id', $user->client_id)
+            ->findOrFail($id);
+
+        // Tenant branding — every PDF is stamped with the caller's client
+        // org details (logo, address, GST/PAN/CIN, website) so each tenant
+        // gets a branded quotation document.
+        $client = \App\Models\Client::find($entry->client_id);
+
+        // Code-128 barcode encoding the quotation code (Q-#####). milon/barcode
+        // returns an HTML string we can embed inline in the Blade.
+        $quoteCode = 'Q-' . str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT);
+        $barcodeHtml = '';
+        try {
+            $generator = new \Milon\Barcode\DNS1D();
+            $barcodeHtml = $generator->getBarcodeHTML($quoteCode, 'C128', 1.4, 30);
+        } catch (\Throwable $e) {
+            $barcodeHtml = ''; // PDF still renders without the barcode
+        }
+
+        $pdf = Pdf::loadView('pdf.shared_price_quotation', [
+            'entry'       => $entry,
+            'client'      => $client,
+            'quoteCode'   => $quoteCode,
+            'barcodeHtml' => $barcodeHtml,
+            'inline'      => $request->boolean('inline'),
+        ])->setPaper('a4');
+
+        $filename = 'quotation_' . str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT) . '.pdf';
+
+        return $request->boolean('inline')
+            ? $pdf->stream($filename)
+            : $pdf->download($filename);
+    }
+
     /* ─────────────────────────────────────────────────────────────────
-     *  LEAD PRODUCTS — POST /sales/leads/{lead}/products
+     *  LEAD PRODUCTcheS — POST /sales/leads/{lead}/products
      *
      *  Map a product master to this lead. The composite unique on
      *  (lead_id, product_id) prevents duplicates; the controller pre-

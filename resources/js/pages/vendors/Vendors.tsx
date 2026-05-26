@@ -348,7 +348,6 @@ export default function Vendors() {
         const v: Vendor = info.row.original;
         return (
           <div className="d-flex gap-1 justify-content-center">
-            <ActionBtn title="View"         icon="ri-eye-line"            color="primary"   onClick={() => toast.info('View', `Viewing ${v.companyName}`)} />
             <ActionBtn title="Edit"         icon="ri-pencil-line"         color="info"      onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }} />
             <ActionBtn title="Map Products" icon="ri-links-line"          color="success"   onClick={() => navigate(`/products?vendor_id=${v.id}&vendor_code=${encodeURIComponent(v.code || '')}&vendor_name=${encodeURIComponent(v.companyName || '')}`)} />
             <ActionBtn
@@ -479,6 +478,81 @@ export default function Vendors() {
         /* Action button row in the last column */
         .v-actions { display: inline-flex; gap: 4px; }
         .v-actions .btn { padding: .25rem .5rem; line-height: 1; }
+
+        /* Add Supplier — primary CTA. Hover lift + brighter gradient +
+         * shadow glow so the button actively responds to the cursor
+         * instead of feeling like a static decal. Dark mode keeps the
+         * same elevation curve with a deeper shadow that reads against
+         * the near-black surface. */
+        .v-add-btn {
+          background: linear-gradient(120deg, #405189 0%, #6691e7 100%);
+          border: none;
+          color: #fff;
+          font-weight: 600;
+          box-shadow: 0 4px 12px rgba(64,81,137,.28);
+          transition: transform .15s ease, box-shadow .2s ease, filter .15s ease;
+        }
+        .v-add-btn:hover, .v-add-btn:focus-visible {
+          transform: translateY(-1px);
+          filter: brightness(1.08);
+          box-shadow: 0 8px 20px rgba(102,145,231,.45);
+          background: linear-gradient(120deg, #405189 0%, #6691e7 100%);
+          color: #fff;
+        }
+        .v-add-btn:active {
+          transform: translateY(0);
+          box-shadow: 0 3px 10px rgba(64,81,137,.32);
+        }
+        [data-bs-theme="dark"] .v-add-btn {
+          box-shadow: 0 4px 14px rgba(102,145,231,.32);
+        }
+        [data-bs-theme="dark"] .v-add-btn:hover,
+        [data-bs-theme="dark"] .v-add-btn:focus-visible {
+          box-shadow: 0 10px 26px rgba(102,145,231,.55);
+          filter: brightness(1.12);
+        }
+
+        /* Search bar — Velzon's default .search-box leaves the input
+         * borderless until focus, which looked flat in default state
+         * and then suddenly snapped into a heavy outline on focus.
+         * Scope a consistent visible border at rest, a soft hover
+         * lift, and a smooth focus ring transition. */
+        .vendors-surface .search-box .form-control {
+          border: 1.5px solid #e2e8f0;
+          background: #f8fafc;
+          transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+        }
+        .vendors-surface .search-box .form-control:hover {
+          background: #fff;
+          border-color: #cbd5e1;
+        }
+        .vendors-surface .search-box .form-control:focus {
+          background: #fff;
+          border-color: #6691e7;
+          box-shadow: 0 0 0 3px rgba(102,145,231,.18);
+          outline: none;
+        }
+        .vendors-surface .search-box .search-icon {
+          transition: color .18s ease;
+        }
+        .vendors-surface .search-box .form-control:focus + .search-icon,
+        .vendors-surface .search-box:hover .search-icon {
+          color: #405189;
+        }
+        [data-bs-theme="dark"] .vendors-surface .search-box .form-control {
+          background: #1a1430;
+          border-color: rgba(255,255,255,.10);
+          color: #ede9fe;
+        }
+        [data-bs-theme="dark"] .vendors-surface .search-box .form-control:hover {
+          background: #221940;
+          border-color: rgba(167,139,250,.30);
+        }
+        [data-bs-theme="dark"] .vendors-surface .search-box .form-control:focus {
+          background: #221940;
+          border-color: #7c3aed;
+          box-shadow: 0 0 0 3px rgba(124,58,237,.25);
+        }
       `}</style>
 
       <Row>
@@ -515,13 +589,7 @@ export default function Vendors() {
               <div className="d-flex align-items-center gap-2 flex-wrap">
                 <Button
                   onClick={() => setAddOpen(true)}
-                  className="btn-label waves-effect waves-light rounded-pill"
-                  style={{
-                    background: 'linear-gradient(120deg, #405189 0%, #6691e7 100%)',
-                    border: 'none',
-                    color: '#fff',
-                    fontWeight: 600,
-                  }}
+                  className="btn-label waves-effect waves-light rounded-pill v-add-btn"
                 >
                   <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
                   Add Supplier

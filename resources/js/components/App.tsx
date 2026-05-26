@@ -50,6 +50,7 @@ import SalesConsignee from '../pages/sales/SalesConsignee';
 import SalesLeadAckMaster from '../pages/sales/SalesLeadAckMaster';
 import SalesLeadWorksheet from '../pages/sales/SalesLeadWorksheet';
 import LeadDistributionPage from '../pages/sales/AssignedLeadsModal';
+import SalesLeadsDetails from '../pages/sales/SalesLeadsDetails';
 import SalesTodo from '../pages/sales/SalesTodo';
 import SalesQPI from '../pages/sales/SalesQPI';
 import SalesP2PSummary from '../pages/sales/SalesP2PSummary';
@@ -159,6 +160,14 @@ const getPagePath = (page: string, data?: any): string => {
       if (page === 'sales.lead_ack_master') return '/sales/lead-ack-master';
       if (page === 'sales.lead_worksheet')  return data?.salespersonId ? `/sales/lead-worksheet?sp=${data.salespersonId}${data?.salespersonName ? `&sp_name=${encodeURIComponent(data.salespersonName)}` : ''}` : '/sales/lead-worksheet';
       if (page === 'sales.lead_distribution') return '/sales/lead-distribution';
+      if (page === 'sales.leads_details') {
+        const sp     = data?.salespersonId ? `sp=${data.salespersonId}` : '';
+        const spName = data?.salespersonName ? `sp_name=${encodeURIComponent(data.salespersonName)}` : '';
+        const spEmp  = data?.salespersonEmp ? `sp_emp=${encodeURIComponent(data.salespersonEmp)}` : '';
+        const spMgr  = data?.salespersonMgr ? `sp_mgr=${encodeURIComponent(data.salespersonMgr)}` : '';
+        const qs = [sp, spName, spEmp, spMgr].filter(Boolean).join('&');
+        return qs ? `/sales/leads-details?${qs}` : '/sales/leads-details';
+      }
       /* "My Workplace" reuses the Lead Worksheet page — it's the same
          operational view, surfaced under a friendlier menu label after
          the May-26 cleanup. */
@@ -621,6 +630,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/sales/lead-ack-master" element={<SalesLeadAckMaster />} />
               <Route path="/sales/lead-worksheet" element={<SalesLeadWorksheet />} />
               <Route path="/sales/lead-distribution" element={<LeadDistributionPage />} />
+              <Route path="/sales/leads-details" element={<SalesLeadsDetails />} />
               <Route path="/sales/todo" element={<SalesTodo />} />
               <Route path="/sales/matrix/:oppId/stage/:stage" element={<SalesMatrixDetail />} />
               <Route path="/sales/qpi" element={<SalesQPI />} />

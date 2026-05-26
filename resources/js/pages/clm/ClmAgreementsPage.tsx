@@ -282,20 +282,36 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                   return (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
-                      <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
+                      <td style={{ textAlign: 'center' }}>
+                        <Tooltip label={`Auto-generated agreement ID · ${r.code}`}>
+                          <span className="clm-code-pill">{r.code}</span>
+                        </Tooltip>
+                      </td>
                       <td className="clm-td-name">{r.title}</td>
                       <td className="clm-td-desc">{r.agreement_type}</td>
                       <td style={{ textAlign: 'center' }}>
-                        <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-green'}`}>
-                          <span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}
-                        </span>
+                        <Tooltip label={isHigh ? 'Highly Regulated — needs segment-specific compliance' : 'Less Regulated — applies to all standard segments'}>
+                          <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-emerald'}`}>
+                            <span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}
+                          </span>
+                        </Tooltip>
                       </td>
-                      <td style={{ textAlign: 'center', fontSize: 11.5 }}>
-                        {isHigh ? <span style={{ fontWeight: 600, color: '#0891b2' }}>{r.segment || '—'}</span> : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>All segments</span>}
-                      </td>
-                      <td className="clm-td-desc">{r.party}</td>
                       <td style={{ textAlign: 'center' }}>
-                        <span className={`clm-badge ${r.signing ? 'clm-badge-indigo' : 'clm-badge-slate'}`}>{r.signing ? 'Yes' : 'No'}</span>
+                        {isHigh && r.segment
+                          ? <Tooltip label={`Segment scope · ${r.segment}`}>
+                              <span className="clm-badge clm-badge-teal">{r.segment}</span>
+                            </Tooltip>
+                          : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All segments</span>}
+                      </td>
+                      <td className="clm-td-desc">
+                        <Tooltip label={r.party.split(',').map(s => s.trim()).filter(Boolean).join(' · ')} maxWidth={320}>
+                          <span>{r.party}</span>
+                        </Tooltip>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <Tooltip label={r.signing ? 'Signing workflow required' : 'No signing workflow'}>
+                          <span className={`clm-badge ${r.signing ? 'clm-badge-green' : 'clm-badge-slate'}`}>{r.signing ? 'Yes' : 'No'}</span>
+                        </Tooltip>
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">

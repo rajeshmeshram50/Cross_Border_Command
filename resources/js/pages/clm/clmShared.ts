@@ -22,14 +22,14 @@
 
 export const CLM_CSS = `
 .clm-root {
-  padding: 12px 14px;
+  padding: 0;
   width: 100%;
   font-family: 'Rubik', system-ui, sans-serif;
   font-size: 14px;
   letter-spacing: normal;
   color: #0F172A;
-  display: flex; flex-direction: column; gap: 8px;
-  background: #F4F6FB;
+  display: flex; flex-direction: column; gap: 14px;
+  background: transparent;
   box-sizing: border-box;
 }
 .clm-root * { box-sizing: border-box; }
@@ -110,6 +110,20 @@ export const CLM_CSS = `
   border-radius: 10px 10px 0 0; pointer-events: none;
 }
 .clm-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.18); }
+
+/* Inline "+" quick-add button — sits to the right of a MasterSelect to
+ * spawn a SimpleNameModal/SimpleDescModal without leaving the form. */
+.clm-quick-add-btn {
+  width: 34px; height: 34px; flex-shrink: 0;
+  border: none; border-radius: 9px; cursor: pointer;
+  background: linear-gradient(135deg, #0891b2, #0e7490);
+  color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 3px 10px rgba(8,145,178,.35);
+  transition: transform .15s ease, box-shadow .22s ease;
+}
+.clm-quick-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(8,145,178,.50); }
+[data-bs-theme="dark"] .clm-quick-add-btn { box-shadow: 0 3px 10px rgba(8,145,178,.55); }
 
 /* ──────────────────────────────────────────────────────────
  * BREF-BOX — "What We Are Doing Here" expandable info panel.
@@ -351,8 +365,9 @@ export const CLM_CSS = `
 .clm-table tbody tr:hover { background: rgba(6,182,212,.06); box-shadow: inset 3px 0 0 #0891b2; }
 .clm-table tbody td { padding: 13px 16px; font-size: 13px; color: #0c4a6e; vertical-align: middle; }
 .clm-td-num  { text-align: center; color: #94a3b8; font-weight: 700; width: 48px; }
-.clm-td-name { font-weight: 700; color: #0c4a6e; letter-spacing: -.15px; text-align: left; font-size: 13.5px; }
-.clm-td-desc { font-size: 12px; color: #475569; }
+.clm-td-name { font-weight: 700; color: #0c4a6e; letter-spacing: -.15px; text-align: left; font-size: 13.5px; text-transform: capitalize; }
+.clm-td-desc { font-size: 12px; color: #475569; text-transform: capitalize; }
+.clm-td-desc::first-letter { text-transform: uppercase; }
 
 /* Code chip */
 .clm-code-pill {
@@ -369,10 +384,10 @@ export const CLM_CSS = `
 /* Badges */
 .clm-badge {
   display: inline-block;
-  padding: 4px 12px; border-radius: 999px;
-  font-size: 11.5px; font-weight: 700;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 600;
   border: 1px solid; white-space: nowrap;
-  letter-spacing: 0; line-height: 1.3;
+  letter-spacing: .01em; line-height: 1.35;
 }
 /* Legacy dot kept in JSX but hidden — visual cleanup without
    touching markup. Light + dark mode both pick this up. */
@@ -426,38 +441,44 @@ export const CLM_CSS = `
 
 /* Pagination — clean flat row. Plain "Showing X of Y" on left,
    numbered chips on right with teal gradient on the active chip. */
+/* Footer pagination — mirrors the Customers/Sales-page footer shape:
+ * tinted pastel strip, "Showing N of M Results" on the left, circular
+ * page buttons on the right with a filled accent for the active page. */
 .clm-pag {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 18px;
-  background: #fff;
-  border-top: 1px solid rgba(6,182,212,.15);
-  flex-wrap: wrap; gap: 10px;
+  padding: 9px 16px;
+  border-top: 1.5px solid #cffafe;
+  background: linear-gradient(180deg, #f0fdff, #ecfeff);
+  flex-shrink: 0; flex-wrap: wrap; gap: 10px;
 }
-.clm-pag-info { font-size: 12.5px; color: #475569; font-weight: 500; }
-.clm-pag-info b { color: #0c4a6e; font-weight: 500; }
+.clm-pag-info {
+  font-size: 11.5px; font-weight: 600; color: #0891b2;
+  background: #fff; border: 1.5px solid #a5f3fc;
+  padding: 3px 12px; border-radius: 20px;
+}
+.clm-pag-info b { color: #0c4a6e; font-weight: 700; }
 .clm-pag-btns { display: inline-flex; align-items: center; gap: 6px; }
 .clm-pag-btn {
-  min-width: 32px; height: 32px; padding: 0 10px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  width: 28px; height: 28px; padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid #a5f3fc;
   background: #fff;
-  color: #475569;
-  font-size: 13px; font-weight: 700; cursor: pointer;
+  color: #0891b2;
+  font-size: 12.5px; font-weight: 700; cursor: pointer;
   font-family: inherit;
-  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .18s ease, box-shadow .22s ease;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .22s ease;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .clm-pag-btn:hover:not(:disabled):not(.on) {
-  background: #f0fdff;
+  background: #cffafe;
   border-color: #67e8f9;
-  color: #0891b2;
-  transform: translateY(-1px);
+  color: #0c4a6e;
 }
 .clm-pag-btn:disabled { opacity: 0.40; cursor: not-allowed; }
 .clm-pag-btn.on {
   background: linear-gradient(135deg, #06b6d4, #0891b2 60%, #0e7490);
-  border-color: transparent; color: #fff; font-weight: 500;
-  box-shadow: 0 4px 12px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.18);
+  border-color: transparent; color: #fff;
+  box-shadow: 0 3px 10px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.18);
   cursor: default;
 }
 
@@ -531,25 +552,59 @@ body > .dropdown-menu.master-select-menu,
   cursor: pointer;
   font-size: 16px; font-weight: 300;
   font-family: inherit; line-height: 1;
-  transition: background .15s, border-color .15s;
+  transition: background .15s, border-color .15s, color .15s, transform .15s;
 }
-.clm-modal-close:hover { background: rgba(255,255,255,.24); border-color: rgba(255,255,255,.45); }
+/* Hover — turn red with a subtle lift so the close affordance reads as
+ * the destructive action it is. Cursor is already pointer above; we
+ * re-assert it here for forms where a wrapper element resets it. */
+.clm-modal-close:hover,
+.clm-modal-close:focus-visible {
+  background: rgba(239,68,68,.92);
+  border-color: #ef4444;
+  color: #fff;
+  cursor: pointer;
+  transform: translateY(-1px);
+}
+.clm-modal-close:active { transform: translateY(0); background: #dc2626; }
 
 .clm-modal-body {
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
-  padding: 14px 18px 12px;
-  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 16px 10px;
+  display: flex; flex-direction: column; gap: 8px;
   overflow-y: auto;
 }
 
-/* Auto code strip */
+/* MasterSelect / native select trigger inside a CLM modal must read
+ * solid white — the modal body has a light cyan gradient which would
+ * otherwise tint Velzon's --vz-card-bg variable on certain themes. */
+.clm-modal-body .master-select-toggle,
+.clm-modal-body .clm-select,
+.clm-modal-body .clm-input,
+.clm-modal-body .clm-textarea { background-color: #fff; }
+.clm-modal-body .master-select-toggle {
+  height: 34px;
+  border-radius: 9px;
+  border-color: rgba(6,182,212,.25);
+  font-size: 12.5px;
+}
+.clm-modal-body .master-select-wrap.show .master-select-toggle {
+  border-color: #0891b2 !important;
+  box-shadow: 0 0 0 3px rgba(8,145,178,.14) !important;
+}
+.clm-modal-body .master-select-wrap.show .master-select-chev { color: #0891b2; }
+[data-bs-theme="dark"] .clm-modal-body .master-select-toggle,
+[data-bs-theme="dark"] .clm-modal-body .clm-select,
+[data-bs-theme="dark"] .clm-modal-body .clm-input,
+[data-bs-theme="dark"] .clm-modal-body .clm-textarea { background-color: #1e293b; }
+
+/* Auto code strip — same logic: parent body gap handles spacing below */
 .clm-autocode {
   display: flex; align-items: center; gap: 8px;
   background: linear-gradient(110deg, #e0f9fd, #caf5fa);
   border: 1.5px solid rgba(6,182,212,.25);
   border-radius: 10px;
-  padding: 8px 12px;
-  margin-bottom: 6px;
+  padding: 6px 12px;
+  margin-bottom: 0;
 }
 .clm-autocode-ico {
   width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0;
@@ -577,9 +632,9 @@ body > .dropdown-menu.master-select-menu,
 .clm-autocode-dot { width: 5px; height: 5px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.5); }
 .clm-autocode-badge.edit .clm-autocode-dot { background: #f59e0b; box-shadow: 0 0 4px rgba(245,158,11,.5); }
 
-/* Form field */
-.clm-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 6px; }
-.clm-field:last-child { margin-bottom: 0; }
+/* Form field — relies on .clm-modal-body's flex gap for inter-field
+ * spacing (no margin-bottom) so we don't stack double space between rows. */
+.clm-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 0; }
 .clm-field-label {
   font-size: 8.5px; font-weight: 500; letter-spacing: .13em; text-transform: uppercase;
   color: #0e7490; display: flex; align-items: center; gap: 5px;
@@ -904,7 +959,7 @@ body > .dropdown-menu.master-select-menu,
 @keyframes clmSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* ── Dark mode ── */
-[data-bs-theme="dark"] .clm-root { color: #e2e8f0; background: #0a0f1c; }
+[data-bs-theme="dark"] .clm-root { color: #e2e8f0; background: transparent; }
 [data-bs-theme="dark"] .clm-page-card { background: #0f172a; border-color: rgba(6,182,212,.18); }
 /* Dark mode: solid dark teal-tinted bg (was light gradient that
    carried a glossy feel through). The ::after overlay (50% white
@@ -959,13 +1014,41 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-table tbody tr:hover { background: rgba(8,145,178,.16); }
 [data-bs-theme="dark"] .clm-table tbody td { color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-td-name { color: #f1f5f9; }
-[data-bs-theme="dark"] .clm-pag { background: #0f172a; border-top-color: rgba(6,182,212,.18); }
-[data-bs-theme="dark"] .clm-pag-info { color: #cbd5e1; }
-[data-bs-theme="dark"] .clm-pag-info b { color: #67e8f9; }
+
+/* DCP — Segment Rule modal document tables (KYC / Due Diligence /
+ * Trade Licenses / Trade Documents / Quality & Compliance). The doc
+ * card and per-row containers were inline-styled with a hard-coded
+ * white background, so dark mode left them as bright white islands
+ * on a near-black surface — document names + authority lines became
+ * unreadable. Light mode keeps the original white; dark mode swaps
+ * to a slate panel with light text. */
+.dcp-doc-card { background: #fff; }
+.dcp-doc-row  { background: #fff; }
+[data-bs-theme="dark"] .dcp-doc-card { background: #0f172a; }
+[data-bs-theme="dark"] .dcp-doc-row {
+  background: #0f172a;
+  border-bottom-color: rgba(6,182,212,.18) !important;
+}
+[data-bs-theme="dark"] .dcp-doc-row:hover { background: rgba(8,145,178,.16); }
+/* Inline-styled text colors (dark navy document name, slate-grey
+ * authority) get overridden to dark-mode-friendly tones — :where()
+ * keeps specificity low so any explicit style on the same element
+ * still wins. */
+[data-bs-theme="dark"] .dcp-doc-row :where(div, span) { color: #e2e8f0; }
+[data-bs-theme="dark"] .dcp-doc-row > div > div:first-child { color: #f1f5f9; }
+[data-bs-theme="dark"] .dcp-doc-row > div > div:last-child  { color: #94a3b8; }
+[data-bs-theme="dark"] .clm-pag {
+  background: linear-gradient(180deg, rgba(8,145,178,.10), rgba(8,145,178,.06));
+  border-top-color: rgba(6,182,212,.25);
+}
+[data-bs-theme="dark"] .clm-pag-info {
+  background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(6,182,212,.35);
+}
+[data-bs-theme="dark"] .clm-pag-info b { color: #cffafe; }
 [data-bs-theme="dark"] .clm-pag-btn {
-  background: rgba(255,255,255,.03);
-  color: #cbd5e1;
-  border-color: rgba(6,182,212,.25);
+  background: rgba(8,145,178,.10);
+  color: #67e8f9;
+  border-color: rgba(6,182,212,.30);
 }
 [data-bs-theme="dark"] .clm-pag-btn:hover:not(:disabled):not(.on) {
   background: rgba(8,145,178,.14);
@@ -1058,7 +1141,7 @@ body > .dropdown-menu.master-select-menu,
 
 /* Phone ≤ 640px — single column layout, head-strip stacks fully */
 @media (max-width: 640px) {
-  .clm-root { padding: 10px; }
+  .clm-root { gap: 10px; }
   .clm-head-strip { flex-direction: column; align-items: stretch; padding: 12px 12px 12px 18px; }
   .clm-head-strip-left { flex: none; }
   .clm-head-strip-title { font-size: 15px; white-space: normal; }

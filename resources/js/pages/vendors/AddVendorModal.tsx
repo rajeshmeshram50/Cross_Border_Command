@@ -4,12 +4,13 @@ import api from '../../api';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
+import { MasterMultiSelect } from '../master/masterFormKit';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import {
   validateEmail, validatePincode, validateWebsite,
   validateGstin, validateIfsc, validateAccountNumber,
 } from '../../utils/fieldValidators';
+import SalesCustomerSendForSignatureModal from '../sales/SalesCustomerSendForSignatureModal';
 
 /* Vendor-specific contact number rule — 6 to 15 digits, numerics only.
  * Stricter than the shared `validatePhoneGeneric` (which permits +, spaces,
@@ -165,14 +166,31 @@ export type GstScrutinyRow = {
   redFlags: string;
 };
 
-/* Step 3 — Trade Documents (signature workflow on a preset list). */
+/* Step 3 — Trade Documents (signature workflow on a preset list).
+ * `db_id` is the clm_trade_doc_library.id used by the Zoho-Sign send
+ * modal; null for rows that came from the legacy SEED_TRADE_DOCS
+ * fallback (those can't be sent since they don't map to a library
+ * draft). `signedUrl` and `signatureRequestId` are set by the polling
+ * loop once the live signature status is fetched. */
 export type TradeDocRow = {
   code: string;             // TD-001, TD-002, …
   name: string;             // 'Vendor / Supplier Agreement'
+  db_id: number | null;
   sendForSignature: boolean;
-  status: 'N/A' | 'Sent' | 'Signed';
+  status: 'N/A' | 'Sent' | 'Signed' | 'inprogress' | 'completed' | 'declined' | 'recalled' | 'expired';
   attachment: File | null;
   attachmentName: string;
+  signatureRequestId?: number;
+  signedUrl?: string;
+  /* Zoho Sign completion-certificate URL — populated by the polling
+   * effect from clm_signature_requests.certificate_path on completed
+   * rows. Drives the third action-column button. */
+  certificateUrl?: string;
+  /* Set by the parent right before rendering — true when this row's
+   * signatureRequestId is inside the active 60-second Resend cooldown.
+   * The button locks so a multi-doc bundle can't fire one reminder
+   * email per doc. */
+  cooldownActive?: boolean;
 };
 
 /* Step 4 — product-vendor mapping rows with pricing. */
@@ -226,11 +244,11 @@ const SEED_TRADE_LICENSE: TradeLicenseRow[] = [];
  * an onboarder typically sends for e-signature. Status flips to 'Sent'
  * when the user clicks the row's Send button. */
 const SEED_TRADE_DOCS: TradeDocRow[] = [
-  { code: 'TD-001', name: 'Vendor / Supplier Agreement',         sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-002', name: 'Non-Disclosure Agreement (NDA)',      sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-003', name: 'Declaration of Compliance / Conformity', sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-004', name: 'Quality Assurance Agreement',         sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-005', name: 'Service Level Agreement (SLA)',       sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-001', name: 'Vendor / Supplier Agreement',            db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-002', name: 'Non-Disclosure Agreement (NDA)',         db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-003', name: 'Declaration of Compliance / Conformity', db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-004', name: 'Quality Assurance Agreement',            db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
+  { code: 'TD-005', name: 'Service Level Agreement (SLA)',          db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
 ];
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -303,6 +321,55 @@ export default function AddVendorModal(props: {
     });
   };
 
+  /* Company Name / Company Legal Name input sanitiser. Strip XSS angle
+   * brackets and SQL-injection signatures before they reach state, then
+   * enforce a name whitelist (letters, digits, spaces, and the few
+   * punctuation marks real company names use: . , - ( ) & / ' %). 100-char
+   * cap matches the backend column. Inline error surfaces when a paste
+   * lands disallowed input so the user knows what was stripped. */
+  const COMPANY_NAME_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
+  const COMPANY_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+  const COMPANY_NAME_MAX = 100;
+  const handleCompanyNameChange = (
+    raw: string,
+    fieldKey: 'companyName' | 'legalName',
+    setter: (v: string) => void,
+  ) => {
+    let cleaned = raw.replace(/[<>]/g, '');
+    const afterAngles = cleaned;
+    cleaned = cleaned.replace(COMPANY_NAME_SQL_RE, '');
+    const afterSql = cleaned;
+    cleaned = cleaned.replace(COMPANY_NAME_INVALID_RE, '');
+    if (cleaned.length > COMPANY_NAME_MAX) cleaned = cleaned.slice(0, COMPANY_NAME_MAX);
+    setter(cleaned);
+    if (cleaned === raw) {
+      clearFieldError(fieldKey);
+      return;
+    }
+    let msg: string;
+    if (afterAngles !== raw)        msg = 'HTML characters (< or >) are not allowed';
+    else if (afterSql !== afterAngles) msg = 'SQL-like patterns are not allowed';
+    else                            msg = "Use letters, numbers, spaces, and . , - ( ) & / ' % only";
+    setFieldErrors(prev => ({ ...prev, [fieldKey]: msg }));
+  };
+
+  /* Generic sanitised-change wrapper. Pipes the raw keystroke through
+   * the supplied sanitiser, writes the cleaned value back to state, and
+   * surfaces / clears the inline error on the matching Field. Lets the
+   * Registered Office / City / Contact Person / Designation inputs all
+   * share one bind-site without each growing their own handler. */
+  const applySanitizer = (
+    raw: string,
+    fieldKey: string,
+    setter: (v: string) => void,
+    sanitizer: (raw: string) => SanitizeResult,
+  ) => {
+    const { cleaned, error } = sanitizer(raw);
+    setter(cleaned);
+    if (error) setFieldErrors(prev => ({ ...prev, [fieldKey]: error }));
+    else clearFieldError(fieldKey);
+  };
+
   /* ─── Master Quick-Add state (matches the Add Product wizard pattern) ─── */
   const [quickAdd, setQuickAdd] = useState<VendorMasterSlug | null>(null);
 
@@ -349,8 +416,55 @@ export default function AddVendorModal(props: {
    * `${kycTab}::${doc.code}`. Value: File + blob URL. Reset on modal
    * close — held at this level (not inside SupplierSegmentRefTable)
    * so switching sub-tabs doesn't drop uploads. */
-  type SegRefUpload = { file: File; url: string; name: string };
+  type SegRefUpload = { file: File | null; url: string; name: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
+
+  /* Persist a segment-rule reference upload so it lands in
+   * segment_doc_uploads (where the Evidence Vault reads from). The
+   * three vendor KYC sub-tabs map directly onto the three categories:
+   *   company → dd, owner → kyc, license → tl. */
+  const SUB_TO_CAT_V: Record<string, 'kyc' | 'dd' | 'tl'> = {
+    company: 'dd',
+    owner:   'kyc',
+    license: 'tl',
+  };
+  const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
+    const ownerId = vendorId || initialVendorId || null;
+    if (!ownerId) {
+      // Vendor row needs to exist before /segment-uploads/supplier/{id}
+      // can write. The supplier form posts on Step 1 save so this only
+      // bites if the user uploads before saving Step 1.
+      return;
+    }
+    const [sub, doc_code] = refKey.split('::');
+    const category = SUB_TO_CAT_V[sub];
+    if (!category || !doc_code) return;
+    const fd = new FormData();
+    fd.append('category', category);
+    fd.append('doc_code', doc_code);
+    fd.append('doc_name', docName || doc_code);
+    fd.append('attachment', file);
+    try {
+      const { data } = await api.post(`/segment-uploads/supplier/${ownerId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const row = data?.data;
+      if (row?.attachment_url) {
+        setSegmentRefUploads(prev => {
+          const existing = prev[refKey];
+          if (existing?.url && existing.url.startsWith('blob:')) {
+            try { URL.revokeObjectURL(existing.url); } catch {}
+          }
+          return {
+            ...prev,
+            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name },
+          };
+        });
+      }
+    } catch {
+      // Silent — keep blob URL in state so the user still sees the upload
+    }
+  };
 
   /* ─── Step 1: Address + primary contact ─── */
   const [registeredOffice, setRegisteredOffice] = useState('');
@@ -450,8 +564,64 @@ export default function AddVendorModal(props: {
      to avoid an extra fetch on initial mount. */
   const [licenseTypeOpts, setLicenseTypeOpts] = useState<Opt[]>([]);
 
+  /* Hydrate segmentRefUploads on edit-mode open so the KYC / DD / Trade
+   * License tables show what was previously attached. Reads the same
+   * segment_doc_uploads table the Evidence Vault uses. */
+  useEffect(() => {
+    if (!initialVendorId) return;
+    let cancelled = false;
+    api.get(`/segment-uploads/supplier/${initialVendorId}`)
+      .then((r) => {
+        if (cancelled) return;
+        const refs: any[] = Array.isArray(r.data?.data) ? r.data.data : [];
+        const CAT_TO_SUB: Record<string, string> = { dd: 'company', kyc: 'owner', tl: 'license' };
+        const hydrated: Record<string, SegRefUpload> = {};
+        for (const x of refs) {
+          const sub = CAT_TO_SUB[x.category];
+          if (!sub || !x.doc_code) continue;
+          hydrated[`${sub}::${x.doc_code}`] = { file: null, url: x.attachment_url || '', name: x.attachment_name || '' };
+        }
+        if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
+      })
+      .catch(() => { /* silent — leave the table empty */ });
+    return () => { cancelled = true; };
+  }, [initialVendorId]);
+
   /* ─── Step 3: Trade Documents (preset signature workflow) ─── */
   const [tradeDocRows, setTradeDocRows] = useState<TradeDocRow[]>(SEED_TRADE_DOCS);
+  /* Send for Signature — when non-null the Zoho Sign wizard pops with
+   * the listed clm_trade_doc_library ids pre-checked. modelName='Vendor'
+   * makes the backend resolve {{supplier.*}} tokens with this vendor. */
+  const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
+  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }>>({});
+
+  /* Resend cooldown — same pattern as the customer + consignee modals.
+   * Zoho's remind API operates per-REQUEST so a multi-doc bundle gets
+   * ONE reminder email no matter how many rows in the bundle the user
+   * clicks Resend on. We seed a 60s cooldown on the
+   * signature_request_id; every sibling row's Resend button locks
+   * visually until the timer expires. */
+  const [recentReminds, setRecentReminds] = useState<Record<number, number>>({});
+  useEffect(() => {
+    const expiries = Object.values(recentReminds);
+    if (expiries.length === 0) return;
+    const earliest = Math.min(...expiries);
+    const wait = Math.max(50, earliest - Date.now() + 50);
+    const id = window.setTimeout(() => {
+      setRecentReminds(prev => {
+        const now = Date.now();
+        const fresh: Record<number, number> = {};
+        for (const k in prev) if (prev[k] > now) fresh[+k] = prev[k];
+        return fresh;
+      });
+    }, wait);
+    return () => window.clearTimeout(id);
+  }, [recentReminds]);
+  const isReminderCooldown = (reqId?: number | null): boolean => !!reqId && (recentReminds[reqId] ?? 0) > Date.now();
+  const reminderCooldownSeconds = (reqId?: number | null): number => {
+    if (!reqId) return 0;
+    return Math.max(0, Math.ceil(((recentReminds[reqId] ?? 0) - Date.now()) / 1000));
+  };
 
   /* ─── Step 4: Product mappings + Add Product Mapping modal ─── */
   type ProductOpt = {
@@ -486,6 +656,9 @@ export default function AddVendorModal(props: {
   };
   const EMPTY_MAP_DRAFT: MapDraft = { productId: '', productCode: '', productName: '', hsnSacCode: '', segment: '', batchSerialLot: '', purchasePrice: '', gstPercentage: '', gstAmount: '', totalAmount: '' };
   const [mapDraft,       setMapDraft]       = useState<MapDraft>(EMPTY_MAP_DRAFT);
+  /* When set, the Map Products popup is editing this existing mapping
+   * row (saveMapDraft updates in place instead of appending a new one). */
+  const [mapEditingId,   setMapEditingId]   = useState<string | null>(null);
 
   /* ─── Body scroll lock ─── */
   useEffect(() => {
@@ -611,13 +784,22 @@ export default function AddVendorModal(props: {
     if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
 
     let cancelled = false;
-    Promise.all(
-      ids.map(id =>
-        api.get(`/clm/segment-rules/for-segment/${id}`)
-          .then(r => r.data?.data ?? {})
-          .catch(() => ({}))
-      )
-    ).then(results => {
+    Promise.all([
+      Promise.all(
+        ids.map(id =>
+          api.get(`/clm/segment-rules/for-segment/${id}`)
+            .then(r => r.data?.data ?? {})
+            .catch(() => ({}))
+        )
+      ),
+      /* Party filter for the supplier (vendor) form: trade docs whose
+       * `party` CSV mentions ANY Supplier-* sub-type. The endpoint
+       * matches Supplier-Material / Logistic / Tech / Advisory /
+       * Strategic Risk. Intersected with segment-rule td below. */
+      api.get('/clm/trade-doc-library/for-party/supplier')
+        .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
+        .catch(() => [] as Array<{ code: string; name: string }>),
+    ]).then(([results, partyDocs]) => {
       if (cancelled) return;
       const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc'): SegDocRow[] => {
         const map = new Map<string, SegDocRow>();
@@ -633,17 +815,135 @@ export default function AddVendorModal(props: {
         }
         return Array.from(map.values());
       };
+      const partyById = new Map<string, number>(
+        (partyDocs as Array<{ code: string; id: number }>).map(p => [p.code, p.id]),
+      );
+      const mergedTd = mergeCat('td').filter(d => partyById.has(d.code));
       setSegmentDocs({
         kyc: mergeCat('kyc'),
         dd:  mergeCat('dd'),
         tl:  mergeCat('tl'),
-        td:  mergeCat('td'),
+        td:  mergedTd,
         qc:  mergeCat('qc'),
       });
+      /* Drive the Step 3 Trade Documents signature workflow from the
+       * segment × party intersection. Mandatory rows arrive pre-checked.
+       * Falls back to the legacy seed list when the intersection is
+       * empty so the table is never blank — those rows have db_id=null
+       * and can't be sent (Send is gated on db_id). */
+      if (mergedTd.length > 0) {
+        setTradeDocRows(mergedTd.map(d => ({
+          code: d.code,
+          name: d.name,
+          db_id: partyById.get(d.code) ?? null,
+          sendForSignature: d.requirement === 'M',
+          status: 'N/A' as const,
+          attachment: null,
+          attachmentName: '',
+        })));
+      }
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segment]);
+
+  /* Poll live signature-request status every 15s while the user is on
+   * Step 3 → Trade Documents. ?sync=true makes the backend pull each
+   * inprogress row from Zoho so completed signings appear in the badges
+   * without a refresh — same pattern as Customer/Consignee Stage 3.
+   * Keyed on `vendorId` (not `initialVendorId`) so the poller also kicks
+   * in for newly-created vendors once Stage 1→2 has saved a row. */
+  useEffect(() => {
+    if (!vendorId || step !== 3 || tradeTab !== 'trade') return;
+    let cancelled = false;
+    const fetchAndUpdate = async (withSync: boolean) => {
+      try {
+        const r = await api.get('/clm/signature-requests', {
+          params: { party_id: vendorId, model_name: 'Vendor', sync: withSync ? 1 : 0 },
+        });
+        if (cancelled) return;
+        const rows: Array<{
+          id: number;
+          status: TradeDocRow['status'];
+          trade_doc_ids: number[];
+          signed_document_paths?: Array<{ url?: string; path?: string; file_url?: string }> | string[] | null;
+          signed_document_path?: string | null;
+          signed_document_url?: string | null;
+          certificate_path?: string | null;
+          certificate_url?: string | null;
+          file_url?: string | null;
+        }> = Array.isArray(r.data?.data) ? r.data.data : [];
+        const map: Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }> = {};
+        for (const row of rows) {
+          const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
+          for (let i = 0; i < ids.length; i++) {
+            const docId = Number(ids[i]);
+            if (!docId || map[docId]) continue;
+            // Resolve a usable URL from whatever the backend populated.
+            // Production sometimes returns signed_document_paths=null
+            // (the Zoho-download queue job hadn't run yet) while the
+            // webhook-set certificate_path is already there. Fall back
+            // through the chain so the View / Download buttons enable
+            // as soon as ANY signed artefact exists, instead of staying
+            // disabled until the queue worker catches up.
+            // Backend transforms the response with file_url() now (see
+            // ClmSignatureController::index), so .url / .file_url on each
+            // signed_document_paths entry is already absolute (Azure blob
+            // URL on prod, /storage/… on local). Prefer those over raw
+            // paths so we don't double-resolve.
+            const signedArr = row.signed_document_paths;
+            let rawSignedUrl: string | null = null;
+            if (Array.isArray(signedArr)) {
+              const entry = signedArr[i] as { url?: string; path?: string; file_url?: string } | string | undefined;
+              if (typeof entry === 'string') rawSignedUrl = entry;
+              else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
+            }
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
+            /* file_url and certificate_* are NOT fallbacks here. When
+             * Zoho mints the certificate before the signed PDF lands
+             * (signed_document_paths: []), Laravel's model accessor
+             * fills file_url with the cert URL — using that as a signed
+             * URL fallback silently routes the View / Download buttons
+             * to the certificate. Keep them strictly separate so the
+             * signed-doc buttons stay disabled until the real signed
+             * PDF appears, and the cert lives only on its own button. */
+            const rawCertUrl = row.certificate_url || row.certificate_path || null;
+            // Resolve via resolveFileUrl so the URL gets the right
+            // base prefix (VITE_API_URL on the deployed SPA, current
+            // origin in dev). Bare /storage/… relative URLs 404 when
+            // the SPA origin differs from the API host.
+            map[docId] = {
+              status: row.status,
+              signatureRequestId: row.id,
+              signedUrl:      rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
+              certificateUrl: rawCertUrl   ? resolveFileUrl(rawCertUrl)   : undefined,
+            };
+          }
+        }
+        setSigStatusByDoc(map);
+      } catch { /* silent — polling failures shouldn't toast every 15s */ }
+    };
+    fetchAndUpdate(false);
+    const iv = window.setInterval(() => fetchAndUpdate(true), 15000);
+    return () => { cancelled = true; window.clearInterval(iv); };
+  }, [vendorId, step, tradeTab]);
+
+  // Project polled status into tradeDocRows.
+  useEffect(() => {
+    setTradeDocRows(prev => prev.map(r => {
+      if (!r.db_id) return r;
+      const info = sigStatusByDoc[r.db_id];
+      if (!info) return r;
+      return {
+        ...r,
+        status: info.status,
+        signatureRequestId: info.signatureRequestId,
+        signedUrl:      info.signedUrl      ?? r.signedUrl,
+        certificateUrl: info.certificateUrl ?? r.certificateUrl,
+      };
+    }));
+  }, [sigStatusByDoc]);
 
   /* ──────────────────────────────────────────────────────────────────
    * Edit-mode prefill — fires once on mount when the parent passed an
@@ -702,8 +1002,20 @@ export default function AddVendorModal(props: {
     const numStr = (n?: number | null): string => (n ?? '') === '' || n == null ? '' : String(n);
 
     (async () => {
+      /* Parallel fetch — kick off the vendor show AND the products
+       * dropdown at the same time. Previously productOpts only loaded
+       * when the user opened Step 4, so a fresh edit with mappings
+       * showed blank HSN/Segment until the user clicked Map Products
+       * and waited for *another* ~500-row fetch. Firing both in parallel
+       * shaves the perceived load to whichever is slower, and the
+       * Map Products backfill effect immediately joins them. */
+      const minShimmerMs = 350; // floor so the shimmer doesn't flicker on fast networks
+      const t0 = performance.now();
       try {
-        const res = await api.get<{ data: ApiVendor }>(`/vendors/${initialVendorId}`);
+        const [res] = await Promise.all([
+          api.get<{ data: ApiVendor }>(`/vendors/${initialVendorId}`),
+          fetchProductOptsIfNeeded(),
+        ]);
         const v = res.data?.data;
         if (!v) return;
 
@@ -823,13 +1135,16 @@ export default function AddVendorModal(props: {
           redFlags: r.red_flags ?? '',
         })));
 
-        // Step 4 — product mappings
+        // Step 4 — product mappings. HSN/SAC + Segment aren't echoed in
+        // the vendor show payload, so they're seeded empty here and a
+        // later effect backfills them once productOpts loads (kicked off
+        // by the void call right after).
         setProductMappings((v.product_mappings ?? []).map(m => ({
           id: String(m.id),
           productId: m.product_id ?? null,
           productCode: m.product_code ?? '',
           productName: m.product_name ?? '',
-          hsnSacCode: '',  // not echoed in the index/show shape; refetched if user re-edits
+          hsnSacCode: '',
           segment: '',
           batchSerialLot: m.batch_serial_lot ?? '',
           purchasePrice: Number(m.purchase_price ?? 0),
@@ -837,10 +1152,19 @@ export default function AddVendorModal(props: {
           gstAmount: Number(m.gst_amount ?? 0),
           totalAmount: Number(m.total_amount ?? 0),
         })));
+        // productOpts already fetched in parallel above — Map Products
+        // backfill effect joins on productId once both arrays are
+        // populated, so no extra fetch needed here.
       } catch {
         toast.error('Load failed', 'Could not load the supplier — closing the form.');
         onClose();
       } finally {
+        // Floor the visible shimmer time so a fast network doesn't
+        // render a 50ms flash that looks like a glitch. Once enough
+        // wall-clock has elapsed, drop the overlay.
+        const elapsed = performance.now() - t0;
+        const wait = Math.max(0, minShimmerMs - elapsed);
+        if (wait > 0) await new Promise(r => setTimeout(r, wait));
         setLoadingEdit(false);
       }
     })();
@@ -1283,8 +1607,60 @@ export default function AddVendorModal(props: {
     });
   };
   const sendTradeDoc = (code: string) => {
-    setTradeDocRows(prev => prev.map(r => r.code === code ? { ...r, sendForSignature: false, status: 'Sent' as const } : r));
-    toast.success('Sent for signature', `${code} marked as sent`);
+    const row = tradeDocRows.find(r => r.code === code);
+    if (!row?.db_id) {
+      toast.info('Not a library document', 'This row is a legacy placeholder. Pick a segment with mapped trade documents to enable signature sending.');
+      return;
+    }
+    // `vendorId` covers both edit-mode (prop-supplied) and create-mode
+    // (set by Stage 1→2 auto-save). Checking only `initialVendorId`
+    // here was wrong — it stays null after a fresh create until the
+    // user closes and re-opens the modal.
+    if (!vendorId) {
+      toast.info('Save vendor first', 'Save the vendor before sending documents for signature.');
+      return;
+    }
+    /* Resend semantics — when the doc is already `inprogress` in Zoho,
+     * the user clicking "Resend" wants to NUDGE the existing signer,
+     * not re-pick recipients + re-position the signature box. Hit the
+     * remind endpoint directly (mirrors New_IDIMS_6.0 + the customer /
+     * consignee flows) and toast. Declined / recalled / expired rows
+     * fall through to the wizard so the user can re-cast a fresh
+     * request. Vendor row state uses signatureRequestId (camelCase).
+     * Bundle-aware cooldown stops a 3-doc bundle from triggering three
+     * reminder emails. */
+    const reqId = row.signatureRequestId;
+    if (reqId && row.status === 'inprogress') {
+      if (isReminderCooldown(reqId)) {
+        toast.info('Already reminded', `One reminder covers every document in this bundle. Try again in ${reminderCooldownSeconds(reqId)}s.`);
+        return;
+      }
+      const bundleCount = tradeDocRows.filter(r => r.signatureRequestId === reqId).length;
+      api.post(`/clm/signature-requests/${reqId}/remind`)
+        .then(() => {
+          setRecentReminds(prev => ({ ...prev, [reqId]: Date.now() + 60_000 }));
+          toast.success('Reminder sent',
+            bundleCount > 1
+              ? `The signer was notified about all ${bundleCount} documents in this signature request.`
+              : 'The signer has been notified.',
+          );
+        })
+        .catch(err => toast.error('Reminder failed', err?.response?.data?.message ?? 'Could not send the reminder. Try again later.'));
+      return;
+    }
+    setSendForSignature([row.db_id]);
+  };
+  const sendSelectedTradeDocs = () => {
+    const ids = tradeDocRows.filter(r => r.sendForSignature && r.db_id).map(r => r.db_id!);
+    if (ids.length === 0) {
+      toast.info('Nothing selected', 'Tick one or more documents under "Send for Signature" first.');
+      return;
+    }
+    if (!vendorId) {
+      toast.info('Save vendor first', 'Save the vendor before sending documents for signature.');
+      return;
+    }
+    setSendForSignature(ids.slice(0, 10));
   };
 
   /* ──────────────────────────────────────────────────────────────────
@@ -1351,6 +1727,7 @@ export default function AddVendorModal(props: {
   };
 
   const openMapPopup = () => {
+    setMapEditingId(null);
     setMapDraft(EMPTY_MAP_DRAFT);
     setMapPopupOpen(true);
     void fetchProductOptsIfNeeded();
@@ -1379,8 +1756,30 @@ export default function AddVendorModal(props: {
     if (!mapDraft.purchasePrice.trim())  { toast.error('Missing field', 'Purchase Price is required'); return; }
     const price = parseFloat(mapDraft.purchasePrice);
     if (!isFinite(price) || price < 0)   { toast.error('Invalid price', 'Purchase Price must be a non-negative number'); return; }
-    if (productMappings.some(m => m.productId === Number(mapDraft.productId))) {
+    // Duplicate-mapping check only fires for ADD mode — in edit mode the
+    // row already exists for this productId, so we exclude the row being
+    // edited from the check.
+    if (productMappings.some(m => m.productId === Number(mapDraft.productId) && m.id !== mapEditingId)) {
       toast.error('Already mapped', `${mapDraft.productCode} is already mapped to this vendor`);
+      return;
+    }
+    if (mapEditingId) {
+      setProductMappings(prev => prev.map(r => r.id !== mapEditingId ? r : {
+        ...r,
+        productId:    Number(mapDraft.productId),
+        productCode:  mapDraft.productCode,
+        productName:  mapDraft.productName,
+        hsnSacCode:   mapDraft.hsnSacCode,
+        segment:      mapDraft.segment,
+        batchSerialLot: mapDraft.batchSerialLot,
+        purchasePrice: price,
+        gstPercentage: parseFloat(mapDraft.gstPercentage) || 0,
+        gstAmount:    parseFloat(mapDraft.gstAmount) || 0,
+        totalAmount:  parseFloat(mapDraft.totalAmount) || price,
+      }));
+      setMapEditingId(null);
+      setMapPopupOpen(false);
+      toast.success('Mapping updated', `${mapDraft.productCode} ${mapDraft.productName} updated`);
       return;
     }
     const row: ProductMappingRow = {
@@ -1402,8 +1801,77 @@ export default function AddVendorModal(props: {
   };
   const removeMapRow = (id: string) => setProductMappings(prev => prev.filter(r => r.id !== id));
 
+  /* Backfill HSN / Segment on existing mappings once productOpts arrive.
+   * Edit-load seeds these as empty (the vendor show payload doesn't
+   * include the joined master rows), so the Map Products table renders
+   * blank cells until the user re-edits each mapping. This effect joins
+   * each mapping back to its product by productId and writes the master
+   * values in. Skips rows that already have data so a user-edited value
+   * isn't clobbered. */
+  useEffect(() => {
+    if (productOpts.length === 0 || productMappings.length === 0) return;
+    let dirty = false;
+    const next = productMappings.map(m => {
+      if (m.hsnSacCode && m.segment) return m;
+      const opt = productOpts.find(o => Number(o.value) === Number(m.productId));
+      if (!opt) return m;
+      if ((m.hsnSacCode || '') === (opt.hsn || '') && (m.segment || '') === (opt.segment || '')) return m;
+      dirty = true;
+      return { ...m, hsnSacCode: m.hsnSacCode || opt.hsn || '', segment: m.segment || opt.segment || '' };
+    });
+    if (dirty) setProductMappings(next);
+  }, [productOpts, productMappings]);
+
+  /* Open the Map Products popup in edit mode for an existing row.
+   * Prefills the draft from the row, sets mapEditingId so saveMapDraft
+   * updates in place rather than appending, and ensures the product /
+   * GST option lists are loaded so the dropdowns aren't blank. */
+  const openMapEdit = (id: string) => {
+    const row = productMappings.find(r => r.id === id);
+    if (!row) return;
+    setMapEditingId(id);
+    setMapDraft({
+      productId: row.productId != null ? String(row.productId) : '',
+      productCode: row.productCode,
+      productName: row.productName,
+      hsnSacCode: row.hsnSacCode,
+      segment: row.segment,
+      batchSerialLot: row.batchSerialLot,
+      purchasePrice: String(row.purchasePrice ?? ''),
+      gstPercentage: String(row.gstPercentage ?? ''),
+      gstAmount: String(row.gstAmount ?? ''),
+      totalAmount: String(row.totalAmount ?? ''),
+    });
+    setMapPopupOpen(true);
+    void fetchProductOptsIfNeeded();
+    void fetchGstPctOptsIfNeeded();
+  };
+
+  /* Tracks which extra contact the popup is currently editing. null in
+   * add-mode (popup appends a new row), set to a contact id in edit-mode
+   * (saveContactDraft updates that row in place rather than creating a
+   * duplicate). Lets the Edit icon on each secondary contact reuse the
+   * same ContactAddPopup component. */
+  const [contactEditingId, setContactEditingId] = useState<number | null>(null);
   const openContactPopup = () => {
+    setContactEditingId(null);
     setContactDraft({ name: '', designation: '', phone: '', email: '', whatsapp: true, attachmentName: '', attachmentFile: null });
+    setContactPopupOpen(true);
+  };
+  const openContactEdit = (id: number) => {
+    const c = extraContacts.find(x => x.id === id);
+    if (!c) return;
+    setContactEditingId(id);
+    setContactDraft({
+      name: c.name,
+      designation: c.designation,
+      phone: c.phone,
+      email: c.email,
+      whatsapp: c.whatsapp,
+      attachmentName: c.attachmentName,
+      attachmentFile: c.attachmentFile ?? null,
+      attachmentPath: c.attachmentPath,
+    });
     setContactPopupOpen(true);
   };
   const saveContactDraft = () => {
@@ -1422,9 +1890,15 @@ export default function AddVendorModal(props: {
     const emailErr = validateEmail(contactDraft.email);
     if (emailErr) { toast.error('Invalid Email', emailErr); return; }
 
-    setExtraContacts(prev => [...prev, { id: Date.now(), ...contactDraft }]);
+    if (contactEditingId !== null) {
+      setExtraContacts(prev => prev.map(c => c.id === contactEditingId ? { ...c, ...contactDraft } : c));
+      toast.success('Contact updated', `${contactDraft.name} updated`);
+    } else {
+      setExtraContacts(prev => [...prev, { id: Date.now(), ...contactDraft }]);
+      toast.success('Contact added', `${contactDraft.name} added to the list`);
+    }
     setContactPopupOpen(false);
-    toast.success('Contact added', `${contactDraft.name} added to the list`);
+    setContactEditingId(null);
   };
   const removeExtraContact = (id: number) => setExtraContacts(prev => prev.filter(c => c.id !== id));
 
@@ -1476,6 +1950,40 @@ export default function AddVendorModal(props: {
 
         {/* ─── Body ─── */}
         <div className="avm-body">
+          {loadingEdit && (
+            /* Shimmer-only edit-load placeholder. The centred "Loading…"
+               spinner card was removed per design feedback — the form-
+               shaped skeleton bars convey the loading state without the
+               popup blocking the user's view of the form geometry. */
+            <div className="avm-load-overlay" role="status" aria-live="polite" aria-label="Loading supplier">
+              <div className="avm-load-skeleton">
+                {/* Section heading + 4 fields */}
+                <div className="avm-load-bar avm-load-heading" />
+                <div className="avm-load-grid">
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                </div>
+                {/* Address section heading + grid */}
+                <div className="avm-load-bar avm-load-heading" style={{ marginTop: 18 }} />
+                <div className="avm-load-grid">
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                </div>
+                {/* Contact section heading + grid */}
+                <div className="avm-load-bar avm-load-heading" style={{ marginTop: 18 }} />
+                <div className="avm-load-grid">
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                </div>
+              </div>
+            </div>
+          )}
           {step > 1 && (() => {
             /* Carried-over summary of everything captured in earlier
                steps. Each entry is a `Label : value` pair flowed
@@ -1650,10 +2158,22 @@ export default function AddVendorModal(props: {
                 <SectionCard tone="violet" icon={<i className="ri-building-line" />} title="Basic Company Details" subtitle="Identity, classification & sourcing readiness">
                   <div className="avm-grid-2">
                     <Field label="Company Name" required error={fieldErrors.companyName}>
-                      <input className="avm-input" placeholder="e.g. ABC Logistics" value={companyName} onChange={e => { setCompanyName(e.target.value); clearFieldError('companyName'); }} />
+                      <input
+                        className="avm-input"
+                        placeholder="e.g. ABC Logistics"
+                        value={companyName}
+                        maxLength={COMPANY_NAME_MAX}
+                        onChange={e => handleCompanyNameChange(e.target.value, 'companyName', setCompanyName)}
+                      />
                     </Field>
-                    <Field label="Company Legal Name">
-                      <input className="avm-input" placeholder="ABC Logistics Pvt Ltd" value={legalName} onChange={e => setLegalName(e.target.value)} />
+                    <Field label="Company Legal Name" error={fieldErrors.legalName}>
+                      <input
+                        className="avm-input"
+                        placeholder="ABC Logistics Pvt Ltd"
+                        value={legalName}
+                        maxLength={COMPANY_NAME_MAX}
+                        onChange={e => handleCompanyNameChange(e.target.value, 'legalName', setLegalName)}
+                      />
                     </Field>
                   </div>
                   <div className="avm-grid-3">
@@ -1672,11 +2192,14 @@ export default function AddVendorModal(props: {
                       <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts} />
                     </Field>
                     <Field label="Supplier Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segment}>
+                      {/* masterFormKit's MasterMultiSelect renders visible violet
+                          chips with × buttons + a checkbox-marked dropdown so
+                          multi-select is obvious. `value` prop is plural despite
+                          the singular name. */}
                       <MasterMultiSelect
-                        values={segment}
+                        value={segment}
                         options={segmentOpts}
                         placeholder="Select Segment"
-                        addMorePlaceholder="+ Add another segment"
                         onChange={vs => { setSegment(vs); clearFieldError('segment'); }}
                       />
                     </Field>
@@ -1690,7 +2213,13 @@ export default function AddVendorModal(props: {
               {idTab === 'identification' && (
                 <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Company Address & Contact Person Details" subtitle="Registered office and primary KYC contact">
                   <Field label="Registered Office Address" required error={fieldErrors.registeredOffice}>
-                    <input className="avm-input" placeholder="Plot 21, Industrial Area" value={registeredOffice} onChange={e => { setRegisteredOffice(e.target.value); clearFieldError('registeredOffice'); }} />
+                    <input
+                      className="avm-input"
+                      placeholder="Plot 21, Industrial Area"
+                      value={registeredOffice}
+                      maxLength={200}
+                      onChange={e => applySanitizer(e.target.value, 'registeredOffice', setRegisteredOffice, sanitizeKycAddress)}
+                    />
                   </Field>
                   <div className="avm-grid-4">
                     <Field label="Country" required addNew onAdd={() => setQuickAdd('countries')} error={fieldErrors.country}>
@@ -1729,15 +2258,33 @@ export default function AddVendorModal(props: {
                       />
                     </Field>
                     <Field label="City" required error={fieldErrors.city}>
-                      <input className="avm-input" placeholder="e.g. Pune" value={city} onChange={e => { setCity(e.target.value); clearFieldError('city'); }} />
+                      <input
+                        className="avm-input"
+                        placeholder="e.g. Pune"
+                        value={city}
+                        maxLength={60}
+                        onChange={e => applySanitizer(e.target.value, 'city', setCity, raw => sanitizeKycAlpha(raw, 60))}
+                      />
                     </Field>
                   </div>
                   <div className="avm-grid-4">
                     <Field label="Contact Person Name" required error={fieldErrors.contactName}>
-                      <input className="avm-input" placeholder="Rahul Sharma" value={contactName} onChange={e => { setContactName(e.target.value); clearFieldError('contactName'); }} />
+                      <input
+                        className="avm-input"
+                        placeholder="Rahul Sharma"
+                        value={contactName}
+                        maxLength={60}
+                        onChange={e => applySanitizer(e.target.value, 'contactName', setContactName, raw => sanitizeKycAlpha(raw, 60))}
+                      />
                     </Field>
                     <Field label="Designation" required error={fieldErrors.designation}>
-                      <input className="avm-input" placeholder="admin" value={designation} onChange={e => { setDesignation(e.target.value); clearFieldError('designation'); }} />
+                      <input
+                        className="avm-input"
+                        placeholder="admin"
+                        value={designation}
+                        maxLength={60}
+                        onChange={e => applySanitizer(e.target.value, 'designation', setDesignation, raw => sanitizeKycDesignation(raw, 60))}
+                      />
                     </Field>
                     <Field label="Contact No" required error={fieldErrors.contactNo}>
                       <input
@@ -1931,9 +2478,14 @@ export default function AddVendorModal(props: {
                                       {r.isPrimary ? (
                                         <span className="text-muted fs-13" title="Edit on the Vendor Identification tab">—</span>
                                       ) : (
-                                        <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} title="Remove">
-                                          <i className="ri-delete-bin-line" />
-                                        </button>
+                                        <>
+                                          <button type="button" className="btn btn-sm btn-soft-info" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} title="Edit">
+                                            <i className="ri-pencil-line" />
+                                          </button>
+                                          <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} title="Remove">
+                                            <i className="ri-delete-bin-line" />
+                                          </button>
+                                        </>
                                       )}
                                     </div>
                                   </td>
@@ -1979,6 +2531,7 @@ export default function AddVendorModal(props: {
                     tabKey="company"
                     uploads={segmentRefUploads}
                     setUploads={setSegmentRefUploads}
+                    persistUpload={persistSegmentRefUpload}
                   />
                 ) : (
                   <DdTable
@@ -1997,6 +2550,7 @@ export default function AddVendorModal(props: {
                     tabKey="owner"
                     uploads={segmentRefUploads}
                     setUploads={setSegmentRefUploads}
+                    persistUpload={persistSegmentRefUpload}
                   />
                 ) : (
                   <OwnerKycTable
@@ -2013,6 +2567,7 @@ export default function AddVendorModal(props: {
                     tabKey="license"
                     uploads={segmentRefUploads}
                     setUploads={setSegmentRefUploads}
+                    persistUpload={persistSegmentRefUpload}
                   />
                 ) : (
                   <TradeLicenseTable
@@ -2119,10 +2674,11 @@ export default function AddVendorModal(props: {
               )}
               {tradeTab === 'trade' && (
                 <TradeDocsTable
-                  rows={tradeDocRows}
+                  rows={tradeDocRows.map(r => ({ ...r, cooldownActive: isReminderCooldown(r.signatureRequestId) }))}
                   onToggleAll={toggleAllTradeDocSign}
                   onToggleSign={toggleTradeDocSign}
                   onSend={sendTradeDoc}
+                  onSendSelected={sendSelectedTradeDocs}
                 />
               )}
             </SectionCard>
@@ -2133,7 +2689,7 @@ export default function AddVendorModal(props: {
             <SectionCard tone="green" icon={<i className="ri-box-3-line" />} title="Products Details" subtitle="Link products to this vendor with purchase price & GST" headerAction={
               <button className="avm-section-add-btn" onClick={openMapPopup}>+ Add More Products</button>
             }>
-              <ProductMappingTable rows={productMappings} onRemove={removeMapRow} />
+              <ProductMappingTable rows={productMappings} onRemove={removeMapRow} onEdit={openMapEdit} />
             </SectionCard>
           )}
         </div>
@@ -2145,11 +2701,19 @@ export default function AddVendorModal(props: {
             {step > 1 && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
             {step < 4 ? (
               <button className="avm-btn-primary" onClick={goNext} disabled={saving}>
-                {saving ? 'Saving…' : <>Save &amp; Next →</>}
+                {saving ? (
+                  <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+                ) : (
+                  <>Save &amp; Next →</>
+                )}
               </button>
             ) : (
               <button className="avm-btn-primary" onClick={submitAll} disabled={saving}>
-                <i className="ri-check-line" /> {saving ? 'Saving…' : 'Save Vendor'}
+                {saving ? (
+                  <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+                ) : (
+                  <><i className="ri-check-line" /> Save Supplier</>
+                )}
               </button>
             )}
           </div>
@@ -2276,6 +2840,39 @@ export default function AddVendorModal(props: {
           }}
         />
       )}
+
+      {/* Step 3 Trade Documents → Send for Signature (Zoho Sign).
+          Mounts at the modal root so the wizard renders ABOVE the
+          vendor form. modelName='Vendor' makes the backend resolve
+          the {{supplier.*}} token namespace from this vendor. */}
+      <SalesCustomerSendForSignatureModal
+        open={Array.isArray(sendForSignature)}
+        modelName="Vendor"
+        customer={(() => {
+          // `vendorId` is the runtime state — covers both edit-mode
+          // (prop) and create-mode (set by Stage 1→2 auto-save). The
+          // earlier check on `initialVendorId` returned null for newly
+          // saved vendors, blocking the wizard from opening even
+          // though the row existed on the server.
+          if (!vendorId) return null;
+          return {
+            id:      `v-${vendorId}`,
+            db_id:   vendorId,
+            company: companyName || '',
+            contact: contactName || '',
+            email:   email || '',
+          };
+        })()}
+        preselectedDocIds={sendForSignature ?? undefined}
+        onClose={() => setSendForSignature(null)}
+        onSent={(sentDocIds) => {
+          const sentSet = new Set(sentDocIds);
+          setTradeDocRows(prev => prev.map(r => (r.db_id && sentSet.has(r.db_id))
+            ? { ...r, sendForSignature: false, status: 'inprogress' as const }
+            : r));
+          setSendForSignature(null);
+        }}
+      />
     </div>
   ), document.body);
 }
@@ -2322,9 +2919,39 @@ function MasterQuickAddPopup(props: {
 
   const submit = async () => {
     const errs: Record<string, string> = {};
+    /* Same defence layer the main vendor form uses on its Company Name —
+     * Quick Add writes straight to /master/{slug} so without this an
+     * attacker could plant `<script>` / `' OR 1=1 --` into a Risk Level
+     * or Compliance Behaviour and have it render verbatim everywhere
+     * those masters are surfaced. */
+    const QA_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i;
+    const QA_NAME_WHITELIST = /^[A-Za-z0-9\s\-.,()&/'%]+$/;
     schema.fields.forEach(f => {
-      if (f.required && !(values[f.name] ?? '').toString().trim()) {
+      const raw = (values[f.name] ?? '').toString().trim();
+      if (f.required && !raw) {
         errs[f.name] = `${f.label} is required`;
+        return;
+      }
+      if (!raw || f.type === 'number') return;
+      if (/[<>]/.test(raw)) {
+        errs[f.name] = `${f.label} cannot contain HTML characters (< or >)`;
+        return;
+      }
+      if (QA_SQL_RE.test(raw)) {
+        errs[f.name] = `${f.label} contains disallowed patterns (possible SQL/JS injection)`;
+        return;
+      }
+      if (!/[A-Za-z0-9]/.test(raw)) {
+        errs[f.name] = `${f.label} must contain meaningful text (letters or numbers)`;
+        return;
+      }
+      if (!QA_NAME_WHITELIST.test(raw)) {
+        errs[f.name] = `${f.label} may only contain letters, numbers, spaces, and . , - ( ) & / ' %`;
+        return;
+      }
+      if (raw.length > 80) {
+        errs[f.name] = `${f.label} must be 80 characters or fewer`;
+        return;
       }
     });
     if (Object.keys(errs).length) {
@@ -2425,6 +3052,17 @@ function ContactAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof ContactDraft>(k: K, v: ContactDraft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ name?: string; designation?: string }>({});
+  const handleNameChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycAlpha(raw, 60);
+    setDraft({ ...draft, name: cleaned });
+    setErrors(prev => ({ ...prev, name: error }));
+  };
+  const handleDesignationChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycDesignation(raw, 60);
+    setDraft({ ...draft, designation: cleaned });
+    setErrors(prev => ({ ...prev, designation: error }));
+  };
   return createPortal((
     /* Backdrop click is intentionally NOT wired to onClose so an
        accidental outside click doesn't wipe an in-flight contact entry.
@@ -2442,11 +3080,23 @@ function ContactAddPopup(props: {
 
         <div className="avm-cp-body">
           <div className="avm-grid-4">
-            <Field label="Contact Person Name" required>
-              <input className="avm-input" placeholder="Enter name" value={draft.name} onChange={e => set('name', e.target.value)} />
+            <Field label="Contact Person Name" required error={errors.name}>
+              <input
+                className="avm-input"
+                placeholder="Enter name"
+                value={draft.name}
+                maxLength={60}
+                onChange={e => handleNameChange(e.target.value)}
+              />
             </Field>
-            <Field label="Designation" required>
-              <input className="avm-input" placeholder="Enter designation" value={draft.designation} onChange={e => set('designation', e.target.value)} />
+            <Field label="Designation" required error={errors.designation}>
+              <input
+                className="avm-input"
+                placeholder="Enter designation"
+                value={draft.designation}
+                maxLength={60}
+                onChange={e => handleDesignationChange(e.target.value)}
+              />
             </Field>
             <Field label="Contact No" required>
               <input
@@ -2626,9 +3276,15 @@ function SelectInput(props: {
  *  `existingPath` is set on rows hydrated from /vendors/{id} so the
  *  View link works on previously-uploaded files without re-uploading.
  */
-const FILE_ACCEPT     = '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf';
+const FILE_ACCEPT     = '.jpg,.jpeg,.png,.pdf,.doc,.docx,image/jpeg,image/png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const FILE_MAX_BYTES  = 2 * 1024 * 1024; // 2 MB
-const FILE_TYPE_LABEL = 'JPG / PNG / PDF';
+const FILE_TYPE_LABEL = 'JPG / PNG / PDF / DOC / DOCX';
+const FILE_ALLOWED_EXT_RE   = /\.(jpe?g|png|pdf|docx?)$/i;
+const FILE_ALLOWED_MIME_RE  = /^(image\/(jpeg|png)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document))$/i;
+/* Dangerous extension blacklist — script-style and executable files that
+ * must never reach storage even if a mistuned MIME-sniff or an empty type
+ * lets them past the allow-list. Belt-and-suspenders behind the whitelist. */
+const FILE_DENY_EXT_RE = /\.(exe|bat|cmd|com|scr|msi|js|jse|vbs|vbe|ws[hf]?|ps1|psm1|jar|sh|app|apk|dll|deb|rpm|html?|svg|php|asp[x]?|jsp)$/i;
 
 function FileChooser(props: {
   file: File | null;
@@ -2647,12 +3303,22 @@ function FileChooser(props: {
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0] ?? null;
     if (!picked) { onPick(null); return; }
-    // Validate format — picker MIME filter is advisory, native dialog
-    // lets the user override it.
-    const ok =
-      /^(image\/(jpeg|png)|application\/pdf)$/i.test(picked.type) ||
-      /\.(jpe?g|png|pdf)$/i.test(picked.name);
-    if (!ok) {
+    /* Three-layer validation — the native `accept` attribute is advisory
+     * (users can override via the OS dialog), so we enforce on JS too:
+     *   1. Hard-deny dangerous extensions (.exe, .bat, .js, .html, …)
+     *      even if the MIME somehow claims otherwise.
+     *   2. Allow only the whitelisted business formats (PDF/JPG/PNG/DOC/DOCX)
+     *      by MIME *or* by extension. The OR is necessary because some
+     *      browsers / OSes ship an empty `picked.type` for valid files. */
+    const name = picked.name;
+    if (FILE_DENY_EXT_RE.test(name)) {
+      toast.error('Unsafe file type blocked', `${name} — executable / script files are not allowed`);
+      e.target.value = '';
+      return;
+    }
+    const mimeOk = picked.type && FILE_ALLOWED_MIME_RE.test(picked.type);
+    const extOk  = FILE_ALLOWED_EXT_RE.test(name);
+    if (!mimeOk && !extOk) {
       toast.error('Unsupported file', `Only ${FILE_TYPE_LABEL} files are allowed`);
       e.target.value = '';
       return;
@@ -2764,24 +3430,28 @@ function SupplierSegmentRefTable(props: {
   title: string;
   tabKey: string;
   rows: { code: string; name: string; authority?: string | null; expiry?: string | null; requirement: 'M' | 'O' }[];
-  uploads: Record<string, { file: File; url: string; name: string }>;
-  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File; url: string; name: string }>>>;
+  uploads: Record<string, { file: File | null; url: string; name: string }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+  persistUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
 }) {
-  const { title, tabKey, rows, uploads, setUploads } = props;
-  /* Single picker handler — drives both first-time Upload and the
-   * Re-upload action after the file is in. The setter swaps the blob
-   * URL atomically so we never leak the previous File object. */
-  const onPick = (refKey: string, f: File | undefined) => {
+  const { title, tabKey, rows, uploads, setUploads, persistUpload } = props;
+  /* Show the blob URL immediately for instant feedback, then fire the
+   * server upload — the persist callback swaps the blob URL for a
+   * permanent attachment_url once the row lands in segment_doc_uploads. */
+  const onPick = (refKey: string, docName: string, f: File | undefined) => {
     if (!f) return;
     setUploads(prev => {
       const existing = prev[refKey];
-      if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+      if (existing?.url && existing.url.startsWith('blob:')) {
+        try { URL.revokeObjectURL(existing.url); } catch {}
+      }
       return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
     });
+    void persistUpload(refKey, f, docName);
   };
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -2819,7 +3489,7 @@ function SupplierSegmentRefTable(props: {
                   {!uploaded ? (
                     <label className="btn btn-sm btn-soft-primary mb-0" title="Upload" style={{ cursor: 'pointer' }}>
                       <i className="ri-upload-2-line" />
-                      <input type="file" hidden onChange={e => onPick(refKey, e.target.files?.[0])} />
+                      <input type="file" hidden onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
                     </label>
                   ) : (
                     <div className="hstack gap-1">
@@ -2831,7 +3501,7 @@ function SupplierSegmentRefTable(props: {
                       </a>
                       <label className="btn btn-sm btn-soft-primary mb-0" title="Re-upload (replace file)" style={{ cursor: 'pointer' }}>
                         <i className="ri-refresh-line" />
-                        <input type="file" hidden onChange={e => onPick(refKey, e.target.files?.[0])} />
+                        <input type="file" hidden onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
                       </label>
                     </div>
                   )}
@@ -2921,8 +3591,8 @@ function DdTable(props: {
 }) {
   if (props.rows.length === 0) return <EmptyTable label="No due-diligence documents added yet. Use “+ Add More Due Diligence” to begin." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -2996,8 +3666,8 @@ function OwnerKycTable(props: {
 }) {
   if (props.rows.length === 0) return <EmptyTable label="No owner-KYC documents added yet. Use “+ Add Owner KYC” to begin." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3060,8 +3730,8 @@ function TradeLicenseTable(props: {
 }) {
   if (props.rows.length === 0) return <EmptyTable label="No trade licenses added yet. Use “+ Add Trade License” to begin." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3128,8 +3798,8 @@ function TradeLicenseTable(props: {
 function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; onClearFile?: (id: string) => void }) {
   if (props.rows.length === 0) return <EmptyTable label="No bank records added yet." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3176,8 +3846,8 @@ function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; on
 function GstScrutinyTable(props: { rows: GstScrutinyRow[]; onRemove?: (id: string) => void }) {
   if (props.rows.length === 0) return <EmptyTable label="No GST scrutiny entries added yet." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3225,57 +3895,150 @@ function TradeDocsTable(props: {
   onToggleAll: () => void;
   onToggleSign: (code: string) => void;
   onSend: (code: string) => void;
+  onSendSelected: () => void;
 }) {
   const allChecked = props.rows.length > 0 && props.rows.every(r => r.sendForSignature);
+  // Map raw signature status → display label + pill colour. Legacy
+  // 'Sent'/'Signed'/'N/A' values still come back from local-only state
+  // (rows that haven't been hit by the poller yet); the live values
+  // come from the polling loop in the parent.
+  const badge = (status: TradeDocRow['status']): { label: string; cls: string } => {
+    switch (status) {
+      case 'completed': case 'Signed':     return { label: 'Signed',             cls: 'avm-pill-primary' };
+      case 'inprogress': case 'Sent':       return { label: 'Awaiting Signature', cls: 'avm-pill-success' };
+      case 'declined':                      return { label: 'Declined',           cls: 'avm-pill-muted' };
+      case 'recalled':                      return { label: 'Recalled',           cls: 'avm-pill-muted' };
+      case 'expired':                       return { label: 'Expired',            cls: 'avm-pill-muted' };
+      default:                              return { label: 'N/A',                cls: 'avm-pill-muted' };
+    }
+  };
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
-        <thead className="table-light">
-          <tr>
-            <th>SR NO</th>
-            <th>DOCUMENT NAME</th>
-            <th style={{ minWidth: 260 }}>
-              <label className="d-inline-flex align-items-center gap-2 mb-0">
-                <input type="checkbox" checked={allChecked} onChange={props.onToggleAll} />
-                SEND DOCUMENT FOR SIGNATURE
-              </label>
-            </th>
-            <th>DOCUMENT STATUS</th>
-            <th>ACTIONS</th>
-          </tr>
-        </thead>
-        <tbody>
-          {props.rows.map((r, i) => (
-            <tr key={r.code}>
-              <td>{String(i + 1)}</td>
-              <td><strong>{r.name}</strong></td>
-              <td>
-                <div className="d-inline-flex align-items-center gap-2">
-                  <input type="checkbox" checked={r.sendForSignature} onChange={() => props.onToggleSign(r.code)} />
-                  <button type="button" className="avm-btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => props.onSend(r.code)} disabled={!r.sendForSignature && r.status === 'N/A'}>
-                    <i className="ri-send-plane-line me-1" /> Send
-                  </button>
-                </div>
-              </td>
-              <td>
-                <span className={`avm-pill ${r.status === 'Sent' ? 'avm-pill-success' : (r.status === 'Signed' ? 'avm-pill-primary' : 'avm-pill-muted')}`}>
-                  {r.status}
-                </span>
-              </td>
-              <td>
-                <div className="hstack gap-1">
-                  <button type="button" className="btn btn-sm btn-soft-secondary" title="View" disabled={!r.attachmentName}>
-                    <i className="ri-eye-line" />
-                  </button>
-                  <button type="button" className="btn btn-sm btn-soft-secondary" title="Download" disabled={!r.attachmentName}>
-                    <i className="ri-download-2-line" />
-                  </button>
-                </div>
-              </td>
+    <div>
+      <div className="table-responsive table-card border rounded">
+        <table className="table align-middle table-nowrap mb-0">
+          <thead className="table-light">
+            <tr>
+              <th>SR NO</th>
+              <th>DOCUMENT NAME</th>
+              <th style={{ minWidth: 260 }}>
+                <label className="d-inline-flex align-items-center gap-2 mb-0">
+                  <input type="checkbox" checked={allChecked} onChange={props.onToggleAll} />
+                  SEND DOCUMENT FOR SIGNATURE
+                </label>
+              </th>
+              <th>DOCUMENT STATUS</th>
+              <th>ACTIONS</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {props.rows.map((r, i) => {
+              const b = badge(r.status);
+              const viewHref = r.signedUrl || (r.attachmentName ? '#' : '#');
+              const canView  = !!r.signedUrl || !!r.attachmentName;
+              return (
+                <tr key={r.code}>
+                  <td>{String(i + 1)}</td>
+                  <td><strong>{r.name}</strong></td>
+                  <td>
+                    {(() => {
+                      // Once the signer is done (`completed` from polling,
+                      // or the legacy 'Signed' local-state value), block
+                      // resend — it would create a fresh request against
+                      // an archived PDF. declined / recalled / expired
+                      // stay re-sendable so the user can retry.
+                      const isSigned = r.status === 'completed' || r.status === 'Signed';
+                      return (
+                        <div className="d-inline-flex align-items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={r.sendForSignature}
+                            onChange={() => props.onToggleSign(r.code)}
+                            disabled={isSigned}
+                          />
+                          <button
+                            type="button"
+                            className="avm-btn-primary"
+                            style={{
+                              padding: '6px 14px',
+                              fontSize: 13,
+                              opacity: (isSigned || r.cooldownActive) ? 0.5 : 1,
+                              cursor:  (isSigned || r.cooldownActive) ? 'not-allowed' : 'pointer',
+                            }}
+                            onClick={() => { if (!isSigned && !r.cooldownActive) props.onSend(r.code); }}
+                            disabled={isSigned || !!r.cooldownActive}
+                            title={
+                              isSigned         ? 'This document has already been signed.'
+                              : r.cooldownActive ? 'Reminder just sent — one reminder covers every document in this bundle.'
+                              : (r.status === 'N/A' ? 'Send for signature' : 'Resend for signature')
+                            }
+                          >
+                            <i className="ri-send-plane-line me-1" /> {r.cooldownActive ? 'Sent ✓' : (r.status === 'N/A' ? 'Send' : 'Resend')}
+                          </button>
+                        </div>
+                      );
+                    })()}
+                  </td>
+                  <td>
+                    <span className={`avm-pill ${b.cls}`}>{b.label}</span>
+                  </td>
+                  <td>
+                    <div className="hstack gap-1">
+                      <a
+                        href={r.signedUrl || viewHref}
+                        target={r.signedUrl ? '_blank' : undefined}
+                        rel={r.signedUrl ? 'noreferrer' : undefined}
+                        onClick={e => { if (!canView) e.preventDefault(); }}
+                        className="btn btn-sm btn-soft-secondary"
+                        title={r.signedUrl ? 'View signed document' : 'View'}
+                        style={{ opacity: canView ? 1 : 0.5, pointerEvents: canView ? 'auto' : 'none' }}
+                      >
+                        <i className="ri-eye-line" />
+                      </a>
+                      <a
+                        href={r.signedUrl || '#'}
+                        download={r.signedUrl ? '' : undefined}
+                        onClick={e => { if (!r.signedUrl) e.preventDefault(); }}
+                        className="btn btn-sm btn-soft-secondary"
+                        title={r.signedUrl ? 'Download signed document' : 'Download'}
+                        style={{ opacity: r.signedUrl ? 1 : 0.5, pointerEvents: r.signedUrl ? 'auto' : 'none' }}
+                      >
+                        <i className="ri-download-2-line" />
+                      </a>
+                      {/* Certificate of Completion — third action only
+                          when the request is completed and Zoho has
+                          minted the certificate. Matches the Customer /
+                          Consignee Stage 3 tables. The legacy 'Signed'
+                          string is treated the same as 'completed' so
+                          rows from before the live-status polling
+                          landed still see the button. */}
+                      {(r.status === 'completed' || r.status === 'Signed') && r.certificateUrl && (
+                        <a
+                          href={r.certificateUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          download=""
+                          className="btn btn-sm btn-soft-info"
+                          title="Download Certificate of Completion"
+                          style={{ pointerEvents: 'auto' }}
+                        >
+                          <i className="ri-award-line" />
+                        </a>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {props.rows.length > 0 && (
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'center' }}>
+          <button type="button" className="avm-btn-primary" onClick={props.onSendSelected}>
+            <i className="ri-send-plane-line me-1" /> Send Selected Documents for Signature
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -3285,11 +4048,11 @@ function TradeDocsTable(props: {
  * with purchase price + GST + total. Empty state until "+ Add More
  * Products" is clicked.
  * ────────────────────────────────────────────────────────────────────── */
-function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void }) {
+function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void }) {
   if (props.rows.length === 0) return <EmptyTable label="No products mapped yet. Use “+ Add More Products” to link this vendor to one or more products." />;
   return (
-    <div className="table-responsive table-card border rounded">
-      <table className="table align-middle table-nowrap mb-0">
+    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
+      <table className="table align-middle mb-0 avm-kyc-table">
         <thead className="table-light">
           <tr>
             <th>SR NO</th>
@@ -3298,10 +4061,10 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
             <th>HSN / SAC</th>
             <th>SEGMENT</th>
             <th>BATCH / LOT</th>
-            <th>PRICE (₹)</th>
-            <th>GST %</th>
-            <th>GST AMT (₹)</th>
-            <th>TOTAL (₹)</th>
+            <th className="text-end">PRICE (₹)</th>
+            <th className="text-end">GST %</th>
+            <th className="text-end">GST AMT (₹)</th>
+            <th className="text-end">TOTAL (₹)</th>
             <th>ACTIONS</th>
           </tr>
         </thead>
@@ -3319,9 +4082,16 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td className="text-end font-monospace fs-13">{r.gstAmount.toFixed(2)}</td>
               <td className="text-end font-monospace fs-13"><strong>{r.totalAmount.toFixed(2)}</strong></td>
               <td>
-                <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove(r.id)} title="Remove">
-                  <i className="ri-delete-bin-line" />
-                </button>
+                <div className="hstack gap-1">
+                  {props.onEdit && (
+                    <button type="button" className="btn btn-sm btn-soft-info" onClick={() => props.onEdit?.(r.id)} title="Edit">
+                      <i className="ri-pencil-line" />
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove(r.id)} title="Remove">
+                    <i className="ri-delete-bin-line" />
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -3458,6 +4228,108 @@ function PopupShell(props: {
 }
 
 type DdAddPopupDraft = { documentName: string; issuingAuthority: string; expiry: string; mandatory: boolean; file: File | null; fileName: string };
+
+/* ─── Vendor KYC popup field sanitisers ────────────────────────────────
+ * Shared by the DD, Owner KYC, Trade License, and Bank popups. Each
+ * helper strips XSS angle brackets and SQL-injection signatures, then
+ * enforces a per-field-type charset and length cap, returning the
+ * cleaned value along with a context-aware error message when input
+ * was modified. The Field component renders the error inline. */
+const VENDOR_KYC_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
+
+type SanitizeResult = { cleaned: string; error?: string };
+
+const stripXssAndSql = (raw: string): { cleaned: string; afterAngles: string; afterSql: string } => {
+  const afterAngles = raw.replace(/[<>]/g, '');
+  const afterSql = afterAngles.replace(VENDOR_KYC_SQL_RE, '');
+  return { cleaned: afterSql, afterAngles, afterSql };
+};
+
+/* Name-like fields — DD Document Name, KYC Document Name, Issuing
+ * Authority, Bank Name. Allows letters, digits, spaces, and the basic
+ * punctuation real names use (. , - ( ) & / ' %). */
+const VENDOR_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+const sanitizeKycName = (raw: string, maxLen = 120): SanitizeResult => {
+  const { cleaned: stripped, afterAngles, afterSql } = stripXssAndSql(raw);
+  let cleaned = stripped.replace(VENDOR_NAME_INVALID_RE, '');
+  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  let error: string;
+  if (afterAngles !== raw)          error = 'HTML characters (< or >) are not allowed';
+  else if (afterSql !== afterAngles) error = 'SQL-like patterns are not allowed';
+  else                              error = "Use letters, numbers, spaces, and . , - ( ) & / ' % only";
+  return { cleaned, error };
+};
+
+/* Identifier fields — Document Number, License Number. These are
+ * machine-readable codes like PAN (AABCT1234F), FSSAI (10019011000123),
+ * Aadhaar masks; allow letters, digits, hyphens, and slashes only. */
+const VENDOR_ID_INVALID_RE = /[^A-Za-z0-9\-/]/g;
+const sanitizeKycId = (raw: string, maxLen = 40): SanitizeResult => {
+  const { cleaned: stripped, afterAngles, afterSql } = stripXssAndSql(raw);
+  let cleaned = stripped.replace(VENDOR_ID_INVALID_RE, '');
+  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  let error: string;
+  if (afterAngles !== raw)          error = 'HTML characters (< or >) are not allowed';
+  else if (afterSql !== afterAngles) error = 'SQL-like patterns are not allowed';
+  else                              error = 'Only letters, digits, hyphens and slashes are allowed';
+  return { cleaned, error };
+};
+
+/* Alphabetic-only fields — Bank Branch, City, Contact Person Name.
+ * Letters + spaces, plus the few punctuation marks real values use
+ * (e.g. "M.G. Road", "St. Louis", "Mr. Rahul Sharma"). */
+const VENDOR_ALPHA_INVALID_RE = /[^A-Za-z\s.,'-]/g;
+const sanitizeKycAlpha = (raw: string, maxLen = 60): SanitizeResult => {
+  const cleaned = raw.replace(VENDOR_ALPHA_INVALID_RE, '').slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  return { cleaned, error: 'Only alphabetic characters are allowed' };
+};
+
+/* Designation — same alphabet base, plus `/` for combined titles
+ * (e.g. "CEO/Director", "Sr. Manager - Ops"). */
+const VENDOR_DESIGNATION_INVALID_RE = /[^A-Za-z\s.,'/-]/g;
+const sanitizeKycDesignation = (raw: string, maxLen = 60): SanitizeResult => {
+  const cleaned = raw.replace(VENDOR_DESIGNATION_INVALID_RE, '').slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  return { cleaned, error: 'Only letters, spaces, and . , - / are allowed' };
+};
+
+/* Address — broader charset than a name (plot numbers, flat numbers
+ * etc. include `#` and `/`), but still no `<` / `>` / SQL signatures.
+ * Allows letters, digits, spaces, and . , - ( ) & / ' # %. */
+const VENDOR_ADDRESS_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'#%]/g;
+const sanitizeKycAddress = (raw: string, maxLen = 200): SanitizeResult => {
+  const { cleaned: stripped, afterAngles, afterSql } = stripXssAndSql(raw);
+  let cleaned = stripped.replace(VENDOR_ADDRESS_INVALID_RE, '');
+  if (cleaned.length > maxLen) cleaned = cleaned.slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  let error: string;
+  if (afterAngles !== raw)          error = 'HTML characters (< or >) are not allowed';
+  else if (afterSql !== afterAngles) error = 'SQL-like patterns are not allowed';
+  else                              error = "Use letters, numbers, spaces, and . , - ( ) & / ' # % only";
+  return { cleaned, error };
+};
+
+/* Expiry — MM/YYYY or N/A. As the user types, only digits, slash,
+ * and N/A letters survive. 7-char cap (MM/YYYY length). Save-time
+ * format validation is left to the parent saver — this just blocks
+ * the obviously-invalid keystrokes that the screenshots called out
+ * (random text, special characters). */
+const VENDOR_EXPIRY_INVALID_RE = /[^0-9NA/]/gi;
+const sanitizeKycExpiry = (raw: string): SanitizeResult => {
+  let cleaned = raw.replace(VENDOR_EXPIRY_INVALID_RE, '');
+  if (cleaned.length > 7) cleaned = cleaned.slice(0, 7);
+  if (cleaned === raw) return { cleaned };
+  return { cleaned, error: 'Enter MM/YYYY (e.g. 12/2026) or N/A' };
+};
+
+/* Back-compat alias — earlier turn introduced sanitizeDdDocName and the
+ * DdAddPopup body still references it. Wire it to the new generic. */
+const sanitizeDdDocName = (raw: string) => sanitizeKycName(raw, 120);
+const DD_DOC_NAME_MAX = 120;
+
 function DdAddPopup(props: {
   nextCodePreview: string;
   draft: DdAddPopupDraft;
@@ -3467,22 +4339,56 @@ function DdAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave, nextCodePreview } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ documentName?: string; issuingAuthority?: string; expiry?: string }>({});
+  const handleDocNameChange = (raw: string) => {
+    const { cleaned, error } = sanitizeDdDocName(raw);
+    setDraft({ ...draft, documentName: cleaned });
+    setErrors(prev => ({ ...prev, documentName: error }));
+  };
+  const handleAuthorityChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycName(raw, 120);
+    setDraft({ ...draft, issuingAuthority: cleaned });
+    setErrors(prev => ({ ...prev, issuingAuthority: error }));
+  };
+  const handleExpiryChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycExpiry(raw);
+    setDraft({ ...draft, expiry: cleaned });
+    setErrors(prev => ({ ...prev, expiry: error }));
+  };
   return (
     <PopupShell title="Add Due Diligence Document" icon="ri-file-text-line" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-2">
         <Field label="Auto Code">
           <input className="avm-input" value={nextCodePreview} readOnly style={{ color: '#d97706', fontFamily: 'monospace', fontWeight: 600 }} />
         </Field>
-        <Field label="DD Document Name" required>
-          <input className="avm-input" placeholder="e.g. Memorandum of Association" value={draft.documentName} onChange={e => set('documentName', e.target.value)} />
+        <Field label="DD Document Name" required error={errors.documentName}>
+          <input
+            className="avm-input"
+            placeholder="e.g. Memorandum of Association"
+            value={draft.documentName}
+            maxLength={DD_DOC_NAME_MAX}
+            onChange={e => handleDocNameChange(e.target.value)}
+          />
         </Field>
       </div>
       <div className="avm-grid-2">
-        <Field label="Issuing Authority" required>
-          <input className="avm-input" placeholder="e.g. Registrar of Companies (ROC)" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
+        <Field label="Issuing Authority" required error={errors.issuingAuthority}>
+          <input
+            className="avm-input"
+            placeholder="e.g. Registrar of Companies (ROC)"
+            value={draft.issuingAuthority}
+            maxLength={120}
+            onChange={e => handleAuthorityChange(e.target.value)}
+          />
         </Field>
-        <Field label="Expiry">
-          <input className="avm-input" placeholder="MM/YYYY or N/A" value={draft.expiry} onChange={e => set('expiry', e.target.value)} />
+        <Field label="Expiry" error={errors.expiry}>
+          <input
+            className="avm-input"
+            placeholder="MM/YYYY or N/A"
+            value={draft.expiry}
+            maxLength={7}
+            onChange={e => handleExpiryChange(e.target.value)}
+          />
         </Field>
       </div>
       <div className="avm-grid-2">
@@ -3512,22 +4418,61 @@ function OwnerKycAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave, nextCodePreview } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ documentName?: string; issuingAuthority?: string; documentNumber?: string; expiry?: string }>({});
+  const handleDocNameChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycName(raw, 120);
+    setDraft({ ...draft, documentName: cleaned });
+    setErrors(prev => ({ ...prev, documentName: error }));
+  };
+  const handleAuthorityChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycName(raw, 120);
+    setDraft({ ...draft, issuingAuthority: cleaned });
+    setErrors(prev => ({ ...prev, issuingAuthority: error }));
+  };
+  const handleDocNumberChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycId(raw, 40);
+    setDraft({ ...draft, documentNumber: cleaned });
+    setErrors(prev => ({ ...prev, documentNumber: error }));
+  };
+  const handleExpiryChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycExpiry(raw);
+    setDraft({ ...draft, expiry: cleaned });
+    setErrors(prev => ({ ...prev, expiry: error }));
+  };
   return (
     <PopupShell title="Add Owner KYC Document" icon="ri-user-add-line" subtitle="Upload an identity, address, or compliance document for the owner" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-2">
         <Field label="Auto Code">
           <input className="avm-input" value={nextCodePreview} readOnly style={{ color: '#d97706', fontFamily: 'monospace', fontWeight: 600 }} />
         </Field>
-        <Field label="KYC Document Name" required>
-          <input className="avm-input" placeholder="e.g. PAN Card, Aadhaar Card, Passport" value={draft.documentName} onChange={e => set('documentName', e.target.value)} />
+        <Field label="KYC Document Name" required error={errors.documentName}>
+          <input
+            className="avm-input"
+            placeholder="e.g. PAN Card, Aadhaar Card, Passport"
+            value={draft.documentName}
+            maxLength={120}
+            onChange={e => handleDocNameChange(e.target.value)}
+          />
         </Field>
       </div>
       <div className="avm-grid-2">
-        <Field label="Issuing Authority" required>
-          <input className="avm-input" placeholder="e.g. Income Tax Department" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
+        <Field label="Issuing Authority" required error={errors.issuingAuthority}>
+          <input
+            className="avm-input"
+            placeholder="e.g. Income Tax Department"
+            value={draft.issuingAuthority}
+            maxLength={120}
+            onChange={e => handleAuthorityChange(e.target.value)}
+          />
         </Field>
-        <Field label="Document Number">
-          <input className="avm-input" placeholder="e.g. AABCT1234F" value={draft.documentNumber} onChange={e => set('documentNumber', e.target.value)} />
+        <Field label="Document Number" error={errors.documentNumber}>
+          <input
+            className="avm-input"
+            placeholder="e.g. AABCT1234F"
+            value={draft.documentNumber}
+            maxLength={40}
+            onChange={e => handleDocNumberChange(e.target.value)}
+          />
         </Field>
       </div>
       <div className="avm-grid-3">
@@ -3539,8 +4484,14 @@ function OwnerKycAddPopup(props: {
             maxDate={new Date().toISOString().slice(0, 10)}
           />
         </Field>
-        <Field label="Expiry">
-          <input className="avm-input" placeholder="MM/YYYY or N/A" value={draft.expiry} onChange={e => set('expiry', e.target.value)} />
+        <Field label="Expiry" error={errors.expiry}>
+          <input
+            className="avm-input"
+            placeholder="MM/YYYY or N/A"
+            value={draft.expiry}
+            maxLength={7}
+            onChange={e => handleExpiryChange(e.target.value)}
+          />
         </Field>
         <Field label="Status">
           <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Inactive')} options={['Active', 'Inactive']} />
@@ -3568,6 +4519,17 @@ function TradeLicenseAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave, typeOpts } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ licenseNumber?: string; issuingAuthority?: string }>({});
+  const handleLicenseNumberChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycId(raw, 40);
+    setDraft({ ...draft, licenseNumber: cleaned });
+    setErrors(prev => ({ ...prev, licenseNumber: error }));
+  };
+  const handleAuthorityChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycName(raw, 120);
+    setDraft({ ...draft, issuingAuthority: cleaned });
+    setErrors(prev => ({ ...prev, issuingAuthority: error }));
+  };
   return (
     <PopupShell title="Add Trade License" icon="ri-file-list-3-line" subtitle="Register a regulatory license, certification, or trade authorization" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-2">
@@ -3576,13 +4538,25 @@ function TradeLicenseAddPopup(props: {
             ? <SelectInput value={draft.licenseType} onChange={v => set('licenseType', v)} placeholder="Select License Type" options={typeOpts} />
             : <input className="avm-input" placeholder="e.g. FSSAI License" value={draft.licenseType} onChange={e => set('licenseType', e.target.value)} />}
         </Field>
-        <Field label="License Number" required>
-          <input className="avm-input" placeholder="e.g. 10019011000123" value={draft.licenseNumber} onChange={e => set('licenseNumber', e.target.value)} />
+        <Field label="License Number" required error={errors.licenseNumber}>
+          <input
+            className="avm-input"
+            placeholder="e.g. 10019011000123"
+            value={draft.licenseNumber}
+            maxLength={40}
+            onChange={e => handleLicenseNumberChange(e.target.value)}
+          />
         </Field>
       </div>
       <div className="avm-grid-3">
-        <Field label="Issuing Authority" required>
-          <input className="avm-input" placeholder="e.g. FSSAI, Govt. of India" value={draft.issuingAuthority} onChange={e => set('issuingAuthority', e.target.value)} />
+        <Field label="Issuing Authority" required error={errors.issuingAuthority}>
+          <input
+            className="avm-input"
+            placeholder="e.g. FSSAI, Govt. of India"
+            value={draft.issuingAuthority}
+            maxLength={120}
+            onChange={e => handleAuthorityChange(e.target.value)}
+          />
         </Field>
         <Field label="Issue Date" required>
           <MasterDatePicker
@@ -3622,14 +4596,42 @@ function BankAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ bankName?: string; branchName?: string; branchAddress?: string }>({});
+  const handleBankNameChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycName(raw, 80);
+    setDraft({ ...draft, bankName: cleaned });
+    setErrors(prev => ({ ...prev, bankName: error }));
+  };
+  const handleBranchChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycAlpha(raw, 60);
+    setDraft({ ...draft, branchName: cleaned });
+    setErrors(prev => ({ ...prev, branchName: error }));
+  };
+  const handleBranchAddressChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycAddress(raw, 200);
+    setDraft({ ...draft, branchAddress: cleaned });
+    setErrors(prev => ({ ...prev, branchAddress: error }));
+  };
   return (
     <PopupShell title="Add Bank Details" icon="ri-bank-line" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-4">
-        <Field label="Bank Name" required>
-          <input className="avm-input" placeholder="Enter bank name" value={draft.bankName} onChange={e => set('bankName', e.target.value)} />
+        <Field label="Bank Name" required error={errors.bankName}>
+          <input
+            className="avm-input"
+            placeholder="Enter bank name"
+            value={draft.bankName}
+            maxLength={80}
+            onChange={e => handleBankNameChange(e.target.value)}
+          />
         </Field>
-        <Field label="Branch" required>
-          <input className="avm-input" placeholder="Enter branch" value={draft.branchName} onChange={e => set('branchName', e.target.value)} />
+        <Field label="Branch" required error={errors.branchName}>
+          <input
+            className="avm-input"
+            placeholder="Enter branch"
+            value={draft.branchName}
+            maxLength={60}
+            onChange={e => handleBranchChange(e.target.value)}
+          />
         </Field>
         <Field label="Account Number" required>
           <input className="avm-input" placeholder="Enter account number" value={draft.accountNumber} onChange={e => set('accountNumber', e.target.value)} />
@@ -3639,8 +4641,14 @@ function BankAddPopup(props: {
         </Field>
       </div>
       <div className="avm-grid-2">
-        <Field label="Branch Address">
-          <input className="avm-input" placeholder="Enter branch address" value={draft.branchAddress} onChange={e => set('branchAddress', e.target.value)} />
+        <Field label="Branch Address" error={errors.branchAddress}>
+          <input
+            className="avm-input"
+            placeholder="Enter branch address"
+            value={draft.branchAddress}
+            maxLength={200}
+            onChange={e => handleBranchAddressChange(e.target.value)}
+          />
         </Field>
         <Field label="Cancelled Cheque" required>
           <FileChooser
@@ -3664,11 +4672,43 @@ function GstScrutinyAddPopup(props: {
 }) {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
+  const [errors, setErrors] = useState<{ gstNumber?: string; prevNonGst2aInvoice?: string; redFlags?: string }>({});
+  /* GST number is strictly alphanumeric (15 chars: 27AADCI6120M1ZH style).
+   * Strip everything else and uppercase; backend still validates the full
+   * regex, this just keeps obvious garbage out of the picker. */
+  const handleGstNumberChange = (raw: string) => {
+    const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15);
+    set('gstNumber', cleaned);
+    if (cleaned !== raw.toUpperCase().slice(0, 15)) {
+      setErrors(prev => ({ ...prev, gstNumber: 'Only letters and digits (e.g. 27AADCI6120M1ZH)' }));
+    } else {
+      setErrors(prev => ({ ...prev, gstNumber: undefined }));
+    }
+  };
+  const handlePrevInvoiceChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycId(raw, 50);
+    set('prevNonGst2aInvoice', cleaned);
+    setErrors(prev => ({ ...prev, prevNonGst2aInvoice: error }));
+  };
+  /* Red Flags is free-form prose — explanation text like "GSTR-1 not filed
+   * for Q3 2024". Strip XSS/SQL but keep the broader address-style
+   * charset so the user can type sentences naturally. */
+  const handleRedFlagsChange = (raw: string) => {
+    const { cleaned, error } = sanitizeKycAddress(raw, 300);
+    set('redFlags', cleaned);
+    setErrors(prev => ({ ...prev, redFlags: error }));
+  };
   return (
     <PopupShell title="Add GST Scrutiny" icon="ri-shield-check-line" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-3">
-        <Field label="GST Number" required>
-          <input className="avm-input" placeholder="Enter GST number" value={draft.gstNumber} onChange={e => set('gstNumber', e.target.value.toUpperCase())} />
+        <Field label="GST Number" required error={errors.gstNumber}>
+          <input
+            className="avm-input"
+            placeholder="Enter GST number"
+            value={draft.gstNumber}
+            maxLength={15}
+            onChange={e => handleGstNumberChange(e.target.value)}
+          />
         </Field>
         <Field label="GST Status" required>
           <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Suspended' | 'Cancelled')} placeholder="Select GST status" options={['Active', 'Suspended', 'Cancelled']} />
@@ -3683,11 +4723,23 @@ function GstScrutinyAddPopup(props: {
         </Field>
       </div>
       <div className="avm-grid-2">
-        <Field label="Previous Non-GST 2A Reflected Invoice">
-          <input className="avm-input" placeholder="Enter invoice reference (optional)" value={draft.prevNonGst2aInvoice} onChange={e => set('prevNonGst2aInvoice', e.target.value)} />
+        <Field label="Previous Non-GST 2A Reflected Invoice" error={errors.prevNonGst2aInvoice}>
+          <input
+            className="avm-input"
+            placeholder="Enter invoice reference (optional)"
+            value={draft.prevNonGst2aInvoice}
+            maxLength={50}
+            onChange={e => handlePrevInvoiceChange(e.target.value)}
+          />
         </Field>
-        <Field label="Red Flags">
-          <input className="avm-input" placeholder="Enter red flags (optional)" value={draft.redFlags} onChange={e => set('redFlags', e.target.value)} />
+        <Field label="Red Flags" error={errors.redFlags}>
+          <input
+            className="avm-input"
+            placeholder="Enter red flags (optional)"
+            value={draft.redFlags}
+            maxLength={300}
+            onChange={e => handleRedFlagsChange(e.target.value)}
+          />
         </Field>
       </div>
     </PopupShell>
@@ -3858,77 +4910,89 @@ const SCOPED_CSS = `
   padding: 18px 22px 22px;
   background: #fff;
   scrollbar-width: thin; scrollbar-color: #c0cffb transparent;
+  position: relative;  /* anchor for the .avm-load-overlay during edit-load */
 }
 .avm-body::-webkit-scrollbar { width: 8px; }
 .avm-body::-webkit-scrollbar-thumb { background: #c0cffb; border-radius: 99px; }
 
 /* Previous-stage summary */
+/* Step 2 / 3 / 4 carried-over summary header — restyled to match the
+ * lavender Stage 1 vendor header (.avm-id-summary) so every read-only
+ * header in the wizard reads as one component family. Previously this
+ * was a green "completed" panel; design feedback wanted the same calm
+ * violet palette applied across all stages. */
 .avm-prev {
-  background: #ecfdf5; border: 1.5px solid #86efac; border-radius: 12px;
+  background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
+  border: 1px solid #e9d5ff; border-radius: 12px;
   margin-bottom: 14px; overflow: hidden;
 }
 .avm-prev-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px;
-  background: linear-gradient(135deg, #dcfce7, #ecfdf5);
-  border-bottom: 1px solid #bbf7d0;
+  background: transparent;
+  border-bottom: 1px solid rgba(196,181,253,.45);
 }
-.avm-prev-title { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: #166534; letter-spacing: -0.01em; }
-.avm-prev-check { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
-.avm-prev-chip { padding: 3px 10px; border-radius: 99px; background: #fff; color: #166534; font-size: 11px; font-weight: 500; border: 1px solid #bbf7d0; }
-.avm-prev-toggle { height: 28px; padding: 0 12px; background: #fff; border: 1px solid #bbf7d0; color: #166534; border-radius: 7px; font-family: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; }
-.avm-prev-body { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
-/* Step-grouped summary — each stage gets a tone-coloured label
-   followed by a flat grid of label/value pairs. No per-cell box;
-   stage labels do the visual grouping. Mirrors the Add Product
-   wizard's PreviousStages styling. */
-.avm-prev-stage { display: flex; flex-direction: column; gap: 6px; }
-.avm-prev-stage + .avm-prev-stage { margin-top: 10px; }
+.avm-prev-title { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: #5b21b6; letter-spacing: -0.01em; }
+.avm-prev-check { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
+.avm-prev-chip { padding: 3px 10px; border-radius: 99px; background: #fff; color: #5b21b6; font-size: 11px; font-weight: 500; border: 1px solid #c4b5fd; }
+.avm-prev-toggle { height: 28px; padding: 0 12px; background: #fff; border: 1px solid #c4b5fd; color: #5b21b6; border-radius: 7px; font-family: inherit; font-size: 11.5px; font-weight: 500; cursor: pointer; }
+.avm-prev-toggle:hover { background: #ede9fe; border-color: #a78bfa; }
+.avm-prev-body { padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 13px; }
+/* Step-grouped summary — each stage's label uses the same muted violet
+ * tone so the header reads as a single block rather than several panels
+ * fighting for attention. */
+.avm-prev-stage { display: flex; flex-direction: column; gap: 8px; }
+.avm-prev-stage + .avm-prev-stage { margin-top: 6px; padding-top: 10px; border-top: 1px dashed rgba(196,181,253,.55); }
 .avm-prev-stage-label {
-  font-size: 10.5px; font-weight: 600; letter-spacing: .08em;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+  color: #6d28d9;
   display: inline-flex; align-items: center;
+  text-transform: uppercase;
 }
-.avm-prev-stage.tone-violet .avm-prev-stage-label { color: #5b21b6; }
-.avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #0f766e; }
-.avm-prev-stage.tone-purple .avm-prev-stage-label { color: #6b21a8; }
+.avm-prev-stage.tone-violet .avm-prev-stage-label,
+.avm-prev-stage.tone-teal   .avm-prev-stage-label,
+.avm-prev-stage.tone-purple .avm-prev-stage-label { color: #6d28d9; }
 
-/* Compact inline pair rows — each row is a flex-wrap container
-   that flows "Label : value" pairs side by side and breaks onto
-   the next visual line only when the viewport is too narrow. */
-.avm-prev-rows {
-  display: flex; flex-direction: column; gap: 6px;
-}
+/* Switch the per-stage rows from flex-wrap to the same 4-column grid
+ * used by .avm-id-summary-row, so labels and values line up cleanly
+ * across stages — matches the Stage 1 screenshot exactly. */
+.avm-prev-rows { display: flex; flex-direction: column; gap: 13px; }
 .avm-prev-row {
-  display: flex; flex-wrap: wrap; gap: 6px 26px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 28px;
+  row-gap: 13px;
   align-items: baseline;
 }
 .avm-prev-pair {
-  display: inline-flex; align-items: baseline; gap: 6px;
-  font-size: 12.5px; line-height: 1.45;
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 12px; line-height: 1.4;
   min-width: 0;
+  cursor: default; padding: 1px 2px; border-radius: 4px;
+  transition: background .12s;
 }
-/* Carried-over summary header (Steps 2 / 3 / 4) — same visual tone
-   as the .avm-id-summary strip on the Address & Contact sub-tab so
-   every read-only header in the wizard reads as one component
-   family. Label weight lowered from 700 → 500 per design feedback. */
+.avm-prev-pair:hover { background: rgba(124,58,237,0.06); }
 .avm-prev-k {
-  font-size: 10px; font-weight: 500; letter-spacing: .04em;
-  color: #7c3aed; text-transform: uppercase;
-  white-space: nowrap;
+  font-size: 12px; font-weight: 600; letter-spacing: .01em;
+  color: #64748b; text-transform: uppercase;
+  white-space: nowrap; flex-shrink: 0;
 }
 .avm-prev-v {
-  font-weight: 500; color: #1e1b4b;
+  font-weight: 600; color: #6d28d9; line-height: 1.4;
+  min-width: 0; flex: 1 1 auto;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 320px;
 }
 .avm-prev-link {
-  font-weight: 600; color: #4338ca; text-decoration: underline;
+  font-weight: 600; color: #6d28d9; text-decoration: underline;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 320px;
+  min-width: 0; flex: 1 1 auto;
 }
-.avm-prev-link:hover { color: #312e81; }
+.avm-prev-link:hover { color: #4c1d95; }
 .avm-prev-suffix {
-  font-size: 11.5px; color: #64748b; font-weight: 500;
+  font-size: 11px; color: #64748b; font-weight: 500;
+}
+@media (max-width: 900px) {
+  .avm-prev-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* Tabs */
@@ -4396,8 +5460,17 @@ const SCOPED_CSS = `
   border-radius: 10px;
   transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
 }
-.avm-btn-ghost { background: #fff; border: 1.5px solid #e2e8f0; color: #475569; }
-.avm-btn-ghost:hover { background: #f1f5f9; border-color: #cbd5e1; }
+/* Cancel button — the old #e2e8f0 border was nearly invisible against
+ * the modal's white surface, so the button read as a floating label.
+ * Use a stronger slate border + subtle shadow so it's recognisable as
+ * a clickable affordance without competing with the primary CTA. */
+.avm-btn-ghost {
+  background: #fff;
+  border: 1.5px solid #94a3b8;
+  color: #334155;
+  box-shadow: 0 1px 2px rgba(15,23,42,.06);
+}
+.avm-btn-ghost:hover { background: #f1f5f9; border-color: #64748b; color: #1e293b; }
 .avm-btn-outline { background: #fff; border: 1.5px solid #c0cffb; color: #405189; }
 .avm-btn-outline:hover { background: #eef2ff; border-color: #405189; }
 .avm-btn-primary {
@@ -4405,6 +5478,93 @@ const SCOPED_CSS = `
   box-shadow: 0 4px 12px rgba(64,81,137,.4);
 }
 .avm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(64,81,137,.5); }
+.avm-btn-primary:disabled { transform: none; opacity: .85; cursor: progress; box-shadow: 0 4px 12px rgba(64,81,137,.32); }
+
+/* Inline spinner shown in Save & Next / Save Vendor while the network
+ * call is in flight. Same size/curve as Bootstrap's spinner-border-sm
+ * so it sits flush with the 13px button text. */
+.avm-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: avm-spinner-spin .7s linear infinite;
+  vertical-align: -2px;
+}
+@keyframes avm-spinner-spin { to { transform: rotate(360deg); } }
+.avm-spinner-lg {
+  width: 36px; height: 36px;
+  border-width: 3px;
+  border-color: rgba(64,81,137,.20);
+  border-top-color: #405189;
+}
+
+/* Edit-mode shimmer placeholder — shown over the form while /vendors/{id}
+ * is in flight. Form-shaped skeleton bars convey "data is loading" while
+ * preserving the user's mental map of the form layout (no centred modal
+ * card covering the geometry). */
+.avm-load-overlay {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  z-index: 5;
+  overflow: hidden;
+  padding: 22px 26px;
+}
+[data-bs-theme="dark"] .avm-load-overlay { background: #1c2531; }
+.avm-load-skeleton { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: 10px; }
+.avm-load-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+.avm-load-bar {
+  height: 38px; border-radius: 8px;
+  background: linear-gradient(90deg, #eef2f7 0%, #f8fafc 50%, #eef2f7 100%);
+  background-size: 200% 100%;
+  animation: avm-skel-shimmer 1.2s ease-in-out infinite;
+}
+.avm-load-heading { height: 18px; width: 220px; border-radius: 5px; margin-bottom: 6px; }
+[data-bs-theme="dark"] .avm-load-bar {
+  background: linear-gradient(90deg, #221940 0%, #1a1430 50%, #221940 100%);
+  background-size: 200% 100%;
+}
+@keyframes avm-skel-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (max-width: 880px) {
+  .avm-load-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* KYC table layout — Bootstrap's table-nowrap was forcing every cell
+ * onto a single line, so long document names / addresses / red flags
+ * would overflow the column and break the table layout. Allow text
+ * cells to wrap with sane per-cell limits, but keep nowrap for the
+ * status badges and the action button column so they stay aligned. */
+.avm-kyc-table-wrap { overflow-x: auto; }
+.avm-kyc-table {
+  table-layout: auto;
+}
+.avm-kyc-table th, .avm-kyc-table td {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+  max-width: 280px;
+}
+.avm-kyc-table th { white-space: nowrap; }  /* headers stay on one line */
+.avm-kyc-table td .badge,
+.avm-kyc-table td .avm-pill,
+.avm-kyc-table td .btn,
+.avm-kyc-table td .hstack,
+.avm-kyc-table td .font-monospace { white-space: nowrap; }
+/* Action / SR / status columns stay narrow so they don't fight the
+ * text columns for horizontal space. The last column is action icons
+ * across every KYC table; first is the row number. */
+.avm-kyc-table th:first-child, .avm-kyc-table td:first-child,
+.avm-kyc-table th:last-child,  .avm-kyc-table td:last-child {
+  white-space: nowrap;
+  max-width: none;
+  width: 1%;
+}
 
 @media (max-width: 880px) {
   .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr 1fr; }
@@ -4469,21 +5629,25 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-doctable-search { background: #110c25; border-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-doctable-search input { color: #ede9fe; }
 [data-bs-theme="dark"] .avm-doctable-count { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev { background: #14241a; border-color: #166534; }
-[data-bs-theme="dark"] .avm-prev-head { background: linear-gradient(135deg, #16321f, #1d4029); border-bottom-color: #166534; }
-[data-bs-theme="dark"] .avm-prev-title { color: #ffffff; }
-[data-bs-theme="dark"] .avm-prev-toggle { background: #1a3225; color: #d1fae5; border-color: #22c55e; }
-[data-bs-theme="dark"] .avm-prev-chip { background: #1a3225; border-color: #22c55e; color: #ffffff; }
-[data-bs-theme="dark"] .avm-prev-field-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev-field-value { color: #ffffff; }
-[data-bs-theme="dark"] .avm-prev-k { color: #d8b4fe; font-weight: 600; }
-[data-bs-theme="dark"] .avm-prev-v { color: #ffffff; font-weight: 500; }
-[data-bs-theme="dark"] .avm-prev-link { color: #a5b4fc; }
-[data-bs-theme="dark"] .avm-prev-link:hover { color: #c7d2fe; }
-[data-bs-theme="dark"] .avm-prev-suffix { color: #cbd5e1; }
-[data-bs-theme="dark"] .avm-prev-stage.tone-violet .avm-prev-stage-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev-stage.tone-teal   .avm-prev-stage-label { color: #5eead4; }
-[data-bs-theme="dark"] .avm-prev-stage.tone-purple .avm-prev-stage-label { color: #d8b4fe; }
+/* Dark mode — mirrors .avm-id-summary palette so all read-only headers
+ * (Stage 1 + carried-over Stage 2/3/4) share the same dark violet shell. */
+[data-bs-theme="dark"] .avm-prev { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-prev-head { background: transparent; border-bottom-color: rgba(167,139,250,.25); }
+[data-bs-theme="dark"] .avm-prev-title { color: #ddd6fe; }
+[data-bs-theme="dark"] .avm-prev-toggle { background: #221940; color: #c4b5fd; border-color: rgba(167,139,250,.35); }
+[data-bs-theme="dark"] .avm-prev-toggle:hover { background: #2a1d5c; border-color: #a78bfa; }
+[data-bs-theme="dark"] .avm-prev-chip { background: #221940; border-color: rgba(167,139,250,.35); color: #ddd6fe; }
+[data-bs-theme="dark"] .avm-prev-pair:hover { background: rgba(167,139,250,0.10); }
+[data-bs-theme="dark"] .avm-prev-k { color: #94a3b8; }
+[data-bs-theme="dark"] .avm-prev-v { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-link { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-link:hover { color: #ddd6fe; }
+[data-bs-theme="dark"] .avm-prev-suffix { color: #94a3b8; }
+[data-bs-theme="dark"] .avm-prev-stage-label,
+[data-bs-theme="dark"] .avm-prev-stage.tone-violet .avm-prev-stage-label,
+[data-bs-theme="dark"] .avm-prev-stage.tone-teal   .avm-prev-stage-label,
+[data-bs-theme="dark"] .avm-prev-stage.tone-purple .avm-prev-stage-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-stage + .avm-prev-stage { border-top-color: rgba(167,139,250,.20); }
 
 /* ─── Master Quick-Add popup ─── */
 .avm-qa-backdrop {

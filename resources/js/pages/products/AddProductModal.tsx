@@ -6,6 +6,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
+import { SegmentModal, type SegmentForm } from '../clm/ClmSegmentPage';
+import { CLM_CSS } from '../clm/clmShared';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Product — 2-step wizard
@@ -211,6 +213,89 @@ export default function AddProductModal(props: {
     });
   };
 
+  /* Product/Generic name input filter. Allows letters, digits, spaces, and
+   * the punctuation that legitimately appears in product names
+   * (e.g. "Vitamin B-12", "Pen & Pencil", "Acid 5%", "Item (Large)", "A/B Type").
+   * Disallowed characters are silently stripped, and the field surfaces an
+   * inline error so the user understands why their keystroke didn't land. */
+  const PRODUCT_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+  const handleProductNameChange = (
+    raw: string,
+    fieldKey: 'name' | 'genericName',
+    setter: (v: string) => void,
+  ) => {
+    const cleaned = raw.replace(PRODUCT_NAME_INVALID_RE, '');
+    setter(cleaned);
+    if (cleaned !== raw) {
+      setFieldErrors(prev => ({
+        ...prev,
+        [fieldKey]: "Special characters are not allowed. Use letters, numbers, spaces, and . , - ( ) & / ' % only",
+      }));
+    } else {
+      clearFieldError(fieldKey);
+    }
+  };
+
+  /* Printable Description sanitiser. Defends against the two payload classes
+   * a security review flagged:
+   *   • XSS — strip every `<` / `>` so no HTML tag can survive (kills
+   *     `<script>alert(1)</script>`, `<img onerror=…>`, etc.)
+   *   • SQL injection — block common attack signatures (`' OR 1=1 --`,
+   *     `; DROP …`, `UNION SELECT …`, `javascript:`, inline event handlers)
+   * Also caps the field at 256 chars to match the backend column width and
+   * keep the printed PDF from overflowing the description box. */
+  const DESCRIPTION_MAX = 256;
+  const HAS_ANGLE_BRACKET_RE = /[<>]/;
+  const SQL_INJECTION_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i;
+  const handleDescriptionChange = (raw: string) => {
+    let cleaned = raw;
+    const issues: string[] = [];
+    if (HAS_ANGLE_BRACKET_RE.test(cleaned)) {
+      cleaned = cleaned.replace(/[<>]/g, '');
+      issues.push('HTML-like syntax (<, >) is not allowed');
+    }
+    if (SQL_INJECTION_RE.test(cleaned)) {
+      cleaned = cleaned.replace(/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi, '');
+      issues.push('Suspicious SQL-like patterns are not allowed');
+    }
+    if (cleaned.length > DESCRIPTION_MAX) {
+      cleaned = cleaned.slice(0, DESCRIPTION_MAX);
+      issues.push(`Description must be ${DESCRIPTION_MAX} characters or fewer`);
+    }
+    setDescription(cleaned);
+    if (issues.length) {
+      setFieldErrors(prev => ({ ...prev, description: issues.join('; ') }));
+    } else {
+      clearFieldError('description');
+    }
+  };
+
+  /* Confidential Info uses the same defence layer as the printable
+   * description — strip every `<` / `>` (kills any HTML/script tag) and
+   * scrub the SQL-injection signatures, then cap at 500 chars. Stays
+   * silent in the UI (no inline error) because the field is optional
+   * and the audit wanted the payload neutralised, not flagged. */
+  const CONFIDENTIAL_MAX = 500;
+  const handleConfidentialChange = (raw: string) => {
+    let cleaned = raw.replace(/[<>]/g, '');
+    cleaned = cleaned.replace(/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi, '');
+    if (cleaned.length > CONFIDENTIAL_MAX) cleaned = cleaned.slice(0, CONFIDENTIAL_MAX);
+    setConfidential(cleaned);
+  };
+
+  /* Inventory tracking fields (Batch / Serial / CAT / LOT) are numeric-only
+   * per the security review — strip anything non-digit on input so paste of
+   * "BATCH-2024-A1" auto-corrects to "20241". 20-char cap mirrors the column
+   * widths and stops paragraph-length pastes. */
+  const TRACKING_MAX = 20;
+  const handleNumericTrackingChange = (
+    raw: string,
+    setter: (v: string) => void,
+  ) => {
+    const digitsOnly = raw.replace(/\D/g, '').slice(0, TRACKING_MAX);
+    setter(digitsOnly);
+  };
+
   /* ─── Master Quick-Add state ───────────────────────────────────────
    * The `+` button next to a master-backed field sets this to the
    * master slug; the MasterQuickAddPopup component renders the right
@@ -322,8 +407,75 @@ export default function AddProductModal(props: {
    * Re-upload. Key shape for uploads: `qc::${doc.code}`. */
   type SegDocRow = { id:number; code:string; name:string; authority?:string|null; expiry?:string|null; requirement:'M'|'O' };
   const [segmentQcDocs, setSegmentQcDocs] = useState<SegDocRow[]>([]);
-  type SegRefUpload = { file: File; url: string; name: string };
+  type SegRefUpload = { file: File | null; url: string; name: string };
   const [qcRefUploads, setQcRefUploads] = useState<Record<string, SegRefUpload>>({});
+
+  /* Persist a QC reference upload to /segment-uploads/product/{id} so
+   * the file actually lands in the segment_doc_uploads table (same
+   * pipeline customer/consignee/supplier forms use). Without this the
+   * file would only live in browser memory as a blob URL and disappear
+   * on close. Bails out silently before the product has been saved
+   * (no id to scope the upload to). */
+  const persistQcRefUpload = async (refKey: string, file: File, docName: string) => {
+    if (!productId) {
+      toast.error('Save first', 'Save the product before attaching QC documents.');
+      return;
+    }
+    const [, doc_code] = refKey.split('::');
+    if (!doc_code) return;
+    const fd = new FormData();
+    fd.append('category', 'qc');
+    fd.append('doc_code', doc_code);
+    fd.append('doc_name', docName || doc_code);
+    fd.append('attachment', file);
+    try {
+      const { data } = await api.post(`/segment-uploads/product/${productId}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const row = data?.data;
+      if (row?.attachment_url) {
+        setQcRefUploads(prev => {
+          const existing = prev[refKey];
+          if (existing?.url && existing.url.startsWith('blob:')) {
+            try { URL.revokeObjectURL(existing.url); } catch {}
+          }
+          return {
+            ...prev,
+            [refKey]: { file: null, url: row.attachment_url, name: row.attachment_name || file.name },
+          };
+        });
+      }
+    } catch (err: any) {
+      toast.error('Upload failed', err?.response?.data?.message ?? 'Could not save the QC document.');
+    }
+  };
+
+  /* Hydrate qcRefUploads from the server when the modal opens in edit
+   * mode. Same pattern as customer/consignee — fetch the existing
+   * segment_doc_uploads rows and seed the per-row state so re-opens
+   * show what was attached previously. */
+  useEffect(() => {
+    if (!productId) return;
+    let cancelled = false;
+    api.get(`/segment-uploads/product/${productId}?category=qc`)
+      .then(r => {
+        if (cancelled) return;
+        const refs: any[] = Array.isArray(r.data?.data) ? r.data.data : [];
+        const hydrated: Record<string, SegRefUpload> = {};
+        for (const u of refs) {
+          if (u.category !== 'qc' || !u.doc_code) continue;
+          hydrated[`qc::${u.doc_code}`] = {
+            file: null,
+            url:  u.attachment_url || '',
+            name: u.attachment_name || '',
+          };
+        }
+        if (Object.keys(hydrated).length > 0) setQcRefUploads(hydrated);
+      })
+      .catch(() => { /* leave empty — the user can still upload fresh */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId]);
 
   /* ─── Step 2: Vendor ─── */
   const [vendors, setVendors] = useState<VendorEntry[]>([]);
@@ -929,6 +1081,9 @@ export default function AddProductModal(props: {
     if (!name.trim())            errs.name              = 'Product name is required';
     if (!genericName.trim())     errs.genericName       = 'Generic name is required';
     if (!description.trim())     errs.description       = 'Printable description is required';
+    else if (HAS_ANGLE_BRACKET_RE.test(description)) errs.description = 'HTML-like syntax (<, >) is not allowed';
+    else if (SQL_INJECTION_RE.test(description))     errs.description = 'Suspicious SQL-like patterns are not allowed';
+    else if (description.length > DESCRIPTION_MAX)   errs.description = `Description must be ${DESCRIPTION_MAX} characters or fewer`;
     if (!brand.trim())           errs.brand             = 'Make / Brand / Specifications is required';
     if (!segmentId)              errs.segmentId         = 'Segment is required';
     if (!hazType)                errs.hazType           = 'Haz / Non-Haz is required';
@@ -1349,15 +1504,25 @@ export default function AddProductModal(props: {
                 >
                   <div className="apm-grid-2">
                     <Field label="Product Name" required icon={<i className="ri-product-hunt-line" />} error={fieldErrors.name}>
-                      <input className="apm-input apm-input-mf" placeholder="Enter product name" value={name} onChange={e => { setName(e.target.value); clearFieldError('name'); }} />
+                      <input className="apm-input apm-input-mf" placeholder="Enter product name" value={name} onChange={e => handleProductNameChange(e.target.value, 'name', setName)} />
                     </Field>
                     <Field label="Generic Name" required icon={<i className="ri-price-tag-3-line" />} error={fieldErrors.genericName}>
-                      <input className="apm-input apm-input-mf" placeholder="Enter generic name" value={genericName} onChange={e => { setGenericName(e.target.value); clearFieldError('genericName'); }} />
+                      <input className="apm-input apm-input-mf" placeholder="Enter generic name" value={genericName} onChange={e => handleProductNameChange(e.target.value, 'genericName', setGenericName)} />
                     </Field>
                   </div>
 
                   <Field label="Product Printable Description" required icon={<i className="ri-file-text-line" />} error={fieldErrors.description}>
-                    <textarea className="apm-input apm-input-mf apm-textarea" placeholder="Enter printable description" value={description} onChange={e => { setDescription(e.target.value); clearFieldError('description'); }} rows={3} />
+                    <textarea
+                      className="apm-input apm-input-mf apm-textarea"
+                      placeholder="Enter printable description"
+                      value={description}
+                      onChange={e => handleDescriptionChange(e.target.value)}
+                      maxLength={DESCRIPTION_MAX}
+                      rows={3}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>
+                      {description.length}/{DESCRIPTION_MAX}
+                    </div>
                   </Field>
 
                   <div className="apm-grid-2">
@@ -1454,38 +1619,53 @@ export default function AddProductModal(props: {
                         <Field label="Batch No" icon={<i className="ri-hashtag" />}>
                           <input
                             className="apm-input apm-input-mf"
-                            placeholder="Optional"
+                            placeholder="Numeric only"
                             value={batchNo}
-                            onChange={e => setBatchNo(e.target.value)}
+                            inputMode="numeric"
+                            maxLength={TRACKING_MAX}
+                            onChange={e => handleNumericTrackingChange(e.target.value, setBatchNo)}
                           />
                         </Field>
                         <Field label="Serial No" icon={<i className="ri-barcode-line" />}>
                           <input
                             className="apm-input apm-input-mf"
-                            placeholder="Optional"
+                            placeholder="Numeric only"
                             value={serialNo}
-                            onChange={e => setSerialNo(e.target.value)}
+                            inputMode="numeric"
+                            maxLength={TRACKING_MAX}
+                            onChange={e => handleNumericTrackingChange(e.target.value, setSerialNo)}
                           />
                         </Field>
                         <Field label="Cat No" icon={<i className="ri-price-tag-3-line" />}>
                           <input
                             className="apm-input apm-input-mf"
-                            placeholder="Optional"
+                            placeholder="Numeric only"
                             value={catNo}
-                            onChange={e => setCatNo(e.target.value)}
+                            inputMode="numeric"
+                            maxLength={TRACKING_MAX}
+                            onChange={e => handleNumericTrackingChange(e.target.value, setCatNo)}
                           />
                         </Field>
                         <Field label="Lot No" icon={<i className="ri-list-check-2" />}>
                           <input
                             className="apm-input apm-input-mf"
-                            placeholder="Optional"
+                            placeholder="Numeric only"
                             value={lotNo}
-                            onChange={e => setLotNo(e.target.value)}
+                            inputMode="numeric"
+                            maxLength={TRACKING_MAX}
+                            onChange={e => handleNumericTrackingChange(e.target.value, setLotNo)}
                           />
                         </Field>
                       </div>
                       <Field label="Confidential Info" icon={<i className="ri-lock-2-line" />}>
-                        <textarea className="apm-input apm-input-mf apm-textarea apm-conf-textarea" placeholder="Confidential information" value={confidential} onChange={e => setConfidential(e.target.value)} rows={6} />
+                        <textarea
+                          className="apm-input apm-input-mf apm-textarea apm-conf-textarea"
+                          placeholder="Confidential information"
+                          value={confidential}
+                          onChange={e => handleConfidentialChange(e.target.value)}
+                          maxLength={CONFIDENTIAL_MAX}
+                          rows={6}
+                        />
                       </Field>
                     </div>
                   </div>
@@ -1579,8 +1759,6 @@ export default function AddProductModal(props: {
                               <th scope="col">Sr No</th>
                               <th scope="col">Auto Code</th>
                               <th scope="col">QC Document Name</th>
-                              <th scope="col">Authority</th>
-                              <th scope="col">Expiry</th>
                               <th scope="col">Status</th>
                               <th scope="col">File</th>
                               <th scope="col">Actions</th>
@@ -1590,21 +1768,52 @@ export default function AddProductModal(props: {
                             {segmentQcDocs.map((q, i) => {
                               const refKey = `qc::${q.code}`;
                               const uploaded = qcRefUploads[refKey];
-                              const onPick = (f: File | undefined) => {
+                              const onPick = (f: File | undefined, inputEl?: HTMLInputElement | null) => {
                                 if (!f) return;
+                                /* Three-layer file validation — deny list first
+                                 * (kills .exe/.bat/.js even if MIME claims
+                                 * otherwise), then allow-list by extension or
+                                 * MIME (OR because some browsers ship an empty
+                                 * `file.type` for legit office docs), then size
+                                 * cap. Reset the input on rejection so the user
+                                 * can re-pick the same name after fixing. */
+                                const reset = () => { if (inputEl) inputEl.value = ''; };
+                                if (QC_COMPLIANCE_DENY_EXT_RE.test(f.name)) {
+                                  toast.error('Unsafe file type blocked', `${f.name} — executable / script files are not allowed`);
+                                  reset();
+                                  return;
+                                }
+                                const mimeOk = f.type && QC_COMPLIANCE_ALLOWED_MIME_RE.test(f.type);
+                                const extOk  = QC_COMPLIANCE_ALLOWED_EXT_RE.test(f.name);
+                                if (!mimeOk && !extOk) {
+                                  toast.error('Unsupported file type', `${f.name} — only PDF, DOC, DOCX, XLS, XLSX, JPG, PNG are allowed`);
+                                  reset();
+                                  return;
+                                }
+                                if (f.size > QC_COMPLIANCE_MAX_BYTES) {
+                                  const mb = (f.size / (1024 * 1024)).toFixed(2);
+                                  toast.error('File too large', `${f.name} is ${mb} MB — maximum allowed size is 10 MB`);
+                                  reset();
+                                  return;
+                                }
+                                /* Show the blob URL immediately for instant feedback,
+                                 * then fire the server upload — the persist callback
+                                 * swaps the blob URL for the permanent attachment_url
+                                 * once the row hits segment_doc_uploads. */
                                 setQcRefUploads(prev => {
                                   const existing = prev[refKey];
-                                  if (existing) { try { URL.revokeObjectURL(existing.url); } catch {} }
+                                  if (existing?.url && existing.url.startsWith('blob:')) {
+                                    try { URL.revokeObjectURL(existing.url); } catch {}
+                                  }
                                   return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
                                 });
+                                void persistQcRefUpload(refKey, f, q.name);
                               };
                               return (
                                 <tr key={q.code} style={{ background: uploaded ? undefined : '#fafafa' }}>
                                   <td><span className="text-muted fs-13">{String(i + 1).padStart(2, '0')}</span></td>
                                   <td><span className="badge bg-light text-dark border">{q.code}</span></td>
                                   <td><strong className="fs-13">{q.name}</strong></td>
-                                  <td className="fs-13">{q.authority || '—'}</td>
-                                  <td className="fs-13">{q.expiry || 'N/A'}</td>
                                   <td>
                                     <span className={`badge ${q.requirement === 'M' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`}>
                                       {q.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
@@ -1617,9 +1826,14 @@ export default function AddProductModal(props: {
                                   </td>
                                   <td>
                                     {!uploaded ? (
-                                      <label className="btn btn-sm btn-soft-primary mb-0" title="Upload" style={{ cursor: 'pointer' }}>
+                                      <label className="btn btn-sm btn-soft-primary mb-0" title="Upload (PDF, DOC, DOCX, XLS, XLSX, JPG, PNG · max 10 MB)" style={{ cursor: 'pointer' }}>
                                         <i className="ri-upload-2-line" />
-                                        <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+                                        <input
+                                          type="file"
+                                          hidden
+                                          accept={QC_COMPLIANCE_ACCEPT}
+                                          onChange={e => onPick(e.target.files?.[0], e.currentTarget)}
+                                        />
                                       </label>
                                     ) : (
                                       <div className="d-flex gap-1">
@@ -1631,7 +1845,12 @@ export default function AddProductModal(props: {
                                         </a>
                                         <label className="btn btn-sm btn-soft-primary mb-0" title="Re-upload (replace file)" style={{ cursor: 'pointer' }}>
                                           <i className="ri-refresh-line" />
-                                          <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+                                          <input
+                                            type="file"
+                                            hidden
+                                            accept={QC_COMPLIANCE_ACCEPT}
+                                            onChange={e => onPick(e.target.files?.[0], e.currentTarget)}
+                                          />
                                         </label>
                                       </div>
                                     )}
@@ -1980,7 +2199,36 @@ export default function AddProductModal(props: {
         }}
       />
 
-      {quickAdd && (
+      {quickAdd === 'segments' ? (
+        /* Segments quick-add now opens the full CLM segment form (name +
+         * regulatory status + buyer/consignee rule) and POSTs to the CLM
+         * endpoint so the new row lands on the unified `clm_segments`
+         * table that downstream segment rules + DCP read from. The CLM
+         * styles get injected here too since the modal portals to body. */
+        <>
+          <style>{CLM_CSS}</style>
+          <SegmentModal
+            existing={null}
+            nextCode={`S-${String(optSegments.length + 1).padStart(3, '0')}`}
+            onClose={() => setQuickAdd(null)}
+            onSave={async (form: SegmentForm) => {
+              try {
+                const { data } = await api.post('/clm/segments', form);
+                const row = (data?.data ?? data) as Record<string, unknown>;
+                /* ClmSegmentController returns `name` (not `title`),
+                 * but `onMasterAdded('segments', …)` reads `row.title`.
+                 * Normalise so the option label lines up with the rest
+                 * of the segments dropdown (which also displays name). */
+                onMasterAdded('segments', { ...row, title: row.title ?? row.name });
+                setQuickAdd(null);
+                toast.success('Segment added', String(row.name ?? row.title ?? form.name));
+              } catch (e: any) {
+                toast.error('Save failed', e?.response?.data?.message ?? 'Could not save segment');
+              }
+            }}
+          />
+        </>
+      ) : quickAdd && (
         <MasterQuickAddPopup
           slug={quickAdd}
           onClose={() => setQuickAdd(null)}
@@ -2265,6 +2513,34 @@ function PreviousStages(props: {
 /* ──────────────────────────────────────────────────────────────────────────
  * QC Add popup — opens above the parent modal
  * ────────────────────────────────────────────────────────────────────── */
+/* QC attachment guardrails — backend ProductController accepts the same
+ * set, so rejecting at the picker level avoids round-trip 422s and the
+ * worse case of an unsafe upload hitting storage. */
+const QC_ALLOWED_EXTS = ['.pdf', '.png', '.jpg', '.jpeg'];
+const QC_ALLOWED_MIMES = /^(application\/pdf|image\/(png|jpe?g))$/i;
+const QC_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+
+/* QC Compliance (segment-rule) uploads accept a broader business set:
+ * PDF + Office documents in addition to images. Defence-in-depth deny
+ * list rejects executable / script files even if the MIME is missing
+ * (some OSes ship empty `file.type` for rare formats). 10 MB cap fits
+ * full-scan COA / MSDS PDFs without inviting paragraph-sized garbage. */
+const QC_COMPLIANCE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png';
+const QC_COMPLIANCE_ALLOWED_EXT_RE = /\.(pdf|docx?|xlsx?|jpe?g|png)$/i;
+const QC_COMPLIANCE_ALLOWED_MIME_RE = /^(application\/(pdf|msword|vnd\.openxmlformats-officedocument\.(?:wordprocessingml\.document|spreadsheetml\.sheet)|vnd\.ms-excel)|image\/(jpeg|png))$/i;
+const QC_COMPLIANCE_DENY_EXT_RE = /\.(exe|bat|cmd|com|scr|msi|js|jse|vbs|vbe|ws[hf]?|ps1|psm1|jar|sh|app|apk|dll|deb|rpm|html?|svg|php|asp[x]?|jsp)$/i;
+const QC_COMPLIANCE_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/* Free-text sanitisers for QC modal fields. Strip XSS angle brackets +
+ * SQL signatures regardless of which field they were pasted into, then
+ * apply per-field length caps so a paragraph paste can't blow past the
+ * column width. Issued By also enforces a charset whitelist (authority
+ * names are short identifiers, not free prose). */
+const QC_SQL_INJECTION_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
+const QC_ISSUED_BY_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+const QC_ISSUED_BY_MAX = 80;
+const QC_PURPOSE_MAX = 200;
+
 function QcAddPopup(props: {
   draft: Omit<QcRecord, 'id'>;
   setDraft: (next: Omit<QcRecord, 'id'>) => void;
@@ -2277,24 +2553,73 @@ function QcAddPopup(props: {
   onSave: () => void;
 }) {
   const { draft, setDraft, isEdit, product, onClose, onSave } = props;
+  const toast = useToast();
+  const [fieldErrors, setFieldErrors] = useState<{ issuedBy?: string; purpose?: string }>({});
   const set = <K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) =>
     setDraft({ ...draft, [key]: value });
 
+  const setIssuedBy = (raw: string) => {
+    let cleaned = raw.replace(/[<>]/g, '').replace(QC_SQL_INJECTION_RE, '');
+    const beforeWhitelist = cleaned;
+    cleaned = cleaned.replace(QC_ISSUED_BY_INVALID_RE, '');
+    if (cleaned.length > QC_ISSUED_BY_MAX) cleaned = cleaned.slice(0, QC_ISSUED_BY_MAX);
+    setDraft({ ...draft, issuedBy: cleaned });
+    if (cleaned !== raw) {
+      setFieldErrors(prev => ({
+        ...prev,
+        issuedBy: beforeWhitelist !== raw
+          ? 'HTML/SQL-like content is not allowed'
+          : "Use letters, numbers, spaces, and . , - ( ) & / ' % only",
+      }));
+    } else {
+      setFieldErrors(prev => ({ ...prev, issuedBy: undefined }));
+    }
+  };
+
+  const setPurpose = (raw: string) => {
+    let cleaned = raw.replace(/[<>]/g, '').replace(QC_SQL_INJECTION_RE, '');
+    if (cleaned.length > QC_PURPOSE_MAX) cleaned = cleaned.slice(0, QC_PURPOSE_MAX);
+    setDraft({ ...draft, purpose: cleaned });
+    if (cleaned !== raw) {
+      setFieldErrors(prev => ({ ...prev, purpose: 'HTML or SQL-like content is not allowed' }));
+    } else {
+      setFieldErrors(prev => ({ ...prev, purpose: undefined }));
+    }
+  };
+
   const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) {
-      /* Build an in-memory blob URL right away so the freshly-added
-         row's "View Attachment" link works before the file is saved
-         to the server. The server URL replaces this on the next
-         /products/{id} prefill once Save Quality finishes uploading. */
-      const previewUrl = URL.createObjectURL(f);
-      setDraft({
-        ...draft,
-        attachmentName: f.name,
-        attachmentFile: f,
-        attachmentUrl: previewUrl,
-      });
+    if (!f) return;
+    /* Reset the input so the user can re-pick the same file after a
+     * rejection (browsers swallow change events for identical values). */
+    const resetInput = () => { e.target.value = ''; };
+
+    const lower = f.name.toLowerCase();
+    const extOk = QC_ALLOWED_EXTS.some(ext => lower.endsWith(ext));
+    const mimeOk = !f.type || QC_ALLOWED_MIMES.test(f.type);
+    if (!extOk || !mimeOk) {
+      toast.error('Unsupported file type', `${f.name} — only PDF, PNG, or JPG files are allowed.`);
+      resetInput();
+      return;
     }
+    if (f.size > QC_MAX_BYTES) {
+      const mb = (f.size / (1024 * 1024)).toFixed(2);
+      toast.error('File too large', `${f.name} is ${mb} MB — maximum allowed size is 5 MB.`);
+      resetInput();
+      return;
+    }
+
+    /* Build an in-memory blob URL right away so the freshly-added
+       row's "View Attachment" link works before the file is saved
+       to the server. The server URL replaces this on the next
+       /products/{id} prefill once Save Quality finishes uploading. */
+    const previewUrl = URL.createObjectURL(f);
+    setDraft({
+      ...draft,
+      attachmentName: f.name,
+      attachmentFile: f,
+      attachmentUrl: previewUrl,
+    });
   };
 
   return createPortal((
@@ -2335,8 +2660,14 @@ function QcAddPopup(props: {
                 options={QC_NAMES}
               />
             </Field>
-            <Field label="Issued By" required icon={<i className="ri-government-line" />}>
-              <input className="apm-input apm-input-mf" placeholder="Authority" value={draft.issuedBy} onChange={e => set('issuedBy', e.target.value)} />
+            <Field label="Issued By" required icon={<i className="ri-government-line" />} error={fieldErrors.issuedBy}>
+              <input
+                className="apm-input apm-input-mf"
+                placeholder="Authority"
+                value={draft.issuedBy}
+                maxLength={QC_ISSUED_BY_MAX}
+                onChange={e => setIssuedBy(e.target.value)}
+              />
             </Field>
             <Field label={`Attachment ( Only One File Allowed )`} required>
               <div className="apm-qc-file">
@@ -2349,8 +2680,14 @@ function QcAddPopup(props: {
             </Field>
           </div>
 
-          <Field label="QC Purpose" required icon={<i className="ri-file-list-3-line" />}>
-            <input className="apm-input apm-input-mf" placeholder="Certificate of Analysis" value={draft.purpose} onChange={e => set('purpose', e.target.value)} />
+          <Field label="QC Purpose" required icon={<i className="ri-file-list-3-line" />} error={fieldErrors.purpose}>
+            <input
+              className="apm-input apm-input-mf"
+              placeholder="Certificate of Analysis"
+              value={draft.purpose}
+              maxLength={QC_PURPOSE_MAX}
+              onChange={e => setPurpose(e.target.value)}
+            />
           </Field>
 
           <div className="apm-qc-row-2">
