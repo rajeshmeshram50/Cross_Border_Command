@@ -29,7 +29,12 @@ export interface SigReqRow {
   request_name?: string | null;
   trade_doc_ids?: number[] | null;
   document_names?: string[] | null;
-  signed_document_paths?: Array<{ url?: string; path?: string }> | null;
+  signed_document_paths?: Array<{ url?: string; path?: string; file_url?: string }> | null;
+  /** Legacy single-file pointer (string disk-relative path) — backend
+   *  still writes it alongside signed_document_paths for backward compat.
+   *  Used as a last-resort fallback when the JSON array is missing
+   *  entries for a particular doc index. */
+  signed_document_path?: string | null;
   certificate_path?: string | null;
   signers?: Array<{ name?: string; email?: string; order?: number }> | null;
   created_at?: string | null;
@@ -108,13 +113,25 @@ export function signatureRequestsToVaultDocs(rows: SigReqRow[]): VaultDocLike[] 
       seenDocs.add(seenKey);
 
       const signedEntry = paths[i] ?? null;
-      // Resolve through resolveFileUrl so the URL works whether the
-      // backend returned an absolute URL (CDN / Azure), a /storage/…
-      // relative path, or just the disk-relative `path` value. Prevents
-      // 404s when the SPA origin and API origin differ (Vite dev
-      // server, separate deploy host, etc.).
-      const rawUrl = signedEntry?.url || signedEntry?.path || null;
-      const url    = rawUrl ? resolveFileUrl(rawUrl) : null;
+      /* Resolve from `path` FIRST (just like the certificate above),
+       * not from the cached `url`. The cached URL goes stale across
+       * disk-config flips: a row whose fetchSignedArtifacts ran under
+       * the local disk stored `url = "/storage/uploads/…"`, but after
+       * the disk is switched to Azure the actual file lives at
+       * https://<container>.blob.core.windows.net/cbc-saas/uploads/…
+       * and the cached `/storage/…` URL 404s. Re-resolving from the
+       * disk-relative `path` via resolveFileUrl + VITE_API_URL keeps
+       * the link in sync with the current backend config every render.
+       * Falls through to `file_url`, `url`, and the legacy single-file
+       * `signed_document_path` column for older rows that only stored
+       * one of those.
+       */
+      const rawPath = signedEntry?.path
+        || signedEntry?.file_url
+        || signedEntry?.url
+        || (i === 0 ? req.signed_document_path ?? null : null)
+        || null;
+      const url  = rawPath ? resolveFileUrl(rawPath) : null;
       const name = names[i] ?? `Document ${docId}`;
 
       out.push({
