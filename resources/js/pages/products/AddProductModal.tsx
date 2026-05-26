@@ -1768,8 +1768,34 @@ export default function AddProductModal(props: {
                             {segmentQcDocs.map((q, i) => {
                               const refKey = `qc::${q.code}`;
                               const uploaded = qcRefUploads[refKey];
-                              const onPick = (f: File | undefined) => {
+                              const onPick = (f: File | undefined, inputEl?: HTMLInputElement | null) => {
                                 if (!f) return;
+                                /* Three-layer file validation — deny list first
+                                 * (kills .exe/.bat/.js even if MIME claims
+                                 * otherwise), then allow-list by extension or
+                                 * MIME (OR because some browsers ship an empty
+                                 * `file.type` for legit office docs), then size
+                                 * cap. Reset the input on rejection so the user
+                                 * can re-pick the same name after fixing. */
+                                const reset = () => { if (inputEl) inputEl.value = ''; };
+                                if (QC_COMPLIANCE_DENY_EXT_RE.test(f.name)) {
+                                  toast.error('Unsafe file type blocked', `${f.name} — executable / script files are not allowed`);
+                                  reset();
+                                  return;
+                                }
+                                const mimeOk = f.type && QC_COMPLIANCE_ALLOWED_MIME_RE.test(f.type);
+                                const extOk  = QC_COMPLIANCE_ALLOWED_EXT_RE.test(f.name);
+                                if (!mimeOk && !extOk) {
+                                  toast.error('Unsupported file type', `${f.name} — only PDF, DOC, DOCX, XLS, XLSX, JPG, PNG are allowed`);
+                                  reset();
+                                  return;
+                                }
+                                if (f.size > QC_COMPLIANCE_MAX_BYTES) {
+                                  const mb = (f.size / (1024 * 1024)).toFixed(2);
+                                  toast.error('File too large', `${f.name} is ${mb} MB — maximum allowed size is 10 MB`);
+                                  reset();
+                                  return;
+                                }
                                 /* Show the blob URL immediately for instant feedback,
                                  * then fire the server upload — the persist callback
                                  * swaps the blob URL for the permanent attachment_url
@@ -1800,9 +1826,14 @@ export default function AddProductModal(props: {
                                   </td>
                                   <td>
                                     {!uploaded ? (
-                                      <label className="btn btn-sm btn-soft-primary mb-0" title="Upload" style={{ cursor: 'pointer' }}>
+                                      <label className="btn btn-sm btn-soft-primary mb-0" title="Upload (PDF, DOC, DOCX, XLS, XLSX, JPG, PNG · max 10 MB)" style={{ cursor: 'pointer' }}>
                                         <i className="ri-upload-2-line" />
-                                        <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+                                        <input
+                                          type="file"
+                                          hidden
+                                          accept={QC_COMPLIANCE_ACCEPT}
+                                          onChange={e => onPick(e.target.files?.[0], e.currentTarget)}
+                                        />
                                       </label>
                                     ) : (
                                       <div className="d-flex gap-1">
@@ -1814,7 +1845,12 @@ export default function AddProductModal(props: {
                                         </a>
                                         <label className="btn btn-sm btn-soft-primary mb-0" title="Re-upload (replace file)" style={{ cursor: 'pointer' }}>
                                           <i className="ri-refresh-line" />
-                                          <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+                                          <input
+                                            type="file"
+                                            hidden
+                                            accept={QC_COMPLIANCE_ACCEPT}
+                                            onChange={e => onPick(e.target.files?.[0], e.currentTarget)}
+                                          />
                                         </label>
                                       </div>
                                     )}
@@ -2483,6 +2519,17 @@ function PreviousStages(props: {
 const QC_ALLOWED_EXTS = ['.pdf', '.png', '.jpg', '.jpeg'];
 const QC_ALLOWED_MIMES = /^(application\/pdf|image\/(png|jpe?g))$/i;
 const QC_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+
+/* QC Compliance (segment-rule) uploads accept a broader business set:
+ * PDF + Office documents in addition to images. Defence-in-depth deny
+ * list rejects executable / script files even if the MIME is missing
+ * (some OSes ship empty `file.type` for rare formats). 10 MB cap fits
+ * full-scan COA / MSDS PDFs without inviting paragraph-sized garbage. */
+const QC_COMPLIANCE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png';
+const QC_COMPLIANCE_ALLOWED_EXT_RE = /\.(pdf|docx?|xlsx?|jpe?g|png)$/i;
+const QC_COMPLIANCE_ALLOWED_MIME_RE = /^(application\/(pdf|msword|vnd\.openxmlformats-officedocument\.(?:wordprocessingml\.document|spreadsheetml\.sheet)|vnd\.ms-excel)|image\/(jpeg|png))$/i;
+const QC_COMPLIANCE_DENY_EXT_RE = /\.(exe|bat|cmd|com|scr|msi|js|jse|vbs|vbe|ws[hf]?|ps1|psm1|jar|sh|app|apk|dll|deb|rpm|html?|svg|php|asp[x]?|jsp)$/i;
+const QC_COMPLIANCE_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
 /* Free-text sanitisers for QC modal fields. Strip XSS angle brackets +
  * SQL signatures regardless of which field they were pasted into, then

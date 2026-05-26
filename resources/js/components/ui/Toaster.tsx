@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { CheckCircle, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -66,7 +67,13 @@ const VARIANTS: Record<ToastType, ToastVariant> = {
 };
 
 export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; onDismiss: (id: number) => void }) {
-  return (
+  /* Portal to <body> so the toast wrap escapes any ancestor that
+   * created a new stacking context (e.g. master modals with backdrop
+   * filters or transformed wizard shells). Without this, even a
+   * z-index of 100000 stays trapped under the modal's portal layer
+   * and the validation toast lands behind the open modal. */
+  if (typeof document === 'undefined') return null;
+  return createPortal((
     <>
       {/* One stylesheet for the whole toaster — bound to the .cbc-toast
           class names emitted below. Centralising it here keeps the JSX
@@ -219,7 +226,7 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
         ))}
       </div>
     </>
-  );
+  ), document.body);
 }
 
 function ToastCard({ toast, onClose }: { toast: ToastItemType; onClose: () => void }) {
