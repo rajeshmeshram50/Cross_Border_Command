@@ -433,11 +433,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
             }
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
-            if (!rawSignedUrl) rawSignedUrl = row.file_url || null;
-            // Certificate is a SEPARATE artefact from the signed PDF —
-            // never fold it into rawSignedUrl. The action column renders
-            // its own button when certificateUrl is set, distinct from
-            // the View / Download buttons that target the signed doc.
+            /* file_url and certificate_* are NOT fallbacks here. When
+             * the certificate is minted but the signed PDF hasn't been
+             * fetched yet (signed_document_paths === []), Laravel's
+             * model accessor often returns the cert URL via file_url,
+             * which would silently link the "View signed document"
+             * button to the certificate. Keep them strictly separate:
+             * rawSignedUrl stays null → View/Download show "No
+             * attachment yet" until the signed PDF lands; certificate
+             * gets its own URL + button below. */
             const rawCertUrl = row.certificate_url || row.certificate_path || null;
             // resolveFileUrl is a no-op when the URL is already absolute
             // (http(s)://…), so passing the pre-resolved URL through it

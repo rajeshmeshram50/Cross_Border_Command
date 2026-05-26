@@ -900,10 +900,14 @@ export default function AddVendorModal(props: {
             }
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
-            if (!rawSignedUrl) rawSignedUrl = row.file_url || null;
-            // Certificate is its OWN artefact, not a fallback for the
-            // signed PDF. Track separately so the action column can
-            // render a dedicated Certificate-of-Completion button.
+            /* file_url and certificate_* are NOT fallbacks here. When
+             * Zoho mints the certificate before the signed PDF lands
+             * (signed_document_paths: []), Laravel's model accessor
+             * fills file_url with the cert URL — using that as a signed
+             * URL fallback silently routes the View / Download buttons
+             * to the certificate. Keep them strictly separate so the
+             * signed-doc buttons stay disabled until the real signed
+             * PDF appears, and the cert lives only on its own button. */
             const rawCertUrl = row.certificate_url || row.certificate_path || null;
             // Resolve via resolveFileUrl so the URL gets the right
             // base prefix (VITE_API_URL on the deployed SPA, current
