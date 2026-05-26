@@ -1066,10 +1066,74 @@ const SCOPED_CSS = `
   color: #6ee7b7;
   border-color: var(--vz-border-color);
 }
-[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item.active .page-link {
-  background: linear-gradient(135deg,#10b981,#047857);
-  border-color: #10b981;
-  color: #fff;
+/* Active page — force emerald in both modes. The TableContainer
+   sets backgroundColor / borderColor via an INLINE style that
+   resolves to var(--vz-secondary) (which is red in dark mode), so
+   we need !important to beat it. */
+.smcg-table-wrap .pagination .page-item.active .page-link,
+.smcg-table-wrap .pagination .page-link.active {
+  background: linear-gradient(135deg, #10b981, #047857) !important;
+  border-color: #10b981 !important;
+  color: #fff !important;
+  box-shadow: 0 2px 6px rgba(16,185,129,.25);
+}
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item.active .page-link,
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-link.active {
+  background: linear-gradient(135deg, #059669, #064e3b) !important;
+  border-color: #10b981 !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(16,185,129,.35);
+}
+
+/* Pagination arrows (prev / next) — distinct from the numbered
+   buttons. Light: soft mint wash, emerald chevron. Dark: a raised
+   slate tile with a clear emerald chevron so the arrow reads as
+   an action button instead of a black square. */
+.smcg-table-wrap .pagination .page-item:first-child .page-link,
+.smcg-table-wrap .pagination .page-item:last-child .page-link {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+}
+.smcg-table-wrap .pagination .page-item:first-child .page-link i,
+.smcg-table-wrap .pagination .page-item:last-child .page-link i {
+  font-size: 16px;
+  line-height: 1;
+}
+.smcg-table-wrap .pagination .page-item:first-child:not(.disabled) .page-link:hover,
+.smcg-table-wrap .pagination .page-item:last-child:not(.disabled) .page-link:hover {
+  background: #d1fae5;
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+.smcg-table-wrap .pagination .page-item.disabled:first-child .page-link,
+.smcg-table-wrap .pagination .page-item.disabled:last-child .page-link {
+  background: #fafafa;
+  border-color: #ececec;
+  color: #cbd5e1;
+}
+
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item:first-child .page-link,
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item:last-child .page-link {
+  background: rgba(16,185,129,0.14);
+  border-color: rgba(110,231,183,0.35);
+  color: #6ee7b7;
+}
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item:first-child:not(.disabled) .page-link:hover,
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item:last-child:not(.disabled) .page-link:hover {
+  background: rgba(16,185,129,0.28);
+  border-color: rgba(110,231,183,0.55);
+  color: #ecfdf5;
+}
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item.disabled:first-child .page-link,
+[data-bs-theme="dark"] .smcg-table-wrap .pagination .page-item.disabled:last-child .page-link {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.28);
 }
 
 /* Legacy .smcg-table rules below — no longer apply since tableClass

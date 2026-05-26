@@ -38,7 +38,11 @@ class ProformaInvoiceController extends Controller
             ->with([
                 'customer:id,customer_code,company_name',
                 'consignee:id,consignee_code,company_name',
-                'lead:id,opp_code',
+                // lead_stage_id + won_at drive the "With Shipment" vs
+                // "Without Shipment" split — a PI only belongs in the
+                // With-Shipment tab once its opportunity reached the
+                // Victory Stage (lead_stage_id === 6 or won_at set).
+                'lead:id,opp_code,lead_stage_id,won_at',
                 'sourceQuotation:id,code',
                 'salesManager:id,name',
                 // Branch name + is_main flag for the BRANCH column in
@@ -69,6 +73,13 @@ class ProformaInvoiceController extends Controller
             $r->creator_name           = $r->creator?->name;
             $r->creator_user_type      = $r->creator?->user_type;
             $r->creator_branch_is_main = (bool) ($r->creator?->branch?->is_main);
+            // Victory-stage gate — the opportunity behind this PI has
+            // crossed Stage 6 (Victory Stage) when EITHER lead_stage_id
+            // is at-or-past 6, OR won_at is stamped. Either signal flips
+            // the PI into the With-Shipment bucket; anything earlier
+            // stays Without-Shipment until the deal closes.
+            $stageId = (int) ($r->lead?->lead_stage_id ?? 0);
+            $r->victory_reached = $stageId >= 6 || $r->lead?->won_at !== null;
             return $r;
         })->all();
 

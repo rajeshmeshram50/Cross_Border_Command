@@ -96,6 +96,12 @@ type PI = {
   createdById?: number | null;
   creatorUserType?: string;
   creatorBranchIsMain?: boolean;
+  // True when the source opportunity has reached Stage 6 (Victory
+  // Stage) — i.e. shipment is considered complete. Drives the
+  // With Shipment vs Without Shipment tab split. PIs whose
+  // opportunity hasn't won yet stay in Without-Shipment until the
+  // deal closes upstream.
+  victoryReached?: boolean;
 };
 
 const ROWS_PER_PAGE = 10;
@@ -545,6 +551,14 @@ export default function SalesQPI() {
           createdById: r.created_by ?? r.creator?.id ?? null,
           creatorUserType:     r.creator_user_type ?? r.creator?.user_type ?? '',
           creatorBranchIsMain: Boolean(r.creator_branch_is_main),
+          // Server-computed: opportunity reached Stage 6 (Victory).
+          // Fallback to checking the eager-loaded lead.lead_stage_id /
+          // lead.won_at directly so an older API response that doesn't
+          // ship the flag yet still bucketizes correctly.
+          victoryReached: Boolean(
+            r.victory_reached
+            ?? ((Number(r.lead?.lead_stage_id ?? 0) >= 6) || !!r.lead?.won_at)
+          ),
           // Stash pi_type on the row so the sub-tab filter can split it.
           // Cast to any so we don't have to widen the public PI type.
           ...(r.pi_type ? { _piType: r.pi_type } : {}),
@@ -556,13 +570,18 @@ export default function SalesQPI() {
   };
   useEffect(() => { reloadPis(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Split the single PI list into With/Without buckets via pi_type.
+  // Split the single PI list into With/Without buckets by the
+  // opportunity's stage progress. A PI lands in "With Shipment" only
+  // when its source opportunity has reached Stage 6 (Victory Stage) —
+  // i.e. all six stages of the Sales Matrix are complete. Anything
+  // still working through Stage 1–5 stays in "Without Shipment" until
+  // the deal closes upstream.
   const piWithShipment = useMemo(
-    () => pis.filter((r: any) => (r._piType ?? 'with_shipment') === 'with_shipment'),
+    () => pis.filter(r => r.victoryReached === true),
     [pis],
   );
   const piWithoutShipment = useMemo(
-    () => pis.filter((r: any) => r._piType === 'without_shipment'),
+    () => pis.filter(r => r.victoryReached !== true),
     [pis],
   );
 

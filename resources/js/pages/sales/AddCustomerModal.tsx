@@ -220,7 +220,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   // Details + Primary Address & Contact Person) without an extra
   // click. They can still collapse it via the chevron if they want
   // more vertical space for the active stage.
-  const [historyOpen, setHistoryOpen] = useState(true);
+  // History panel is collapsed by default — Stage 2/3 users mostly
+  // want to focus on the current stage's fields, not re-read what
+  // they just filled in. Click the header bar to expand.
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // ── Master dropdowns. Every <select> on this modal sources its
   //    options from /master/{slug}, scoped server-side to the
@@ -315,6 +318,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
    * immediately on the synchronous tick, blocking the second call
    * cold. Fixes the duplicate-row issue users saw on quick clicks. */
   const inFlightRef = useRef(false);
+
+  // Dirty-saved flag — true whenever an intermediate persistStage1
+  // succeeded during this modal session. We use it on close to fire
+  // onSaved so the parent list refreshes even if the user closed via
+  // the X button after a Save & Next instead of finishing Stage 3.
+  // Cleared after onSaved fires so re-opens start clean.
+  const dirtySavedRef = useRef(false);
 
   // Trade docs selection — initial rows are populated from the segment
   // rule when the user picks a segment in Stage 1 (see segment-template
@@ -638,7 +648,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     setKycPage({ 'company-dd':1, 'owner-kyc':1, 'trade-licence':1 });
     setKycSearch('');
     setEvSub('dd');
-    setHistoryOpen(true);
+    setHistoryOpen(false);
     setForm({
       coName:   customer?.company ?? '',
       coLegal:  customer?.company ?? '',
@@ -917,17 +927,31 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     return () => { document.body.style.overflow = prev; };
   }, [open]);
 
+  // Close wrapper — if any intermediate Save & Next persisted edits
+  // during this session, fire onSaved on the way out so the parent
+  // list refreshes (otherwise the user has to manually reload the
+  // page to see their Identification-tab changes). Resets the flag
+  // so a subsequent re-open of the same modal starts clean.
+  const handleClose = () => {
+    if (dirtySavedRef.current) {
+      dirtySavedRef.current = false;
+      onSaved?.();
+    }
+    onClose();
+  };
+
   // ESC closes the sub-modal first, then the main modal.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (locModal.open) { setLocModal({ open:false, editing:null }); return; }
-      onClose();
+      handleClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open, locModal.open, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, locModal.open, onClose, onSaved]);
 
   if (!open) return null;
 
@@ -944,9 +968,22 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
    *    field via the `errors` state. */
   const validateStage1 = (): boolean => {
     const next: Record<string, string> = {};
+    // Company name — same allow-list as legal name: letters, numbers,
+    // spaces and business punctuation. Blocks junk like "@@@###" and
+    // requires at least one letter (so all-digit names are rejected).
     if (!form.coName.trim())                            next.coName  = 'Company name is required';
     else if (form.coName.trim().length > 30)            next.coName  = 'Company name must be 30 characters or fewer';
+    else if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(form.coName.trim()))
+                                                        next.coName  = 'Company name has invalid characters — letters, numbers and . , & \' - ( ) / only';
+    else if (!/[A-Za-z]/.test(form.coName))             next.coName  = 'Company name must contain at least one letter';
+    // Legal name — letters, numbers, spaces and a few business chars
+    // (& . , ' - ( )). Blocks junk like "@@@@@@" or "12345" alone, and
+    // caps the length so excessively long input gets rejected up front.
     if (!form.coLegal.trim())                           next.coLegal = 'Legal name is required';
+    else if (form.coLegal.trim().length > 100)          next.coLegal = 'Legal name must be 100 characters or fewer';
+    else if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(form.coLegal.trim()))
+                                                        next.coLegal = 'Legal name has invalid characters — letters, numbers and . , & \' - ( ) / only';
+    else if (!/[A-Za-z]/.test(form.coLegal))            next.coLegal = 'Legal name must contain at least one letter';
     if (!form.coType)                                   next.coType  = 'Select a customer type';
     if (!form.coSeg || form.coSeg.length === 0)         next.coSeg   = 'Select at least one segment';
     if (!form.coClass)                                  next.coClass = 'Select a classification';
@@ -955,10 +992,22 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     if (!form.addr.trim())                              next.addr     = 'Address is required';
     if (!form.country)                                  next.country  = 'Select a country';
     if (!form.state)                                    next.state    = 'Select a state';
+    // City — only letters / spaces / dots / hyphens / apostrophes
+    // (handles "St. John's", "Tel-Aviv"). Caps at 30 chars so the
+    // backend doesn't end up storing pasted garbage.
     if (!form.city.trim())                              next.city     = 'City is required';
+    else if (form.city.trim().length > 30)              next.city     = 'City must be 30 characters or fewer';
+    else if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(form.city.trim()))
+                                                        next.city     = 'City can contain only letters, spaces, dots, hyphens and apostrophes';
     if (!form.pin.trim())                               next.pin      = 'PIN / Postal code is required';
     else if (!/^\d{6}$/.test(form.pin.trim()))          next.pin      = 'PIN must be exactly 6 digits';
+    // Contact person name — alphabetic only (letters + spaces + . - '
+    // for names like "Mr. John O'Brien-Smith"). Rejects "123456@@" and
+    // similar garbage that the field was previously accepting.
     if (!form.cpName.trim())                            next.cpName   = 'Contact person name is required';
+    else if (form.cpName.trim().length > 60)            next.cpName   = 'Name must be 60 characters or fewer';
+    else if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(form.cpName.trim()))
+                                                        next.cpName   = 'Name can contain only letters, spaces, dots, hyphens and apostrophes';
     if (!form.cpDesig.trim())                           next.cpDesig  = 'Designation is required';
     if (!form.cpTel.trim())                             next.cpTel    = 'Contact number is required';
     else if (!/^\+?[0-9\s-]{7,15}$/.test(form.cpTel))   next.cpTel    = 'Phone must be 7–15 digits';
@@ -971,6 +1020,17 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       next.cpEmail = 'This email is already used by another address on this customer';
     }
     if (!form.cpWa)                                     next.cpWa     = 'Select WhatsApp preference';
+    // Website — optional, but if provided must look like a real URL /
+    // domain (http(s)://… or bare example.com). Caps length to keep
+    // junk like a 500-char dump out of the DB.
+    if (form.coWeb && form.coWeb.trim()) {
+      const w = form.coWeb.trim();
+      if (w.length > 200) {
+        next.coWeb = 'Website must be 200 characters or fewer';
+      } else if (!/^(https?:\/\/)?([\w-]+\.)+[A-Za-z]{2,}(\/[\w\-./?%&=#]*)?$/.test(w)) {
+        next.coWeb = 'Enter a valid website (e.g. https://example.com)';
+      }
+    }
     setErrors(next);
     if (Object.keys(next).length === 0) return true;
     // Surface the first field with an error to the user. The body
@@ -1062,6 +1122,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       // re-open of this customer starts fresh on Stage 1 instead of
       // bouncing back to Stage 3 (which is where this submit fired from).
       if (persistedDbId) stageMemory.delete(persistedDbId);
+      // Stage-3 submit fires onSaved itself, so clear the dirty flag
+      // to stop handleClose from firing onSaved a second time.
+      dirtySavedRef.current = false;
       onSaved?.();
       onClose();
     } catch (err: any) {
@@ -1118,6 +1181,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     if (inFlightRef.current || saving) return savedDbId;
     inFlightRef.current = true;
     setSaving(true);
+    // Min-display window — on fast networks (localhost / cached) the
+    // save can complete in <50ms and the Save & Next spinner flashes
+    // imperceptibly. Force at least 350ms of loader so users get
+    // clear "something happened" feedback before the stage advances.
+    const _saveStart = Date.now();
     try {
       const payload = buildPayload();
       // Prefer the existing customer.db_id (edit mode) over savedDbId
@@ -1126,11 +1194,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       const persistedDbId = (isEdit && customer?.db_id) || savedDbId;
       if (persistedDbId) {
         await api.put(`/customers/${persistedDbId}`, payload);
+        dirtySavedRef.current = true;
         return persistedDbId;
       }
       const r = await api.post('/customers', payload);
       const newId = r.data?.data?.db_id ?? null;
       if (newId) setSavedDbId(newId);
+      dirtySavedRef.current = true;
       return newId;
     } catch (err: any) {
       // Replay the same 422 → inline-error mapping that submitCustomer uses.
@@ -1163,6 +1233,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       }
       return null;
     } finally {
+      const elapsed = Date.now() - _saveStart;
+      if (elapsed < 350) await new Promise(r => setTimeout(r, 350 - elapsed));
       setSaving(false);
       inFlightRef.current = false;
     }
@@ -1181,6 +1253,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         return;
       }
       if (tab === 'identification') {
+        // Persist the form NOW (not just on the final tab) so that
+        // edits made to the Identification tab don't get lost when
+        // the user clicks Save & Next and then closes the modal.
+        // persistStage1 is idempotent — it PUTs when we already have
+        // a row id (edit mode / mid-session POST result) and POSTs
+        // only the first time. That means clicking Save & Next on
+        // each tab in turn won't create duplicate rows.
+        const id = await persistStage1();
+        if (!id) return;
         setTab('address-contact');
         return;
       }
@@ -1255,7 +1336,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               Loading customer details…
             </div>
           )}
-          <button type="button" className="acm-close" onClick={onClose} aria-label="Close">
+          <button type="button" className="acm-close" onClick={handleClose} aria-label="Close">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
@@ -1500,7 +1581,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
                 }
               >
                 {saving ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="acm-cust-spin">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" className="acm-cust-spin">
                     <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                   </svg>
                 ) : (
@@ -1908,7 +1989,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
             </Field>
           </div>
           <div className="acm-row acm-row-4">
-            <Field label="Company Website"><input value={form.coWeb} onChange={e => setF('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
+            <Field label="Company Website" error={errors.coWeb} fieldKey="coWeb"><input className={errors.coWeb ? 'acm-input-error' : ''} value={form.coWeb} onChange={e => set('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
             <Field label="Customer Segment" required error={errors.coSeg} fieldKey="coSeg">
               {/* masterFormKit's MasterMultiSelect renders visible violet
                   chips with × buttons + a checkbox-marked dropdown so
@@ -2165,13 +2246,25 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
   setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
   persistUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
 }) {
+  const toast = useToast();
   const uploaded = uploads[refKey];
   /* Re-using `onPick` for both first-time upload and re-upload. We
    * show the blob URL immediately for instant feedback, then fire the
    * server upload — the persist callback swaps the blob URL for a
-   * permanent attachment_url once the row hits segment_doc_uploads. */
+   * permanent attachment_url once the row hits segment_doc_uploads.
+   *
+   * validateUpload() gate enforces the extension allow-list (PDF /
+   * JPG / PNG / DOC / DOCX) AND the 2 MB size cap up front, so a
+   * 50 MB junk file can never reach the persist call. The server
+   * runs the same check (mimes + max size) — this is just the early
+   * client-side bounce so the user gets immediate feedback. */
   const onPick = (f: File | undefined) => {
     if (!f) return;
+    const err = validateUpload(f, 'doc');
+    if (err) {
+      toast.error('File rejected', err);
+      return;
+    }
     setUploads(prev => {
       const existing = prev[refKey];
       if (existing?.url && existing.url.startsWith('blob:')) {
@@ -2188,7 +2281,7 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
         <Tooltip label="Upload">
           <label className="acm-doc-action acm-doc-action-upload" aria-label="Upload" style={{ cursor: 'pointer' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
           </label>
         </Tooltip>
       </div>
@@ -2209,7 +2302,7 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
       <Tooltip label="Re-upload (replace file)">
         <label className="acm-doc-action acm-doc-action-upload" aria-label="Re-upload" style={{ cursor: 'pointer' }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+          <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
         </label>
       </Tooltip>
     </div>
@@ -2310,14 +2403,18 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
       d.name.toLowerCase().includes(q) ||
       (d.authority || '').toLowerCase().includes(q));
   }, [q, segmentRefSource]);
-  /* Which sub-tabs are currently rendering the 7-col reference table.
-   * Always for trade-licence (matches prior behavior). For company-dd
-   * and owner-kyc, only when (a) no live data yet AND (b) the segment
-   * provides reference rows — once the user adds a real upload (or an
-   * owner), the live tables take over. */
-  const showSegmentRef = isTradeLegacy
-    || (sub === 'company-dd' && filteredDocs.length === 0 && (segmentDocs.dd?.length ?? 0) > 0)
-    || (sub === 'owner-kyc'  && owners.length === 0       && (segmentDocs.kyc?.length ?? 0) > 0);
+  /* Which sub-tabs are currently rendering the 5-col reference table.
+   * For all three sub-tabs: only when there's no live data yet — once
+   * the user adds a real upload (or an owner), the live tables take
+   * over so saved entries are visible on re-edit. The previous
+   * `isTradeLegacy` flag was unconditional, which is why uploaded
+   * Trade Licence docs vanished from the Edit screen — they exist in
+   * customer_documents (kind='tl') but were hidden behind the static
+   * segmentRef reference rows. */
+  const showSegmentRef =
+       (isTradeLegacy            && filteredDocs.length === 0)
+    || (sub === 'company-dd'     && filteredDocs.length === 0 && (segmentDocs.dd?.length ?? 0) > 0)
+    || (sub === 'owner-kyc'      && owners.length === 0       && (segmentDocs.kyc?.length ?? 0) > 0);
 
   const totalRows = showSegmentRef ? filteredTradeLegacy.length
                   : isOwners       ? filteredOwners.length
@@ -2449,7 +2546,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
             ) : (
               <table className="acm-table">
                 <thead><tr>
-                  <th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>License #</th>
+                  <th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>License</th>
                   <th>Issuing Authority</th><th>Issuing Date</th><th>Expiry</th><th>Attachment</th><th>Actions</th>
                 </tr></thead>
                 <tbody>
@@ -3731,7 +3828,12 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
     if (!d.line.trim())                                next.line          = 'Address is required';
     if (!d.country)                                    next.country       = 'Select country';
     if (!d.state)                                      next.state         = 'Select state';
+    // City — same rule as the primary tab: letters + standard name
+    // punctuation, max 30 chars. Keeps the two paths consistent.
     if (!d.city.trim())                                next.city          = 'City is required';
+    else if (d.city.trim().length > 30)                next.city          = 'City must be 30 characters or fewer';
+    else if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(d.city.trim()))
+                                                       next.city          = 'City can contain only letters, spaces, dots, hyphens and apostrophes';
     if (!d.pin.trim())                                 next.pin           = 'PIN is required';
     else if (!/^\d{6}$/.test(d.pin.trim()))            next.pin           = 'PIN must be exactly 6 digits';
     if (!d.cpName.trim())                              next.cpName        = 'Contact name required';
@@ -4351,15 +4453,30 @@ const SCOPED_CSS = `
    stays sticky so the user always sees which column they're on. */
 .acm-table-wrap {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: auto;
-  max-height: 360px;
+  max-height: 380px;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
 }
-.acm-table thead th { position: sticky; top: 0; z-index: 1; }
-.acm-table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 900px; font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif; }
+.acm-table-wrap::-webkit-scrollbar { height: 8px; width: 8px; }
+.acm-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(124,58,237,.35); border-radius: 999px;
+}
+.acm-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.55); }
+.acm-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 900px; font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif; }
 .acm-table thead tr { background: linear-gradient(180deg, #faf7ff, #f5efff); }
+/* Sticky header — position:sticky needs an OWN background on the <th>
+   (the <tr>'s background doesn't follow a positioned cell), and
+   border-collapse:separate so the bottom border doesn't scroll up
+   with the rows. z-index:5 keeps the header above any positioned
+   badge/pill inside row cells. */
 .acm-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: linear-gradient(180deg, #faf7ff, #f5efff);
   padding: 14px 16px;
   text-align: left;
   font-size: 10.5px;
@@ -4367,7 +4484,10 @@ const SCOPED_CSS = `
   letter-spacing: .09em;
   color: #5b21b6;
   text-transform: uppercase;
-  border-bottom: 1.5px solid #e9d5ff;
+  /* Box-shadow stand-in for the bottom border — a real border on a
+     sticky cell scrolls away with the row above it; a box-shadow
+     stays glued to the cell's bottom edge. */
+  box-shadow: inset 0 -1.5px 0 0 #e9d5ff;
   white-space: nowrap;
 }
 .acm-table tbody td {
@@ -4996,10 +5116,15 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-table thead tr {
   background: linear-gradient(180deg, rgba(28,37,49,0.85), rgba(17,24,42,0.85)) !important;
 }
+/* Sticky <th> needs its OWN opaque background in dark mode for the
+   same reason as light mode — otherwise rows scroll through it.
+   Solid color (not gradient) so cells don't show a seam where the
+   gradient repeats per-cell. */
 [data-bs-theme="dark"] .acm-table thead th {
   color: #c4b5fd !important;
-  border-bottom-color: rgba(167,139,250,0.20) !important;
-  background: transparent !important;
+  background: #16202d !important;
+  box-shadow: inset 0 -1.5px 0 0 rgba(167,139,250,0.20) !important;
+  border-bottom-color: transparent !important;
 }
 [data-bs-theme="dark"] .acm-table tbody td {
   color: #e2e8f0;

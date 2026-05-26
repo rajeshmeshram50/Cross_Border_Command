@@ -722,9 +722,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         // the consignee flagged as same-as-customer on update.
         if (typeof d.same_as_customer === 'boolean') {
           setSameAsCustomer(d.same_as_customer);
-          // Auto-expand the linked-customer panel when editing a mirror
-          // so the user sees the cloned customer details immediately.
-          if (d.same_as_customer) setLinkedHidden(false);
+          // Linked Customer panel stays collapsed by default — the
+          // user can click the bar to expand it on demand. (Previous
+          // behavior auto-expanded for same-as-customer rows, but
+          // the summary section is noisy on first open.)
         }
         const extra: any[] = Array.isArray(d.locations) ? d.locations : [];
         setLocations(extra.map((a: any) => ({
@@ -1001,19 +1002,48 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const validateStage1 = (): Record<string, string> => {
     const e: Record<string, string> = {};
     const f = form1;
+    // Company name — letters / numbers / business punctuation only.
+    // Blocks junk like "@@@###" and requires at least one letter.
     if (!f.companyName.trim())                                e.companyName = 'Company name is required';
     else if (f.companyName.trim().length > 30)                e.companyName = 'Company name must be 30 characters or fewer';
+    else if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.companyName.trim()))
+                                                              e.companyName = 'Company name has invalid characters — letters, numbers and . , & \' - ( ) / only';
+    else if (!/[A-Za-z]/.test(f.companyName))                 e.companyName = 'Company name must contain at least one letter';
+    // Legal name — same allow-list, longer cap.
     if (!f.legalName.trim())                                  e.legalName   = 'Company legal name is required';
+    else if (f.legalName.trim().length > 100)                 e.legalName   = 'Legal name must be 100 characters or fewer';
+    else if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.legalName.trim()))
+                                                              e.legalName   = 'Legal name has invalid characters — letters, numbers and . , & \' - ( ) / only';
+    else if (!/[A-Za-z]/.test(f.legalName))                   e.legalName   = 'Legal name must contain at least one letter';
+    // Website — optional, but if provided must look like a real URL.
+    if (f.website && f.website.trim()) {
+      const w = f.website.trim();
+      if (w.length > 200) {
+        e.website = 'Website must be 200 characters or fewer';
+      } else if (!/^(https?:\/\/)?([\w-]+\.)+[A-Za-z]{2,}(\/[\w\-./?%&=#]*)?$/.test(w)) {
+        e.website = 'Enter a valid website (e.g. https://example.com)';
+      }
+    }
     if (!Array.isArray(f.segment) || f.segment.length === 0)  e.segment     = 'Select at least one segment';
     if (!f.risk)                                              e.risk        = 'Select a risk level';
     if (!f.addressType)                                       e.addressType = 'Select address type';
     if (!f.address.trim())                                    e.address     = 'Address is required';
     if (!f.country)                                           e.country     = 'Select country';
     if (!f.state)                                             e.state       = 'Select state';
+    // City — letters + standard name punctuation only (handles
+    // "St. John's", "Tel-Aviv"). Caps at 30 chars so pasted garbage
+    // can't sneak through.
     if (!f.city.trim())                                       e.city        = 'City is required';
+    else if (f.city.trim().length > 30)                       e.city        = 'City must be 30 characters or fewer';
+    else if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(f.city.trim()))
+                                                              e.city        = 'City can contain only letters, spaces, dots, hyphens and apostrophes';
     if (!f.pin.trim())                                        e.pin         = 'PIN is required';
     else if (!/^\d{6}$/.test(f.pin.trim()))                   e.pin         = 'PIN must be exactly 6 digits';
+    // Contact person name — alphabetic only, blocks "123456@@" etc.
     if (!f.contactName.trim())                                e.contactName = 'Contact name is required';
+    else if (f.contactName.trim().length > 60)                e.contactName = 'Name must be 60 characters or fewer';
+    else if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(f.contactName.trim()))
+                                                              e.contactName = 'Name can contain only letters, spaces, dots, hyphens and apostrophes';
     if (!f.designation.trim())                                e.designation = 'Designation is required';
     if (!f.contactNo.trim())                                  e.contactNo   = 'Contact number is required';
     else if (!/^\+?[0-9\s-]{7,15}$/.test(f.contactNo))        e.contactNo   = 'Phone must be 7-15 digits';
@@ -1111,6 +1141,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     }
     inFlightRef.current = true;
     setSaving(true);
+    // Min-display window — on fast networks the save can complete in
+    // <50ms and the Save & Next spinner flashes imperceptibly. Force
+    // ≥350ms of loader so users get clear "something happened"
+    // feedback before the stage advances.
+    const _saveStart = Date.now();
     try {
       const payload = buildPayload();
       let dbId = consignee?.db_id ?? savedDbId;
@@ -1167,6 +1202,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       }
       return null;
     } finally {
+      const elapsed = Date.now() - _saveStart;
+      if (elapsed < 350) await new Promise(r => setTimeout(r, 350 - elapsed));
       setSaving(false);
       inFlightRef.current = false;
     }
@@ -1779,7 +1816,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 style={saving ? { opacity: 0.55, cursor: 'wait' } : undefined}
               >
                 {saving
-                  ? <><IconSpinner /> Saving…</>
+                  ? <><IconSpinner size={18} /> Saving…</>
                   : <>Save &amp; Next <IconChevronRight /></>}
               </button>
             )}
@@ -1790,7 +1827,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 disabled={saving}
                 style={saving ? { opacity: 0.75, cursor: 'wait' } : undefined}
               >
-                {saving ? <IconSpinner /> : <IconCheck />} {saving ? 'Saving…' : 'Save Consignee'}
+                {saving ? <IconSpinner size={18} /> : <IconCheck />} {saving ? 'Saving…' : 'Save Consignee'}
               </button>
             )}
           </div>
@@ -2587,13 +2624,24 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
    * would split the mirror. */
   disabled?: boolean;
 }) {
+  const toast = useToast();
   const uploaded = uploads[refKey];
   /* Single picker — drives both first-time Upload and Re-upload. Shows
    * the blob URL immediately for snappy feedback and fires the server
    * upload; the persist callback swaps the blob URL for the permanent
-   * attachment_url once it lands in segment_doc_uploads. */
+   * attachment_url once it lands in segment_doc_uploads.
+   *
+   * isAcceptedFile() enforces the extension allow-list (PDF / JPG /
+   * PNG / DOC / DOCX) AND the 2 MB cap up front, so a 50 MB junk
+   * file can never reach the persist call. Server runs the same
+   * check — this is the client-side bounce for immediate feedback. */
   const onPick = (f: File | undefined) => {
     if (!f) return;
+    const check = isAcceptedFile(f);
+    if (!check.ok) {
+      toast.error('File rejected', check.reason);
+      return;
+    }
     setUploads(prev => {
       const existing = prev[refKey];
       if (existing?.url && existing.url.startsWith('blob:')) {
@@ -2621,7 +2669,7 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
         <Tooltip label="Upload">
           <label className="acm-loc-btn" aria-label="Upload" style={{ cursor: 'pointer' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
           </label>
         </Tooltip>
       </div>
@@ -2643,7 +2691,7 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
         <Tooltip label="Re-upload (replace file)">
           <label className="acm-loc-btn" aria-label="Re-upload" style={{ cursor: 'pointer' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            <input type="file" hidden onChange={e => onPick(e.target.files?.[0])} />
+            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
           </label>
         </Tooltip>
       )}
@@ -2926,8 +2974,8 @@ const Stage2 = ({
               <table className="acm-loc-table">
                 <thead>
                   <tr>
-                    <th>SR NO</th><th>AUTO CODE</th><th>{meta.nameCol.toUpperCase()}</th><th>LICENSE #</th>
-                    <th>ISSUING AUTHORITY</th><th>ISSUE DATE</th><th>EXPIRY</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                    <th>SR NO</th><th>AUTO CODE</th><th>{meta.nameCol.toUpperCase()}</th>
+                    <th>ISSUING AUTHORITY</th><th>ATTACHMENT</th><th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2961,10 +3009,7 @@ const Stage2 = ({
                           <td style={{ fontWeight: 700 }}>
                             {tl.name}{tl.isMandatory ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
                           </td>
-                          <td>—</td>
                           <td>{tl.authority}</td>
-                          <td><span className="acm-kyc-exp na">—</span></td>
-                          <td><span className={tl.expiry === 'N/A' ? 'acm-kyc-exp na' : 'acm-kyc-exp'}>{tl.expiry}</span></td>
                           <td>
                             {uploaded
                               ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
@@ -2986,9 +3031,9 @@ const Stage2 = ({
                   })()}
                   {filteredDocs.length === 0 && (
                     q
-                      ? <tr className="acm-loc-empty"><td colSpan={9}>No documents match your search.</td></tr>
+                      ? <tr className="acm-loc-empty"><td colSpan={6}>No documents match your search.</td></tr>
                       : (sub === 'company-dd' && (segmentDocs.dd?.length ?? 0) === 0)
-                        ? <tr className="acm-loc-empty"><td colSpan={9}>{`No DD documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
+                        ? <tr className="acm-loc-empty"><td colSpan={6}>{`No DD documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
                         : null /* trade-licence + company-dd-with-segment-refs already render rows above */
                   )}
                   {filteredDocs.map((d, i) => {
@@ -2998,10 +3043,7 @@ const Stage2 = ({
                         <td>{String(sr).padStart(2, '0')}</td>
                         <td><span className="acm-kyc-code">{codeFor(kind, sr)}</span></td>
                         <td style={{ fontWeight: 700 }}>{d.name}</td>
-                        <td>{d.license_number || '—'}</td>
                         <td>{d.issuing_authority || '—'}</td>
-                        <td><span className={d.issue_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.issue_date)}</span></td>
-                        <td><span className={d.expiry_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.expiry_date)}</span></td>
                         <td><AttachmentLink url={d.attachment_url} path={d.attachment_path} /></td>
                         <td>
                           <div className="acm-loc-actions">
@@ -3710,7 +3752,7 @@ const VaultDocsTable = ({ docs, kind }: { docs: KycDocRow[]; kind: 'dd' | 'tl' }
           <thead>
             <tr>
               <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-              <th>LICENSE #</th><th>ISSUING AUTHORITY</th>
+              <th>LICENSE</th><th>ISSUING AUTHORITY</th>
               <th>ISSUE</th><th>EXPIRY</th><th>ATTACHMENT</th>
             </tr>
           </thead>
@@ -4528,10 +4570,19 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
     if (!d.line.trim())                                next.line          = 'Address is required';
     if (!d.country)                                    next.country       = 'Select country';
     if (!d.state)                                      next.state         = 'Select state';
+    // City — same rule as Stage 1: letters + standard name
+    // punctuation, max 30 chars. Keeps both paths consistent.
     if (!d.city.trim())                                next.city          = 'City is required';
+    else if (d.city.trim().length > 30)                next.city          = 'City must be 30 characters or fewer';
+    else if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(d.city.trim()))
+                                                       next.city          = 'City can contain only letters, spaces, dots, hyphens and apostrophes';
     if (!d.pin.trim())                                 next.pin           = 'PIN is required';
     else if (!/^\d{6}$/.test(d.pin.trim()))            next.pin           = 'PIN must be exactly 6 digits';
+    // Contact name — alphabetic only, no "123456@@" garbage.
     if (!d.cpName.trim())                              next.cpName        = 'Contact name required';
+    else if (d.cpName.trim().length > 60)              next.cpName        = 'Name must be 60 characters or fewer';
+    else if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(d.cpName.trim()))
+                                                       next.cpName        = 'Name can contain only letters, spaces, dots, hyphens and apostrophes';
     if (!d.cpDesignation.trim())                       next.cpDesignation = 'Designation required';
     if (!d.cpContact.trim())                           next.cpContact     = 'Phone required';
     else if (!/^\+?[0-9\s-]{7,15}$/.test(d.cpContact)) next.cpContact     = 'Phone must be 7-15 digits';
@@ -6209,12 +6260,23 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   border-color: rgba(148,163,184,0.30);
 }
 .acm-loc-body { padding: 0; }
-/* Horizontal scroll wrapper. -webkit-overflow-scrolling: touch smooths
-   the scroll on iPad/Android, and a thin scrollbar style keeps the rail
-   from dominating the table on narrow screens. */
+/* Horizontal + vertical scroll wrapper. The inner table sets a
+   min-width of 860px (Stage 1 location table) or 980px (Stage 2 KYC
+   tables) so columns stay legible — this wrapper picks up the
+   horizontal scroll when the viewport is narrower. width: 100% +
+   max-width: 100% pin it to the parent (the wizard body's flex
+   column) so it never punches out of the modal on small screens.
+   max-height + overflow-y prevents the table from pushing the
+   sticky footer off-screen when there are lots of rows.
+   -webkit-overflow-scrolling: touch smooths the scroll on
+   iPad/Android, and the thin scrollbar style keeps the rail from
+   dominating the table on narrow screens. */
 .acm-loc-table-wrap {
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
+  max-height: 380px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
 }
@@ -6250,11 +6312,21 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
    Wider min-width so columns stay readable and the wrap div picks
    up horizontal scroll on narrow viewports. */
 .acm-kyc-body .acm-loc-table { min-width: 980px; }
+.acm-loc-table { border-collapse: separate; border-spacing: 0; }
 .acm-loc-table thead tr {
   background: #f9fafb;
   border-bottom: 1px solid #e5e7eb;
 }
+/* Sticky header — keeps the column labels glued to the top of the
+   scroll wrapper while rows scroll underneath. Needs an OWN
+   background on the <th> (the <tr>'s background doesn't follow a
+   positioned cell), and a box-shadow as the bottom border because a
+   real border on a sticky cell scrolls away with the row above it. */
 .acm-loc-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #f9fafb;
   padding: 10px 12px; text-align: left;
   /* Slightly smaller + tighter so the table header strip reads as a
      muted label row rather than competing with the row content for
@@ -6262,6 +6334,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   font-weight: 700; font-size: 10px; letter-spacing: .05em;
   color: #6b7280; text-transform: uppercase;
   white-space: nowrap;
+  box-shadow: inset 0 -1px 0 0 #e5e7eb;
 }
 .acm-loc-table tbody td {
   padding: 12px; border-bottom: 1px solid #f3f4f6;
@@ -6393,7 +6466,32 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-info       { background: rgba(30,64,175,.20); border-color: rgba(96,165,250,.30); color: #93c5fd; }
 [data-bs-theme="dark"] .acm-pick-footer { border-top-color: rgba(16,185,129,.20); background: #103129; }
 [data-bs-theme="dark"] .acm-btn-light  { background: #1a3d34; color: #ecfdf5; border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .acm-btn-light:hover { background: #234d42; }
+/* Dark-mode hover — needs a clearly stronger background + border lift
+   so the user gets a tactile cue. The previous flat #234d42 was too
+   close to the base color to read as "hover". */
+[data-bs-theme="dark"] .acm-btn-light:hover {
+  background: #2c5e51;
+  border-color: rgba(110,231,183,.55);
+  color: #f0fdf4;
+  box-shadow: 0 2px 10px rgba(16,185,129,.20);
+}
+
+/* Table cell text colors — several rows are styled inline with
+   color:#1f2937 (slate-800) which disappears against the dark
+   canvas. Flip those to a high-contrast off-white via the inline-
+   style attribute selector. Same trick the Customer modal uses. */
+[data-bs-theme="dark"] .acm-loc-table tbody td[style*="color: rgb(31, 41, 55)"],
+[data-bs-theme="dark"] .acm-loc-table tbody td[style*="color:#1f2937"] {
+  color: #f1f5f9 !important;
+}
+[data-bs-theme="dark"] .acm-loc-table tbody td[style*="color: rgb(107, 114, 128)"],
+[data-bs-theme="dark"] .acm-loc-table tbody td[style*="color:#6b7280"] {
+  color: #94a3b8 !important;
+}
+[data-bs-theme="dark"] .acm-loc-table tbody td[style*="color: rgb(156, 163, 175)"],
+[data-bs-theme="dark"] .acm-loc-table tbody td[style*="color:#9ca3af"] {
+  color: #94a3b8 !important;
+}
 
 [data-bs-theme="dark"] .acm-wiz        { background: #0f2a23; }
 [data-bs-theme="dark"] .acm-wiz-body   { background: #0a1f1a; scrollbar-color: #047857 transparent; }
@@ -6481,7 +6579,14 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-add-pill     { background: #103129; color: #6ee7b7; border-color: rgba(16,185,129,.40); }
 [data-bs-theme="dark"] .acm-add-pill:hover { background: #10b981; color: #fff; }
 [data-bs-theme="dark"] .acm-loc-table thead tr { background: #103129; border-bottom-color: rgba(16,185,129,.20); }
-[data-bs-theme="dark"] .acm-loc-table thead th { color: #94a3b8; }
+/* Sticky <th> needs its OWN opaque background in dark mode so rows
+   don't scroll through it. Solid color (not gradient) so cells
+   don't show a seam where the gradient repeats per-cell. */
+[data-bs-theme="dark"] .acm-loc-table thead th {
+  color: #94a3b8;
+  background: #103129;
+  box-shadow: inset 0 -1px 0 0 rgba(16,185,129,.20);
+}
 [data-bs-theme="dark"] .acm-loc-table tbody td { color: #ecfdf5; border-bottom-color: rgba(16,185,129,.15); }
 [data-bs-theme="dark"] .acm-loc-table tbody tr:hover { background: rgba(16,185,129,.10); }
 [data-bs-theme="dark"] .acm-loc-empty td { color: #94a3b8; }
