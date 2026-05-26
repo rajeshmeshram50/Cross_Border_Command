@@ -37,6 +37,17 @@ class BrandingResolver
             return [];
         }
 
+        // Client admins are managed BY the platform (super admin onboards
+        // them, super admin can reset their password), so transactional emails
+        // sent to them are FROM us, not from their own org. Return empty so
+        // the templates fall back to IGC platform defaults — same as super
+        // admin recipients.
+        // Branch users / employees stay with their parent client's brand
+        // because their day-to-day operator IS the client admin, not us.
+        if (($user->user_type ?? null) === 'client_admin') {
+            return [];
+        }
+
         $client = Client::find($user->client_id);
         if (!$client) {
             return [];

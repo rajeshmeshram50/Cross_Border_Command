@@ -87,6 +87,12 @@ class ForgotPasswordController extends Controller
             ], 503);
         }
         try {
+            // Branding is recipient-aware: BrandingResolver returns IGC
+            // platform defaults for super_admin AND client_admin users, and
+            // the parent client's own brand for branch users / employees.
+            // Keeps the OTP/credentials email contextual — client admins
+            // managed by us see "INORBVICT / GROUP OF COMPANIES"; branch
+            // users managed by their client see their client's wordmark.
             Mail::to($email)->cc('php@inhpl.com')->send(new PasswordResetOtpMail(
                 $otp,
                 $user->name,
@@ -248,6 +254,7 @@ class ForgotPasswordController extends Controller
         // transient SMTP hiccup never blocks the password reset itself
         // (the password IS already saved).
         if (Settings::shouldSendMail()) try {
+            // Same recipient-aware branding rule as the OTP send above.
             Mail::to($user->email)->send(new PasswordChangedMail(
                 $user->name,
                 $user->email,
