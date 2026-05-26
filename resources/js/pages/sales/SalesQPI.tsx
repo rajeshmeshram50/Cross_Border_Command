@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
+import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
@@ -45,6 +46,27 @@ export type Quotation = {
   //                        Reminder enabled (badge shows count)
   emailedAt?: string | null;
   reminderCount?: number;
+  // Server-computed: true when the current user can mutate this row.
+  // Driven by the branch-hierarchy rule — a normal branch user CAN
+  // see (but NOT modify) main-branch quotations. Frontend uses this
+  // to grey out Edit / Delete / Email / Reminder / Convert-to-PI on
+  // read-only rows so the user gets immediate visual feedback before
+  // hitting a 403. Defaults to true so legacy rows (and shows where
+  // the backend hasn't stamped the flag yet) remain editable.
+  canModify?: boolean;
+  // Owning branch (eager-loaded). Drives the "Branch" column so
+  // multi-branch users can tell which branch each record belongs to.
+  // `isMainBranch` is a quick-look flag for the "Main" badge.
+  branchName?: string;
+  isMainBranch?: boolean;
+  // Creator info — drives the "Created By" pill. Pill tone is keyed
+  // off user_type (super_admin / client_admin / client_user /
+  // branch_user); the sub-label shows the creator's branch tier
+  // (Main Branch vs the actual branch name on the row).
+  createdBy?: string;
+  createdById?: number | null;
+  creatorUserType?: string;
+  creatorBranchIsMain?: boolean;
 };
 
 type PI = {
@@ -64,9 +86,101 @@ type PI = {
   // Same email/reminder state as Quotation rows above.
   emailedAt?: string | null;
   reminderCount?: number;
+  // Branch-hierarchy read-only flag — see Quotation type above.
+  canModify?: boolean;
+  // Owning branch — see Quotation type above.
+  branchName?: string;
+  isMainBranch?: boolean;
+  // Creator info — see Quotation type above.
+  createdBy?: string;
+  createdById?: number | null;
+  creatorUserType?: string;
+  creatorBranchIsMain?: boolean;
 };
 
 const ROWS_PER_PAGE = 10;
+
+/**
+ * Render the "Created By" cell as a colored pill with a small sub-label.
+ *
+ * Display rules (so the column says something meaningful from the
+ * viewer's perspective, not just "who clicked Save"):
+ *
+ *   1. If the LOGGED-IN user is the creator → pill = "You"
+ *      (showing your own name on your own dashboard is noise).
+ *   2. Else if the row was created by someone on the MAIN branch AND
+ *      the logged-in user is NOT on the main branch → pill = "Main Branch"
+ *      (normal-branch users see Head-Office records as "Main Branch"
+ *      instead of a stranger's name).
+ *   3. Else → pill = creator's actual name + sub-label with their
+ *      branch / role (so a Main-Branch viewer can still tell which
+ *      employee on which sub-branch made it).
+ *
+ * Pill tone is keyed off `user_type` (super-admin / client / branch)
+ * so the visual language matches the Master Details "Created By"
+ * column.
+ */
+function renderCreatorCell(
+  name: string | undefined,
+  creatorId: number | null | undefined,
+  userType: string | undefined,
+  creatorBranchIsMain: boolean | undefined,
+  branchName: string | undefined,
+  currentUserId: number | undefined,
+  currentUserIsMain: boolean | undefined,
+) {
+  if (!name && !creatorId) return <span className="qpi-em">—</span>;
+
+  // Rule 1: self-created → "You"
+  const isSelf = !!currentUserId && !!creatorId && currentUserId === creatorId;
+  // Rule 2: main-branch creation viewed by a normal-branch user
+  const showAsMainBranch = !isSelf && !!creatorBranchIsMain && !currentUserIsMain;
+
+  const t = String(userType ?? '').toLowerCase();
+  // Pill tone — keyed off user_type. Self-pill borrows the client tone
+  // (blue) so it reads as "yours" without colliding with other pills.
+  const tone =
+    isSelf
+      ? { bg: '#e0e7ff', fg: '#3730a3', kind: 'self' as const }
+    : showAsMainBranch
+      ? { bg: '#ede9fe', fg: '#6d28d9', kind: 'main' as const }
+    : t === 'super_admin'
+      ? { bg: '#ede9fe', fg: '#6d28d9', kind: 'super' as const }
+    : t === 'client_admin' || t === 'client_user'
+      ? { bg: '#dbeafe', fg: '#1d4ed8', kind: 'client' as const }
+    : t === 'branch_user' || t === 'employee'
+      ? { bg: '#ccfbf1', fg: '#0d9488', kind: 'branch' as const }
+      : { bg: '#f1f5f9', fg: '#475569', kind: 'other' as const };
+
+  // Primary pill text per rule above.
+  const primary =
+    isSelf            ? 'You'
+    : showAsMainBranch ? 'Main Branch'
+    : (name || '—');
+
+  // Sub-label — context line under the pill. For "Main Branch" we
+  // skip the sub-label (the pill already tells the whole story); for
+  // "You" we show the row's branch; otherwise we show the creator's
+  // tier (Main Branch vs the row's branch name) or the role.
+  const subLabel = (() => {
+    if (showAsMainBranch) return '';
+    if (isSelf) return branchName || '';
+    if (tone.kind === 'super')  return 'Super Admin';
+    if (tone.kind === 'client') return t === 'client_admin' ? 'Client Admin' : 'Client user';
+    if (tone.kind === 'branch') return creatorBranchIsMain ? 'Main Branch' : (branchName || 'Branch');
+    return '';
+  })();
+
+  return (
+    <div className="qpi-creator-cell">
+      <span className={`qpi-creator-pill qpi-creator-${tone.kind}`}
+            style={{ background: tone.bg, color: tone.fg }}>
+        {primary}
+      </span>
+      {subLabel && <span className="qpi-creator-sub">{subLabel}</span>}
+    </div>
+  );
+}
 
 /* ════════════════════════════════════════════════════════════════════════════
  * PDF preview / download — Quotation or PI document, signature variants.
@@ -333,6 +447,10 @@ const STEPS = [
 
 export default function SalesQPI() {
   const toast = useToast();
+  // Current user — needed by the "Created By" column to swap names for
+  // "You" (self-created) or "Main Branch" (normal-branch viewer sees
+  // a main-branch-created row).
+  const { user: currentUser } = useAuth();
   const [tab, setTab] = useState<QPITab>('quotation');
   const [piSub, setPiSub] = useState<PISubTab>('with');
   const [wdhOpen, setWdhOpen] = useState(true);
@@ -375,6 +493,16 @@ export default function SalesQPI() {
           status:       r.status ?? 'draft',
           emailedAt:    r.emailed_at ?? null,
           reminderCount: Number(r.reminder_count ?? 0),
+          // Default to TRUE so rows from older API versions stay
+          // editable. Server explicitly returns false for cross-branch
+          // read-only rows (normal branch viewing main-branch records).
+          canModify:    r.can_modify !== false,
+          branchName:   r.branch?.name ?? '',
+          isMainBranch: Boolean(r.branch?.is_main),
+          createdBy:    r.creator_name ?? r.creator?.name ?? '',
+          createdById:  r.created_by ?? r.creator?.id ?? null,
+          creatorUserType:     r.creator_user_type ?? r.creator?.user_type ?? '',
+          creatorBranchIsMain: Boolean(r.creator_branch_is_main),
         }));
         setQuotations(rows);
       })
@@ -410,6 +538,13 @@ export default function SalesQPI() {
           salesManager: r.sales_manager_name ?? r.salesManager?.name ?? '—',
           emailedAt:   r.emailed_at ?? null,
           reminderCount: Number(r.reminder_count ?? 0),
+          canModify:   r.can_modify !== false,
+          branchName:  r.branch?.name ?? '',
+          isMainBranch: Boolean(r.branch?.is_main),
+          createdBy:   r.creator_name ?? r.creator?.name ?? '',
+          createdById: r.created_by ?? r.creator?.id ?? null,
+          creatorUserType:     r.creator_user_type ?? r.creator?.user_type ?? '',
+          creatorBranchIsMain: Boolean(r.creator_branch_is_main),
           // Stash pi_type on the row so the sub-tab filter can split it.
           // Cast to any so we don't have to widen the public PI type.
           ...(r.pi_type ? { _piType: r.pi_type } : {}),
@@ -700,10 +835,32 @@ export default function SalesQPI() {
       cell: (info: any) => <span className="qpi-sm">{info.getValue() || '—'}</span>,
     },
     {
+      // Created By — name of the user who originally created the row,
+      // styled as a colored pill (tone keyed off user_type) with the
+      // creator's branch/client tier as a sub-label. Mirrors the
+      // Master Details "Created By" column.
+      header: 'Created By', accessorKey: 'createdBy',
+      cell: (info: any) => {
+        const r = info.row.original as Quotation;
+        return renderCreatorCell(
+          r.createdBy, r.createdById, r.creatorUserType, r.creatorBranchIsMain, r.branchName,
+          currentUser?.id, currentUser?.is_main_branch === true,
+        );
+      },
+    },
+    {
       header: () => <div className="text-center">Action</div>,
       id: '__actions', meta: { align: 'center' },
       cell: (info: any) => {
         const r = info.row.original as Quotation;
+        // Branch-hierarchy: a normal branch user viewing a main-branch
+        // quotation can SEE the row (and open the More-Options preview)
+        // but cannot Convert / Email / Remind / Edit / Delete. We dim
+        // those buttons + show an explanatory tooltip so the user
+        // understands why the action is unavailable instead of just
+        // clicking and hitting a 403.
+        const readOnly = r.canModify === false;
+        const readOnlyHint = 'View-only — this record belongs to the main branch.';
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
             {r.status === 'converted_to_pi' ? (
@@ -713,56 +870,63 @@ export default function SalesQPI() {
                 </button>
               </Tooltip>
             ) : (
-              <button
-                type="button"
-                className="qpi-convert-btn"
-                disabled={convertingId === r.id}
-                onClick={() => onConvertToPi(r)}
-              >
-                <IconRepeatSm />
-                <span className="qpi-convert-btn-label">
-                  {convertingId === r.id ? 'Converting…' : 'Convert to PI'}
-                </span>
-              </button>
+              <Tooltip label={readOnly ? readOnlyHint : (convertingId === r.id ? 'Converting…' : 'Convert this quotation into a PI')}>
+                <button
+                  type="button"
+                  className="qpi-convert-btn"
+                  disabled={readOnly || convertingId === r.id}
+                  onClick={() => onConvertToPi(r)}
+                >
+                  <IconRepeatSm />
+                  <span className="qpi-convert-btn-label">
+                    {convertingId === r.id ? 'Converting…' : 'Convert to PI'}
+                  </span>
+                </button>
+              </Tooltip>
             )}
-            {/* Email button — only enabled until the first send. After
-                emailedAt is set the button greys out and the Reminder
-                button to its right takes over. */}
+            {/* Email button — only enabled until the first send AND only
+                when the user can modify this row. Read-only rows
+                (main-branch viewed by normal branch) show a hint instead. */}
             <ActionBtn
               title={
-                emailingFor?.kind === 'quotation' && emailingFor.id === r.id
-                  ? 'Sending…'
-                  : r.emailedAt
-                    ? 'Already emailed — use Reminder to follow up'
-                    : 'Email Quotation'
+                readOnly
+                  ? readOnlyHint
+                  : emailingFor?.kind === 'quotation' && emailingFor.id === r.id
+                    ? 'Sending…'
+                    : r.emailedAt
+                      ? 'Already emailed — use Reminder to follow up'
+                      : 'Email Quotation'
               }
               icon={<IconMail />}
               color="#2563eb"
-              disabled={!!r.emailedAt || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
+              disabled={readOnly || !!r.emailedAt || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
             />
             {/* Reminder button — opposite of Email: disabled until the
                 initial email has gone out, then enabled with a small
                 count badge showing how many reminders have already
-                been sent. */}
+                been sent. Read-only rows always disabled. */}
             <ActionBtn
               title={
-                emailingFor?.kind === 'quotation' && emailingFor.id === r.id
-                  ? 'Sending…'
-                  : r.emailedAt
-                    ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
-                    : 'Send initial email first to enable reminders'
+                readOnly
+                  ? readOnlyHint
+                  : emailingFor?.kind === 'quotation' && emailingFor.id === r.id
+                    ? 'Sending…'
+                    : r.emailedAt
+                      ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
+                      : 'Send initial email first to enable reminders'
               }
               icon={<IconBellSm />}
               color="#f59e0b"
-              disabled={!r.emailedAt || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
+              disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
               badge={r.reminderCount ?? 0}
               onClick={() => r.id && sendReminder('quotation', r.id, r.qtNo)}
             />
             <ActionBtn
-              title="Edit Quotation"
+              title={readOnly ? readOnlyHint : 'Edit Quotation'}
               icon={<IconEdit />}
               color="#16a34a"
+              disabled={readOnly}
               onClick={() => {
                 if (!r.id) { toast.error('Cannot edit', 'This quotation has no server id yet.'); return; }
                 if (r.status === 'converted_to_pi') {
@@ -794,16 +958,17 @@ export default function SalesQPI() {
               </button>
             </Tooltip>
             <ActionBtn
-              title="Delete Quotation"
+              title={readOnly ? readOnlyHint : 'Delete Quotation'}
               icon={<IconTrash />}
               color="#dc2626"
+              disabled={readOnly}
               onClick={() => r.id && setDeleteTarget({ kind: 'quotation', id: r.id, code: r.qtNo })}
             />
           </div>
         );
       },
     },
-  ], [convertingId]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [convertingId, currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── PI table columns — header set differs by sub-tab (BT ID / BT Date
    *    only on With Shipment). Build both column sets memoised. */
@@ -833,46 +998,66 @@ export default function SalesQPI() {
     { header: 'Sales Manager', accessorKey: 'salesManager',
       cell: (info: any) => <span className="qpi-sm">{info.getValue() || '—'}</span> },
     {
+      // Created By — mirrors the Quotation table column. See helper.
+      header: 'Created By', accessorKey: 'createdBy',
+      cell: (info: any) => {
+        const r = info.row.original as PI;
+        return renderCreatorCell(
+          r.createdBy, r.createdById, r.creatorUserType, r.creatorBranchIsMain, r.branchName,
+          currentUser?.id, currentUser?.is_main_branch === true,
+        );
+      },
+    },
+    {
       header: () => <div className="text-center">Action</div>,
       id: '__actions', meta: { align: 'center' },
       cell: (info: any) => {
         const r = info.row.original as PI;
+        // Same branch-hierarchy gate as the Quotation row — main-branch
+        // PIs are visible-but-locked to a normal branch user.
+        const readOnly = r.canModify === false;
+        const readOnlyHint = 'View-only — this record belongs to the main branch.';
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
             {/* Email + Reminder pair — mirrors the Quotation row:
                 Email disabled once emailedAt is set; Reminder enabled
-                only after that, with a badge counting prior reminders. */}
+                only after that. Both also disabled on read-only rows. */}
             <ActionBtn
               title={
-                emailingFor?.kind === 'pi' && emailingFor.id === r.id
-                  ? 'Sending…'
-                  : r.emailedAt
-                    ? 'Already emailed — use Reminder to follow up'
-                    : 'Email PI'
+                readOnly
+                  ? readOnlyHint
+                  : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                    ? 'Sending…'
+                    : r.emailedAt
+                      ? 'Already emailed — use Reminder to follow up'
+                      : 'Email PI'
               }
               icon={<IconMail />}
               color="#2563eb"
-              disabled={!!r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+              disabled={readOnly || !!r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
               onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
             />
             <ActionBtn
               title={
-                emailingFor?.kind === 'pi' && emailingFor.id === r.id
-                  ? 'Sending…'
-                  : r.emailedAt
-                    ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
-                    : 'Send initial email first to enable reminders'
+                readOnly
+                  ? readOnlyHint
+                  : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                    ? 'Sending…'
+                    : r.emailedAt
+                      ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
+                      : 'Send initial email first to enable reminders'
               }
               icon={<IconBellSm />}
               color="#f59e0b"
-              disabled={!r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+              disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
               badge={r.reminderCount ?? 0}
               onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
             />
             <ActionBtn
-              title="Edit PI"
+              title={readOnly ? readOnlyHint : 'Edit PI'}
               icon={<IconEdit />}
               color="#16a34a"
+              disabled={readOnly}
               onClick={() => {
                 if (!r.id) { toast.error('Cannot edit', 'This PI has no server id yet.'); return; }
                 setEditingPiId(r.id);
@@ -898,9 +1083,10 @@ export default function SalesQPI() {
               </button>
             </Tooltip>
             <ActionBtn
-              title="Delete PI"
+              title={readOnly ? readOnlyHint : 'Delete PI'}
               icon={<IconTrash />}
               color="#dc2626"
+              disabled={readOnly}
               onClick={() => r.id && setDeleteTarget({ kind: 'pi', id: r.id, code: r.piNo })}
             />
           </div>
@@ -908,8 +1094,8 @@ export default function SalesQPI() {
       },
     },
   ];
-  const piWithColumns    = useMemo<any[]>(() => piColumnsBase(true),  []); // eslint-disable-line react-hooks/exhaustive-deps
-  const piWithoutColumns = useMemo<any[]>(() => piColumnsBase(false), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const piWithColumns    = useMemo<any[]>(() => piColumnsBase(true),  [currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
+  const piWithoutColumns = useMemo<any[]>(() => piColumnsBase(false), [currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="qpi-root">
@@ -3368,6 +3554,44 @@ const SCOPED_CSS = `
    user typed in the customer/consignee record. */
 .qpi-cap { text-transform: capitalize; }
 
+/* Branch column — owner branch name + optional MAIN chip. The chip
+   uses the brand purple so it pops without clashing with the per-row
+   action accents. Whole cell stays compact so the QPI table doesn't
+   need an extra horizontal scroll when the column is added. */
+.qpi-branch-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.qpi-branch-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #1e293b;
+  text-transform: capitalize;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qpi-branch-main {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #ede9fe;
+  color: #6d28d9;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  border-radius: 5px;
+  border: 1px solid #ddd6fe;
+  line-height: 1.2;
+}
+[data-bs-theme="dark"] .qpi-branch-name { color: #e2e8f0; }
+[data-bs-theme="dark"] .qpi-branch-main {
+  background: rgba(167,139,250,.18);
+  color: #c4b5fd;
+  border-color: rgba(167,139,250,.30);
+}
+
 /* Dates — tabular monospace numerics, secondary color. */
 .qpi-date {
   font-variant-numeric: tabular-nums;
@@ -3391,6 +3615,31 @@ const SCOPED_CSS = `
 .qpi-sm { color: var(--vz-body-color, #495057); font-weight: 500; font-size: 13px; }
 .qpi-em { color: #cbd5e1; font-weight: 400; }
 .qpi-em-center { text-align: center; color: #cbd5e1; font-weight: 400; }
+
+/* Created By — colored pill keyed off user_type, with a small
+ * sub-label (Main Branch / branch name / role). Same scheme as the
+ * Master Details "Created By" column so the visual language stays
+ * consistent between the two pages. */
+.qpi-creator-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.qpi-creator-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.qpi-creator-sub {
+  font-size: 10.5px;
+  color: var(--vz-secondary-color, #878a99);
+}
+[data-bs-theme="dark"] .qpi-creator-sub { color: rgba(255,255,255,.55); }
 
 .qpi-bt-badge {
   display: inline-flex; align-items: center;

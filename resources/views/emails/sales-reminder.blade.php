@@ -42,10 +42,21 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                                         </tr>
                                     </table>
                                 </td>
-                                <td style="width:110px; padding:0; vertical-align:top; text-align:right;">
-                                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="110" align="right">
+                                <td style="width:140px; padding:0; vertical-align:top; text-align:right;">
+                                    {{-- Two-stripe ribbon corner — mimics the Acme
+                                         Logistics reference. Three hard-stop bands:
+                                           0–32%   → darker cobalt (outer stripe,
+                                                     "back of the fold")
+                                           32–58%  → brighter cobalt (inner stripe,
+                                                     "front of the fold")
+                                           58–100% → white (fills out the rest of
+                                                     the corner square so the inner
+                                                     half blends with the card body)
+                                         Background-color is white so the transparent
+                                         third band reads as the card surface. --}}
+                                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="140" align="right">
                                         <tr>
-                                            <td height="110" style="background:#3b82f6; background-image:linear-gradient(135deg, #60a5fa 0%, #3b82f6 60%, #2563eb 100%); border-bottom-left-radius:55px; line-height:0; font-size:0;">&nbsp;</td>
+                                            <td height="140" style="background-color:#ffffff; background-image:linear-gradient(225deg, #1e40af 0%, #1e40af 28%, #4b95f8 28%, #4b95f8 52%, #ffffff 52%, #ffffff 100%); border-bottom-left-radius:70px; line-height:0; font-size:0;">&nbsp;</td>
                                         </tr>
                                     </table>
                                 </td>
@@ -246,15 +257,17 @@ table, td, div, h1, h2, p { font-family: 'Segoe UI', Arial, sans-serif !importan
                     </td>
                 </tr>
 
-                <!-- ═══════ BOTTOM-LEFT AMBER RIBBON ═══════ -->
+                <!-- ═══════ BOTTOM-LEFT WRAPPED RIBBON — mirrors the
+                     top-right ribbon (same hard-stop gradient, rotated
+                     so the "fold" sits on the opposite diagonal). ═══════ -->
                 <tr>
                     <td style="padding:0;">
                         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                             <tr>
-                                <td style="width:110px; padding:0; vertical-align:bottom;">
-                                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="110">
+                                <td style="width:140px; padding:0; vertical-align:bottom;">
+                                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="140">
                                         <tr>
-                                            <td height="90" style="background:#3b82f6; background-image:linear-gradient(315deg, #60a5fa 0%, #3b82f6 60%, #2563eb 100%); border-top-right-radius:55px; line-height:0; font-size:0;">&nbsp;</td>
+                                            <td height="140" style="background-color:#ffffff; background-image:linear-gradient(45deg, #1e40af 0%, #1e40af 28%, #4b95f8 28%, #4b95f8 52%, #ffffff 52%, #ffffff 100%); border-top-right-radius:70px; line-height:0; font-size:0;">&nbsp;</td>
                                         </tr>
                                     </table>
                                 </td>

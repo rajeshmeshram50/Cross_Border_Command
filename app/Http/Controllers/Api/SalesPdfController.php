@@ -277,11 +277,8 @@ class SalesPdfController extends Controller
             'salesManager:id,name',
         ])->findOrFail($id);
 
-        // Tenant scope — same rule as QuotationController::assertScope.
-        if ($user->user_type !== 'super_admin' &&
-            (!$user->client_id || (int) $quot->client_id !== (int) $user->client_id)) {
-            abort(404);
-        }
+        // Tenant + branch scope — same rule as QuotationController::assertScope.
+        $this->assertRecordScope($quot, $user, 'read');
 
         $withSignature = $request->boolean('signature', true);
 
@@ -332,11 +329,8 @@ class SalesPdfController extends Controller
             'salesManager:id,name',
         ])->findOrFail($id);
 
-        // Tenant scope — same rule as ProformaInvoiceController::assertScope.
-        if ($user->user_type !== 'super_admin' &&
-            (!$user->client_id || (int) $pi->client_id !== (int) $user->client_id)) {
-            abort(404);
-        }
+        // Tenant + branch scope — same rule as ProformaInvoiceController::assertScope.
+        $this->assertRecordScope($pi, $user, 'read');
 
         $withSignature = $request->boolean('signature', true);
 
@@ -458,10 +452,9 @@ class SalesPdfController extends Controller
             'salesManager:id,name',
         ])->findOrFail($id);
 
-        if ($user->user_type !== 'super_admin' &&
-            (!$user->client_id || (int) $quot->client_id !== (int) $user->client_id)) {
-            abort(404);
-        }
+        // Email = WRITE (stamps emailed_at + sends mail). Normal branch
+        // users can't email main-branch quotations.
+        $this->assertRecordScope($quot, $user, 'write');
 
         return $this->sendSalesDocumentEmail(
             $request, $quot,
@@ -485,10 +478,7 @@ class SalesPdfController extends Controller
             'salesManager:id,name',
         ])->findOrFail($id);
 
-        if ($user->user_type !== 'super_admin' &&
-            (!$user->client_id || (int) $pi->client_id !== (int) $user->client_id)) {
-            abort(404);
-        }
+        $this->assertRecordScope($pi, $user, 'write');
 
         return $this->sendSalesDocumentEmail(
             $request, $pi,
@@ -666,10 +656,8 @@ class SalesPdfController extends Controller
             'salesManager:id,name',
         ])->findOrFail($id);
 
-        if ($user->user_type !== 'super_admin' &&
-            (!$user->client_id || (int) $quot->client_id !== (int) $user->client_id)) {
-            abort(404);
-        }
+        // Reminder = WRITE (stamps last_reminded_at + bumps reminder_count).
+        $this->assertRecordScope($quot, $user, 'write');
 
         return $this->sendSalesReminderEmail(
             $request, $quot,
@@ -693,10 +681,7 @@ class SalesPdfController extends Controller
             'salesManager:id,name',
         ])->findOrFail($id);
 
-        if ($user->user_type !== 'super_admin' &&
-            (!$user->client_id || (int) $pi->client_id !== (int) $user->client_id)) {
-            abort(404);
-        }
+        $this->assertRecordScope($pi, $user, 'write');
 
         return $this->sendSalesReminderEmail(
             $request, $pi,
@@ -1326,6 +1311,41 @@ class SalesPdfController extends Controller
      * reliably in Gmail, Outlook, Apple Mail — data URIs in <img src>
      * get stripped by Gmail for security.
      */
+    /**
+     * Tenant + branch-aware authorisation for a Quotation or PI record.
+     * Mirrors QuotationController::assertScope so that the PDF / email
+     * endpoints exposed here enforce identical hierarchy rules:
+     *
+     *   - super_admin / client_admin / client_user        → full access
+     *   - main_branch_user (branch with is_main = true)   → full access
+     *   - normal branch_user → own-branch full, main-branch read-only,
+     *                          other branches: 404 (invisible)
+     *
+     * $action: 'read' allows main-branch records, 'write' rejects them
+     *          for normal branch users with 403.
+     */
+    private function assertRecordScope($record, $user, string $action = 'read'): void
+    {
+        if ($user->user_type === 'super_admin') return;
+        if (!$user->client_id || (int) $record->client_id !== (int) $user->client_id) {
+            abort(404);
+        }
+        if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
+        if ($user->branch && (bool) $user->branch->is_main) return;
+        if ((int) $record->branch_id === (int) $user->branch_id) return;
+
+        $isFromMainBranch = \DB::table('branches')
+            ->where('id', $record->branch_id)
+            ->where('client_id', $user->client_id)
+            ->value('is_main');
+
+        if ($isFromMainBranch) {
+            if ($action === 'read') return;
+            abort(403, 'Main-branch records are view-only for branch users.');
+        }
+        abort(404);
+    }
+
     private function branchAssetAbsolutePath(?string $path): ?string
     {
         if (!$path) return null;
