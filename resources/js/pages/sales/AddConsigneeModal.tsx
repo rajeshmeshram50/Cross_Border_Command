@@ -422,10 +422,16 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   /* Persist a segment-rule reference upload to /segment-uploads/consignee/{id}
    * so the Evidence Vault sees it. Mirrors AddCustomerModal's helper —
    * without this round-trip the upload only lives in browser memory. */
+  /* Sub-tab → backend category. The sub-tab key is 'trade-licence'
+   * (British spelling — matches the KycSubTab type). The American
+   * 'trade-license' spelling here used to return undefined and
+   * silently kill the segment-ref upload (file shown as blob in
+   * the current session, never reached the server, vanished on
+   * re-edit). */
   const SUB_TO_CAT_CO: Record<string, 'kyc' | 'dd' | 'tl'> = {
     'company-dd':    'dd',
     'owner-kyc':     'kyc',
-    'trade-license': 'tl',
+    'trade-licence': 'tl',
   };
   const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
     const ownerId = savedDbId || consignee?.db_id || null;
@@ -1084,7 +1090,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       ]);
       const refs: any[] = Array.isArray(refsR.data?.data) ? refsR.data.data : [];
       const hydrated: Record<string, SegRefUpload> = {};
-      const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-license' };
+      // British 'trade-licence' on purpose — matches the KycSubTab
+      // type + the render's refKey lookup. American 'trade-license'
+      // here broke hydration of trade-licence segment uploads on
+      // re-edit (key in segmentRefUploads didn't match the one the
+      // render rebuilt from `sub`).
+      const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-licence' };
       for (const r of refs) {
         const sub = CAT_TO_SUB[r.category];
         if (!sub || !r.doc_code) continue;
@@ -2891,8 +2902,8 @@ const Stage2 = ({
               <table className="acm-loc-table">
                 <thead>
                   <tr>
-                    <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th><th>—</th>
-                    <th>ISSUING AUTHORITY</th><th>ISSUE DATE</th><th>EXPIRY</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                    <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
+                    <th>ISSUING AUTHORITY</th><th>ATTACHMENT</th><th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2904,10 +2915,7 @@ const Stage2 = ({
                         <td>{String(i + 1).padStart(2, '0')}</td>
                         <td><span className="acm-kyc-code">{d.code}</span></td>
                         <td style={{ fontWeight: 700 }}>{d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}</td>
-                        <td>—</td>
                         <td>{d.authority ?? '—'}</td>
-                        <td><span className="acm-kyc-exp na">—</span></td>
-                        <td><span className={d.expiry ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{d.expiry ?? 'N/A'}</span></td>
                         <td>
                           {uploaded
                             ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
@@ -3408,7 +3416,7 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                     <thead>
                       <tr>
                         <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-                        <th>ISSUING AUTHORITY</th><th>EXPIRY</th><th>STATUS</th><th>ATTACHMENT</th>
+                        <th>ISSUING AUTHORITY</th><th>STATUS</th><th>ATTACHMENT</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3423,7 +3431,6 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                               {d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
                             </td>
                             <td>{d.authority || '—'}</td>
-                            <td><span className={(!d.expiry || d.expiry === 'N/A') ? 'acm-kyc-exp na' : 'acm-kyc-exp'}>{d.expiry || 'N/A'}</span></td>
                             <td>
                               <span style={{
                                 padding:'2px 8px', borderRadius:999, fontSize:10.5, fontWeight:600,
@@ -3763,22 +3770,18 @@ const VaultDocsTable = ({ docs, kind }: { docs: KycDocRow[]; kind: 'dd' | 'tl' }
           <thead>
             <tr>
               <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-              <th>LICENSE</th><th>ISSUING AUTHORITY</th>
-              <th>ISSUE</th><th>EXPIRY</th><th>ATTACHMENT</th>
+              <th>ISSUING AUTHORITY</th><th>ATTACHMENT</th>
             </tr>
           </thead>
           <tbody>
             {docs.length === 0 ? (
-              <tr className="acm-loc-empty"><td colSpan={8}>No {kind === 'dd' ? 'company DD' : 'trade licence'} documents captured in Stage 2.</td></tr>
+              <tr className="acm-loc-empty"><td colSpan={5}>No {kind === 'dd' ? 'company DD' : 'trade licence'} documents captured in Stage 2.</td></tr>
             ) : docs.map((d, i) => (
               <tr key={d.id}>
                 <td>{String(i + 1).padStart(2, '0')}</td>
                 <td><span className="acm-kyc-code">{codeFor(kind, i + 1)}</span></td>
                 <td style={{ fontWeight: 700 }}>{d.name}</td>
-                <td>{d.license_number || '—'}</td>
                 <td>{d.issuing_authority || '—'}</td>
-                <td><span className={d.issue_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.issue_date)}</span></td>
-                <td><span className={d.expiry_date ? 'acm-kyc-exp' : 'acm-kyc-exp na'}>{fmtMy(d.expiry_date)}</span></td>
                 <td><AttachmentLink url={d.attachment_url} path={d.attachment_path} /></td>
               </tr>
             ))}
