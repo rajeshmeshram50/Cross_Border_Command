@@ -184,12 +184,10 @@ export default function ClmDcpPage() {
             <span className="clm-tab-dot" style={{ background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.5)' }} />
             Less Regulated <span className="clm-tab-count">{counts.less}</span>
           </button>
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
             <div className="clm-search">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
               <input type="text" placeholder="Search segment rules…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
             </div>
-          </div>
         </div>
 
         <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
