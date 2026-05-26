@@ -552,9 +552,20 @@ body > .dropdown-menu.master-select-menu,
   cursor: pointer;
   font-size: 16px; font-weight: 300;
   font-family: inherit; line-height: 1;
-  transition: background .15s, border-color .15s;
+  transition: background .15s, border-color .15s, color .15s, transform .15s;
 }
-.clm-modal-close:hover { background: rgba(255,255,255,.24); border-color: rgba(255,255,255,.45); }
+/* Hover — turn red with a subtle lift so the close affordance reads as
+ * the destructive action it is. Cursor is already pointer above; we
+ * re-assert it here for forms where a wrapper element resets it. */
+.clm-modal-close:hover,
+.clm-modal-close:focus-visible {
+  background: rgba(239,68,68,.92);
+  border-color: #ef4444;
+  color: #fff;
+  cursor: pointer;
+  transform: translateY(-1px);
+}
+.clm-modal-close:active { transform: translateY(0); background: #dc2626; }
 
 .clm-modal-body {
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
@@ -1003,6 +1014,29 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-table tbody tr:hover { background: rgba(8,145,178,.16); }
 [data-bs-theme="dark"] .clm-table tbody td { color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-td-name { color: #f1f5f9; }
+
+/* DCP — Segment Rule modal document tables (KYC / Due Diligence /
+ * Trade Licenses / Trade Documents / Quality & Compliance). The doc
+ * card and per-row containers were inline-styled with a hard-coded
+ * white background, so dark mode left them as bright white islands
+ * on a near-black surface — document names + authority lines became
+ * unreadable. Light mode keeps the original white; dark mode swaps
+ * to a slate panel with light text. */
+.dcp-doc-card { background: #fff; }
+.dcp-doc-row  { background: #fff; }
+[data-bs-theme="dark"] .dcp-doc-card { background: #0f172a; }
+[data-bs-theme="dark"] .dcp-doc-row {
+  background: #0f172a;
+  border-bottom-color: rgba(6,182,212,.18) !important;
+}
+[data-bs-theme="dark"] .dcp-doc-row:hover { background: rgba(8,145,178,.16); }
+/* Inline-styled text colors (dark navy document name, slate-grey
+ * authority) get overridden to dark-mode-friendly tones — :where()
+ * keeps specificity low so any explicit style on the same element
+ * still wins. */
+[data-bs-theme="dark"] .dcp-doc-row :where(div, span) { color: #e2e8f0; }
+[data-bs-theme="dark"] .dcp-doc-row > div > div:first-child { color: #f1f5f9; }
+[data-bs-theme="dark"] .dcp-doc-row > div > div:last-child  { color: #94a3b8; }
 [data-bs-theme="dark"] .clm-pag {
   background: linear-gradient(180deg, rgba(8,145,178,.10), rgba(8,145,178,.06));
   border-top-color: rgba(6,182,212,.25);

@@ -182,6 +182,10 @@ export type TradeDocRow = {
   attachmentName: string;
   signatureRequestId?: number;
   signedUrl?: string;
+  /* Zoho Sign completion-certificate URL — populated by the polling
+   * effect from clm_signature_requests.certificate_path on completed
+   * rows. Drives the third action-column button. */
+  certificateUrl?: string;
   /* Set by the parent right before rendering — true when this row's
    * signatureRequestId is inside the active 60-second Resend cooldown.
    * The button locks so a multi-doc bundle can't fire one reminder
@@ -589,7 +593,7 @@ export default function AddVendorModal(props: {
    * the listed clm_trade_doc_library ids pre-checked. modelName='Vendor'
    * makes the backend resolve {{supplier.*}} tokens with this vendor. */
   const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
-  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string }>>({});
+  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }>>({});
 
   /* Resend cooldown — same pattern as the customer + consignee modals.
    * Zoho's remind API operates per-REQUEST so a multi-doc bundle gets
@@ -869,7 +873,7 @@ export default function AddVendorModal(props: {
           certificate_url?: string | null;
           file_url?: string | null;
         }> = Array.isArray(r.data?.data) ? r.data.data : [];
-        const map: Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string }> = {};
+        const map: Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }> = {};
         for (const row of rows) {
           const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
           for (let i = 0; i < ids.length; i++) {
@@ -896,8 +900,15 @@ export default function AddVendorModal(props: {
             }
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
-            if (!rawSignedUrl) rawSignedUrl = row.file_url || null;
-            if (!rawSignedUrl) rawSignedUrl = row.certificate_url || row.certificate_path || null;
+            /* file_url and certificate_* are NOT fallbacks here. When
+             * Zoho mints the certificate before the signed PDF lands
+             * (signed_document_paths: []), Laravel's model accessor
+             * fills file_url with the cert URL — using that as a signed
+             * URL fallback silently routes the View / Download buttons
+             * to the certificate. Keep them strictly separate so the
+             * signed-doc buttons stay disabled until the real signed
+             * PDF appears, and the cert lives only on its own button. */
+            const rawCertUrl = row.certificate_url || row.certificate_path || null;
             // Resolve via resolveFileUrl so the URL gets the right
             // base prefix (VITE_API_URL on the deployed SPA, current
             // origin in dev). Bare /storage/… relative URLs 404 when
@@ -905,7 +916,8 @@ export default function AddVendorModal(props: {
             map[docId] = {
               status: row.status,
               signatureRequestId: row.id,
-              signedUrl: rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
+              signedUrl:      rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
+              certificateUrl: rawCertUrl   ? resolveFileUrl(rawCertUrl)   : undefined,
             };
           }
         }
@@ -927,7 +939,8 @@ export default function AddVendorModal(props: {
         ...r,
         status: info.status,
         signatureRequestId: info.signatureRequestId,
-        signedUrl: info.signedUrl ?? r.signedUrl,
+        signedUrl:      info.signedUrl      ?? r.signedUrl,
+        certificateUrl: info.certificateUrl ?? r.certificateUrl,
       };
     }));
   }, [sigStatusByDoc]);
@@ -3991,6 +4004,26 @@ function TradeDocsTable(props: {
                       >
                         <i className="ri-download-2-line" />
                       </a>
+                      {/* Certificate of Completion — third action only
+                          when the request is completed and Zoho has
+                          minted the certificate. Matches the Customer /
+                          Consignee Stage 3 tables. The legacy 'Signed'
+                          string is treated the same as 'completed' so
+                          rows from before the live-status polling
+                          landed still see the button. */}
+                      {(r.status === 'completed' || r.status === 'Signed') && r.certificateUrl && (
+                        <a
+                          href={r.certificateUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          download=""
+                          className="btn btn-sm btn-soft-info"
+                          title="Download Certificate of Completion"
+                          style={{ pointerEvents: 'auto' }}
+                        >
+                          <i className="ri-award-line" />
+                        </a>
+                      )}
                     </div>
                   </td>
                 </tr>
