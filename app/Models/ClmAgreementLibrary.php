@@ -15,12 +15,16 @@ class ClmAgreementLibrary extends Model
 
     protected $fillable = [
         'client_id', 'code', 'agreement_type', 'title', 'party',
-        'regulatory', 'signing', 'segment', 'agr_status', 'content', 'status',
+        'regulatory', 'signing', 'segment', 'agr_status', 'content',
+        'docx_path', 'docx_original_name',
+        'header_config', 'footer_config', 'status',
         'created_by', 'updated_by',
     ];
 
     protected $casts = [
-        'signing' => 'boolean',
+        'signing'       => 'boolean',
+        'header_config' => 'array',
+        'footer_config' => 'array',
     ];
 
     public function client(): BelongsTo { return $this->belongsTo(Client::class); }

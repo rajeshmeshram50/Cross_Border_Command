@@ -23,8 +23,12 @@ class ClmSignatureRequest extends Model
 
     protected $table = 'clm_signature_requests';
 
+    public const DOC_TRADE     = 'trade_doc';
+    public const DOC_AGREEMENT = 'agreement';
+
     protected $fillable = [
         'client_id', 'branch_id',
+        'document_type', 'lead_id',
         'trade_doc_id', 'trade_doc_ids', 'document_names', 'zoho_document_ids',
         'model_name', 'party_id',
         'zoho_request_id', 'request_name', 'status',
@@ -74,13 +78,18 @@ class ClmSignatureRequest extends Model
         }
     }
 
-    /** Resolve every draft attached to this request. */
+    /** Resolve every draft attached to this request — picks the right
+     *  library table based on `document_type` so both trade-doc and
+     *  agreement requests round-trip cleanly. */
     public function documents(): Collection
     {
         $ids = is_array($this->trade_doc_ids) && !empty($this->trade_doc_ids)
             ? $this->trade_doc_ids
             : [$this->trade_doc_id];
 
+        if ($this->document_type === self::DOC_AGREEMENT) {
+            return ClmAgreementLibrary::whereIn('id', $ids)->get();
+        }
         return ClmTradeDocLibrary::whereIn('id', $ids)->get();
     }
 

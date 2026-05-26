@@ -1,58 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useEditor, EditorContent, Editor, Mark, mergeAttributes } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
-import TextAlign from '@tiptap/extension-text-align';
-import TextStyle from '@tiptap/extension-text-style';
-import Color from '@tiptap/extension-color';
-import Highlight from '@tiptap/extension-highlight';
-import Link from '@tiptap/extension-link';
-import Subscript from '@tiptap/extension-subscript';
-import Superscript from '@tiptap/extension-superscript';
-
-/**
- * Custom FontSize mark — TipTap ships no first-party font-size extension,
- * but the Trade Document editor has one in its toolbar (size 1–7), so to
- * match parity we add a tiny mark that emits `<span style="font-size:Npt">`.
- * Lives in this file because it's a one-line semantic addition; promoting
- * it to a shared util would just be churn.
- */
-const FontSize = Mark.create({
-  name: 'fontSize',
-  addAttributes() {
-    return {
-      size: {
-        default: null,
-        parseHTML: (el) => el.style.fontSize?.replace(/['"]/g, '') || null,
-        renderHTML: (attrs) => (attrs.size ? { style: `font-size: ${attrs.size}` } : {}),
-      },
-    };
-  },
-  parseHTML() {
-    return [{ style: 'font-size' }];
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ['span', mergeAttributes(HTMLAttributes), 0];
-  },
-  addCommands() {
-    return {
-      setFontSize:
-        (size: string) =>
-        ({ commands }: any) =>
-          commands.setMark(this.name, { size }),
-      unsetFontSize:
-        () =>
-        ({ commands }: any) =>
-          commands.unsetMark(this.name),
-    } as any;
-  },
-});
 import api from '../../api';
+import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterMultiSelect } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import { SimpleDescModal } from './clmCommon';
+import ClmInsertTableModal from './ClmInsertTableModal';
+import ClmInsertHrModal from './ClmInsertHrModal';
+import HeaderFooterPanel, {
+  DEFAULT_HEADER, DEFAULT_FOOTER,
+  type HeaderConfig, type FooterConfig,
+} from '../hrms/doc-templates/HeaderFooterPanel';
 
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → Agreements Master → Library → "Add New Agreement" wizard
@@ -83,6 +43,11 @@ export type AgrLib = {
   segment: string | null;
   agr_status: string;
   content: string | null;
+  /* Stage 2 page-shell — same shape Trade Document carries. Nullable for
+   * rows that pre-date the columns; the wizard layers the row's config
+   * over branded defaults so missing keys stay safe. */
+  header_config?: HeaderConfig | null;
+  footer_config?: FooterConfig | null;
 };
 
 /* Applicable Party — identical to the Trade Document Draft page's
@@ -110,7 +75,11 @@ interface Props {
   open: boolean;
   existing: AgrLib | null;
   types: AgrType[];
-  knownSegments: string[];
+  /* Segment master rows (name + regulatory tier) — used to filter the
+   * Stage-1 segment selector by the chosen High/Less regulatory radio.
+   * Accept the legacy string[] shape too for callers that haven't been
+   * updated yet; those entries default to 'less'. */
+  knownSegments: Array<{ name: string; regulatory_status: 'highly' | 'less' }> | string[];
   nextCode: string;
   onClose: () => void;
   onSaved: () => void;
@@ -132,25 +101,179 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   const [regulatory, setRegulatory]       = useState<'highly' | 'less'>('less');
   const [purpose, setPurpose]             = useState('');
   const [parties, setParties]             = useState<Set<string>>(new Set());
-  const [segment, setSegment]             = useState<string>('');
+  /* Segments — always an array internally so the high-reg / less-reg
+   * branches share the same state shape. High-reg is single-select
+   * (length 0 or 1); less-reg is multi-select (any length). Persisted
+   * as a comma-separated string in clm_agreement_library.segment. */
+  const [segments, setSegments]           = useState<string[]>([]);
 
   // Step 2 fields
   const [content, setContent]                 = useState('');
   const [placeholderOpen, setPlaceholderOpen] = useState(false);
   const [clauseOpen, setClauseOpen]           = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  /* Insert Table / Insert HR — same pattern Trade Doc uses. Caret is
+   * stashed via stashSelection() before opening so the generated HTML
+   * lands at the user's last in-editor caret, not the editor's start. */
+  const [tablePickerOpen, setTablePickerOpen] = useState(false);
+  const [hrPickerOpen, setHrPickerOpen]       = useState(false);
+
+  // Editor state — contentEditable + execCommand, mirrors Trade Doc modal.
+  const editorRef        = useRef<HTMLDivElement | null>(null);
+  const [fontSize, setFontSizeState] = useState('14');
+  const [block, setBlockState]       = useState('p');
+  const lastRangeRef                  = useRef<Range | null>(null);
+  const docxRef                       = useRef<HTMLInputElement | null>(null);
+
+  /* Stage 2 page-shell — same UX as Trade Document modal. Defaults pre-
+   * fill the header with the user's branch (or client) logo + name so
+   * a fresh draft looks branded; the user can edit / replace either
+   * side via the header popover. Saved values come back as
+   * `header_config` / `footer_config` on the row and layer over the
+   * defaults so a row that pre-dates these columns keeps rendering. */
+  const { user: authUser } = useAuth();
+  const brandedDefaults = useMemo(() => {
+    const headerLogoUrl = authUser?.branch_logo ?? authUser?.client_logo ?? null;
+    const headerLogoPath = headerLogoUrl
+      ? (headerLogoUrl.match(/\/storage\/(.+)$/)?.[1] ?? null)
+      : null;
+    const headerTitle = authUser?.branch_name ?? authUser?.client_name ?? DEFAULT_HEADER.title;
+    const footerLine  = authUser?.client_name
+      ? `${authUser.client_name}${authUser?.branch_name && authUser.branch_name !== authUser.client_name ? ' · ' + authUser.branch_name : ''}  |  Confidential`
+      : DEFAULT_FOOTER.text;
+    return {
+      header: { ...DEFAULT_HEADER, logo_path: headerLogoPath, logo_url: headerLogoUrl, title: headerTitle },
+      footer: { ...DEFAULT_FOOTER, text: footerLine },
+    };
+  }, [authUser?.branch_logo, authUser?.client_logo, authUser?.branch_name, authUser?.client_name]);
+  const [headerConfig, setHeaderConfig] = useState<HeaderConfig>(brandedDefaults.header);
+  const [footerConfig, setFooterConfig] = useState<FooterConfig>(brandedDefaults.footer);
 
   const [quickAddTypeOpen, setQuickAddTypeOpen] = useState(false);
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Underline,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-    ],
-    content: '<p></p>',
-    onUpdate({ editor }) { setContent(editor.getHTML()); },
-  });
+  /* Rich-text helpers — execCommand is deprecated but the lightest path
+   * for a contentEditable div. preventDefault on the toolbar's mousedown
+   * keeps the editor's selection alive while a button is being clicked. */
+  const syncContent = () => {
+    if (editorRef.current) setContent(editorRef.current.innerHTML);
+  };
+  const exec = (cmd: string, value?: string) => {
+    editorRef.current?.focus();
+    document.execCommand(cmd, false, value);
+    syncContent();
+  };
+  const applyFontSize = (px: string) => {
+    editorRef.current?.focus();
+    document.execCommand('fontSize', false, '7');
+    editorRef.current?.querySelectorAll('font[size="7"]').forEach((f) => {
+      const span = document.createElement('span');
+      span.style.fontSize = `${px}px`;
+      span.innerHTML = (f as HTMLElement).innerHTML;
+      f.replaceWith(span);
+    });
+    syncContent();
+  };
+  const applyBlock = (tag: string) => exec('formatBlock', `<${tag}>`);
+  const insertLink = () => {
+    const url = window.prompt('Enter URL', 'https://');
+    if (url) exec('createLink', url);
+  };
+  const stashSelection = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
+      lastRangeRef.current = sel.getRangeAt(0).cloneRange();
+    }
+    // Don't clobber the previous stash if the new selection is OUTSIDE
+    // the editor — that happens while a modal (Placeholder / Table /
+    // HR) is open. We want to remember the LAST in-editor caret.
+  };
+  /* Restore the stashed caret BEFORE executing the insertion command.
+   * Falls back to the END of the editor (collapsed range) when no
+   * stash exists yet — happens when the user opens a Placeholder / HR /
+   * Table modal without first clicking inside the body. End-of-editor
+   * is closer to user intent than the top-default `editor.focus()`. */
+  const restoreCaretForInsert = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const stash = lastRangeRef.current;
+    const sel   = window.getSelection();
+    if (!sel) return;
+    if (stash && editor.contains(stash.startContainer)) {
+      sel.removeAllRanges();
+      sel.addRange(stash);
+    } else {
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);   // collapse to end
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  };
+  const rememberCaretAfterInsert = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+      lastRangeRef.current = sel.getRangeAt(0).cloneRange();
+    }
+  };
+  const insertAtCaret = (text: string) => {
+    restoreCaretForInsert();
+    document.execCommand('insertText', false, text);
+    rememberCaretAfterInsert();
+    syncContent();
+  };
+  /* Drop generated HTML at the stashed caret position. Used by the
+   * Insert Table + Insert HR modals — execCommand('insertHTML') is
+   * more reliable than splicing nodes by hand and handles the case
+   * where the user's selection spans multiple existing nodes. */
+  const insertHtmlAtCaret = (html: string) => {
+    restoreCaretForInsert();
+    document.execCommand('insertHTML', false, html);
+    rememberCaretAfterInsert();
+    syncContent();
+  };
+
+  /* DOCX round-trip — mirrors the Trade Doc draft flow. Requires an
+   * existing row so we have an id to scope the upload/download to. */
+  const downloadDocx = async () => {
+    if (!editingId) {
+      toast.error('Save first', 'Save the agreement before downloading as DOCX.');
+      return;
+    }
+    try {
+      const resp = await api.get(`/clm/agreement-library/${editingId}/download`, { responseType: 'blob' });
+      const url  = URL.createObjectURL(new Blob([resp.data]));
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = `${existing?.code ?? `A-${String(editingId).padStart(3, '0')}`}.docx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error('Download failed', e?.response?.data?.message ?? 'Please try again.');
+    }
+  };
+  const uploadDocx = async (file: File) => {
+    if (!editingId) {
+      toast.error('Save first', 'Save the agreement before uploading a revised DOCX.');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('docx', file);
+    try {
+      const { data } = await api.post(`/clm/agreement-library/${editingId}/upload-docx`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const row = data?.data;
+      if (row?.content) {
+        setContent(row.content);
+        if (editorRef.current) editorRef.current.innerHTML = row.content;
+      }
+      toast.success('Uploaded', file.name);
+    } catch (e: any) {
+      toast.error('Upload failed', e?.response?.data?.message ?? 'Please try again.');
+    }
+  };
 
   // Reset/hydrate on open
   useEffect(() => {
@@ -164,19 +287,52 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       setRegulatory(existing.regulatory ?? 'less');
       setPurpose('');
       setParties(new Set((existing.party ?? '').split(',').map(s => s.trim()).filter(Boolean)));
-      setSegment(existing.segment ?? '');
+      setSegments((existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean));
       setContent(existing.content ?? '');
+      // Layer the saved zone config over branded defaults — pre-migration
+      // rows come back with null and keep the logged-in user's branch
+      // branding as their starting point.
+      setHeaderConfig({ ...brandedDefaults.header, ...(existing.header_config || {}) } as HeaderConfig);
+      setFooterConfig({ ...brandedDefaults.footer, ...(existing.footer_config || {}) } as FooterConfig);
     } else {
       setAgreementType('');
       setTitle('');
       setRegulatory('less');
       setPurpose('');
       setParties(new Set());
-      setSegment('');
+      setSegments([]);
       setContent('');
+      setHeaderConfig(brandedDefaults.header);
+      setFooterConfig(brandedDefaults.footer);
     }
-    if (editor) editor.commands.setContent(existing?.content || '<p></p>', { emitUpdate: false });
-  }, [open, existing, editor]);
+  }, [open, existing, brandedDefaults]);
+
+  /* Track the last caret position inside the body editor on every
+   * selectionchange so opening a child modal (Placeholder / Table /
+   * HR) doesn't clobber the in-editor caret. The listener only updates
+   * when the new selection is INSIDE the editor, so modal openings
+   * leave the stash untouched. */
+  useEffect(() => {
+    if (step !== 2) return;
+    const onSel = () => {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
+        lastRangeRef.current = sel.getRangeAt(0).cloneRange();
+      }
+    };
+    document.addEventListener('selectionchange', onSel);
+    return () => document.removeEventListener('selectionchange', onSel);
+  }, [step]);
+
+  // When the user enters step 2, hydrate the contentEditable DOM from
+  // the `content` state. Mirrors the Trade Doc draft page — the editor
+  // node only exists in the tree on step 2 so this is the right place
+  // to seed its innerHTML.
+  useEffect(() => {
+    if (step === 2 && editorRef.current) {
+      editorRef.current.innerHTML = content ?? '';
+    }
+  }, [step, content]);
 
   useEffect(() => { setTypes(initialTypes); }, [initialTypes]);
 
@@ -199,11 +355,30 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     return nextCode;
   }, [editingId, existing, nextCode]);
 
+  /* Normalise the knownSegments prop into a uniform { name, regulatory_status }
+   * shape regardless of whether the caller passed strings (legacy) or
+   * objects (new shape). Legacy strings default to 'less' so they still
+   * surface on the less-regulatory dropdown. */
+  const normalisedSegments = useMemo(() => {
+    return (knownSegments as Array<string | { name: string; regulatory_status: 'highly' | 'less' }>).map(s => (
+      typeof s === 'string' ? { name: s, regulatory_status: 'less' as const } : s
+    )).filter(s => !!s.name);
+  }, [knownSegments]);
+
+  /* Dropdown options for the current regulatory tier. Filter by the
+   * radio selection so high-reg only shows highly-regulated segments
+   * and less-reg only shows less-regulated ones. Any segments saved
+   * on the row that no longer match the tier (e.g. the row's
+   * regulatory was flipped after originally being saved) are still
+   * appended so the user can see what's already there and remove it. */
   const segmentOptions = useMemo(() => {
-    const set = new Set<string>(knownSegments);
-    if (segment) set.add(segment);
-    return Array.from(set).filter(Boolean).map(s => ({ value: s, label: s }));
-  }, [knownSegments, segment]);
+    const byName = new Map<string, string>();
+    normalisedSegments
+      .filter(s => s.regulatory_status === regulatory)
+      .forEach(s => byName.set(s.name, `${s.name}`));
+    segments.forEach(name => { if (!byName.has(name)) byName.set(name, name); });
+    return Array.from(byName.entries()).map(([value, label]) => ({ value, label }));
+  }, [normalisedSegments, segments, regulatory]);
 
   const toggleParty = (v: string) => {
     setParties(prev => {
@@ -233,7 +408,9 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     if (!agreementType.trim()) next.agreementType = 'Agreement type is required';
     if (!title.trim())          next.title         = 'Title is required';
     if (parties.size === 0)     next.party         = 'Select at least one applicable party';
-    if (regulatory === 'highly' && !segment.trim()) next.segment = 'High-regulatory agreements need a specific segment';
+    if (regulatory === 'highly' && segments.length !== 1) {
+      next.segment = 'High-regulatory agreements need exactly one segment';
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -242,8 +419,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   const goBack = () => setStep(1);
 
   const insertPlaceholderToken = (token: string) => {
-    if (!editor) return;
-    editor.chain().focus().insertContent(token + ' ').run();
+    insertAtCaret(token + ' ');
   };
 
   const handleSave = async () => {
@@ -256,7 +432,8 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     // content blob. stripMetaFromContent still runs so legacy rows
     // (drafted before the cut) load cleanly without the embedded
     // <!-- AGW-META --> comment leaking back into the editor.
-    const strippedContent = stripMetaFromContent(content?.trim() || '');
+    const raw = (editorRef.current?.innerHTML ?? content ?? '').trim();
+    const strippedContent = stripMetaFromContent(raw);
     const purposeBlock = purpose.trim()
       ? `<p><strong>Purpose:</strong> ${escapeHtml(purpose.trim())}</p>`
       : '';
@@ -270,9 +447,14 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       // wizard no longer exposes a signing-workflow toggle. A separate
       // Send-for-Signature flow drives Zoho Sign when needed.
       signing:        false,
-      segment:        regulatory === 'highly' ? (segment.trim() || null) : null,
+      // Persist as CSV — high-reg always sends a single segment, less-reg
+      // can send zero or many. Empty list → null so the column stays
+      // searchable as "no segment configured".
+      segment:        segments.length ? segments.join(', ') : null,
       agr_status:     'Active',
       content:        finalContent,
+      header_config:  headerConfig,
+      footer_config:  footerConfig,
     };
     try {
       if (editingId) {
@@ -424,7 +606,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 </div>
                 <div className="agw-reg-grid">
                   <label className={`agw-reg-opt agw-reg-high ${regulatory === 'highly' ? 'is-on' : ''}`}>
-                    <input type="radio" name="agw-reg" checked={regulatory === 'highly'} onChange={() => setRegulatory('highly')} />
+                    <input type="radio" name="agw-reg" checked={regulatory === 'highly'} onChange={() => { setRegulatory('highly'); setSegments([]); setErrors(p => ({ ...p, segment: '' })); }} />
                     <span className="agw-reg-opt-dot" />
                     <div>
                       <div className="agw-reg-opt-title">High Regulatory</div>
@@ -432,7 +614,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                     </div>
                   </label>
                   <label className={`agw-reg-opt agw-reg-less ${regulatory === 'less' ? 'is-on' : ''}`}>
-                    <input type="radio" name="agw-reg" checked={regulatory === 'less'} onChange={() => setRegulatory('less')} />
+                    <input type="radio" name="agw-reg" checked={regulatory === 'less'} onChange={() => { setRegulatory('less'); setSegments([]); setErrors(p => ({ ...p, segment: '' })); }} />
                     <span className="agw-reg-opt-dot" />
                     <div>
                       <div className="agw-reg-opt-title">Less Regulatory</div>
@@ -440,20 +622,39 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                     </div>
                   </label>
                 </div>
-                {regulatory === 'highly' && (
-                  <div className="agw-field" style={{ marginTop: 12 }}>
-                    <label className="agw-label">Segment <span className="agw-req">*</span></label>
+                {/* Segment selector — gated by the regulatory tier:
+                      - High-reg: single-select (each high-reg agreement
+                        targets exactly one regulated segment).
+                      - Less-reg: multi-select (a less-reg agreement can
+                        apply across many general segments). The dropdown
+                        only lists segments whose master tier matches the
+                        current radio, so the user can never accidentally
+                        cross tiers. */}
+                <div className="agw-field" style={{ marginTop: 12 }}>
+                  <label className="agw-label">
+                    {regulatory === 'highly' ? <>Segment <span className="agw-req">*</span></> : 'Segments (select one or more)'}
+                  </label>
+                  {regulatory === 'highly' ? (
                     <MasterSelect
-                      key={`agw-seg-${segmentOptions.length}`}
-                      value={segment}
+                      key={`agw-seg-h-${segmentOptions.length}`}
+                      value={segments[0] ?? ''}
                       invalid={!!errors.segment}
-                      placeholder="— Select Segment —"
+                      placeholder={segmentOptions.length ? '— Select Segment —' : 'No highly-regulated segments configured'}
                       options={segmentOptions}
-                      onChange={(v) => { setSegment(v); setErrors(p => ({ ...p, segment: '' })); }}
+                      onChange={(v) => { setSegments(v ? [v] : []); setErrors(p => ({ ...p, segment: '' })); }}
                     />
-                    {errors.segment && <div className="agw-err">{errors.segment}</div>}
-                  </div>
-                )}
+                  ) : (
+                    <MasterMultiSelect
+                      key={`agw-seg-l-${segmentOptions.length}`}
+                      value={segments}
+                      invalid={!!errors.segment}
+                      placeholder={segmentOptions.length ? '— Select Segments —' : 'No less-regulated segments configured'}
+                      options={segmentOptions}
+                      onChange={(vs) => { setSegments(vs); setErrors(p => ({ ...p, segment: '' })); }}
+                    />
+                  )}
+                  {errors.segment && <div className="agw-err">{errors.segment}</div>}
+                </div>
               </div>
 
               <div className="agw-field">
@@ -518,36 +719,32 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
           ) : (
             <div className="agw-step-body">
               <AgrEditor
-                editor={editor}
-                onUploadWord={() => fileInputRef.current?.click()}
-                onOpenPlaceholder={() => { setPlaceholderOpen(true); setClauseOpen(false); }}
+                editorRef={editorRef}
+                fontSize={fontSize}
+                setFontSizeState={setFontSizeState}
+                applyFontSize={applyFontSize}
+                block={block}
+                setBlockState={setBlockState}
+                applyBlock={applyBlock}
+                exec={exec}
+                insertLink={insertLink}
+                stashSelection={stashSelection}
+                syncContent={syncContent}
+                docxRef={docxRef}
+                onDownloadDocx={() => void downloadDocx()}
+                onUploadDocx={(f) => void uploadDocx(f)}
+                onOpenPlaceholder={() => { stashSelection(); setPlaceholderOpen(true); setClauseOpen(false); }}
                 onOpenClauseLibrary={() => { setClauseOpen(o => !o); setPlaceholderOpen(false); }}
+                onOpenTablePicker={() => { stashSelection(); setTablePickerOpen(true); }}
+                onOpenHrPicker={() => { stashSelection(); setHrPickerOpen(true); }}
                 clauseOpen={clauseOpen}
                 onCloseClauseLibrary={() => setClauseOpen(false)}
-              />
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".doc,.docx,.txt,.html"
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file || !editor) return;
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const txt = String(reader.result ?? '');
-                    if (file.name.toLowerCase().endsWith('.html')) {
-                      editor.chain().focus().insertContent(txt).run();
-                    } else {
-                      const html = txt.split(/\r?\n/).map(line => `<p>${escapeHtml(line)}</p>`).join('');
-                      editor.chain().focus().insertContent(html).run();
-                    }
-                    toast.success('Imported', `${file.name} loaded into the editor.`);
-                  };
-                  reader.onerror = () => toast.error('Read failed', 'Could not read the selected file.');
-                  reader.readAsText(file);
-                  e.target.value = '';
-                }}
+                onInsertClause={(html) => { insertHtmlAtCaret(html); setClauseOpen(false); }}
+                editingId={editingId}
+                headerConfig={headerConfig}
+                setHeaderConfig={setHeaderConfig}
+                footerConfig={footerConfig}
+                setFooterConfig={setFooterConfig}
               />
             </div>
           )}
@@ -601,35 +798,90 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
             onPick={(token) => { insertPlaceholderToken(token); setPlaceholderOpen(false); }}
           />
         )}
+
+        {/* Insert Table picker — same component the Trade Doc draft uses
+            so generated table markup stays consistent across CLM. */}
+        <ClmInsertTableModal
+          open={tablePickerOpen}
+          onClose={() => setTablePickerOpen(false)}
+          onInsert={(html) => { insertHtmlAtCaret(html); setTablePickerOpen(false); }}
+        />
+
+        {/* Insert Horizontal Line picker — replaces the toolbar's plain
+            HR button with the styled-line picker (colour, height, style)
+            so PDF output renders a deliberate separator instead of the
+            1px grey line dompdf falls back to. */}
+        <ClmInsertHrModal
+          open={hrPickerOpen}
+          onClose={() => setHrPickerOpen(false)}
+          onInsert={(html) => { insertHtmlAtCaret(html); setHrPickerOpen(false); }}
+        />
       </div>
     </div>,
     document.body,
   );
 }
 
-/* ── Tiptap editor sub-component for the Agreement wizard ──────────── */
+/* ── Agreement editor sub-component ─────────────────────────────────
+ * Uses the same contentEditable + execCommand engine as the Trade
+ * Document draft page (ClmTradeDocumentDraftPage.tsx) so the two
+ * editors are visually and functionally identical. */
 
 function AgrEditor({
-  editor,
-  onUploadWord,
+  editorRef,
+  fontSize,
+  setFontSizeState,
+  applyFontSize,
+  block,
+  setBlockState,
+  applyBlock,
+  exec,
+  insertLink,
+  stashSelection,
+  syncContent,
+  docxRef,
+  onDownloadDocx,
+  onUploadDocx,
   onOpenPlaceholder,
   onOpenClauseLibrary,
   onCloseClauseLibrary,
+  onOpenTablePicker,
+  onOpenHrPicker,
   clauseOpen,
+  onInsertClause,
+  editingId,
+  headerConfig,
+  setHeaderConfig,
+  footerConfig,
+  setFooterConfig,
 }: {
-  editor: Editor | null;
-  onUploadWord: () => void;
+  editorRef: React.MutableRefObject<HTMLDivElement | null>;
+  fontSize: string;
+  setFontSizeState: (v: string) => void;
+  applyFontSize: (px: string) => void;
+  block: string;
+  setBlockState: (v: string) => void;
+  applyBlock: (tag: string) => void;
+  exec: (cmd: string, value?: string) => void;
+  insertLink: () => void;
+  stashSelection: () => void;
+  syncContent: () => void;
+  docxRef: React.MutableRefObject<HTMLInputElement | null>;
+  onDownloadDocx: () => void;
+  onUploadDocx: (file: File) => void;
   onOpenPlaceholder: () => void;
   onOpenClauseLibrary: () => void;
   onCloseClauseLibrary: () => void;
+  onOpenTablePicker: () => void;
+  onOpenHrPicker: () => void;
   clauseOpen: boolean;
+  onInsertClause: (html: string) => void;
+  editingId: number | null;
+  headerConfig: HeaderConfig;
+  setHeaderConfig: (h: HeaderConfig) => void;
+  footerConfig: FooterConfig;
+  setFooterConfig: (f: FooterConfig) => void;
 }) {
-  if (!editor) return <div className="agw-editor-shell" style={{ padding: 24, textAlign: 'center', color: '#94a3b8' }}>Loading editor…</div>;
-
-  const isActive = (name: string, attrs?: Record<string, any>) => {
-    try { return editor.isActive(name, attrs); } catch { return false; }
-  };
-
   return (
     <div className="agw-editor-shell">
       <div className="agw-editor-head">
@@ -638,20 +890,34 @@ function AgrEditor({
           DRAFT AGREEMENT CONTENT
         </div>
         <div className="agw-editor-actions">
-          <Tooltip label="Upload a Word / text document and import its content">
-            <button type="button" className="agw-editor-btn" onClick={onUploadWord}>
+          <input ref={docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
+                 onChange={e => { const f = e.target.files?.[0]; if (f) onUploadDocx(f); e.currentTarget.value = ''; }} />
+          <Tooltip label={editingId ? 'Download as DOCX' : 'Save the agreement first'}>
+            <button type="button" className="agw-editor-btn" onClick={onDownloadDocx}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+              Download DOCX
+            </button>
+          </Tooltip>
+          <Tooltip label={editingId ? 'Upload a revised Word file' : 'Save the agreement first'}>
+            <button type="button" className="agw-editor-btn" onClick={() => docxRef.current?.click()}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
               Upload Word Doc
             </button>
           </Tooltip>
           <Tooltip label="Insert a {{group.field}} placeholder">
-            <button type="button" className="agw-editor-btn" onClick={onOpenPlaceholder}>
+            <button type="button" className="agw-editor-btn" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={onOpenPlaceholder}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
               {'{} Placeholder'}
             </button>
           </Tooltip>
+          <Tooltip label="Insert a table at the caret">
+            <button type="button" className="agw-editor-btn" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={onOpenTablePicker}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="1"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+              Insert Table
+            </button>
+          </Tooltip>
           <Tooltip label="Browse reusable clauses">
-            <button type="button" className="agw-editor-btn" onClick={onOpenClauseLibrary}>
+            <button type="button" className="agw-editor-btn" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={onOpenClauseLibrary}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
               Clause Library
             </button>
@@ -659,58 +925,105 @@ function AgrEditor({
         </div>
       </div>
 
-      <div className="agw-toolbar">
-        <select
-          className="agw-toolbar-sel"
-          title="Block type"
-          value={
-            isActive('heading', { level: 1 }) ? 'h1' :
-            isActive('heading', { level: 2 }) ? 'h2' :
-            isActive('heading', { level: 3 }) ? 'h3' : 'p'
-          }
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === 'p') editor.chain().focus().setParagraph().run();
-            else editor.chain().focus().toggleHeading({ level: Number(v.slice(1)) as 1|2|3 }).run();
-          }}
-        >
+      <div className="agw-toolbar" onMouseDown={e => e.preventDefault()}>
+        <select className="agw-toolbar-sel" value={fontSize} onChange={e => { setFontSizeState(e.target.value); applyFontSize(e.target.value); }} title="Font size">
+          <option value="11">11</option><option value="12">12</option><option value="13">13</option>
+          <option value="14">14</option><option value="16">16</option><option value="18">18</option>
+          <option value="20">20</option><option value="24">24</option><option value="28">28</option>
+        </select>
+        <select className="agw-toolbar-sel" value={block} onChange={e => { setBlockState(e.target.value); applyBlock(e.target.value); }} title="Block format">
           <option value="p">Paragraph</option>
           <option value="h1">Heading 1</option>
           <option value="h2">Heading 2</option>
           <option value="h3">Heading 3</option>
+          <option value="blockquote">Quote</option>
+          <option value="pre">Code</option>
         </select>
-
-        <Tooltip label="Bold (Ctrl+B)"><button type="button" className={`agw-toolbar-btn ${isActive('bold') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleBold().run()}><b>B</b></button></Tooltip>
-        <Tooltip label="Italic (Ctrl+I)"><button type="button" className={`agw-toolbar-btn ${isActive('italic') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleItalic().run()}><i>I</i></button></Tooltip>
-        <Tooltip label="Underline (Ctrl+U)"><button type="button" className={`agw-toolbar-btn ${isActive('underline') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleUnderline().run()}><u>U</u></button></Tooltip>
-        <Tooltip label="Strikethrough"><button type="button" className={`agw-toolbar-btn ${isActive('strike') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleStrike().run()}><s>S</s></button></Tooltip>
-        <Tooltip label="Inline code"><button type="button" className={`agw-toolbar-btn ${isActive('code') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleCode().run()}>{'<>'}</button></Tooltip>
-        <Tooltip label="Blockquote"><button type="button" className={`agw-toolbar-btn ${isActive('blockquote') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleBlockquote().run()}>“”</button></Tooltip>
-
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('bold')}          title="Bold (Ctrl+B)"><b>B</b></button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('italic')}        title="Italic (Ctrl+I)"><i>I</i></button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('underline')}     title="Underline (Ctrl+U)"><u>U</u></button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('strikeThrough')} title="Strikethrough"><s>S</s></button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('superscript')}   title="Superscript">X²</button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('subscript')}     title="Subscript">X₂</button>
+        <label className="agw-toolbar-btn agw-toolbar-color" title="Text color" style={{ position: 'relative' }}>
+          T
+          <input type="color" defaultValue="#0c4a6e" onChange={e => exec('foreColor', e.target.value)}
+                 style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+        </label>
+        {/* Highlight — system color picker (click ✎) + quick-pick
+            swatches for the everyday yellow / mint / sky / pink / lilac
+            so the user doesn't have to dive into the OS picker for
+            common cases. Same palette the Trade Doc modal uses. */}
+        <label className="agw-toolbar-btn agw-toolbar-color" title="Custom highlight color" style={{ position: 'relative', color: '#f59e0b' }}>
+          ✎
+          <input type="color" defaultValue="#fde68a" onChange={e => exec('hiliteColor', e.target.value)}
+                 style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
+        </label>
+        {['#fde68a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#e9d5ff'].map(c => (
+          <button
+            key={c}
+            type="button"
+            className="agw-toolbar-btn"
+            title={`Highlight ${c}`}
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => exec('hiliteColor', c)}
+            style={{ background: c, width: 22, padding: 0, border: '1px solid #cbd5e1' }}
+          >&nbsp;</button>
+        ))}
         <span className="agw-toolbar-sep" />
-
-        <Tooltip label="Align left"><button type="button" className="agw-toolbar-btn" onClick={() => editor.chain().focus().setTextAlign('left').run()} aria-label="Align left"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg></button></Tooltip>
-        <Tooltip label="Align center"><button type="button" className="agw-toolbar-btn" onClick={() => editor.chain().focus().setTextAlign('center').run()} aria-label="Align center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button></Tooltip>
-        <Tooltip label="Align right"><button type="button" className="agw-toolbar-btn" onClick={() => editor.chain().focus().setTextAlign('right').run()} aria-label="Align right"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg></button></Tooltip>
-        <Tooltip label="Justify"><button type="button" className="agw-toolbar-btn" onClick={() => editor.chain().focus().setTextAlign('justify').run()} aria-label="Justify"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button></Tooltip>
-
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('justifyLeft')}    title="Align left">≡</button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('justifyCenter')}  title="Align center">≡</button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('justifyRight')}   title="Align right">≡</button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('justifyFull')}    title="Justify">≡</button>
         <span className="agw-toolbar-sep" />
-
-        <Tooltip label="Bullet list"><button type="button" className={`agw-toolbar-btn ${isActive('bulletList') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()} aria-label="Bullet list">•≡</button></Tooltip>
-        <Tooltip label="Numbered list"><button type="button" className={`agw-toolbar-btn ${isActive('orderedList') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleOrderedList().run()} aria-label="Numbered list">1≡</button></Tooltip>
-        <Tooltip label="Decrease indent / lift"><button type="button" className="agw-toolbar-btn" onClick={() => editor.chain().focus().liftListItem('listItem').run()} aria-label="Outdent">⇤</button></Tooltip>
-        <Tooltip label="Increase indent / sink"><button type="button" className="agw-toolbar-btn" onClick={() => editor.chain().focus().sinkListItem('listItem').run()} aria-label="Indent">⇥</button></Tooltip>
-
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('insertUnorderedList')} title="Bullet list">•≡</button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('insertOrderedList')}   title="Numbered list">1≡</button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('outdent')} title="Outdent">⇤</button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('indent')}  title="Indent">⇥</button>
         <span className="agw-toolbar-sep" />
-
-        <Tooltip label="Horizontal rule"><button type="button" className="agw-toolbar-btn" onClick={() => editor.chain().focus().setHorizontalRule().run()} aria-label="Horizontal rule">—</button></Tooltip>
-        <Tooltip label="Undo (Ctrl+Z)"><button type="button" className="agw-toolbar-btn" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} aria-label="Undo">↶</button></Tooltip>
-        <Tooltip label="Redo (Ctrl+Y)"><button type="button" className="agw-toolbar-btn" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} aria-label="Redo">↷</button></Tooltip>
-        <Tooltip label="Clear formatting"><button type="button" className="agw-toolbar-btn" onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()} aria-label="Clear formatting">⌫</button></Tooltip>
+        <button type="button" className="agw-toolbar-btn" onClick={insertLink} title="Insert link">🔗</button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('unlink')} title="Remove link">🔗⃠</button>
+        {/* Insert HR opens the styled-line picker (colour / height /
+            style) instead of dropping a plain <hr> — same UX as the
+            Trade Doc modal. The previous selection is stashed before
+            the modal opens so the insertion lands where the caret was. */}
+        <button
+          type="button" className="agw-toolbar-btn"
+          title="Insert horizontal line"
+          onMouseDown={e => { e.preventDefault(); stashSelection(); }}
+          onClick={onOpenHrPicker}
+        >—</button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('undo')} title="Undo">↶</button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('redo')} title="Redo">↷</button>
+        <button type="button" className="agw-toolbar-btn" onClick={() => exec('removeFormat')} title="Clear formatting">🅣</button>
       </div>
 
+      {/* Page-shell preview — wraps the editor in a fixed header (logo +
+          title + subtitle) and footer (text + page #). Same component
+          the HR Document Templates Step 3 and Trade Document modal use,
+          so look-and-feel stays uniform across CLM. Logo upload posts to
+          the agreement_library tenant folder. */}
+      <HeaderFooterPanel
+        header={headerConfig} setHeader={setHeaderConfig}
+        footer={footerConfig} setFooter={setFooterConfig}
+        uploadLogoEndpoint="/clm/agreement-library/upload-header-logo"
+      >
+        <div
+          ref={editorRef}
+          className="agw-editor"
+          contentEditable
+          suppressContentEditableWarning
+          onInput={syncContent}
+          role="textbox"
+          aria-multiline="true"
+          aria-label="Agreement content"
+        />
+      </HeaderFooterPanel>
+
+      {/* The clause-library inline drawer used to live in the editor
+          area; keep it just below the page-shell so it overlays the
+          same column when toggled. */}
       <div className="agw-editor-area">
-        <EditorContent editor={editor} className="agw-editor" />
         {clauseOpen && (
           <div className="agw-clause-panel">
             <div className="agw-clause-panel-head">
@@ -725,7 +1038,8 @@ function AgrEditor({
                   key={i}
                   type="button"
                   className="agw-clause-item"
-                  onClick={() => { editor.chain().focus().insertContent(c.html).run(); onCloseClauseLibrary(); }}
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => onInsertClause(c.html)}
                 >
                   <span className="agw-clause-item-title">{c.title}</span>
                   <span className="agw-clause-item-sub">{c.sub}</span>
@@ -739,7 +1053,7 @@ function AgrEditor({
       <div className="agw-editor-foot">
         <span className="agw-editor-foot-hint">ⓘ Placeholders auto-fill on agreement generation</span>
         <Tooltip label="Open the placeholder picker">
-          <button type="button" className="agw-editor-foot-tag" onClick={onOpenPlaceholder}>{'{{PLACEHOLDER}}'}</button>
+          <button type="button" className="agw-editor-foot-tag" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={onOpenPlaceholder}>{'{{PLACEHOLDER}}'}</button>
         </Tooltip>
       </div>
     </div>
@@ -1075,19 +1389,21 @@ const AGW_CSS = `
 .agw-toolbar-sep { width: 1px; height: 20px; background: #cbd5e1; }
 
 .agw-editor-area { position: relative; }
-.agw-editor, .agw-editor .ProseMirror { min-height: 240px; padding: 18px 22px; background: #fff; outline: none; font-size: 13.5px; line-height: 1.6; color: #0c4a6e; }
-.agw-editor .ProseMirror { padding: 0; min-height: 240px; }
-.agw-editor .ProseMirror:focus { outline: none; }
-.agw-editor .ProseMirror p { margin: 0 0 .6em 0; }
-.agw-editor .ProseMirror p:last-child { margin-bottom: 0; }
-.agw-editor .ProseMirror h1, .agw-editor .ProseMirror h2, .agw-editor .ProseMirror h3 { color: #0c4a6e; font-weight: 800; margin: .4em 0; line-height: 1.25; }
-.agw-editor .ProseMirror h1 { font-size: 22px; }
-.agw-editor .ProseMirror h2 { font-size: 18px; }
-.agw-editor .ProseMirror h3 { font-size: 15.5px; }
-.agw-editor .ProseMirror ul, .agw-editor .ProseMirror ol { padding-left: 22px; margin: 0 0 .6em 0; }
-.agw-editor .ProseMirror blockquote { border-left: 3px solid #67e8f9; padding-left: 12px; margin: .4em 0; color: #475569; font-style: italic; }
-.agw-editor .ProseMirror code { background: #f0fdff; padding: 1px 5px; border-radius: 4px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: #0e7490; }
-.agw-editor .ProseMirror hr { border: 0; border-top: 1px dashed #94a3b8; margin: 14px 0; }
+.agw-editor { min-height: 280px; padding: 18px 22px; background: #fff; outline: none; font-size: 13.5px; line-height: 1.6; color: #0c4a6e; }
+.agw-editor:focus { outline: none; }
+.agw-editor p { margin: 0 0 .6em 0; }
+.agw-editor p:last-child { margin-bottom: 0; }
+.agw-editor h1, .agw-editor h2, .agw-editor h3 { color: #0c4a6e; font-weight: 800; margin: .4em 0; line-height: 1.25; }
+.agw-editor h1 { font-size: 22px; }
+.agw-editor h2 { font-size: 18px; }
+.agw-editor h3 { font-size: 15.5px; }
+.agw-editor ul, .agw-editor ol { padding-left: 22px; margin: 0 0 .6em 0; }
+.agw-editor blockquote { border-left: 3px solid #67e8f9; padding-left: 12px; margin: .4em 0; color: #475569; font-style: italic; }
+.agw-editor code { background: #f0fdff; padding: 1px 5px; border-radius: 4px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: #0e7490; }
+.agw-editor pre { background: #f0fdff; border: 1px solid #cffafe; border-radius: 6px; padding: 10px 12px; margin: .6em 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: #0e7490; overflow-x: auto; }
+.agw-editor hr { border: 0; border-top: 1px dashed #94a3b8; margin: 14px 0; }
+.agw-editor a { color: #0891b2; text-decoration: underline; }
+.agw-toolbar-color { overflow: hidden; font-weight: 800; }
 
 .agw-clause-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(320px, 70%); background: #fff; border-left: 1px solid rgba(6,182,212,.22); box-shadow: -8px 0 24px rgba(15,23,42,.10); display: flex; flex-direction: column; animation: agwClauseSlide .22s ease both; z-index: 5; }
 @keyframes agwClauseSlide { from { transform: translateX(12px); opacity: 0 } to { transform: none; opacity: 1 } }
@@ -1199,8 +1515,8 @@ const AGW_CSS = `
 [data-bs-theme="dark"] .agw-toolbar-btn:hover { background: rgba(8,145,178,.14); color: #67e8f9; border-color: rgba(103,232,249,.45); }
 [data-bs-theme="dark"] .agw-toolbar-btn.is-on { background: rgba(8,145,178,.30); border-color: rgba(103,232,249,.55); color: #cffafe; }
 [data-bs-theme="dark"] .agw-toolbar-sep { background: rgba(255,255,255,.10); }
-[data-bs-theme="dark"] .agw-editor, [data-bs-theme="dark"] .agw-editor .ProseMirror { background: #0f172a; color: #e2e8f0; }
-[data-bs-theme="dark"] .agw-editor .ProseMirror h1, [data-bs-theme="dark"] .agw-editor .ProseMirror h2, [data-bs-theme="dark"] .agw-editor .ProseMirror h3 { color: #cffafe; }
+[data-bs-theme="dark"] .agw-editor { background: #0f172a; color: #e2e8f0; }
+[data-bs-theme="dark"] .agw-editor h1, [data-bs-theme="dark"] .agw-editor h2, [data-bs-theme="dark"] .agw-editor h3 { color: #cffafe; }
 [data-bs-theme="dark"] .agw-editor-foot { background: rgba(8,145,178,.10); border-top-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .agw-editor-foot-hint { color: #67e8f9; }
 [data-bs-theme="dark"] .agw-editor-foot-tag { background: rgba(8,145,178,.18); color: #cffafe; border-color: rgba(6,182,212,.35); }
