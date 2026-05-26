@@ -214,8 +214,19 @@ export default function Tooltip({
             // Inner highlight — a subtle white sheen at the top so the
             // pill reads as a glossy surface, not a flat rectangle.
             backgroundClip: 'padding-box',
-            whiteSpace: maxWidth ? 'normal' : 'nowrap',
-            maxWidth,
+            /* Wrap long content by default — without this, a 200-char
+             * tooltip label (e.g. a customer's pasted-junk Contact
+             * Person field) blows past the right edge of the screen
+             * and the viewport clamp can't help because the tooltip
+             * itself is wider than the viewport. A generous default
+             * cap (360px) keeps short labels on one line while long
+             * ones wrap cleanly. wordBreak + overflowWrap handle the
+             * pathological "Gggggggggg…" no-space case. The caller
+             * can still pass an explicit `maxWidth` to override. */
+            whiteSpace: 'normal',
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            maxWidth: maxWidth ?? `min(360px, calc(100vw - 16px))`,
             zIndex,
             pointerEvents: 'none',
             animation: 'cbcTooltipSpring 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)',

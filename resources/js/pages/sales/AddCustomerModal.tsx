@@ -526,10 +526,17 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    * endpoint that the Evidence Vault reads from. Without this round-
    * trip the upload only lives in browser memory and disappears the
    * next time the modal opens. */
+  /* Sub-tab → backend category. NOTE: the sub-tab key is
+   * 'trade-licence' (British spelling — matches the KycSubTab type).
+   * Earlier this map used 'trade-license' (American), causing the
+   * lookup to return undefined and persistSegmentRefUpload to return
+   * early — so trade-licence segment-ref uploads were never reaching
+   * the server. They showed as a blob URL in the current session
+   * but vanished on re-edit. */
   const SUB_TO_CAT_C: Record<string, 'kyc' | 'dd' | 'tl'> = {
     'company-dd':    'dd',
     'owner-kyc':     'kyc',
-    'trade-license': 'tl',
+    'trade-licence': 'tl',
   };
   const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
     const ownerId = savedDbId || customer?.db_id || null;
@@ -810,7 +817,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       setKycOwners(Array.isArray(ownersRes.data?.data) ? ownersRes.data.data : []);
       const refs = Array.isArray(refsRes.data?.data) ? refsRes.data.data : [];
       const hydrated: Record<string, SegRefUpload> = {};
-      const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-license' };
+      // British 'trade-licence' on purpose — matches the KycSubTab
+      // type + the render's refKey lookup. Mismatched spelling here
+      // was the reason hydrated trade-licence uploads weren't
+      // appearing on re-edit.
+      const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-licence' };
       for (const r of refs) {
         const sub = CAT_TO_SUB[r.category];
         if (!sub || !r.doc_code) continue;
