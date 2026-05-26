@@ -1358,18 +1358,49 @@ class SalesPdfController extends Controller
     private function branchAssetAbsolutePath(?string $path): ?string
     {
         if (!$path) return null;
+
         $norm = ltrim(str_replace('\\', '/', trim($path)), '/');
         foreach (['storage/', 'public/'] as $strip) {
-            if (str_starts_with($norm, $strip)) $norm = substr($norm, strlen($strip));
+            if (str_starts_with($norm, $strip)) {
+                $norm = substr($norm, strlen($strip));
+            }
         }
-        if (!str_contains($norm, '/')) return null;
-
-        try {
-            if (!Storage::disk('public')->exists($norm)) return null;
-            return Storage::disk('public')->path($norm);
-        } catch (\Throwable $e) {
+        if (!str_contains($norm, '/')) {
             return null;
         }
+
+        try {
+            $disk = Storage::disk('public');
+            if ($disk->exists($norm)) {
+                $abs = $disk->path($norm);
+                if (is_file($abs) && is_readable($abs)) {
+                    return $abs;
+                }
+            }
+
+            // If the provided path is already an absolute filesystem path,
+            // try it directly as a fallback.
+            if (is_file($path) && is_readable($path)) {
+                return $path;
+            }
+
+            if (is_file($norm) && is_readable($norm)) {
+                return $norm;
+            }
+
+            Log::warning('Branch logo asset not readable', [
+                'path' => $path,
+                'normalized' => $norm,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Branch logo asset lookup failed', [
+                'path' => $path,
+                'normalized' => $norm,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return null;
     }
 
     private function defaultTerms(): string
