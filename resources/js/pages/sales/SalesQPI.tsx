@@ -1495,7 +1495,7 @@ function useQpiMasters(open: boolean): LoadedMasters {
       api.get('/master/incoterms').catch(() => ({ data: [] })),
       api.get('/master/port_of_loading').catch(() => ({ data: [] })),
       api.get('/master/countries').catch(() => ({ data: [] })),
-      api.get('/customers').catch(() => ({ data: { data: [] } })),
+      api.get('/customers', { params: { tab: 'all' } }).catch(() => ({ data: { data: [] } })),
       api.get('/consignees').catch(() => ({ data: { data: [] } })),
       api.get('/master/bank_accounts').catch(() => ({ data: [] })),
       api.get('/sales/leads', { params: { per_page: 200 } }).catch(() => ({ data: { data: [] } })),
@@ -1610,7 +1610,7 @@ function useQpiMasters(open: boolean): LoadedMasters {
       const opportunitiesRaw: LeadRow[] = [];
       leadRows.forEach((r: any) => {
         const code = r.opp_code ?? r.opp_id ?? (r.id ? `OPP-${String(r.id).padStart(4, '0')}` : '');
-        const who  = r.sender_company || r.sender_name || r.company || '';
+        const who  = (r.sender_company || r.sender_name || r.company || '').toString();
         const label = code && who ? `${code} – ${who}` : (code || who || '');
         if (!label) return;
         opportunityOpts.push({ value: label, label });
@@ -1618,7 +1618,7 @@ function useQpiMasters(open: boolean): LoadedMasters {
         opportunitiesRaw.push({
           leadId:         Number(r.id ?? 0),
           opp_code:       code,
-          sender_company: r.sender_company ?? '',
+          sender_company: who,
           sender_country: r.sender_country_iso ?? r.sender_country ?? '',
           date:           dateSrc ? new Date(dateSrc).toLocaleDateString('en-GB') : '',
           // lead.customer_id is the numeric FK to customers.id (== db_id
@@ -2475,11 +2475,11 @@ function BasicForm(props: {
     // Resolve the customer for this lead by numeric FK first, fall back
     // to company-name match for legacy/sync'd rows missing customer_id.
     const custRow = (row.customerDbId != null
-        ? masters.customersRaw.find(c => c.dbId === row.customerDbId)
-        : null)
+      ? masters.customersRaw.find(c => c.dbId === row.customerDbId)
+      : null)
       ?? masters.customersRaw.find(c =>
-          c.company && row.sender_company &&
-          c.company.toLowerCase() === row.sender_company.toLowerCase());
+        c.company && row.sender_company &&
+        c.company.trim().toLowerCase() === row.sender_company.trim().toLowerCase());
 
     if (custRow) {
       nextCustomer    = `${custRow.code} – ${custRow.company}`;
@@ -2542,13 +2542,14 @@ function BasicForm(props: {
     if (cust) {
       if (cust.currency) nextCurrency = cust.currency;
 
-      // Clear opportunity if it doesn't belong to the new customer.
+      // Clear opportunity only when the currently-selected opportunity
+      // exists in the master list and does not belong to this customer.
       const oppRow = masters.opportunitiesRaw.find(o => o.opp_code === labelCode(form.opportunity));
       const oppMatches = oppRow && (
         oppRow.customerDbId === cust.dbId ||
-        (oppRow.sender_company && oppRow.sender_company.toLowerCase() === cust.company.toLowerCase())
+        (oppRow.sender_company && oppRow.sender_company.trim().toLowerCase() === cust.company.trim().toLowerCase())
       );
-      if (!oppMatches) { nextOpportunity = ''; nextOppId = null; }
+      if (oppRow && !oppMatches) { nextOpportunity = ''; nextOppId = null; }
 
       // Filter consignees by numeric FK — auto-pick if exactly one,
       // clear if the current selection no longer belongs to this customer.
