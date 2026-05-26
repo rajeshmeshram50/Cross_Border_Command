@@ -3364,11 +3364,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
         ? { ok: true }
         : { ok: false, reason: 'Bank details, PAN, CTC and PF deduction must all be valid before moving on.' };
     }
+    // if (activeStage === 5) {
+    //   return stage5IsDone
+    //     ? { ok: true }
+    //     : { ok: false, reason: 'Acknowledge every policy before moving to verification.' };
+    // }
     if (activeStage === 5) {
-      return stage5IsDone
-        ? { ok: true }
-        : { ok: false, reason: 'Acknowledge every policy before moving to verification.' };
-    }
+  return { ok: true };
+}
     return { ok: true };
   };
 
@@ -4452,13 +4455,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
         // Stage 5 — every policy must be acknowledged. Block the
         // advance to verification otherwise; the user would just hit
         // the same blocker at final submission.
-        if (activeStage === 5 && !stage5IsDone) {
-          toast.error(
-            'Policies — acknowledge to continue',
-            'Tick every policy checkbox before moving to verification.',
-          );
-          return;
-        }
+        // if (activeStage === 5 && !stage5IsDone) {
+        //   toast.error(
+        //     'Policies — acknowledge to continue',
+        //     'Tick every policy checkbox before moving to verification.',
+        //   );
+        //   return;
+        // }
         setNextLoading(true);
         // Flush any typed-but-unblurred Previous-Employment rows before
         // we advance — same fix as the Previous / sidebar navigation.
