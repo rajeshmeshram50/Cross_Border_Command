@@ -176,14 +176,23 @@ export default function SalesMatrixDetail() {
   type ClmTally = { total: number; verified: number; error?: boolean; loading?: boolean } | null;
   const [custTally, setCustTally] = useState<ClmTally>(null);
   const [consTally, setConsTally] = useState<ClmTally>(null);
-  /* Refetch trigger — bumped after a modal SAVE (not just close) so the
+  /* Refetch triggers — bumped after a modal SAVE (not just close) so the
    * tally effects re-run even though the customer/consignee FK hasn't
-   * changed. Without this the CLM panel would keep showing the pre-upload
-   * count until the user navigates away and back. Note: when the same
-   * onSaved also re-maps the customer FK via reloadLead, both effects
-   * will fire — the cancel flag below ensures only the latest setState
-   * wins, so it's safe (one extra network round-trip in that rare case). */
-  const [clmRefreshTick, setClmRefreshTick] = useState(0);
+   * changed. Without these the CLM panel would keep showing the pre-upload
+   * count until the user navigates away and back.
+   *
+   * Split per party (was a single shared tick): a consignee save must not
+   * re-fire the customer vault fetch — the customer record wasn't touched
+   * and the extra concurrent request races against the consignee vault +
+   * reloadLead. On slower servers the spurious customer fetch was timing
+   * out at 8s and flipping the Customer Details row into the red
+   * "Couldn't load — tap to retry" state right after a consignee save. */
+  const [custRefreshTick, setCustRefreshTick] = useState(0);
+  const [consRefreshTick, setConsRefreshTick] = useState(0);
+  /* Agreement-applicable card has its own tick so a Send/Recall inside
+   * the agreement modal refreshes the card without re-hitting the heavy
+   * customer + consignee vault endpoints. */
+  const [agreementRefreshTick, setAgreementRefreshTick] = useState(0);
   /* Click → open the existing Customer/Consignee modal pre-positioned at
    * the requested stage (2 = KYC, 3 = Trade Docs / Evidence Vault). Stage
    * selection comes from which CLM row the user clicked — both currently
@@ -414,7 +423,7 @@ export default function SalesMatrixDetail() {
       })
       .catch(() => { if (!cancelled) setCustTally({ total: 0, verified: 0, error: true }); });
     return () => { cancelled = true; };
-  }, [serverHeader.customerId, clmRefreshTick]);
+  }, [serverHeader.customerId, custRefreshTick]);
 
   useEffect(() => {
     const cid = serverHeader.consigneeId;
@@ -432,12 +441,12 @@ export default function SalesMatrixDetail() {
       })
       .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
     return () => { cancelled = true; };
-  }, [serverHeader.consigneeId, clmRefreshTick]);
+  }, [serverHeader.consigneeId, consRefreshTick]);
 
   /* Applicable agreements for this lead → drives the Segment Details
-   * card counts + powers LeadAgreementSendModal. Refetched on
-   * clmRefreshTick so a successful Send / Recall in the modal can
-   * trigger a refresh that ripples back into the card. */
+   * card counts + powers LeadAgreementSendModal. Refetched whenever
+   * EITHER party's tally tick bumps so a successful Send / Recall or a
+   * customer/consignee KYC change ripples back into the card. */
   useEffect(() => {
     if (!resolvedLeadId) { setAgreementApplicable(null); return; }
     let cancelled = false;
@@ -448,7 +457,7 @@ export default function SalesMatrixDetail() {
       })
       .catch(() => { if (!cancelled) setAgreementApplicable(null); });
     return () => { cancelled = true; };
-  }, [resolvedLeadId, clmRefreshTick]);
+  }, [resolvedLeadId, custRefreshTick, consRefreshTick, agreementRefreshTick]);
 
   /* "Marked as key" is sourced live from the server (leads.key_opportunity)
    * so it survives navigation / refresh. Toggling fires a PUT and the
@@ -763,7 +772,7 @@ export default function SalesMatrixDetail() {
                 sub={renderClmSub(custTally)}
                 progress={renderClmProgress(custTally)}
                 state={custTally?.error ? 'error' : custTally?.loading ? 'loading' : 'ready'}
-                onRetry={custTally?.error ? () => setClmRefreshTick(t => t + 1) : undefined}
+                onRetry={custTally?.error ? () => setCustRefreshTick(t => t + 1) : undefined}
                 disabled={customerAddOpen || consigneeAddOpen}
                 onClick={() => {
                   if (customerAddOpen || consigneeAddOpen) return;
@@ -790,7 +799,7 @@ export default function SalesMatrixDetail() {
                 sub={renderClmSub(consTally)}
                 progress={renderClmProgress(consTally)}
                 state={consTally?.error ? 'error' : consTally?.loading ? 'loading' : 'ready'}
-                onRetry={consTally?.error ? () => setClmRefreshTick(t => t + 1) : undefined}
+                onRetry={consTally?.error ? () => setConsRefreshTick(t => t + 1) : undefined}
                 disabled={customerAddOpen || consigneeAddOpen}
                 onClick={() => {
                   if (customerAddOpen || consigneeAddOpen) return;
@@ -995,7 +1004,7 @@ export default function SalesMatrixDetail() {
         open={customerAddOpen}
         customer={customerEditing}
         initialStage={clmInitialStage}
-        /* onClose intentionally does NOT bump clmRefreshTick — closing
+        /* onClose intentionally does NOT bump the refresh tick — closing
          * without saving can't have changed any uploads, so a refetch
          * would just be a wasted round-trip. The tick only fires on
          * onSaved below. */
@@ -1003,7 +1012,7 @@ export default function SalesMatrixDetail() {
         onSaved={() => {
           setCustomerOpts([]); setCustomerRows({});
           setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined);
-          setClmRefreshTick(t => t + 1);
+          setCustRefreshTick(t => t + 1);
           void reloadLead();
         }}
       />
@@ -1069,7 +1078,7 @@ export default function SalesMatrixDetail() {
         onSaved={() => {
           setConsigneeOpts([]); setConsigneeRows({});
           setConsigneeAddOpen(false); setConsigneeEditing(null); setClmInitialStage(undefined);
-          setClmRefreshTick(t => t + 1);
+          setConsRefreshTick(t => t + 1);
           void reloadLead();
         }}
       />
@@ -1205,7 +1214,7 @@ export default function SalesMatrixDetail() {
         tier={agreementModalTier}
         data={agreementApplicable}
         onClose={() => setAgreementModalOpen(false)}
-        onSent={() => setClmRefreshTick(t => t + 1)}
+        onSent={() => setAgreementRefreshTick(t => t + 1)}
       />
 
       {/* ── Key Opportunity confirm popup ──

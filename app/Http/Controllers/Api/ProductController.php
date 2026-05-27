@@ -4,12 +4,21 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\Masters\Conditions;
+use App\Models\Masters\GstPercentage;
+use App\Models\Masters\HazClass;
+use App\Models\Masters\HsnCodes;
+use App\Models\Masters\PackagingMaterial;
+use App\Models\Masters\Segments;
+use App\Models\Masters\Uom;
 use App\Models\Product;
 use App\Models\ProductQcRecord;
 use App\Models\ProductVendorMap;
 use App\Models\User;
+use App\Models\Vendor;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -609,5 +618,95 @@ class ProductController extends Controller
         ])->values();
 
         return response()->json(['data' => $rows]);
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * GET /products/master-bundle
+     *
+     * Bundle every master dropdown the Add Product / Edit Product modal
+     * needs into ONE response. Replaces 8 separate round-trips:
+     *   /master/segments, /master/haz_class, /master/uom, /master/hsn_codes,
+     *   /master/conditions, /master/packaging_material, /master/gst_percentage,
+     *   /vendors?per_page=500
+     *
+     * Each list is projected to the minimum columns the form actually reads,
+     * and filtered to status = 'active' server-side (the modal was previously
+     * filtering client-side after downloading inactive rows it never showed).
+     *
+     * Tenant scope is applied to vendors via Vendor::forUser($user) so the
+     * dropdown matches the user's existing /vendors index visibility.
+     * ────────────────────────────────────────────────────────────── */
+    public function masterBundle(Request $request)
+    {
+        $user = $request->user();
+
+        // Server-side cache (5-min TTL, per-user key).
+        //
+        // Per-user keying — vendors are tenant-scoped via Vendor::forUser($user)
+        // so we MUST NOT share a single cache entry across users (different
+        // clients/branches see different vendor lists). The masters themselves
+        // are global, but the cost of keeping them inside the per-user entry
+        // is tiny (~3KB) and avoids juggling two cache layers.
+        //
+        // Invalidation — the frontend busts the matching sessionStorage key
+        // on inline master add (see productBundleCache.ts), and reopening
+        // the modal after the 5-min TTL also picks up changes made elsewhere.
+        // No cross-controller invalidation needed for the Product module to
+        // stay self-contained.
+        $cacheKey = 'product:master-bundle:user:' . ($user?->id ?? 'guest');
+
+        $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
+            // Helper — pulls active rows with a fixed column projection.
+            // The status column is enum('Active','Inactive') on the master_*
+            // tables but lowercase 'active'/'inactive' on clm_segments, so
+            // we compare case-insensitively to handle both shapes without
+            // touching the DB.
+            $active = function (string $modelClass, array $cols) {
+                return $modelClass::query()
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->orderBy('id')
+                    ->get($cols);
+            };
+
+            $vendors = Vendor::query()
+                ->forUser($user)
+                ->with('primaryAddress:id,vendor_id,contact_name,contact_no,email,designation')
+                ->orderByDesc('id')
+                ->get(['id', 'vendor_code', 'company_name', 'website', 'primary_email', 'status'])
+                ->map(fn ($v) => [
+                    'id'             => $v->id,
+                    'vendor_code'    => $v->vendor_code,
+                    'company_name'   => $v->company_name,
+                    'website'        => $v->website,
+                    'primary_email'  => $v->primary_email,
+                    'status'         => $v->status,
+                    'primary_address' => $v->primaryAddress ? [
+                        'contact_name' => $v->primaryAddress->contact_name,
+                        'contact_no'   => $v->primaryAddress->contact_no,
+                        'email'        => $v->primaryAddress->email,
+                        'designation'  => $v->primaryAddress->designation,
+                    ] : null,
+                ])
+                ->values();
+
+            // Column projections match the REAL DB schema:
+            //   • Segments uses `name` (clm_segments). The model exposes a
+            //     `title` accessor (appends => ['title']) that reads from
+            //     `name`, so the JSON response still surfaces `title` for
+            //     the frontend — we just need to SELECT the real `name`.
+            //   • Every other master uses its own native columns directly.
+            return [
+                'segments'           => $active(Segments::class,          ['id', 'name']),
+                'haz_class'          => $active(HazClass::class,          ['id', 'name']),
+                'uom'                => $active(Uom::class,               ['id', 'title', 'short_code', 'unit_type']),
+                'hsn_codes'          => $active(HsnCodes::class,          ['id', 'hsn_code', 'description']),
+                'conditions'         => $active(Conditions::class,        ['id', 'title']),
+                'packaging_material' => $active(PackagingMaterial::class, ['id', 'title']),
+                'gst_percentage'     => $active(GstPercentage::class,     ['id', 'percentage']),
+                'vendors'            => $vendors,
+            ];
+        });
+
+        return response()->json($bundle);
     }
 }

@@ -612,7 +612,7 @@ const SCOPED_CSS = `
   100% { background-position: 200% 0; }
 }
 .pv2-shimmer {
-  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%);
+  background: linear-gradient(90deg, #f5f3ff 25%, #ede9fe 37%, #f5f3ff 63%);
   background-size: 200% 100%;
   animation: pv2-shimmer-sweep 1.4s ease-in-out infinite;
   border-radius: 6px;
@@ -620,7 +620,7 @@ const SCOPED_CSS = `
 .pv2-main-shimmer { flex: 1; min-height: 280px; border-radius: 12px; }
 [data-bs-theme="dark"] .pv2-shimmer,
 [data-layout-mode="dark"] .pv2-shimmer {
-  background: linear-gradient(90deg, #1c2531 25%, #283042 37%, #1c2531 63%);
+  background: linear-gradient(90deg, #1a1430 25%, #2a1d5c 37%, #1a1430 63%);
   background-size: 200% 100%;
 }
 

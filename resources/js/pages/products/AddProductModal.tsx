@@ -8,6 +8,11 @@ import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
 import { SegmentModal, type SegmentForm } from '../clm/ClmSegmentPage';
 import { CLM_CSS } from '../clm/clmShared';
+import {
+  readProductMasterBundle,
+  writeProductMasterBundle,
+  bustProductMasterBundle,
+} from './productBundleCache';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Product — 2-step wizard
@@ -314,6 +319,11 @@ export default function AddProductModal(props: {
   const [optConditions, setOptConditions] = useState<MasterOpt[]>([]);
   const [optPackaging, setOptPackaging] = useState<MasterOpt[]>([]);
   const [optGst, setOptGst] = useState<MasterOpt[]>([]);
+  /* True until the parallel master fetches (segments, haz_class, uom, hsn,
+   * conditions, packaging, gst, vendors) resolve. While true, the form body
+   * renders a shimmer skeleton so the user sees structure instead of empty
+   * dropdowns — important because the 8 calls can take 1-2s on cold load. */
+  const [mastersLoading, setMastersLoading] = useState<boolean>(true);
 
   /* ─── Step 1: Core ─── */
   const [name, setName] = useState('');
@@ -782,90 +792,112 @@ export default function AddProductModal(props: {
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  /* ─── Load master options on mount ─── */
+  /* ─── Load master options on mount ───
+   *
+   * Single bundled fetch: /products/master-bundle returns every dropdown
+   * (segments, haz_class, uom, hsn_codes, conditions, packaging_material,
+   * gst_percentage, vendors) in ONE round-trip. Replaces the previous
+   * 8-call Promise.all and the per-call status filter — server now returns
+   * active rows only and the lean vendor projection.
+   *
+   * Caching: the bundle is also cached client-side via productBundleCache
+   * (sessionStorage, 5-min TTL). If a fresh cached copy exists we hydrate
+   * the dropdowns synchronously — the modal feels instant on reopens. Any
+   * inline master add inside the modal busts the cache (see add* handlers
+   * around line ~915) so freshly-created entries persist across reopens.
+   */
   useEffect(() => {
-    type Row = Record<string, unknown> & { id: number | string };
-    const fetchMaster = async (slug: string, labelKey: string, opts?: { extraKeys?: string[] }): Promise<MasterOpt[]> => {
-      try {
-        const res = await api.get<Row[]>(`/master/${slug}`);
-        return (res.data || [])
-          .filter(r => String((r as Record<string, unknown>).status ?? '').toLowerCase() !== 'inactive')
-          .map(r => {
-            const extra: Record<string, unknown> = {};
-            opts?.extraKeys?.forEach(k => { extra[k] = (r as Record<string, unknown>)[k]; });
-            return {
-              value: String(r.id),
-              label: String((r as Record<string, unknown>)[labelKey] ?? ''),
-              extra,
-            };
-          });
-      } catch {
-        return [];
-      }
+    type Row = { id: number | string; status?: string | null };
+    type Bundle = {
+      segments:           Array<Row & { title?: string | null }>;
+      haz_class:          Array<Row & { name?: string | null }>;
+      uom:                Array<Row & { title?: string | null; short_code?: string | null; unit_type?: string | null }>;
+      hsn_codes:          Array<Row & { hsn_code?: string | null; description?: string | null }>;
+      conditions:         Array<Row & { title?: string | null }>;
+      packaging_material: Array<Row & { title?: string | null }>;
+      gst_percentage:     Array<Row & { percentage?: number | string | null }>;
+      vendors: Array<{
+        id: number | string;
+        vendor_code?: string | null;
+        company_name?: string | null;
+        website?: string | null;
+        primary_email?: string | null;
+        status?: string | null;
+        primary_address?: {
+          contact_name?: string | null;
+          contact_no?: string | null;
+          email?: string | null;
+          designation?: string | null;
+        } | null;
+      }>;
     };
 
-    /* Vendor master ships its own paginated endpoint, not /master/*.
-       We pull every vendor (no status filter) so both Active and
-       Inactive rows show up in the Step-2 dropdown — the user may
-       legitimately want to map a draft/inactive vendor, after which
-       the vendor flips to Active. */
-    const fetchVendors = async (): Promise<VendorOpt[]> => {
-      try {
-        type VRow = {
-          id: number | string;
-          vendor_code?: string | null;
-          company_name?: string | null;
-          website?: string | null;
-          primary_email?: string | null;
-          status?: string | null;
-          primary_address?: {
-            contact_name?: string | null;
-            contact_no?: string | null;
-            email?: string | null;
-            designation?: string | null;
-          } | null;
-        };
-        const res = await api.get<{ data?: VRow[] } | VRow[]>('/vendors?per_page=500');
-        const rows: VRow[] = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
-        return rows.map(r => ({
-          id:          String(r.id),
-          code:        String(r.vendor_code ?? ''),
-          name:        String(r.company_name ?? ''),
-          website:     String(r.website ?? ''),
-          contact:     String(r.primary_address?.contact_name ?? ''),
-          phone:       String(r.primary_address?.contact_no ?? ''),
-          email:       String(r.primary_address?.email ?? r.primary_email ?? ''),
-          designation: String(r.primary_address?.designation ?? ''),
-          status:      String(r.status ?? '').toLowerCase(),
-        }));
-      } catch { return []; }
+    const toOpt = <T extends Row>(rows: T[], labelKey: keyof T, extraKeys?: Array<keyof T>): MasterOpt[] =>
+      (rows || []).map(r => {
+        const extra: Record<string, unknown> = {};
+        extraKeys?.forEach(k => { extra[k as string] = r[k]; });
+        return { value: String(r.id), label: String(r[labelKey] ?? ''), extra };
+      });
+
+    // Single hydration path — used for both cache-hit and freshly-fetched
+    // bundles so the dropdown-label transforms stay consistent.
+    const hydrate = (b: Bundle) => {
+      setOptSegments(toOpt(b.segments,                            'title'));
+      setOptHazClasses(toOpt(b.haz_class,                         'name'));
+      setOptUoms(
+        toOpt(b.uom, 'title', ['short_code', 'unit_type'])
+          .map(o => ({ ...o, label: o.label + (o.extra?.short_code ? ` (${o.extra.short_code})` : '') }))
+      );
+      setOptHsn(
+        toOpt(b.hsn_codes, 'hsn_code', ['description'])
+          .map(o => ({ ...o, label: o.label + (o.extra?.description ? ` — ${String(o.extra.description).slice(0, 40)}` : '') }))
+      );
+      setOptConditions(toOpt(b.conditions,                        'title'));
+      setOptPackaging(toOpt(b.packaging_material,                 'title'));
+      setOptGst(
+        toOpt(b.gst_percentage, 'percentage', ['percentage'])
+          .map(o => {
+            // Trim noisy trailing zeros (40.0000 → 40) on the dropdown
+            // label while keeping the % suffix.
+            const n = parseFloat(o.label);
+            const clean = Number.isFinite(n) ? String(Number(n.toFixed(2))) : o.label;
+            return { ...o, label: `${clean}%` };
+          })
+      );
+      setVendorOpts((b.vendors || []).map(r => ({
+        id:          String(r.id),
+        code:        String(r.vendor_code ?? ''),
+        name:        String(r.company_name ?? ''),
+        website:     String(r.website ?? ''),
+        contact:     String(r.primary_address?.contact_name ?? ''),
+        phone:       String(r.primary_address?.contact_no ?? ''),
+        email:       String(r.primary_address?.email ?? r.primary_email ?? ''),
+        designation: String(r.primary_address?.designation ?? ''),
+        status:      String(r.status ?? '').toLowerCase(),
+      })));
     };
 
+    // Cache hit — hydrate immediately and skip the network entirely.
+    const cached = readProductMasterBundle<Bundle>();
+    if (cached) {
+      hydrate(cached);
+      setMastersLoading(false);
+      return;
+    }
+
+    // Cache miss — fetch the bundle and persist it for next time.
     (async () => {
-      const [seg, hz, uo, hs, co, pk, gst, vd] = await Promise.all([
-        fetchMaster('segments',           'title'),
-        fetchMaster('haz_class',          'name'),
-        fetchMaster('uom',                'title', { extraKeys: ['short_code', 'unit_type'] }),
-        fetchMaster('hsn_codes',          'hsn_code', { extraKeys: ['description'] }),
-        fetchMaster('conditions',         'title'),
-        fetchMaster('packaging_material', 'title'),
-        fetchMaster('gst_percentage',     'percentage', { extraKeys: ['percentage'] }),
-        fetchVendors(),
-      ]);
-      setOptSegments(seg);
-      setOptHazClasses(hz);
-      setOptUoms(uo.map(o => ({ ...o, label: o.label + (o.extra?.short_code ? ` (${o.extra.short_code})` : '') })));
-      setOptHsn(hs.map(o => ({ ...o, label: o.label + (o.extra?.description ? ` — ${String(o.extra.description).slice(0, 40)}` : '') })));
-      setOptConditions(co);
-      setOptPackaging(pk);
-      setOptGst(gst.map(o => {
-        // Trim noisy trailing zeros (40.0000 → 40) on the dropdown
-        // label while keeping the % suffix.
-        const n = parseFloat(o.label);
-        const clean = Number.isFinite(n) ? String(Number(n.toFixed(2))) : o.label;
-        return { ...o, label: `${clean}%` };
-      }));
-      setVendorOpts(vd);
+      try {
+        const res = await api.get<Bundle>('/products/master-bundle');
+        hydrate(res.data);
+        writeProductMasterBundle(res.data);
+      } catch {
+        // Leave dropdowns empty — the form still renders; the user will
+        // see a toast from individual save attempts if a required option
+        // is missing.
+      } finally {
+        setMastersLoading(false);
+      }
     })();
   }, []);
 
@@ -906,6 +938,11 @@ export default function AddProductModal(props: {
   const onMasterAdded = (slug: MasterSlug, row: Record<string, unknown>) => {
     const id = String(row.id ?? '');
     if (!id) return;
+    // Inline master add — the cached bundle is now stale (missing this row).
+    // Bust it so the next modal open refetches; the in-memory opt* arrays
+    // below already get the new row appended, so the CURRENT dropdown
+    // updates instantly without needing a refetch.
+    bustProductMasterBundle();
     const labelOf = (key: string) => String(row[key] ?? '');
     switch (slug) {
       case 'segments':
@@ -1431,7 +1468,9 @@ export default function AddProductModal(props: {
 
         {/* ─── Body ─── */}
         <div className="apm-body">
-          {step === 1 && (
+          {(mastersLoading || loadingEdit) ? (
+            <FormSkeleton />
+          ) : step === 1 && (
             <>
               {/* Previous stages summary — visible once user moves past Core */}
               {tab !== 'core' && (
@@ -1868,7 +1907,7 @@ export default function AddProductModal(props: {
             </>
           )}
 
-          {step === 2 && (
+          {!mastersLoading && !loadingEdit && step === 2 && (
             <>
               {/* All Step-1 data carried into Step 2 */}
               <PreviousStages
@@ -2129,7 +2168,7 @@ export default function AddProductModal(props: {
               </button>
             )}
             {step === 2 ? (
-              <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving || loadingEdit}>
+              <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving || loadingEdit || mastersLoading}>
                 {saving ? (
                   <span className="apm-spinner" />
                 ) : (
@@ -2140,7 +2179,7 @@ export default function AddProductModal(props: {
             ) : (
               <button
                 className="apm-btn-primary"
-                disabled={saving || loadingEdit}
+                disabled={saving || loadingEdit || mastersLoading}
                 onClick={() => {
                   if (tab === 'core')         saveCore();
                   else if (tab === 'sales')   saveSales();
@@ -2290,6 +2329,44 @@ function SectionCard(props: {
         {props.headerAction}
       </div>
       <div className="apm-section-body">{props.children}</div>
+    </div>
+  );
+}
+
+/* Shimmer skeleton shown inside the modal body while the 8 parallel master
+ * fetches (or the edit-mode product prefill) are in flight. Mirrors the real
+ * Core-tab layout — section card + 2-column grid of fields — so the user
+ * sees structure instead of an empty modal. Light/dark themes are handled
+ * by the .apm-shim CSS rules below. */
+function FormSkeleton() {
+  const Field = ({ wide = false }: { wide?: boolean }) => (
+    <div className={`apm-shim-field${wide ? ' wide' : ''}`}>
+      <div className="apm-shim apm-shim-label" />
+      <div className="apm-shim apm-shim-input" />
+    </div>
+  );
+  return (
+    <div className="apm-shim-wrap" aria-busy="true" aria-live="polite">
+      {[0, 1].map(s => (
+        <div key={s} className="apm-shim-section">
+          <div className="apm-shim-section-head">
+            <div className="apm-shim apm-shim-icon" />
+            <div className="apm-shim-section-titles">
+              <div className="apm-shim apm-shim-title" />
+              <div className="apm-shim apm-shim-sub" />
+            </div>
+          </div>
+          <div className="apm-shim-section-body">
+            <div className="apm-shim-grid-2">
+              <Field /><Field /><Field /><Field />
+            </div>
+            <Field wide />
+            <div className="apm-shim-grid-2">
+              <Field /><Field />
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -3028,6 +3105,51 @@ const SCOPED_CSS = `
 .apm-body::-webkit-scrollbar { width: 8px; }
 .apm-body::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 99px; }
 
+/* ─── Shimmer skeleton (light theme) — shown while masters/edit prefill load.
+   Uses a single keyframes definition (apm-shim-sweep) so every shimmer block
+   stays in sync with the surrounding section cards. Dark-theme overrides
+   live in the [data-bs-theme="dark"] block at the bottom of this stylesheet. */
+@keyframes apm-shim-sweep {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+.apm-shim-wrap { display: flex; flex-direction: column; gap: 16px; }
+.apm-shim {
+  background: linear-gradient(90deg, #ede9fe 0%, #f5f3ff 50%, #ede9fe 100%);
+  background-size: 800px 100%;
+  animation: apm-shim-sweep 1.2s linear infinite;
+  border-radius: 8px;
+  display: block;
+}
+.apm-shim-section {
+  background: #fff;
+  border: 1px solid #ede9fe;
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgba(124,58,237,.06);
+  overflow: hidden;
+}
+.apm-shim-section-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px;
+  background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
+  border-bottom: 1px solid #ede9fe;
+}
+.apm-shim-icon { width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0; }
+.apm-shim-section-titles { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.apm-shim-title { height: 14px; width: 180px; }
+.apm-shim-sub   { height: 10px; width: 240px; opacity: .75; }
+.apm-shim-section-body {
+  padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.apm-shim-grid-2 {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.apm-shim-field { display: flex; flex-direction: column; gap: 6px; }
+.apm-shim-field.wide { grid-column: 1 / -1; }
+.apm-shim-label { height: 10px; width: 110px; opacity: .8; }
+.apm-shim-input { height: 38px; border-radius: 10px; }
+
 /* ─── Tabs ─── */
 .apm-tabs {
   display: flex; gap: 4px; margin-bottom: 14px;
@@ -3763,6 +3885,23 @@ const SCOPED_CSS = `
   scrollbar-color: #4c1d95 transparent;
 }
 [data-bs-theme="dark"] .apm-body::-webkit-scrollbar-thumb { background: #4c1d95; }
+
+/* Shimmer skeleton — dark theme. Uses the same keyframes but swaps the
+   base/highlight stops to match the navy/violet body background so the
+   sweep stays visible against the darker section cards. */
+[data-bs-theme="dark"] .apm-shim {
+  background: linear-gradient(90deg, #1a1430 0%, #2a1d5c 50%, #1a1430 100%);
+  background-size: 800px 100%;
+}
+[data-bs-theme="dark"] .apm-shim-section {
+  background: #14102a;
+  border-color: #3b2a6b;
+  box-shadow: 0 2px 10px rgba(0,0,0,.45);
+}
+[data-bs-theme="dark"] .apm-shim-section-head {
+  background: linear-gradient(180deg, #1a1430 0%, #221852 100%);
+  border-bottom-color: #3b2a6b;
+}
 
 [data-bs-theme="dark"] .apm-tabs { border-bottom-color: #3b2a6b; }
 [data-bs-theme="dark"] .apm-tab { color: #6d6391; }
