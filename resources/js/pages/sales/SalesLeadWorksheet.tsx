@@ -786,7 +786,7 @@ export default function SalesLeadWorksheet() {
                     <td>
                       <div className="lwp-asgn">
                         <div className={`lwp-av-xs ${ua ? 'u' : ''}`}>{initials(l.assigned)}</div>
-                        <span style={{ color: ua ? '#94a3b8' : '#1e293b', fontWeight: ua ? 400 : 500 }}>
+                        <span className={ua ? 'u' : ''}>
                           {ua ? 'Unassigned' : l.assigned}
                         </span>
                       </div>
@@ -1472,7 +1472,11 @@ const SCOPED_CSS = `
 }
 .lwp-root .lwp-wa-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity:.8; flex-shrink:0; }
 .lwp-root .lwp-asgn { display: flex; align-items: center; gap: 4px; overflow: hidden; }
-.lwp-root .lwp-asgn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.lwp-root .lwp-asgn span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px;
+  color: #1e293b; font-weight: 500;
+}
+.lwp-root .lwp-asgn span.u { color: #94a3b8; font-weight: 400; }
 .lwp-root .lwp-av-xs {
   width: 20px; height: 20px; border-radius: 50%;
   background: linear-gradient(135deg, #0891b2, #0e7490);
@@ -1945,6 +1949,7 @@ const SCOPED_CSS = `
    black) which becomes invisible on the dark slate row surface. */
 [data-bs-theme="dark"] .lwp-root .lwp-cust-name { color: #f1f5f9; font-weight: 600; }
 [data-bs-theme="dark"] .lwp-root .lwp-asgn span { color: #e2e8f0; }
+[data-bs-theme="dark"] .lwp-root .lwp-asgn span.u { color: #94a3b8; }
 [data-bs-theme="dark"] .lwp-root .lwp-av-xs.u   { background: #1e293b; color: #64748b; }
 [data-bs-theme="dark"] .lwp-root .lwp-opp-link  { color: #67e8f9; }
 [data-bs-theme="dark"] .lwp-root .lwp-opp-link:hover { color: #a5f3fc; }

@@ -452,34 +452,34 @@ function SegmentRuleModal(props: {
         </div>
 
         {/* Stage tabs */}
-        <div style={{ background: '#fff', padding: '10px 18px', borderBottom: '1px solid rgba(6,182,212,.09)', display: 'flex', alignItems: 'center', gap: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 16px', borderRadius: 11, background: stage === 1 ? 'linear-gradient(135deg, #0891b2, #0e7490)' : stage > 1 ? 'rgba(240,253,250,.9)' : 'rgba(241,245,249,.7)', border: stage > 1 ? '1.5px solid rgba(34,197,94,.28)' : 'none', cursor: stage > 1 ? 'pointer' : 'default' }} onClick={() => stage > 1 && setStage(1)}>
-            <div style={{ width: 26, height: 26, borderRadius: 7, background: stage === 1 ? 'rgba(255,255,255,.18)' : stage > 1 ? 'linear-gradient(135deg, #22c55e, #16a34a)' : '#e2e8f0', border: stage === 1 ? '1.5px solid rgba(255,255,255,.32)' : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#fff' }}>
+        <div className="dcp-stage-strip" style={{ background: '#fff', padding: '10px 18px', borderBottom: '1px solid rgba(6,182,212,.09)', display: 'flex', alignItems: 'center', gap: 0 }}>
+          <div className={`dcp-stage-tile ${stage === 1 ? 'dcp-stage-tile-active' : stage > 1 ? 'dcp-stage-tile-done' : 'dcp-stage-tile-pending'}`} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 16px', borderRadius: 11, background: stage === 1 ? 'linear-gradient(135deg, #0891b2, #0e7490)' : stage > 1 ? 'rgba(240,253,250,.9)' : 'rgba(241,245,249,.7)', border: stage > 1 ? '1.5px solid rgba(34,197,94,.28)' : 'none', cursor: stage > 1 ? 'pointer' : 'default' }} onClick={() => stage > 1 && setStage(1)}>
+            <div className={stage === 1 ? 'dcp-stage-tile-num-active' : stage > 1 ? 'dcp-stage-tile-num-done' : 'dcp-stage-tile-num-pending'} style={{ width: 26, height: 26, borderRadius: 7, background: stage === 1 ? 'rgba(255,255,255,.18)' : stage > 1 ? 'linear-gradient(135deg, #22c55e, #16a34a)' : '#e2e8f0', border: stage === 1 ? '1.5px solid rgba(255,255,255,.32)' : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#fff' }}>
               {stage > 1 ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8"><polyline points="20 6 9 17 4 12"/></svg> : '1'}
             </div>
             <div>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: stage === 1 ? '#fff' : stage > 1 ? '#15803d' : '#94a3b8' }}>Segment & Authority</div>
-              <div style={{ fontSize: 9, color: stage === 1 ? 'rgba(255,255,255,.7)' : stage > 1 ? '#16a34a' : '#b0bec5' }}>Regulatory status, segment & authorities</div>
+              <div className="dcp-stage-tile-title" style={{ fontSize: 11.5, fontWeight: 800, color: stage === 1 ? '#fff' : stage > 1 ? '#15803d' : '#94a3b8' }}>Segment & Authority</div>
+              <div className="dcp-stage-tile-sub" style={{ fontSize: 9, color: stage === 1 ? 'rgba(255,255,255,.7)' : stage > 1 ? '#16a34a' : '#b0bec5' }}>Regulatory status, segment & authorities</div>
             </div>
           </div>
           <div style={{ width: 32, height: 2, background: 'linear-gradient(90deg, #0891b2, rgba(6,182,212,.3))', margin: '0 8px' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 16px', borderRadius: 11, background: stage === 2 ? 'linear-gradient(135deg, #0891b2, #0e7490)' : 'rgba(241,245,249,.7)' }}>
-            <div style={{ width: 26, height: 26, borderRadius: 7, background: stage === 2 ? 'rgba(255,255,255,.18)' : '#e2e8f0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: stage === 2 ? '#fff' : '#94a3b8' }}>2</div>
+          <div className={`dcp-stage-tile ${stage === 2 ? 'dcp-stage-tile-active' : 'dcp-stage-tile-pending'}`} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 16px', borderRadius: 11, background: stage === 2 ? 'linear-gradient(135deg, #0891b2, #0e7490)' : 'rgba(241,245,249,.7)' }}>
+            <div className={stage === 2 ? 'dcp-stage-tile-num-active' : 'dcp-stage-tile-num-pending'} style={{ width: 26, height: 26, borderRadius: 7, background: stage === 2 ? 'rgba(255,255,255,.18)' : '#e2e8f0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: stage === 2 ? '#fff' : '#94a3b8' }}>2</div>
             <div>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: stage === 2 ? '#fff' : '#94a3b8' }}>CLM Documents</div>
-              <div style={{ fontSize: 9, color: stage === 2 ? 'rgba(255,255,255,.7)' : '#b0bec5' }}>Assign document requirements per category</div>
+              <div className="dcp-stage-tile-title" style={{ fontSize: 11.5, fontWeight: 800, color: stage === 2 ? '#fff' : '#94a3b8' }}>CLM Documents</div>
+              <div className="dcp-stage-tile-sub" style={{ fontSize: 9, color: stage === 2 ? 'rgba(255,255,255,.7)' : '#b0bec5' }}>Assign document requirements per category</div>
             </div>
           </div>
           <div style={{ flex: 1 }} />
-          <div style={{ fontSize: 9.5, fontWeight: 700, color: '#0891b2', background: 'rgba(8,145,178,.07)', border: '1px solid rgba(8,145,178,.16)', borderRadius: 20, padding: '3px 9px' }}>Step {stage} of 2</div>
+          <div className="dcp-step-badge" style={{ fontSize: 9.5, fontWeight: 700, color: '#0891b2', background: 'rgba(8,145,178,.07)', border: '1px solid rgba(8,145,178,.16)', borderRadius: 20, padding: '3px 9px' }}>Step {stage} of 2</div>
         </div>
 
         <div className="clm-modal-body" style={{ maxHeight: '70vh' }}>
           {stage === 1 ? (
             <>
               {/* Card 1: Regulatory Status + Segment Select */}
-              <div style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden' }}>
-                <div style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div className="dcp-modal-card" style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden' }}>
+                <div className="dcp-modal-card-head" style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 9, fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.09em' }}>Segment Regulatory Status</span>
                   <span className="clm-req">*</span>
                 </div>
@@ -488,20 +488,20 @@ function SegmentRuleModal(props: {
                     const on = reg === v;
                     const hi = v === 'highly';
                     return (
-                      <label key={v} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: `1.5px solid ${on ? (hi ? 'rgba(239,68,68,.38)' : 'rgba(34,197,94,.32)') : 'rgba(203,213,225,.38)'}`, background: on ? (hi ? 'rgba(254,242,242,.45)' : 'rgba(240,253,244,.45)') : 'rgba(248,250,252,.5)', cursor: existing ? 'not-allowed' : 'pointer', opacity: existing && !on ? 0.55 : 1, transition: 'all .15s' }}
+                      <label key={v} className={`dcp-radio-label ${on ? (hi ? 'dcp-radio-label-on-highly' : 'dcp-radio-label-on-less') : ''}`} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: `1.5px solid ${on ? (hi ? 'rgba(239,68,68,.38)' : 'rgba(34,197,94,.32)') : 'rgba(203,213,225,.38)'}`, background: on ? (hi ? 'rgba(254,242,242,.45)' : 'rgba(240,253,244,.45)') : 'rgba(248,250,252,.5)', cursor: existing ? 'not-allowed' : 'pointer', opacity: existing && !on ? 0.55 : 1, transition: 'all .15s' }}
                         onClick={() => { if (existing) return; setReg(v); setSegCodes([]); }}>
                         <input type="radio" checked={on} onChange={() => {}} disabled={!!existing} style={{ accentColor: hi ? '#ef4444' : '#16a34a', width: 14, height: 14 }} />
                         <span style={{ width: 16, height: 16, borderRadius: '50%', background: hi ? '#ef4444' : '#22c55e' }} />
                         <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: on ? (hi ? '#991b1b' : '#166534') : '#1e293b' }}>{hi ? 'High Regulatory' : 'Less Regulatory'}</div>
-                          <div style={{ fontSize: 9, color: on ? (hi ? '#b91c1c' : '#15803d') : '#94a3b8', marginTop: 2 }}>{hi ? 'Requires specific segment & compliance review' : 'Pick one or many — each becomes its own rule row'}</div>
+                          <div className="dcp-radio-title" style={{ fontSize: 12, fontWeight: 700, color: on ? (hi ? '#991b1b' : '#166534') : '#1e293b' }}>{hi ? 'High Regulatory' : 'Less Regulatory'}</div>
+                          <div className="dcp-radio-sub" style={{ fontSize: 9, color: on ? (hi ? '#b91c1c' : '#15803d') : '#94a3b8', marginTop: 2 }}>{hi ? 'Requires specific segment & compliance review' : 'Pick one or many — each becomes its own rule row'}</div>
                         </div>
                       </label>
                     );
                   })}
                 </div>
                 {reg && (
-                  <div style={{ margin: '0 12px 12px', padding: '11px 12px', background: reg === 'highly' ? 'linear-gradient(110deg, rgba(239,68,68,.03), rgba(254,242,242,.4))' : 'linear-gradient(110deg, rgba(22,163,74,.03), rgba(240,253,244,.4))', border: `1px solid ${reg === 'highly' ? 'rgba(239,68,68,.15)' : 'rgba(22,163,74,.15)'}`, borderRadius: 10 }}>
+                  <div className={reg === 'highly' ? 'dcp-select-seg-highly' : 'dcp-select-seg-less'} style={{ margin: '0 12px 12px', padding: '11px 12px', background: reg === 'highly' ? 'linear-gradient(110deg, rgba(239,68,68,.03), rgba(254,242,242,.4))' : 'linear-gradient(110deg, rgba(22,163,74,.03), rgba(240,253,244,.4))', border: `1px solid ${reg === 'highly' ? 'rgba(239,68,68,.15)' : 'rgba(22,163,74,.15)'}`, borderRadius: 10 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
                       <div style={{ fontSize: 8.5, fontWeight: 800, color: reg === 'highly' ? '#dc2626' : '#15803d', textTransform: 'uppercase', letterSpacing: '.08em' }}>
                         {isMulti ? 'Select Segments (multi)' : 'Select Segment'} <span className="clm-req">*</span>
@@ -521,7 +521,7 @@ function SegmentRuleModal(props: {
                           No less-regulated segments configured yet. Add them in <em>CLM → Segment Master</em> first.
                         </div>
                       ) : (
-                        <div style={{ maxHeight: 168, overflowY: 'auto', background: '#fff', border: '1px solid rgba(22,163,74,.18)', borderRadius: 8, padding: 4 }}>
+                        <div className="dcp-multi-seg-list" style={{ maxHeight: 168, overflowY: 'auto', background: '#fff', border: '1px solid rgba(22,163,74,.18)', borderRadius: 8, padding: 4 }}>
                           {segments.map(s => {
                             const checked = segCodes.includes(s.code);
                             const has = existingRules.some(r => r.segment_code === s.code);
@@ -562,25 +562,25 @@ function SegmentRuleModal(props: {
 
               {/* Card 2: Segment Details */}
               {selSeg && (
-                <div style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden' }}>
-                  <div style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)' }}>
+                <div className="dcp-modal-card" style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden' }}>
+                  <div className="dcp-modal-card-head" style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)' }}>
                     <span style={{ fontSize: 9, fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.09em' }}>Segment Details</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 0 }}>
-                    <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Segment ID</div>
-                      <div style={{ fontFamily: "'Geist Mono', monospace", fontSize: 14, fontWeight: 800, color: '#0c4a6e' }}>{selSeg.code}</div>
+                    <div className="dcp-segdtl-cell" style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
+                      <div className="dcp-segdtl-label" style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Segment ID</div>
+                      <div className="dcp-segdtl-val" style={{ fontFamily: "'Geist Mono', monospace", fontSize: 14, fontWeight: 800, color: '#0c4a6e' }}>{selSeg.code}</div>
                     </div>
-                    <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Segment Name</div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#0c4a6e' }}>{selSeg.name}</div>
+                    <div className="dcp-segdtl-cell" style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
+                      <div className="dcp-segdtl-label" style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Segment Name</div>
+                      <div className="dcp-segdtl-val" style={{ fontSize: 12, fontWeight: 700, color: '#0c4a6e' }}>{selSeg.name}</div>
                     </div>
-                    <div style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>Regulatory</div>
+                    <div className="dcp-segdtl-cell" style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
+                      <div className="dcp-segdtl-label" style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>Regulatory</div>
                       <span className={`clm-badge ${reg === 'highly' ? 'clm-badge-red' : 'clm-badge-emerald'}`}><span className="clm-badge-dot" />{reg === 'highly' ? 'High' : 'Less'}</span>
                     </div>
                     <div style={{ padding: '10px 14px' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>Buyer ≠ Consignee</div>
+                      <div className="dcp-segdtl-label" style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>Buyer ≠ Consignee</div>
                       <span className={`clm-badge ${selSeg.buyer_consignee === 'allowed' ? 'clm-badge-green' : 'clm-badge-red'}`}>{selSeg.buyer_consignee === 'allowed' ? 'Allowed' : 'Not Allowed'}</span>
                     </div>
                   </div>
@@ -590,7 +590,7 @@ function SegmentRuleModal(props: {
           ) : (
             // Stage 2: Document selection per category
             <div>
-              <div style={{ display: 'flex', gap: 2, padding: 4, background: 'rgba(240,253,255,.9)', border: '1.5px solid rgba(6,182,212,.15)', borderRadius: 13, overflowX: 'auto' }}>
+              <div className="dcp-cat-tabs" style={{ display: 'flex', gap: 2, padding: 4, background: 'rgba(240,253,255,.9)', border: '1.5px solid rgba(6,182,212,.15)', borderRadius: 13, overflowX: 'auto' }}>
                 {CAT_KEYS.map(c => {
                   const on = activeCat === c;
                   const cnt = totalSel(c);
@@ -617,7 +617,7 @@ function SegmentRuleModal(props: {
                 <div style={{ maxHeight: 360, overflowY: 'auto' }}>
                   <table className="clm-table">
                     <thead>
-                      <tr style={{ background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1.5px solid rgba(6,182,212,.12)' }}>
+                      <tr className="dcp-thead-row" style={{ background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1.5px solid rgba(6,182,212,.12)' }}>
                         <th style={{ width: 36, padding: '9px 4px 9px 14px', textAlign: 'left' }}></th>
                         <th style={{ width: 36, padding: '9px 4px', textAlign: 'center' }}></th>
                         <th style={{ width: 100, padding: '9px 8px', textAlign: 'left' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2' }}>Code</span></th>
@@ -652,9 +652,9 @@ function SegmentRuleModal(props: {
                             <td className="clm-td-name">{d.name || d.title}</td>
                             <td className="clm-td-desc">{d.authority || d.issued_by || '—'}</td>
                             <td style={{ width: 200, textAlign: 'right' }}>
-                              <div style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: `1.5px solid ${isM ? 'rgba(6,182,212,.35)' : isO ? 'rgba(245,158,11,.35)' : 'rgba(203,213,225,.4)'}` }}>
-                                <button onClick={() => setDocReq(activeCat, d.code, isM ? null : 'M')} style={{ padding: '5px 14px', border: 'none', borderRight: '1px solid rgba(203,213,225,.35)', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', background: isM ? 'linear-gradient(135deg, #06b6d4, #0891b2)' : 'rgba(248,250,252,.8)', color: isM ? '#fff' : '#94a3b8' }}>Mandatory</button>
-                                <button onClick={() => setDocReq(activeCat, d.code, isO ? null : 'O')} style={{ padding: '5px 14px', border: 'none', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', background: isO ? 'linear-gradient(135deg, #fbbf24, #d97706)' : 'rgba(248,250,252,.8)', color: isO ? '#fff' : '#94a3b8' }}>Optional</button>
+                              <div className={`dcp-req-group ${isM ? 'dcp-req-group-mand' : isO ? 'dcp-req-group-opt' : ''}`} style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: `1.5px solid ${isM ? 'rgba(6,182,212,.35)' : isO ? 'rgba(245,158,11,.35)' : 'rgba(203,213,225,.4)'}` }}>
+                                <button className={isM ? 'dcp-req-btn-on' : 'dcp-req-btn-off'} onClick={() => setDocReq(activeCat, d.code, isM ? null : 'M')} style={{ padding: '5px 14px', border: 'none', borderRight: '1px solid rgba(203,213,225,.35)', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', background: isM ? 'linear-gradient(135deg, #06b6d4, #0891b2)' : 'rgba(248,250,252,.8)', color: isM ? '#fff' : '#94a3b8' }}>Mandatory</button>
+                                <button className={isO ? 'dcp-req-btn-on' : 'dcp-req-btn-off'} onClick={() => setDocReq(activeCat, d.code, isO ? null : 'O')} style={{ padding: '5px 14px', border: 'none', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', background: isO ? 'linear-gradient(135deg, #fbbf24, #d97706)' : 'rgba(248,250,252,.8)', color: isO ? '#fff' : '#94a3b8' }}>Optional</button>
                               </div>
                             </td>
                           </tr>

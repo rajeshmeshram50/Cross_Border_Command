@@ -3,6 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Masters\ComplianceBehaviours;
+use App\Models\Masters\Countries;
+use App\Models\Masters\GstPercentage;
+use App\Models\Masters\LicenseName;
+use App\Models\Masters\RiskLevels;
+use App\Models\Masters\Segments;
+use App\Models\Masters\StateCodes;
+use App\Models\Masters\States;
+use App\Models\Masters\VendorBehaviour;
+use App\Models\Masters\VendorTypes;
 use App\Models\Vendor;
 use App\Models\VendorAddress;
 use App\Models\VendorBankAccount;
@@ -13,6 +23,7 @@ use App\Models\VendorProductMapping;
 use App\Support\MasterVisibility;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -747,5 +758,62 @@ class VendorController extends Controller
             'created_at' => optional($v->created_at)->toDateTimeString(),
             'updated_at' => optional($v->updated_at)->toDateTimeString(),
         ];
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * GET /vendors/master-bundle
+     *
+     * Bundle every master dropdown the Add Vendor / Edit Vendor modal
+     * needs into ONE response. Replaces 10+ separate round-trips:
+     *   /master/vendor_types, /master/risk_levels, /master/vendor_behaviour,
+     *   /master/segments, /master/compliance_behaviours, /master/countries,
+     *   /master/state_codes (+ state relation), /master/states,
+     *   /master/license_name, /master/gst_percentage.
+     *
+     * The bundle is cached server-side via Cache::remember (5-min TTL,
+     * per-user) — these masters are global lookups that change rarely, so
+     * the cache absorbs the bulk of repeat opens without staleness pain.
+     *
+     * Status filtering is case-insensitive because clm_segments uses
+     * 'active'/'inactive' while master_* tables use 'Active'/'Inactive'.
+     * Column projections match the REAL DB schema (Segments selects
+     * `name` and lets the model accessor surface `title` in JSON).
+     * ────────────────────────────────────────────────────────────── */
+    public function masterBundle(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $cacheKey = 'vendor:master-bundle:user:' . ($user?->id ?? 'guest');
+
+        $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () {
+            $active = function (string $modelClass, array $cols) {
+                return $modelClass::query()
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->orderBy('id')
+                    ->get($cols);
+            };
+
+            // state_codes eager-loads its parent state so the dropdown can
+            // cascade off the chosen country without a second round-trip.
+            $stateCodes = StateCodes::query()
+                ->whereRaw('LOWER(status) = ?', ['active'])
+                ->with('state:id,name,country_id')
+                ->orderBy('id')
+                ->get(['id', 'state_id', 'state_code', 'status']);
+
+            return [
+                'vendor_types'          => $active(VendorTypes::class,          ['id', 'name']),
+                'risk_levels'           => $active(RiskLevels::class,           ['id', 'name']),
+                'vendor_behaviour'      => $active(VendorBehaviour::class,      ['id', 'name']),
+                'segments'              => $active(Segments::class,             ['id', 'name']),
+                'compliance_behaviours' => $active(ComplianceBehaviours::class, ['id', 'name']),
+                'countries'             => $active(Countries::class,            ['id', 'name']),
+                'state_codes'           => $stateCodes,
+                'states'                => $active(States::class,               ['id', 'name', 'country_id']),
+                'license_name'          => $active(LicenseName::class,          ['id', 'name']),
+                'gst_percentage'        => $active(GstPercentage::class,        ['id', 'percentage']),
+            ];
+        });
+
+        return response()->json($bundle);
     }
 }

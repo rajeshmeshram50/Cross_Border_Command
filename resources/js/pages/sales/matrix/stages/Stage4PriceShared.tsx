@@ -586,11 +586,19 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
                                 : '—'}
                             </td>
                             <td>
-                              <div className="s4-quote-input-wrap">
-                                <span className="s4-quote-prefix">{r.currency || '$'}</span>
+                              {/* Currency lives in a separate chip beside the
+                               *  input — the previous absolute-positioned
+                               *  prefix overlapped the typed value (e.g.
+                               *  "USD 0" with no clear separation). Now the
+                               *  user sees "[USD] [12345.00]" with the chip
+                               *  visually decoupled from the editable field. */}
+                              <div className="s4-quote-group">
+                                <span className={`s4-quote-curr ${blocked ? 's4-quote-curr-disabled' : ''}`}>
+                                  {r.currency || 'USD'}
+                                </span>
                                 <input
                                   type="number" min="0" step="any"
-                                  className={`s4-quote-input ${blocked ? 's4-quote-disabled' : ''}`}
+                                  className={`s4-quote-num ${blocked ? 's4-quote-disabled' : ''}`}
                                   value={quotedDraft[r.id] ?? ''}
                                   disabled={blocked}
                                   onChange={(e) => setQuotedDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
@@ -1044,23 +1052,37 @@ const STAGE4_CSS = `
 .s4-dt { color: #475569; font-weight: 600; }
 .s4-dt-sep { color: #cbd5e1; margin: 0 4px; }
 
-/* Quoted price input */
-.s4-quote-input-wrap {
-  position: relative; display: inline-block;
+/* Quoted price input — currency chip + numeric input live side-by-side
+ * so the user reads them as two distinct fields. The chip is pinned to
+ * the row's currency master value; the input takes a clean number. */
+.s4-quote-group {
+  display: inline-flex; align-items: stretch; gap: 6px;
 }
-.s4-quote-prefix {
-  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
-  font-size: 11.5px; color: #1e2a5e; font-weight: 700;
+.s4-quote-curr {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 46px; height: 32px;
+  padding: 0 10px; border-radius: 8px;
+  background: #eff6ff; color: #1e2a5e;
+  border: 1.5px solid #c7d2fe;
+  font-family: 'Inter', monospace; font-size: 11px; font-weight: 800;
+  letter-spacing: .04em;
+  user-select: none;
 }
-.s4-quote-input {
-  width: 130px; height: 32px;
-  padding: 0 10px 0 32px;
+.s4-quote-curr-disabled {
+  background: #f1f5f9; color: #94a3b8; border-color: #e2e8f0;
+  border-style: dashed;
+}
+.s4-quote-num {
+  width: 110px; height: 32px;
+  padding: 0 10px;
   border: 1.5px solid #c7d2fe; border-radius: 8px;
   background: #fff; font-size: 12px; color: #1e293b;
   outline: none; font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
   transition: border-color .15s, box-shadow .15s;
 }
-.s4-quote-input:focus { border-color: #2f4d9e; box-shadow: 0 0 0 3px rgba(47,77,158,.16); }
+.s4-quote-num:focus { border-color: #2f4d9e; box-shadow: 0 0 0 3px rgba(47,77,158,.16); }
 .s4-quote-disabled {
   background: #f1f5f9; cursor: not-allowed; color: #94a3b8;
   border-style: dashed;
@@ -1136,11 +1158,16 @@ const STAGE4_CSS = `
 [data-bs-theme="dark"] .s4-price  { color: #93c5fd; }
 [data-bs-theme="dark"] .s4-quoted { color: #6ee7b7; }
 [data-bs-theme="dark"] .s4-dt { color: rgba(196,181,253,.65); }
-[data-bs-theme="dark"] .s4-quote-prefix { color: #93c5fd; }
-[data-bs-theme="dark"] .s4-quote-input {
+[data-bs-theme="dark"] .s4-quote-curr {
+  background: rgba(147,197,253,.14); color: #bfdbfe; border-color: rgba(147,197,253,.40);
+}
+[data-bs-theme="dark"] .s4-quote-curr-disabled {
+  background: rgba(167,139,250,.08); color: rgba(196,181,253,.45); border-color: rgba(167,139,250,.25);
+}
+[data-bs-theme="dark"] .s4-quote-num {
   background: rgba(147,197,253,.06); border-color: rgba(147,197,253,.35); color: #ede9fe;
 }
-[data-bs-theme="dark"] .s4-quote-input:focus { border-color: #60a5fa; }
+[data-bs-theme="dark"] .s4-quote-num:focus { border-color: #60a5fa; }
 [data-bs-theme="dark"] .s4-quote-disabled { background: rgba(167,139,250,.10); color: rgba(196,181,253,.45); }
 [data-bs-theme="dark"] .s4-icon-btn { background: #1f1845; border-color: rgba(147,197,253,.35); color: #bfdbfe; }
 [data-bs-theme="dark"] .s4-icon-btn:hover:not(:disabled) { background: #2a2150; border-color: #60a5fa; }

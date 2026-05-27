@@ -11,6 +11,11 @@ import {
   validateGstin, validateIfsc, validateAccountNumber,
 } from '../../utils/fieldValidators';
 import SalesCustomerSendForSignatureModal from '../sales/SalesCustomerSendForSignatureModal';
+import {
+  readVendorMasterBundle,
+  writeVendorMasterBundle,
+  bustVendorMasterBundle,
+} from './vendorBundleCache';
 
 /* Vendor-specific contact number rule — 6 to 15 digits, numerics only.
  * Stricter than the shared `validatePhoneGeneric` (which permits +, spaces,
@@ -385,6 +390,12 @@ export default function AddVendorModal(props: {
   const [vendorCode, setVendorCode] = useState<string>('');
   const [saving,   setSaving]   = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(isEdit);
+  /* True until the bundled master fetch (/vendors/master-bundle) resolves.
+   * While true, the modal body shows a shimmer skeleton so the user sees
+   * structure instead of empty dropdowns — important because the bundle
+   * pulls 1800+ states rows on cold load. Hits 0ms when the sessionStorage
+   * cache is fresh (see vendorBundleCache). */
+  const [mastersLoading, setMastersLoading] = useState<boolean>(true);
 
   /* ─── Step 1: Identification ─── */
   const [companyName, setCompanyName] = useState('');
@@ -601,6 +612,7 @@ export default function AddVendorModal(props: {
    * clicks Resend on. We seed a 60s cooldown on the
    * signature_request_id; every sibling row's Resend button locks
    * visually until the timer expires. */
+  
   const [recentReminds, setRecentReminds] = useState<Record<number, number>>({});
   useEffect(() => {
     const expiries = Object.values(recentReminds);
@@ -679,35 +691,61 @@ export default function AddVendorModal(props: {
    *                            one fetch drives both the State dropdown
    *                            AND the State Code auto-fill.
    * ──────────────────────────────────────────────────────────── */
+  /* Bundled master fetch — /vendors/master-bundle returns every dropdown
+   * (vendor_types, risk_levels, vendor_behaviour, segments,
+   * compliance_behaviours, countries, state_codes [with state relation],
+   * states, license_name, gst_percentage) in ONE round-trip. Replaces the
+   * previous 8-call Promise.all and pre-empts the two later lazy fetches
+   * (license_name on the License popup, gst_percentage on the Map Product
+   * dialog) — they now hydrate from this same bundle for free.
+   *
+   * Caching: the bundle is read from sessionStorage first (5-min TTL) via
+   * vendorBundleCache. Cache hit ⇒ synchronous hydration, 0 API calls.
+   * Cache miss ⇒ fetch + persist for next time. Inline master adds bust
+   * the cache (see onMasterAdded analog if/when introduced).
+   */
   useEffect(() => {
-    type Row = Record<string, unknown> & { id: number | string; status?: string };
-    /* Master rows ship to the dropdown as { value: id, label: name } so
-       the form state carries FK ids the backend can persist directly
-       (vendor_type_id, risk_level_id, segment_id, …). The PrevField
-       summary still wants the label, so we resolve via labelFor(...). */
-    const fetchMaster = async (slug: string, labelKey: string): Promise<Opt[]> => {
-      try {
-        const res = await api.get<Row[]>(`/master/${slug}`);
-        return (res.data || [])
-          .filter(r => String(r.status ?? '').toLowerCase() !== 'inactive')
-          .map(r => ({ value: String(r.id), label: String(r[labelKey] ?? '') }))
-          .filter(o => o.value !== '' && o.label !== '');
-      } catch {
-        return [];
-      }
+    type IdRow = { id: number | string };
+    type NamedRow = IdRow & { name?: string | null };
+    type Bundle = {
+      vendor_types: NamedRow[];
+      risk_levels: NamedRow[];
+      vendor_behaviour: NamedRow[];
+      segments: Array<IdRow & { name?: string | null; title?: string | null }>;
+      compliance_behaviours: NamedRow[];
+      countries: NamedRow[];
+      state_codes: Array<IdRow & {
+        state_id: number | string;
+        state_code: string;
+        status?: string | null;
+        state?: { id?: number; name?: string; country_id?: number | string } | null;
+      }>;
+      states: Array<IdRow & { name?: string | null; country_id?: number | string | null }>;
+      license_name: NamedRow[];
+      gst_percentage: Array<IdRow & { percentage?: number | string | null }>;
     };
-    const fetchStateCodes = async () => {
-      try {
-        type Sc = {
-          id: number | string;
-          state_id: number | string;
-          state_code: string;
-          status?: string;
-          state?: { id?: number; name?: string; country_id?: number | string };
-        };
-        const res = await api.get<Sc[]>(`/master/state_codes`);
-        return (res.data || [])
-          .filter(r => String(r.status ?? '').toLowerCase() !== 'inactive')
+
+    const toOpt = (rows: NamedRow[]): Opt[] =>
+      (rows || [])
+        .map(r => ({ value: String(r.id), label: String(r.name ?? '') }))
+        .filter(o => o.value !== '' && o.label !== '');
+
+    const hydrate = (b: Bundle) => {
+      setVendorTypeOpts(toOpt(b.vendor_types));
+      setRiskLevelOpts(toOpt(b.risk_levels));
+      setBehaviourOpts(toOpt(b.vendor_behaviour));
+      // Segments: server returns `name`, but the Segments model also
+      // appends `title` (alias of name) for legacy API consumers. Read
+      // whichever is present — same string either way.
+      setSegmentOpts(
+        (b.segments || [])
+          .map(r => ({ value: String(r.id), label: String(r.title ?? r.name ?? '') }))
+          .filter(o => o.value !== '' && o.label !== '')
+      );
+      setComplianceOpts(toOpt(b.compliance_behaviours));
+      setCountryOpts(toOpt(b.countries));
+      setStateCodeRows(
+        (b.state_codes || [])
           .map(r => ({
             id: String(r.id),
             state_id: String(r.state_id ?? ''),
@@ -715,52 +753,52 @@ export default function AddVendorModal(props: {
             state_name: String(r.state?.name ?? ''),
             country_id: String(r.state?.country_id ?? ''),
           }))
-          .filter(r => r.state_name !== '');
-      } catch {
-        return [] as Array<{ id: string; state_id: string; state_code: string; state_name: string; country_id: string }>;
-      }
-    };
-    /* master_states is the full per-country state list. Pulled
-       directly here (instead of relying on state_codes' eager-loaded
-       relation) because state_codes only carries ~10 Indian rows —
-       picking any other country was returning an empty State dropdown
-       before this. country_id rides along so the dropdown can cascade
-       off the chosen Country. */
-    const fetchStates = async () => {
-      try {
-        type S = { id: number | string; name?: string; country_id?: number | string; status?: string };
-        const res = await api.get<S[]>(`/master/states`);
-        return (res.data || [])
-          .filter(r => String(r.status ?? '').toLowerCase() !== 'inactive')
+          .filter(r => r.state_name !== '')
+      );
+      setStateRows(
+        (b.states || [])
           .map(r => ({
             id: String(r.id),
             name: String(r.name ?? ''),
             country_id: String(r.country_id ?? ''),
           }))
-          .filter(r => r.name !== '');
-      } catch {
-        return [] as Array<{ id: string; name: string; country_id: string }>;
-      }
+          .filter(r => r.name !== '')
+      );
+      // Pre-populate the License Type + GST% dropdowns that were
+      // previously lazy-loaded on popup open. Now they're already in
+      // memory by the time the user clicks anything.
+      setLicenseTypeOpts(
+        (b.license_name || [])
+          .map(r => ({ value: String(r.name ?? ''), label: String(r.name ?? '') }))
+          .filter(o => o.value)
+      );
+      setGstPctOpts(
+        (b.gst_percentage || [])
+          .map(r => ({ value: String(r.percentage ?? ''), label: `${r.percentage ?? ''}%` }))
+          .filter(o => o.value && o.value !== '')
+      );
     };
+
+    // Cache hit — hydrate immediately, skip the network.
+    const cached = readVendorMasterBundle<Bundle>();
+    if (cached) {
+      hydrate(cached);
+      setMastersLoading(false);
+      return;
+    }
+
     (async () => {
-      const [vt, rl, bh, sg, cb, co, sc, st] = await Promise.all([
-        fetchMaster('vendor_types',          'name'),
-        fetchMaster('risk_levels',           'name'),
-        fetchMaster('vendor_behaviour',      'name'),
-        fetchMaster('segments',              'title'),
-        fetchMaster('compliance_behaviours', 'name'),
-        fetchMaster('countries',             'name'),
-        fetchStateCodes(),
-        fetchStates(),
-      ]);
-      setVendorTypeOpts(vt);
-      setRiskLevelOpts(rl);
-      setBehaviourOpts(bh);
-      setSegmentOpts(sg);
-      setComplianceOpts(cb);
-      setCountryOpts(co);
-      setStateCodeRows(sc);
-      setStateRows(st);
+      try {
+        const res = await api.get<Bundle>('/vendors/master-bundle');
+        hydrate(res.data);
+        writeVendorMasterBundle(res.data);
+      } catch {
+        // Dropdowns stay empty; the form still renders and individual
+        // saves will surface validation errors if a required option is
+        // missing.
+      } finally {
+        setMastersLoading(false);
+      }
     })();
   }, []);
 
@@ -1524,20 +1562,12 @@ export default function AddVendorModal(props: {
   };
   const removeOwnerRow = (id: string) => setOwnerRows(prev => prev.filter(r => r.id !== id));
 
-  const openLicPopup = async () => {
+  const openLicPopup = () => {
     setLicDraft(EMPTY_LIC_DRAFT);
     setLicPopupOpen(true);
-    // Lazy-load the license_name master the first time the modal opens.
-    if (licenseTypeOpts.length === 0) {
-      try {
-        const res = await api.get<Array<{ id: string | number; name?: string; status?: string }>>('/master/license_name');
-        const rows = Array.isArray(res.data) ? res.data : [];
-        setLicenseTypeOpts(rows
-          .filter(r => (r.status ?? 'Active') === 'Active')
-          .map(r => ({ value: String(r.name ?? ''), label: String(r.name ?? '') }))
-          .filter(o => o.value));
-      } catch { /* silent — fallback to free text */ }
-    }
+    // license_name options are now seeded from the master bundle on mount
+    // (see hydrate() in the bundled-fetch useEffect above), so no fetch
+    // is needed here. The popup opens with the dropdown pre-populated.
   };
   const saveLicDraft = () => {
     if (!licDraft.licenseType.trim())   { toast.error('Missing field', 'License Type is required'); return; }
@@ -1704,17 +1734,11 @@ export default function AddVendorModal(props: {
       })));
     } catch { /* silent — modal falls back to manual entry */ }
   };
-  const fetchGstPctOptsIfNeeded = async () => {
-    if (gstPctOpts.length) return;
-    try {
-      const res = await api.get<Array<{ id: string | number; percentage?: number | string; status?: string }>>('/master/gst_percentage');
-      const rows = Array.isArray(res.data) ? res.data : [];
-      setGstPctOpts(rows
-        .filter(r => (r.status ?? 'Active') === 'Active')
-        .map(r => ({ value: String(r.percentage ?? ''), label: `${r.percentage ?? ''}%` }))
-        .filter(o => o.value && o.value !== ''));
-    } catch { /* silent */ }
-  };
+  // gst_percentage options are seeded from the master bundle on mount
+  // (see hydrate() in the bundled-fetch useEffect above). The two callers
+  // below still invoke this helper but it's now a no-op kept for layout
+  // — removing the fetch silently turns the dialog into an instant open.
+  const fetchGstPctOptsIfNeeded = async () => { /* seeded from bundle */ };
 
   const recomputeMapTotals = (draft: MapDraft): MapDraft => {
     const price = parseFloat(draft.purchasePrice);
@@ -1950,12 +1974,15 @@ export default function AddVendorModal(props: {
 
         {/* ─── Body ─── */}
         <div className="avm-body">
-          {loadingEdit && (
-            /* Shimmer-only edit-load placeholder. The centred "Loading…"
-               spinner card was removed per design feedback — the form-
-               shaped skeleton bars convey the loading state without the
-               popup blocking the user's view of the form geometry. */
-            <div className="avm-load-overlay" role="status" aria-live="polite" aria-label="Loading supplier">
+          {(loadingEdit || mastersLoading) ? (
+            /* Shimmer skeleton — replaces the form entirely while
+               /vendors/master-bundle (or the edit-mode prefill) is in
+               flight. Previously this was an overlay sitting ON TOP of
+               the form, but absolute positioning inside a scrollable
+               body left gaps and let the half-loaded form bleed through.
+               Mutually-exclusive rendering is simpler and reliable.
+               Skeleton hits 0ms when the sessionStorage cache is fresh. */
+            <div className="avm-load-overlay avm-load-overlay-static" role="status" aria-live="polite" aria-label="Loading supplier form">
               <div className="avm-load-skeleton">
                 {/* Section heading + 4 fields */}
                 <div className="avm-load-bar avm-load-heading" />
@@ -1981,9 +2008,20 @@ export default function AddVendorModal(props: {
                   <div className="avm-load-bar" />
                   <div className="avm-load-bar" />
                 </div>
+                {/* Bottom section — KYC docs / product mappings */}
+                <div className="avm-load-bar avm-load-heading" style={{ marginTop: 18 }} />
+                <div className="avm-load-grid">
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                  <div className="avm-load-bar" />
+                </div>
               </div>
             </div>
-          )}
+          ) : (<>
+          {/* The form body proper renders only when masters and edit-mode
+              prefill have both finished — keeps half-hydrated inputs from
+              flashing onscreen behind a translucent skeleton. */}
           {step > 1 && (() => {
             /* Carried-over summary of everything captured in earlier
                steps. Each entry is a `Label : value` pair flowed
@@ -2692,6 +2730,7 @@ export default function AddVendorModal(props: {
               <ProductMappingTable rows={productMappings} onRemove={removeMapRow} onEdit={openMapEdit} />
             </SectionCard>
           )}
+          </>)}
         </div>
 
         {/* ─── Footer ─── */}
@@ -2797,6 +2836,7 @@ export default function AddVendorModal(props: {
             // and fail the integer FK validation.
             const id = String(row.id ?? '');
             if (!id) { setQuickAdd(null); return; }
+            bustVendorMasterBundle();
             switch (quickAdd) {
               case 'vendor_types': {
                 const label = String(row.name ?? '');
@@ -5511,6 +5551,17 @@ const SCOPED_CSS = `
   z-index: 5;
   overflow: hidden;
   padding: 22px 26px;
+}
+/* avm-load-overlay-static — used when the skeleton REPLACES the form
+   (mutually-exclusive render) rather than sitting on top of it. Drops
+   the absolute positioning so the skeleton flows normally inside the
+   scrollable body, which guarantees full coverage regardless of body
+   height or scroll offset. */
+.avm-load-overlay-static {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  min-height: 100%;
 }
 [data-bs-theme="dark"] .avm-load-overlay { background: #1c2531; }
 .avm-load-skeleton { width: 100%; max-width: 1100px; display: flex; flex-direction: column; gap: 10px; }
