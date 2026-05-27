@@ -1128,54 +1128,50 @@ const CEV_CSS = `
   padding-bottom: 2px;
 }
 .cev-tabs::-webkit-scrollbar { display: none; }
+/* Tab pill — restyled to match AddCustomerModal's .acm-tab (Stage 1
+ * Customer Identification / Address & Contact Details). Same clean
+ * rounded-rectangle pill + solid 1.5px border + simpler gradient on
+ * active. Icons and count badges are retained (functionality stays
+ * intact) but the icon circle's heavy background was dropped so the
+ * icon reads as part of the label, not as a separate chip stuck to
+ * the tab. */
 .cev-tab {
   flex: 0 0 auto;
   position: relative;
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 9px 16px 9px 9px;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 16px;
   background: #ffffff;
-  border: 1px solid rgba(124,58,237,0.18);
-  border-radius: 999px;
-  color: #5b21b6;
-  font-size: 13px; font-weight: 700;
+  border: 1.5px solid #c4b5fd;
+  border-radius: 12px;
+  color: #6d28d9;
+  font-size: 12.5px; font-weight: 700;
   cursor: pointer;
-  transition: transform .18s ease, box-shadow .22s ease, border-color .18s ease, background .18s ease, color .18s ease;
-  box-shadow: 0 1px 2px rgba(40,18,80,0.04);
+  transition: all .2s ease;
+  white-space: nowrap;
 }
 .cev-tab-icon {
-  width: 28px; height: 28px;
-  border-radius: 50%;
+  width: 18px; height: 18px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  background: transparent;
   color: #6d28d9;
   font-size: 15px;
-  transition: all .18s ease;
   flex-shrink: 0;
+  transition: color .18s ease;
 }
 .cev-tab-label { white-space: nowrap; }
 .cev-tab:hover {
-  transform: translateY(-1px);
-  border-color: rgba(124,58,237,0.42);
-  box-shadow: 0 6px 16px rgba(124,58,237,0.16);
+  background: #ede9fe;
+  border-color: #7c3aed;
   color: #4c1d95;
 }
-.cev-tab:hover .cev-tab-icon {
-  background: linear-gradient(135deg, #ddd6fe, #c4b5fd);
-}
+.cev-tab:hover .cev-tab-icon { color: #4c1d95; }
 .cev-tab.is-active {
-  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 55%, #a78bfa 100%);
-  border-color: transparent;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  border-color: #7c3aed;
   color: #ffffff;
-  box-shadow:
-    0 4px 12px rgba(124,58,237,0.32),
-    0 10px 26px rgba(76,29,149,0.28);
-  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(109,40,217,.35);
 }
-.cev-tab.is-active .cev-tab-icon {
-  background: rgba(255,255,255,0.22);
-  color: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.30);
-}
+.cev-tab.is-active .cev-tab-icon { color: #ffffff; }
 .cev-tab-count {
   background: #ede9fe; color: #5b21b6;
   font-size: 10.5px; font-weight: 800; letter-spacing: 0.02em;
@@ -1186,7 +1182,6 @@ const CEV_CSS = `
 .cev-tab.is-active .cev-tab-count {
   background: rgba(255,255,255,0.28);
   color: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.30);
 }
 
 /* ─── BODY ─── */
@@ -1460,12 +1455,12 @@ const CEV_CSS = `
 /* ─── DARK MODE — violet palette mapped to lavender-on-deep-purple ─── */
 [data-bs-theme="dark"] .cev-card { background: #1a1430; }
 [data-bs-theme="dark"] .cev-tabs-wrap { background: linear-gradient(180deg, #1a1430 0%, #211a3d 100%); border-bottom-color: rgba(124,58,237,.22); }
-[data-bs-theme="dark"] .cev-tab { background: #211a3d; border-color: rgba(124,58,237,.28); color: #c4b5fd; box-shadow: 0 1px 2px rgba(0,0,0,0.30); }
-[data-bs-theme="dark"] .cev-tab-icon { background: rgba(124,58,237,.18); color: #c4b5fd; }
-[data-bs-theme="dark"] .cev-tab:hover { border-color: rgba(167,139,250,.50); color: #ede9fe; box-shadow: 0 6px 16px rgba(0,0,0,.30); }
-[data-bs-theme="dark"] .cev-tab:hover .cev-tab-icon { background: rgba(124,58,237,.32); color: #ede9fe; }
-[data-bs-theme="dark"] .cev-tab.is-active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 55%, #a78bfa 100%); color: #fff; border-color: transparent; }
-[data-bs-theme="dark"] .cev-tab.is-active .cev-tab-icon { background: rgba(255,255,255,0.22); color: #fff; }
+[data-bs-theme="dark"] .cev-tab { background: transparent; color: #c4b5fd; border: 1.5px solid rgba(167,139,250,0.40); box-shadow: none; }
+[data-bs-theme="dark"] .cev-tab-icon { background: transparent; color: #c4b5fd; }
+[data-bs-theme="dark"] .cev-tab:hover { background: rgba(167,139,250,0.10); border-color: #a78bfa; color: #ede9fe; box-shadow: none; }
+[data-bs-theme="dark"] .cev-tab:hover .cev-tab-icon { background: transparent; color: #ede9fe; }
+[data-bs-theme="dark"] .cev-tab.is-active { background: linear-gradient(135deg,#6d28d9,#4c1d95); color: #fff; border-color: #7c3aed; }
+[data-bs-theme="dark"] .cev-tab.is-active .cev-tab-icon { background: transparent; color: #fff; }
 [data-bs-theme="dark"] .cev-tab-count { background: rgba(124,58,237,.22); color: #c4b5fd; }
 [data-bs-theme="dark"] .cev-tab.is-active .cev-tab-count { background: rgba(255,255,255,.28); color: #fff; }
 [data-bs-theme="dark"] .cev-kpi-outer { background: linear-gradient(180deg, #1a1430 0%, #211a3d 100%); border-bottom-color: rgba(124,58,237,.22); }
@@ -1543,8 +1538,8 @@ const CEV_CSS = `
   .cev-kpi-nav-prev { left: 10px; }
   .cev-kpi-nav-next { right: 10px; }
   .cev-tabs-wrap { padding: 10px 14px; }
-  .cev-tab { padding: 7px 14px 7px 7px; font-size: 12.5px; gap: 7px; }
-  .cev-tab-icon { width: 24px; height: 24px; font-size: 13px; }
+  .cev-tab { padding: 7px 14px; font-size: 12px; gap: 7px; }
+  .cev-tab-icon { width: 16px; height: 16px; font-size: 13px; }
   .cev-body { padding: 14px 16px 18px; gap: 12px; }
   .cev-section { padding: 12px 14px; }
   .cev-section-count { font-size: 22px; }
@@ -1557,8 +1552,8 @@ const CEV_CSS = `
 @media (max-width: 640px) {
   .cev-card { width: 100vw; }
   .cev-kpi-tile { flex: 0 0 170px; }
-  .cev-tab { padding: 6px 12px 6px 6px; font-size: 11.5px; }
-  .cev-tab-icon { width: 22px; height: 22px; font-size: 12px; }
+  .cev-tab { padding: 6px 12px; font-size: 11.5px; }
+  .cev-tab-icon { width: 14px; height: 14px; font-size: 12px; }
   .cev-tab-count { font-size: 9.5px; padding: 1px 6px; }
 }
 `;

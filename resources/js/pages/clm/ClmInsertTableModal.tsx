@@ -311,12 +311,34 @@ const ITM_CSS = `
 }
 .itm-btn-primary:hover { filter: brightness(1.05); }
 
-[data-bs-theme="dark"] .itm-shell { background: var(--vz-card-bg); }
+/* Use explicit slate tones (not just var(--vz-card-bg) which renders too
+ * close to the page behind) so the modal shell visibly lifts off the
+ * dark page. Shell is the lightest band, body slightly darker, foot
+ * back to mid-slate — gives clear card hierarchy in dark mode. */
+[data-bs-theme="dark"] .itm-shell {
+  background: #1e293b;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, .55), 0 0 0 1px rgba(6,182,212,.18);
+}
+[data-bs-theme="dark"] .itm-body { background: #172033; }
 [data-bs-theme="dark"] .itm-input,
 [data-bs-theme="dark"] .itm-color-input {
-  background: var(--vz-secondary-bg); color: var(--vz-body-color); border-color: var(--vz-border-color);
+  background: #0f172a; color: #e2e8f0; border-color: rgba(6,182,212,.25);
 }
-[data-bs-theme="dark"] .itm-preview-wrap { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); }
-[data-bs-theme="dark"] .itm-foot { background: var(--vz-secondary-bg); border-top-color: var(--vz-border-color); }
-[data-bs-theme="dark"] .itm-btn-cancel { background: var(--vz-card-bg); color: var(--vz-body-color); border-color: var(--vz-border-color); }
+[data-bs-theme="dark"] .itm-preview-wrap { background: #0f172a; border-color: rgba(6,182,212,.22); }
+[data-bs-theme="dark"] .itm-foot { background: #1e293b; border-top-color: rgba(6,182,212,.18); }
+[data-bs-theme="dark"] .itm-btn-cancel { background: #0f172a; color: #cbd5e1; border-color: rgba(148,163,184,.30); }
+[data-bs-theme="dark"] .itm-btn-cancel:hover { background: #1e293b; }
+/* The body labels (ROWS / COLUMNS / HEADER BACKGROUND / HEADER TEXT COLOUR
+ * / PREVIEW), hint text (1–30 / 1–10), the "Stripe alternate body rows"
+ * toggle, and the color-picker swatch all keep their light-mode greys when
+ * the rest of the modal turns dark — they wash out against the dark panel.
+ * Bring them up to a readable cyan / slate palette here. */
+[data-bs-theme="dark"] .itm-lbl { color: #67e8f9; }
+[data-bs-theme="dark"] .itm-hint { color: #94a3b8; }
+[data-bs-theme="dark"] .itm-toggle { color: var(--vz-body-color); }
+[data-bs-theme="dark"] .itm-preview-label { color: #67e8f9; }
+[data-bs-theme="dark"] .itm-preview-scale { color: var(--vz-body-color); }
+[data-bs-theme="dark"] .itm-color-swatch {
+  background: var(--vz-secondary-bg); border-color: var(--vz-border-color);
+}
 `;

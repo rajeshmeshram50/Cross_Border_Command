@@ -1044,54 +1044,50 @@ const CNEV_CSS = `
   padding-bottom: 2px;
 }
 .cnev-tabs::-webkit-scrollbar { display: none; }
+/* Tab pill — restyled to match AddCustomerModal's .acm-tab (Stage 1
+ * Customer Identification pill). Clean rounded-rectangle pill +
+ * solid 1.5px border + single-stop gradient on active. Icons and
+ * count badges kept (functionality preserved) but the icon circle's
+ * heavy gradient background was dropped so the icon sits inline
+ * with the label instead of looking like a stuck-on chip. Green
+ * palette stays — this is the consignee variant. */
 .cnev-tab {
   flex: 0 0 auto;
   position: relative;
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 9px 16px 9px 9px;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 16px;
   background: #ffffff;
-  border: 1px solid rgba(16,185,129,0.18);
-  border-radius: 999px;
-  color: #065f46;
-  font-size: 13px; font-weight: 700;
+  border: 1.5px solid #6ee7b7;
+  border-radius: 12px;
+  color: #047857;
+  font-size: 12.5px; font-weight: 700;
   cursor: pointer;
-  transition: transform .18s ease, box-shadow .22s ease, border-color .18s ease, background .18s ease, color .18s ease;
-  box-shadow: 0 1px 2px rgba(6,78,59,0.04);
+  transition: all .2s ease;
+  white-space: nowrap;
 }
 .cnev-tab-icon {
-  width: 28px; height: 28px;
-  border-radius: 50%;
+  width: 18px; height: 18px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  background: transparent;
   color: #047857;
   font-size: 15px;
-  transition: all .18s ease;
   flex-shrink: 0;
+  transition: color .18s ease;
 }
 .cnev-tab-label { white-space: nowrap; }
 .cnev-tab:hover {
-  transform: translateY(-1px);
-  border-color: rgba(16,185,129,0.42);
-  box-shadow: 0 6px 16px rgba(16,185,129,0.16);
+  background: #ecfdf5;
+  border-color: #10b981;
   color: #064e3b;
 }
-.cnev-tab:hover .cnev-tab-icon {
-  background: linear-gradient(135deg, #a7f3d0, #6ee7b7);
-}
+.cnev-tab:hover .cnev-tab-icon { color: #064e3b; }
 .cnev-tab.is-active {
-  background: linear-gradient(135deg, #047857 0%, #10b981 55%, #6ee7b7 100%);
-  border-color: transparent;
+  background: linear-gradient(135deg, #10b981, #047857);
+  border-color: #10b981;
   color: #ffffff;
-  box-shadow:
-    0 4px 12px rgba(16,185,129,0.32),
-    0 10px 26px rgba(6,78,59,0.28);
-  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(16,185,129,.35);
 }
-.cnev-tab.is-active .cnev-tab-icon {
-  background: rgba(255,255,255,0.22);
-  color: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.30);
-}
+.cnev-tab.is-active .cnev-tab-icon { color: #ffffff; }
 .cnev-tab-count {
   background: #d1fae5; color: #047857;
   font-size: 10.5px; font-weight: 800; letter-spacing: 0.02em;
@@ -1102,7 +1098,6 @@ const CNEV_CSS = `
 .cnev-tab.is-active .cnev-tab-count {
   background: rgba(255,255,255,0.28);
   color: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.30);
 }
 
 /* ─── BODY ─── */
@@ -1353,12 +1348,12 @@ const CNEV_CSS = `
 /* ─── DARK MODE ─── */
 [data-bs-theme="dark"] .cnev-card { background: #0c2218; }
 [data-bs-theme="dark"] .cnev-tabs-wrap { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); border-bottom-color: rgba(16,185,129,.22); }
-[data-bs-theme="dark"] .cnev-tab { background: #102b21; border-color: rgba(16,185,129,.28); color: #6ee7b7; box-shadow: 0 1px 2px rgba(0,0,0,0.30); }
-[data-bs-theme="dark"] .cnev-tab-icon { background: rgba(16,185,129,.18); color: #6ee7b7; }
-[data-bs-theme="dark"] .cnev-tab:hover { border-color: rgba(110,231,183,.50); color: #d1fae5; box-shadow: 0 6px 16px rgba(0,0,0,.30); }
-[data-bs-theme="dark"] .cnev-tab:hover .cnev-tab-icon { background: rgba(16,185,129,.32); color: #d1fae5; }
-[data-bs-theme="dark"] .cnev-tab.is-active { background: linear-gradient(135deg, #047857 0%, #10b981 55%, #6ee7b7 100%); color: #fff; border-color: transparent; }
-[data-bs-theme="dark"] .cnev-tab.is-active .cnev-tab-icon { background: rgba(255,255,255,0.22); color: #fff; }
+[data-bs-theme="dark"] .cnev-tab { background: transparent; color: #6ee7b7; border: 1.5px solid rgba(16,185,129,0.40); box-shadow: none; }
+[data-bs-theme="dark"] .cnev-tab-icon { background: transparent; color: #6ee7b7; }
+[data-bs-theme="dark"] .cnev-tab:hover { background: rgba(16,185,129,0.10); border-color: #10b981; color: #d1fae5; box-shadow: none; }
+[data-bs-theme="dark"] .cnev-tab:hover .cnev-tab-icon { background: transparent; color: #d1fae5; }
+[data-bs-theme="dark"] .cnev-tab.is-active { background: linear-gradient(135deg, #047857, #064e3b); color: #fff; border-color: #10b981; }
+[data-bs-theme="dark"] .cnev-tab.is-active .cnev-tab-icon { background: transparent; color: #fff; }
 [data-bs-theme="dark"] .cnev-tab-count { background: rgba(16,185,129,.22); color: #6ee7b7; }
 [data-bs-theme="dark"] .cnev-tab.is-active .cnev-tab-count { background: rgba(255,255,255,.28); color: #fff; }
 [data-bs-theme="dark"] .cnev-kpi-outer { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); border-bottom-color: rgba(16,185,129,.22); }
@@ -1432,8 +1427,8 @@ const CNEV_CSS = `
   .cnev-kpi-nav-prev { left: 10px; }
   .cnev-kpi-nav-next { right: 10px; }
   .cnev-tabs-wrap { padding: 10px 14px; }
-  .cnev-tab { padding: 7px 14px 7px 7px; font-size: 12.5px; gap: 7px; }
-  .cnev-tab-icon { width: 24px; height: 24px; font-size: 13px; }
+  .cnev-tab { padding: 7px 14px; font-size: 12px; gap: 7px; }
+  .cnev-tab-icon { width: 16px; height: 16px; font-size: 13px; }
   .cnev-body { padding: 14px 16px 18px; gap: 12px; }
   .cnev-section { padding: 12px 14px; }
   .cnev-section-count { font-size: 22px; }
@@ -1446,8 +1441,8 @@ const CNEV_CSS = `
 @media (max-width: 640px) {
   .cnev-card { width: 100vw; }
   .cnev-kpi-tile { flex: 0 0 170px; }
-  .cnev-tab { padding: 6px 12px 6px 6px; font-size: 11.5px; }
-  .cnev-tab-icon { width: 22px; height: 22px; font-size: 12px; }
+  .cnev-tab { padding: 6px 12px; font-size: 11.5px; }
+  .cnev-tab-icon { width: 14px; height: 14px; font-size: 12px; }
   .cnev-tab-count { font-size: 9.5px; padding: 1px 6px; }
 }
 `;

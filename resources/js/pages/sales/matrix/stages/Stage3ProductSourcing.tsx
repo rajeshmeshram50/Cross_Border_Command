@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
@@ -53,6 +53,14 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
   const leadId = header.leadId;
 
+  /* Ref to the readiness checklist so we can scroll it into view + flash
+   * it when the user clicks Save & Next while issues remain. Beats a
+   * blink-and-it's-gone toast because the user can read the list, click
+   * straight into the failing tab, and watch issues drop off as they fix
+   * them. */
+  const readinessRef = useRef<HTMLDivElement | null>(null);
+  const [readinessFlash, setReadinessFlash] = useState(false);
+
   /* Initial-mount fetch flips the loading flag (shows skeleton). For
    * after-action refreshes (post Create Procurement, post Mark Sourced)
    * we want the table to update silently so users don't see a jarring
@@ -90,6 +98,69 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   const detailsSet   = rows.filter(r => r.sourcing_status !== null).length;
   /* Sourcing Required progress — how many required rows are marked done. */
   const requiredDone = requiredRows.filter(r => r.procurement_done).length;
+
+  /* Friendly readiness checklist — every item that would block Save &
+   * Next is surfaced here as a one-line action, so the user can see ALL
+   * blockers at once instead of fixing one and tripping the next toast.
+   * Each item carries an optional CTA that either flips to the right
+   * tab or scrolls to the right row. The Save & Next handler reuses
+   * `pendingChecks.length` for its disabled/badge state. */
+  type Check = {
+    key:    string;
+    title:  string;
+    sub:    string;
+    ctaLabel?: string;
+    onCta?:  () => void;
+  };
+  const pendingChecks = useMemo<Check[]>(() => {
+    const out: Check[] = [];
+    if (!leadId) {
+      out.push({
+        key:   'no-lead',
+        title: 'Open this stage from the Lead Worksheet',
+        sub:   'The opportunity context is missing — re-open this lead to save progress.',
+      });
+      return out;
+    }
+    if (rows.length === 0) {
+      out.push({
+        key:   'no-products',
+        title: 'Map at least one product',
+        sub:   'Use the toolbar Product Directory to add products to this opportunity.',
+      });
+      return out;
+    }
+    if (detailsRows.length > 0) {
+      out.push({
+        key:      'unset-sourcing',
+        title:    `${detailsRows.length} product${detailsRows.length === 1 ? '' : 's'} need a sourcing status`,
+        sub:      'Choose “Sourcing Required” or “Not Required” for every product on the Product Details tab.',
+        ctaLabel: 'Go to Product Details',
+        onCta:    () => setTab('details'),
+      });
+    }
+    if (inactiveRows.length > 0) {
+      out.push({
+        key:      'inactive',
+        title:    `${inactiveRows.length} product${inactiveRows.length === 1 ? '' : 's'} not active`,
+        sub:      'Activate them under Masters → Products before advancing this stage.',
+      });
+    }
+    const pendingProc = requiredRows.filter(r => !r.procurement_done);
+    if (pendingProc.length > 0) {
+      out.push({
+        key:      'pending-proc',
+        title:    `${pendingProc.length} sourcing-required product${pendingProc.length === 1 ? '' : 's'} pending`,
+        sub:      pendingProc.some(r => r.procurement_id == null)
+          ? 'Create a procurement and then click “Mark as Done” on each row.'
+          : 'Click “Mark as Done” on each row once procurement is complete.',
+        ctaLabel: 'Go to Sourcing Required',
+        onCta:    () => setTab('required'),
+      });
+    }
+    return out;
+  }, [leadId, rows.length, detailsRows.length, inactiveRows.length, requiredRows]);
+  const isReady = pendingChecks.length === 0;
 
   /* ── Set sourcing status ─────────────────────────────────────────── */
   const onSourcingChange = async (row: Row, status: 'required' | 'not_required') => {
@@ -191,37 +262,16 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   };
 
   /* ── Save & Next ─────────────────────────────────────────────────── */
+  /* If anything in the readiness checklist is pending we don't throw a
+   * toast — we scroll the panel into view and pulse it for 1.2s so the
+   * user can read the full list, then click into the failing tab. The
+   * panel always reflects current state so they get live feedback as
+   * they fix items. */
   const onSaveAndNext = async () => {
-    if (!leadId) {
-      toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
-      return;
-    }
-    if (rows.length === 0) {
-      toast.warning('Map a product first', 'Use the toolbar Product Directory to add at least one product.');
-      return;
-    }
-    if (detailsRows.length > 0) {
-      toast.warning(
-        `${detailsRows.length} product${detailsRows.length === 1 ? '' : 's'} need a sourcing status`,
-        'Choose Yes or No for every product on the Product Details tab.',
-      );
-      setTab('details');
-      return;
-    }
-    if (inactiveRows.length > 0) {
-      toast.warning(
-        `${inactiveRows.length} product${inactiveRows.length === 1 ? '' : 's'} not active`,
-        'Activate them on the Product Master before advancing.',
-      );
-      return;
-    }
-    const unsourced = requiredRows.filter(r => !r.procurement_done);
-    if (unsourced.length > 0) {
-      toast.warning(
-        `${unsourced.length} product${unsourced.length === 1 ? '' : 's'} still pending`,
-        'Click "Mark as Done" on each Sourcing Required row to advance.',
-      );
-      setTab('required');
+    if (!isReady) {
+      readinessRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setReadinessFlash(true);
+      window.setTimeout(() => setReadinessFlash(false), 1200);
       return;
     }
     setAdvancing(true);
@@ -258,6 +308,63 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
       </div>
 
       <div className="smd-stg-body">
+        {/* Readiness checklist — only renders while items remain.
+         *  Replaces a series of one-off toast warnings with a single
+         *  scrollable, clickable summary the user can read at any time.
+         *  When the list empties, it auto-collapses into a slim "ready"
+         *  ribbon so the user knows they're clear to advance. */}
+        <div
+          ref={readinessRef}
+          className={`s3-ready ${isReady ? 's3-ready-ok' : 's3-ready-warn'} ${readinessFlash ? 's3-ready-flash' : ''}`}
+          role={isReady ? 'status' : 'alert'}
+        >
+          <div className="s3-ready-head">
+            <span className="s3-ready-icon" aria-hidden>
+              {isReady ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 9v4M12 17h.01" />
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                </svg>
+              )}
+            </span>
+            <div className="s3-ready-text">
+              <div className="s3-ready-title">
+                {isReady
+                  ? 'Ready to advance to Stage 4 — Price Shared'
+                  : `${pendingChecks.length} thing${pendingChecks.length === 1 ? '' : 's'} to finish before advancing`}
+              </div>
+              <div className="s3-ready-sub">
+                {isReady
+                  ? 'All products are classified, active, and sourcing is complete.'
+                  : 'Tick these off in any order — Save & Next will unlock once the list is clear.'}
+              </div>
+            </div>
+          </div>
+
+          {!isReady && (
+            <ul className="s3-ready-list">
+              {pendingChecks.map(c => (
+                <li key={c.key} className="s3-ready-item">
+                  <span className="s3-ready-dot" aria-hidden />
+                  <div className="s3-ready-item-body">
+                    <div className="s3-ready-item-title">{c.title}</div>
+                    <div className="s3-ready-item-sub">{c.sub}</div>
+                  </div>
+                  {c.onCta && (
+                    <button type="button" className="s3-ready-cta" onClick={c.onCta}>
+                      {c.ctaLabel ?? 'Open'} <span aria-hidden>→</span>
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
         {/* Pill tabs */}
         <div className="s3-tabs">
           <button
@@ -315,7 +422,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                 </div>
                 <div>
                   <div className="s3-card-title">
-                    All Mapped Products <span className="s3-card-count s3-card-count-violet">{rows.length}</span>
+                    All Mapped Products <span className="s3-card-count s3-card-count-violet">{detailsRows.length}</span>
                   </div>
                   <div className="s3-card-sub">Assign sourcing status to each product to proceed</div>
                 </div>
@@ -355,10 +462,16 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                       <td><span className="smd-skel smd-skel-pill" /></td>
                     </tr>
                   ))}
-                  {!loading && rows.length === 0 && (
-                    <tr><td colSpan={9} className="s3-empty">No products mapped — use the toolbar Product Directory to add some.</td></tr>
+                  {!loading && detailsRows.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="s3-empty">
+                        {rows.length === 0
+                          ? 'No products mapped — use the toolbar Product Directory to add some.'
+                          : 'All mapped products have a sourcing status — check the Sourcing Required / Not Required tabs.'}
+                      </td>
+                    </tr>
                   )}
-                  {!loading && rows.map((r, idx) => {
+                  {!loading && detailsRows.map((r, idx) => {
                     const statusLc = (r.product_status ?? '').toLowerCase();
                     const isInactive = statusLc !== 'active';
                     return (
@@ -664,18 +777,28 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 
       {/* Footer */}
       <div className="smd-stg-foot">
-        <div className="smd-stg-foot-note">
-          ⚠ <strong>Note :</strong> Add product details and shortlist vendors to proceed.
+        <div className={`smd-stg-foot-note ${isReady ? 's3-foot-note-ok' : ''}`}>
+          {isReady ? (
+            <>✓ <strong>Ready :</strong> All checks passed — click Save &amp; Next to advance.</>
+          ) : (
+            <>⚠ <strong>{pendingChecks.length} pending :</strong> See the checklist above to unlock Save &amp; Next.</>
+          )}
         </div>
         <div className="smd-stg-btn-row">
           <button className="smd-stg-btn" onClick={onPrev} type="button">← Previous</button>
           <button
-            className="smd-stg-btn smd-stg-btn-primary"
+            className={`smd-stg-btn smd-stg-btn-primary ${!isReady ? 's3-next-blocked' : ''}`}
             onClick={() => void onSaveAndNext()}
             disabled={advancing}
             type="button"
+            title={isReady ? 'Advance to Stage 4 — Price Shared' : 'Finish the checklist above first'}
+            aria-disabled={!isReady}
           >
-            {advancing ? 'Advancing…' : 'Save & Next →'}
+            {advancing
+              ? 'Advancing…'
+              : isReady
+                ? 'Save & Next →'
+                : `${pendingChecks.length} to fix`}
           </button>
         </div>
       </div>
@@ -707,6 +830,117 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 }
 
 const STAGE3_CSS = `
+/* ═══════════════════════════════ READINESS PANEL ═══════════════════════════════
+ * Persistent, friendly version of what used to be a one-shot toast.
+ * Two variants:
+ *   .s3-ready-warn — amber, lists pending blockers with inline CTAs.
+ *   .s3-ready-ok   — slim mint ribbon, lets the user know they're clear.
+ * .s3-ready-flash triggers a 1.2s shake when the user clicks Save & Next
+ * while blockers remain, drawing their eye back to the panel. */
+.s3-ready {
+  border-radius: 12px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1.5px solid transparent;
+}
+.s3-ready-warn {
+  background: linear-gradient(135deg, #fffbeb, #fef3c7);
+  border-color: #fcd34d;
+  color: #78350f;
+}
+.s3-ready-ok {
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+  border-color: #6ee7b7;
+  color: #064e3b;
+  padding: 10px 14px;
+}
+@keyframes s3-ready-shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-4px); }
+  40%      { transform: translateX(4px); }
+  60%      { transform: translateX(-3px); }
+  80%      { transform: translateX(3px); }
+}
+.s3-ready-flash {
+  animation: s3-ready-shake .6s ease-in-out 0s 2;
+  box-shadow: 0 0 0 4px rgba(251, 191, 36, .25);
+}
+.s3-ready-head {
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.s3-ready-icon {
+  width: 26px; height: 26px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.55); color: #b45309;
+  flex-shrink: 0;
+}
+.s3-ready-ok .s3-ready-icon { background: rgba(255,255,255,.65); color: #047857; }
+.s3-ready-text { flex: 1; min-width: 0; }
+.s3-ready-title {
+  font-size: 12.5px; font-weight: 800; letter-spacing: -.2px;
+  line-height: 1.25;
+}
+.s3-ready-sub {
+  font-size: 11px; font-weight: 600; margin-top: 2px;
+  opacity: .85; line-height: 1.4;
+}
+.s3-ready-list {
+  list-style: none; margin: 10px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.s3-ready-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 9px;
+  background: rgba(255,255,255,.65);
+  border: 1px solid rgba(252, 191, 36, .50);
+}
+.s3-ready-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #d97706;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, .18);
+}
+.s3-ready-item-body { flex: 1; min-width: 0; }
+.s3-ready-item-title {
+  font-size: 11.5px; font-weight: 800; color: #78350f;
+  line-height: 1.3;
+}
+.s3-ready-item-sub {
+  font-size: 10.5px; font-weight: 600; color: #92400e;
+  margin-top: 2px; line-height: 1.4;
+}
+.s3-ready-cta {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 8px; border: none; cursor: pointer;
+  background: linear-gradient(135deg, #d97706, #b45309);
+  color: #fff;
+  font-family: inherit; font-size: 10.5px; font-weight: 800;
+  box-shadow: 0 2px 6px rgba(217,119,6,.30);
+  transition: all .12s;
+}
+.s3-ready-cta:hover { background: linear-gradient(135deg, #b45309, #92400e); transform: translateY(-1px); }
+
+/* Footer note variants — green when ready, amber when blocked. */
+.s3-foot-note-ok {
+  background: linear-gradient(135deg, #ecfdf5, #d1fae5) !important;
+  border-color: #6ee7b7 !important;
+  color: #047857 !important;
+}
+.s3-foot-note-ok strong { color: #064e3b !important; }
+
+/* Save & Next, blocked state — desaturated + amber outline so the user
+ * sees at a glance the button isn't currently the "happy path." Click
+ * still fires onSaveAndNext, which scrolls to the checklist. */
+.s3-next-blocked {
+  background: linear-gradient(135deg, #94a3b8, #64748b) !important;
+  box-shadow: 0 2px 6px rgba(100, 116, 139, .30) !important;
+  position: relative;
+}
+.s3-next-blocked:hover {
+  background: linear-gradient(135deg, #64748b, #475569) !important;
+}
+
 /* ═══════════════════════════════ TABS ═══════════════════════════════ */
 .s3-tabs { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .s3-tab {
@@ -1044,4 +1278,52 @@ const STAGE3_CSS = `
 [data-bs-theme="dark"] .s3-dash    { color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s3-proc-pill { background: rgba(252,191,36,.18); color: #fde68a; border-color: rgba(252,191,36,.45); }
 [data-bs-theme="dark"] .s3-proc-pill:hover { background: rgba(252,191,36,.28); }
+
+/* Readiness panel — dark mode. Warn variant uses translucent amber on
+ * the deep-slate body; ok variant uses translucent mint. Items + CTAs
+ * mirror the light scheme. */
+[data-bs-theme="dark"] .s3-ready-warn {
+  background: linear-gradient(135deg, rgba(252,191,36,.10), rgba(252,191,36,.18));
+  border-color: rgba(252,191,36,.40);
+  color: #fbbf24;
+}
+[data-bs-theme="dark"] .s3-ready-ok {
+  background: linear-gradient(135deg, rgba(16,185,129,.10), rgba(16,185,129,.18));
+  border-color: rgba(110,231,183,.40);
+  color: #6ee7b7;
+}
+[data-bs-theme="dark"] .s3-ready-icon {
+  background: rgba(252,191,36,.18); color: #fde68a;
+}
+[data-bs-theme="dark"] .s3-ready-ok .s3-ready-icon {
+  background: rgba(16,185,129,.18); color: #6ee7b7;
+}
+[data-bs-theme="dark"] .s3-ready-item {
+  background: rgba(20,16,42,.55);
+  border-color: rgba(252,191,36,.35);
+}
+[data-bs-theme="dark"] .s3-ready-item-title { color: #fde68a; }
+[data-bs-theme="dark"] .s3-ready-item-sub   { color: #fbbf24; }
+[data-bs-theme="dark"] .s3-ready-dot {
+  background: #fbbf24;
+  box-shadow: 0 0 0 3px rgba(251,191,36,.25);
+}
+[data-bs-theme="dark"] .s3-ready-cta {
+  background: linear-gradient(135deg, #f59e0b, #b45309);
+  box-shadow: 0 2px 8px rgba(245,158,11,.40);
+}
+[data-bs-theme="dark"] .s3-foot-note-ok {
+  background: linear-gradient(135deg, rgba(16,185,129,.12), rgba(16,185,129,.20)) !important;
+  border-color: rgba(110,231,183,.40) !important;
+  color: #6ee7b7 !important;
+}
+[data-bs-theme="dark"] .s3-foot-note-ok strong { color: #a7f3d0 !important; }
+[data-bs-theme="dark"] .s3-next-blocked {
+  background: linear-gradient(135deg, #475569, #334155) !important;
+  box-shadow: 0 2px 6px rgba(15,23,42,.50) !important;
+  color: #cbd5e1 !important;
+}
+[data-bs-theme="dark"] .s3-next-blocked:hover {
+  background: linear-gradient(135deg, #334155, #1e293b) !important;
+}
 `;
