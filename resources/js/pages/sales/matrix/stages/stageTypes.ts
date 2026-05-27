@@ -12,6 +12,15 @@ export type StageProps = {
    * reading dependent state (e.g., Stage 2's submitPicker awaits this
    * so a click on Save & Next immediately afterwards sees fresh data). */
   reloadLead?: () => Promise<unknown> | void;
+  /* Stage 5 calls this whenever a Proforma Invoice is created or
+   * edited. Parent (SalesMatrixDetail) wires it to bump
+   * `agreementRefreshTick`, which refetches /clm/leads/{id}/agreement-
+   * applicable — that endpoint's `pi` field is what unlocks the
+   * Segment Details card on the left rail. Without this hook the
+   * card stayed locked until the user manually clicked Save & Next
+   * (the only other path that re-rendered the parent with new
+   * server state). */
+  onPiChange?: () => void;
 };
 
 /* Shared stage shell styles — each stage imports SHARED_STAGE_CSS once. */
