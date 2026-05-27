@@ -36,14 +36,19 @@ type Customer = {
   sameAsCustomerConsigneeCount?: number;
 };
 
+/* Tinted-glass tokens — semi-transparent backgrounds so the pill
+ * inherits the surface tone and reads cleanly on both light and dark
+ * themes. Each entry pairs a brand-saturated text colour with a soft
+ * tinted bg + matching border so the badge feels modern rather than
+ * pastel-flat. */
 const TYPE_COLORS: Record<string, { bg: string; color: string; border: string; dot: string }> = {
-  'Retailer':   { bg:'#eff6ff', color:'#1e40af', border:'#bfdbfe', dot:'#3b82f6' },
-  'Exporter':   { bg:'#f0fdf4', color:'#15803d', border:'#bbf7d0', dot:'#22c55e' },
-  'Reseller':   { bg:'#fef3f2', color:'#b91c1c', border:'#fecaca', dot:'#ef4444' },
-  'Wholesaler': { bg:'#fffbeb', color:'#b45309', border:'#fed7aa', dot:'#f59e0b' },
+  'Retailer':   { bg:'rgba(59,130,246,0.12)',  color:'#2563eb', border:'rgba(59,130,246,0.35)',  dot:'#3b82f6' },
+  'Exporter':   { bg:'rgba(34,197,94,0.12)',   color:'#16a34a', border:'rgba(34,197,94,0.35)',   dot:'#22c55e' },
+  'Reseller':   { bg:'rgba(239,68,68,0.12)',   color:'#dc2626', border:'rgba(239,68,68,0.35)',   dot:'#ef4444' },
+  'Wholesaler': { bg:'rgba(245,158,11,0.14)',  color:'#d97706', border:'rgba(245,158,11,0.38)',  dot:'#f59e0b' },
 };
 
-const ROWS_PER_PAGE = 10;
+const ROWS_PER_PAGE = 5;
 
 /* Display the first alphabetic letter as upper-case so company /
  * contact entries that were saved lowercase (e.g. "tcs", "igc")
@@ -921,13 +926,25 @@ const SCOPED_CSS = `
 .smc-table-wrap .table tbody tr:last-child td { border-bottom: none !important; }
 
 /* Pagination strip below the table (from TableContainer) — pull the
-   buttons into the purple aesthetic too. */
+   buttons into the purple aesthetic too.
+   Fixed 36×36 box on every button (numbers AND chevrons) so the row
+   aligns cleanly. Bootstrap's default page-link padding caused the
+   numbered button to render slightly taller than the chevrons. */
+.smc-table-wrap .pagination { align-items: center; gap: 4px; }
+.smc-table-wrap .pagination .page-item { display: inline-flex; }
 .smc-table-wrap .pagination .page-link {
   border-radius: 8px !important;
-  margin: 0 2px;
+  margin: 0;
+  padding: 0;
+  height: 36px;
+  min-width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: #6d28d9;
   border: 1px solid #e0d9f7;
   font-weight: 600;
+  line-height: 1;
 }
 .smc-table-wrap .pagination .page-item.active .page-link {
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
@@ -1211,10 +1228,28 @@ const SCOPED_CSS = `
    subtle borders. Same density and weight across all three so the
    row reads as a tidy strip. */
 .smc-type-pill {
-  display: inline-flex; align-items: center;
-  padding: 3px 10px; border-radius: 20px;
-  font-size: 11px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px 4px 11px;
+  border-radius: 999px;
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: .02em;
   border: 1px solid; white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 1px 2px rgba(15,23,42,.06);
+  transition: filter .15s ease, transform .15s ease;
+}
+.smc-type-pill::before {
+  content: '';
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 2px rgba(255,255,255,.35);
+  flex-shrink: 0;
+}
+.smc-type-pill:hover { filter: brightness(1.05); transform: translateY(-1px); }
+[data-bs-theme="dark"] .smc-type-pill {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.25);
+}
+[data-bs-theme="dark"] .smc-type-pill::before {
+  box-shadow: 0 0 6px currentColor;
 }
 .smc-seg {
   display: inline-flex; align-items: center;

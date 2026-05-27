@@ -1305,9 +1305,30 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
        * gets its own Save & Next step. */
       if (kycSub === 'company-dd')  { setKycSub('owner-kyc');    return; }
       if (kycSub === 'owner-kyc')   { setKycSub('trade-licence'); return; }
+      // Crossing into Stage 3 — reset Evidence Vault sub-state so the
+      // user lands on KYC Documents › Company Due Diligence and can
+      // walk every Stage 3 sub-tab via Save & Next instead of landing
+      // mid-flow on whichever sub-tab was last selected.
+      setEvTab('kyc-documents');
+      setEvSub('dd');
       setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
     } else {
       if (!validateStage1()) { setStage(1); setTab('identification'); return; }
+      /* Stage 3 sub-tab cycling: walk Evidence Vault › KYC Documents
+       * (Company DD → Owner KYC → Trade Licence) → Trade Documents
+       * before firing the final submit. Previously this branch jumped
+       * straight to submitCustomer(), so clicking Update Customer from
+       * any Stage 3 sub-tab persisted and closed without giving the
+       * user a chance to review the remaining tabs.
+       *
+       * Stage 3's KYC sub-tab state is evSub (dd/kyc/tl) — distinct
+       * from kycSub which drives Stage 2. */
+      if (evTab === 'kyc-documents') {
+        if (evSub === 'dd')  { setEvSub('kyc'); return; }
+        if (evSub === 'kyc') { setEvSub('tl');  return; }
+        setEvTab('trade-documents');
+        return;
+      }
       submitCustomer();
     }
   };
@@ -1321,11 +1342,23 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       if (kycSub === 'owner-kyc')     { setKycSub('company-dd'); return; }
       setStage(1); setTab('address-contact');
     }
-    else { setStage(2); }
+    else {
+      // Stage 3 reverse cycle: Trade Documents → KYC Documents
+      // (Trade Licence → Owner KYC → Company DD) → Stage 2.
+      if (evTab === 'trade-documents') {
+        setEvTab('kyc-documents');
+        setEvSub('tl');
+        return;
+      }
+      if (evSub === 'tl')  { setEvSub('kyc'); return; }
+      if (evSub === 'kyc') { setEvSub('dd');  return; }
+      setStage(2);
+    }
   };
 
   const atStart = stage === 1 && tab === 'identification';
-  const nextLabel = stage === 3
+  const onFinalStage3Tab = stage === 3 && evTab === 'trade-documents';
+  const nextLabel = onFinalStage3Tab
     ? (isEdit ? 'Update Customer' : 'Submit Customer')
     : 'Save & Next';
 
@@ -1411,13 +1444,25 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             </div>
             <div className="acm-history-body">
               <HistoryStage1 form={form} locations={locations} customerId={customer?.id} />
-              {stage >= 3 && (
-                <HistoryStage2
-                  ddCount={kycDocs.filter(d => d.kind === 'dd').length}
-                  ownerCount={kycOwners.length}
-                  tlCount={kycDocs.filter(d => d.kind === 'tl').length}
-                />
-              )}
+              {stage >= 3 && (() => {
+                /* Combined counts: legacy hand-added docs (kycDocs /
+                 * kycOwners) PLUS segment-rule reference uploads keyed
+                 * by `${sub-tab}::${doc.code}`. Counting only the legacy
+                 * arrays left the Stage 3 summary stuck at 0 even when
+                 * the user had uploaded files against the segment-rule
+                 * rows on Stage 2. */
+                const segKeys = Object.keys(segmentRefUploads);
+                const segDd  = segKeys.filter(k => k.startsWith('company-dd::')).length;
+                const segOwn = segKeys.filter(k => k.startsWith('owner-kyc::')).length;
+                const segTl  = segKeys.filter(k => k.startsWith('trade-licence::')).length;
+                return (
+                  <HistoryStage2
+                    ddCount={kycDocs.filter(d => d.kind === 'dd').length + segDd}
+                    ownerCount={kycOwners.length + segOwn}
+                    tlCount={kycDocs.filter(d => d.kind === 'tl').length + segTl}
+                  />
+                );
+              })()}
             </div>
           </div>
         )}
@@ -5062,11 +5107,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-step-done { background: linear-gradient(135deg, rgba(6,95,70,0.40) 0%, rgba(16,185,129,0.20) 100%); border-color: #10b981; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
 [data-bs-theme="dark"] .acm-step-done .acm-step-title { color: #d1fae5; }
 [data-bs-theme="dark"] .acm-step-done .acm-step-sub { color: #34d399; }
-[data-bs-theme="dark"] .acm-step-pending { background: rgba(28,37,49,0.6); border-color: rgba(255,255,255,0.08); opacity: 0.7; }
-[data-bs-theme="dark"] .acm-step-pending .acm-step-badge { background: #1c2531; border-color: rgba(255,255,255,0.10); color: #64748b; }
-[data-bs-theme="dark"] .acm-step-pending .acm-step-num { background: #1c2531; color: #64748b; border-color: #11182a; }
-[data-bs-theme="dark"] .acm-step-pending .acm-step-title { color: #64748b; }
-[data-bs-theme="dark"] .acm-step-pending .acm-step-sub { color: #475569; }
+[data-bs-theme="dark"] .acm-step-pending { background: rgba(40,52,70,0.75); border-color: rgba(167,139,250,0.18); opacity: 0.92; }
+[data-bs-theme="dark"] .acm-step-pending .acm-step-badge { background: #232c44; border-color: rgba(167,139,250,0.25); color: #94a3b8; }
+[data-bs-theme="dark"] .acm-step-pending .acm-step-num { background: #232c44; color: #cbd5e1; border-color: #11182a; }
+[data-bs-theme="dark"] .acm-step-pending .acm-step-title { color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-step-pending .acm-step-sub { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-connector-line { background: rgba(255,255,255,0.06); }
 
 /* History panel ("What you did in previous stages") */

@@ -37,7 +37,27 @@ type ProductOpt = {
   name:         string;
 };
 
-const CURRENCIES = ['USD', 'INR', 'EUR', 'GBP', 'AED', 'SGD', 'AUD', 'CNY', 'JPY'];
+type CurrencyOpt = {
+  code:   string;
+  name:   string | null;
+  symbol: string | null;
+};
+
+/* Fallback list — used only when the Currency master can't be reached
+ * or returns zero active rows. The picker should normally render from
+ * the live /master/currencies feed below so tenants can manage their
+ * own list. */
+const CURRENCIES_FALLBACK: CurrencyOpt[] = [
+  { code: 'USD', name: 'US Dollar',          symbol: '$' },
+  { code: 'INR', name: 'Indian Rupee',       symbol: '₹' },
+  { code: 'EUR', name: 'Euro',               symbol: '€' },
+  { code: 'GBP', name: 'British Pound',      symbol: '£' },
+  { code: 'AED', name: 'UAE Dirham',         symbol: 'د.إ' },
+  { code: 'SGD', name: 'Singapore Dollar',   symbol: 'S$' },
+  { code: 'AUD', name: 'Australian Dollar',  symbol: 'A$' },
+  { code: 'CNY', name: 'Chinese Yuan',       symbol: '¥' },
+  { code: 'JPY', name: 'Japanese Yen',       symbol: '¥' },
+];
 
 type DraftRow = {
   product_id:   number | null;
@@ -62,6 +82,8 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
   const [loading, setLoading]         = useState(false);
   const [products, setProducts]       = useState<ProductOpt[]>([]);
   const [productsLoading, setPL]      = useState(false);
+  const [currencies, setCurrencies]   = useState<CurrencyOpt[]>([]);
+  const [currenciesLoading, setCL]    = useState(false);
   const [draftOpen, setDraftOpen]     = useState(false);
   const [draft, setDraft]             = useState<DraftRow>(EMPTY_DRAFT);
   const [saving, setSaving]           = useState(false);
@@ -94,6 +116,35 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
       .catch(() => toast.error('Load failed', 'Could not load the products master'))
       .finally(() => setPL(false));
   }, [open, products.length, toast]);
+
+  /* Load the Currency master once per session. The tenant manages
+   * their own list under Masters → Currencies; we filter to active
+   * rows only and fall back to the hardcoded list if the fetch fails
+   * or the master is empty so the picker is never blank. */
+  useEffect(() => {
+    if (!open || currencies.length > 0) return;
+    setCL(true);
+    api.get<{ data?: any[] } | any[]>('/master/currencies')
+      .then(res => {
+        const raw = Array.isArray(res.data)
+          ? res.data
+          : ((res.data as { data?: any[] })?.data ?? []);
+        const list: CurrencyOpt[] = raw
+          .filter((r: any) => {
+            const s = String(r?.status ?? 'active').toLowerCase();
+            return s === '' || s === 'active' || s === '1' || s === 'true';
+          })
+          .map((r: any) => ({
+            code:   String(r?.code ?? '').toUpperCase(),
+            name:   r?.name   ?? null,
+            symbol: r?.symbol ?? null,
+          }))
+          .filter((c: CurrencyOpt) => !!c.code);
+        setCurrencies(list.length > 0 ? list : CURRENCIES_FALLBACK);
+      })
+      .catch(() => setCurrencies(CURRENCIES_FALLBACK))
+      .finally(() => setCL(false));
+  }, [open, currencies.length]);
 
   const productsById = useMemo(() => {
     const m = new Map<number, ProductOpt>();
@@ -317,10 +368,14 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                         options={
                           lockedCurrency
                             ? [{ value: lockedCurrency, label: lockedCurrency }]
-                            : CURRENCIES.map(c => ({ value: c, label: c }))
+                            : currencies.map(c => ({
+                                value: c.code,
+                                label: c.name ? `${c.code} – ${c.name}` : c.code,
+                              }))
                         }
                         placeholder="Currency"
                         disabled={!!lockedCurrency}
+                        loading={currenciesLoading && currencies.length === 0}
                       />
                     </td>
                     <td>
@@ -393,10 +448,14 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                                 // Only the locked option is selectable.
                                 return [{ value: otherCurrency, label: otherCurrency }];
                               }
-                              return CURRENCIES.map(c => ({ value: c, label: c }));
+                              return currencies.map(c => ({
+                                value: c.code,
+                                label: c.name ? `${c.code} – ${c.name}` : c.code,
+                              }));
                             })()}
                             placeholder="Currency"
                             disabled={rows.some(x => x.id !== r.id && !!x.currency)}
+                            loading={currenciesLoading && currencies.length === 0}
                           />
                         </td>
                         <td>

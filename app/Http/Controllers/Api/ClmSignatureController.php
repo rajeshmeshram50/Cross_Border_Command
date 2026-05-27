@@ -370,11 +370,27 @@ class ClmSignatureController extends Controller
         // Resolve the primary party for placeholder replacement — buyer
         // always wins when present, otherwise consignee. Suppliers aren't
         // in the lead-side flow.
-        [$primary, $primaryModel, $signers] = $this->resolveAgreementSigners($agreement, $lead, $user);
+        [$primary, $primaryModel, $signers, $allParties] = $this->resolveAgreementSigners($agreement, $lead, $user);
 
         if (!$primary) {
             return response()->json(['status' => false, 'message' => 'No customer/consignee on this lead to render the agreement against.'], 422);
         }
+
+        // Diagnostic log — written every preview so the operator can
+        // confirm in storage/logs/laravel.log which parties got resolved
+        // and whether the agreement body actually contains tokens to
+        // substitute. Compact form: agreement + lead + party ids, plus
+        // a flag for whether the body had ANY `{{` placeholders.
+        Log::info('agreement.preview', [
+            'agreement_id'   => $agreement->id,
+            'agreement_code' => $agreement->code,
+            'lead_id'        => $lead->id,
+            'lead_customer_id'  => $lead->customer_id,
+            'lead_consignee_id' => $lead->consignee_id,
+            'primary'        => [$primaryModel, $primary->id ?? null, $primary->company_name ?? null],
+            'all_parties'    => collect($allParties)->map(fn ($p, $k) => [$k, $p->id, $p->company_name])->values()->all(),
+            'body_has_tokens'=> str_contains((string) $agreement->content, '{{'),
+        ]);
 
         $pdf = $this->renderAgreementPdf(
             $agreement,
@@ -385,6 +401,7 @@ class ClmSignatureController extends Controller
             $data['header_config_override'] ?? null,
             $data['footer_config_override'] ?? null,
             array_key_exists('content_override', $data) ? (string) $data['content_override'] : null,
+            $allParties,
         );
 
         return response($pdf->output(), 200, [
@@ -480,7 +497,7 @@ class ClmSignatureController extends Controller
         // Resolve signers from the first agreement (same party for all
         // selected, so signer composition is identical).
         $headAgreement = $orderedAgreements->first();
-        [$primary, $primaryModel, $signers] = $this->resolveAgreementSigners($headAgreement, $lead, $user);
+        [$primary, $primaryModel, $signers, $allParties] = $this->resolveAgreementSigners($headAgreement, $lead, $user);
 
         if (!$primary || empty($signers)) {
             return response()->json([
@@ -518,6 +535,7 @@ class ClmSignatureController extends Controller
                     is_array($headerOverride) ? $headerOverride : null,
                     is_array($footerOverride) ? $footerOverride : null,
                     $contentOverride !== null ? (string) $contentOverride : null,
+                    $allParties,
                 );
                 $tmp = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
                 file_put_contents($tmp, $pdf->output());
@@ -569,6 +587,25 @@ class ClmSignatureController extends Controller
             $details         = $this->zoho->getRequest($zohoRequestId);
             $zohoActions     = data_get($details, 'requests.actions',      []);
             $zohoDocumentIds = data_get($details, 'requests.document_ids', []);
+
+            // Tag each Zoho action with the CBC signer role (buyer /
+            // consignee) by matching its recipient_email against our
+            // resolved $signers list. submitWithFields uses `cbc_role`
+            // to look up per-signer coords on multi-party agreements
+            // (e.g. Buyer + Consignee), so each signer's signature box
+            // lands at the position the user dragged for THAT role —
+            // rather than every signer sharing one coord and visually
+            // stacking on top of each other.
+            $signersByEmail = collect($signers)
+                ->keyBy(fn ($s) => strtolower((string) ($s['email'] ?? '')));
+            foreach ($zohoActions as &$zohoAction) {
+                $email = strtolower((string) ($zohoAction['recipient_email'] ?? ''));
+                $match = $signersByEmail->get($email);
+                if (is_array($match) && !empty($match['role'])) {
+                    $zohoAction['cbc_role'] = (string) $match['role'];
+                }
+            }
+            unset($zohoAction);
 
             $perDocCoords = $this->mapClientCoordsToZohoDocIds(
                 (array) ($data['document_settings'] ?? []),
@@ -698,6 +735,10 @@ class ClmSignatureController extends Controller
                 'email' => $customer->primary_email,
                 'name'  => $customer->company_name ?: 'Buyer',
                 'order' => $order++,
+                // Role tag — used downstream to look up the per-signer
+                // signature box coords supplied by the SPA when the
+                // user drags each role's overlay independently.
+                'role'  => 'buyer',
             ];
         }
         if ($wantsConsignee && $consignee && $consignee->primary_email) {
@@ -705,14 +746,26 @@ class ClmSignatureController extends Controller
                 'email' => $consignee->primary_email,
                 'name'  => $consignee->company_name ?: 'Consignee',
                 'order' => $order++,
+                'role'  => 'consignee',
             ];
         }
 
+        // All resolvable parties on the lead, keyed by model name, so the
+        // agreement render path can substitute placeholders for every
+        // applicable namespace (`{{customer.*}}` AND `{{consignee.*}}`
+        // on a Buyer+Consignee agreement, not just the primary's tokens).
+        // null entries are skipped so callers can rely on the keys being
+        // present iff the lead has that side mapped.
+        $allParties = array_filter([
+            'Customer'  => $customer,
+            'Consignee' => $consignee,
+        ]);
+
         // Primary party = whichever side will own the signature_requests
         // row (for tenant + visibility scoping). Prefer customer.
-        if ($customer)      return [$customer,  'Customer',  $signers];
-        if ($consignee)     return [$consignee, 'Consignee', $signers];
-        return [null, 'Customer', $signers];
+        if ($customer)      return [$customer,  'Customer',  $signers, $allParties];
+        if ($consignee)     return [$consignee, 'Consignee', $signers, $allParties];
+        return [null, 'Customer', $signers, $allParties];
     }
 
     /**
@@ -731,12 +784,17 @@ class ClmSignatureController extends Controller
         ?array $headerOverride = null,
         ?array $footerOverride = null,
         ?string $contentOverride = null,
+        array $allParties = [],
     ) {
         // Body HTML: per-send override beats the saved row's content.
         // The override path lets the workplace Send-for-Signature flow
         // tweak agreement copy without mutating the master.
         $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $agreement->content;
-        $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName);
+        // $allParties carries every party the lead has mapped (Customer
+        // + Consignee for a Buyer+Consignee agreement). Without it,
+        // replacePlaceholders only substitutes the primary's tokens
+        // and `{{consignee.name}}` stays as literal text in the PDF.
+        $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName, $allParties);
         $client        = Client::find($agreement->client_id);
 
         // Read the row's saved page-shell config (Stage 2 wizard) so the
@@ -761,6 +819,12 @@ class ClmSignatureController extends Controller
         // Build a stand-in object that the trade-doc blade can read with
         // its existing `$document->title ?? $document->name ?? 'Document'`
         // contract. We pass the agreement directly — title is present.
+        // Enable inline PHP execution so the blade's
+        // <script type="text/php"> page-number stamp can call
+        // $pdf->page_text(). The global config/dompdf.php has
+        // `enable_php = false` for safety, so we opt-in per render.
+        // Without this, {PAGE_NUM}/{PAGE_COUNT} never get substituted
+        // and the footer page number is silently dropped.
         return Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $agreement,
             'party'            => $party,
@@ -773,7 +837,9 @@ class ClmSignatureController extends Controller
             'headerConfig'     => $headerConfig,
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
-        ])->setPaper('a4');
+        ])
+        ->setPaper('a4')
+        ->setOption('isPhpEnabled', true);
     }
 
     /* ─────────────────────── LIST / SHOW ─────────────────────── */
@@ -1130,6 +1196,9 @@ class ClmSignatureController extends Controller
             $client?->logo,
         );
 
+        // Opt-in to inline PHP so the blade's footer page-number
+        // <script type="text/php"> can stamp {PAGE_NUM}/{PAGE_COUNT}.
+        // See the agreement render path for the same toggle + rationale.
         return Pdf::loadView('pdf.clm-signature-document', [
             'document'         => $doc,
             'party'            => $party,
@@ -1142,7 +1211,9 @@ class ClmSignatureController extends Controller
             'headerConfig'     => $headerConfig,
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
-        ])->setPaper('a4');
+        ])
+        ->setPaper('a4')
+        ->setOption('isPhpEnabled', true);
     }
 
     /**
@@ -1198,67 +1269,21 @@ class ClmSignatureController extends Controller
      * primary_email, primaryAddress with cp_*), so a single resolver
      * over the relevant party works for all three.
      */
-    private function replacePlaceholders(string $html, Model $party, string $modelName): string
+    private function replacePlaceholders(string $html, Model $party, string $modelName, array $extraParties = []): string
     {
         if ($html === '') return '<p></p>';
 
-        // Maps the Eloquent class to the token-namespace prefix the draft
-        // editor uses. Vendor → supplier matches the ClmInsertPlaceholderModal
-        // picker (the user-facing label is "Supplier", the model is "Vendor").
-        $partyToTokenNs = ['Customer' => 'customer', 'Consignee' => 'consignee', 'Vendor' => 'supplier'];
-        $ns = $partyToTokenNs[$modelName] ?? null;
-
-        if ($ns) {
-            $addr = $party->primaryAddress;   // null-safe via PHP 8 ?->
-
-            // The three address tables don't share a shape:
-            //   CustomerAddress / ConsigneeAddress → `country`, `state`, `pin`
-            //                                        are plain string columns.
-            //   VendorAddress                      → `country` / `state` are
-            //                                        BelongsTo relationships
-            //                                        (Countries / States) and
-            //                                        pincode lives in `pincode`.
-            // If we hand a model to e() the default __toString() returns its
-            // JSON dump — that's why the rendered PDF was printing
-            // `[{"id":15159,"client_id":null, …,"name":"India", …}]` in the
-            // country / address cells. Coerce each value down to a plain
-            // string before composition.
-            $scalar = static function ($v): string {
-                if ($v === null) return '';
-                if (is_object($v)) return (string) ($v->name ?? '');
-                return (string) $v;
-            };
-
-            $contactPerson = $modelName === 'Vendor' ? ($addr?->contact_name ?? '') : ($addr?->cp_name ?? '');
-            $contactPhone  = $modelName === 'Vendor' ? ($addr?->contact_no  ?? '') : ($addr?->cp_contact ?? '');
-            $countryStr = $scalar($addr?->country);
-            $stateStr   = $scalar($addr?->state);
-            $pinStr     = $scalar($modelName === 'Vendor' ? ($addr?->pincode ?? null) : ($addr?->pin ?? null));
-
-            $addressLine = trim(implode(', ', array_filter([
-                $addr?->address_line, $addr?->city, $stateStr, $countryStr, $pinStr,
-            ])));
-
-            $codeAttr = $modelName === 'Customer'  ? 'customer_code'
-                      : ($modelName === 'Consignee' ? 'consignee_code'
-                      : 'vendor_code');
-
-            $map = [
-                '{{' . $ns . '.name}}'            => e($party->company_name ?? ''),
-                '{{' . $ns . '.code}}'            => e($party->{$codeAttr} ?? ''),
-                '{{' . $ns . '.company}}'         => e(($party->legal_name ?: $party->company_name) ?? ''),
-                '{{' . $ns . '.contact_person}}'  => e($contactPerson),
-                '{{' . $ns . '.phone}}'           => e($contactPhone),
-                '{{' . $ns . '.email}}'           => e($party->primary_email ?? ''),
-                '{{' . $ns . '.country}}'         => e($countryStr),
-                '{{' . $ns . '.state}}'           => e($stateStr),
-                '{{' . $ns . '.address}}'         => e($addressLine),
-                '{{' . $ns . '.gst}}'             => '',
-                '{{' . $ns . '.pan}}'             => '',
-                '{{' . $ns . '.iec}}'             => '',
-            ];
-
-            $html = strtr($html, $map);
+        // Substitute the primary party first, then iterate every extra
+        // party from $extraParties so a Buyer+Consignee agreement gets
+        // BOTH `{{customer.*}}` AND `{{consignee.*}}` resolved. The
+        // `extraParties` map is keyed by model name (Customer / Consignee
+        // / Vendor) so we can skip the primary when it appears in the
+        // map too.
+        $html = $this->replacePartyNamespaceTokens($html, $party, $modelName);
+        foreach ($extraParties as $extraModelName => $extraParty) {
+            if (!$extraParty) continue;
+            if ($extraModelName === $modelName) continue; // already done
+            $html = $this->replacePartyNamespaceTokens($html, $extraParty, $extraModelName);
         }
 
         // Signature placeholders — every party variant becomes a styled
@@ -1268,13 +1293,149 @@ class ClmSignatureController extends Controller
         // for the draggable signature overlay. Zoho's real signature
         // widget is positioned by the (x, y, page) coords in the submit
         // payload — the box here is purely visual + detection scaffolding.
-        foreach (['customer', 'consignee', 'supplier'] as $party) {
-            $token  = self::sigMarkerToken($party);
+        //
+        // `buyer` is an alias for `customer` so the agreement Stage-2
+        // picker's `{{buyer.signature}}` resolves the same way as the
+        // trade-doc `{{customer.signature}}`. Regex pass instead of
+        // str_replace so `{{ buyer.signature }}` / case-variants also
+        // resolve (matches the body-token tolerance above).
+        $signatureAliases = [
+            'customer'  => 'customer',
+            'buyer'     => 'customer',
+            'consignee' => 'consignee',
+            'supplier'  => 'supplier',
+        ];
+        foreach ($signatureAliases as $alias => $canonical) {
+            $token  = self::sigMarkerToken($canonical);
             $sigBox = '<div class="sig-box">'
                     . '<span class="sig-marker">' . $token . '</span>'
                     . '[ Signature ]'
                     . '</div>';
-            $html = str_replace('{{' . $party . '.signature}}', $sigBox, $html);
+            $pattern = '/\{\{\s*' . preg_quote($alias, '/') . '\s*\.\s*signature\s*\}\}/iu';
+            $html = preg_replace($pattern, $sigBox, $html);
+        }
+
+        return $html;
+    }
+
+    /**
+     * Substitute one party's tokens (`{{customer.name}}`, `{{customer.email}}`,
+     * etc.) into the HTML. Split out of replacePlaceholders so the agreement
+     * render path can call it once per applicable party — Customer + Consignee
+     * tokens both get resolved on a Buyer+Consignee agreement.
+     */
+    private function replacePartyNamespaceTokens(string $html, Model $party, string $modelName): string
+    {
+        // Each Eloquent class maps to one OR MORE user-facing token
+        // namespaces because two pickers feed this resolver:
+        //   - The trade-doc Insert Placeholder modal uses canonical
+        //     `customer`, `consignee`, `supplier`.
+        //   - The agreement Stage-2 wizard's PlaceholderPicker uses
+        //     `buyer` (legacy alias for Customer), `consignee`,
+        //     `supplier`.
+        // Without the alias the agreement picker's `{{buyer.*}}` tokens
+        // survive raw into the rendered PDF — that's why the Segment
+        // Details preview was leaking placeholders.
+        $partyToTokenNamespaces = [
+            'Customer'  => ['customer', 'buyer'],
+            'Consignee' => ['consignee'],
+            'Vendor'    => ['supplier'],
+        ];
+        $namespaces = $partyToTokenNamespaces[$modelName] ?? null;
+        if (empty($namespaces)) return $html;
+
+        // Decode the common HTML entity variants of `{` and `}` so tokens
+        // that came out of the contenteditable normalised (e.g. after
+        // copy-paste from Word / Google Docs) still match the regex below.
+        // Doing this on the body HTML is safe because braces have no
+        // structural meaning in HTML — they only matter for our tokens.
+        $html = str_replace(
+            ['&#123;', '&#x7B;', '&#125;', '&#x7D;', '&lcub;', '&rcub;'],
+            ['{',      '{',       '}',      '}',      '{',      '}'],
+            $html,
+        );
+
+        $addr = $party->primaryAddress;   // null-safe via PHP 8 ?->
+
+        // The three address tables don't share a shape:
+        //   CustomerAddress / ConsigneeAddress → `country`, `state`, `pin`
+        //                                        are plain string columns.
+        //   VendorAddress                      → `country` / `state` are
+        //                                        BelongsTo relationships
+        //                                        (Countries / States) and
+        //                                        pincode lives in `pincode`.
+        // If we hand a model to e() the default __toString() returns its
+        // JSON dump — that's why the rendered PDF was printing
+        // `[{"id":15159,"client_id":null, …,"name":"India", …}]` in the
+        // country / address cells. Coerce each value down to a plain
+        // string before composition.
+        $scalar = static function ($v): string {
+            if ($v === null) return '';
+            if (is_object($v)) return (string) ($v->name ?? '');
+            return (string) $v;
+        };
+
+        $contactPerson = $modelName === 'Vendor' ? ($addr?->contact_name ?? '') : ($addr?->cp_name ?? '');
+        $contactPhone  = $modelName === 'Vendor' ? ($addr?->contact_no  ?? '') : ($addr?->cp_contact ?? '');
+        $countryStr = $scalar($addr?->country);
+        $stateStr   = $scalar($addr?->state);
+        $pinStr     = $scalar($modelName === 'Vendor' ? ($addr?->pincode ?? null) : ($addr?->pin ?? null));
+
+        $addressLine = trim(implode(', ', array_filter([
+            $addr?->address_line, $addr?->city, $stateStr, $countryStr, $pinStr,
+        ])));
+
+        $codeAttr = $modelName === 'Customer'  ? 'customer_code'
+                  : ($modelName === 'Consignee' ? 'consignee_code'
+                  : 'vendor_code');
+
+        // Pre-compute resolved values for the canonical field names.
+        $nameValue   = e($party->company_name ?? '');
+        $codeValue   = e($party->{$codeAttr} ?? '');
+        $cityValue   = e($scalar($addr?->city ?? null));
+
+        // Field → resolved value. Includes:
+        //   - canonical names trade-doc tokens use ({name, code, ...})
+        //   - long-form aliases the agreement Stage-2 picker emits
+        //     ({buyer_name, consignee_name, supplier_name, vendor_code})
+        //   - picker fields that have no backing column yet (risk_level,
+        //     role, category, bank_account) — resolved to empty strings
+        //     so they at least disappear from the PDF instead of leaking
+        //     `{{buyer.risk_level}}` raw text.
+        // The regex below pairs each field with every namespace we know
+        // for this model, so {{customer.name}} AND {{buyer.name}} AND
+        // {{buyer.buyer_name}} all land on the same value.
+        $values = [
+            'name'            => $nameValue,
+            'code'            => $codeValue,
+            'buyer_name'      => $nameValue,
+            'consignee_name'  => $nameValue,
+            'supplier_name'   => $nameValue,
+            'vendor_code'     => $codeValue,
+            'company'         => e(($party->legal_name ?: $party->company_name) ?? ''),
+            'contact_person'  => e($contactPerson),
+            'phone'           => e($contactPhone),
+            'email'           => e($party->primary_email ?? ''),
+            'country'         => e($countryStr),
+            'state'           => e($stateStr),
+            'city'            => $cityValue,
+            'address'         => e($addressLine),
+            'gst'             => '',
+            'pan'             => '',
+            'iec'             => '',
+            'risk_level'      => '',
+            'role'            => '',
+            'category'        => '',
+            'bank_account'    => '',
+        ];
+
+        foreach ($namespaces as $ns) {
+            foreach ($values as $field => $value) {
+                $pattern = '/\{\{\s*'
+                         . preg_quote($ns,    '/') . '\s*\.\s*'
+                         . preg_quote($field, '/') . '\s*\}\}/iu';
+                $html = preg_replace($pattern, $value, $html);
+            }
         }
 
         return $html;
