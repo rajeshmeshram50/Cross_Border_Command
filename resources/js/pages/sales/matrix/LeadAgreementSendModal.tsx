@@ -1,19 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import Tooltip from '../../../components/ui/Tooltip';
-
-/* A4 PDF dimensions in points (1pt = 1/72in). Same constants the trade-
- * doc send flow uses — the draggable signature box reads its coords in
- * the same space so backend handling stays uniform across both flows. */
-const A4_W = 595;
-const A4_H = 842;
-
-type DocSettings = { x: number; y: number; page: number; width: number; height: number };
-/* Default signature box — last-page bottom-right, ~150×45pt. Mirrors
- * the trade-doc send seed so the user's muscle memory carries over. */
-const DEFAULT_SIG: DocSettings = { x: 380, y: 720, page: 0, width: 150, height: 45 };
+import SalesCustomerSendForSignatureModal, { type AgreementSendRow } from '../SalesCustomerSendForSignatureModal';
+import { type HeaderConfig, type FooterConfig } from '../../hrms/doc-templates/HeaderFooterPanel';
 
 /*
  * Sales Matrix → Lead detail → "Segment Details" card → Highly / Less
@@ -53,6 +44,13 @@ export type AgreementRow = {
   required: 'REQ' | 'OPT';
   updated_at: string | null;
   signature_request: AgreementRowSig;
+  /* Send-for-Signature editor seed fields — body HTML + saved page-
+   * shell config so the Edit Header/Footer/Body popup in the
+   * workplace can hydrate without an extra fetch. Backend supplies
+   * these from applicableForLead. */
+  content?: string | null;
+  header_config?: HeaderConfig | null;
+  footer_config?: FooterConfig | null;
 };
 
 export type ApplicableSegment = {
@@ -102,7 +100,6 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
   const [payload, setPayload] = useState<ApplicablePayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeSegId, setActiveSegId] = useState<number | null>(null);
-  const [sendingId, setSendingId] = useState<number | null>(null);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
 
   /* Bulk selection. Multi-row checkbox state — the "Send Selected"
@@ -217,91 +214,12 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
   const headerCheckIndeterminate = headerCheckSelectedCount > 0 && !headerCheckChecked;
   const headerCheckDisabled      = headerCheckEligible.length === 0;
 
-  /* Posing state — supports both single-row "Send" and bulk
-   * "Send Selected (N)". Each entry carries its own preview blob
-   * URL + sig-box settings; `activeIdx` picks which agreement the
-   * preview pane is showing. */
-  type PosingDoc = { agreement: AgreementRow; previewUrl: string; settings: DocSettings };
-  const [posing, setPosing] = useState<{ docs: PosingDoc[]; activeIdx: number } | null>(null);
-  const [posingLoading, setPosingLoading] = useState(false);
-  const [posingSending, setPosingSending] = useState(false);
-  const previewWrapRef = useRef<HTMLDivElement | null>(null);
-  const [wrapWidthPx, setWrapWidthPx] = useState(0);
-  const dragStateRef = useRef<{ mode: 'move' | 'resize'; startX: number; startY: number; initial: DocSettings } | null>(null);
-  const activePosingDoc = posing ? posing.docs[posing.activeIdx] ?? null : null;
-
-  /* Revoke every preview blob URL when posing tears down so we don't
-   * leak object URLs across Send clicks. */
-  useEffect(() => {
-    return () => { posing?.docs.forEach(d => { if (d.previewUrl) URL.revokeObjectURL(d.previewUrl); }); };
-  }, [posing]);
-
-  /* Track the preview wrapper width via ResizeObserver so the overlay
-   * draws correctly from the first paint, and stays in sync if the
-   * modal is resized. Same pattern as the trade-doc send. */
-  useEffect(() => {
-    const el = previewWrapRef.current;
-    if (!el || !posing) return;
-    setWrapWidthPx(el.clientWidth);
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) setWrapWidthPx(entry.contentRect.width);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [posing]);
-
-  const updatePosingSettings = (patch: Partial<DocSettings>) => {
-    setPosing(p => {
-      if (!p) return p;
-      const next = p.docs.slice();
-      const idx  = p.activeIdx;
-      if (!next[idx]) return p;
-      next[idx] = { ...next[idx], settings: { ...next[idx].settings, ...patch } };
-      return { ...p, docs: next };
-    });
-  };
-
-  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-
-  const onSigPointerDown = (e: React.PointerEvent, mode: 'move' | 'resize') => {
-    if (!activePosingDoc) return;
-    e.preventDefault();
-    e.stopPropagation();
-    (e.target as Element).setPointerCapture?.(e.pointerId);
-    dragStateRef.current = { mode, startX: e.clientX, startY: e.clientY, initial: { ...activePosingDoc.settings } };
-    window.addEventListener('pointermove', onSigPointerMove);
-    window.addEventListener('pointerup', onSigPointerUp);
-  };
-
-  /* These are kept on the component so the listeners can read fresh
-   * posing state via the setter — wrapping in useCallback would force
-   * us to re-attach on every render. Same trade-off the customer
-   * modal made. */
-  const onSigPointerMove = (e: PointerEvent) => {
-    const drag = dragStateRef.current;
-    if (!drag) return;
-    const el = previewWrapRef.current;
-    const w  = wrapWidthPx || el?.clientWidth || 0;
-    if (w <= 0) return;
-    const ptPerPx = A4_W / w;
-    const dxPt = (e.clientX - drag.startX) * ptPerPx;
-    const dyPt = (e.clientY - drag.startY) * ptPerPx;
-    if (drag.mode === 'move') {
-      const x = clamp(drag.initial.x + dxPt, 0, A4_W - drag.initial.width);
-      const y = clamp(drag.initial.y + dyPt, 0, A4_H - drag.initial.height);
-      updatePosingSettings({ x, y });
-    } else {
-      const width  = clamp(drag.initial.width  + dxPt, 40, A4_W - drag.initial.x);
-      const height = clamp(drag.initial.height + dyPt, 24, A4_H - drag.initial.y);
-      updatePosingSettings({ width, height });
-    }
-  };
-  const onSigPointerUp = () => {
-    dragStateRef.current = null;
-    window.removeEventListener('pointermove', onSigPointerMove);
-    window.removeEventListener('pointerup', onSigPointerUp);
-  };
+  /* Send-for-Signature modal launch state. The actual preview +
+   * draggable signature box UI lives in SalesCustomerSendForSignatureModal
+   * (mode="agreement") so the workplace flow looks and feels identical
+   * to the customer/consignee trade-doc tab's Send step. We just track
+   * which agreements were picked when the user clicked Send. */
+  const [ssfAgreements, setSsfAgreements] = useState<AgreementRow[]>([]);
 
   /* Escape-to-close mirrors the rest of the matrix modals. */
   useEffect(() => {
@@ -369,84 +287,31 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
     }
   };
 
-  /* Step 1 of Send — fetch the merged PDF blob(s) and transition into
-   * the posing view where the user drags the signature box per doc.
-   * Accepts one OR many agreements: the row-level "Send" button hands
-   * over a single-element array, the bulk "Send Selected (N)" footer
-   * button hands over the full checkbox selection. We DON'T POST to
-   * /agreement-send here; that happens in confirmSend after the user
-   * clicks "Send for Signature" on the posing pane. */
-  const handleSend = async (agreements: AgreementRow[]) => {
+  /* Send — hands off to SalesCustomerSendForSignatureModal in
+   * agreement mode. That modal handles the preview blob fetch + the
+   * draggable signature box + the eventual POST to /agreement-send,
+   * so this side just supplies the picked agreements and waits for
+   * its `onSent` callback to refresh our row statuses. */
+  const handleSend = (agreements: AgreementRow[]) => {
     if (!leadId || agreements.length === 0) return;
-    setSendingId(agreements[0].id);
-    setPosingLoading(true);
-    try {
-      // Fetch all previews in parallel — small N (≤10) so this is
-      // cheap, and the user sees the doc-rail load atomically rather
-      // than progressively flickering as each blob lands.
-      const blobs = await Promise.all(agreements.map(a =>
-        api.post(
-          '/clm/signature-requests/agreement-preview',
-          { agreement_id: a.id, lead_id: leadId },
-          { responseType: 'blob' },
-        ).then(r => new Blob([r.data], { type: 'application/pdf' }))
-      ));
-      const docs: PosingDoc[] = agreements.map((a, i) => ({
-        agreement: a,
-        previewUrl: URL.createObjectURL(blobs[i]),
-        settings: { ...DEFAULT_SIG },
-      }));
-      setPosing({ docs, activeIdx: 0 });
-    } catch (e: any) {
-      const msg = e?.response?.data?.message ?? 'Could not render the preview.';
-      toast.error('Preview failed', msg);
-    } finally {
-      setSendingId(null);
-      setPosingLoading(false);
-    }
+    setSsfAgreements(agreements);
   };
 
-  /* Step 2 of Send — fires the actual Zoho request with per-doc
-   * coords. On success the modal returns to the table view, the
-   * applicable payload is refreshed so each row's status pill flips
-   * to "In Progress", and the parent (SalesMatrixDetail) is notified
-   * via onSent so the segment counts can refresh. */
-  const confirmSend = async () => {
-    if (!posing || !leadId || posing.docs.length === 0) return;
-    setPosingSending(true);
-    try {
-      // Build agreement_ids[] + per-doc document_settings keyed by
-      // agreement id. Backend will reject if the selection mixes
-      // applicable parties — same-party guard is enforced both
-      // client- and server-side.
-      const documentSettings: Record<string, DocSettings> = {};
-      posing.docs.forEach(d => { documentSettings[String(d.agreement.id)] = d.settings; });
-      const { data: r } = await api.post('/clm/signature-requests/agreement-send', {
-        agreement_ids:     posing.docs.map(d => d.agreement.id),
-        lead_id:           leadId,
-        document_settings: documentSettings,
-      });
-      toast.success('Sent', r?.message ?? 'Agreement(s) sent for signature.');
-      setPosing(null);
-      setSelectedIds(new Set());
+  /* Refresh the applicable payload after a successful Send so the
+   * row status pills flip to "In Progress" and the parent
+   * (SalesMatrixDetail) can refresh its segment-counts snapshot. */
+  const onSsfSent = async () => {
+    setSsfAgreements([]);
+    setSelectedIds(new Set());
+    if (leadId) {
       try {
         const ref = await api.get(`/clm/leads/${leadId}/agreement-applicable`);
         setPayload((ref.data?.data ?? null) as ApplicablePayload | null);
       } catch {
         // ignore — UI still works on the previous payload
       }
-      onSent?.();
-    } catch (e: any) {
-      const msg = e?.response?.data?.message ?? 'Could not send the agreement.';
-      toast.error('Send failed', msg);
-    } finally {
-      setPosingSending(false);
     }
-  };
-
-  const cancelPosing = () => {
-    posing?.docs.forEach(d => { if (d.previewUrl) URL.revokeObjectURL(d.previewUrl); });
-    setPosing(null);
+    onSent?.();
   };
 
   /* Resend a Zoho reminder for an existing in-progress signature
@@ -498,25 +363,7 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
 
         {/* ── BODY ── */}
         <div className="lasm-body">
-          {posing ? (
-            <PosingPane
-              posing={posing}
-              activeIdx={posing.activeIdx}
-              setActiveIdx={(i) => setPosing(p => (p ? { ...p, activeIdx: i } : p))}
-              wrapWidthPx={wrapWidthPx}
-              previewWrapRef={previewWrapRef}
-              onSigPointerDown={onSigPointerDown}
-              updateSettings={updatePosingSettings}
-              onCancel={cancelPosing}
-              onConfirm={() => void confirmSend()}
-              sending={posingSending}
-              loading={posingLoading}
-              recipientName={payload?.lead.customer?.name ?? null}
-              recipientEmail={payload?.lead.customer?.email ?? null}
-              consigneeName={payload?.lead.consignee?.name ?? null}
-              consigneeEmail={payload?.lead.consignee?.email ?? null}
-            />
-          ) : loading ? (
+          {loading ? (
             <div className="lasm-empty">Loading agreements…</div>
           ) : !payload ? (
             <div className="lasm-empty">Could not load applicable agreements.</div>
@@ -580,7 +427,6 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                       const sig = a.signature_request;
                       const sigStatus = sig?.status ?? 'draft';
                       const sentAlready = sigStatus !== 'draft' && sigStatus !== 'recalled';
-                      const isSending     = sendingId === a.id;
                       const isPrev        = previewingId === a.id;
                       const isRemind      = !!sig && reminderId === sig.id;
                       const checkboxLocked = sentAlready || !canSelectAgreement(a);
@@ -623,11 +469,10 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                                   <button
                                     type="button"
                                     className="lasm-btn-send"
-                                    disabled={isSending}
-                                    onClick={() => void handleSend([a])}
+                                    onClick={() => handleSend([a])}
                                   >
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                                    {isSending ? 'Sending…' : 'Send'}
+                                    Send
                                   </button>
                                 </Tooltip>
                               )}
@@ -695,11 +540,10 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                   <button
                     type="button"
                     className="lasm-bulk-send"
-                    disabled={posingLoading}
-                    onClick={() => void handleSend(selectedAgreementRows)}
+                    onClick={() => handleSend(selectedAgreementRows)}
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                    {posingLoading ? 'Preparing…' : `Send Selected (${selectedIds.size})`}
+                    {`Send Selected (${selectedIds.size})`}
                   </button>
                 </div>
               )}
@@ -707,206 +551,36 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
           )}
         </div>
       </div>
+
+      {/* Send-for-Signature modal — reuses the customer/consignee
+          trade-doc preview UI (mode="agreement") so the workplace
+          flow shows the SAME preview pane the user sees on the
+          trade-doc tab. Backend wiring branches to the agreement
+          preview/send endpoints inside the modal. */}
+      <SalesCustomerSendForSignatureModal
+        open={ssfAgreements.length > 0}
+        customer={null}
+        mode="agreement"
+        agreementContext={ssfAgreements.length > 0 && leadId ? {
+          leadId,
+          agreements: ssfAgreements.map<AgreementSendRow>(a => ({
+            id:             a.id,
+            code:           a.code,
+            title:          a.title,
+            agreement_type: a.agreement_type,
+            party:          a.party,
+            content:        a.content       ?? null,
+            header_config:  a.header_config ?? null,
+            footer_config:  a.footer_config ?? null,
+          })),
+          customer:  payload?.lead.customer  ? { name: payload.lead.customer.name,  email: payload.lead.customer.email  ?? null } : null,
+          consignee: payload?.lead.consignee ? { name: payload.lead.consignee.name, email: payload.lead.consignee.email ?? null } : null,
+        } : null}
+        onClose={() => setSsfAgreements([])}
+        onSent={() => { void onSsfSent(); }}
+      />
     </div>,
     document.body,
-  );
-}
-
-/* ── Posing pane — shown after Send is clicked on a row ───────────
- *
- * Mirrors the trade-doc Send-for-Signature modal's preview step: the
- * agreement PDF renders in an iframe (Chrome's PDF viewer strips
- * chrome via the fragment params), with a draggable / resizable
- * signature box overlay in the same coord space. Coords are in PDF
- * points (top-left origin, matching Zoho), so the conversion to/from
- * CSS pixels is a uniform scale per wrapWidthPx.
- */
-function PosingPane({
-  posing,
-  wrapWidthPx,
-  previewWrapRef,
-  onSigPointerDown,
-  updateSettings,
-  onCancel,
-  onConfirm,
-  sending,
-  loading,
-  recipientName,
-  recipientEmail,
-  consigneeName,
-  consigneeEmail,
-  activeIdx,
-  setActiveIdx,
-}: {
-  posing: { docs: { agreement: AgreementRow; previewUrl: string; settings: DocSettings }[]; activeIdx: number };
-  wrapWidthPx: number;
-  previewWrapRef: React.MutableRefObject<HTMLDivElement | null>;
-  onSigPointerDown: (e: React.PointerEvent, mode: 'move' | 'resize') => void;
-  updateSettings: (patch: Partial<DocSettings>) => void;
-  onCancel: () => void;
-  onConfirm: () => void;
-  sending: boolean;
-  loading: boolean;
-  recipientName: string | null;
-  recipientEmail: string | null;
-  consigneeName: string | null;
-  consigneeEmail: string | null;
-  activeIdx: number;
-  setActiveIdx: (i: number) => void;
-}) {
-  const active = posing.docs[activeIdx];
-  if (!active) {
-    return <div className="lasm-empty">Loading preview…</div>;
-  }
-  const { settings, previewUrl, agreement } = active;
-  const isBulk    = posing.docs.length > 1;
-  const pxPerPt   = wrapWidthPx > 0 ? wrapWidthPx / A4_W : 0;
-  const leftPx    = settings.x      * pxPerPt;
-  const topPx     = settings.y      * pxPerPt;
-  const widthPx   = settings.width  * pxPerPt;
-  const heightPx  = settings.height * pxPerPt;
-  const sendLabel = sending
-    ? 'Sending…'
-    : (isBulk ? `Send ${posing.docs.length} for Signature` : 'Send for Signature');
-
-  return (
-    <div className="lasm-posing">
-      <div className="lasm-posing-bar">
-        <button type="button" className="lasm-posing-back" onClick={onCancel} disabled={sending}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          Back
-        </button>
-        <div className="lasm-posing-title">
-          <div className="lasm-posing-doc">{agreement.title}</div>
-          <div className="lasm-posing-sub">{agreement.agreement_type || '—'} · {agreement.party}</div>
-        </div>
-        <button type="button" className="lasm-posing-send" onClick={onConfirm} disabled={sending || loading || !previewUrl}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          {sendLabel}
-        </button>
-      </div>
-
-      <div className={`lasm-posing-body ${isBulk ? 'lasm-posing-body-bulk' : ''}`}>
-        {/* Doc rail — only rendered for bulk sends. Clicking a row in
-            the rail swaps the preview pane to that agreement and the
-            coord side rail then drives ITS settings. Each doc keeps
-            its own dragged coords so users can position the signature
-            per agreement without losing prior work. */}
-        {isBulk && (
-          <aside className="lasm-doc-rail">
-            <div className="lasm-doc-rail-head">Documents · {posing.docs.length}</div>
-            {posing.docs.map((d, i) => (
-              <button
-                key={d.agreement.id}
-                type="button"
-                className={`lasm-doc-rail-item ${i === activeIdx ? 'is-active' : ''}`}
-                onClick={() => setActiveIdx(i)}
-              >
-                <span className="lasm-doc-rail-code">{d.agreement.code ?? `A-${d.agreement.id}`}</span>
-                <span className="lasm-doc-rail-name">{d.agreement.title}</span>
-              </button>
-            ))}
-          </aside>
-        )}
-        <div className="lasm-preview-pane">
-          {loading ? (
-            <div className="lasm-preview-state">Rendering preview…</div>
-          ) : !previewUrl ? (
-            <div className="lasm-preview-state">Preview unavailable.</div>
-          ) : (
-            <div className="lasm-preview-wrap" ref={previewWrapRef}>
-              {/* #page=N (1-indexed) syncs the visible page to the one
-                 the user is positioning on. Re-keying on page forces a
-                 reload so the iframe lands on the correct page. */}
-              <iframe
-                key={`${previewUrl}-p${settings.page}`}
-                title="Agreement preview"
-                src={`${previewUrl}#page=${(settings.page ?? 0) + 1}&toolbar=0&navpanes=0&scrollbar=0&zoom=page-fit&view=FitH`}
-                className="lasm-preview-frame"
-              />
-              {wrapWidthPx > 0 && (
-                <div
-                  className="lasm-sig-overlay"
-                  style={{ left: leftPx, top: topPx, width: widthPx, height: heightPx }}
-                  onPointerDown={(e) => onSigPointerDown(e, 'move')}
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    const step = e.altKey ? 10 : e.shiftKey ? 5 : 1;
-                    if (e.key === 'ArrowUp')    { e.preventDefault(); updateSettings({ y: Math.max(0, settings.y - step) }); }
-                    if (e.key === 'ArrowDown')  { e.preventDefault(); updateSettings({ y: Math.max(0, settings.y + step) }); }
-                    if (e.key === 'ArrowLeft')  { e.preventDefault(); updateSettings({ x: Math.max(0, settings.x - step) }); }
-                    if (e.key === 'ArrowRight') { e.preventDefault(); updateSettings({ x: Math.max(0, settings.x + step) }); }
-                  }}
-                  title="Drag to move, arrow keys to nudge (Shift = 5pt, Alt = 10pt)"
-                >
-                  <div className="lasm-sig-label">Signature</div>
-                  <div className="lasm-sig-page">page {settings.page + 1}</div>
-                  <div className="lasm-sig-resize" onPointerDown={(e) => onSigPointerDown(e, 'resize')} aria-label="Resize signature" />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <aside className="lasm-coord-pane">
-          <div className="lasm-coord-head">Signature Position</div>
-          <div className="lasm-coord-help">
-            Drag the box on the preview to reposition. The corner handle
-            resizes it. Change <strong>Page</strong> to switch the
-            preview to the page you're positioning on.
-          </div>
-
-          <label className="lasm-coord-row">
-            <span>Page</span>
-            <input type="number" min={1} value={(settings.page ?? 0) + 1}
-                   onChange={(e) => updateSettings({ page: Math.max(0, (Number(e.target.value) || 1) - 1) })} />
-          </label>
-          {(['X', 'Y'] as const).map(axis => {
-            const key = axis.toLowerCase() as 'x' | 'y';
-            const value = Math.round(settings[key]);
-            return (
-              <label key={axis} className="lasm-coord-row">
-                <span>{axis}</span>
-                <input type="number" min={0} value={value}
-                       onChange={(e) => updateSettings({ [key]: Math.max(0, Number(e.target.value) || 0) } as Partial<DocSettings>)} />
-              </label>
-            );
-          })}
-          <label className="lasm-coord-row">
-            <span>Width</span>
-            <input type="number" min={20} value={Math.round(settings.width)}
-                   onChange={(e) => updateSettings({ width: Math.max(20, Number(e.target.value) || 20) })} />
-          </label>
-          <label className="lasm-coord-row">
-            <span>Height</span>
-            <input type="number" min={20} value={Math.round(settings.height)}
-                   onChange={(e) => updateSettings({ height: Math.max(20, Number(e.target.value) || 20) })} />
-          </label>
-
-          <button type="button" className="lasm-reset" onClick={() => updateSettings(DEFAULT_SIG)}>
-            Reset to default
-          </button>
-
-          <div className="lasm-recipient-card">
-            <div className="lasm-recipient-h">Signers</div>
-            {recipientName && (
-              <div className="lasm-recipient-row">
-                <span className="lasm-recipient-role">Buyer</span>
-                <span className="lasm-recipient-name">{recipientName}</span>
-                <span className="lasm-recipient-email">{recipientEmail || '—'}</span>
-              </div>
-            )}
-            {consigneeName && /Consignee/i.test(agreement.party) && (
-              <div className="lasm-recipient-row">
-                <span className="lasm-recipient-role">Consignee</span>
-                <span className="lasm-recipient-name">{consigneeName}</span>
-                <span className="lasm-recipient-email">{consigneeEmail || '—'}</span>
-              </div>
-            )}
-          </div>
-        </aside>
-      </div>
-    </div>
   );
 }
 
@@ -1002,69 +676,8 @@ const LASM_CSS = `
 .lasm-bulk-send:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(8,145,178,.30); }
 .lasm-bulk-send:disabled { opacity: .55; cursor: not-allowed; }
 
-/* Doc rail in the posing pane (bulk send). Single-doc posing skips
-   this rail entirely so the layout stays compact. */
-.lasm-posing-body-bulk { grid-template-columns: 200px 1fr 260px; }
-.lasm-doc-rail { padding: 14px 10px; border-right: 1px solid #e2e8f0; background: #f8fafc; overflow: auto; }
-.lasm-doc-rail-head { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #64748b; padding: 0 6px 8px; }
-.lasm-doc-rail-item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  width: 100%; padding: 8px 10px; margin-bottom: 4px; border-radius: 6px;
-  background: transparent; border: 1px solid transparent; color: #475569;
-  font-family: inherit; text-align: left; cursor: pointer; transition: background .15s ease, border-color .15s ease, color .15s ease; }
-.lasm-doc-rail-item:hover { background: #f1f5f9; }
-.lasm-doc-rail-item.is-active { background: #ecfeff; border-color: #67e8f9; color: #0c4a6e; }
-.lasm-doc-rail-code { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; font-weight: 700; color: #0e7490; }
-.lasm-doc-rail-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-
-/* ── Posing pane (preview + draggable sig box) ── */
-.lasm-shell:has(.lasm-posing) { max-width: 1280px; }
-.lasm-posing { display: flex; flex-direction: column; min-height: 560px; }
-.lasm-posing-bar { display: flex; align-items: center; gap: 14px; padding: 12px 22px;
-  background: linear-gradient(110deg,#f8fafc,#eef2f7); border-bottom: 1px solid #e2e8f0; }
-.lasm-posing-back { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px;
-  background: #fff; border: 1px solid #e2e8f0; color: #475569; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: border-color .15s ease, color .15s ease; }
-.lasm-posing-back:hover:not(:disabled) { border-color: #0e7490; color: #0e7490; }
-.lasm-posing-back:disabled { opacity: .55; cursor: not-allowed; }
-.lasm-posing-title { flex: 1; min-width: 0; }
-.lasm-posing-doc { font-size: 13px; font-weight: 800; color: #0c4a6e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lasm-posing-sub { font-size: 10.5px; color: #94a3b8; margin-top: 2px; }
-.lasm-posing-send { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 9px;
-  background: linear-gradient(135deg,#06b6d4,#0e7490); color: #fff; border: none; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
-.lasm-posing-send:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(8,145,178,.30); }
-.lasm-posing-send:disabled { opacity: .55; cursor: not-allowed; }
-
-.lasm-posing-body { display: grid; grid-template-columns: 1fr 260px; gap: 0; flex: 1; min-height: 480px; }
-.lasm-preview-pane { padding: 14px 18px; background: #f1f5f9; display: flex; align-items: flex-start; justify-content: center; overflow: auto; }
-.lasm-preview-state { padding: 32px; text-align: center; color: #94a3b8; font-size: 13px; }
-.lasm-preview-wrap { position: relative; width: 100%; max-width: 560px; aspect-ratio: ${A4_W} / ${A4_H};
-  background: #fff; box-shadow: 0 6px 18px rgba(15,23,42,.18); border-radius: 4px; overflow: hidden; }
-.lasm-preview-frame { width: 100%; height: 100%; border: 0; display: block; }
-.lasm-sig-overlay { position: absolute; z-index: 10;
-  border: 2px dashed #0e7490; background: rgba(6,182,212,.16);
-  display: flex; align-items: center; justify-content: center; cursor: move; user-select: none; }
-.lasm-sig-overlay:focus { outline: 2px solid #0e7490; outline-offset: 2px; }
-.lasm-sig-label { font-size: 11px; font-weight: 700; color: #0e7490; pointer-events: none; }
-.lasm-sig-page { position: absolute; top: -18px; left: 0; font-size: 10px; font-weight: 700; color: #0e7490;
-  background: #cffafe; border: 1px solid #67e8f9; border-radius: 3px; padding: 1px 5px; pointer-events: none; }
-.lasm-sig-resize { position: absolute; right: -2px; bottom: -2px; width: 14px; height: 14px;
-  background: #0e7490; border: 2px solid #fff; border-radius: 2px; cursor: nwse-resize; }
-
-.lasm-coord-pane { padding: 16px 18px; border-left: 1px solid #e2e8f0; background: #fff; overflow: auto; }
-.lasm-coord-head { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #0e7490; margin-bottom: 8px; }
-.lasm-coord-help { font-size: 11.5px; color: #64748b; line-height: 1.45; margin-bottom: 14px; }
-.lasm-coord-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; }
-.lasm-coord-row > span { font-size: 11.5px; font-weight: 600; color: #475569; }
-.lasm-coord-row input { width: 92px; padding: 5px 8px; border: 1px solid #e2e8f0; border-radius: 6px;
-  font-family: inherit; font-size: 12px; color: #0c4a6e; }
-.lasm-coord-row input:focus { outline: none; border-color: #67e8f9; box-shadow: 0 0 0 2px rgba(103,232,249,.25); }
-.lasm-reset { width: 100%; margin-top: 8px; padding: 7px 10px; border-radius: 7px;
-  background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
-.lasm-reset:hover { background: #e2e8f0; }
-.lasm-recipient-card { margin-top: 16px; padding: 12px; background: linear-gradient(110deg,#f0fdff,#ecfeff); border: 1px solid #cffafe; border-radius: 9px; }
-.lasm-recipient-h { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #0e7490; margin-bottom: 8px; }
-.lasm-recipient-row { display: flex; flex-direction: column; gap: 1px; padding: 6px 0; border-top: 1px dashed rgba(8,145,178,.18); }
-.lasm-recipient-row:first-of-type { border-top: 0; padding-top: 0; }
-.lasm-recipient-role { font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #0e7490; }
-.lasm-recipient-name { font-size: 12px; font-weight: 700; color: #0c4a6e; }
-.lasm-recipient-email { font-size: 11px; color: #475569; }
+/* Posing pane CSS removed — the agreement Send-for-Signature preview
+   now renders inside SalesCustomerSendForSignatureModal, which carries
+   its own SSF_CSS for the preview pane, doc rail, sig overlay,
+   coord pane and recipient card. */
 `;

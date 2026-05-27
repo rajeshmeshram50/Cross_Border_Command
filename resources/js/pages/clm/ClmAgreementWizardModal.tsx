@@ -1079,6 +1079,7 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
     { label: 'PAN',            token: '{{buyer.pan}}' },
     { label: 'IEC',            token: '{{buyer.iec}}' },
     { label: 'Risk Level',     token: '{{buyer.risk_level}}' },
+    { label: 'Signature',      token: '{{buyer.signature}}' },
   ] },
   { id: 'consignee', label: 'Consignee', iconEmoji: '🚚', iconColor: '#f59e0b', fields: [
     { label: 'Consignee Name', token: '{{consignee.consignee_name}}' },
@@ -1089,6 +1090,7 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
     { label: 'Contact Person', token: '{{consignee.contact_person}}' },
     { label: 'Phone',          token: '{{consignee.phone}}' },
     { label: 'Email',          token: '{{consignee.email}}' },
+    { label: 'Signature',      token: '{{consignee.signature}}' },
   ] },
   { id: 'supplier', label: 'Supplier', iconEmoji: '📦', iconColor: '#16a34a', fields: [
     { label: 'Supplier Name',  token: '{{supplier.supplier_name}}' },
@@ -1103,6 +1105,7 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
     { label: 'City',           token: '{{supplier.city}}' },
     { label: 'Category',       token: '{{supplier.category}}' },
     { label: 'Risk Level',     token: '{{supplier.risk_level}}' },
+    { label: 'Signature',      token: '{{supplier.signature}}' },
   ] },
 ];
 

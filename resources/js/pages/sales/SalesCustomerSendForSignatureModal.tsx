@@ -80,6 +80,41 @@ const DEFAULTS: DocSettings = { x: 380, y: 720, page: 0, width: 150, height: 45 
 const A4_W = 595;
 const A4_H = 842;
 
+/* When the modal is reused from the workplace's Segment Details card,
+ * the data shape flips from "trade documents bound to a single party"
+ * to "agreements bound to a lead (which carries customer + consignee)".
+ * Keeping these in a discriminated sibling lets every internal branch
+ * read `mode === 'agreement'` cleanly without ad-hoc null checks across
+ * the existing trade-doc props. */
+export type AgreementSendRow = {
+  id: number;
+  code: string | null;
+  title: string;
+  agreement_type?: string | null;
+  party?: string | null;
+  /* Seed fields for the Edit Header / Footer / Body popup — the modal
+   * needs the saved body HTML + page-shell config to hydrate the
+   * editor without a separate fetch. Optional so legacy callers that
+   * don't have them still type-check; missing values fall through to
+   * the DEFAULT_HEADER / DEFAULT_FOOTER constants. */
+  content?: string | null;
+  header_config?: HeaderConfig | null;
+  footer_config?: FooterConfig | null;
+};
+
+export type AgreementContext = {
+  leadId: number;
+  /* Preselected agreements — the picker step is skipped in agreement
+   * mode (the segment-details card already chose which agreements to
+   * send), so we hand them in fully resolved. */
+  agreements: AgreementSendRow[];
+  /* Auto-resolved signers from the lead's customer + consignee. The
+   * backend re-derives these from `agreement.party` so this is purely
+   * for the on-screen recipient card. */
+  customer?:  { name: string; email: string | null } | null;
+  consignee?: { name: string; email: string | null } | null;
+};
+
 interface Props {
   open: boolean;
   customer: SendForSignatureCustomer | null;
@@ -94,9 +129,28 @@ interface Props {
    * controller's replacePlaceholders. Defaults to 'Customer' for the
    * existing caller. */
   modelName?: 'Customer' | 'Consignee' | 'Vendor';
+  /** Switches the modal between the original trade-doc flow and the
+   * agreement-send flow used by the workplace's Segment Details card.
+   * Default keeps every existing caller (customer / consignee /
+   * vendor modals) on the trade-doc behaviour. */
+  mode?: 'trade-doc' | 'agreement';
+  /** Required when mode === 'agreement'. Carries the lead + the
+   * preselected agreements so the modal can skip its picker step and
+   * dispatch to the agreement preview/send endpoints. */
+  agreementContext?: AgreementContext | null;
 }
 
-export default function SalesCustomerSendForSignatureModal({ open, customer, onClose, onSent, preselectedDocIds, modelName = 'Customer' }: Props) {
+export default function SalesCustomerSendForSignatureModal({
+  open,
+  customer,
+  onClose,
+  onSent,
+  preselectedDocIds,
+  modelName = 'Customer',
+  mode = 'trade-doc',
+  agreementContext = null,
+}: Props) {
+  const isAgreement = mode === 'agreement';
   const toast = useToast();
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -265,6 +319,33 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
    * customer" worth re-initialising for. */
   useEffect(() => {
     if (!open) return;
+    if (isAgreement) {
+      // Agreement mode skips the picker step entirely — Segment Details
+      // already chose which agreements ride this send. Signers are
+      // server-resolved from the lead's customer/consignee, so the
+      // editor is hidden and we seed display-only rows for the
+      // recipient card.
+      const ctx = agreementContext;
+      const ids = (ctx?.agreements ?? []).map(a => a.id).slice(0, 10);
+      setStep(2);
+      setSelectedIds(ids);
+      const displaySigners: Signer[] = [];
+      if (ctx?.customer)  displaySigners.push({ name: ctx.customer.name,  email: ctx.customer.email  ?? '', order: 1 });
+      if (ctx?.consignee) displaySigners.push({ name: ctx.consignee.name, email: ctx.consignee.email ?? '', order: displaySigners.length + 1 });
+      setSigners(displaySigners.length > 0 ? displaySigners : [{ name: '', email: '', order: 1 }]);
+      setIsSequential(false);
+      setExpiryDays(30);
+      setNotes('Please review and sign these agreements.');
+      setSettings({});
+      setActiveDocId(ids[0] ?? null);
+      setPreviewUrl(null);
+      userOverrodeRef.current.clear();
+      setHeaderOverrides({});
+      setFooterOverrides({});
+      setContentOverrides({});
+      setEditingShell(false);
+      return;
+    }
     const hasPreselected = Array.isArray(preselectedDocIds) && preselectedDocIds.length > 0;
     setStep(hasPreselected ? 2 : 1);
     setSelectedIds(hasPreselected ? preselectedDocIds!.slice(0, 10) : []);
@@ -288,7 +369,7 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
   // preselectedDocIds and customer are read at open-time only —
   // intentionally excluded from deps. db_id captures "different customer".
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, customer?.db_id]);
+  }, [open, customer?.db_id, isAgreement, agreementContext?.leadId]);
 
   /* ── Fetch the trade-doc library when the modal opens (cached for the
    * lifetime of the modal — re-fetched on next open). The for-party
@@ -300,12 +381,32 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
 
   useEffect(() => {
     if (!open) return;
+    if (isAgreement) {
+      // Skip the trade-doc library fetch and stitch the picker-list
+      // shape directly from the supplied agreement context. The picker
+      // step is hidden in this mode, but the rail + active-doc lookup
+      // still reads from `docs`, so we hydrate it with adapted rows.
+      const adapted: TradeDoc[] = (agreementContext?.agreements ?? []).map(a => ({
+        id:    a.id,
+        code:  a.code ?? `A-${a.id}`,
+        name:  a.title,
+        title: a.title,
+        doc_type: a.agreement_type ?? undefined,
+        purpose:  a.party ?? undefined,
+        content:       a.content       ?? null,
+        header_config: a.header_config ?? null,
+        footer_config: a.footer_config ?? null,
+      }));
+      setDocs(adapted);
+      setDocsLoading(false);
+      return;
+    }
     setDocsLoading(true);
     api.get(`/clm/trade-doc-library/for-party/${partyFilter}`)
       .then(r => setDocs(Array.isArray(r.data?.data) ? r.data.data : []))
       .catch(() => setDocs([]))
       .finally(() => setDocsLoading(false));
-  }, [open, partyFilter]);
+  }, [open, partyFilter, isAgreement, agreementContext?.leadId]);
 
   /* ── Escape closes the modal whenever we're not mid-send. */
   useEffect(() => {
@@ -346,7 +447,13 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
    * overlay. Detection is best-effort: if it fails, we fall back to the
    * pre-existing default (bottom-right of page 1). */
   useEffect(() => {
-    if (step !== 2 || !activeDocId || !customer?.db_id) return;
+    if (step !== 2 || !activeDocId) return;
+    // Agreement mode hits the agreement-preview endpoint and skips the
+    // header/footer/body overrides (the backend doesn't accept them on
+    // the agreement render path). Trade-doc mode keeps its existing
+    // customer-bound request shape.
+    if (isAgreement && !agreementContext?.leadId) return;
+    if (!isAgreement && !customer?.db_id) return;
     const docId = activeDocId;
     let cancelled = false;
     setPreviewLoading(true);
@@ -358,17 +465,29 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
     const headerOverride = headerOverrides[docId];
     const footerOverride = footerOverrides[docId];
     const contentOverride = contentOverrides[docId];
-    api.post('/clm/signature-requests/preview',
-      {
-        trade_doc_id: docId,
-        party_id: customer.db_id,
-        model_name: modelName,
-        ...(headerOverride  ? { header_config_override:  headerOverride  } : {}),
-        ...(footerOverride  ? { footer_config_override:  footerOverride  } : {}),
-        ...(contentOverride !== undefined ? { content_override: contentOverride } : {}),
-      },
-      { responseType: 'blob' },
-    )
+    const previewRequest = isAgreement
+      ? api.post('/clm/signature-requests/agreement-preview',
+          {
+            agreement_id: docId,
+            lead_id: agreementContext!.leadId,
+            ...(headerOverride  ? { header_config_override:  headerOverride  } : {}),
+            ...(footerOverride  ? { footer_config_override:  footerOverride  } : {}),
+            ...(contentOverride !== undefined ? { content_override: contentOverride } : {}),
+          },
+          { responseType: 'blob' },
+        )
+      : api.post('/clm/signature-requests/preview',
+          {
+            trade_doc_id: docId,
+            party_id: customer!.db_id,
+            model_name: modelName,
+            ...(headerOverride  ? { header_config_override:  headerOverride  } : {}),
+            ...(footerOverride  ? { footer_config_override:  footerOverride  } : {}),
+            ...(contentOverride !== undefined ? { content_override: contentOverride } : {}),
+          },
+          { responseType: 'blob' },
+        );
+    previewRequest
       .then(async r => {
         if (cancelled) return;
         const blob = r.data as Blob;
@@ -401,7 +520,7 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, activeDocId, customer?.db_id, headerOverrides, footerOverrides, contentOverrides]);
+  }, [step, activeDocId, customer?.db_id, agreementContext?.leadId, isAgreement, headerOverrides, footerOverrides, contentOverrides]);
 
   /* ── Release blob URLs we created so we don't leak memory. */
   useEffect(() => {
@@ -442,6 +561,37 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
 
   /* ── Send. */
   const send = async () => {
+    if (isAgreement) {
+      if (!agreementContext?.leadId || selectedIds.length === 0) {
+        toast.error('Missing context', 'Lead or agreement selection is missing.');
+        return;
+      }
+      setSending(true);
+      try {
+        const r = await api.post('/clm/signature-requests/agreement-send', {
+          agreement_ids:     selectedIds,
+          lead_id:           agreementContext.leadId,
+          is_sequential:     isSequential,
+          expiry_days:       expiryDays,
+          notes:             notes.trim(),
+          document_settings: settings,
+          ...(Object.keys(headerOverrides).length  ? { header_config_overrides:  headerOverrides  } : {}),
+          ...(Object.keys(footerOverrides).length  ? { footer_config_overrides:  footerOverrides  } : {}),
+          ...(Object.keys(contentOverrides).length ? { content_overrides:        contentOverrides } : {}),
+        });
+        toast.success('Sent for signature', r.data?.message ?? `${selectedIds.length} agreement(s) sent.`);
+        onSent?.(selectedIds.slice());
+        onClose();
+      } catch (e: any) {
+        const msg = e?.response?.data?.message
+          || (e?.response?.data?.errors && Object.values(e.response.data.errors).flat().join(' · '))
+          || 'Failed to send the agreement(s).';
+        toast.error('Send failed', msg);
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
     if (!customer?.db_id) {
       toast.error('Missing customer', 'This customer is not saved yet.');
       return;
@@ -574,7 +724,10 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
   // When opened from Stage 3 with documents already chosen, the modal
   // skips the picker entirely — show a single "preview & position" view
   // with Send as the action. The two-step stepper is hidden in that mode.
+  // Agreement mode follows the same single-step pattern (the segment
+  // details card already picked which agreements to send).
   const launchedFromStage3 = Array.isArray(preselectedDocIds) && preselectedDocIds.length > 0;
+  const singleStepFlow = launchedFromStage3 || isAgreement;
 
   return createPortal(
     <div className="ssf-overlay" onMouseDown={e => { if (e.target === e.currentTarget && !sending) onClose(); }} role="dialog" aria-modal="true">
@@ -590,9 +743,17 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
               </svg>
             </div>
             <div>
-              <div className="ssf-head-label">SEND FOR SIGNATURE</div>
-              <div className="ssf-head-title">{customer?.company || 'Customer'}</div>
-              {customer?.email && <div className="ssf-head-sub">{customer.email}</div>}
+              <div className="ssf-head-label">{isAgreement ? 'SEND AGREEMENTS FOR SIGNATURE' : 'SEND FOR SIGNATURE'}</div>
+              <div className="ssf-head-title">
+                {isAgreement
+                  ? (agreementContext?.customer?.name || agreementContext?.consignee?.name || 'Lead Agreements')
+                  : (customer?.company || 'Customer')}
+              </div>
+              {isAgreement
+                ? (agreementContext?.customer?.email || agreementContext?.consignee?.email)
+                  ? <div className="ssf-head-sub">{agreementContext?.customer?.email || agreementContext?.consignee?.email}</div>
+                  : null
+                : (customer?.email && <div className="ssf-head-sub">{customer.email}</div>)}
             </div>
           </div>
           <button type="button" className="ssf-close" onClick={() => !sending && onClose()} aria-label="Close">
@@ -601,9 +762,10 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
         </div>
 
         {/* Stepper only shown for the standalone (no-preselection) path.
-            When launched from Stage 3, documents are already chosen and
-            the modal is a single Preview & Send screen — no stepper. */}
-        {!launchedFromStage3 && (
+            When launched from Stage 3 OR in agreement mode, documents
+            are already chosen and the modal is a single Preview & Send
+            screen — no stepper. */}
+        {!singleStepFlow && (
           <div className="ssf-steps">
             {[
               { n: 1, label: 'Documents & Signers' },
@@ -794,7 +956,10 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
                 {/* Opens the full-screen Edit Layout popup so the user
                    has room to drag the logo, edit the title, change the
                    footer text, and insert tables / lines into the body
-                   without fighting the cramped side-rail width. */}
+                   without fighting the cramped side-rail width. Same
+                   editor in both trade-doc and agreement modes — the
+                   agreement preview/send endpoints now honour the same
+                   header/footer/body overrides as the trade-doc path. */}
                 <button
                   type="button"
                   className="ssf-reset-btn"
@@ -888,9 +1053,31 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
                 )}
 
                 <div className="ssf-recipient-card">
-                  <div className="ssf-recipient-h">Recipient</div>
-                  <div className="ssf-recipient-name">{customer?.company || '—'}</div>
-                  <div className="ssf-recipient-email">{customer?.email || '—'}</div>
+                  <div className="ssf-recipient-h">{isAgreement ? 'Signers' : 'Recipient'}</div>
+                  {isAgreement ? (
+                    <>
+                      {agreementContext?.customer && (
+                        <div style={{ marginBottom: 6 }}>
+                          <div className="ssf-recipient-name">{agreementContext.customer.name}</div>
+                          <div className="ssf-recipient-email">{agreementContext.customer.email || '—'}</div>
+                        </div>
+                      )}
+                      {agreementContext?.consignee && (
+                        <div>
+                          <div className="ssf-recipient-name">{agreementContext.consignee.name}</div>
+                          <div className="ssf-recipient-email">{agreementContext.consignee.email || '—'}</div>
+                        </div>
+                      )}
+                      {!agreementContext?.customer && !agreementContext?.consignee && (
+                        <div className="ssf-recipient-email">No signers resolved — check the lead's customer/consignee mapping.</div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="ssf-recipient-name">{customer?.company || '—'}</div>
+                      <div className="ssf-recipient-email">{customer?.email || '—'}</div>
+                    </>
+                  )}
                 </div>
               </aside>
             </div>
@@ -902,9 +1089,9 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
         <div className="ssf-foot">
           <div className="ssf-foot-left">
             {/* Only show Back when there's somewhere to go back TO — i.e.
-                a standalone launch that started at step 1. The Stage 3
-                launch has no step 1 to return to. */}
-            {step === 2 && !launchedFromStage3 && (
+                a standalone launch that started at step 1. Stage-3 and
+                agreement-mode launches have no step 1 to return to. */}
+            {step === 2 && !singleStepFlow && (
               <button type="button" className="ssf-btn ssf-btn-ghost" onClick={() => setStep(1)} disabled={sending}>← Back</button>
             )}
           </div>
@@ -917,7 +1104,10 @@ export default function SalesCustomerSendForSignatureModal({ open, customer, onC
             )}
             {step === 2 && (
               <button type="button" className="ssf-btn ssf-btn-primary" disabled={sending} onClick={send}>
-                {sending ? 'Sending…' : `Send for Signature (${selectedDocs.length})`}
+                {sending ? 'Sending…'
+                  : isAgreement
+                    ? `Send Agreement${selectedDocs.length > 1 ? `s (${selectedDocs.length})` : ''} for Signature`
+                    : `Send for Signature (${selectedDocs.length})`}
               </button>
             )}
           </div>
