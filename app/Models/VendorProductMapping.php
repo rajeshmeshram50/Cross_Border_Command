@@ -6,12 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Vendor Stage 4 — links a vendor to a product with the purchase
- * price + GST line items. Amounts are denormalised copies of the
- * modal's auto-computed totals so the list page can render without
- * recomputing per row.
- */
+
 class VendorProductMapping extends Model
 {
     use SoftDeletes;

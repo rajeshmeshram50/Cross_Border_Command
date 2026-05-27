@@ -6,11 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Vendor Stage 2 — Bank account row. Multiple per vendor (the modal
- * lets the user add more via "+ Add More Bank"). Cancelled cheque
- * file path is denormalised on the row.
- */
+
 class VendorBankAccount extends Model
 {
     use SoftDeletes;

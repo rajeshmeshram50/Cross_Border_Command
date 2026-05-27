@@ -6,10 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Vendor Stage 2 — Owner KYC. One row per owner / authorized signatory
- * with a single identity-proof attachment.
- */
+
 class VendorOwner extends Model
 {
     use SoftDeletes;
