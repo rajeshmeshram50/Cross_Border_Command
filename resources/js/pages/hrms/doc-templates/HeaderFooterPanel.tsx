@@ -739,37 +739,50 @@ function HfpDarkStyles() {
         background: var(--vz-secondary-bg) !important;
       }
 
-      /* Popover (Header Settings / Footer Settings) */
+      /* Popover (Header Settings / Footer Settings). Inline popoverStyle
+         hard-codes background: '#fafaff' so we have to use !important.
+         We also use explicit hex values instead of var(--vz-card-bg) so
+         the dark surface is reliably dark — the Velzon CSS variables
+         don't always resolve correctly inside this inline-styled tree. */
       [data-bs-theme="dark"] .tpl-popover {
-        background: var(--vz-card-bg) !important;
+        background: #1e293b !important;
         border-bottom-color: #8b5cf6 !important;
       }
       [data-bs-theme="dark"] .tpl-popover-label {
-        color: rgba(255,255,255,0.55) !important;
+        color: #94a3b8 !important;
       }
+      /* The inline "(multi-line)" sub-span uses color: '#9ca3af' which
+         is the same gray in both themes — readable but dim. Brighten
+         slightly for dark mode. */
+      [data-bs-theme="dark"] .tpl-popover-label span { color: #cbd5e1 !important; }
       [data-bs-theme="dark"] .tpl-popover-hint {
-        color: rgba(255,255,255,0.45) !important;
+        color: #94a3b8 !important;
       }
       [data-bs-theme="dark"] .tpl-popover-warn {
         color: #fbbf24 !important;
       }
       [data-bs-theme="dark"] .tpl-popover-input {
-        background: var(--vz-secondary-bg) !important;
-        border-color: var(--vz-border-color) !important;
-        color: var(--vz-body-color) !important;
+        background: #0f172a !important;
+        border-color: rgba(99,102,241,0.30) !important;
+        color: #e2e8f0 !important;
       }
       [data-bs-theme="dark"] .tpl-popover-input::placeholder {
         color: rgba(255,255,255,0.40) !important;
       }
       [data-bs-theme="dark"] .tpl-popover-divider {
-        border-top-color: var(--vz-border-color) !important;
+        border-top-color: rgba(99,102,241,0.30) !important;
+      }
+      /* The font-size / page-number-format range slider has no class —
+         target the bare input[type=range] inside the popover. */
+      [data-bs-theme="dark"] .tpl-popover input[type="range"] {
+        accent-color: #8b5cf6;
       }
 
       /* Inline chips (alignment selector, page-number alignment) */
       [data-bs-theme="dark"] .tpl-chip:not(.is-active) {
-        background: var(--vz-secondary-bg) !important;
-        border-color: var(--vz-border-color) !important;
-        color: var(--vz-body-color) !important;
+        background: #0f172a !important;
+        border-color: rgba(99,102,241,0.30) !important;
+        color: #e2e8f0 !important;
       }
       [data-bs-theme="dark"] .tpl-chip.tpl-chip-reset {
         background: rgba(245,158,11,0.18) !important;
@@ -778,14 +791,14 @@ function HfpDarkStyles() {
       }
 
       [data-bs-theme="dark"] .tpl-toggle-chip:not(.is-on) {
-        background: var(--vz-secondary-bg) !important;
-        border-color: var(--vz-border-color) !important;
-        color: var(--vz-body-color) !important;
+        background: #0f172a !important;
+        border-color: rgba(99,102,241,0.30) !important;
+        color: #e2e8f0 !important;
       }
 
       [data-bs-theme="dark"] .tpl-color-swatch {
-        background: var(--vz-secondary-bg) !important;
-        border-color: var(--vz-border-color) !important;
+        background: #0f172a !important;
+        border-color: rgba(99,102,241,0.30) !important;
       }
       [data-bs-theme="dark"] .tpl-logo-remove {
         background: rgba(248,113,113,0.18) !important;
