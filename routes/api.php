@@ -150,6 +150,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     // Sales Matrix → Customers. Backed by customers + customer_addresses
     // tables; tenant-scoped server-side.
+    //
+    // Bundle endpoint — returns every master dropdown the Add Customer
+    // AND Add Consignee modals need in ONE round-trip. Declared BEFORE
+    // the apiResource so the literal 'master-bundle' segment isn't
+    // captured as a {customer} id by the show/update/destroy routes.
+    Route::get   ('/customers/master-bundle',          [CustomerController::class, 'masterBundle']);
     Route::apiResource('customers', CustomerController::class)
         ->only(['index', 'show', 'store', 'update', 'destroy']);
 

@@ -5,9 +5,19 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\CustomerAddress;
+use App\Models\Masters\AddressTypes;
+use App\Models\Masters\Countries;
+use App\Models\Masters\CustomerClassifications;
+use App\Models\Masters\CustomerTypes;
+use App\Models\Masters\Designations;
+use App\Models\Masters\DocumentType;
+use App\Models\Masters\RiskLevels;
+use App\Models\Masters\Segments;
+use App\Models\Masters\States;
 use App\Support\MasterVisibility;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -467,5 +477,59 @@ class CustomerController extends Controller
         $clientId = $user->client_id ?? ($user->branch?->client_id);
         $branchId = $user->branch_id;
         return [$clientId, $branchId];
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * GET /customers/master-bundle
+     *
+     * Bundle every master dropdown the Add Customer / Add Consignee modal
+     * needs into ONE response. Replaces 9 separate round-trips:
+     *   /master/customer_types, /master/segments, /master/customer_classifications,
+     *   /master/risk_levels, /master/address_types, /master/countries,
+     *   /master/states, /master/designations, /master/document_type
+     *
+     * Shared between BOTH customer flows — opening Add Customer warms the
+     * cache for Add Consignee (and vice versa) since their dropdown
+     * needs overlap by 8 of 9 masters. `customer_types` is unused by the
+     * consignee modal but is so small (~10 rows) that including it for
+     * cache parity costs nothing.
+     *
+     * Cached server-side via Cache::remember (5-min TTL, per-user). Masters
+     * change rarely, so the cache absorbs the bulk of repeat opens. The
+     * frontend mirrors this with a sessionStorage cache in
+     * customerBundleCache.ts.
+     *
+     * Status filtering is case-insensitive because clm_segments uses
+     * 'active'/'inactive' while master_* tables use 'Active'/'Inactive'.
+     * Segments projects `name` (the real column) — the model's `title`
+     * accessor surfaces it as `title` in JSON for legacy consumers.
+     * ────────────────────────────────────────────────────────────── */
+    public function masterBundle(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $cacheKey = 'customer:master-bundle:user:' . ($user?->id ?? 'guest');
+
+        $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () {
+            $active = function (string $modelClass, array $cols) {
+                return $modelClass::query()
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->orderBy('id')
+                    ->get($cols);
+            };
+
+            return [
+                'customer_types'           => $active(CustomerTypes::class,           ['id', 'name']),
+                'segments'                 => $active(Segments::class,                ['id', 'name']),
+                'customer_classifications' => $active(CustomerClassifications::class, ['id', 'name']),
+                'risk_levels'              => $active(RiskLevels::class,              ['id', 'name']),
+                'address_types'            => $active(AddressTypes::class,            ['id', 'name']),
+                'countries'                => $active(Countries::class,               ['id', 'name']),
+                'states'                   => $active(States::class,                  ['id', 'name', 'country_id']),
+                'designations'             => $active(Designations::class,            ['id', 'name']),
+                'document_type'            => $active(DocumentType::class,            ['id', 'title']),
+            ];
+        });
+
+        return response()->json($bundle);
     }
 }

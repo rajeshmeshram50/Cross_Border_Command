@@ -8,6 +8,10 @@ import { Shimmer } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 import { MasterMultiSelect } from '../master/masterFormKit';
+import {
+  readCustomerMasterBundle,
+  writeCustomerMasterBundle,
+} from './customerBundleCache';
 
 /* Stage 3 → Trade Documents → Send for Signature.
  * Same shape used by AddCustomerModal / AddVendorModal so the Zoho
@@ -342,6 +346,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * shimmer skeleton over Stage 1 so the user sees the form shape
    * resolving in rather than empty inputs flashing into populated. */
   const [hydrating, setHydrating] = useState(false);
+  /* True until /customers/master-bundle resolves (or sessionStorage cache
+   * hits). The modal renders a shimmer skeleton while either this OR
+   * `hydrating` is true via the derived `showShimmer` flag below. */
+  const [mastersLoading, setMastersLoading] = useState<boolean>(true);
+  const showShimmer = hydrating || mastersLoading;
   const [form1, setForm1] = useState({
     /* Basic company. `segment` is multi-valued — array of segment
      * names — so a consignee can be tagged with several segments and
@@ -769,45 +778,88 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, consignee?.db_id]);
 
-  /* Fetch the masters that back this modal's dropdowns. Same endpoint
-   * pattern AddCustomerModal uses — segments, customer_classifications,
-   * risk_levels, address_types, countries, states, designations. Each
-   * call is independent so one failing master doesn't break the rest. */
+  /* Bundled master fetch — /customers/master-bundle returns every dropdown
+   * (segments, customer_classifications, risk_levels, address_types,
+   * countries, states, designations, document_type) in ONE round-trip.
+   * Shared with AddCustomerModal via the same sessionStorage cache key,
+   * so opening one modal warms the cache for the other. Replaces 8
+   * separate /master/* fetches. The unused `customer_types` field in
+   * the bundle is silently ignored — payload cost is negligible. */
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    const pickName = (rows: any[], key = 'name'): Opt[] => (rows ?? [])
-      .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
-      .map(r => ({ value: String(r[key] ?? ''), label: String(r[key] ?? '') }))
+
+    type IdNamed = { id: number | string; name?: string | null };
+    type Bundle = {
+      customer_types: IdNamed[];
+      segments: Array<{ id: number | string; name?: string | null; title?: string | null }>;
+      customer_classifications: IdNamed[];
+      risk_levels: IdNamed[];
+      address_types: IdNamed[];
+      countries: IdNamed[];
+      states: Array<{ id: number | string; name?: string | null; country_id?: number | string | null }>;
+      designations: IdNamed[];
+      document_type: Array<{ id: number | string; title?: string | null }>;
+    };
+
+    const pickName = (rows: IdNamed[]): Opt[] => (rows || [])
+      .map(r => ({ value: String(r.name ?? ''), label: String(r.name ?? '') }))
       .filter(o => o.value);
-    const pickCountries = (rows: any[]): (Opt & { id: number })[] => (rows ?? [])
-      .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
+    const pickCountriesFromBundle = (rows: IdNamed[]): (Opt & { id: number })[] => (rows || [])
       .map(r => ({ id: Number(r.id), value: String(r.name ?? ''), label: String(r.name ?? '') }))
       .filter(o => o.value);
-    const pickStates = (rows: any[]): StateOpt[] => (rows ?? [])
-      .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
+    const pickStatesFromBundle = (rows: Bundle['states']): StateOpt[] => (rows || [])
       .map(r => ({ countryId: Number(r.country_id), value: String(r.name ?? ''), label: String(r.name ?? '') }))
       .filter(o => o.value);
 
-    Promise.allSettled([
-      api.get('/master/segments').then(r => {
+    const hydrate = (b: Bundle) => {
+      // Segments — server returns `name`; the model also appends `title`
+      // (alias) for legacy consumers. Read whichever is present.
+      const segmentRows = (b.segments || []).map(x => ({
+        id: Number(x.id),
+        name: String(x.title ?? x.name ?? ''),
+      })).filter(s => s.name);
+      setMSegments(segmentRows.map(s => ({ value: s.name, label: s.name })));
+      setMSegmentIds(segmentRows);
+
+      setMClassifications(pickName(b.customer_classifications));
+      setMRiskLevels(pickName(b.risk_levels));
+      setMAddressTypes(pickName(b.address_types));
+      // Countries — alpha-sort mirrors the previous client-side sort.
+      const sortedCountries = [...(b.countries ?? [])].sort((a, b) =>
+        String(a.name ?? '').localeCompare(String(b.name ?? '')));
+      setMCountries(pickCountriesFromBundle(sortedCountries));
+      setMStates(pickStatesFromBundle(b.states));
+      setMDesignations(pickName(b.designations));
+      // Document Type master uses `title` (not `name`).
+      setMDocumentTypes(
+        (b.document_type || [])
+          .map(r => ({ value: String(r.title ?? ''), label: String(r.title ?? '') }))
+          .filter(o => o.value)
+      );
+    };
+
+    // Cache hit — hydrate immediately, skip the network entirely.
+    const cached = readCustomerMasterBundle<Bundle>();
+    if (cached) {
+      hydrate(cached);
+      setMastersLoading(false);
+      return () => { cancelled = true; };
+    }
+
+    (async () => {
+      try {
+        const res = await api.get<Bundle>('/customers/master-bundle');
         if (cancelled) return;
-        const rows = (r.data ?? []).filter((x: any) => !x.status || String(x.status).toLowerCase() === 'active');
-        setMSegments(rows.map((x: any) => ({ value: String(x.title ?? ''), label: String(x.title ?? '') })).filter((o: Opt) => o.value));
-        setMSegmentIds(rows.map((x: any) => ({ id: Number(x.id), name: String(x.title ?? '') })).filter((s: { name: string }) => s.name));
-      }),
-      api.get('/master/customer_classifications').then(r => { if (!cancelled) setMClassifications(pickName(r.data ?? [])); }),
-      api.get('/master/risk_levels').then(r => { if (!cancelled) setMRiskLevels(pickName(r.data ?? [])); }),
-      api.get('/master/address_types').then(r => { if (!cancelled) setMAddressTypes(pickName(r.data ?? [])); }),
-      api.get('/master/countries').then(r => {
-        if (cancelled) return;
-        const sorted = [...(r.data ?? [])].sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
-        setMCountries(pickCountries(sorted));
-      }),
-      api.get('/master/states').then(r => { if (!cancelled) setMStates(pickStates(r.data ?? [])); }),
-      api.get('/master/designations').then(r => { if (!cancelled) setMDesignations(pickName(r.data ?? [])); }),
-      api.get('/master/document_type').then(r => { if (!cancelled) setMDocumentTypes(pickName(r.data ?? [], 'title')); }),
-    ]);
+        hydrate(res.data);
+        writeCustomerMasterBundle(res.data);
+      } catch {
+        // Dropdowns stay empty; validation will catch missing values.
+      } finally {
+        if (!cancelled) setMastersLoading(false);
+      }
+    })();
+
     return () => { cancelled = true; };
   }, [open]);
 
@@ -1665,13 +1717,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         {/* Scrolling body — only the stage-specific form / tables /
             banners scroll. The pinned section above stays put. */}
         <div className="acm-wiz-body">
-          {/* Edit-mode hydration UX — show the full-form shimmer
-              while /consignees/:id resolves so the user sees
-              structured skeleton blocks instead of a half-empty
-              form that fills in mid-load. The skeleton swaps to
-              the populated form in one frame once the fetch lands. */}
-          {stage === 1 && hydrating && <Stage1FormShimmer />}
-          {stage === 1 && !hydrating && (
+          {/* Hydration UX — show the full-form shimmer while EITHER
+              /consignees/:id resolves (edit mode) OR the initial
+              master-bundle load is in flight. The skeleton swaps to
+              the populated form in one frame once everything lands. */}
+          {stage === 1 && showShimmer && <Stage1FormShimmer />}
+          {stage === 1 && !showShimmer && (
             <Stage1
               tab={idTab}
               setTab={setIdTab}
