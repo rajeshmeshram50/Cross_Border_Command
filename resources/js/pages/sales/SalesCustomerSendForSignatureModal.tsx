@@ -985,6 +985,45 @@ export default function SalesCustomerSendForSignatureModal({
                 {!previewLoading && !previewUrl && <div className="ssf-preview-state">Preview unavailable.</div>}
                 {previewUrl && (
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                    {/* Multi-signer info banner — surfaces the signer
+                        composition right above the preview so the
+                        user sees which parties will receive the doc
+                        and whether any are blocked (unmapped on the
+                        lead). Renders unconditionally in agreement
+                        mode so a single-signer agreement also gets
+                        the visual confirmation. */}
+                    {isAgreement && (
+                      <div className="ssf-signer-banner">
+                        {(() => {
+                          const ctxSigners = agreementContext?.signers ?? [];
+                          const unmapped = ctxSigners.filter(s => !s.email);
+                          if (ctxSigners.length === 0) {
+                            return (
+                              <span className="ssf-banner-warn">
+                                ⚠ No applicable parties resolved. Check the agreement's "Applicable Party" setting.
+                              </span>
+                            );
+                          }
+                          if (unmapped.length > 0) {
+                            return (
+                              <>
+                                <span className="ssf-banner-warn">
+                                  ⚠ {unmapped.length} signer{unmapped.length > 1 ? 's' : ''} missing on this lead:&nbsp;
+                                  {unmapped.map(s => s.role === 'buyer' ? 'Customer' : s.role === 'consignee' ? 'Consignee' : 'Supplier').join(', ')}.
+                                  Map them on the lead before sending.
+                                </span>
+                              </>
+                            );
+                          }
+                          return (
+                            <span className="ssf-banner-ok">
+                              ✓ {ctxSigners.length} signer{ctxSigners.length > 1 ? 's' : ''} resolved — each receives the same PDF and signs on their own box.
+                              {ctxSigners.length > 1 && ' Click a tab below to reposition that signer\'s box.'}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    )}
                     {/* Signer-tab strip — only renders in agreement
                         mode with ≥2 signers (Buyer + Consignee).
                         Clicking a tab promotes that role to "active":
@@ -1000,9 +1039,9 @@ export default function SalesCustomerSendForSignatureModal({
                             type="button"
                             role="tab"
                             aria-selected={s.role === activeSignerRole}
-                            className={`ssf-signer-tab ${s.role === activeSignerRole ? 'is-on' : ''}`}
+                            className={`ssf-signer-tab ${s.role === activeSignerRole ? 'is-on' : ''} ${!s.email ? 'is-unmapped' : ''}`}
                             onClick={() => setActiveSignerRole(s.role)}
-                            title={`Position ${s.name}'s signature`}
+                            title={s.email ? `Position ${s.name}'s signature` : `${s.name} — not mapped on this lead`}
                           >
                             <span className={`ssf-signer-dot ssf-signer-dot-${s.role}`} />
                             {s.role === 'buyer' ? 'Buyer' : s.role === 'consignee' ? 'Consignee' : 'Supplier'}
@@ -1287,14 +1326,37 @@ export default function SalesCustomerSendForSignatureModal({
                 Next: Preview →
               </button>
             )}
-            {step === 2 && (
-              <button type="button" className="ssf-btn ssf-btn-primary" disabled={sending} onClick={send}>
-                {sending ? 'Sending…'
-                  : isAgreement
-                    ? `Send Agreement${selectedDocs.length > 1 ? `s (${selectedDocs.length})` : ''} for Signature`
-                    : `Send for Signature (${selectedDocs.length})`}
-              </button>
-            )}
+            {step === 2 && (() => {
+              // Block Send when any applicable party on the agreement
+              // is missing from the lead (e.g. Buyer+Consignee
+              // agreement on a lead with no consignee). The backend
+              // would 422 anyway; client gating gives clearer
+              // feedback up front. Trade-doc path isn't affected
+              // because `unmapped` is always empty there.
+              const unmapped = isAgreement
+                ? (agreementContext?.signers ?? []).filter(s => !s.email)
+                : [];
+              const blocked = isAgreement && (
+                (agreementContext?.signers?.length ?? 0) === 0 || unmapped.length > 0
+              );
+              const tooltip = unmapped.length > 0
+                ? `Cannot send — missing: ${unmapped.map(s => s.role === 'buyer' ? 'Customer' : s.role === 'consignee' ? 'Consignee' : 'Supplier').join(', ')}`
+                : undefined;
+              return (
+                <button
+                  type="button"
+                  className="ssf-btn ssf-btn-primary"
+                  disabled={sending || blocked}
+                  onClick={send}
+                  title={tooltip}
+                >
+                  {sending ? 'Sending…'
+                    : isAgreement
+                      ? `Send Agreement${selectedDocs.length > 1 ? `s (${selectedDocs.length})` : ''} for Signature`
+                      : `Send for Signature (${selectedDocs.length})`}
+                </button>
+              );
+            })()}
           </div>
         </div>
 
@@ -1854,19 +1916,58 @@ const SSF_CSS = `
 .ssf-sig-overlay-consignee.is-active { border-color: #0d9488; background: rgba(20, 184, 166, .22); }
 .ssf-sig-overlay-supplier.is-active  { border-color: #d97706; background: rgba(245, 158, 11, .22); }
 
+/* Inactive signer's box — still clearly visible (matches the role's
+ * colour at lower saturation) so multi-signer layouts read at a
+ * glance. Clicking promotes it to active. */
 .ssf-sig-overlay.is-dim {
-  border-style: dotted;
-  border-color: #94a3b8;
-  background: rgba(148, 163, 184, .12);
+  border-style: dashed;
+  border-width: 2px;
+  opacity: 0.75;
   cursor: pointer;
-  box-shadow: none;
 }
-.ssf-sig-overlay.is-dim .ssf-sig-label { color: #64748b; }
-.ssf-sig-overlay.is-dim .ssf-sig-page  { color: #94a3b8; }
-.ssf-sig-overlay.is-dim:hover {
-  border-color: #64748b;
-  background: rgba(148, 163, 184, .20);
+.ssf-sig-overlay-buyer.is-dim     { border-color: #4338ca; background: rgba(67, 56, 202, .10); }
+.ssf-sig-overlay-consignee.is-dim { border-color: #0d9488; background: rgba(13, 148, 136, .10); }
+.ssf-sig-overlay-supplier.is-dim  { border-color: #d97706; background: rgba(217, 119, 6, .10); }
+.ssf-sig-overlay.is-dim:hover { opacity: 1; }
+.ssf-sig-overlay.is-dim::before {
+  content: 'click to activate';
+  position: absolute;
+  bottom: -18px; left: 0;
+  font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: #64748b;
+  pointer-events: none;
 }
+
+/* Banner above the preview pane — surfaces signer resolution state
+ * (count, unmapped warnings) so the user never has to guess why
+ * boxes do/don't appear. */
+.ssf-signer-banner {
+  width: 100%; max-width: 560px;
+  padding: 8px 12px;
+  margin: 0 auto 10px;
+  border-radius: 8px;
+  font-size: 12px; line-height: 1.4;
+  background: #ecfeff; border: 1px solid #67e8f9;
+  color: #0e7490;
+  text-align: center;
+}
+.ssf-banner-warn { color: #92400e; }
+.ssf-signer-banner:has(.ssf-banner-warn) {
+  background: #fef3c7; border-color: #fde68a;
+}
+.ssf-banner-ok { color: #047857; }
+.ssf-signer-banner:has(.ssf-banner-ok) {
+  background: #ecfdf5; border-color: #a7f3d0;
+}
+
+/* Unmapped signer tab — strikethrough name + amber border so the
+ * user sees at a glance which party is blocking the send. */
+.ssf-signer-tab.is-unmapped {
+  border: 1.5px dashed #f59e0b;
+  background: #fffbeb;
+  color: #b45309;
+}
+.ssf-signer-tab.is-unmapped .ssf-signer-tab-name { text-decoration: line-through; }
 
 .ssf-coord-pane { background: #fff; border-left: 1px solid #e2e8f0; padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .ssf-coord-help { font-size: 11.5px; color: #64748b; line-height: 1.45; }
