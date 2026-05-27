@@ -76,6 +76,19 @@ type DocSettings = {
 
 const DEFAULTS: DocSettings = { x: 380, y: 720, page: 0, width: 150, height: 45 };
 
+/* Per-signer default coords for multi-party agreements. Buyer parks on
+ * the page-bottom left, Consignee on the right — so a Buyer+Consignee
+ * agreement opens with two non-overlapping boxes the user can fine-tune
+ * by dragging each independently. Single-signer agreements just pick
+ * their role's slot. Supplier is reserved for future vendor-side flows
+ * (today's lead-side workplace doesn't surface supplier signers). */
+type SignerRoleKey = 'buyer' | 'consignee' | 'supplier';
+const SIGNER_DEFAULTS: Record<SignerRoleKey, DocSettings> = {
+  buyer:     { x:  60, y: 720, page: 0, width: 150, height: 45 },
+  consignee: { x: 380, y: 720, page: 0, width: 150, height: 45 },
+  supplier:  { x: 220, y: 720, page: 0, width: 150, height: 45 },
+};
+
 // A4 in PDF points (1pt = 1/72in)
 const A4_W = 595;
 const A4_H = 842;
@@ -102,17 +115,31 @@ export type AgreementSendRow = {
   footer_config?: FooterConfig | null;
 };
 
+/* Signer role keys mirror the backend's resolveAgreementSigners output.
+ * 'supplier' isn't reachable from the lead-side flow today (suppliers
+ * are vendor-side), but the union keeps the type future-proof. */
+export type AgreementSignerRole = 'buyer' | 'consignee' | 'supplier';
+
+export type AgreementSigner = {
+  role: AgreementSignerRole;
+  name: string;
+  email: string | null;
+};
+
 export type AgreementContext = {
   leadId: number;
   /* Preselected agreements — the picker step is skipped in agreement
    * mode (the segment-details card already chose which agreements to
    * send), so we hand them in fully resolved. */
   agreements: AgreementSendRow[];
-  /* Auto-resolved signers from the lead's customer + consignee. The
-   * backend re-derives these from `agreement.party` so this is purely
-   * for the on-screen recipient card. */
-  customer?:  { name: string; email: string | null } | null;
-  consignee?: { name: string; email: string | null } | null;
+  /* Active signers for this bundle. The caller pre-filters by each
+   * agreement's `party` CSV (all agreements in a bulk-send share the
+   * same party set — backend enforces it), so a Buyer-only agreement
+   * sends [{role:'buyer',...}] and a Buyer+Consignee agreement sends
+   * both entries. The preview renders one draggable signature box
+   * per entry, and the Send payload carries per-role coords keyed by
+   * `role` so each signer's signature lands at its own position. */
+  signers: AgreementSigner[];
 };
 
 interface Props {
@@ -164,6 +191,13 @@ export default function SalesCustomerSendForSignatureModal({
   const [notes, setNotes] = useState('Please review and sign these documents.');
 
   const [settings, setSettings] = useState<Record<number, DocSettings>>({});
+  /* Agreement mode only — per-doc-per-signer coord map. Trade-doc mode
+   * keeps using the flat `settings` map above so its existing single-
+   * signer behaviour is unchanged. Active role decides which slice
+   * the coord pane drives and which overlay accepts pointer drags. */
+  const [signerSettings, setSignerSettings] =
+    useState<Record<number, Partial<Record<SignerRoleKey, DocSettings>>>>({});
+  const [activeSignerRole, setActiveSignerRole] = useState<SignerRoleKey | null>(null);
   const [activeDocId, setActiveDocId] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -327,16 +361,32 @@ export default function SalesCustomerSendForSignatureModal({
       // recipient card.
       const ctx = agreementContext;
       const ids = (ctx?.agreements ?? []).map(a => a.id).slice(0, 10);
+      const ctxSigners = ctx?.signers ?? [];
       setStep(2);
       setSelectedIds(ids);
-      const displaySigners: Signer[] = [];
-      if (ctx?.customer)  displaySigners.push({ name: ctx.customer.name,  email: ctx.customer.email  ?? '', order: 1 });
-      if (ctx?.consignee) displaySigners.push({ name: ctx.consignee.name, email: ctx.consignee.email ?? '', order: displaySigners.length + 1 });
-      setSigners(displaySigners.length > 0 ? displaySigners : [{ name: '', email: '', order: 1 }]);
+      // Display-only signer rows for the recipient card — built from
+      // the pre-filtered ctx.signers so a Buyer-only agreement never
+      // surfaces the consignee, and vice-versa.
+      const displaySigners: Signer[] = ctxSigners.length > 0
+        ? ctxSigners.map((s, i) => ({ name: s.name, email: s.email ?? '', order: i + 1 }))
+        : [{ name: '', email: '', order: 1 }];
+      setSigners(displaySigners);
       setIsSequential(false);
       setExpiryDays(30);
       setNotes('Please review and sign these agreements.');
       setSettings({});
+      // Seed per-doc-per-signer coords from SIGNER_DEFAULTS so the
+      // preview opens with non-overlapping boxes for each role. Each
+      // signer gets their own slot; user drags adjust the slot tied
+      // to whichever signer tab is active.
+      const seededSignerSettings: Record<number, Partial<Record<SignerRoleKey, DocSettings>>> = {};
+      ids.forEach(id => {
+        const perRole: Partial<Record<SignerRoleKey, DocSettings>> = {};
+        ctxSigners.forEach(s => { perRole[s.role] = { ...SIGNER_DEFAULTS[s.role] }; });
+        seededSignerSettings[id] = perRole;
+      });
+      setSignerSettings(seededSignerSettings);
+      setActiveSignerRole(ctxSigners[0]?.role ?? null);
       setActiveDocId(ids[0] ?? null);
       setPreviewUrl(null);
       userOverrodeRef.current.clear();
@@ -568,13 +618,28 @@ export default function SalesCustomerSendForSignatureModal({
       }
       setSending(true);
       try {
+        /* Build per-role document_settings — agreement-send accepts
+         * `{[agreementId]: {buyer: {...}, consignee: {...}}}` so each
+         * signer's signature box can land at its own dragged position
+         * on the same PDF (rather than every signer's widget sharing
+         * one coord and visually stacking). Falls back to SIGNER_DEFAULTS
+         * for any signer the user didn't touch. */
+        const documentSettings: Record<number, Record<string, DocSettings>> = {};
+        selectedIds.forEach(id => {
+          const slice = signerSettings[id] ?? {};
+          const filled: Record<string, DocSettings> = {};
+          (agreementContext.signers ?? []).forEach(s => {
+            filled[s.role] = slice[s.role] ?? { ...(SIGNER_DEFAULTS[s.role] ?? DEFAULTS) };
+          });
+          documentSettings[id] = filled;
+        });
         const r = await api.post('/clm/signature-requests/agreement-send', {
           agreement_ids:     selectedIds,
           lead_id:           agreementContext.leadId,
           is_sequential:     isSequential,
           expiry_days:       expiryDays,
           notes:             notes.trim(),
-          document_settings: settings,
+          document_settings: documentSettings,
           ...(Object.keys(headerOverrides).length  ? { header_config_overrides:  headerOverrides  } : {}),
           ...(Object.keys(footerOverrides).length  ? { footer_config_overrides:  footerOverrides  } : {}),
           ...(Object.keys(contentOverrides).length ? { content_overrides:        contentOverrides } : {}),
@@ -630,9 +695,38 @@ export default function SalesCustomerSendForSignatureModal({
     }
   };
 
-  const activeSettings = activeDocId ? (settings[activeDocId] ?? { ...DEFAULTS }) : null;
+  /* activeSettings + updateActiveSettings branch by mode so the
+   * coord pane (X / Y / W / H / Page inputs) and the draggable
+   * overlay both bind to:
+   *   - agreement mode → signerSettings[docId][activeSignerRole]
+   *   - trade-doc mode → settings[docId]
+   * Per-signer agreement coords are kept in their own state map so
+   * trade-doc behaviour stays bit-for-bit unchanged. */
+  const activeSettings: DocSettings | null = (() => {
+    if (!activeDocId) return null;
+    if (isAgreement) {
+      if (!activeSignerRole) return null;
+      const roleSeed = SIGNER_DEFAULTS[activeSignerRole] ?? DEFAULTS;
+      return signerSettings[activeDocId]?.[activeSignerRole] ?? { ...roleSeed };
+    }
+    return settings[activeDocId] ?? { ...DEFAULTS };
+  })();
   const updateActiveSettings = (patch: Partial<DocSettings>) => {
     if (!activeDocId) return;
+    if (isAgreement) {
+      if (!activeSignerRole) return;
+      const role = activeSignerRole;
+      setSignerSettings(prev => {
+        const roleSeed = SIGNER_DEFAULTS[role] ?? DEFAULTS;
+        const docSlice = prev[activeDocId] ?? {};
+        const cur      = docSlice[role] ?? { ...roleSeed };
+        return {
+          ...prev,
+          [activeDocId]: { ...docSlice, [role]: { ...roleSeed, ...cur, ...patch } },
+        };
+      });
+      return;
+    }
     setSettings(prev => ({ ...prev, [activeDocId]: { ...DEFAULTS, ...prev[activeDocId], ...patch } }));
   };
 
@@ -746,13 +840,22 @@ export default function SalesCustomerSendForSignatureModal({
               <div className="ssf-head-label">{isAgreement ? 'SEND AGREEMENTS FOR SIGNATURE' : 'SEND FOR SIGNATURE'}</div>
               <div className="ssf-head-title">
                 {isAgreement
-                  ? (agreementContext?.customer?.name || agreementContext?.consignee?.name || 'Lead Agreements')
+                  ? ((agreementContext?.signers ?? [])[0]?.name || 'Lead Agreements')
                   : (customer?.company || 'Customer')}
               </div>
               {isAgreement
-                ? (agreementContext?.customer?.email || agreementContext?.consignee?.email)
-                  ? <div className="ssf-head-sub">{agreementContext?.customer?.email || agreementContext?.consignee?.email}</div>
-                  : null
+                ? (() => {
+                    const ctxSigners = agreementContext?.signers ?? [];
+                    if (ctxSigners.length === 0) return null;
+                    if (ctxSigners.length === 1) {
+                      return ctxSigners[0].email ? <div className="ssf-head-sub">{ctxSigners[0].email}</div> : null;
+                    }
+                    // Multi-signer header — surface "Buyer + Consignee"
+                    // so the sender knows at a glance who's getting the
+                    // doc.
+                    const labels = ctxSigners.map(s => s.role === 'buyer' ? 'Buyer' : s.role === 'consignee' ? 'Consignee' : 'Supplier');
+                    return <div className="ssf-head-sub">{labels.join(' + ')} · {ctxSigners.length} signer{ctxSigners.length > 1 ? 's' : ''}</div>;
+                  })()
                 : (customer?.email && <div className="ssf-head-sub">{customer.email}</div>)}
             </div>
           </div>
@@ -881,65 +984,149 @@ export default function SalesCustomerSendForSignatureModal({
                 {previewLoading && <div className="ssf-preview-state">Rendering preview…</div>}
                 {!previewLoading && !previewUrl && <div className="ssf-preview-state">Preview unavailable.</div>}
                 {previewUrl && (
-                  <div className="ssf-preview-wrap" ref={previewWrapRef}>
-                    {/* PDF.js / native viewer behind; #toolbar=0&navpanes=0&scrollbar=0
-                        strips the browser PDF chrome on Chromium so the page itself
-                        fills the wrapper at A4 ratio. The draggable overlay sits
-                        on top in the SAME coordinate space.
-                        #page=N (1-indexed) syncs the visible page to the page
-                        the user is positioning on — otherwise on multi-page
-                        docs the user sees page 1 while their (x,y) is being
-                        applied by Zoho to page 2, and the widget lands far
-                        from where they dragged. Re-keying on page also
-                        forces a reload when the page input changes. */}
-                    <iframe
-                      key={`${previewUrl}-p${activeSettings?.page ?? 0}`}
-                      title="Preview"
-                      src={`${previewUrl}#page=${(activeSettings?.page ?? 0) + 1}&toolbar=0&navpanes=0&scrollbar=0&zoom=page-fit&view=FitH`}
-                      className="ssf-preview-frame"
-                    />
-                    {activeSettings && wrapWidthPx > 0 && (() => {
-                      // Zoho field coords use TOP-LEFT origin (y grows down),
-                      // matching CSS — so the conversion is a simple scale,
-                      // no Y inversion. Render only once the wrapper has been
-                      // measured so the box doesn't paint at 0×0 on the first
-                      // frame before the ResizeObserver fires.
-                      const pxPerPt  = wrapWidthPx / A4_W;
-                      const leftPx   = activeSettings.x      * pxPerPt;
-                      const topPx    = activeSettings.y      * pxPerPt;
-                      const widthPx  = activeSettings.width  * pxPerPt;
-                      const heightPx = activeSettings.height * pxPerPt;
-                      return (
-                        <div
-                          className="ssf-sig-overlay"
-                          style={{ left: leftPx, top: topPx, width: widthPx, height: heightPx }}
-                          onPointerDown={e => onSigPointerDown(e, 'move')}
-                          /* Keyboard nudge for pixel-perfect placement —
-                             arrow keys move by 1pt, Shift = 5pt, Alt = 10pt.
-                             tabIndex makes the div focusable so keydown
-                             fires when the user clicks the overlay first
-                             (pointerdown gives it focus implicitly via
-                             setPointerCapture). */
-                          tabIndex={0}
-                          onKeyDown={e => {
-                            const step = e.altKey ? 10 : e.shiftKey ? 5 : 1;
-                            if (e.key === 'ArrowUp')    { e.preventDefault(); updateActiveSettings({ y: Math.max(0, activeSettings.y - step) }); }
-                            if (e.key === 'ArrowDown')  { e.preventDefault(); updateActiveSettings({ y: Math.max(0, activeSettings.y + step) }); }
-                            if (e.key === 'ArrowLeft')  { e.preventDefault(); updateActiveSettings({ x: Math.max(0, activeSettings.x - step) }); }
-                            if (e.key === 'ArrowRight') { e.preventDefault(); updateActiveSettings({ x: Math.max(0, activeSettings.x + step) }); }
-                          }}
-                          title="Drag to move, arrow keys to nudge by 1pt (Shift = 5, Alt = 10)"
-                        >
-                          <div className="ssf-sig-label">Signature</div>
-                          <div className="ssf-sig-page">page {activeSettings.page + 1}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                    {/* Signer-tab strip — only renders in agreement
+                        mode with ≥2 signers (Buyer + Consignee).
+                        Clicking a tab promotes that role to "active":
+                        the coord pane drives its coords, the iframe
+                        jumps to its saved page, and its overlay
+                        becomes draggable while the other signer's
+                        box dims to a read-only outline. */}
+                    {isAgreement && (agreementContext?.signers?.length ?? 0) > 1 && (
+                      <div className="ssf-signer-tabs" role="tablist">
+                        {(agreementContext?.signers ?? []).map(s => (
+                          <button
+                            key={s.role}
+                            type="button"
+                            role="tab"
+                            aria-selected={s.role === activeSignerRole}
+                            className={`ssf-signer-tab ${s.role === activeSignerRole ? 'is-on' : ''}`}
+                            onClick={() => setActiveSignerRole(s.role)}
+                            title={`Position ${s.name}'s signature`}
+                          >
+                            <span className={`ssf-signer-dot ssf-signer-dot-${s.role}`} />
+                            {s.role === 'buyer' ? 'Buyer' : s.role === 'consignee' ? 'Consignee' : 'Supplier'}
+                            <span className="ssf-signer-tab-name">· {s.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="ssf-preview-wrap" ref={previewWrapRef}>
+                      {/* PDF.js / native viewer behind; #toolbar=0&navpanes=0&scrollbar=0
+                          strips the browser PDF chrome on Chromium so the page itself
+                          fills the wrapper at A4 ratio. The draggable overlay sits
+                          on top in the SAME coordinate space.
+                          #page=N (1-indexed) syncs the visible page to the page
+                          the user is positioning on — otherwise on multi-page
+                          docs the user sees page 1 while their (x,y) is being
+                          applied by Zoho to page 2, and the widget lands far
+                          from where they dragged. Re-keying on page also
+                          forces a reload when the page input changes. */}
+                      <iframe
+                        key={`${previewUrl}-p${activeSettings?.page ?? 0}`}
+                        title="Preview"
+                        src={`${previewUrl}#page=${(activeSettings?.page ?? 0) + 1}&toolbar=0&navpanes=0&scrollbar=0&zoom=page-fit&view=FitH`}
+                        className="ssf-preview-frame"
+                      />
+                      {/* Overlay rendering branches by mode.
+                          - trade-doc: ONE overlay bound to settings[docId]
+                          - agreement: ONE overlay per signer on the active
+                            page; only the active signer is draggable, the
+                            rest are dimmed read-only previews so the user
+                            can see how the layout looks for the bundle. */}
+                      {isAgreement && wrapWidthPx > 0 && activeDocId && (() => {
+                        const pxPerPt = wrapWidthPx / A4_W;
+                        const visiblePage = activeSettings?.page ?? 0;
+                        return (agreementContext?.signers ?? []).map(s => {
+                          const ds = signerSettings[activeDocId]?.[s.role]
+                            ?? SIGNER_DEFAULTS[s.role]
+                            ?? DEFAULTS;
+                          // Only paint overlays whose .page matches the
+                          // iframe's current page — otherwise the box
+                          // would float over the wrong page.
+                          if (ds.page !== visiblePage) return null;
+                          const isActive = s.role === activeSignerRole;
+                          const leftPx   = ds.x      * pxPerPt;
+                          const topPx    = ds.y      * pxPerPt;
+                          const widthPx  = ds.width  * pxPerPt;
+                          const heightPx = ds.height * pxPerPt;
+                          const dotCls   = `ssf-signer-dot ssf-signer-dot-${s.role}`;
+                          return (
+                            <div
+                              key={s.role}
+                              className={`ssf-sig-overlay ssf-sig-overlay-${s.role} ${isActive ? 'is-active' : 'is-dim'}`}
+                              style={{ left: leftPx, top: topPx, width: widthPx, height: heightPx }}
+                              onPointerDown={(e) => {
+                                if (!isActive) {
+                                  // Clicking another signer's box switches
+                                  // focus to that signer (drag won't fire
+                                  // on this pointerdown — user clicks
+                                  // again to start the drag).
+                                  e.stopPropagation();
+                                  setActiveSignerRole(s.role);
+                                  return;
+                                }
+                                onSigPointerDown(e, 'move');
+                              }}
+                              tabIndex={isActive ? 0 : -1}
+                              onKeyDown={e => {
+                                if (!isActive) return;
+                                const step = e.altKey ? 10 : e.shiftKey ? 5 : 1;
+                                if (e.key === 'ArrowUp')    { e.preventDefault(); updateActiveSettings({ y: Math.max(0, ds.y - step) }); }
+                                if (e.key === 'ArrowDown')  { e.preventDefault(); updateActiveSettings({ y: Math.max(0, ds.y + step) }); }
+                                if (e.key === 'ArrowLeft')  { e.preventDefault(); updateActiveSettings({ x: Math.max(0, ds.x - step) }); }
+                                if (e.key === 'ArrowRight') { e.preventDefault(); updateActiveSettings({ x: Math.max(0, ds.x + step) }); }
+                              }}
+                              title={isActive ? 'Drag to move' : `Click to switch to ${s.name}`}
+                            >
+                              <div className="ssf-sig-label"><span className={dotCls} /> {s.role === 'buyer' ? 'Buyer' : s.role === 'consignee' ? 'Consignee' : 'Supplier'}</div>
+                              <div className="ssf-sig-page">page {ds.page + 1}</div>
+                              {isActive && (
+                                <div
+                                  className="ssf-sig-resize"
+                                  onPointerDown={(e) => onSigPointerDown(e, 'resize')}
+                                  aria-label="Resize signature"
+                                />
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
+                      {!isAgreement && activeSettings && wrapWidthPx > 0 && (() => {
+                        // Trade-doc single-overlay path — unchanged from
+                        // before, kept inside its own IIFE so the agreement
+                        // branch above can grow independently.
+                        const pxPerPt  = wrapWidthPx / A4_W;
+                        const leftPx   = activeSettings.x      * pxPerPt;
+                        const topPx    = activeSettings.y      * pxPerPt;
+                        const widthPx  = activeSettings.width  * pxPerPt;
+                        const heightPx = activeSettings.height * pxPerPt;
+                        return (
                           <div
-                            className="ssf-sig-resize"
-                            onPointerDown={e => onSigPointerDown(e, 'resize')}
-                            aria-label="Resize signature"
-                          />
-                        </div>
-                      );
-                    })()}
+                            className="ssf-sig-overlay"
+                            style={{ left: leftPx, top: topPx, width: widthPx, height: heightPx }}
+                            onPointerDown={e => onSigPointerDown(e, 'move')}
+                            tabIndex={0}
+                            onKeyDown={e => {
+                              const step = e.altKey ? 10 : e.shiftKey ? 5 : 1;
+                              if (e.key === 'ArrowUp')    { e.preventDefault(); updateActiveSettings({ y: Math.max(0, activeSettings.y - step) }); }
+                              if (e.key === 'ArrowDown')  { e.preventDefault(); updateActiveSettings({ y: Math.max(0, activeSettings.y + step) }); }
+                              if (e.key === 'ArrowLeft')  { e.preventDefault(); updateActiveSettings({ x: Math.max(0, activeSettings.x - step) }); }
+                              if (e.key === 'ArrowRight') { e.preventDefault(); updateActiveSettings({ x: Math.max(0, activeSettings.x + step) }); }
+                            }}
+                            title="Drag to move, arrow keys to nudge by 1pt (Shift = 5, Alt = 10)"
+                          >
+                            <div className="ssf-sig-label">Signature</div>
+                            <div className="ssf-sig-page">page {activeSettings.page + 1}</div>
+                            <div
+                              className="ssf-sig-resize"
+                              onPointerDown={e => onSigPointerDown(e, 'resize')}
+                              aria-label="Resize signature"
+                            />
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1056,21 +1243,19 @@ export default function SalesCustomerSendForSignatureModal({
                   <div className="ssf-recipient-h">{isAgreement ? 'Signers' : 'Recipient'}</div>
                   {isAgreement ? (
                     <>
-                      {agreementContext?.customer && (
-                        <div style={{ marginBottom: 6 }}>
-                          <div className="ssf-recipient-name">{agreementContext.customer.name}</div>
-                          <div className="ssf-recipient-email">{agreementContext.customer.email || '—'}</div>
+                      {(agreementContext?.signers ?? []).length === 0 && (
+                        <div className="ssf-recipient-email">No signers resolved — check the lead's customer/consignee mapping against the agreement's applicable party.</div>
+                      )}
+                      {(agreementContext?.signers ?? []).map((s, i) => (
+                        <div key={s.role} style={{ marginBottom: i < (agreementContext?.signers ?? []).length - 1 ? 6 : 0 }}>
+                          <div className="ssf-recipient-name">
+                            <span className={`ssf-signer-dot ssf-signer-dot-${s.role}`} style={{ marginRight: 6 }} />
+                            {s.role === 'buyer' ? 'Buyer · ' : s.role === 'consignee' ? 'Consignee · ' : 'Supplier · '}
+                            {s.name}
+                          </div>
+                          <div className="ssf-recipient-email">{s.email || '—'}</div>
                         </div>
-                      )}
-                      {agreementContext?.consignee && (
-                        <div>
-                          <div className="ssf-recipient-name">{agreementContext.consignee.name}</div>
-                          <div className="ssf-recipient-email">{agreementContext.consignee.email || '—'}</div>
-                        </div>
-                      )}
-                      {!agreementContext?.customer && !agreementContext?.consignee && (
-                        <div className="ssf-recipient-email">No signers resolved — check the lead's customer/consignee mapping.</div>
-                      )}
+                      ))}
                     </>
                   ) : (
                     <>
@@ -1618,6 +1803,69 @@ const SSF_CSS = `
   border-radius: 3px;
   cursor: nwse-resize;
   touch-action: none;
+}
+
+/* ── Multi-signer (agreement mode) ────────────────────────────────────
+ * Signer tabs above the preview let the user pick which signer's box
+ * the coord pane drives. Each role gets its own colour dot for quick
+ * visual mapping between tab / overlay / recipient card. */
+.ssf-signer-tabs {
+  display: inline-flex; gap: 6px;
+  margin: 0 auto 10px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+.ssf-signer-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  background: transparent; border: 0;
+  font-family: inherit; font-size: 12px; font-weight: 700;
+  color: #475569; cursor: pointer;
+  border-radius: 7px;
+  transition: background .15s ease, color .15s ease;
+}
+.ssf-signer-tab:hover { background: #f1f5f9; color: #0f172a; }
+.ssf-signer-tab.is-on { background: #eef2ff; color: #4338ca; }
+.ssf-signer-tab-name {
+  font-weight: 500; color: #94a3b8; max-width: 140px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ssf-signer-tab.is-on .ssf-signer-tab-name { color: #6366f1; }
+
+/* Role colour swatches — buyer = indigo, consignee = teal,
+ * supplier = amber. The same dot recurs in the recipient card and the
+ * sig-label so the user can scan the layout at a glance. */
+.ssf-signer-dot {
+  display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.ssf-signer-dot-buyer     { background: #4338ca; }
+.ssf-signer-dot-consignee { background: #0d9488; }
+.ssf-signer-dot-supplier  { background: #d97706; }
+
+/* Active overlay keeps the default indigo styling (defined above).
+ * Per-role variants tint the active border + label to match the dot,
+ * and the .is-dim variant fades inactive boxes so the user can tell
+ * at a glance which one their drag targets. */
+.ssf-sig-overlay-buyer.is-active     { border-color: #4338ca; background: rgba(99, 102, 241, .22); }
+.ssf-sig-overlay-consignee.is-active { border-color: #0d9488; background: rgba(20, 184, 166, .22); }
+.ssf-sig-overlay-supplier.is-active  { border-color: #d97706; background: rgba(245, 158, 11, .22); }
+
+.ssf-sig-overlay.is-dim {
+  border-style: dotted;
+  border-color: #94a3b8;
+  background: rgba(148, 163, 184, .12);
+  cursor: pointer;
+  box-shadow: none;
+}
+.ssf-sig-overlay.is-dim .ssf-sig-label { color: #64748b; }
+.ssf-sig-overlay.is-dim .ssf-sig-page  { color: #94a3b8; }
+.ssf-sig-overlay.is-dim:hover {
+  border-color: #64748b;
+  background: rgba(148, 163, 184, .20);
 }
 
 .ssf-coord-pane { background: #fff; border-left: 1px solid #e2e8f0; padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
