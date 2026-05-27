@@ -333,6 +333,14 @@ class ClmAgreementController extends Controller
                     'required'       => $a->regulatory === 'highly' ? 'REQ' : 'OPT',
                     'updated_at'     => optional($a->updated_at)->toDateString(),
                     'signature_request' => $sigOut,
+                    /* Send-for-Signature editor seed — body HTML + saved
+                     * page-shell config so the Edit Header/Footer/Body
+                     * popup in the workplace can hydrate without an
+                     * extra round-trip. Per-row send-time overrides
+                     * layer over these without mutating the saved row. */
+                    'content'        => $a->content,
+                    'header_config'  => is_array($a->header_config) ? $a->header_config : null,
+                    'footer_config'  => is_array($a->footer_config) ? $a->footer_config : null,
                 ];
             })->values();
 

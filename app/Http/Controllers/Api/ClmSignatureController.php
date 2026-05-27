@@ -352,8 +352,15 @@ class ClmSignatureController extends Controller
         $user = $request->user(); if (!$user) abort(401);
 
         $data = $request->validate([
-            'agreement_id' => 'required|integer|exists:clm_agreement_library,id',
-            'lead_id'      => 'required|integer|exists:leads,id',
+            'agreement_id'            => 'required|integer|exists:clm_agreement_library,id',
+            'lead_id'                 => 'required|integer|exists:leads,id',
+            /* Per-send page-shell + body overrides — let the workplace
+             * Send-for-Signature flow tweak the agreement's header,
+             * footer and body content without mutating the saved row.
+             * Identical shape to the trade-doc preview override path. */
+            'header_config_override'  => 'nullable|array',
+            'footer_config_override'  => 'nullable|array',
+            'content_override'        => 'nullable|string',
         ]);
 
         $agreement = ClmAgreementLibrary::where('client_id', $user->client_id)
@@ -369,7 +376,16 @@ class ClmSignatureController extends Controller
             return response()->json(['status' => false, 'message' => 'No customer/consignee on this lead to render the agreement against.'], 422);
         }
 
-        $pdf = $this->renderAgreementPdf($agreement, $primary, $primaryModel, Str::uuid()->toString(), $signers);
+        $pdf = $this->renderAgreementPdf(
+            $agreement,
+            $primary,
+            $primaryModel,
+            Str::uuid()->toString(),
+            $signers,
+            $data['header_config_override'] ?? null,
+            $data['footer_config_override'] ?? null,
+            array_key_exists('content_override', $data) ? (string) $data['content_override'] : null,
+        );
 
         return response($pdf->output(), 200, [
             'Content-Type'        => 'application/pdf',
@@ -403,6 +419,13 @@ class ClmSignatureController extends Controller
              * single + bulk sends. mapClientCoordsToZohoDocIds expands
              * it into per-Zoho-doc field entries. */
             'document_settings' => 'nullable|array',
+            /* Per-doc page-shell + body overrides keyed by agreement_id.
+             * Mirrors the trade-doc send override path so each agreement
+             * in a bulk send can carry its own brand band + body edits
+             * without mutating the saved row. */
+            'header_config_overrides'   => 'nullable|array',
+            'footer_config_overrides'   => 'nullable|array',
+            'content_overrides'         => 'nullable|array',
         ]);
 
         // Normalise the input — frontend may pass `agreement_ids` (bulk)
@@ -470,10 +493,32 @@ class ClmSignatureController extends Controller
         $tempPaths    = [];
         $localDocMeta = [];
 
+        // Per-agreement overrides — keys can arrive as ints or numeric
+        // strings depending on how the JSON object was serialised, so
+        // we look up by both forms.
+        $headerOverrides  = (array) ($data['header_config_overrides'] ?? []);
+        $footerOverrides  = (array) ($data['footer_config_overrides'] ?? []);
+        $contentOverrides = (array) ($data['content_overrides']       ?? []);
+        $pickOverride = function (array $bag, int $aid) {
+            return $bag[$aid] ?? $bag[(string) $aid] ?? null;
+        };
+
         try {
             // 1. Render every agreement to a temp PDF.
             foreach ($orderedAgreements as $a) {
-                $pdf = $this->renderAgreementPdf($a, $primary, $primaryModel, $requestUuid, $signers);
+                $headerOverride  = $pickOverride($headerOverrides,  $a->id);
+                $footerOverride  = $pickOverride($footerOverrides,  $a->id);
+                $contentOverride = $pickOverride($contentOverrides, $a->id);
+                $pdf = $this->renderAgreementPdf(
+                    $a,
+                    $primary,
+                    $primaryModel,
+                    $requestUuid,
+                    $signers,
+                    is_array($headerOverride) ? $headerOverride : null,
+                    is_array($footerOverride) ? $footerOverride : null,
+                    $contentOverride !== null ? (string) $contentOverride : null,
+                );
                 $tmp = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
                 file_put_contents($tmp, $pdf->output());
                 $tempPaths[]    = $tmp;
@@ -683,8 +728,14 @@ class ClmSignatureController extends Controller
         string $modelName,
         string $requestUuid,
         ?array $signers = null,
+        ?array $headerOverride = null,
+        ?array $footerOverride = null,
+        ?string $contentOverride = null,
     ) {
-        $sourceHtml    = (string) $agreement->content;
+        // Body HTML: per-send override beats the saved row's content.
+        // The override path lets the workplace Send-for-Signature flow
+        // tweak agreement copy without mutating the master.
+        $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $agreement->content;
         $processedHtml = $this->replacePlaceholders($sourceHtml, $party, $modelName);
         $client        = Client::find($agreement->client_id);
 
@@ -692,8 +743,14 @@ class ClmSignatureController extends Controller
         // PDF matches what the user composed in the editor. Missing on
         // pre-migration rows → empty array; blade falls back to a
         // minimal client-name header so older agreements still render.
-        $headerConfig = is_array($agreement->header_config) ? $agreement->header_config : [];
-        $footerConfig = is_array($agreement->footer_config) ? $agreement->footer_config : [];
+        // Per-send overrides are LAYERED over the saved config (rather
+        // than replacing it wholesale) so the user can tweak one field
+        // — e.g. just the footer text — without having to repopulate
+        // every other column the editor would have shown.
+        $savedHeader = is_array($agreement->header_config) ? $agreement->header_config : [];
+        $savedFooter = is_array($agreement->footer_config) ? $agreement->footer_config : [];
+        $headerConfig = is_array($headerOverride) ? array_replace($savedHeader, $headerOverride) : $savedHeader;
+        $footerConfig = is_array($footerOverride) ? array_replace($savedFooter, $footerOverride) : $savedFooter;
 
         $headerLogoBase64 = $this->resolveLogoBase64(
             $headerConfig['logo_path'] ?? null,
