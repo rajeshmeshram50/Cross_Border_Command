@@ -2253,7 +2253,18 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
           <div className="acm-row acm-row-4">
             <Field label="Contact Person Name" required error={errors.cpName} fieldKey="cpName"><input className={errors.cpName ? 'acm-input-error' : ''} value={form.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
             <Field label="Designation" required error={errors.cpDesig} fieldKey="cpDesig">
-              <MasterSelect value={form.cpDesig} options={optsWith(masters.designations, form.cpDesig)} placeholder="Select designation" invalid={!!errors.cpDesig} onChange={v => set('cpDesig', v)} />
+              {/* Free-text input — matches AddConsigneeModal. The
+                  /master/designations dropdown forced users to pick
+                  from a fixed list that rarely matched the real
+                  designation; backend stores cp_designation as a
+                  string up to 128 chars either way. */}
+              <input
+                className={`acm-input ${errors.cpDesig ? 'acm-input-error' : ''}`}
+                placeholder="Type designation (e.g. Compliance Officer)"
+                value={form.cpDesig}
+                onChange={e => set('cpDesig', e.target.value)}
+                maxLength={60}
+              />
             </Field>
             <Field label="Contact No" required error={errors.cpTel} fieldKey="cpTel"><input className={errors.cpTel ? 'acm-input-error' : ''} type="tel" value={form.cpTel} onChange={e => set('cpTel', e.target.value)} placeholder="7–15 digit number" /></Field>
             <Field label="Email" required error={errors.cpEmail} fieldKey="cpEmail"><input className={errors.cpEmail ? 'acm-input-error' : ''} type="email" value={form.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
@@ -4124,7 +4135,16 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
           <div className="acm-row acm-row-4">
             <Field label="Contact Person Name" required error={errs.cpName}><input className={errs.cpName ? 'acm-input-error' : ''} value={d.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
             <Field label="Designation" required error={errs.cpDesignation}>
-              <MasterSelect value={d.cpDesignation} options={optsWith(masters.designations, d.cpDesignation)} placeholder="Select designation" invalid={!!errs.cpDesignation} onChange={v => set('cpDesignation', v)} />
+              {/* Free-text input — matches AddConsigneeModal's location
+                  sub-modal. Backend stores cp_designation as a string
+                  up to 128 chars either way. */}
+              <input
+                className={`acm-input ${errs.cpDesignation ? 'acm-input-error' : ''}`}
+                placeholder="e.g. Sales Manager"
+                value={d.cpDesignation}
+                onChange={e => set('cpDesignation', e.target.value)}
+                maxLength={60}
+              />
             </Field>
             <Field label="Contact No" required error={errs.cpContact}><input className={errs.cpContact ? 'acm-input-error' : ''} type="tel" value={d.cpContact} onChange={e => set('cpContact', e.target.value)} placeholder="7–15 digit mobile" /></Field>
             <Field label="Email Id" required error={errs.cpEmail}><input className={errs.cpEmail ? 'acm-input-error' : ''} type="email" value={d.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
