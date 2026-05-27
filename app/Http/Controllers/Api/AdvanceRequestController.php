@@ -267,10 +267,7 @@ class AdvanceRequestController extends Controller
         }
     }
 
-    /* ============================================================ */
-    /*  MANAGER ACTIONS                                             */
-    /* ============================================================ */
-
+ 
     public function managerApprove(Request $request, $id)
     {
         return $this->managerAct($request, $id, 'approved');
