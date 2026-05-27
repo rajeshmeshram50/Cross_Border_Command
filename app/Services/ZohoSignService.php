@@ -258,7 +258,26 @@ class ZohoSignService
                     $docId = $doc['document_id'] ?? null;
                     if (!$docId) continue;
 
-                    $c = $perDocCoords[$docId] ?? [];
+                    /* Per-role lookup (agreement multi-signer case).
+                     * When the SPA drags Buyer and Consignee boxes
+                     * independently it sends:
+                     *   document_settings[agreementId] = {
+                     *     buyer:     {x, y, page, width, height},
+                     *     consignee: {x, y, page, width, height},
+                     *   }
+                     * which mapClientCoordsToZohoDocIds rebins as
+                     *   $perDocCoords[$zohoDocId] = {buyer:..., consignee:...}
+                     * The controller stamps `cbc_role` onto each Zoho
+                     * action before calling us, so we pick the role-
+                     * specific coord here. Falls back to the flat
+                     * shape so trade-doc single-signer sends keep
+                     * working unchanged. */
+                    $docCoords = $perDocCoords[$docId] ?? [];
+                    $role      = (string) ($action['cbc_role'] ?? '');
+                    $roleSlice = ($role !== '' && isset($docCoords[$role]) && is_array($docCoords[$role]))
+                        ? $docCoords[$role]
+                        : null;
+                    $c = $roleSlice ?? (isset($docCoords['x']) ? $docCoords : []);
                     // Zoho rejects field coords with too many decimal places
                     // (error 9011 "You have entered too many characters") —
                     // the front-end PDF.js detector returns sub-pt-precision
