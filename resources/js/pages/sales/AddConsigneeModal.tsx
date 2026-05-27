@@ -2511,13 +2511,17 @@ const Stage1 = ({
                 <input className={`acm-input ${errors.contactName ? 'acm-input-error' : ''}`} placeholder="Full name" value={form.contactName} onChange={e => set('contactName', e.target.value)} disabled={lock} />
               </Field>
               <Field label="Designation" required error={errors.designation} fieldKey="designation">
-                <MasterSelect
+                {/* Free-text input — users were asked to type the
+                    designation manually instead of picking from the
+                    /master/designations dropdown. Master fetch still
+                    runs (harmless) but no longer drives the UI here. */}
+                <input
+                  className={`acm-input ${errors.designation ? 'acm-input-error' : ''}`}
+                  placeholder="Type designation (e.g. Compliance Officer)"
                   value={form.designation}
-                  options={optsWith(masters.designations, form.designation)}
-                  placeholder="Select Designation"
-                  invalid={!!errors.designation}
+                  onChange={e => set('designation', e.target.value)}
                   disabled={lock}
-                  onChange={v => set('designation', v)}
+                  maxLength={60}
                 />
               </Field>
               <Field label="Contact No" required error={errors.contactNo} fieldKey="contactNo">
@@ -4473,16 +4477,16 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
             </div>
             <div className="acm-field">
               <label className="acm-field-label">DESIGNATION</label>
-              {/* Designation is master-backed — pulls from
-                  /master/designations so the value matches what's
-                  available elsewhere in the app. Synthetic option for
-                  the row's existing value (handles legacy free-text
-                  values that pre-date this change). */}
-              <MasterSelect
+              {/* Free-text input — was a MasterSelect tied to
+                  /master/designations; switched to a plain input so
+                  users can type any designation (Director, Owner,
+                  Authorised Signatory, etc.) without master upkeep. */}
+              <input
+                className="acm-input"
+                placeholder="e.g. Director, Owner, Authorised Signatory"
                 value={d.designation ?? ''}
-                options={optsWith(designations, d.designation ?? '')}
-                placeholder="Select Designation"
-                onChange={v => set('designation', v)}
+                onChange={e => set('designation', e.target.value)}
+                maxLength={60}
               />
             </div>
           </div>
@@ -4798,12 +4802,16 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
             </div>
             <div className="acm-field">
               <label className="acm-field-label">DESIGNATION <span className="acm-req">*</span></label>
-              <MasterSelect
+              {/* Free-text input — was a MasterSelect tied to
+                  /master/designations; switched to a plain input so
+                  the location's contact designation can be anything
+                  the user types. */}
+              <input
+                className={`acm-input ${errs.cpDesignation ? 'acm-input-error' : ''}`}
+                placeholder="e.g. Sales Manager"
                 value={d.cpDesignation}
-                options={optsWith(designations, d.cpDesignation)}
-                placeholder="Select designation"
-                invalid={!!errs.cpDesignation}
-                onChange={v => set('cpDesignation', v)}
+                onChange={e => set('cpDesignation', e.target.value)}
+                maxLength={60}
               />
               {errs.cpDesignation && <span className="acm-err-text">{errs.cpDesignation}</span>}
             </div>
