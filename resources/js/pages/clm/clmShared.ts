@@ -1200,11 +1200,31 @@ body > .dropdown-menu.master-select-menu,
   background: rgba(8,145,178,.10) !important;
   border-color: rgba(6,182,212,.25) !important;
 }
+/* The light-cyan gradient is set on the <tr> itself, so the background
+ * override has to target the tr — overriding only the > th leaves the
+ * row visibly white. We also paint each th explicitly so the cells
+ * pick up the dark band even when the row's own background is hidden
+ * behind any default browser th rule. */
+[data-bs-theme="dark"] .dcp-thead-row,
 [data-bs-theme="dark"] .dcp-thead-row > th {
-  background: rgba(8,145,178,.18) !important;
+  background: rgba(8,145,178,.22) !important;
   border-bottom-color: rgba(6,182,212,.30) !important;
 }
-[data-bs-theme="dark"] .dcp-thead-row > th > span { color: #67e8f9 !important; }
+[data-bs-theme="dark"] .dcp-thead-row > th > span { color: #cffafe !important; }
+
+/* Stage 2 — Mandatory / Optional segmented buttons. Unselected state uses
+ * an inline rgba(248,250,252,.8) bg + #94a3b8 text — both light-mode
+ * colors that wash out against the dark row. Selected ("on") states are
+ * teal / amber gradients that already work in either mode, so we only
+ * need to fix the off state. */
+[data-bs-theme="dark"] .dcp-req-btn-off {
+  background: rgba(30,41,59,.7) !important;
+  color: #cbd5e1 !important;
+}
+[data-bs-theme="dark"] .dcp-req-btn-off:hover { background: rgba(51,65,85,.85) !important; }
+[data-bs-theme="dark"] .dcp-req-group { border-color: rgba(148,163,184,.30) !important; }
+[data-bs-theme="dark"] .dcp-req-group.dcp-req-group-mand { border-color: rgba(6,182,212,.45) !important; }
+[data-bs-theme="dark"] .dcp-req-group.dcp-req-group-opt  { border-color: rgba(245,158,11,.45) !important; }
 
 /* Brighten the inactive segment-rule tab text in dark mode — previously
  * #94a3b8 was too dim to read against the near-black panel. */
