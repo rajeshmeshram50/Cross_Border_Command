@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
+import { useToast } from '../../contexts/ToastContext';
 import { signatureRequestsToVaultDocs, type SigReqRow } from '../../utils/vaultSignatureRows';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -177,10 +180,14 @@ function buildDemoVault(customer: CustomerVaultTarget): VaultData {
 }
 
 export default function CustomerEvidenceVaultModal({ open, customer, onClose, data }: Props) {
+  const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');
   const kpiStripRef = useRef<HTMLDivElement | null>(null);
   const [kpiPaused, setKpiPaused] = useState(false);
+  /* Export All — in-flight flag drives spinner + disabled state on
+   * the footer button while the XLSX workbook is being assembled. */
+  const [exporting, setExporting] = useState(false);
   /* Live vault payload from GET /segment-uploads/customer/{id}/vault.
    * Stays null until the fetch resolves; null + loading lets the modal
    * render a skeleton instead of demo numbers. */
@@ -311,6 +318,103 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
       total_documents: Math.max(0, (base.total_documents ?? 0) - baseSegmentTd.length) + sigRows.length,
     };
   }, [customer, data, vaultLive, signatureRows]);
+
+  /* Export All — builds a multi-sheet Excel workbook of every tab
+   * in the vault (Summary, Company DD, Owner KYC, Trade Licenses,
+   * Trade Documents, Shipment Agreements). One workbook = one
+   * self-contained compliance archive snapshot the user can email
+   * / file. Mirrors ConsigneeEvidenceVaultModal so both vaults
+   * behave the same way. */
+  const handleExportAll = async () => {
+    if (!vault || !customer || exporting) return;
+    setExporting(true);
+    try {
+      const fmtDate = (d?: string | null) => (d && d !== 'N/A') ? d : '';
+      const docRow = (d: VaultDoc, i: number) => ({
+        '#':                  i + 1,
+        'Doc Code':           d.doc_code || '',
+        'Document Name':      d.name || '',
+        'Reference / Number': d.reference || '',
+        'Issuing Authority':  d.authority || '',
+        'Issue Date':         fmtDate(d.issue_date),
+        'Expiry':             fmtDate(d.expiry),
+        'Status':             d.status || '',
+        'Attachment':         d.attachment || '',
+        'Attachment URL':     d.attachment_url || '',
+      });
+      const shipmentRow = (s: VaultShipmentRow, i: number) => ({
+        '#':                 i + 1,
+        'Shipment ID':       s.shipment_id || '',
+        'Opportunity ID':    s.opportunity_id || '',
+        'Customer':          s.customer || '',
+        'Country':           s.country || '',
+        'Due Diligence':     s.due_dil?.ratio || '',
+        'KYC':               s.kyc?.ratio || '',
+        'Trade Licence':     s.trade_lic?.ratio || '',
+        'Trade Docs':        s.trade_docs?.ratio || '',
+        'Agreement':         s.agreement?.ratio || '',
+        'Risk':              s.risk || '',
+        'Buyer = Consignee': s.buyer_is_consignee ? 'Yes' : 'No',
+      });
+
+      const summary = [
+        { Field: 'Customer ID',           Value: customer.id },
+        { Field: 'Company',               Value: customer.company },
+        { Field: 'Risk',                  Value: customer.risk || '' },
+        { Field: 'Type',                  Value: customer.type || '' },
+        { Field: 'Segment',               Value: customer.segment || '' },
+        { Field: 'Country',               Value: customer.country || '' },
+        { Field: 'Contact',               Value: customer.contact || '' },
+        { Field: 'Total Documents',       Value: vault.total_documents },
+        { Field: 'Verified / Signed',     Value: vault.verified_signed },
+        { Field: 'Pending',               Value: vault.pending },
+        { Field: 'Company Due Diligence', Value: vault.company_dd_count },
+        { Field: 'Owner KYC',             Value: vault.owner_kyc_count },
+        { Field: 'Trade Licenses',        Value: vault.trade_license_count },
+        { Field: 'Trade Documents',       Value: vault.trade_documents_count },
+        { Field: 'Shipment Agreements',   Value: vault.total_shipments },
+        { Field: 'Last Updated',          Value: vault.last_updated || '' },
+        { Field: 'Exported At',           Value: new Date().toLocaleString('en-IN') },
+      ];
+
+      const wb = XLSX.utils.book_new();
+      const append = (name: string, rows: any[]) => {
+        // Empty buckets still get a sheet (with a placeholder row) so
+        // the workbook structure matches what the modal shows.
+        const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ '#': '', 'Document Name': '(no records)' }]);
+        XLSX.utils.book_append_sheet(wb, ws, name);
+      };
+
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'Summary');
+      append('Company Due Diligence', vault.company_dd.map(docRow));
+      append('Owner KYC',             vault.owner_kyc.map(docRow));
+      append('Trade Licenses',        vault.trade_licenses.map(docRow));
+      append('Trade Documents',       vault.trade_documents.map(docRow));
+      const shipRows = vault.shipment_agreements.map(shipmentRow);
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.json_to_sheet(shipRows.length ? shipRows : [{ '#': '', 'Shipment ID': '(no records)' }]),
+        'Shipment Agreements'
+      );
+
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const stamp = new Date().toISOString().slice(0, 10);
+      const safeId = (customer.id || 'customer').replace(/[^A-Za-z0-9_-]/g, '_');
+      saveAs(
+        new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        `EvidenceVault_${safeId}_${stamp}.xlsx`,
+      );
+
+      const totalRows = vault.company_dd.length + vault.owner_kyc.length
+                      + vault.trade_licenses.length + vault.trade_documents.length
+                      + vault.shipment_agreements.length;
+      toast.success('Exported', `${totalRows} record${totalRows === 1 ? '' : 's'} across 6 sheets.`);
+    } catch (err: any) {
+      toast.error('Export failed', err?.message || 'Could not generate the Excel file.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (!open || !customer || !vault) return null;
 
@@ -497,9 +601,18 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             Last updated: <b>{vault.last_updated}</b> · Vault managed by Compliance Team
           </div>
           <div className="cev-footer-actions">
-            <button type="button" className="cev-btn cev-btn-light" onClick={() => alert('Export wiring lands with the backend')}>
-              <i className="ri-download-cloud-2-line" /> Export All
-            </button>
+            <Tooltip label="Download every tab (Company DD, Owner KYC, Trade Licenses, Trade Documents, Shipments) as a single .xlsx workbook">
+              <button
+                type="button"
+                className="cev-btn cev-btn-light"
+                onClick={handleExportAll}
+                disabled={exporting}
+                style={exporting ? { opacity: 0.7, cursor: 'wait' } : undefined}
+              >
+                <i className={exporting ? 'ri-loader-4-line cev-spin' : 'ri-download-cloud-2-line'} />
+                {exporting ? ' Exporting…' : ' Export All'}
+              </button>
+            </Tooltip>
             <button type="button" className="cev-btn cev-btn-dark" onClick={onClose}>
               Close Vault
             </button>
@@ -1451,6 +1564,11 @@ const CEV_CSS = `
 .cev-btn-light:hover { background: #f5f3ff; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.20); }
 .cev-btn-dark  { background: linear-gradient(135deg, #4c1d95, #7c3aed); color: #fff; box-shadow: 0 4px 14px rgba(76,29,149,.30); }
 .cev-btn-dark:hover  { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(76,29,149,.45); }
+/* Spinner used by the Export All button while the XLSX workbook is
+ * being built. Class-scoped to .cev-spin so it doesn't collide with
+ * any global ri-spin rule the project may add later. */
+.cev-spin { display: inline-block; animation: cevSpin .8s linear infinite; }
+@keyframes cevSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* ─── DARK MODE — violet palette mapped to lavender-on-deep-purple ─── */
 [data-bs-theme="dark"] .cev-card { background: #1a1430; }
