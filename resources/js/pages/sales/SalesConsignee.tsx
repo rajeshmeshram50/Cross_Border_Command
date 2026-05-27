@@ -26,13 +26,16 @@ import TableContainer from '../../velzon/Components/Common/TableContainerReactTa
 /* Risk pill palette. Master-defined risk levels usually come back as
  * Low / Medium / High but other tiers (Tier-1, Critical, …) can land
  * too — anything not in the lookup falls back to the Low style. */
+/* Tinted-glass tokens — semi-transparent backgrounds so the pill
+ * inherits the surface tone and reads cleanly on both light and dark
+ * themes (parallels the Customer Type pills on SalesCustomers). */
 const RISK_COLORS: Record<string, { bg: string; color: string; dot: string }> = {
-  'Low':    { bg:'#ecfdf5', color:'#047857', dot:'#10b981' },
-  'Medium': { bg:'#fffbeb', color:'#b45309', dot:'#f59e0b' },
-  'High':   { bg:'#fef2f2', color:'#b91c1c', dot:'#ef4444' },
+  'Low':    { bg:'rgba(34,197,94,0.12)',  color:'#16a34a', dot:'#10b981' },
+  'Medium': { bg:'rgba(245,158,11,0.14)', color:'#d97706', dot:'#f59e0b' },
+  'High':   { bg:'rgba(239,68,68,0.12)',  color:'#dc2626', dot:'#ef4444' },
 };
 
-const ROWS_PER_PAGE = 10;
+const ROWS_PER_PAGE = 5;
 
 /* titleCase + TruncatedCell are module-level so the function refs
  * stay stable across renders. The page's `columns` useMemo captures
@@ -250,7 +253,7 @@ export default function SalesConsignee() {
         const v = String(info.getValue() ?? '');
         const r = RISK_COLORS[v] || RISK_COLORS['Low'];
         return (
-          <span className="smcg-risk-pill" style={{ background: r.bg, color: r.color }}>
+          <span className="smcg-risk-pill" style={{ background: r.bg, color: r.color, borderColor: r.bg.replace('0.12)','0.35)').replace('0.14)','0.38)') }}>
             {v}
           </span>
         );
@@ -1042,13 +1045,25 @@ const SCOPED_CSS = `
 .smcg-table-wrap .table tbody tr:last-child td { border-bottom: none !important; }
 
 /* Pagination strip — emerald-tinted pills with a green gradient on
-   the active page. */
+   the active page.
+   Fixed 36×36 box on every button (numbers AND chevrons) so the row
+   aligns cleanly. Bootstrap's default page-link padding caused the
+   numbered button to render slightly taller than the chevrons. */
+.smcg-table-wrap .pagination { align-items: center; gap: 4px; }
+.smcg-table-wrap .pagination .page-item { display: inline-flex; }
 .smcg-table-wrap .pagination .page-link {
   border-radius: 8px !important;
-  margin: 0 2px;
+  margin: 0;
+  padding: 0;
+  height: 36px;
+  min-width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: #047857;
   border: 1px solid #d1fae5;
   font-weight: 600;
+  line-height: 1;
 }
 .smcg-table-wrap .pagination .page-item.active .page-link {
   background: linear-gradient(135deg, #10b981, #047857);
@@ -1239,10 +1254,18 @@ const SCOPED_CSS = `
 /* Segment chip leading dot removed — matches the SalesCustomers
    cleanup where pill badges don't carry a leading dot indicator. */
 .smcg-risk-pill {
-  display: inline-flex; align-items: center;
-  padding: 3px 10px; border-radius: 20px;
-  font-size: 11px; font-weight: 600;
-  white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px 4px 11px;
+  border-radius: 999px;
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: .02em;
+  border: 1px solid; white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 1px 2px rgba(15,23,42,.06);
+  transition: filter .15s ease, transform .15s ease;
+}
+.smcg-risk-pill:hover { filter: brightness(1.05); transform: translateY(-1px); }
+[data-bs-theme="dark"] .smcg-risk-pill {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.25);
 }
 /* Legacy .smcg-risk-dot kept as a no-op (markup removed). */
 .smcg-risk-dot { display: none; }

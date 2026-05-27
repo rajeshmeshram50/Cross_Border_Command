@@ -3,7 +3,10 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import Tooltip from '../../../components/ui/Tooltip';
-import SalesCustomerSendForSignatureModal, { type AgreementSendRow } from '../SalesCustomerSendForSignatureModal';
+import SalesCustomerSendForSignatureModal, {
+  type AgreementSendRow,
+  type AgreementSigner,
+} from '../SalesCustomerSendForSignatureModal';
 import { type HeaderConfig, type FooterConfig } from '../../hrms/doc-templates/HeaderFooterPanel';
 
 /*
@@ -561,21 +564,44 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
         open={ssfAgreements.length > 0}
         customer={null}
         mode="agreement"
-        agreementContext={ssfAgreements.length > 0 && leadId ? {
-          leadId,
-          agreements: ssfAgreements.map<AgreementSendRow>(a => ({
-            id:             a.id,
-            code:           a.code,
-            title:          a.title,
-            agreement_type: a.agreement_type,
-            party:          a.party,
-            content:        a.content       ?? null,
-            header_config:  a.header_config ?? null,
-            footer_config:  a.footer_config ?? null,
-          })),
-          customer:  payload?.lead.customer  ? { name: payload.lead.customer.name,  email: payload.lead.customer.email  ?? null } : null,
-          consignee: payload?.lead.consignee ? { name: payload.lead.consignee.name, email: payload.lead.consignee.email ?? null } : null,
-        } : null}
+        agreementContext={ssfAgreements.length > 0 && leadId ? (() => {
+          /* All agreements in a bulk-send share the same applicable
+           * party (the same-party guard is enforced both client- and
+           * server-side), so we read the CSV from the first agreement
+           * and intersect it with the lead's mapped customer/
+           * consignee to build the active signer list. The recipient
+           * card and the per-signer draggable signature boxes both
+           * iterate this array, so an agreement scoped to "Buyer"
+           * only never surfaces the consignee, and a
+           * "Buyer, Consignee" agreement gets two independent boxes. */
+          const partyTokens = String(ssfAgreements[0].party ?? '')
+            .split(',')
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+          const wantsBuyer     = partyTokens.includes('buyer');
+          const wantsConsignee = partyTokens.includes('consignee');
+          const signers: AgreementSigner[] = [];
+          if (wantsBuyer && payload?.lead.customer) {
+            signers.push({ role: 'buyer', name: payload.lead.customer.name, email: payload.lead.customer.email ?? null });
+          }
+          if (wantsConsignee && payload?.lead.consignee) {
+            signers.push({ role: 'consignee', name: payload.lead.consignee.name, email: payload.lead.consignee.email ?? null });
+          }
+          return {
+            leadId,
+            agreements: ssfAgreements.map<AgreementSendRow>(a => ({
+              id:             a.id,
+              code:           a.code,
+              title:          a.title,
+              agreement_type: a.agreement_type,
+              party:          a.party,
+              content:        a.content       ?? null,
+              header_config:  a.header_config ?? null,
+              footer_config:  a.footer_config ?? null,
+            })),
+            signers,
+          };
+        })() : null}
         onClose={() => setSsfAgreements([])}
         onSent={() => { void onSsfSent(); }}
       />
