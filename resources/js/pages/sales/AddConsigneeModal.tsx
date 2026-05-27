@@ -305,6 +305,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * the user saw on rapid clicks. */
   const inFlightRef = useRef(false);
 
+  /* True after persistStage1 has POSTed or PUT a row in this session.
+   * If the user closes via X/Cancel before the Stage 3 final submit,
+   * we still fire onSaved so the parent list refreshes — otherwise a
+   * brand-new consignee created on Stage 1 stays invisible until the
+   * page is reloaded. Reset on modal open. */
+  const dirtySavedRef = useRef(false);
+
   /* Stage 3 → Trade Documents → Send for Signature. Mirrors what
    * [[AddCustomerModal]] does — tdDocs is the table state (per-row
    * checkbox + status badge), sendForSignature holds the IDs the user
@@ -481,6 +488,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   // Reset everything when modal opens fresh.
   useEffect(() => {
     if (!open) return;
+    dirtySavedRef.current = false;
     if (consignee) {
       // Edit mode — skip the customer picker. The matching customer
       // is populated by the fetch effect below once it lands; until
@@ -1062,6 +1070,20 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
 
   if (!open) return null;
 
+  /* Wrapper around the prop's onClose — if persistStage1 ran during
+   * this session (dirtySavedRef), fire onSaved so the parent list
+   * refreshes even when the user dismisses via X/Cancel before the
+   * Stage 3 final submit. The final submit path at goSubmit() already
+   * fires onSaved + onClose directly, so this only matters for early
+   * dismissal. */
+  const handleClose = () => {
+    if (dirtySavedRef.current) {
+      onSaved?.();
+      dirtySavedRef.current = false;
+    }
+    onClose();
+  };
+
   const confirmCustomer = () => {
     if (!customer) {
       toast.warning('Pick a customer', 'Select the customer this consignee will be linked to.');
@@ -1287,6 +1309,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         dbId = r.data?.data?.db_id ?? null;
         if (dbId) setSavedDbId(dbId);
       }
+      // Mark this session as dirty so an early X/Cancel still triggers
+      // the parent list refresh (without it the new row stays invisible
+      // until the page reloads).
+      dirtySavedRef.current = true;
       return dbId;
     } catch (err: any) {
       const apiErrors = err?.response?.data?.errors ?? null;
@@ -1595,7 +1621,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         <style>{SCOPED_CSS}</style>
         <div className="acm-pick" onMouseDown={e => e.stopPropagation()}>
           <div className="acm-pick-header">
-            <button className="acm-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+            <button className="acm-close" onClick={handleClose} aria-label="Close"><IconClose /></button>
             <div className="acm-pick-icon"><IconTruck size={28} /></div>
             <div className="acm-pick-title">Add New Consignee</div>
             <div className="acm-pick-sub">Select the customer account to which this consignee will be linked for shipment and export execution.</div>
@@ -1662,7 +1688,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             </div>
           </div>
           <div className="acm-pick-footer">
-            <button className="acm-btn acm-btn-light" onClick={onClose}><IconClose size={14} /> Cancel</button>
+            <button className="acm-btn acm-btn-light" onClick={handleClose}><IconClose size={14} /> Cancel</button>
             <button
               className={`acm-btn acm-btn-primary ${customer ? '' : 'acm-btn-disabled'}`}
               onClick={confirmCustomer}
@@ -1701,7 +1727,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 : 'Capture consignee identity, customer linkage, compliance, and shipment readiness for export execution.'}
             </div>
           </div>
-          <button className="acm-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+          <button className="acm-close" onClick={handleClose} aria-label="Close"><IconClose /></button>
         </div>
 
         {/* Pinned top — stepper + Linked Customer summary stay
@@ -2016,7 +2042,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
 
         {/* Footer */}
         <div className="acm-wiz-footer">
-          <button className="acm-btn acm-btn-light" onClick={onClose}><IconClose size={14} /> Cancel</button>
+          <button className="acm-btn acm-btn-light" onClick={handleClose}><IconClose size={14} /> Cancel</button>
           <div className="acm-footer-right">
             {stage > 1 && (
               <button className="acm-btn acm-btn-light" onClick={goBack}>

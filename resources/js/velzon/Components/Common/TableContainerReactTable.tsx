@@ -88,6 +88,12 @@ interface TableContainerProps {
   handleContactClick?: any;
   handleTicketClick?: any;
   isBordered?: any;
+  /** When true, the pagination bar always renders the compact
+   *  "1 ... 3 ... 12" form — first + current + last with ellipses
+   *  for any gaps — instead of the default windowed view that lists
+   *  every page when the total is ≤7. Pass it from list pages that
+   *  want the tighter bar even at small page counts. */
+  condensedPagination?: boolean;
 }
 
 const TableContainer = ({
@@ -101,7 +107,8 @@ const TableContainer = ({
   thClass,
   divClass,
   SearchPlaceholder,
-  isBordered
+  isBordered,
+  condensedPagination = false,
 
 }: TableContainerProps) => {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -265,24 +272,43 @@ const TableContainer = ({
               <Link to="#" className="page-link" onClick={previousPage}><i className="ri-arrow-left-s-line"></i></Link>
             </li>
             {(() => {
-              // Windowed pagination: keeps the bar at ~9 items regardless of
-              // total page count. Shows first, last, current ± 1, and inserts
-              // an ellipsis ("…") wherever there's a gap. With ≤7 pages we
-              // render every number (no ellipsis needed).
+              // Two pagination modes:
+              //   - Windowed (default): bar holds ~9 items. First, last,
+              //     current ± 1, ellipsis for gaps. With ≤7 pages every
+              //     number renders (no ellipsis needed).
+              //   - Condensed (opt-in via `condensedPagination`): always
+              //     first + current + last with ellipses for any gap.
+              //     Renders as "1 … 3 … 12" even at small page counts.
               const total = getPageOptions().length;
               const current = getState().pagination.pageIndex;
-              const siblings = 1;
               const items: Array<number | 'ellipsis-l' | 'ellipsis-r'> = [];
-              if (total <= 7) {
-                for (let i = 0; i < total; i++) items.push(i);
+              if (condensedPagination) {
+                // Sliding 2-button window: always show two page numbers
+                // (current + next). On the last page, slide back to show
+                // penultimate + last so the user keeps a sibling. Prev/
+                // next arrows move the window forward/backward by one.
+                if (total <= 1) {
+                  items.push(0);
+                } else if (current >= total - 1) {
+                  items.push(total - 2);
+                  items.push(total - 1);
+                } else {
+                  items.push(current);
+                  items.push(current + 1);
+                }
               } else {
-                const left = Math.max(current - siblings, 1);
-                const right = Math.min(current + siblings, total - 2);
-                items.push(0);
-                if (left > 1) items.push('ellipsis-l');
-                for (let i = left; i <= right; i++) items.push(i);
-                if (right < total - 2) items.push('ellipsis-r');
-                items.push(total - 1);
+                const siblings = 1;
+                if (total <= 7) {
+                  for (let i = 0; i < total; i++) items.push(i);
+                } else {
+                  const left = Math.max(current - siblings, 1);
+                  const right = Math.min(current + siblings, total - 2);
+                  items.push(0);
+                  if (left > 1) items.push('ellipsis-l');
+                  for (let i = left; i <= right; i++) items.push(i);
+                  if (right < total - 2) items.push('ellipsis-r');
+                  items.push(total - 1);
+                }
               }
               return items.map((item, key) => {
                 if (item === 'ellipsis-l' || item === 'ellipsis-r') {

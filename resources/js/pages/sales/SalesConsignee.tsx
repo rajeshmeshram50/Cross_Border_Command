@@ -484,6 +484,7 @@ export default function SalesConsignee() {
               theadClass="table-light"
               divClass="table-responsive table-card border rounded"
               SearchPlaceholder="Search consignees..."
+              condensedPagination
             />
           )}
           {!loading && filtered.length === 0 && (

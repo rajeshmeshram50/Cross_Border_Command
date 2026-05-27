@@ -465,6 +465,7 @@ export default function SalesCustomers() {
               theadClass="table-light"
               divClass="table-responsive table-card border rounded"
               SearchPlaceholder="Search customers..."
+              condensedPagination
             />
           )}
           {!loading && filtered.length === 0 && (
