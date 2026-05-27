@@ -1247,8 +1247,18 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         }, 0);
         return;
       }
-      // Auto-save Stage 1 before advancing so Stage 2 KYC has a
-      // consignee_id to nest under.
+      /* Sub-tab cycling: persist Stage 1 on the first Save & Next so
+       * the Identification tab edits are committed, then move to the
+       * Address & Contact sub-tab. The second Save & Next from
+       * Address & Contact crosses into Stage 2. Mirrors AddCustomerModal
+       * so both modals behave the same way. */
+      if (idTab === 'identification') {
+        const id = await persistStage1();
+        if (!id) return;
+        setIdTab('address-contact');
+        return;
+      }
+      // Leaving Stage 1 entirely → persist so Stage 2 KYC has a target.
       const id = await persistStage1();
       if (!id) return;
       /* If "Same as Customer" is ticked, fire the deep-clone endpoint.
@@ -1271,13 +1281,33 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setStage(2);
       return;
     }
-    /* No Stage 2 gate. The KYC tab is segment-rule-driven now — manual
-     * Owner/DD entry was removed, so blocking the advance on those
-     * counts would trap the user. Stage 1's required fields are still
-     * the only gate; Stage 2 and Stage 3 move freely. */
+    if (stage === 2) {
+      /* Sub-tab cycling: walk through Company DD → Owner KYC →
+       * Trade Licence before crossing into Stage 3 so each sub-tab
+       * gets its own Save & Next step (parallels AddCustomerModal). */
+      if (kycSub === 'company-dd')  { setKycSub('owner-kyc');    return; }
+      if (kycSub === 'owner-kyc')   { setKycSub('trade-licence'); return; }
+      setStage(3);
+      return;
+    }
+    /* Stage 3 advance — no gate, no further sub-tabs. */
     setStage(s => (s < 3 ? (s + 1) as Stage : s));
   };
-  const goBack = () => setStage(s => (s > 1 ? (s - 1) as Stage : s));
+  const goBack = () => {
+    if (stage === 1) {
+      if (idTab === 'address-contact') setIdTab('identification');
+      return;
+    }
+    if (stage === 2) {
+      // Mirror goNext: step backwards through Stage 2 sub-tabs before
+      // falling back to Stage 1's last sub-tab.
+      if (kycSub === 'trade-licence') { setKycSub('owner-kyc'); return; }
+      if (kycSub === 'owner-kyc')     { setKycSub('company-dd'); return; }
+      setStage(1); setIdTab('address-contact');
+      return;
+    }
+    setStage(s => (s > 1 ? (s - 1) as Stage : s));
+  };
 
   /* Build the POST/PUT payload from form1 + locations. Mirrors the
    * shape declared in ConsigneeController::validatePayload(). The
@@ -3341,8 +3371,19 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
   onSendTd: (id: string) => void;
   onSendSelectedTd: () => void;
 }) => {
-  const ddCount = kycDocs.filter(d => d.kind === 'dd').length;
-  const tlCount = kycDocs.filter(d => d.kind === 'tl').length;
+  /* Combined counts: legacy hand-added docs (kycDocs / kycOwners) PLUS
+   * segment-rule reference uploads keyed by `${sub-tab}::${doc.code}`.
+   * Counting only the legacy arrays left the Stage 3 summary stuck at
+   * 0 even when the user had uploaded files against the segment-rule
+   * rows on Stage 2 — mirrors the same fix applied to the Customer
+   * modal's HistoryStage2. */
+  const segKeys = Object.keys(segmentRefUploads);
+  const segDd  = segKeys.filter(k => k.startsWith('company-dd::')).length;
+  const segOwn = segKeys.filter(k => k.startsWith('owner-kyc::')).length;
+  const segTl  = segKeys.filter(k => k.startsWith('trade-licence::')).length;
+  const ddCount    = kycDocs.filter(d => d.kind === 'dd').length + segDd;
+  const tlCount    = kycDocs.filter(d => d.kind === 'tl').length + segTl;
+  const ownerCount = kycOwners.length + segOwn;
   return (
     <>
       {/* "What you did in previous stages" — compact summary panel
@@ -3359,12 +3400,12 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
               <span><b>Stage 1 mirrors the linked customer.</b> See the Linked Customer panel above for the full details.</span>
             </div>
           </div>
-          <ConsigneeHistoryStage2 ddCount={ddCount} ownerCount={kycOwners.length} tlCount={tlCount} />
+          <ConsigneeHistoryStage2 ddCount={ddCount} ownerCount={ownerCount} tlCount={tlCount} />
         </ConsigneeHistoryPanel>
       ) : (
         <ConsigneeHistoryPanel stagesCompleted={2}>
           <ConsigneeHistoryStage1 form={form1} locations={locations} />
-          <ConsigneeHistoryStage2 ddCount={ddCount} ownerCount={kycOwners.length} tlCount={tlCount} />
+          <ConsigneeHistoryStage2 ddCount={ddCount} ownerCount={ownerCount} tlCount={tlCount} />
         </ConsigneeHistoryPanel>
       )}
 

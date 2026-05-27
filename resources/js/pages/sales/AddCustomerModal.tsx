@@ -1305,9 +1305,30 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
        * gets its own Save & Next step. */
       if (kycSub === 'company-dd')  { setKycSub('owner-kyc');    return; }
       if (kycSub === 'owner-kyc')   { setKycSub('trade-licence'); return; }
+      // Crossing into Stage 3 — reset Evidence Vault sub-state so the
+      // user lands on KYC Documents › Company Due Diligence and can
+      // walk every Stage 3 sub-tab via Save & Next instead of landing
+      // mid-flow on whichever sub-tab was last selected.
+      setEvTab('kyc-documents');
+      setEvSub('dd');
       setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
     } else {
       if (!validateStage1()) { setStage(1); setTab('identification'); return; }
+      /* Stage 3 sub-tab cycling: walk Evidence Vault › KYC Documents
+       * (Company DD → Owner KYC → Trade Licence) → Trade Documents
+       * before firing the final submit. Previously this branch jumped
+       * straight to submitCustomer(), so clicking Update Customer from
+       * any Stage 3 sub-tab persisted and closed without giving the
+       * user a chance to review the remaining tabs.
+       *
+       * Stage 3's KYC sub-tab state is evSub (dd/kyc/tl) — distinct
+       * from kycSub which drives Stage 2. */
+      if (evTab === 'kyc-documents') {
+        if (evSub === 'dd')  { setEvSub('kyc'); return; }
+        if (evSub === 'kyc') { setEvSub('tl');  return; }
+        setEvTab('trade-documents');
+        return;
+      }
       submitCustomer();
     }
   };
@@ -1321,11 +1342,23 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       if (kycSub === 'owner-kyc')     { setKycSub('company-dd'); return; }
       setStage(1); setTab('address-contact');
     }
-    else { setStage(2); }
+    else {
+      // Stage 3 reverse cycle: Trade Documents → KYC Documents
+      // (Trade Licence → Owner KYC → Company DD) → Stage 2.
+      if (evTab === 'trade-documents') {
+        setEvTab('kyc-documents');
+        setEvSub('tl');
+        return;
+      }
+      if (evSub === 'tl')  { setEvSub('kyc'); return; }
+      if (evSub === 'kyc') { setEvSub('dd');  return; }
+      setStage(2);
+    }
   };
 
   const atStart = stage === 1 && tab === 'identification';
-  const nextLabel = stage === 3
+  const onFinalStage3Tab = stage === 3 && evTab === 'trade-documents';
+  const nextLabel = onFinalStage3Tab
     ? (isEdit ? 'Update Customer' : 'Submit Customer')
     : 'Save & Next';
 
