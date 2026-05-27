@@ -14,16 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Vendor parent row.
- *
- * Owns 1..N vendor_addresses (exactly one primary), N vendor_documents
- * (kind = dd | tl), N vendor_owners, N vendor_bank_accounts,
- * N vendor_gst_scrutiny, N vendor_product_mappings.
- *
- * Tenant visibility uses the shared creator-hierarchy rule — same scope
- * as customers/consignees/products. See MasterVisibility.
- */
+
 class Vendor extends Model
 {
     use SoftDeletes;

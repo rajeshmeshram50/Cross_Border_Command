@@ -7,14 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/**
- * Vendor Stage 2 — Company Due Diligence (kind='dd') OR Trade License
- * (kind='tl'). One row per uploaded document.
- *
- * For kind='tl', `license_type_id` points at the master_license_name
- * row and document_name is left null (the master provides the label).
- * For kind='dd', license_type_id is null and document_name is free text.
- */
+
 class VendorDocument extends Model
 {
     use SoftDeletes;
