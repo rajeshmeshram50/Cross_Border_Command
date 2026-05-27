@@ -39,6 +39,11 @@ export function MasterMultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  /* Expand the chip strip when the user clicks "+N more" — without this
+   * the hidden chips were unreachable: clicking the pill just opened the
+   * dropdown, and removing them required either typing into the search
+   * or scrolling through the options. */
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => { if (!open) setSearch(''); }, [open]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [dropDir, setDropDir] = useState<'up' | 'down'>('down');
@@ -95,7 +100,7 @@ export function MasterMultiSelect({
             <span className="master-select-placeholder">{placeholder}</span>
           ) : (
             <span className="d-inline-flex align-items-center flex-wrap gap-1" style={{ overflow: 'hidden' }}>
-              {selectedOptions.slice(0, maxChips).map(o => (
+              {(expanded ? selectedOptions : selectedOptions.slice(0, maxChips)).map(o => (
                 <span
                   key={o.value}
                   className="d-inline-flex align-items-center"
@@ -124,8 +129,27 @@ export function MasterMultiSelect({
                 </span>
               ))}
               {selectedOptions.length > maxChips && (
-                <span style={{ fontSize: 11.5, color: '#6b7280', fontWeight: 600 }}>
-                  +{selectedOptions.length - maxChips} more
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => { e.stopPropagation(); setExpanded(v => !v); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault(); e.stopPropagation();
+                      setExpanded(v => !v);
+                    }
+                  }}
+                  title={expanded ? 'Show less' : selectedOptions.slice(maxChips).map(o => o.label).join(', ')}
+                  className="master-multi-more"
+                  style={{
+                    fontSize: 11.5, fontWeight: 600,
+                    padding: '2px 8px', borderRadius: 12,
+                    background: '#eef2ff', color: '#4338ca',
+                    cursor: 'pointer', userSelect: 'none',
+                    border: '1px solid #c7d2fe',
+                  }}
+                >
+                  {expanded ? 'Show less' : `+${selectedOptions.length - maxChips} more`}
                 </span>
               )}
             </span>
@@ -518,4 +542,64 @@ export const MASTER_MODAL_CSS = `
     box-shadow: 0 8px 22px rgba(0,0,0,0.55);
   }
 
+  /* MultiSelect selected chips — the inline style sets a pale indigo
+     (#eef2ff bg + #4338ca text) which looks like a white sticker on
+     the dark form background. Override the inline values with !important
+     in dark mode so the chips read as tinted-glass tokens. The remove
+     × icon (role="button" inside the chip) inherits the chip text colour. */
+  [data-bs-theme="dark"] .master-select-toggle > span > span.d-inline-flex {
+    background: rgba(124,58,237,0.18) !important;
+    color: #c4b5fd !important;
+    border: 1px solid rgba(167,139,250,0.35) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+  [data-bs-theme="dark"] .master-select-toggle > span > span.d-inline-flex > span[role="button"] {
+    color: #ede9fe !important;
+    opacity: 0.85;
+  }
+  [data-bs-theme="dark"] .master-select-toggle > span > span.d-inline-flex > span[role="button"]:hover {
+    color: #fff !important;
+    opacity: 1;
+  }
+  /* "+N more" / "Show less" toggle — match the chip tinting in dark mode. */
+  [data-bs-theme="dark"] .master-multi-more {
+    background: rgba(124,58,237,0.22) !important;
+    color: #ddd6fe !important;
+    border-color: rgba(167,139,250,0.45) !important;
+  }
+  [data-bs-theme="dark"] .master-multi-more:hover {
+    background: rgba(124,58,237,0.32) !important;
+    color: #fff !important;
+  }
+  .master-multi-more:hover { filter: brightness(.97); }
+
+  /* Chip strip — force a single horizontal row and scroll horizontally
+     when chips overflow, instead of wrapping to multiple rows. This
+     keeps the field exactly the same height as the surrounding inputs
+     no matter how many segments are selected or whether "Show less"
+     is expanded. Bootstrap's .flex-wrap utility uses !important so we
+     have to override with !important too. */
+  .master-select-toggle > span.d-inline-flex.flex-wrap {
+    flex-wrap: nowrap !important;
+    max-width: 100%;
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+    scrollbar-color: #c4b5fd transparent;
+  }
+  /* Lock each chip so it never shrinks below its label width — without
+     this, flexbox would squish the chips to fit the row and the labels
+     would clip. */
+  .master-select-toggle > span.d-inline-flex.flex-wrap > span { flex-shrink: 0; }
+  .master-select-toggle > span.d-inline-flex.flex-wrap::-webkit-scrollbar { height: 4px; }
+  .master-select-toggle > span.d-inline-flex.flex-wrap::-webkit-scrollbar-thumb {
+    background: #c4b5fd; border-radius: 6px;
+  }
+  [data-bs-theme="dark"] .master-select-toggle > span.d-inline-flex.flex-wrap {
+    scrollbar-color: rgba(167,139,250,0.45) transparent;
+  }
+  [data-bs-theme="dark"] .master-select-toggle > span.d-inline-flex.flex-wrap::-webkit-scrollbar-thumb {
+    background: rgba(167,139,250,0.45);
+  }
 `;

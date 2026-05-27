@@ -36,6 +36,8 @@ interface Props {
   onClose: () => void;
 }
 
+const ROWS_PER_PAGE = 5;
+
 export default function CustomerConsigneesModal({ open, customer, onClose }: Props) {
   const toast = useToast();
   const [q, setQ] = useState('');
@@ -44,6 +46,10 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ConsigneeRow | null>(null);
   const [delTarget, setDelTarget] = useState<ConsigneeRow | null>(null);
+  /* Client-side pagination — 5 rows per page. Reset to page 1 whenever
+   * the search term or underlying row set changes so the user never
+   * lands on an empty page beyond the new last page. */
+  const [page, setPage] = useState(1);
   /* In-flight flag for the delete confirm — drives spinner + disabled
    * state on the confirm dialog while the DELETE request is going. */
   const [deleting, setDeleting] = useState(false);
@@ -103,6 +109,11 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
       String(c.risk).toLowerCase().includes(lo),
     );
   }, [q, rows]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
+  useEffect(() => { setPage(1); }, [q, rows]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
 
   const handleDelete = async () => {
     if (!delTarget?.db_id) { setDelTarget(null); return; }
@@ -218,7 +229,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
                         {q ? 'No consignees match your search.' : <>No consignees mapped to <strong>{customer.id}</strong> yet. Click <strong>+ Add Consignee</strong> to create the first one.</>}
                       </td>
                     </tr>
-                  ) : filtered.map((c, i) => {
+                  ) : pageRows.map((c, i) => {
                     const riskColor = String(c.risk).toLowerCase() === 'high'
                       ? 'ccm-pill-high'
                       : String(c.risk).toLowerCase() === 'medium'
@@ -227,7 +238,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
                     const location = [c.countryDetail, c.country].filter(Boolean).join(', ') || '—';
                     return (
                       <tr key={c.id}>
-                        <td>{i + 1}</td>
+                        <td>{(page - 1) * ROWS_PER_PAGE + i + 1}</td>
                         <td><span className="ccm-id-chip">{c.id}</span></td>
                         <td className="ccm-company">{c.company || '—'}</td>
                         <td>{c.segment || '—'}</td>
@@ -266,6 +277,43 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
                 </tbody>
               </table>
             </div>
+            {filtered.length > 0 && (
+              <div className="ccm-pag">
+                <span className="ccm-pag-info">
+                  Showing <b>{(page - 1) * ROWS_PER_PAGE + 1}</b>–<b>{Math.min(page * ROWS_PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b>
+                </span>
+                <div className="ccm-pag-btns">
+                  <button
+                    type="button"
+                    className="ccm-pag-btn"
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    aria-label="Previous page"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
+                  {Array.from({ length: totalPages }, (_, n) => n + 1).map(n => (
+                    <button
+                      key={n}
+                      type="button"
+                      className={`ccm-pag-btn ${n === page ? 'is-active' : ''}`}
+                      onClick={() => setPage(n)}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="ccm-pag-btn"
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    aria-label="Next page"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -518,6 +566,67 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .ccm-empty td { color: #94a3b8; background: #1a2236; }
 [data-bs-theme="dark"] .ccm-empty td strong { color: #c4b5fd; }
 [data-bs-theme="dark"] .ccm-empty-state { color: #c4b5fd; }
+
+/* Pagination footer — sits under the table inside .ccm-body. Matches
+ * the customers-list pagination aesthetic: pill info chip on the left,
+ * uniform 32×32 buttons on the right with the active page filled. */
+.ccm-pag {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 18px 14px;
+  gap: 10px; flex-wrap: wrap;
+}
+.ccm-pag-info {
+  font-size: 12px; color: #6d28d9; font-weight: 600;
+  padding: 5px 12px;
+  background: #f5f3ff; border: 1px solid rgba(167,139,250,.30);
+  border-radius: 999px;
+}
+.ccm-pag-info b { color: #4c1d95; font-weight: 800; }
+.ccm-pag-btns { display: inline-flex; align-items: center; gap: 4px; }
+.ccm-pag-btn {
+  height: 32px; min-width: 32px; padding: 0;
+  border-radius: 8px;
+  border: 1px solid #e0d9f7;
+  background: #fff;
+  color: #6d28d9;
+  font-size: 12.5px; font-weight: 700;
+  font-family: inherit;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .22s ease;
+}
+.ccm-pag-btn:hover:not(:disabled):not(.is-active) {
+  background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6;
+}
+.ccm-pag-btn.is-active {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  border-color: #7c3aed; color: #fff;
+  box-shadow: 0 2px 6px rgba(109,40,217,.30);
+  cursor: default;
+}
+.ccm-pag-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+[data-bs-theme="dark"] .ccm-pag-info {
+  background: rgba(124,58,237,.20);
+  border-color: rgba(167,139,250,.35);
+  color: #ddd6fe;
+}
+[data-bs-theme="dark"] .ccm-pag-info b { color: #ede9fe; }
+[data-bs-theme="dark"] .ccm-pag-btn {
+  background: #131c33;
+  border-color: rgba(167,139,250,.30);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .ccm-pag-btn:hover:not(:disabled):not(.is-active) {
+  background: rgba(124,58,237,.20);
+  border-color: rgba(167,139,250,.50);
+  color: #ede9fe;
+}
+[data-bs-theme="dark"] .ccm-pag-btn.is-active {
+  background: linear-gradient(135deg, #6d28d9, #4c1d95);
+  border-color: #7c3aed; color: #fff;
+  box-shadow: 0 2px 8px rgba(124,58,237,.45);
+}
 [data-bs-theme="dark"] .ccm-empty-spinner { border-color: rgba(167,139,250,0.30); border-top-color: #a78bfa; }
 [data-bs-theme="dark"] .ccm-id-chip { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .ccm-cust-chip { background: rgba(167,139,250,.20); color: #c4b5fd; border-color: rgba(167,139,250,.40); }
