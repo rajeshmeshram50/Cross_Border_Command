@@ -7,6 +7,10 @@ import { Shimmer } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
+import {
+  readCustomerMasterBundle,
+  writeCustomerMasterBundle,
+} from './customerBundleCache';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Customer — 3-stage modal
@@ -231,40 +235,89 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const [historyOpen, setHistoryOpen] = useState(false);
 
   // ── Master dropdowns. Every <select> on this modal sources its
-  //    options from /master/{slug}, scoped server-side to the
-  //    inviting tenant. Inactive rows are filtered out at the UI
-  //    layer so historical data still renders if someone edits an
-  //    older customer that referenced a since-deactivated row.
+  //    options from /customers/master-bundle, scoped server-side to the
+  //    inviting tenant. Inactive rows are filtered out by the server.
   const [masters, setMasters] = useState<MasterLists>(EMPTY_MASTERS);
+  /* True until /customers/master-bundle resolves (or the sessionStorage
+   * cache hits). The modal body renders a shimmer skeleton while this
+   * is true so the user sees structure instead of empty dropdowns. */
+  const [mastersLoading, setMastersLoading] = useState<boolean>(true);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    const pickName = (rows: any[], key = 'name'): MasterOpt[] => rows
-      .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
-      .map(r => ({ id: Number(r.id), name: String(r[key] ?? '') }))
+
+    type IdNamed = { id: number | string; name?: string | null };
+    type Bundle = {
+      customer_types: IdNamed[];
+      segments: Array<{ id: number | string; name?: string | null; title?: string | null }>;
+      customer_classifications: IdNamed[];
+      risk_levels: IdNamed[];
+      address_types: IdNamed[];
+      countries: IdNamed[];
+      states: Array<{ id: number | string; name?: string | null; country_id?: number | string | null }>;
+      designations: IdNamed[];
+      document_type: Array<{ id: number | string; title?: string | null }>;
+    };
+
+    const pickName = (rows: IdNamed[]): MasterOpt[] => (rows || [])
+      .map(r => ({ id: Number(r.id), name: String(r.name ?? '') }))
       .filter(r => r.name);
-    const pickStates = (rows: any[]): StateOpt[] => rows
-      .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
+    const pickStates = (rows: Bundle['states']): StateOpt[] => (rows || [])
       .map(r => ({ id: Number(r.id), name: String(r.name ?? ''), country_id: Number(r.country_id) }))
       .filter(r => r.name);
-    Promise.allSettled([
-      api.get('/master/customer_types').then(r => { if (!cancelled) setMasters(m => ({ ...m, customerTypes: pickName(r.data ?? []) })); }),
-      api.get('/master/segments').then(r => { if (!cancelled) setMasters(m => ({ ...m, segments: pickName(r.data ?? [], 'title') })); }),
-      api.get('/master/customer_classifications').then(r => { if (!cancelled) setMasters(m => ({ ...m, classifications: pickName(r.data ?? []) })); }),
-      api.get('/master/risk_levels').then(r => { if (!cancelled) setMasters(m => ({ ...m, riskLevels: pickName(r.data ?? []) })); }),
-      api.get('/master/address_types').then(r => { if (!cancelled) setMasters(m => ({ ...m, addressTypes: pickName(r.data ?? []) })); }),
-      api.get('/master/countries').then(r => {
+
+    const hydrate = (b: Bundle) => {
+      // Segments — server returns `name`; the model also appends `title`
+      // (alias) for legacy consumers. Read whichever is present.
+      const segments: MasterOpt[] = (b.segments || [])
+        .map(r => ({ id: Number(r.id), name: String(r.title ?? r.name ?? '') }))
+        .filter(r => r.name);
+      // Countries — alpha-sort for the dropdown to mirror the previous
+      // client-side sort.
+      const countries = pickName([...(b.countries ?? [])].sort((a, b) =>
+        String(a.name ?? '').localeCompare(String(b.name ?? '')))
+      );
+      // Document Type master — field is `title` (not `name`).
+      const documentTypes: MasterOpt[] = (b.document_type || [])
+        .map(r => ({ id: Number(r.id), name: String(r.title ?? '') }))
+        .filter(r => r.name);
+
+      setMasters({
+        customerTypes:   pickName(b.customer_types),
+        segments,
+        classifications: pickName(b.customer_classifications),
+        riskLevels:      pickName(b.risk_levels),
+        addressTypes:    pickName(b.address_types),
+        countries,
+        states:          pickStates(b.states),
+        designations:    pickName(b.designations),
+        documentTypes,
+      });
+    };
+
+    // Cache hit — hydrate immediately, skip the network entirely.
+    const cached = readCustomerMasterBundle<Bundle>();
+    if (cached) {
+      hydrate(cached);
+      setMastersLoading(false);
+      return () => { cancelled = true; };
+    }
+
+    (async () => {
+      try {
+        const res = await api.get<Bundle>('/customers/master-bundle');
         if (cancelled) return;
-        const sorted = [...(r.data ?? [])].sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
-        setMasters(m => ({ ...m, countries: pickName(sorted) }));
-      }),
-      api.get('/master/states').then(r => { if (!cancelled) setMasters(m => ({ ...m, states: pickStates(r.data ?? []) })); }),
-      api.get('/master/designations').then(r => { if (!cancelled) setMasters(m => ({ ...m, designations: pickName(r.data ?? []) })); }),
-      // Document Type master — field is `title` (not `name`) — so pickName
-      // is called with the secondary key. Used by Stage 2's Add Document /
-      // License sub-modal.
-      api.get('/master/document_type').then(r => { if (!cancelled) setMasters(m => ({ ...m, documentTypes: pickName(r.data ?? [], 'title') })); }),
-    ]);
+        hydrate(res.data);
+        writeCustomerMasterBundle(res.data);
+      } catch {
+        // Dropdowns stay empty; the form still renders and individual
+        // save attempts will surface validation errors if a required
+        // option is missing.
+      } finally {
+        if (!cancelled) setMastersLoading(false);
+      }
+    })();
+
     return () => { cancelled = true; };
   }, [open]);
 
@@ -638,6 +691,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   // mode. Used to dim the body so the user doesn't start typing into
   // fields that are about to be overwritten.
   const [hydrating, setHydrating] = useState(false);
+  /* Derived flag — true while EITHER the edit-mode entity prefill is in
+   * flight (hydrating) OR the master bundle is still loading on first
+   * open (mastersLoading). Every JSX shimmer/skeleton block reads this
+   * so a new customer sees the same shimmer treatment an edit-mode
+   * customer already gets. */
+  const showShimmer = hydrating || mastersLoading;
 
   // Reset all state when modal closes. When `customer` is provided we open in
   // Edit mode and prefill the form fields we know about (company name, type,
@@ -1411,12 +1470,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             /documents, /owners and /segment-uploads fetches resolve. The
             shimmer skeletons below fill in the visual scaffold; this bar
             is the kinetic cue that they're not stuck. */}
-        {hydrating && <div className="acm-top-progress" role="progressbar" aria-label="Loading"><span /></div>}
+        {showShimmer && <div className="acm-top-progress" role="progressbar" aria-label="Loading"><span /></div>}
 
-        {/* STEPPER — swap to skeleton during edit-mode hydration so
-            the whole top of the modal reads as "loading" instead of
-            showing a partially-active stepper above an empty body. */}
-        {hydrating
+        {/* STEPPER — swap to skeleton during edit-mode hydration OR the
+            initial master-bundle load so the whole top of the modal
+            reads as "loading" instead of showing a partially-active
+            stepper above an empty body. */}
+        {showShimmer
           ? <StepperShimmer />
           : <Stepper stage={stage} maxStage={maxStage} onGoto={gotoStage} />}
 
@@ -1468,15 +1528,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         )}
 
         {/* STAGE 1 TABS — swap to shimmer pills during edit-mode
-            hydration so the tab row matches the loading state of the
-            stepper above and the body below. */}
-        {stage === 1 && hydrating && (
+            hydration OR the master-bundle load so the tab row matches
+            the loading state of the stepper above and the body below. */}
+        {stage === 1 && showShimmer && (
           <div className="acm-tabs acm-tabs-shimmer">
             <Shimmer height={36} width={180} radius={999} />
             <Shimmer height={36} width={200} radius={999} />
           </div>
         )}
-        {stage === 1 && !hydrating && (
+        {stage === 1 && !showShimmer && (
           <div className="acm-tabs">
             <button type="button" className={`acm-tab ${tab === 'identification' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => setTab('identification')}>Customer Identification</button>
             <button type="button" className={`acm-tab ${tab === 'address-contact' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => setTab('address-contact')}>Address &amp; Contact Details</button>
@@ -1501,11 +1561,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               feels faster than the previous "form with thin progress
               strip" because there's no jarring mid-load repaint as
               additional fields populate. */}
-          {stage === 1 && hydrating && <Stage1FormShimmer />}
-          {stage === 1 && !hydrating && tab === 'identification' && (
+          {stage === 1 && showShimmer && <Stage1FormShimmer />}
+          {stage === 1 && !showShimmer && tab === 'identification' && (
             <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} />
           )}
-          {stage === 1 && !hydrating && tab === 'address-contact' && (
+          {stage === 1 && !showShimmer && tab === 'address-contact' && (
             <Stage1AdditionalLocations
               primary={{
                 type:          form.addrType,
@@ -1527,8 +1587,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               onEditPrimary={() => setTab('identification')}
             />
           )}
-          {stage === 2 && hydrating && <Stage2Shimmer />}
-          {stage === 2 && !hydrating && (
+          {stage === 2 && showShimmer && <Stage2Shimmer />}
+          {stage === 2 && !showShimmer && (
             <Stage2KYC
               sub={kycSub} setSub={(s) => { setKycSub(s); setKycSearch(''); }}
               page={kycPage} setPage={(s, p) => setKycPage(prev => ({ ...prev, [s]: p }))}
@@ -1562,11 +1622,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               }}
             />
           )}
-          {stage === 3 && hydrating && <Stage3Shimmer />}
-          {stage === 3 && !hydrating && evTab === 'kyc-documents' && (
+          {stage === 3 && showShimmer && <Stage3Shimmer />}
+          {stage === 3 && !showShimmer && evTab === 'kyc-documents' && (
             <Stage3KycDocs sub={evSub} setSub={setEvSub} segmentDocs={segmentDocs} segmentRefUploads={segmentRefUploads} />
           )}
-          {stage === 3 && !hydrating && evTab === 'trade-documents' && (
+          {stage === 3 && !showShimmer && evTab === 'trade-documents' && (
             <Stage3TradeDocs
               docs={tdDocs.map(d => ({ ...d, cooldownActive: isReminderCooldown(d.signature_request_id) }))}
               onToggle={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, selected: !d.selected } : d))}

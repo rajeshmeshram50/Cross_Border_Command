@@ -1475,205 +1475,284 @@ type LoadedMasters = {
   loading:          boolean;
 };
 
-function useQpiMasters(open: boolean): LoadedMasters {
-  const [state, setState] = useState<LoadedMasters>({
-    currencies: [], incoterms: [], ports: [], countries: [],
-    customers: [], consignees: [], banks: [], opportunities: [],
-    states: [], products: [],
-    opportunitiesRaw: [], customersRaw: [], consigneesRaw: [],
-    banksRaw: [], productsRaw: [],
+/* Module-level cache for the QPI masters. The Create Quotation / Create
+ * PI modals fan out 11 GETs to populate their dropdowns; without a cache
+ * every re-open of the modal repeats all 11. We keep one in-memory copy
+ * keyed by the active branch (so a Branch Switcher change still triggers
+ * a fresh load) and a 5-minute TTL so stale data doesn't haunt a long
+ * session. Most of these masters (currencies, incoterms, ports,
+ * countries, states, banks) change less than once a week — caching them
+ * for 5 minutes is safe and dramatically speeds up the modal. */
+const QPI_MASTERS_CACHE_TTL_MS = 5 * 60 * 1000;
+let qpiMastersCache: {
+  data:     LoadedMasters;
+  branchId: string;
+  loadedAt: number;
+} | null = null;
+/* Promise dedupe — if two modals open back-to-back (e.g. user double-
+ * clicks), only one wave of network traffic actually fires. */
+let qpiMastersInFlight: Promise<LoadedMasters> | null = null;
+
+/* Public helper so callers (e.g. after a successful Map Product / Add
+ * Customer flow) can drop the cache and force the next open to refetch. */
+export function invalidateQpiMastersCache() {
+  qpiMastersCache    = null;
+  qpiMastersInFlight = null;
+}
+
+/* Public prewarm helper — call from a parent screen (e.g. Stage 5 mount)
+ * to start the 11-call fan-out + shape work in the background BEFORE
+ * the user clicks "+ Create Quotation". By the time they do, the cache
+ * is already warm and the modal opens with all dropdowns populated
+ * instantly. Safe to call repeatedly: cache + in-flight dedupe make
+ * extra calls cheap no-ops. */
+export function prewarmQpiMasters(): void {
+  const branch = currentBranchKey();
+  if (
+    qpiMastersCache
+    && qpiMastersCache.branchId === branch
+    && Date.now() - qpiMastersCache.loadedAt < QPI_MASTERS_CACHE_TTL_MS
+  ) return;
+  if (qpiMastersInFlight) return;
+  // Kick the same load the hook uses. Errors are swallowed here; the
+  // actual modal open will see `qpiMastersInFlight === null` and retry.
+  void loadQpiMasters(branch).catch(() => {});
+}
+
+/* The actual fetch+shape work, used by both the prewarm helper and the
+ * useQpiMasters hook. Sets `qpiMastersInFlight` for concurrent-open
+ * dedupe and writes `qpiMastersCache` on success. */
+function loadQpiMasters(branch: string): Promise<LoadedMasters> {
+  if (qpiMastersInFlight) return qpiMastersInFlight;
+  qpiMastersInFlight = Promise.all([
+    api.get('/master/currencies').catch(() => ({ data: [] })),
+    api.get('/master/incoterms').catch(() => ({ data: [] })),
+    api.get('/master/port_of_loading').catch(() => ({ data: [] })),
+    api.get('/master/countries').catch(() => ({ data: [] })),
+    api.get('/customers', { params: { tab: 'all' } }).catch(() => ({ data: { data: [] } })),
+    api.get('/consignees').catch(() => ({ data: { data: [] } })),
+    api.get('/master/bank_accounts').catch(() => ({ data: [] })),
+    api.get('/sales/leads', { params: { per_page: 50 } }).catch(() => ({ data: { data: [] } })),
+    api.get('/master/state_codes').catch(() => ({ data: [] })),
+    api.get('/master/states').catch(() => ({ data: [] })),
+    api.get('/products', { params: { per_page: 100, status: 'active' } }).catch(() => ({ data: { data: [] } })),
+  ]).then(([cur, inco, port, ctry, cust, cons, bank, lead, stCode, st, prod]): LoadedMasters => {
+    const next = shapeQpiMasters(cur, inco, port, ctry, cust, cons, bank, lead, stCode, st, prod);
+    qpiMastersCache    = { data: next, branchId: branch, loadedAt: Date.now() };
+    qpiMastersInFlight = null;
+    return next;
+  }).catch((err): never => {
+    qpiMastersInFlight = null;
+    throw err;
+  });
+  return qpiMastersInFlight;
+}
+
+/* Pure shaper — extracted so the prewarm path and the hook path both
+ * produce the exact same `LoadedMasters` object, avoiding any drift
+ * between two slightly different shaping implementations. */
+function shapeQpiMasters(
+  cur: any, inco: any, port: any, ctry: any,
+  cust: any, cons: any, bank: any, lead: any,
+  stCode: any, st: any, prod: any,
+): LoadedMasters {
+  const arr = (x: any) => Array.isArray(x?.data?.data) ? x.data.data : (Array.isArray(x?.data) ? x.data : []);
+  const optByCode = (rows: any[], codeKey = 'code', nameKey = 'name') =>
+    rows.map((r: any) => {
+      const code = r[codeKey] ?? '';
+      const name = r[nameKey] ?? r.full_name ?? r.title ?? '';
+      const label = code && name ? `${code} – ${name}` : (name || code || '');
+      return { value: label, label };
+    }).filter(o => o.label);
+  const customerRows = arr(cust);
+  const consigneeRows = arr(cons);
+  const bankRows = arr(bank);
+  const leadRows = arr(lead);
+  const productRows = arr(prod);
+
+  const productOptList: MasterOpt[] = [];
+  const productRawList: ProductMasterRow[] = [];
+  productRows.forEach((r: any) => {
+    const dbId = Number(r.id ?? 0);
+    if (!dbId) return;
+    const code = String(r.product_code ?? r.code ?? `P-${String(dbId).padStart(2, '0')}`);
+    const name = r.name ?? '';
+    if (!name) return;
+    const label = `${code} – ${name}`;
+    productOptList.push({ value: label, label });
+    const gstPct = Number(
+      r.gstPercentage?.percentage
+      ?? r.gst_percentage?.percentage
+      ?? r.gst_percentage
+      ?? (Number(r.base_price) > 0 ? (Number(r.gst_amount) / Number(r.base_price)) * 100 : 0)
+    );
+    productRawList.push({
+      dbId, code, name,
+      hsn:    r.hsn?.code ?? r.hsn_code ?? null,
+      rate:   Number(r.base_price ?? 0),
+      taxPct: isFinite(gstPct) ? Number(gstPct.toFixed(2)) : 0,
+    });
+  });
+
+  const bankOptList: MasterOpt[] = [];
+  const bankRawList: BankRow[]   = [];
+  bankRows.forEach((r: any) => {
+    const dbId = Number(r.id ?? 0);
+    if (!dbId) return;
+    const name = r.bank_name ?? r.name ?? '';
+    const holder = r.account_holder ?? '';
+    const label = holder ? `${name} (${holder})` : name;
+    if (!label) return;
+    bankOptList.push({ value: label, label });
+    bankRawList.push({ dbId, label });
+  });
+
+  const customerOpts: MasterOpt[] = [];
+  const customersRaw: CustomerRow[] = [];
+  customerRows.forEach((r: any) => {
+    const dbId = Number(r.db_id ?? r.id ?? 0);
+    if (!dbId) return;
+    const code = String(r.id ?? r.customer_code ?? `C-${String(dbId).padStart(3, '0')}`);
+    const co   = r.company ?? r.company_name ?? r.name ?? '';
+    const label = `${code} – ${co}`;
+    if (!co) return;
+    customerOpts.push({ value: label, label });
+    customersRaw.push({
+      dbId, code, company: co,
+      country: r.country ?? r.country_iso ?? '',
+      currency: r.currency ?? r.default_currency ?? null,
+    });
+  });
+  const consigneeOpts: MasterOpt[] = [];
+  const consigneesRaw: ConsigneeRow[] = [];
+  consigneeRows.forEach((r: any) => {
+    const dbId = Number(r.db_id ?? r.id ?? 0);
+    if (!dbId) return;
+    const code = String(r.id ?? r.consignee_code ?? `CN-${String(dbId).padStart(3, '0')}`);
+    const co   = r.company ?? r.company_name ?? r.name ?? '';
+    if (!co) return;
+    const label = `${code} – ${co}`;
+    consigneeOpts.push({ value: label, label });
+    consigneesRaw.push({
+      dbId, code, company: co,
+      customerDbId: r.customer_id != null ? Number(r.customer_id) : null,
+      country: r.country ?? '',
+    });
+  });
+  const opportunityOpts: MasterOpt[] = [];
+  const opportunitiesRaw: LeadRow[] = [];
+  leadRows.forEach((r: any) => {
+    const code = r.opp_code ?? r.opp_id ?? (r.id ? `OPP-${String(r.id).padStart(4, '0')}` : '');
+    const who  = (r.sender_company || r.sender_name || r.company || '').toString();
+    const label = code && who ? `${code} – ${who}` : (code || who || '');
+    if (!label) return;
+    opportunityOpts.push({ value: label, label });
+    const dateSrc = r.query_time ?? r.created_at;
+    opportunitiesRaw.push({
+      leadId:         Number(r.id ?? 0),
+      opp_code:       code,
+      sender_company: who,
+      sender_country: r.sender_country_iso ?? r.sender_country ?? '',
+      date:           dateSrc ? new Date(dateSrc).toLocaleDateString('en-GB') : '',
+      customerDbId:   r.customer_id != null ? Number(r.customer_id)
+                      : (r.customer?.id != null ? Number(r.customer.id) : null),
+      consigneeDbId:  r.consignee_id != null ? Number(r.consignee_id)
+                      : (r.consignee?.id != null ? Number(r.consignee.id) : null),
+      currency:       r.currency ?? r.quote_currency ?? null,
+    });
+  });
+  const stateRows = arr(st);
+  const stateById = new Map<number, string>();
+  stateRows.forEach((s: any) => { if (s.id) stateById.set(Number(s.id), s.name ?? ''); });
+  const codeRows = arr(stCode);
+  const stateOpts: MasterOpt[] = codeRows.map((r: any) => {
+    const code = (r.state_code ?? r.code ?? '').toString().trim().toUpperCase();
+    const name = stateById.get(Number(r.state_id ?? r.state?.id ?? 0)) ?? (r.state?.name ?? '');
+    const label = code && name ? `${code} – ${name}` : (name || code);
+    return { value: label, label };
+  }).filter((o: MasterOpt) => o.label);
+  const statesFinal: MasterOpt[] = stateOpts.length > 0
+    ? stateOpts
+    : stateRows.map((s: any) => ({ value: s.name ?? '', label: s.name ?? '' })).filter((o: MasterOpt) => o.label);
+
+  return {
+    currencies: optByCode(arr(cur)),
+    incoterms:  optByCode(arr(inco)),
+    ports:      optByCode(arr(port)),
+    countries:  arr(ctry).map((r: any) => ({ value: r.name ?? '', label: r.name ?? '' })).filter((o: MasterOpt) => o.label),
+    states:     statesFinal,
+    customers:  customerOpts,
+    consignees: consigneeOpts,
+    banks:      bankOptList,
+    banksRaw:   bankRawList,
+    products:   productOptList,
+    productsRaw: productRawList,
+    opportunities:    opportunityOpts,
+    opportunitiesRaw,
+    customersRaw,
+    consigneesRaw,
     loading: false,
+  };
+}
+
+function currentBranchKey(): string {
+  try {
+    const userRaw = localStorage.getItem('cbc_user');
+    const user    = userRaw ? JSON.parse(userRaw) : null;
+    if (!user?.id) return 'anon';
+    const b = localStorage.getItem(`cbc_selected_branch_id_${user.id}`);
+    return `${user.id}:${b ?? 'all'}`;
+  } catch { return 'anon'; }
+}
+
+function useQpiMasters(open: boolean): LoadedMasters {
+  const [state, setState] = useState<LoadedMasters>(() => {
+    // Hydrate from cache synchronously so the first render of a re-opened
+    // modal already has the dropdown options — no flash of "Loading…".
+    const branch = currentBranchKey();
+    if (
+      qpiMastersCache
+      && qpiMastersCache.branchId === branch
+      && Date.now() - qpiMastersCache.loadedAt < QPI_MASTERS_CACHE_TTL_MS
+    ) return qpiMastersCache.data;
+    return {
+      currencies: [], incoterms: [], ports: [], countries: [],
+      customers: [], consignees: [], banks: [], opportunities: [],
+      states: [], products: [],
+      opportunitiesRaw: [], customersRaw: [], consigneesRaw: [],
+      banksRaw: [], productsRaw: [],
+      loading: false,
+    };
   });
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    const branch = currentBranchKey();
+
+    // Cache hit — return synchronously, no network at all.
+    if (
+      qpiMastersCache
+      && qpiMastersCache.branchId === branch
+      && Date.now() - qpiMastersCache.loadedAt < QPI_MASTERS_CACHE_TTL_MS
+    ) {
+      setState(qpiMastersCache.data);
+      return;
+    }
+
+    // Concurrent-open dedupe — piggy-back on the in-flight wave.
+    if (qpiMastersInFlight) {
+      setState(s => ({ ...s, loading: true }));
+      qpiMastersInFlight.then(d => { if (!cancelled) setState(d); }).catch(() => {});
+      return () => { cancelled = true; };
+    }
+
     setState(s => ({ ...s, loading: true }));
-    // Each fetch is independent and falls back to [] on error so one
-    // missing master doesn't take down the rest of the form.
-    Promise.all([
-      api.get('/master/currencies').catch(() => ({ data: [] })),
-      api.get('/master/incoterms').catch(() => ({ data: [] })),
-      api.get('/master/port_of_loading').catch(() => ({ data: [] })),
-      api.get('/master/countries').catch(() => ({ data: [] })),
-      api.get('/customers', { params: { tab: 'all' } }).catch(() => ({ data: { data: [] } })),
-      api.get('/consignees').catch(() => ({ data: { data: [] } })),
-      api.get('/master/bank_accounts').catch(() => ({ data: [] })),
-      api.get('/sales/leads', { params: { per_page: 200 } }).catch(() => ({ data: { data: [] } })),
-      api.get('/master/state_codes').catch(() => ({ data: [] })),
-      api.get('/master/states').catch(() => ({ data: [] })),
-      api.get('/products', { params: { per_page: 500, status: 'active' } }).catch(() => ({ data: { data: [] } })),
-    ]).then(([cur, inco, port, ctry, cust, cons, bank, lead, stCode, st, prod]) => {
-      if (cancelled) return;
-      const arr = (x: any) => Array.isArray(x?.data?.data) ? x.data.data : (Array.isArray(x?.data) ? x.data : []);
-      const optByCode = (rows: any[], codeKey = 'code', nameKey = 'name') =>
-        rows.map((r: any) => {
-          const code = r[codeKey] ?? '';
-          const name = r[nameKey] ?? r.full_name ?? r.title ?? '';
-          const label = code && name ? `${code} – ${name}` : (name || code || '');
-          return { value: label, label };
-        }).filter(o => o.label);
-      const customerRows = arr(cust);
-      const consigneeRows = arr(cons);
-      const bankRows = arr(bank);
-      const leadRows = arr(lead);
-      const productRows = arr(prod);
-
-      // Products — "P-01 – Cashew W320". Snapshot the default rate,
-      // GST %, and HSN code so picking a product auto-fills those
-      // fields in the Step 2 line-item row.
-      const productOptList: MasterOpt[] = [];
-      const productRawList: ProductMasterRow[] = [];
-      productRows.forEach((r: any) => {
-        const dbId = Number(r.id ?? 0);
-        if (!dbId) return;
-        const code = String(r.product_code ?? r.code ?? `P-${String(dbId).padStart(2, '0')}`);
-        const name = r.name ?? '';
-        if (!name) return;
-        const label = `${code} – ${name}`;
-        productOptList.push({ value: label, label });
-        // GST percentage is eager-loaded as `gstPercentage` with a
-        // `percentage` field — fall back to gst_amount/base_price if the
-        // master is missing so the auto-fill still has something useful.
-        const gstPct = Number(
-          r.gstPercentage?.percentage
-          ?? r.gst_percentage?.percentage
-          ?? r.gst_percentage
-          ?? (Number(r.base_price) > 0 ? (Number(r.gst_amount) / Number(r.base_price)) * 100 : 0)
-        );
-        productRawList.push({
-          dbId,
-          code,
-          name,
-          hsn:    r.hsn?.code ?? r.hsn_code ?? null,
-          rate:   Number(r.base_price ?? 0),
-          taxPct: isFinite(gstPct) ? Number(gstPct.toFixed(2)) : 0,
-        });
-      });
-
-      // Bank Accounts — "{bank_name} ({account_holder})" label + raw row
-      // keyed by db id so the form can resolve the FK on submit.
-      const bankOptList: MasterOpt[] = [];
-      const bankRawList: BankRow[]   = [];
-      bankRows.forEach((r: any) => {
-        const dbId = Number(r.id ?? 0);
-        if (!dbId) return;
-        const name = r.bank_name ?? r.name ?? '';
-        const holder = r.account_holder ?? '';
-        const label = holder ? `${name} (${holder})` : name;
-        if (!label) return;
-        bankOptList.push({ value: label, label });
-        bankRawList.push({ dbId, label });
-      });
-      // Build display labels alongside compact raw rows kept for cascades.
-      //
-      // KEY DETAIL on shapes (verified by reading the controllers):
-      //   /customers  → { id: "C-012" (code), db_id: 5 (numeric PK), company, ... }
-      //   /consignees → { id: "CN-007", db_id: 12, customer_id: 5 (numeric FK), customer_code, company, ... }
-      //   /sales/leads → { id: 7, opp_code: "OPP-0001", customer_id: 5, customer: {id, customer_code, company_name}, consignee: {id, company_name}, sender_company, ... }
-      //
-      // The FK joins are numeric: lead.customer_id → customers.db_id,
-      // consignee.customer_id → customers.db_id. We use those numeric ids
-      // as the canonical key for cascades; display codes are only for labels.
-      const customerOpts: MasterOpt[] = [];
-      const customersRaw: CustomerRow[] = [];
-      customerRows.forEach((r: any) => {
-        const dbId = Number(r.db_id ?? r.id ?? 0);
-        if (!dbId) return;
-        const code = String(r.id ?? r.customer_code ?? `C-${String(dbId).padStart(3, '0')}`);
-        const co   = r.company ?? r.company_name ?? r.name ?? '';
-        const label = `${code} – ${co}`;
-        if (!co) return;
-        customerOpts.push({ value: label, label });
-        customersRaw.push({
-          dbId, code, company: co,
-          country: r.country ?? r.country_iso ?? '',
-          currency: r.currency ?? r.default_currency ?? null,
-        });
-      });
-      const consigneeOpts: MasterOpt[] = [];
-      const consigneesRaw: ConsigneeRow[] = [];
-      consigneeRows.forEach((r: any) => {
-        const dbId = Number(r.db_id ?? r.id ?? 0);
-        if (!dbId) return;
-        const code = String(r.id ?? r.consignee_code ?? `CN-${String(dbId).padStart(3, '0')}`);
-        const co   = r.company ?? r.company_name ?? r.name ?? '';
-        if (!co) return;
-        const label = `${code} – ${co}`;
-        consigneeOpts.push({ value: label, label });
-        consigneesRaw.push({
-          dbId, code, company: co,
-          customerDbId: r.customer_id != null ? Number(r.customer_id) : null,
-          country: r.country ?? '',
-        });
-      });
-      const opportunityOpts: MasterOpt[] = [];
-      const opportunitiesRaw: LeadRow[] = [];
-      leadRows.forEach((r: any) => {
-        const code = r.opp_code ?? r.opp_id ?? (r.id ? `OPP-${String(r.id).padStart(4, '0')}` : '');
-        const who  = (r.sender_company || r.sender_name || r.company || '').toString();
-        const label = code && who ? `${code} – ${who}` : (code || who || '');
-        if (!label) return;
-        opportunityOpts.push({ value: label, label });
-        const dateSrc = r.query_time ?? r.created_at;
-        opportunitiesRaw.push({
-          leadId:         Number(r.id ?? 0),
-          opp_code:       code,
-          sender_company: who,
-          sender_country: r.sender_country_iso ?? r.sender_country ?? '',
-          date:           dateSrc ? new Date(dateSrc).toLocaleDateString('en-GB') : '',
-          // lead.customer_id is the numeric FK to customers.id (== db_id
-          // we expose on /customers). Prefer it over the eager-loaded
-          // customer.id which would be the same numeric value anyway.
-          customerDbId:   r.customer_id != null ? Number(r.customer_id)
-                          : (r.customer?.id != null ? Number(r.customer.id) : null),
-          // lead.consignee is eager-loaded as { id, company_name }.
-          // Capture its id so picking the opportunity auto-fills THAT
-          // specific consignee (not any consignee of the customer).
-          consigneeDbId:  r.consignee_id != null ? Number(r.consignee_id)
-                          : (r.consignee?.id != null ? Number(r.consignee.id) : null),
-          currency:       r.currency ?? r.quote_currency ?? null,
-        });
-      });
-      // States — prefer the State Codes master (which carries
-      // state_code + state_id) and join in the state name from the
-      // States master. Fall back to plain states if state_codes is
-      // empty. Label format: "MH – Maharashtra" so the user sees both.
-      const stateRows = arr(st);
-      const stateById = new Map<number, string>();
-      stateRows.forEach((s: any) => { if (s.id) stateById.set(Number(s.id), s.name ?? ''); });
-      const codeRows = arr(stCode);
-      const stateOpts: MasterOpt[] = codeRows.map((r: any) => {
-        const code = (r.state_code ?? r.code ?? '').toString().trim().toUpperCase();
-        const name = stateById.get(Number(r.state_id ?? r.state?.id ?? 0)) ?? (r.state?.name ?? '');
-        const label = code && name ? `${code} – ${name}` : (name || code);
-        return { value: label, label };
-      }).filter((o: MasterOpt) => o.label);
-      // If no state_codes are configured, fall back to just the state list.
-      const statesFinal: MasterOpt[] = stateOpts.length > 0
-        ? stateOpts
-        : stateRows.map((s: any) => ({ value: s.name ?? '', label: s.name ?? '' })).filter((o: MasterOpt) => o.label);
-
-      setState({
-        currencies: optByCode(arr(cur)),
-        incoterms:  optByCode(arr(inco)),
-        ports:      optByCode(arr(port)),
-        countries:  arr(ctry).map((r: any) => ({ value: r.name ?? '', label: r.name ?? '' })).filter((o: MasterOpt) => o.label),
-        states:     statesFinal,
-        customers:  customerOpts,
-        consignees: consigneeOpts,
-        // Bank Accounts master — "Bank Name (Account Holder)" so the
-        // user can disambiguate when the same bank has multiple accounts.
-        banks: bankOptList,
-        banksRaw: bankRawList,
-        products: productOptList,
-        productsRaw: productRawList,
-        opportunities: opportunityOpts,
-        opportunitiesRaw,
-        customersRaw,
-        consigneesRaw,
-        loading: false,
-      });
-    }).catch(() => { if (!cancelled) setState(s => ({ ...s, loading: false })); });
+    // Delegate to the shared loader — it handles the fan-out fetch +
+    // shape work and writes the module cache so this and any
+    // pre-warmed/sibling caller share the same result.
+    loadQpiMasters(branch)
+      .then(d => { if (!cancelled) setState(d); })
+      .catch(() => { if (!cancelled) setState(s => ({ ...s, loading: false })); });
     return () => { cancelled = true; };
   }, [open]);
   return state;

@@ -9,6 +9,7 @@ import ConsigneeEvidenceVaultModal, { type ConsigneeVaultTarget } from './Consig
 import { ShimmerTable } from '../../components/ui/Shimmer';
 import api from '../../api';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
+import { readCustomerMasterBundle, writeCustomerMasterBundle } from './customerBundleCache';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Consignee
@@ -128,6 +129,34 @@ export default function SalesConsignee() {
   }, [canView]);
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
+
+  /* Warm the customer/consignee master bundle in the background.
+   *
+   * The Add Consignee modal — and the Add Customer modal on the sibling
+   * page — both consume /customers/master-bundle. Preloading on this
+   * page's idle time ensures the modal hydrates synchronously from
+   * sessionStorage when the user clicks "Add Consignee".
+   *
+   * Skips when a fresh cached copy is already present (likely when the
+   * user navigated here from Customers, since both pages share the
+   * cache key). */
+  useEffect(() => {
+    if (readCustomerMasterBundle()) return;
+    const warm = () => {
+      api.get('/customers/master-bundle')
+        .then(res => writeCustomerMasterBundle(res.data))
+        .catch(() => { /* silent — modal will retry on open */ });
+    };
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (h: number) => void;
+    };
+    const handle = w.requestIdleCallback ? w.requestIdleCallback(warm) : window.setTimeout(warm, 800);
+    return () => {
+      if (w.requestIdleCallback) w.cancelIdleCallback?.(handle);
+      else window.clearTimeout(handle);
+    };
+  }, []);
 
   const handleDelete = async () => {
     if (!delTarget?.db_id) { setDelTarget(null); return; }

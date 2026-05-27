@@ -5,6 +5,7 @@ import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import {
   CreateQuotationModal,
   CreatePIModal,
+  prewarmQpiMasters,
   type QpiInitialOpp,
   type Quotation as QpiQuotation,
 } from '../../SalesQPI';
@@ -133,6 +134,15 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   }, [leadId, toast]);
 
   useEffect(() => { void fetchAll(false); }, [fetchAll]);
+
+  /* Prewarm the Create Quotation / Create PI masters as soon as Stage 5
+   * mounts. The modal needs 11 master fetches to populate its dropdowns;
+   * firing them in the background now means the cache is already hot by
+   * the time the user clicks "+ Create Quotation", so the modal opens
+   * with all dropdowns populated instantly instead of staring at empty
+   * shimmer placeholders. The helper is a no-op if the cache is still
+   * fresh or another caller already started a load. */
+  useEffect(() => { prewarmQpiMasters(); }, []);
 
   /* ── Per-row actions ─────────────────────────────────────────────── */
   const onViewPdf = async (kind: DocType, id: number) => {

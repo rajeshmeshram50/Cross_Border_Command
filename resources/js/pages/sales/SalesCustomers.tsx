@@ -8,6 +8,7 @@ import CustomerEvidenceVaultModal, { type CustomerVaultTarget } from './Customer
 import { ShimmerTable } from '../../components/ui/Shimmer';
 import api from '../../api';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
+import { readCustomerMasterBundle, writeCustomerMasterBundle } from './customerBundleCache';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Customers
@@ -135,6 +136,35 @@ export default function SalesCustomers() {
   }, [tab, q]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
+
+  /* Warm the customer/consignee master bundle in the background.
+   *
+   * The Add Customer modal — and the Add Consignee modal one page over
+   * — both consume /customers/master-bundle. By fetching it during the
+   * Customers page's idle time, the data lands in sessionStorage before
+   * the user clicks "Add Customer" so the modal hydrates synchronously
+   * and the shimmer barely flashes.
+   *
+   * Skips when a fresh cached copy is already present. Uses
+   * requestIdleCallback (with a setTimeout fallback) so the warm-up
+   * never competes with the visible table render. */
+  useEffect(() => {
+    if (readCustomerMasterBundle()) return;
+    const warm = () => {
+      api.get('/customers/master-bundle')
+        .then(res => writeCustomerMasterBundle(res.data))
+        .catch(() => { /* silent — modal will retry on open */ });
+    };
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (h: number) => void;
+    };
+    const handle = w.requestIdleCallback ? w.requestIdleCallback(warm) : window.setTimeout(warm, 800);
+    return () => {
+      if (w.requestIdleCallback) w.cancelIdleCallback?.(handle);
+      else window.clearTimeout(handle);
+    };
+  }, []);
 
   // Inject Google Fonts (DM Sans, Inter) once on mount so the design renders
   // with its intended typography even on a fresh install.
