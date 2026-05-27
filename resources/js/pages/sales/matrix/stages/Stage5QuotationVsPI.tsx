@@ -84,7 +84,7 @@ const statusClass = (s: string | null): string => {
   return 's5-status-default';
 };
 
-export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead }: StageProps) {
+export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead, onPiChange }: StageProps) {
   const toast = useToast();
   const leadId = header.leadId ?? null;
 
@@ -589,6 +589,13 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             setEditPiId(null);
             setPiSource(null);
             void fetchAll(true);
+            // Tell the parent the lead's PI set just changed so it
+            // refetches /clm/leads/{id}/agreement-applicable — that's
+            // what unlocks the Segment Details card on the left rail.
+            // Fires for both create AND edit because edits can also
+            // change the product list (and therefore which segments
+            // / agreements apply).
+            onPiChange?.();
           }}
         />
       )}

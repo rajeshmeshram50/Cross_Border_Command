@@ -1118,6 +1118,93 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-act-del:hover  { background: rgba(239,68,68,.22); }
 [data-bs-theme="dark"] .clm-select { background-image: url("data:image/svg+xml,%3Csvg width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2367e8f9' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); }
 
+/* DCP — Add/Edit Segment Rule modal (Stage 1 stepper + cards, Stage 2 cat tabs).
+ * These sections use hard-coded white / light-cyan backgrounds inline, so dark
+ * mode left them as bright white islands inside the dark modal body. We use
+ * !important so the stylesheet rules win over the inline styles. */
+[data-bs-theme="dark"] .dcp-stage-strip {
+  background: #0f172a !important;
+  border-bottom-color: rgba(6,182,212,.22) !important;
+}
+[data-bs-theme="dark"] .dcp-step-badge {
+  background: rgba(8,145,178,.18) !important;
+  border-color: rgba(8,145,178,.35) !important;
+  color: #67e8f9 !important;
+}
+[data-bs-theme="dark"] .dcp-stage-tile-pending  { background: rgba(30,41,59,.6) !important; }
+[data-bs-theme="dark"] .dcp-stage-tile-done {
+  background: rgba(34,197,94,.10) !important;
+  border-color: rgba(34,197,94,.32) !important;
+}
+[data-bs-theme="dark"] .dcp-stage-tile-num-pending { background: #334155 !important; color: #94a3b8 !important; }
+[data-bs-theme="dark"] .dcp-stage-tile-pending .dcp-stage-tile-title { color: #cbd5e1 !important; }
+[data-bs-theme="dark"] .dcp-stage-tile-pending .dcp-stage-tile-sub   { color: #94a3b8 !important; }
+[data-bs-theme="dark"] .dcp-stage-tile-done    .dcp-stage-tile-title { color: #4ade80 !important; }
+[data-bs-theme="dark"] .dcp-stage-tile-done    .dcp-stage-tile-sub   { color: #22c55e !important; }
+
+[data-bs-theme="dark"] .dcp-modal-card {
+  background: #0f172a !important;
+  border-color: rgba(6,182,212,.25) !important;
+}
+[data-bs-theme="dark"] .dcp-modal-card-head {
+  background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(8,145,178,.10)) !important;
+  border-bottom-color: rgba(6,182,212,.22) !important;
+}
+
+/* Stage 1 — radio options (High Regulatory / Less Regulatory) */
+[data-bs-theme="dark"] .dcp-radio-label {
+  background: rgba(30,41,59,.6) !important;
+  border-color: rgba(148,163,184,.22) !important;
+}
+[data-bs-theme="dark"] .dcp-radio-label-on-highly {
+  background: rgba(239,68,68,.10) !important;
+  border-color: rgba(239,68,68,.40) !important;
+}
+[data-bs-theme="dark"] .dcp-radio-label-on-less {
+  background: rgba(34,197,94,.10) !important;
+  border-color: rgba(34,197,94,.40) !important;
+}
+[data-bs-theme="dark"] .dcp-radio-label                   .dcp-radio-title { color: #e2e8f0 !important; }
+[data-bs-theme="dark"] .dcp-radio-label                   .dcp-radio-sub   { color: #94a3b8 !important; }
+[data-bs-theme="dark"] .dcp-radio-label-on-highly         .dcp-radio-title { color: #fca5a5 !important; }
+[data-bs-theme="dark"] .dcp-radio-label-on-highly         .dcp-radio-sub   { color: #f87171 !important; }
+[data-bs-theme="dark"] .dcp-radio-label-on-less           .dcp-radio-title { color: #86efac !important; }
+[data-bs-theme="dark"] .dcp-radio-label-on-less           .dcp-radio-sub   { color: #4ade80 !important; }
+
+/* Stage 1 — Select-Segment sub-panel (red-tinted for highly, green for less) */
+[data-bs-theme="dark"] .dcp-select-seg-highly {
+  background: linear-gradient(110deg, rgba(239,68,68,.08), rgba(239,68,68,.03)) !important;
+  border-color: rgba(239,68,68,.25) !important;
+}
+[data-bs-theme="dark"] .dcp-select-seg-less {
+  background: linear-gradient(110deg, rgba(22,163,74,.08), rgba(22,163,74,.03)) !important;
+  border-color: rgba(22,163,74,.25) !important;
+}
+[data-bs-theme="dark"] .dcp-multi-seg-list {
+  background: rgba(15,23,42,.55) !important;
+  border-color: rgba(22,163,74,.25) !important;
+}
+
+/* Stage 1 — Segment Details grid */
+[data-bs-theme="dark"] .dcp-segdtl-cell { border-right-color: rgba(6,182,212,.18) !important; }
+[data-bs-theme="dark"] .dcp-segdtl-label { color: #67e8f9 !important; }
+[data-bs-theme="dark"] .dcp-segdtl-val   { color: #cffafe !important; }
+
+/* Stage 2 — category tabs strip + document table head row */
+[data-bs-theme="dark"] .dcp-cat-tabs {
+  background: rgba(8,145,178,.10) !important;
+  border-color: rgba(6,182,212,.25) !important;
+}
+[data-bs-theme="dark"] .dcp-thead-row > th {
+  background: rgba(8,145,178,.18) !important;
+  border-bottom-color: rgba(6,182,212,.30) !important;
+}
+[data-bs-theme="dark"] .dcp-thead-row > th > span { color: #67e8f9 !important; }
+
+/* Brighten the inactive segment-rule tab text in dark mode — previously
+ * #94a3b8 was too dim to read against the near-black panel. */
+[data-bs-theme="dark"] .clm-tab:not(.active) { color: #cbd5e1; }
+
 /* ── Responsive breakpoints ── */
 
 /* Tablet ≤ 1024px — bref-box grid drops to 3 columns; pill text smaller */

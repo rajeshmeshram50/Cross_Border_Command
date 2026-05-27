@@ -573,7 +573,15 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
            * card and the per-signer draggable signature boxes both
            * iterate this array, so an agreement scoped to "Buyer"
            * only never surfaces the consignee, and a
-           * "Buyer, Consignee" agreement gets two independent boxes. */
+           * "Buyer, Consignee" agreement gets two independent boxes.
+           *
+           * Unmapped parties (e.g. agreement expects Consignee but
+           * the lead has no consignee_id) are still emitted into the
+           * signers array but with email=null, so the modal renders
+           * a disabled box + warning row for them. Without this the
+           * modal silently dropped the unmapped party and the user
+           * couldn't tell why their multi-signer agreement only
+           * showed one signature box. */
           const partyTokens = String(ssfAgreements[0].party ?? '')
             .split(',')
             .map(s => s.trim().toLowerCase())
@@ -581,12 +589,32 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
           const wantsBuyer     = partyTokens.includes('buyer');
           const wantsConsignee = partyTokens.includes('consignee');
           const signers: AgreementSigner[] = [];
-          if (wantsBuyer && payload?.lead.customer) {
-            signers.push({ role: 'buyer', name: payload.lead.customer.name, email: payload.lead.customer.email ?? null });
+          if (wantsBuyer) {
+            signers.push({
+              role: 'buyer',
+              name:  payload?.lead.customer?.name  ?? '⚠ Customer not mapped',
+              email: payload?.lead.customer?.email ?? null,
+            });
           }
-          if (wantsConsignee && payload?.lead.consignee) {
-            signers.push({ role: 'consignee', name: payload.lead.consignee.name, email: payload.lead.consignee.email ?? null });
+          if (wantsConsignee) {
+            signers.push({
+              role: 'consignee',
+              name:  payload?.lead.consignee?.name  ?? '⚠ Consignee not mapped',
+              email: payload?.lead.consignee?.email ?? null,
+            });
           }
+          // Diagnostic — visible in DevTools so the operator can see
+          // exactly which signers got built when the modal opens.
+          // eslint-disable-next-line no-console
+          console.debug('[agreement-send] resolved signers', {
+            leadId,
+            partyCsv: ssfAgreements[0].party,
+            wantsBuyer,
+            wantsConsignee,
+            customer:  payload?.lead.customer  ?? null,
+            consignee: payload?.lead.consignee ?? null,
+            signers,
+          });
           return {
             leadId,
             agreements: ssfAgreements.map<AgreementSendRow>(a => ({

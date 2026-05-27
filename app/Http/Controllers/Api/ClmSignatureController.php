@@ -1411,6 +1411,13 @@ class ClmSignatureController extends Controller
             'buyer_name'      => $nameValue,
             'consignee_name'  => $nameValue,
             'supplier_name'   => $nameValue,
+            // Long-form `*_code` aliases — the agreement Stage-2 picker
+            // emits {{buyer.buyer_code}} (not {{buyer.code}}), and
+            // symmetric aliases are added for consignee/supplier so
+            // future picker entries resolve without another patch.
+            'buyer_code'      => $codeValue,
+            'consignee_code'  => $codeValue,
+            'supplier_code'   => $codeValue,
             'vendor_code'     => $codeValue,
             'company'         => e(($party->legal_name ?: $party->company_name) ?? ''),
             'contact_person'  => e($contactPerson),

@@ -896,6 +896,15 @@ export default function SalesMatrixDetail() {
             onPrev={goPrev}
             onNext={goNext}
             reloadLead={reloadLead}
+            // Stage 5 calls this after a PI is created or edited so
+            // the Segment Details card unlocks immediately instead of
+            // waiting for the user to click Save & Next (the only
+            // other path that previously re-rendered with fresh
+            // server state). The tick triggers the
+            // /clm/leads/{id}/agreement-applicable refetch — when its
+            // `pi` field flips from null to populated, the card
+            // becomes enabled with live segment counts.
+            onPiChange={() => setAgreementRefreshTick(t => t + 1)}
           />
         </section>
 
