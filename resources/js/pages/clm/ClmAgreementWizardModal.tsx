@@ -1501,6 +1501,32 @@ const AGW_CSS = `
 [data-bs-theme="dark"] .agw-reg-head, [data-bs-theme="dark"] .agw-party-head { color: #67e8f9; }
 [data-bs-theme="dark"] .agw-reg-ico, [data-bs-theme="dark"] .agw-party-ico { background: rgba(8,145,178,.20); color: #67e8f9; }
 [data-bs-theme="dark"] .agw-reg-opt-sub { color: #94a3b8; }
+/* High/Less Regulatory radio cards use light red/green tinted backgrounds in
+ * light mode (rgba(254,226,226,.35) / rgba(220,252,231,.35)). Without these
+ * overrides the same tints render as nearly-white islands in dark mode and
+ * the dark red/green title text becomes unreadable against them. */
+[data-bs-theme="dark"] .agw-reg-high {
+  background: rgba(239,68,68,.10);
+  border-color: rgba(239,68,68,.30);
+  color: #fca5a5;
+}
+[data-bs-theme="dark"] .agw-reg-high.is-on {
+  background: rgba(239,68,68,.18);
+  border-color: #ef4444;
+  color: #fca5a5;
+  box-shadow: 0 6px 18px rgba(239,68,68,.25);
+}
+[data-bs-theme="dark"] .agw-reg-less {
+  background: rgba(34,197,94,.10);
+  border-color: rgba(34,197,94,.30);
+  color: #86efac;
+}
+[data-bs-theme="dark"] .agw-reg-less.is-on {
+  background: rgba(34,197,94,.18);
+  border-color: #22c55e;
+  color: #86efac;
+  box-shadow: 0 6px 18px rgba(34,197,94,.25);
+}
 [data-bs-theme="dark"] .agw-party-label { color: #cbd5e1; }
 [data-bs-theme="dark"] .agw-party-label-buyer    { color: #67e8f9; }
 [data-bs-theme="dark"] .agw-party-label-supplier { color: #4ade80; }
