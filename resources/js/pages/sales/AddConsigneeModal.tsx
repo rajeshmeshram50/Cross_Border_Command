@@ -1287,11 +1287,29 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
        * gets its own Save & Next step (parallels AddCustomerModal). */
       if (kycSub === 'company-dd')  { setKycSub('owner-kyc');    return; }
       if (kycSub === 'owner-kyc')   { setKycSub('trade-licence'); return; }
+      // Reset Stage 3 sub-state so Evidence Vault opens on KYC
+      // Documents › Company DD instead of landing mid-flow on
+      // whichever sub-tab the user last visited.
+      setVaultTab('kyc');
+      setEvSub('dd');
       setStage(3);
       return;
     }
-    /* Stage 3 advance — no gate, no further sub-tabs. */
-    setStage(s => (s < 3 ? (s + 1) as Stage : s));
+    /* Stage 3 advance — cycle Evidence Vault › KYC Documents
+     * (dd → kyc → tl) → Trade Documents before the final Save
+     * Consignee. Previously this branch fell through to a no-op
+     * setStage that left the user stuck on whichever sub-tab the
+     * Save Consignee button was clicked from, so users could skip
+     * past tabs. */
+    if (vaultTab === 'kyc') {
+      if (evSub === 'dd')  { setEvSub('kyc'); return; }
+      if (evSub === 'kyc') { setEvSub('tl');  return; }
+      setVaultTab('trade');
+      return;
+    }
+    // vaultTab === 'trade' — last Stage 3 sub-tab; fire the actual
+    // submit instead of advancing further.
+    handleSave();
   };
   const goBack = () => {
     if (stage === 1) {
@@ -1306,7 +1324,16 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setStage(1); setIdTab('address-contact');
       return;
     }
-    setStage(s => (s > 1 ? (s - 1) as Stage : s));
+    // Stage 3 reverse cycle: Trade Documents → KYC Documents
+    // (tl → kyc → dd) → Stage 2.
+    if (vaultTab === 'trade') {
+      setVaultTab('kyc');
+      setEvSub('tl');
+      return;
+    }
+    if (evSub === 'tl')  { setEvSub('kyc'); return; }
+    if (evSub === 'kyc') { setEvSub('dd');  return; }
+    setStage(2);
   };
 
   /* Build the POST/PUT payload from form1 + locations. Mirrors the
@@ -1631,32 +1658,62 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 </div>
               </div>
               {!linkedHidden && (
-                <div className="acg-hs-mirror">
-                  <div className="acg-hs-grid">
-                    <ReadInlineG label="Customer ID"          value={customer.id} />
-                    <ReadInlineG label="Company Name"         value={customer.name} />
-                    <ReadInlineG label="Company Legal Name"   value={customer.legalName} />
-                    <ReadInlineG label="Customer Type"        value={customer.type} />
+                <>
+                  <div className="acg-hs-mirror">
+                    <div className="acg-hs-grid">
+                      <ReadInlineG label="Customer ID"          value={customer.id} />
+                      <ReadInlineG label="Company Name"         value={customer.name} />
+                      <ReadInlineG label="Company Legal Name"   value={customer.legalName} />
+                      <ReadInlineG label="Customer Type"        value={customer.type} />
 
-                    <ReadInlineG label="Customer Segment"     value={customer.segment} />
-                    <ReadInlineG label="Classification"       value={customer.classification} />
-                    <ReadInlineG label="Risk Level"           value={customer.risk} />
-                    <ReadInlineG label="Company Website"      value={customer.website} />
+                      <ReadInlineG label="Customer Segment"     value={customer.segment} />
+                      <ReadInlineG label="Classification"       value={customer.classification} />
+                      <ReadInlineG label="Risk Level"           value={customer.risk} />
+                      <ReadInlineG label="Company Website"      value={customer.website} />
 
-                    <ReadInlineG label="Registered Address"   value={customer.address} span={2} />
-                    <ReadInlineG label="Country"              value={customer.country} />
-                    <ReadInlineG label="State"                value={customer.state} />
+                      <ReadInlineG label="Registered Address"   value={customer.address} span={2} />
+                      <ReadInlineG label="Country"              value={customer.country} />
+                      <ReadInlineG label="State"                value={customer.state} />
 
-                    <ReadInlineG label="City"                 value={customer.city} />
-                    <ReadInlineG label="PIN / Postal Code"    value={customer.pin} />
-                    <ReadInlineG label="Contact Person"       value={customer.contactPerson} />
-                    <ReadInlineG label="Designation"          value={customer.designation} />
+                      <ReadInlineG label="City"                 value={customer.city} />
+                      <ReadInlineG label="PIN / Postal Code"    value={customer.pin} />
+                      <ReadInlineG label="Contact Person"       value={customer.contactPerson} />
+                      <ReadInlineG label="Designation"          value={customer.designation} />
 
-                    <ReadInlineG label="Contact No"           value={customer.phone} />
-                    <ReadInlineG label="Email"                value={customer.email} />
-                    <ReadInlineG label="WhatsApp Enabled"     value={customer.whatsapp} />
+                      <ReadInlineG label="Contact No"           value={customer.phone} />
+                      <ReadInlineG label="Email"                value={customer.email} />
+                      <ReadInlineG label="WhatsApp Enabled"     value={customer.whatsapp} />
+                    </div>
                   </div>
-                </div>
+
+                  {/* Stage 2 KYC stat cards — merged into the Linked
+                      Customer panel when Same as Customer is on so the
+                      user sees ONE consolidated read-only block instead
+                      of a redundant "What you did in previous stages"
+                      panel below. Only shown from Stage 3 onwards (the
+                      stats are meaningless before the user has reached
+                      Stage 2 / 3). */}
+                  {sameAsCustomer && stage >= 3 && (() => {
+                    const segKeys = Object.keys(segmentRefUploads);
+                    const segDd  = segKeys.filter(k => k.startsWith('company-dd::')).length;
+                    const segOwn = segKeys.filter(k => k.startsWith('owner-kyc::')).length;
+                    const segTl  = segKeys.filter(k => k.startsWith('trade-licence::')).length;
+                    const ddCount    = kycDocs.filter(d => d.kind === 'dd').length + segDd;
+                    const ownerCount = kycOwners.length + segOwn;
+                    const tlCount    = kycDocs.filter(d => d.kind === 'tl').length + segTl;
+                    const total      = ddCount + ownerCount + tlCount;
+                    return (
+                      <div className="acg-hs-mirror acg-hs-stats-wrap">
+                        <div className="acg-hs-stats">
+                          <div className="acg-hs-stat"><div className="acg-hs-stat-num">{ddCount}</div><div className="acg-hs-stat-lbl">DD Docs</div></div>
+                          <div className="acg-hs-stat"><div className="acg-hs-stat-num">{ownerCount}</div><div className="acg-hs-stat-lbl">Owner KYC</div></div>
+                          <div className="acg-hs-stat"><div className="acg-hs-stat-num">{tlCount}</div><div className="acg-hs-stat-lbl">Trade Lic.</div></div>
+                          <div className="acg-hs-stat"><div className="acg-hs-stat-num">{total}</div><div className="acg-hs-stat-lbl">Total</div></div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
               )}
             </div>
           )}
@@ -1857,31 +1914,37 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 <IconChevronLeft /> Previous
               </button>
             )}
-            {stage < 3 && (
-              /* Save & Next: only `saving` disables the button now —
-               * the prior KYC-row gate was removed alongside the
-               * Stage 2 manual Add flow. */
-              <button
-                className="acm-btn acm-btn-primary"
-                onClick={goNext}
-                disabled={saving}
-                style={saving ? { opacity: 0.55, cursor: 'wait' } : undefined}
-              >
-                {saving
-                  ? <><IconSpinner size={18} /> Saving…</>
-                  : <>Save &amp; Next <IconChevronRight /></>}
-              </button>
-            )}
-            {stage === 3 && (
-              <button
-                className="acm-btn acm-btn-primary"
-                onClick={handleSave}
-                disabled={saving}
-                style={saving ? { opacity: 0.75, cursor: 'wait' } : undefined}
-              >
-                {saving ? <IconSpinner size={18} /> : <IconCheck />} {saving ? 'Saving…' : 'Save Consignee'}
-              </button>
-            )}
+            {(() => {
+              /* Single primary action button: cycles tabs while there
+               * are more sub-tabs ahead, then morphs into Save Consignee
+               * on the final Stage 3 › Trade Documents tab. Splitting
+               * this into two buttons (the old `stage < 3` / `stage === 3`
+               * branch) meant Stage 3 fired the real save from any
+               * sub-tab, so users could skip past KYC sub-tabs entirely.
+               * Now goNext owns the final dispatch too. */
+              const onFinalTab = stage === 3 && vaultTab === 'trade';
+              return onFinalTab ? (
+                <button
+                  className="acm-btn acm-btn-primary"
+                  onClick={goNext}
+                  disabled={saving}
+                  style={saving ? { opacity: 0.75, cursor: 'wait' } : undefined}
+                >
+                  {saving ? <IconSpinner size={18} /> : <IconCheck />} {saving ? 'Saving…' : 'Save Consignee'}
+                </button>
+              ) : (
+                <button
+                  className="acm-btn acm-btn-primary"
+                  onClick={goNext}
+                  disabled={saving}
+                  style={saving ? { opacity: 0.55, cursor: 'wait' } : undefined}
+                >
+                  {saving
+                    ? <><IconSpinner size={18} /> Saving…</>
+                    : <>Save &amp; Next <IconChevronRight /></>}
+                </button>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -3169,10 +3232,7 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
   return (
     <div className="acm-kyc-card" style={{ marginTop: 12 }}>
       {sameAsCustomer && (
-        <div style={{
-          padding: '10px 14px', background: '#ecfeff', borderBottom: '1px solid #cffafe',
-          color: '#155e75', fontSize: 12, fontWeight: 600,
-        }}>
+        <div className="acm-td-mirror-note">
           Same as Customer is on — Trade Document signatures mirror the linked customer. Sending is disabled here; manage signatures on the customer side.
         </div>
       )}
@@ -3388,21 +3448,13 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
     <>
       {/* "What you did in previous stages" — compact summary panel
           (Stage 1 entries as a 4-col Label : Value grid + Stage 2
-          KYC counts as inline stats). When Same as Customer is on,
-          Stage 1 mirrors the linked customer (shown above), so we
-          collapse this panel to just the Stage 2 KYC counts plus a
-          slim mirror note — no duplicate Stage 1 grid. */}
-      {sameAsCustomer ? (
-        <ConsigneeHistoryPanel stagesCompleted={2}>
-          <div className="acg-hs-mirror">
-            <div className="acg-mirror-inline">
-              <span className="acg-mirror-inline-icon"><IconUser /></span>
-              <span><b>Stage 1 mirrors the linked customer.</b> See the Linked Customer panel above for the full details.</span>
-            </div>
-          </div>
-          <ConsigneeHistoryStage2 ddCount={ddCount} ownerCount={ownerCount} tlCount={tlCount} />
-        </ConsigneeHistoryPanel>
-      ) : (
+          KYC counts as inline stats).
+          When Same as Customer is on, the Linked Customer panel above
+          already shows the full Stage 1 data AND now hosts the Stage 2
+          stat cards inline, so this panel becomes a pure duplicate —
+          suppress it entirely. When OFF, the consignee has its own
+          Stage 1 data so the panel still earns its place. */}
+      {!sameAsCustomer && (
         <ConsigneeHistoryPanel stagesCompleted={2}>
           <ConsigneeHistoryStage1 form={form1} locations={locations} />
           <ConsigneeHistoryStage2 ddCount={ddCount} ownerCount={ownerCount} tlCount={tlCount} />
@@ -5197,7 +5249,16 @@ const SCOPED_CSS = `
 .acm-btn-light {
   background: #fff; color: #1f2937; border-color: #e5e7eb;
 }
-.acm-btn-light:hover { background: #f9fafb; border-color: #d1d5db; }
+/* Match the primary button's interactive feel — a soft shadow + a 1px
+ * lift so Cancel/Previous read as proper buttons on hover instead of
+ * sitting flat next to a glowing Save & Next. */
+.acm-btn-light:hover {
+  background: #f9fafb;
+  border-color: #10b981;
+  color: #047857;
+  box-shadow: 0 4px 14px rgba(5,150,105,.18);
+  transform: translateY(-1px);
+}
 .acm-btn-primary {
   background: linear-gradient(135deg, #10b981, #047857);
   color: #fff;
@@ -5711,8 +5772,16 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   color: #d1fae5;
 }
 
-/* Stage 2 count stats — inline pill row (under the Stage 1 grid). */
-.acg-hs-stats-wrap { border-top: 1px dashed #d1fae5; }
+/* Stage 2 count stats — inline pill row under the Stage 1 grid /
+ * mirror notice. Dashed separator removed + top padding tightened
+ * so the mirror block and stat tiles sit in a single continuous
+ * band (matches the customer modal). The .acg-history-body prefix
+ * out-ranks the adjacent-sibling 4px top padding rule. */
+.acg-history-body .acg-hs-mirror.acg-hs-stats-wrap {
+  border-top: none;
+  padding-top: 2px;
+}
+.acg-hs-mirror.acg-hs-stats-wrap { border-top: none; }
 .acg-hs-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -5836,16 +5905,43 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   font-size: 11.5px; font-weight: 700;
 }
 
-/* Stage 3 — vault */
-.acm-vault-tabs { display: flex; gap: 16px; padding: 4px 0 0; border-bottom: 1px solid #e5e7eb; }
+/* Stage 3 — vault. Inner KYC sub-tabs (Company DD / Owner KYC /
+ * Trade Licence) were a flat underline strip; restyled to match the
+ * pill design used by AddCustomerModal's .acm-nested-tab so both
+ * modals carry the same sub-tab affordance. Keeps the green palette
+ * (consignee theme) instead of customer-purple. */
+.acm-vault-tabs { display: flex; gap: 8px; padding: 0; margin-bottom: 16px; flex-wrap: wrap; border-bottom: none; }
 .acm-vault-tab {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 4px; background: transparent; border: none;
-  font-size: 12px; font-weight: 700; color: #6b7280;
-  cursor: pointer; border-bottom: 2px solid transparent;
-  transition: color .15s, border-color .15s;
+  padding: 7px 18px; border-radius: 10px;
+  background: #fff; color: #047857;
+  border: 1.5px solid #6ee7b7;
+  font-family: inherit; font-size: 12px; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
+  transition: all .2s;
 }
-.acm-vault-tab.on { color: #047857; border-bottom-color: #10b981; }
+.acm-vault-tab:hover:not(.on) { background: #ecfdf5; border-color: #10b981; }
+.acm-vault-tab.on {
+  background: linear-gradient(135deg, #10b981, #047857);
+  color: #fff; border-color: #10b981;
+  box-shadow: 0 3px 10px rgba(16,185,129,.35);
+}
+/* Trade Documents tab — "Same as Customer is on" advisory strip.
+ * Was previously a hardcoded cyan inline style (#ecfeff / #155e75)
+ * that read as a bright white slab in dark mode. Routed through a
+ * class so both themes can paint it in the consignee green palette. */
+.acm-td-mirror-note {
+  padding: 10px 14px;
+  background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 100%);
+  border-bottom: 1px solid rgba(16,185,129,.22);
+  color: #064e3b;
+  font-size: 12px; font-weight: 600;
+}
+[data-bs-theme="dark"] .acm-td-mirror-note {
+  background: linear-gradient(110deg, rgba(6,95,70,0.30) 0%, rgba(16,185,129,0.18) 100%);
+  border-bottom-color: rgba(94,234,212,.28);
+  color: #d1fae5;
+}
 .acm-vault-table-wrap {
   background: #fff; border: 1px solid #d1fae5; border-radius: 10px;
   overflow: auto;
@@ -6528,7 +6624,8 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   background: #2c5e51;
   border-color: rgba(110,231,183,.55);
   color: #f0fdf4;
-  box-shadow: 0 2px 10px rgba(16,185,129,.20);
+  box-shadow: 0 4px 16px rgba(16,185,129,.32);
+  transform: translateY(-1px);
 }
 
 /* Table cell text colors — several rows are styled inline with
@@ -6606,9 +6703,19 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-recap-fvalue { color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-recap-pill { background: rgba(16,185,129,.15); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
 
-[data-bs-theme="dark"] .acm-vault-tabs { border-bottom-color: rgba(16,185,129,.20); }
-[data-bs-theme="dark"] .acm-vault-tab  { color: #94a3b8; }
-[data-bs-theme="dark"] .acm-vault-tab.on { color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-vault-tabs { border-bottom: none; }
+[data-bs-theme="dark"] .acm-vault-tab {
+  background: transparent; color: #6ee7b7;
+  border: 1.5px solid rgba(16,185,129,.40);
+}
+[data-bs-theme="dark"] .acm-vault-tab:hover:not(.on) {
+  background: rgba(16,185,129,.10); border-color: #10b981;
+}
+[data-bs-theme="dark"] .acm-vault-tab.on {
+  background: linear-gradient(135deg, #047857, #064e3b);
+  color: #fff; border-color: #10b981;
+  box-shadow: 0 3px 10px rgba(0,0,0,.4);
+}
 [data-bs-theme="dark"] .acm-vault-table-wrap { background: #103129; border-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-vault-table tbody td { border-bottom-color: rgba(16,185,129,.15); color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-vault-srno  { color: #6ee7b7; }
