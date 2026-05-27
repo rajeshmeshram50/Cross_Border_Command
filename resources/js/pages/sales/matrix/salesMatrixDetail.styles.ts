@@ -1035,6 +1035,17 @@ export const SALES_MATRIX_DETAIL_CSS = `
 [data-bs-theme="dark"] .smd-root .smd-clm-row-title  { color: #ede9fe; }
 [data-bs-theme="dark"] .smd-root .smd-clm-row-meta   { color: #94a3b8; }
 [data-bs-theme="dark"] .smd-root .smd-clm-progress-track { background: rgba(255,255,255,.10); }
+/* Inner divider between the group head and its rows + the empty-state
+ * card. Without these the dashed empty-state stayed near-white with
+ * pale violet text — a bright island inside the dark CLM panel. */
+[data-bs-theme="dark"] .smd-root .smd-clm-group-head {
+  border-bottom-color: rgba(167, 139, 250, .22);
+}
+[data-bs-theme="dark"] .smd-root .smd-clm-empty {
+  background: rgba(15, 12, 38, .55);
+  border-color: rgba(167, 139, 250, .30);
+  color: #c4b5fd;
+}
 
 /* ─── Middle column: Stage content card ─── */
 [data-bs-theme="dark"] .smd-root .smd-stage-card {

@@ -997,8 +997,13 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-bref-item-title { color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-tabs-wrap { background: #0f172a; }
 [data-bs-theme="dark"] .clm-tabs-bar { background: #0f172a; border-bottom-color: rgba(6,182,212,.18); }
-[data-bs-theme="dark"] .clm-tab { color: #94a3b8; }
-[data-bs-theme="dark"] .clm-tab:hover { color: #67e8f9; }
+/* Restrict the dim slate color to INACTIVE tabs only — without :not(.active)
+ * this rule was clobbering .clm-tab.active's white text (same specificity,
+ * later in the cascade wins), leaving the active tab readable as a muddy
+ * grey-blue against the teal gradient. */
+[data-bs-theme="dark"] .clm-tab:not(.active) { color: #94a3b8; }
+[data-bs-theme="dark"] .clm-tab.active { color: #fff; }
+[data-bs-theme="dark"] .clm-tab:not(.active):hover { color: #67e8f9; }
 [data-bs-theme="dark"] .clm-tab:not(.active) .clm-tab-count { background: #1e293b; color: #94a3b8; border-color: rgba(148,163,184,.18); }
 [data-bs-theme="dark"] .clm-search { background: #1e293b; border-color: rgba(6,182,212,.25); }
 [data-bs-theme="dark"] .clm-search input { color: #e2e8f0; }
