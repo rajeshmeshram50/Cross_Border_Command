@@ -415,7 +415,7 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                           onChange={() => toggleSelectAll(activeSeg)}
                         />
                       </th>
-                      <th style={{ width: 56 }}>#</th>
+                      <th style={{ width: 56 }}>Sr No.</th>
                       <th>Document</th>
                       <th style={{ width: 110 }}>Required</th>
                       <th style={{ width: 130 }}>Updated On</th>
@@ -734,4 +734,85 @@ const LASM_CSS = `
    now renders inside SalesCustomerSendForSignatureModal, which carries
    its own SSF_CSS for the preview pane, doc rail, sig overlay,
    coord pane and recipient card. */
+
+/* ── Dark mode overrides ──
+ * The modal shell, segment-tab strip, document table and bulk-action
+ * bar are all hard-coded to light surfaces. Without these the whole
+ * modal renders as a near-white card on the dark workplace background. */
+[data-bs-theme="dark"] .lasm-shell {
+  background: #0f172a;
+  box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(6,182,212,.20);
+}
+[data-bs-theme="dark"] .lasm-empty { color: #94a3b8; }
+[data-bs-theme="dark"] .lasm-empty-warn {
+  color: #fcd34d;
+  background: linear-gradient(110deg, rgba(251,191,36,.08), rgba(217,119,6,.18));
+}
+[data-bs-theme="dark"] .lasm-tabs {
+  background: #0f172a;
+  border-bottom-color: rgba(6,182,212,.22);
+}
+[data-bs-theme="dark"] .lasm-tab { color: #94a3b8; }
+[data-bs-theme="dark"] .lasm-tab:hover { color: #67e8f9; }
+[data-bs-theme="dark"] .lasm-tab.is-on {
+  color: #67e8f9;
+  border-bottom-color: #06b6d4;
+}
+[data-bs-theme="dark"] .lasm-table thead th {
+  color: #cffafe;
+  background: linear-gradient(110deg, rgba(8,145,178,.20), rgba(99,102,241,.16));
+  border-bottom-color: rgba(99,102,241,.35);
+}
+[data-bs-theme="dark"] .lasm-table tbody td {
+  color: #e2e8f0;
+  border-bottom-color: rgba(6,182,212,.10);
+}
+[data-bs-theme="dark"] .lasm-table tbody tr:hover td { background: rgba(8,145,178,.10); }
+[data-bs-theme="dark"] .lasm-empty-row { color: #94a3b8; }
+[data-bs-theme="dark"] .lasm-mono { color: #94a3b8; }
+[data-bs-theme="dark"] .lasm-doc-name { color: #67e8f9; }
+[data-bs-theme="dark"] .lasm-doc-sub  { color: #94a3b8; }
+/* REQ / OPT pills — bump the tinted backgrounds and brighten the text
+ * so they read against the dark row instead of looking like washed-out
+ * pastel patches. */
+[data-bs-theme="dark"] .lasm-pill-req {
+  background: rgba(239,68,68,.20); color: #fca5a5;
+}
+[data-bs-theme="dark"] .lasm-pill-opt {
+  background: rgba(245,158,11,.20); color: #fcd34d;
+}
+[data-bs-theme="dark"] .lasm-row-selected td { background: rgba(8,145,178,.16) !important; }
+[data-bs-theme="dark"] .lasm-btn-eye {
+  background: rgba(8,145,178,.10); color: #67e8f9; border-color: rgba(6,182,212,.30);
+}
+[data-bs-theme="dark"] .lasm-btn-eye:hover:not(:disabled) {
+  background: rgba(8,145,178,.22); color: #cffafe;
+}
+[data-bs-theme="dark"] .lasm-btn-icon {
+  background: rgba(8,145,178,.12); color: #67e8f9; border-color: rgba(103,232,249,.35);
+}
+[data-bs-theme="dark"] .lasm-btn-icon:hover { background: rgba(8,145,178,.24); }
+[data-bs-theme="dark"] .lasm-btn-cert {
+  background: rgba(8,145,178,.18); color: #cffafe; border-color: rgba(103,232,249,.40);
+}
+[data-bs-theme="dark"] .lasm-btn-cert:hover { background: rgba(8,145,178,.30); }
+[data-bs-theme="dark"] .lasm-btn-remind {
+  background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(245,158,11,.40);
+}
+[data-bs-theme="dark"] .lasm-btn-remind:hover:not(:disabled) {
+  background: rgba(245,158,11,.30); border-color: #f59e0b;
+}
+[data-bs-theme="dark"] .lasm-bulk-bar {
+  background: linear-gradient(110deg, rgba(8,145,178,.16), rgba(8,145,178,.10));
+  border-top-color: rgba(6,182,212,.35);
+  box-shadow: 0 -6px 14px rgba(0,0,0,.30);
+}
+[data-bs-theme="dark"] .lasm-bulk-info { color: #cffafe; }
+[data-bs-theme="dark"] .lasm-bulk-info em {
+  color: #67e8f9; background: #0f172a; border-color: rgba(103,232,249,.40);
+}
+[data-bs-theme="dark"] .lasm-bulk-clear {
+  border-color: rgba(103,232,249,.35); color: #67e8f9;
+}
+[data-bs-theme="dark"] .lasm-bulk-clear:hover { background: rgba(8,145,178,.18); }
 `;
