@@ -39,12 +39,7 @@ use stdClass;
  */
 class SalesPdfController extends Controller
 {
-    /**
-     * POST /sales/pi/preview-pdf
-     *
-     * Returns the PDF inline so the frontend can open it in a new tab
-     * via blob URL.
-     */
+    
     public function previewPi(Request $request)
     {
         $payload = $request->validate([

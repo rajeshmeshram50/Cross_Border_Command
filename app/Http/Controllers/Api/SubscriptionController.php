@@ -567,7 +567,7 @@ class SubscriptionController extends Controller
             ], 422);
         }
 
-        // Main branch must survive — auto-include if the client forgot to tick it
+      
         $mainId = $clientBranches->firstWhere('is_main', true)?->id;
         $kept = $submitted->all();
         if ($mainId && !in_array($mainId, $kept, true)) {

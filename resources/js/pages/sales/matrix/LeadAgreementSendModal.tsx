@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import api from '../../../api';
-import { useToast } from '../../../contexts/ToastContext';
+import api from '../../../api';import { resolveFileUrl } from '../../../utils/resolveFileUrl';import { useToast } from '../../../contexts/ToastContext';
 import Tooltip from '../../../components/ui/Tooltip';
 import SalesCustomerSendForSignatureModal, {
   type AgreementSendRow,
@@ -316,6 +315,103 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
     }
     onSent?.();
   };
+
+  /* Poll every 15 seconds for agreement signature-request status updates
+   * on the current lead's applicable parties. This reuses the same backend
+   * /clm/signature-requests?sync=1 path used by customer/consignee trade-
+   * document tabs so completed PDFs and certificates appear live. */
+  useEffect(() => {
+    if (!open || !payload) return;
+
+    const customerId = payload.lead.customer?.id;
+    const consigneeId = payload.lead.consignee?.id;
+    const parties: Array<{ id: number; model: 'Customer' | 'Consignee' }> = [];
+    if (customerId) parties.push({ id: customerId, model: 'Customer' });
+    if (consigneeId) parties.push({ id: consigneeId, model: 'Consignee' });
+    if (parties.length === 0) return;
+
+    let cancelled = false;
+
+    const fetchAndUpdate = async (withSync: boolean) => {
+      try {
+        const infoMap: Record<number, { status: string; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }> = {};
+
+        await Promise.all(parties.map(async (party) => {
+          const response = await api.get('/clm/signature-requests', {
+            params: { party_id: party.id, model_name: party.model, sync: withSync ? 1 : 0 },
+          });
+          const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+          for (const row of rows) {
+            const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
+            for (let i = 0; i < ids.length; i += 1) {
+              const agreementId = Number(ids[i]);
+              if (!agreementId || infoMap[agreementId]) continue;
+
+              const signedArr = row.signed_document_paths;
+              let rawSignedUrl: string | null = null;
+              if (Array.isArray(signedArr)) {
+                const entry = signedArr[i] as { url?: string; path?: string; file_url?: string } | string | undefined;
+                if (typeof entry === 'string') rawSignedUrl = entry;
+                else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
+              }
+              if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
+              if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
+
+              const rawCertUrl = row.certificate_url || row.certificate_path || null;
+              infoMap[agreementId] = {
+                status: row.status,
+                signatureRequestId: row.id,
+                signedUrl: rawSignedUrl ? rawSignedUrl : undefined,
+                certificateUrl: rawCertUrl ? rawCertUrl : undefined,
+              };
+            }
+          }
+        }));
+
+        if (cancelled) return;
+
+        setPayload((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            segments: prev.segments.map((seg) => ({
+              ...seg,
+              agreements: seg.agreements.map((agreement) => {
+                const info = infoMap[agreement.id];
+                if (!info) return agreement;
+
+                const existing = agreement.signature_request ?? {
+                  id: info.signatureRequestId,
+                  status: info.status,
+                  signed_url: null,
+                  certificate_url: null,
+                  sent_at: null,
+                  completed_at: null,
+                };
+
+                return {
+                  ...agreement,
+                  signature_request: {
+                    ...existing,
+                    id: info.signatureRequestId,
+                    status: info.status,
+                    signed_url: info.signedUrl ?? existing.signed_url,
+                    certificate_url: info.certificateUrl ?? existing.certificate_url,
+                  },
+                };
+              }),
+            })),
+          };
+        });
+      } catch {
+        // Silent — polling failures shouldn't toast every 15s.
+      }
+    };
+
+    fetchAndUpdate(false);
+    const intervalId = window.setInterval(() => fetchAndUpdate(true), 15000);
+    return () => { cancelled = true; window.clearInterval(intervalId); };
+  }, [open, payload?.lead.customer?.id, payload?.lead.consignee?.id]);
 
   /* Resend a Zoho reminder for an existing in-progress signature
    * request. Hits the same /clm/signature-requests/{id}/remind

@@ -13,6 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 /**
  * Sales Matrix → Consignees.
@@ -84,7 +85,7 @@ class ConsigneeController extends Controller
         $user = $request->user();
         [$clientId, $branchId] = $this->resolveOwnership($user);
 
-        $data = $this->validatePayload($request);
+        $data = $this->validatePayload($request, null, $clientId);
         $this->assertCustomerInScope($user, (int) $data['customer_id']);
         $this->assertSingleMirrorPerCustomer((int) $data['customer_id'], !empty($data['same_as_customer']), null);
 
@@ -139,7 +140,7 @@ class ConsigneeController extends Controller
             return response()->json(['message' => $denial], 403);
         }
 
-        $data = $this->validatePayload($request);
+        $data = $this->validatePayload($request, (int) $consignee->id, $consignee->client_id);
         $this->assertCustomerInScope($user, (int) $data['customer_id']);
         // Carry the previous value forward if the payload omits the
         // key so the guard reads the user's *current* intent.
@@ -391,12 +392,17 @@ class ConsigneeController extends Controller
      * Validate the POST / PUT body. Returns the validated array
      * (nested primary_address + locations preserved).
      *
-     * primary_email uniqueness is per-tenant within the consignees
-     * table, ignoring the row being edited.
+     * primary_email and primary phone uniqueness is per-tenant within
+     * the consignees table, ignoring the row being edited. The
+     * Same-as-Customer flow is exempt because it deliberately copies
+     * the customer's contact details onto the consignee — a unique
+     * rule would block that intended flow.
      */
-    private function validatePayload(Request $request): array
+    private function validatePayload(Request $request, ?int $consigneeId = null, $clientId = null): array
     {
-        $data = $request->validate([
+        $sameAsCustomer = (bool) $request->input('same_as_customer', false);
+
+        $rules = [
             'customer_id'      => 'required|integer|exists:customers,id',
             'company_name'     => 'required|string|max:255',
             'legal_name'       => 'nullable|string|max:255',
@@ -419,16 +425,6 @@ class ConsigneeController extends Controller
             'primary_address.pin'            => ['nullable', 'string', 'regex:/^\d{6}$/'],
             'primary_address.cp_name'        => 'required|string|max:255',
             'primary_address.cp_designation' => 'nullable|string|max:128',
-            'primary_address.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
-            // No uniqueness check — a consignee is a child of a
-            // customer, and it's perfectly valid for multiple
-            // consignees (potentially under the same customer or
-            // across different customers in the same tenant) to share
-            // a primary contact email. The "Same as Customer" toggle
-            // on Stage 1 deliberately copies the customer's email
-            // onto the consignee, so any unique rule here would block
-            // that intended flow.
-            'primary_address.cp_email'       => 'required|email|max:255',
             'primary_address.cp_whatsapp'    => 'nullable|in:yes,no',
 
             'locations'                  => 'sometimes|array',
@@ -443,7 +439,49 @@ class ConsigneeController extends Controller
             'locations.*.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
             'locations.*.cp_email'       => 'nullable|email|max:255',
             'locations.*.cp_whatsapp'    => 'nullable|in:yes,no',
-        ]);
+        ];
+
+        /* Cross-consignee uniqueness on the primary contact's phone +
+         * email — mirrors CustomerController so two consignees in the
+         * same tenant can't claim the same primary contact. Skipped
+         * when same_as_customer is on because that flow deliberately
+         * copies the customer's contact details onto the consignee. */
+        if (!$sameAsCustomer) {
+            $rules['primary_address.cp_email'] = [
+                'required', 'email', 'max:255',
+                Rule::unique('consignees', 'primary_email')
+                    ->where(function ($q) use ($clientId) {
+                        $q->whereNull('deleted_at');
+                        $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                    })
+                    ->ignore($consigneeId),
+            ];
+            $rules['primary_address.cp_contact'] = [
+                'required', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/',
+                function ($attribute, $value, $fail) use ($clientId, $consigneeId) {
+                    if (!trim((string) $value)) return;
+                    $exists = ConsigneeAddress::query()
+                        ->where('cp_contact', $value)
+                        ->where('is_primary', true)
+                        ->whereHas('consignee', function ($q) use ($clientId, $consigneeId) {
+                            $q->whereNull('deleted_at');
+                            $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                            if ($consigneeId) $q->where('id', '!=', $consigneeId);
+                        })
+                        ->exists();
+                    if ($exists) {
+                        $fail('This phone number is already used by another consignee.');
+                    }
+                },
+            ];
+        } else {
+            // Mirror flow — keep the format / required rules but skip
+            // the cross-consignee uniqueness check.
+            $rules['primary_address.cp_email']   = 'required|email|max:255';
+            $rules['primary_address.cp_contact'] = ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'];
+        }
+
+        $data = $request->validate($rules);
 
         /* Cross-row uniqueness within the payload. A single consignee
          * can't have two addresses sharing the same primary contact

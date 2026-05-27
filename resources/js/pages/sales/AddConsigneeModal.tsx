@@ -305,6 +305,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * the user saw on rapid clicks. */
   const inFlightRef = useRef(false);
 
+  /* True after persistStage1 has POSTed or PUT a row in this session.
+   * If the user closes via X/Cancel before the Stage 3 final submit,
+   * we still fire onSaved so the parent list refreshes — otherwise a
+   * brand-new consignee created on Stage 1 stays invisible until the
+   * page is reloaded. Reset on modal open. */
+  const dirtySavedRef = useRef(false);
+
   /* Stage 3 → Trade Documents → Send for Signature. Mirrors what
    * [[AddCustomerModal]] does — tdDocs is the table state (per-row
    * checkbox + status badge), sendForSignature holds the IDs the user
@@ -481,6 +488,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   // Reset everything when modal opens fresh.
   useEffect(() => {
     if (!open) return;
+    dirtySavedRef.current = false;
     if (consignee) {
       // Edit mode — skip the customer picker. The matching customer
       // is populated by the fetch effect below once it lands; until
@@ -578,7 +586,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     if (!open) return;
     let cancelled = false;
     setCustomersLoading(true);
-    api.get('/customers')
+    /* `tab=all` is critical — /customers defaults to `tab=fresh`, which
+     * hides any customer that already has a lead (Recurring bucket).
+     * Without it, editing a consignee whose customer turned recurring
+     * after creation leaves `customer` null on this modal, the
+     * Same-as-Customer panel renders empty, and persistStage1 trips
+     * the "Hold on, loading the linked customer" toast forever. */
+    api.get('/customers', { params: { tab: 'all' } })
       .then(r => {
         if (cancelled) return;
         const rows: any[] = Array.isArray(r.data?.data) ? r.data.data : [];
@@ -1056,6 +1070,20 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
 
   if (!open) return null;
 
+  /* Wrapper around the prop's onClose — if persistStage1 ran during
+   * this session (dirtySavedRef), fire onSaved so the parent list
+   * refreshes even when the user dismisses via X/Cancel before the
+   * Stage 3 final submit. The final submit path at goSubmit() already
+   * fires onSaved + onClose directly, so this only matters for early
+   * dismissal. */
+  const handleClose = () => {
+    if (dirtySavedRef.current) {
+      onSaved?.();
+      dirtySavedRef.current = false;
+    }
+    onClose();
+  };
+
   const confirmCustomer = () => {
     if (!customer) {
       toast.warning('Pick a customer', 'Select the customer this consignee will be linked to.');
@@ -1065,67 +1093,118 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setStage(1);
   };
 
+  /* Single source of truth for Stage 1 field rules. Returns the error
+   * message for one field (or null when clean). Used by both the full
+   * Save-&-Next validator below and the per-keystroke validator in
+   * Stage1.set() — so the inline red error appears in real time as
+   * the user types, instead of waiting for the Save button. */
+  const stage1FieldRule = (k: string, f: typeof form1): string | null => {
+    switch (k) {
+      case 'companyName':
+        if (!f.companyName.trim()) return 'Company name is required';
+        if (f.companyName.trim().length > 30) return 'Company name must be 30 characters or fewer';
+        if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.companyName.trim()))
+          return 'Company name has invalid characters — letters, numbers and . , & \' - ( ) / only';
+        if (!/[A-Za-z]/.test(f.companyName)) return 'Company name must contain at least one letter';
+        return null;
+      case 'legalName':
+        if (!f.legalName.trim()) return 'Company legal name is required';
+        if (f.legalName.trim().length > 100) return 'Legal name must be 100 characters or fewer';
+        if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.legalName.trim()))
+          return 'Legal name has invalid characters — letters, numbers and . , & \' - ( ) / only';
+        if (!/[A-Za-z]/.test(f.legalName)) return 'Legal name must contain at least one letter';
+        return null;
+      case 'website':
+        if (!f.website || !f.website.trim()) return null;
+        if (f.website.trim().length > 200) return 'Website must be 200 characters or fewer';
+        if (!/^(https?:\/\/)?([\w-]+\.)+[A-Za-z]{2,}(\/[\w\-./?%&=#]*)?$/.test(f.website.trim()))
+          return 'Enter a valid website (e.g. https://example.com)';
+        return null;
+      case 'segment':
+        if (!Array.isArray(f.segment) || f.segment.length === 0) return 'Select at least one segment';
+        return null;
+      case 'risk':
+        if (!f.risk) return 'Select a risk level';
+        return null;
+      case 'addressType':
+        if (!f.addressType) return 'Select address type';
+        return null;
+      case 'address':
+        if (!f.address.trim()) return 'Address is required';
+        return null;
+      case 'country':
+        if (!f.country) return 'Select country';
+        return null;
+      case 'state':
+        if (!f.state) return 'Select state';
+        return null;
+      case 'city':
+        if (!f.city.trim()) return 'City is required';
+        if (f.city.trim().length > 30) return 'City must be 30 characters or fewer';
+        if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(f.city.trim()))
+          return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
+        return null;
+      case 'pin':
+        if (!f.pin.trim()) return 'PIN is required';
+        if (!/^\d{6}$/.test(f.pin.trim())) return 'PIN must be exactly 6 digits';
+        return null;
+      case 'contactName':
+        if (!f.contactName.trim()) return 'Contact name is required';
+        if (f.contactName.trim().length > 60) return 'Name must be 60 characters or fewer';
+        if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(f.contactName.trim()))
+          return 'Name can contain only letters, spaces, dots, hyphens and apostrophes';
+        return null;
+      case 'designation':
+        if (!f.designation.trim()) return 'Designation is required';
+        return null;
+      case 'contactNo':
+        if (!f.contactNo.trim()) return 'Contact number is required';
+        if (!/^\+?[0-9\s-]{7,15}$/.test(f.contactNo)) return 'Phone must be 7-15 digits';
+        if (locations.some(l => (l.cpContact || '').trim() === f.contactNo.trim()))
+          return 'This phone number is already used by another address on this consignee';
+        return null;
+      case 'email':
+        if (!f.email.trim()) return 'Email is required';
+        if (!/^\S+@\S+\.\S+$/.test(f.email)) return 'Enter a valid email';
+        if (locations.some(l => (l.cpEmail || '').trim().toLowerCase() === f.email.trim().toLowerCase()))
+          return 'This email is already used by another address on this consignee';
+        return null;
+      case 'whatsapp':
+        if (!f.whatsapp) return 'Select WhatsApp preference';
+        return null;
+    }
+    return null;
+  };
+
+  const STAGE1_FIELD_KEYS = [
+    'companyName','legalName','website','segment','risk','addressType','address',
+    'country','state','city','pin','contactName','designation','contactNo','email','whatsapp',
+  ];
+
   /* Validate every required Stage 1 field. Returns the error map (empty
    * when valid). The map keys match form1 field names so we can wire
    * inline error display via the Field's `error` prop in Stage1. */
   const validateStage1 = (): Record<string, string> => {
     const e: Record<string, string> = {};
-    const f = form1;
-    // Company name — letters / numbers / business punctuation only.
-    // Blocks junk like "@@@###" and requires at least one letter.
-    if (!f.companyName.trim())                                e.companyName = 'Company name is required';
-    else if (f.companyName.trim().length > 30)                e.companyName = 'Company name must be 30 characters or fewer';
-    else if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.companyName.trim()))
-                                                              e.companyName = 'Company name has invalid characters — letters, numbers and . , & \' - ( ) / only';
-    else if (!/[A-Za-z]/.test(f.companyName))                 e.companyName = 'Company name must contain at least one letter';
-    // Legal name — same allow-list, longer cap.
-    if (!f.legalName.trim())                                  e.legalName   = 'Company legal name is required';
-    else if (f.legalName.trim().length > 100)                 e.legalName   = 'Legal name must be 100 characters or fewer';
-    else if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.legalName.trim()))
-                                                              e.legalName   = 'Legal name has invalid characters — letters, numbers and . , & \' - ( ) / only';
-    else if (!/[A-Za-z]/.test(f.legalName))                   e.legalName   = 'Legal name must contain at least one letter';
-    // Website — optional, but if provided must look like a real URL.
-    if (f.website && f.website.trim()) {
-      const w = f.website.trim();
-      if (w.length > 200) {
-        e.website = 'Website must be 200 characters or fewer';
-      } else if (!/^(https?:\/\/)?([\w-]+\.)+[A-Za-z]{2,}(\/[\w\-./?%&=#]*)?$/.test(w)) {
-        e.website = 'Enter a valid website (e.g. https://example.com)';
-      }
+    for (const k of STAGE1_FIELD_KEYS) {
+      const msg = stage1FieldRule(k, form1);
+      if (msg) e[k] = msg;
     }
-    if (!Array.isArray(f.segment) || f.segment.length === 0)  e.segment     = 'Select at least one segment';
-    if (!f.risk)                                              e.risk        = 'Select a risk level';
-    if (!f.addressType)                                       e.addressType = 'Select address type';
-    if (!f.address.trim())                                    e.address     = 'Address is required';
-    if (!f.country)                                           e.country     = 'Select country';
-    if (!f.state)                                             e.state       = 'Select state';
-    // City — letters + standard name punctuation only (handles
-    // "St. John's", "Tel-Aviv"). Caps at 30 chars so pasted garbage
-    // can't sneak through.
-    if (!f.city.trim())                                       e.city        = 'City is required';
-    else if (f.city.trim().length > 30)                       e.city        = 'City must be 30 characters or fewer';
-    else if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(f.city.trim()))
-                                                              e.city        = 'City can contain only letters, spaces, dots, hyphens and apostrophes';
-    if (!f.pin.trim())                                        e.pin         = 'PIN is required';
-    else if (!/^\d{6}$/.test(f.pin.trim()))                   e.pin         = 'PIN must be exactly 6 digits';
-    // Contact person name — alphabetic only, blocks "123456@@" etc.
-    if (!f.contactName.trim())                                e.contactName = 'Contact name is required';
-    else if (f.contactName.trim().length > 60)                e.contactName = 'Name must be 60 characters or fewer';
-    else if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(f.contactName.trim()))
-                                                              e.contactName = 'Name can contain only letters, spaces, dots, hyphens and apostrophes';
-    if (!f.designation.trim())                                e.designation = 'Designation is required';
-    if (!f.contactNo.trim())                                  e.contactNo   = 'Contact number is required';
-    else if (!/^\+?[0-9\s-]{7,15}$/.test(f.contactNo))        e.contactNo   = 'Phone must be 7-15 digits';
-    else if (locations.some(l => (l.cpContact || '').trim() === f.contactNo.trim())) {
-      e.contactNo = 'This phone number is already used by another address on this consignee';
-    }
-    if (!f.email.trim())                                      e.email       = 'Email is required';
-    else if (!/^\S+@\S+\.\S+$/.test(f.email))                 e.email       = 'Enter a valid email';
-    else if (locations.some(l => (l.cpEmail || '').trim().toLowerCase() === f.email.trim().toLowerCase())) {
-      e.email = 'This email is already used by another address on this consignee';
-    }
-    if (!f.whatsapp)                                          e.whatsapp    = 'Select WhatsApp preference';
     return e;
+  };
+
+  /* Per-keystroke validator passed down to Stage1. Runs the single-field
+   * rule against the post-change form and updates errors1 with just that
+   * field's error — so the inline red shows up as the user types instead
+   * of waiting for Save & Next. */
+  const validateField1 = (k: string, nextForm: typeof form1) => {
+    const msg = stage1FieldRule(k, nextForm);
+    setErrors1(prev => {
+      const next = { ...prev };
+      if (msg) next[k] = msg;
+      else delete next[k];
+      return next;
+    });
   };
 
   /* Refetch KYC docs + owners from the server. Called after every
@@ -1230,6 +1309,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         dbId = r.data?.data?.db_id ?? null;
         if (dbId) setSavedDbId(dbId);
       }
+      // Mark this session as dirty so an early X/Cancel still triggers
+      // the parent list refresh (without it the new row stays invisible
+      // until the page reloads).
+      dirtySavedRef.current = true;
       return dbId;
     } catch (err: any) {
       const apiErrors = err?.response?.data?.errors ?? null;
@@ -1538,7 +1621,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         <style>{SCOPED_CSS}</style>
         <div className="acm-pick" onMouseDown={e => e.stopPropagation()}>
           <div className="acm-pick-header">
-            <button className="acm-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+            <button className="acm-close" onClick={handleClose} aria-label="Close"><IconClose /></button>
             <div className="acm-pick-icon"><IconTruck size={28} /></div>
             <div className="acm-pick-title">Add New Consignee</div>
             <div className="acm-pick-sub">Select the customer account to which this consignee will be linked for shipment and export execution.</div>
@@ -1605,7 +1688,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             </div>
           </div>
           <div className="acm-pick-footer">
-            <button className="acm-btn acm-btn-light" onClick={onClose}><IconClose size={14} /> Cancel</button>
+            <button className="acm-btn acm-btn-light" onClick={handleClose}><IconClose size={14} /> Cancel</button>
             <button
               className={`acm-btn acm-btn-primary ${customer ? '' : 'acm-btn-disabled'}`}
               onClick={confirmCustomer}
@@ -1644,7 +1727,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 : 'Capture consignee identity, customer linkage, compliance, and shipment readiness for export execution.'}
             </div>
           </div>
-          <button className="acm-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+          <button className="acm-close" onClick={handleClose} aria-label="Close"><IconClose /></button>
         </div>
 
         {/* Pinned top — stepper + Linked Customer summary stay
@@ -1787,6 +1870,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               setForm={setForm1}
               errors={errors1}
               clearErr={(k) => setErrors1(prev => { if (!prev[k]) return prev; const n = { ...prev }; delete n[k]; return n; })}
+              validateField={validateField1}
               sameAsCustomer={sameAsCustomer}
               setSameAsCustomer={(v) => {
                 /* Block-on-tick: if the user tries to enable
@@ -1958,7 +2042,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
 
         {/* Footer */}
         <div className="acm-wiz-footer">
-          <button className="acm-btn acm-btn-light" onClick={onClose}><IconClose size={14} /> Cancel</button>
+          <button className="acm-btn acm-btn-light" onClick={handleClose}><IconClose size={14} /> Cancel</button>
           <div className="acm-footer-right">
             {stage > 1 && (
               <button className="acm-btn acm-btn-light" onClick={goBack}>
@@ -2353,7 +2437,7 @@ const optsWith = (
 };
 
 const Stage1 = ({
-  tab, setTab, form, setForm, masters, errors, clearErr,
+  tab, setTab, form, setForm, masters, errors, clearErr, validateField,
   sameAsCustomer, setSameAsCustomer, customer, mirrorAlreadyTakenByOther,
   locations, onAddLocation, onEditLocation, onDeleteLocation,
 }: {
@@ -2364,6 +2448,10 @@ const Stage1 = ({
   masters: Stage1Masters;
   errors: Record<string, string>;
   clearErr: (k: string) => void;
+  /** Per-keystroke validator from the parent. Receives the field key
+   *  and the post-change form so the inline red error appears in real
+   *  time without waiting for Save & Next. */
+  validateField: (k: string, nextForm: any) => void;
   sameAsCustomer: boolean;
   setSameAsCustomer: (v: boolean) => void;
   customer: CustomerOption | null;
@@ -2381,7 +2469,11 @@ const Stage1 = ({
    * input + MasterSelect receives `disabled={lock}` so the user can
    * tell at a glance the values are being mirrored. */
   const lock = sameAsCustomer && !!customer;
-  const set = (k: string, v: any) => { setForm({ ...form, [k]: v }); clearErr(k); };
+  const set = (k: string, v: any) => {
+    const nextForm = { ...form, [k]: v };
+    setForm(nextForm);
+    validateField(k, nextForm);
+  };
   const selectedCountry = masters.countries.find(c => c.value === form.country);
   const filteredStates = selectedCountry
     ? masters.states.filter(s => s.countryId === selectedCountry.id)
@@ -2529,7 +2621,7 @@ const Stage1 = ({
                   placeholder="Select Country"
                   invalid={!!errors.country}
                   disabled={lock}
-                  onChange={v => { setForm({ ...form, country: v, state: '' }); clearErr('country'); }}
+                  onChange={v => { const nf = { ...form, country: v, state: '' }; setForm(nf); validateField('country', nf); validateField('state', nf); }}
                 />
               </Field>
               <Field label="State" required error={errors.state} fieldKey="state">
@@ -2562,13 +2654,17 @@ const Stage1 = ({
                 <input className={`acm-input ${errors.contactName ? 'acm-input-error' : ''}`} placeholder="Full name" value={form.contactName} onChange={e => set('contactName', e.target.value)} disabled={lock} />
               </Field>
               <Field label="Designation" required error={errors.designation} fieldKey="designation">
-                <MasterSelect
+                {/* Free-text input — users were asked to type the
+                    designation manually instead of picking from the
+                    /master/designations dropdown. Master fetch still
+                    runs (harmless) but no longer drives the UI here. */}
+                <input
+                  className={`acm-input ${errors.designation ? 'acm-input-error' : ''}`}
+                  placeholder="Type designation (e.g. Compliance Officer)"
                   value={form.designation}
-                  options={optsWith(masters.designations, form.designation)}
-                  placeholder="Select Designation"
-                  invalid={!!errors.designation}
+                  onChange={e => set('designation', e.target.value)}
                   disabled={lock}
-                  onChange={v => set('designation', v)}
+                  maxLength={60}
                 />
               </Field>
               <Field label="Contact No" required error={errors.contactNo} fieldKey="contactNo">
@@ -4524,16 +4620,16 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
             </div>
             <div className="acm-field">
               <label className="acm-field-label">DESIGNATION</label>
-              {/* Designation is master-backed — pulls from
-                  /master/designations so the value matches what's
-                  available elsewhere in the app. Synthetic option for
-                  the row's existing value (handles legacy free-text
-                  values that pre-date this change). */}
-              <MasterSelect
+              {/* Free-text input — was a MasterSelect tied to
+                  /master/designations; switched to a plain input so
+                  users can type any designation (Director, Owner,
+                  Authorised Signatory, etc.) without master upkeep. */}
+              <input
+                className="acm-input"
+                placeholder="e.g. Director, Owner, Authorised Signatory"
                 value={d.designation ?? ''}
-                options={optsWith(designations, d.designation ?? '')}
-                placeholder="Select Designation"
-                onChange={v => set('designation', v)}
+                onChange={e => set('designation', e.target.value)}
+                maxLength={60}
               />
             </div>
           </div>
@@ -4651,9 +4747,71 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
   });
   const [errs, setErrs] = useState<Record<string, string>>({});
   useEscapeKey(onClose);
+  /* Per-field validator — single source of truth shared with submit().
+   * Returns the error message for one field (or null when clean) so
+   * the inline red can fire on each keystroke instead of waiting for
+   * the user to hit Save. */
+  const locFieldRule = (k: string, dd: typeof d): string | null => {
+    switch (k) {
+      case 'type':
+        if (!dd.type) return 'Select address type';
+        return null;
+      case 'line':
+        if (!dd.line.trim()) return 'Address is required';
+        return null;
+      case 'country':
+        if (!dd.country) return 'Select country';
+        return null;
+      case 'state':
+        if (!dd.state) return 'Select state';
+        return null;
+      case 'city':
+        if (!dd.city.trim()) return 'City is required';
+        if (dd.city.trim().length > 30) return 'City must be 30 characters or fewer';
+        if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(dd.city.trim()))
+          return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
+        return null;
+      case 'pin':
+        if (!dd.pin.trim()) return 'PIN is required';
+        if (!/^\d{6}$/.test(dd.pin.trim())) return 'PIN must be exactly 6 digits';
+        return null;
+      case 'cpName':
+        if (!dd.cpName.trim()) return 'Contact name required';
+        if (dd.cpName.trim().length > 60) return 'Name must be 60 characters or fewer';
+        if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(dd.cpName.trim()))
+          return 'Name can contain only letters, spaces, dots, hyphens and apostrophes';
+        return null;
+      case 'cpDesignation':
+        if (!dd.cpDesignation.trim()) return 'Designation required';
+        return null;
+      case 'cpContact':
+        if (!dd.cpContact.trim()) return 'Phone required';
+        if (!/^\+?[0-9\s-]{7,15}$/.test(dd.cpContact)) return 'Phone must be 7-15 digits';
+        if (existingPhones.includes(dd.cpContact.trim()))
+          return 'This phone number is already used by another address on this consignee';
+        return null;
+      case 'cpEmail':
+        if (!dd.cpEmail.trim()) return 'Email required';
+        if (!/^\S+@\S+\.\S+$/.test(dd.cpEmail)) return 'Enter a valid email';
+        if (existingEmails.includes(dd.cpEmail.trim().toLowerCase()))
+          return 'This email is already used by another address on this consignee';
+        return null;
+      case 'cpWhatsapp':
+        if (!dd.cpWhatsapp) return 'Select WhatsApp preference';
+        return null;
+    }
+    return null;
+  };
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => {
-    setD(prev => ({ ...prev, [k]: v }));
-    setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
+    const nextD = { ...d, [k]: v } as typeof d;
+    setD(nextD);
+    const msg = locFieldRule(k as string, nextD);
+    setErrs(prev => {
+      const next = { ...prev };
+      if (msg) next[k as string] = msg;
+      else delete next[k as string];
+      return next;
+    });
   };
   /* Real-time duplicate check — fires the inline error the moment the
    * user types a phone or email already in use by the primary contact
@@ -4724,35 +4882,11 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
 
   const submit = () => {
     const next: Record<string, string> = {};
-    if (!d.type)                                       next.type          = 'Select address type';
-    if (!d.line.trim())                                next.line          = 'Address is required';
-    if (!d.country)                                    next.country       = 'Select country';
-    if (!d.state)                                      next.state         = 'Select state';
-    // City — same rule as Stage 1: letters + standard name
-    // punctuation, max 30 chars. Keeps both paths consistent.
-    if (!d.city.trim())                                next.city          = 'City is required';
-    else if (d.city.trim().length > 30)                next.city          = 'City must be 30 characters or fewer';
-    else if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(d.city.trim()))
-                                                       next.city          = 'City can contain only letters, spaces, dots, hyphens and apostrophes';
-    if (!d.pin.trim())                                 next.pin           = 'PIN is required';
-    else if (!/^\d{6}$/.test(d.pin.trim()))            next.pin           = 'PIN must be exactly 6 digits';
-    // Contact name — alphabetic only, no "123456@@" garbage.
-    if (!d.cpName.trim())                              next.cpName        = 'Contact name required';
-    else if (d.cpName.trim().length > 60)              next.cpName        = 'Name must be 60 characters or fewer';
-    else if (!/^[A-Za-z][A-Za-z .'\-]*$/.test(d.cpName.trim()))
-                                                       next.cpName        = 'Name can contain only letters, spaces, dots, hyphens and apostrophes';
-    if (!d.cpDesignation.trim())                       next.cpDesignation = 'Designation required';
-    if (!d.cpContact.trim())                           next.cpContact     = 'Phone required';
-    else if (!/^\+?[0-9\s-]{7,15}$/.test(d.cpContact)) next.cpContact     = 'Phone must be 7-15 digits';
-    else if (existingPhones.includes(d.cpContact.trim())) {
-      next.cpContact = 'This phone number is already used by another address on this consignee';
+    const keys = ['type','line','country','state','city','pin','cpName','cpDesignation','cpContact','cpEmail','cpWhatsapp'];
+    for (const k of keys) {
+      const msg = locFieldRule(k, d);
+      if (msg) next[k] = msg;
     }
-    if (!d.cpEmail.trim())                             next.cpEmail       = 'Email required';
-    else if (!/^\S+@\S+\.\S+$/.test(d.cpEmail))        next.cpEmail       = 'Enter a valid email';
-    else if (existingEmails.includes(d.cpEmail.trim().toLowerCase())) {
-      next.cpEmail = 'This email is already used by another address on this consignee';
-    }
-    if (!d.cpWhatsapp)                                 next.cpWhatsapp    = 'Select WhatsApp preference';
     setErrs(next);
     if (Object.keys(next).length === 0) { onSave(d); return; }
     // Toast suppressed — inline red errors handle this.
@@ -4797,7 +4931,18 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 options={optsWith(countries, d.country)}
                 placeholder="Select country"
                 invalid={!!errs.country}
-                onChange={v => { setD(prev => ({ ...prev, country: v, state: '' })); setErrs(prev => { if (!prev.country) return prev; const n = { ...prev }; delete n.country; return n; }); }}
+                onChange={v => {
+                  const nd = { ...d, country: v, state: '' } as typeof d;
+                  setD(nd);
+                  setErrs(prev => {
+                    const next = { ...prev };
+                    const c = locFieldRule('country', nd);
+                    if (c) next.country = c; else delete next.country;
+                    const s = locFieldRule('state', nd);
+                    if (s) next.state = s; else delete next.state;
+                    return next;
+                  });
+                }}
               />
               {errs.country && <span className="acm-err-text">{errs.country}</span>}
             </div>
@@ -4849,12 +4994,16 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
             </div>
             <div className="acm-field">
               <label className="acm-field-label">DESIGNATION <span className="acm-req">*</span></label>
-              <MasterSelect
+              {/* Free-text input — was a MasterSelect tied to
+                  /master/designations; switched to a plain input so
+                  the location's contact designation can be anything
+                  the user types. */}
+              <input
+                className={`acm-input ${errs.cpDesignation ? 'acm-input-error' : ''}`}
+                placeholder="e.g. Sales Manager"
                 value={d.cpDesignation}
-                options={optsWith(designations, d.cpDesignation)}
-                placeholder="Select designation"
-                invalid={!!errs.cpDesignation}
-                onChange={v => set('cpDesignation', v)}
+                onChange={e => set('cpDesignation', e.target.value)}
+                maxLength={60}
               />
               {errs.cpDesignation && <span className="acm-err-text">{errs.cpDesignation}</span>}
             </div>

@@ -7,11 +7,6 @@ use App\Models\Masters\States;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * Vendor address + contact row. One per "Additional Contact Person"
- * captured on Stage 1 plus exactly one `is_primary = true` row that
- * carries the registered-office address itself.
- */
 class VendorAddress extends Model
 {
     protected $fillable = [

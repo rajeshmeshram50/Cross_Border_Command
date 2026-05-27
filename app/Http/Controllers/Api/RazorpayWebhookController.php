@@ -165,9 +165,7 @@ class RazorpayWebhookController extends Controller
             }
         });
 
-        // Send invoice mail AFTER the transaction commits. The service
-        // swallows its own failures so SMTP/PDF hiccups can't roll back the
-        // already-recorded gateway success.
+        
         $this->invoiceMailer->sendForPayment($payment->fresh());
     }
 }

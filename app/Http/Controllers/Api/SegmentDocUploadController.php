@@ -460,6 +460,7 @@ class SegmentDocUploadController extends Controller
         return $byCode;
     }
 
+    
     private function storeUpload($file, string $type, int $ownerId, string $category, string $docCode): string
     {
         $ext = $file->getClientOriginalExtension() ?: 'bin';

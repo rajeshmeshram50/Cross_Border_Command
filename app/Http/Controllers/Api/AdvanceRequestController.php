@@ -308,9 +308,7 @@ class AdvanceRequestController extends Controller
         return response()->json($this->serialize($row));
     }
 
-    /* ============================================================ */
-    /*  HR / FINANCE ACTIONS                                        */
-    /* ============================================================ */
+    
 
     public function hrApprove(Request $request, $id)
     {
@@ -351,9 +349,7 @@ class AdvanceRequestController extends Controller
         return response()->json($this->serialize($row));
     }
 
-    /* ============================================================ */
-    /*  HELPERS                                                     */
-    /* ============================================================ */
+  
 
     private function currentEmployeeId($user): ?int
     {
@@ -361,13 +357,7 @@ class AdvanceRequestController extends Controller
         return Employee::where('user_id', $user->id)->value('id');
     }
 
-    /**
-     * Build the transitive set of employee ids that report (directly or
-     * indirectly) to the given root manager. Empty when the root is null.
-     * The root itself is excluded — managers don't own their own rows in
-     * the "team" view. Iterative BFS over reporting_manager_id keeps it
-     * portable across DB engines.
-     */
+  
     private function downstreamEmployeeIds(?int $rootEmployeeId): array
     {
         if (!$rootEmployeeId) return [];
@@ -400,12 +390,7 @@ class AdvanceRequestController extends Controller
         return null;
     }
 
-    /**
-     * Permission gate for HR/Finance actions. Same lookup ExpenseClaim uses
-     * — checks the `hr.expense` module since the advance flow shares HR's
-     * approval surface. If the module isn't seeded, falls back to "any
-     * admin-tier user can approve" so a fresh install isn't gated out.
-     */
+  
     private function guardHrPermission($user, string $perm): void
     {
         if (!$user) abort(401, 'Authentication required');
@@ -527,13 +512,6 @@ class AdvanceRequestController extends Controller
         $q->where('branch_id', $branchFilter);
     }
 
-    /**
-     * Generate the next ADV-#### sequence per (client_id, branch_id). MUST
-     * run inside DB::transaction so the lockForUpdate holds — store()
-     * wraps the allocate+create pair for exactly this reason. Without the
-     * transaction, two concurrent submitters in the same tenant would race
-     * and produce duplicate advance_no values.
-     */
     private function nextAdvanceNo(?int $clientId, ?int $branchId): string
     {
         $q = AdvanceRequest::query()->lockForUpdate();
@@ -551,11 +529,7 @@ class AdvanceRequestController extends Controller
         return 'ADV-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
     }
 
-    /**
-     * Shape one row for the API. Flattens employee/manager names + maps
-     * attachments to download URLs, matching the expense_claims serializer
-     * so the SPA can reuse the same audit-log / attachment widgets.
-     */
+   
     private function serialize(AdvanceRequest $row): array
     {
         $employee = $row->employee;
@@ -608,4 +582,5 @@ class AdvanceRequestController extends Controller
             'created_at'         => optional($row->created_at)->toIso8601String(),
         ];
     }
+    
 }
