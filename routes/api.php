@@ -118,6 +118,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // Products — step-wise create/update (Core → Sales → Quality → Vendors)
     Route::get('/products/stats',                [ProductController::class, 'stats']);
     Route::get('/products/owners',               [ProductController::class, 'owners']);
+    // Bundle endpoint — returns every master dropdown the Add Product modal
+    // needs in one round-trip. Declared BEFORE /products/{id} so the literal
+    // 'master-bundle' segment isn't captured as a numeric id.
+    Route::get('/products/master-bundle',        [ProductController::class, 'masterBundle']);
     Route::get('/products',                      [ProductController::class, 'index']);
     Route::get('/products/{id}',                 [ProductController::class, 'show'])->whereNumber('id');
     Route::post('/products/step/core',           [ProductController::class, 'storeCore']);
