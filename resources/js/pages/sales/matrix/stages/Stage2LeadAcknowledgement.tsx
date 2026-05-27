@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
+import type { StageAcknowledgement } from '../SalesMatrixDetail';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Stage 2: Lead Acknowledgement
@@ -45,7 +46,16 @@ type MasterPayload = {
 export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, reloadLead }: StageProps) {
   const toast = useToast();
 
-  const acks = header.acknowledgements ?? [];
+  /* Optimistic pending rows — prepended to the Activity Report the instant
+   * the user clicks Submit, so the table updates without waiting for the
+   * POST + reload round-trip (~200-800ms saved). Negative ids mark them
+   * as pending; the real rows replace them when reloadLead resolves. */
+  const [pendingAcks, setPendingAcks] = useState<StageAcknowledgement[]>([]);
+  const headerAcks = header.acknowledgements ?? [];
+  const acks = useMemo(
+    () => [...pendingAcks, ...headerAcks],
+    [pendingAcks, headerAcks],
+  );
   const latest = acks[0] ?? null;
   const latestBucket: Bucket | null = (latest?.opportunity_type as Bucket) ?? null;
 
@@ -53,7 +63,6 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
   const [masters, setMasters] = useState<MasterPayload>({ qualified: [], disqualified: [], clarity_pending: [] });
   const [mastersLoading, setMastersLoading] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [saving, setSaving] = useState(false);
   const [advancing, setAdvancing] = useState(false);
 
   // Pull the master once on mount; the same payload feeds all three buckets.
@@ -79,36 +88,68 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
   };
   const closePicker = () => { setPickerBucket(null); setSelected(new Set()); };
 
+  /* ESC dismisses the picker — universal expectation for modal dialogs.
+   * Bound only while the modal is open so the listener doesn't fight
+   * any other ESC handlers (e.g., toolbar keyboard shortcuts) outside
+   * this stage. Safe to dismiss any time now because Submit fires
+   * optimistically and closes the picker before the POST is in flight. */
+  useEffect(() => {
+    if (!pickerBucket) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closePicker();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pickerBucket]);
+
   const submitPicker = async () => {
     if (!pickerBucket || !header.leadId) return;
     if (selected.size === 0) {
       toast.warning('Pick at least one', 'Select one or more reasons before submitting');
       return;
     }
-    setSaving(true);
+
+    /* Build optimistic placeholder rows from the in-modal master list so
+     *  the Activity Report can show the new acknowledgements the instant
+     *  the user clicks Submit. Negative ids keep them distinct from
+     *  server rows; created_at = now sorts them to the top. The B23
+     *  invariant (Save & Next must see the new latest bucket) is
+     *  preserved because `latestBucket` is derived from `acks` which
+     *  includes these pending rows. */
+    const reasonIds = Array.from(selected);
+    const pickedReasons = pickerOptions.filter(r => selected.has(r.id));
+    const nowIso = new Date().toISOString();
+    const optimistic: StageAcknowledgement[] = pickedReasons.map((r, i) => ({
+      id:                 -(Date.now() + i),
+      lead_ack_reason_id: r.id,
+      opportunity_type:   r.opportunity_type,
+      dq_status:          r.dq_status,
+      reason_snapshot:    r.reason,
+      created_at:         nowIso,
+    }));
+    const optimisticIds = new Set(optimistic.map(o => o.id));
+
+    /* Close the picker + drop the placeholders into the table in the
+     *  SAME render, so the UI swap feels instant. Toast pre-confirms
+     *  the save; the rare failure path below rolls these rows back
+     *  and re-toasts an error. */
+    setPendingAcks(prev => [...optimistic, ...prev]);
+    closePicker();
+    toast.success('Saved', `${optimistic.length} acknowledgement(s) recorded`);
+
     try {
-      await api.post(`/sales/leads/${header.leadId}/acknowledgements`, {
-        reason_ids: Array.from(selected),
-      });
-      toast.success('Saved', `${selected.size} acknowledgement(s) recorded`);
-      closePicker();
-      /* B23: await the reload so any code after this point (e.g., the
-       *  user immediately hitting Save & Next) sees the FRESH
-       *  acknowledgement list rather than the stale snapshot from the
-       *  pre-save header. Without the await, latestBucket would still
-       *  reflect the previous state for ~200ms after this returns. */
+      await api.post(`/sales/leads/${header.leadId}/acknowledgements`, { reason_ids: reasonIds });
       await reloadLead?.();
+      /* Reload landed — server rows now live in headerAcks. Strip our
+       *  placeholders so the table doesn't briefly double-up. (Targeted
+       *  removal, not a blanket clear, so a second concurrent submit's
+       *  pending rows survive.) */
+      setPendingAcks(prev => prev.filter(p => !optimisticIds.has(p.id)));
     } catch (e: any) {
+      /* Rollback: remove ONLY this submit's optimistic rows, then
+       *  surface the error so the user can retry. */
+      setPendingAcks(prev => prev.filter(p => !optimisticIds.has(p.id)));
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save acknowledgements');
-      /* B30: close the picker on error too. The previous flow left the
-       *  modal open with the user's selections intact — but with no
-       *  reloadLead fired the activity table didn't refresh, leaving
-       *  the user unsure whether the save partially succeeded. Closing
-       *  + showing the toast makes the failure unambiguous; the user
-       *  can re-open the picker if they want to retry. */
-      closePicker();
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -120,10 +161,18 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
       toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
       return;
     }
-    if (latestBucket !== 'qualified') {
+    if (latestBucket == null) {
       toast.warning(
-        'Qualify the lead first',
-        'The latest acknowledgement must be "Qualified Lead" before moving on.',
+        'Acknowledge the lead first',
+        'Pick a status pill above (Qualified / Clarity Pending / Disqualified) and submit a reason before advancing to Stage 3.',
+      );
+      return;
+    }
+    if (latestBucket !== 'qualified') {
+      const currentLabel = BUCKET_META[latestBucket].label;
+      toast.warning(
+        `Cannot advance — latest status is "${currentLabel}"`,
+        'Only a Qualified Lead can move to Stage 3. Click the green "● Qualified Lead" pill above, pick a reason, and submit to qualify this lead.',
       );
       return;
     }
@@ -131,7 +180,11 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
     try {
       await api.put(`/sales/leads/${header.leadId}`, { lead_stage_id: 3 });
       toast.success('Stage advanced', 'Moving to Product Sourcing (Stage 3)…');
-      reloadLead?.();
+      /* Await the reload (matches submitPicker's B23 pattern) so Stage 3
+       * mounts against the FRESH header — lead_stage_id, won_at, and
+       * the acknowledgement list are all derived from this fetch and
+       * would otherwise render stale for ~200ms. */
+      await reloadLead?.();
       onNext();
     } catch (e: any) {
       toast.error('Could not advance', e?.response?.data?.message ?? 'Network or server error — please try again.');
@@ -289,8 +342,8 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
           <button
             className="smd-stg-btn smd-stg-btn-primary"
             onClick={() => void onSaveAndNext()}
-            disabled={advancing || latestBucket !== 'qualified'}
-            title={latestBucket !== 'qualified' ? 'Latest entry must be Qualified Lead' : undefined}
+            disabled={advancing}
+            title={latestBucket !== 'qualified' ? 'Latest acknowledgement must be Qualified Lead to advance — click for details' : undefined}
           >
             {advancing ? 'Advancing…' : 'Save & Next →'}
           </button>
@@ -360,13 +413,13 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
             <div className={`st2-pick-foot ${BUCKET_META[pickerBucket].pill}`}>
               <span className="st2-pick-count">{selected.size} selected</span>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="st2-pick-btn st2-pick-btn-ghost" onClick={closePicker} disabled={saving}>Cancel</button>
+                <button className="st2-pick-btn st2-pick-btn-ghost" onClick={closePicker}>Cancel</button>
                 <button
                   className="st2-pick-btn st2-pick-btn-primary"
                   onClick={() => void submitPicker()}
-                  disabled={saving || selected.size === 0}
+                  disabled={selected.size === 0}
                 >
-                  {saving ? 'Saving…' : 'Submit'}
+                  Submit
                 </button>
               </div>
             </div>
