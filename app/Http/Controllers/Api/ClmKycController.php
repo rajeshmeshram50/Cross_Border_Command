@@ -115,8 +115,6 @@ class ClmKycController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /** Shared usage check for KYC docs — referenced by segment rules
-     *  (doc_selections JSON) and by segment_doc_uploads (doc_code). */
     private function usageCheck(?string $code): array
     {
         if (!$code) return [];
