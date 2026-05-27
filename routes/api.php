@@ -134,6 +134,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // Stage 3 (Trade Documents) is purely a frontend repository view and has
     // no backend persistence, so there's no /step/trade-documents endpoint.
     Route::get   ('/vendors',                          [\App\Http\Controllers\Api\VendorController::class, 'index']);
+    // Bundle endpoint — returns every master dropdown the Add Vendor modal
+    // needs in one round-trip. Declared BEFORE /vendors/{id} so the literal
+    // 'master-bundle' segment isn't captured as a numeric id.
+    Route::get   ('/vendors/master-bundle',            [\App\Http\Controllers\Api\VendorController::class, 'masterBundle']);
     Route::get   ('/vendors/{id}',                     [\App\Http\Controllers\Api\VendorController::class, 'show'])->whereNumber('id');
     Route::post  ('/vendors/step/identity',            [\App\Http\Controllers\Api\VendorController::class, 'storeIdentity']);
     Route::put   ('/vendors/{id}/step/contacts',       [\App\Http\Controllers\Api\VendorController::class, 'storeContacts'])->whereNumber('id');

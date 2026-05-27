@@ -9,6 +9,10 @@ import AddVendorModal from './AddVendorModal';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from './SupplierEvidenceVaultModal';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import { ShimmerTable } from '../../components/ui/Shimmer';
+import {
+  readVendorMasterBundle,
+  writeVendorMasterBundle,
+} from './vendorBundleCache';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Vendors — front-end only master list
@@ -142,11 +146,47 @@ export default function Vendors() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+ const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
 
   useEffect(() => { void refresh(); }, [refresh]);
+useEffect(() => {
+  if (!allowed) return;
 
-  const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
+  const preloadVendorBundle = async () => {
+    if (readVendorMasterBundle()) return;
 
+    try {
+      const res = await api.get('/vendors/master-bundle');
+      writeVendorMasterBundle(res.data);
+    } catch {
+      // Silent preload failure — AddVendorModal will fetch normally if needed.
+    }
+  };
+
+  const w = window as Window & {
+    requestIdleCallback?: (cb: () => void) => number;
+    cancelIdleCallback?: (id: number) => void;
+  };
+
+  let idleId: number | null = null;
+  let timerId: number | null = null;
+
+  if (typeof w.requestIdleCallback === 'function') {
+    idleId = w.requestIdleCallback(() => void preloadVendorBundle());
+  } else {
+    timerId = window.setTimeout(() => void preloadVendorBundle(), 500);
+  }
+
+  return () => {
+    if (idleId !== null && typeof w.cancelIdleCallback === 'function') {
+      w.cancelIdleCallback(idleId);
+    }
+    if (timerId !== null) {
+      window.clearTimeout(timerId);
+    }
+  };
+}, [allowed]);
+ 
   // Outline icon-pill action button — matches the style used in Clients.tsx
   // so every list page in the shell shares the same affordance.
   const ActionBtn = ({
