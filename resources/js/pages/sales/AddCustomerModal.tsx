@@ -1298,7 +1298,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       /* Stage 2 advance: no validation gate. Stage 2 is now a
        * segment-rule-driven reference view — the manual Add flow that
        * the old DD/Owner KYC gate enforced has been removed, so the
-       * user can move to Stage 3 without uploading anything. */
+       * user can move to Stage 3 without uploading anything.
+       *
+       * Sub-tab cycling: walk through Company DD → Owner KYC →
+       * Trade Licence before crossing into Stage 3 so each sub-tab
+       * gets its own Save & Next step. */
+      if (kycSub === 'company-dd')  { setKycSub('owner-kyc');    return; }
+      if (kycSub === 'owner-kyc')   { setKycSub('trade-licence'); return; }
       setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
     } else {
       if (!validateStage1()) { setStage(1); setTab('identification'); return; }
@@ -1308,7 +1314,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const goPrev = () => {
     if (stage === 1) {
       if (tab === 'address-contact') setTab('identification');
-    } else if (stage === 2) { setStage(1); setTab('address-contact'); }
+    } else if (stage === 2) {
+      // Mirror goNext: step backwards through Stage 2 sub-tabs before
+      // falling back to Stage 1's last tab.
+      if (kycSub === 'trade-licence') { setKycSub('owner-kyc'); return; }
+      if (kycSub === 'owner-kyc')     { setKycSub('company-dd'); return; }
+      setStage(1); setTab('address-contact');
+    }
     else { setStage(2); }
   };
 
@@ -4452,13 +4464,15 @@ const SCOPED_CSS = `
 .acm-subtab-pill:hover:not(.is-active) { background: #ede9fe; }
 .acm-subtab-pill.is-active { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border-color: #7c3aed; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
 
-/* Nested tabs (Stage 3) */
-.acm-nested-tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1.5px solid #ede9fe; padding: 0 4px; flex-wrap: wrap; }
-.acm-nested-tab { padding: 10px 18px; border: none; background: transparent; color: #9ca3af; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; position: relative; transition: color .2s; white-space: nowrap; margin-bottom: -1.5px; }
-.acm-nested-tab::after { content: ''; position: absolute; bottom: 0; left: 14px; right: 14px; height: 2.5px; background: linear-gradient(90deg, #7c3aed, #6d28d9); border-radius: 3px 3px 0 0; transform: scaleX(0); transform-origin: center; transition: transform .25s ease; }
-.acm-nested-tab:hover:not(.is-active) { color: #6d28d9; }
-.acm-nested-tab.is-active { color: #6d28d9; }
-.acm-nested-tab.is-active::after { transform: scaleX(1); }
+/* Nested tabs (Stage 3) — pill style, matches Stage 2's .acm-subtab-pill
+   so the two stages read as one design language. */
+.acm-nested-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.acm-nested-tab { padding: 7px 18px; border-radius: 10px; border: 1.5px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .2s; white-space: nowrap; }
+.acm-nested-tab:hover:not(.is-active) { background: #ede9fe; }
+.acm-nested-tab.is-active { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border-color: #7c3aed; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
+[data-bs-theme="dark"] .acm-nested-tab { background: transparent; color: #c4b5fd; border: 1.5px solid rgba(167,139,250,0.40); }
+[data-bs-theme="dark"] .acm-nested-tab:hover:not(.is-active) { background: rgba(167,139,250,0.10); }
+[data-bs-theme="dark"] .acm-nested-tab.is-active { background: linear-gradient(135deg,#6d28d9,#4c1d95); color: #fff; border-color: #7c3aed; }
 
 /* Doc toolbar */
 .acm-doc-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; background: linear-gradient(180deg, #faf7ff, #f5efff); border-bottom: 1px solid #ede9fe; }
