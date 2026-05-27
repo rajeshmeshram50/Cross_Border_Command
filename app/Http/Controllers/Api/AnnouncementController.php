@@ -41,9 +41,7 @@ class AnnouncementController extends Controller
     private const ATTACH_MAX_KB     = 20 * 1024;            // 20 MB
     private const ATTACH_MIME_TYPES = 'png,jpg,jpeg,pdf';
 
-    /* ─────────────────────────────────────────────────────────────────
-     *  LIST / SHOW / NEXT-CODE / STATS
-     * ───────────────────────────────────────────────────────────────── */
+   
 
     public function index(Request $request)
     {

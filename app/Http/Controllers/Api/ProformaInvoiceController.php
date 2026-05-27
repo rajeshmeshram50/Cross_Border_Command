@@ -311,7 +311,7 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'data' => $row->fresh(['items'])]);
     }
 
-    /* ── DELETE (soft) ──────────────────────────────────────── */
+   
     public function destroy(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -328,7 +328,7 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'message' => 'Cancelled']);
     }
 
-    /* ── DUPLICATE ──────────────────────────────────────────── */
+    
     public function duplicate(Request $request, $id): JsonResponse
     {
         $user = $request->user();
@@ -356,13 +356,7 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'data' => $clone], 201);
     }
 
-    /* ── CREATE FROM QUOTATION ──────────────────────────────── */
-    /**
-     * Seed a draft PI from a Quotation — copies every field + items
-     * across, links via source_quotation_id, flips the quotation's
-     * status to `converted_to_pi`, and returns the new draft PI.
-     * The user can edit it in the Create PI modal before saving.
-     */
+    
     public function fromQuotation(Request $request, $quotationId): JsonResponse
     {
         $user = $request->user();
@@ -482,9 +476,7 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'data' => $pi], 201);
     }
 
-    /* ─────────────────────────────────────────────────────────
-     * Internals
-     * ───────────────────────────────────────────────────────── */
+   
     private function validatePayload(Request $request): array
     {
         $docType = $request->input('doc_type', ProformaInvoice::DOC_INTERNATIONAL);
@@ -557,10 +549,7 @@ class ProformaInvoiceController extends Controller
         }, $items);
     }
 
-    /** B35: see QuotationController::aggregateTotals for the rationale —
-     *  derive the grand_total from the EXACT (unrounded) item math and
-     *  round once at the end so a spread of *.005 amounts don't drift
-     *  banker's-rounding errors into the header. */
+   
     private function aggregateTotals(array $items, float $shipping): array
     {
         $rawSub = 0.0;
@@ -625,7 +614,7 @@ class ProformaInvoiceController extends Controller
         return [$customerName, $consigneeName, $oppCode, $oppDate, $bankLabel, $smName, $convertFrom];
     }
 
-    /** INV/YYYY-NN/SEQ — same pattern as QuotationController. */
+  
     private function nextCode(int $clientId): string
     {
         $fy = $this->currentFinancialYear();
@@ -649,13 +638,7 @@ class ProformaInvoiceController extends Controller
         return $code;
     }
 
-    /** BT-NNNN — global per-client sequence for with_shipment PIs.
-     *
-     *  B34: 4-digit zero-pad. The earlier `%02d` produced "BT-99" then
-     *  "BT-100" (3 digits), breaking the 2-digit regex below. Padding
-     *  to 4 keeps the format stable up to BT-9999 — still matches the
-     *  same `^BT-(\d+)$` so legacy 2-digit codes continue to parse.
-     */
+   
     private function nextBtCode(int $clientId): string
     {
         // B20: defense-in-depth advisory lock for BT sequence.
@@ -687,14 +670,7 @@ class ProformaInvoiceController extends Controller
         return "{$startYear}-{$endShort}";
     }
 
-    /* ── Authorisation ──────────────────────────────────────── */
-
-    /**
-     * Branch-aware read scope. Same rule as QuotationController:
-     *   - super_admin / client_admin / client_user / main_branch_user
-     *     → all branches under their client
-     *   - normal_branch_user → OWN branch + MAIN branch only
-     */
+  
     private function applyScope($q, $user): void
     {
         if ($user->user_type === 'super_admin') return;
@@ -721,10 +697,7 @@ class ProformaInvoiceController extends Controller
         });
     }
 
-    /**
-     * Single-row auth. $action = 'read' allows main-branch records;
-     * $action = 'write' rejects them for normal branch users (403).
-     */
+   
     private function assertScope(ProformaInvoice $row, $user, string $action = 'read'): void
     {
         if ($user->user_type === 'super_admin') return;
@@ -746,13 +719,7 @@ class ProformaInvoiceController extends Controller
         abort(404);
     }
 
-    /**
-     * Source-quotation auth (used by fromQuotation conversion). We
-     * allow main-branch quotations to be converted-to-PI by a normal
-     * branch user — the PI then belongs to the converting user's
-     * branch. Writes on the source quotation itself still go through
-     * QuotationController's stricter assertScope.
-     */
+   
     private function assertQuotationScope(Quotation $row, $user): void
     {
         if ($user->user_type === 'super_admin') return;
@@ -770,7 +737,7 @@ class ProformaInvoiceController extends Controller
         abort(404);
     }
 
-    /** UI hint flag — see QuotationController::userCanModify. */
+   
     private function userCanModify(ProformaInvoice $row, $user): bool
     {
         if ($user->user_type === 'super_admin') return true;
@@ -780,7 +747,7 @@ class ProformaInvoiceController extends Controller
         return (int) $row->branch_id === (int) $user->branch_id;
     }
 
-    /* ── List filters ───────────────────────────────────────── */
+   
     private function applyFilters($q, Request $request): void
     {
         if ($v = $request->query('status'))       $q->where('status', $v);

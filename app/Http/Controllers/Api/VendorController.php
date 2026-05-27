@@ -813,7 +813,6 @@ class VendorController extends Controller
                 'gst_percentage'        => $active(GstPercentage::class,        ['id', 'percentage']),
             ];
         });
-
         return response()->json($bundle);
     }
 }
