@@ -9,6 +9,7 @@ import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { formatCompact } from '../../utils/formatNumber';
 import { useChartTheme } from '../../hooks/useChartTheme';
+import { readDashboardStats, writeDashboardStats } from './dashboardStatsCache';
 
 const methodLabels: Record<string, string> = {
   upi: 'UPI', credit_card: 'Credit Card', debit_card: 'Debit Card',
@@ -135,12 +136,26 @@ export default function BranchDashboard() {
 
   useEffect(() => {
     const controller = new AbortController();
+    // Cache key includes branch_id so each branch's view caches separately.
+    // Prefixed `branch:` to keep it distinct from the ClientDashboard
+    // entries (`client:`) even though both hit /dashboard/client-stats —
+    // the two pages render different layouts and shouldn't share cache.
+    const variant = `branch${selectedBranchId ? `:${selectedBranchId}` : ''}`;
+    const cached = readDashboardStats<any>(variant);
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+      return () => controller.abort();
+    }
     setLoading(true);
     api.get('/dashboard/client-stats', {
       params: selectedBranchId ? { branch_id: selectedBranchId } : {},
       signal: controller.signal,
     })
-      .then(res => setData(res.data))
+      .then(res => {
+        setData(res.data);
+        writeDashboardStats(variant, res.data);
+      })
       .catch(err => {
         if (err?.name !== 'CanceledError' && err?.code !== 'ERR_CANCELED') {
           // swallow other errors silently — keep current data on screen

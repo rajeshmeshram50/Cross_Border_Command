@@ -352,8 +352,8 @@ function ClauseLibModal(props: {
 
   return createPortal((
     <>
-    <div className="clm-modal-bd" onClick={onClose}>
-      <div className="clm-modal clm-modal-xwide" onClick={e => e.stopPropagation()}>
+    <div className="clm-modal-bd">
+      <div className="clm-modal clm-modal-xwide">
         {/* ── HEADER ── */}
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
@@ -513,8 +513,8 @@ function ClauseTypeModal(props: {
   };
 
   return createPortal((
-    <div className="clm-modal-bd" onClick={onClose}>
-      <div className="clm-modal" onClick={e => e.stopPropagation()}>
+    <div className="clm-modal-bd">
+      <div className="clm-modal">
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>

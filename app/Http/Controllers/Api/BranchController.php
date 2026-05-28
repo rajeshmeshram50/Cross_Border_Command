@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Employee;
+use App\Models\Masters\Countries;
+use App\Models\Masters\States;
 use App\Models\User;
 use App\Support\Settings;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -761,5 +764,58 @@ class BranchController extends Controller
             }
         }
         return 'BR-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * GET /branches/form-bundle
+     *
+     * Bundle every master dropdown the BranchForm needs into ONE response.
+     * Replaces 3 separate round-trips on every modal open:
+     *   /master/countries, /master/states, /branches/next-code
+     *
+     * `next_code` is computed per-tenant (uses the caller's client_id) so
+     * it CANNOT be cached server-side across users — but countries/states
+     * are static and safe to cache for 5 min. We split the response: the
+     * cacheable masters go through Cache::remember; next_code is computed
+     * fresh on every request and merged in afterwards.
+     * ────────────────────────────────────────────────────────────── */
+    public function formBundle(Request $request)
+    {
+        $user = $request->user();
+        $cacheKey = 'branch:form-bundle:masters:user:' . ($user?->id ?? 'guest');
+
+        // Masters portion — cached. Countries + states are global lookups
+        // but MasterVisibility::applyReadScope is still applied so any
+        // tenant-tagged rows (client_id != null) are filtered correctly,
+        // matching the canonical /master/{slug} gate in MasterController.
+        $masters = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
+            $scope = fn ($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
+            return [
+                'countries' => Countries::query()
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->tap($scope)
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'iso_code', 'status']),
+                'states' => States::query()
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->tap($scope)
+                    ->orderBy('name')
+                    ->get(['id', 'country_id', 'name', 'status']),
+            ];
+        });
+
+        // next_code — must be computed fresh per request because branch
+        // codes increment as new branches are created. Not cacheable.
+        $clientId = $user?->client_id;
+        $nextCode = $clientId
+            ? $this->peekNextBranchCode($clientId)
+            : 'BR-001';
+
+        return response()->json([
+            'countries' => $masters['countries'],
+            'states'    => $masters['states'],
+            'next_code' => $nextCode,
+            'prefix'    => 'BR-',
+        ]);
     }
 }

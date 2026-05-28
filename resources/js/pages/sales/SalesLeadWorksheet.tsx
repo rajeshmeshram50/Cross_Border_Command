@@ -87,6 +87,22 @@ const initials = (name: string): string => {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 };
 
+/* IndiaMart query_type codes → friendly labels shown in the table's
+ * Lead Type column and in the Filter modal's Lead Type facet. Mirrors
+ * IDIMS_6.0's getQueryTypeLabel() helper. Unknown codes fall through to
+ * whatever the server sent (or "Manual" for null). */
+const LEAD_TYPE_LABEL: Record<string, string> = {
+  BUY:               'Buy Leads',
+  P:                 'PNS Calls',
+  W:                 'Direct Enquiries',
+  BIZ:               'Catalog-View Leads',
+  'Product Inquiry': 'Product Inquiry',
+  WA:                'WhatsApp-Enquiries',
+  B:                 'Buy-Leads',
+};
+const prettyLeadType = (t: string | null | undefined): string =>
+  LEAD_TYPE_LABEL[t ?? ''] ?? (t || 'Manual');
+
 /* Build human-readable chips for whatever filter fields are active. Looks
  * each value up against the parent's cached options list so the chip shows
  * the label ('Inquiry Required') rather than the wire value ('1'). */
@@ -134,7 +150,7 @@ const mapServerToLead = (r: ServerLead): Lead => {
     : '—';
   return {
     id:       r.id,
-    type:     r.query_type || 'Manual',
+    type:     prettyLeadType(r.query_type),
     date,
     source:   r.platform || '—',
     assigned: r.salesperson?.name ?? 'Unassigned',
@@ -274,7 +290,7 @@ export default function SalesLeadWorksheet() {
       .then(r => setFilterOptions({
         stages: r.data.stages,
         platforms:  (r.data.platforms  ?? []).map(p => ({ value: p, label: p })),
-        queryTypes: (r.data.query_types ?? []).map(t => ({ value: t, label: t })),
+        queryTypes: (r.data.query_types ?? []).map(t => ({ value: t, label: prettyLeadType(t) })),
         countries:  r.data.countries ?? [],
         customers:  r.data.customers ?? [],
       }))

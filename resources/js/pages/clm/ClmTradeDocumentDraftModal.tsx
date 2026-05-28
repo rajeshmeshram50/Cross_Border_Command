@@ -436,12 +436,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   return createPortal(
     <div
       className="tdw-overlay"
-      onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}
       role="dialog"
       aria-modal="true"
     >
       <style>{TDW_CSS}</style>
-      <div className="tdw-shell" onMouseDown={e => e.stopPropagation()}>
+      <div className="tdw-shell">
         {/* ── Header strip ── */}
         <div className="tdw-head">
           <div className="tdw-head-left">

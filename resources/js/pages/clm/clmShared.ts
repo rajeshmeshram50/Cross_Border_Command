@@ -298,7 +298,8 @@ export const CLM_CSS = `
   display: flex; align-items: center; gap: 7px;
   padding: 0 12px; height: 34px;
   border: 1.5px solid rgba(6,182,212,.22); border-radius: 8px;
-  background: #fff; min-width: 800px;
+  background: #fff;
+  flex: 1 1 240px; min-width: 200px;
   transition: all .15s;
   box-shadow: 0 1px 4px rgba(6,182,212,.07);
 }
@@ -1247,7 +1248,6 @@ body > .dropdown-menu.master-select-menu,
   .clm-pill { flex: 1; justify-content: center; }
   .clm-add-btn { flex: 1 1 auto; justify-content: center; }
   .clm-tabs-bar { gap: 8px; }
-  .clm-search {  min-width: 1000px; }
   .clm-search-grow:focus-within { width: auto; }
 }
 

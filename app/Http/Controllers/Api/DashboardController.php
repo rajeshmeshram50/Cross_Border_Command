@@ -13,11 +13,30 @@ use App\Models\Plan;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
     public function adminStats()
+    {
+        // Server-side cache (60-second TTL) — admin-stats is global and
+        // every super_admin viewing it sees the same numbers, so a single
+        // shared cache entry serves all of them without per-user fanout.
+        // 60-second TTL matches the frontend sessionStorage TTL so the
+        // server-cache window roughly aligns with the browser-cache window
+        // and the stale-data divergence stays bounded.
+        return response()->json(Cache::remember('dashboard:admin-stats', now()->addSeconds(60), function () {
+            return $this->computeAdminStats();
+        }));
+    }
+
+    /**
+     * Compute the admin-stats payload. Extracted so Cache::remember can
+     * wrap the heavy work without changing the response shape — handlers
+     * that need bypass-cache paths can call this directly.
+     */
+    private function computeAdminStats(): array
     {
         // Core counts
         $totalClients = Client::count();
@@ -154,7 +173,7 @@ class DashboardController extends Controller
             ->get()
             ->toArray();
 
-        return response()->json([
+        return [
             'plan_distribution' => $planDistribution,
             'counts' => [
                 'total_clients' => $totalClients,
@@ -180,7 +199,7 @@ class DashboardController extends Controller
             'recent_clients' => $recentClients,
             'recent_payments' => $recentPayments,
             'top_clients' => $topClients,
-        ]);
+        ];
     }
 
     public function clientStats(Request $request)
@@ -192,26 +211,55 @@ class DashboardController extends Controller
             return response()->json(['message' => 'No client associated'], 422);
         }
 
-        // Resolve & validate branch_id filter (always scoped within this user's client)
+        // Resolve & validate branch_id filter (always scoped within this
+        // user's client). We do the validation HERE — before building the
+        // cache key — so the cache key reflects the actual data slice being
+        // computed. If a user passes a cross-tenant branch_id=99 it gets
+        // normalised to null before keying, preventing a "data for null"
+        // payload from being cached under ':branch:99'.
         $branchId = $request->integer('branch_id') ?: null;
         if ($branchId && !Branch::where('client_id', $clientId)->where('id', $branchId)->exists()) {
-            $branchId = null; // ignore stale / cross-client ids
+            $branchId = null;
         }
-        // Sub-branch users (non-main) are always server-locked to their own branch.
-        // If their branch_id is missing or invalid (data integrity issue), force a
-        // sentinel value so no rows match — never silently widen the scope.
+        // Sub-branch user lock — overrides the caller-supplied branch_id
+        // so the cache key matches the data the user is actually allowed
+        // to see. Sentinel value -1 (no rows match) prevents the cache from
+        // ever storing the "no userBranch" case under a real branch id.
         $userBranch = null;
         if ($user->user_type === 'branch_user') {
             $userBranch = $user->branch_id
                 ? Branch::where('client_id', $clientId)->find($user->branch_id)
                 : null;
             if (!$userBranch) {
-                $branchId = -1; // matches nothing → empty result is safer than leaked data
+                $branchId = -1;
             } elseif (!$userBranch->is_main) {
                 $branchId = $user->branch_id;
             }
-            // Main branch user: $branchId stays as caller-supplied (already validated above)
         }
+
+        // Server-side cache (60-second TTL) — key includes the canonical
+        // client_id + validated branch_id + user_type so different tenants,
+        // branches, and role views each get their own cache entry. The
+        // user_type segment in the key matters because $canViewPayments
+        // differs between main-branch and sub-branch users, so caching
+        // across roles would leak revenue numbers to non-main branches.
+        $cacheKey = 'dashboard:client-stats:' . $clientId
+            . ':branch:' . ($branchId ?? 'all')
+            . ':role:' . $user->user_type;
+        return response()->json(Cache::remember($cacheKey, now()->addSeconds(60), function () use ($request, $clientId, $branchId, $userBranch) {
+            return $this->computeClientStats($request, $clientId, $branchId, $userBranch);
+        }));
+    }
+
+    /**
+     * Compute the client-stats payload. Extracted so Cache::remember can
+     * wrap the heavy work and downstream tests / preview tooling can
+     * bypass the cache by calling this directly. $branchId and $userBranch
+     * are already validated by the caller — see clientStats().
+     */
+    private function computeClientStats(Request $request, int $clientId, ?int $branchId, ?Branch $userBranch): array
+    {
+        $user = $request->user();
 
         // Payment data is billing-level info — only the client admin and the
         // main branch (head office) should see actual amounts and history.
@@ -533,7 +581,7 @@ class DashboardController extends Controller
             'upcoming_events'  => $upcomingEvents,
         ];
 
-        return response()->json([
+        return [
             'client' => [
                 'org_name' => $client?->org_name,
                 'logo' => $client?->logo,
@@ -566,7 +614,7 @@ class DashboardController extends Controller
             'filter' => [
                 'branch_id' => $branchId,
             ],
-        ]);
+        ];
     }
 
     /**

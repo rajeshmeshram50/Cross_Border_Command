@@ -9,6 +9,7 @@ import { useToast } from '../../contexts/ToastContext';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import type { Branch, PaginatedResponse } from '../../types';
+import { readBranchFormBundle, writeBranchFormBundle } from './branchFormBundleCache';
 
 interface Props {
   onNavigate: (page: string, data?: any) => void;
@@ -49,6 +50,42 @@ export default function Branches({ onNavigate }: Props) {
   }, []);
 
   useEffect(() => { fetchBranches(); }, [fetchBranches]);
+
+  /* Warm the BranchForm master bundle in the background.
+   *
+   * BranchForm.tsx needs /branches/form-bundle (countries + states + a
+   * fresh next_code). By fetching the masters portion the moment the
+   * Branches list page mounts, country/state dropdowns hydrate
+   * synchronously when the user clicks "Add Branch" — next_code still
+   * gets refreshed on each modal open but the dropdowns are instant.
+   *
+   * Skips when a fresh cached copy is already present. Uses
+   * requestIdleCallback (with a setTimeout fallback) so the warm-up
+   * never competes with the visible list render. */
+  useEffect(() => {
+    if (readBranchFormBundle()) return;
+    const warm = () => {
+      api.get('/branches/form-bundle')
+        .then(res => {
+          // Cache only the static masters portion — next_code is mutable
+          // per-tenant and must stay fresh per modal open.
+          writeBranchFormBundle({
+            countries: res.data?.countries ?? [],
+            states: res.data?.states ?? [],
+          });
+        })
+        .catch(() => { /* silent — form will retry on open */ });
+    };
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (h: number) => void;
+    };
+    const handle = w.requestIdleCallback ? w.requestIdleCallback(warm) : window.setTimeout(warm, 800);
+    return () => {
+      if (w.requestIdleCallback) w.cancelIdleCallback?.(handle);
+      else window.clearTimeout(handle);
+    };
+  }, []);
 
   // ── Client-side search filter ──
   const filtered = useMemo(() => {

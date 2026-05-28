@@ -201,8 +201,8 @@ function KycModal(props: { existing: Kyc | null; authorities: Authority[]; nextC
   };
 
   return createPortal((
-    <div className="clm-modal-bd" onClick={onClose}>
-      <div className="clm-modal" onClick={e => e.stopPropagation()}>
+    <div className="clm-modal-bd">
+      <div className="clm-modal">
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>

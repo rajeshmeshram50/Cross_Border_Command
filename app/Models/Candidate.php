@@ -104,3 +104,4 @@ class Candidate extends Model
         return $palette[$hash % count($palette)];
     }
 }
+ 
