@@ -212,15 +212,29 @@ export default function Products() {
   const [ownerOpts, setOwnerOpts] = useState<OwnerOpt[]>([]);
 
   useEffect(() => {
-    type MasterRow = { id: number | string; status?: string; name?: string; title?: string; short_code?: string; hsn_code?: string; percentage?: number | string };
-    const active = (r: MasterRow) => String(r.status ?? 'Active').toLowerCase() !== 'inactive';
-    const fetchMaster = async <T,>(slug: string, map: (r: MasterRow) => T | null): Promise<T[]> => {
-      try {
-        const res = await api.get<MasterRow[]>(`/master/${slug}`);
-        const rows = Array.isArray(res.data) ? res.data : [];
-        return rows.filter(active).map(map).filter((v): v is T => v !== null && v !== '');
-      } catch { return []; }
+    /* Filter dropdowns source from the SAME /products/master-bundle
+     * payload the Add Product modal uses. Previously this effect fired
+     * 5 separate /master/* calls (segments, hsn_codes, uom, conditions,
+     * gst_percentage) plus /vendors?per_page=200 — six round-trips on
+     * every Products page load. The page already preloads the bundle
+     * into sessionStorage on mount (see the warm-bundle useEffect
+     * below), so reading from cache is usually instant; on cache miss
+     * we fetch the bundle ourselves and write it back so the modal
+     * benefits too.
+     *
+     * /products/owners stays a separate call — it's not master data
+     * and the list shape (branch metadata) doesn't fit the bundle.
+     */
+    type IdRow = { id: number | string; status?: string | null };
+    type Bundle = {
+      segments: Array<IdRow & { title?: string | null; name?: string | null }>;
+      hsn_codes: Array<IdRow & { hsn_code?: string | null }>;
+      uom: Array<IdRow & { title?: string | null; short_code?: string | null }>;
+      conditions: Array<IdRow & { title?: string | null }>;
+      gst_percentage: Array<IdRow & { percentage?: number | string | null }>;
+      vendors: Array<{ id: number | string; company_name?: string | null }>;
     };
+
     /* Master endpoints are branch-scoped, so the same logical name
        (e.g. "Handicrafts") can come back multiple times when the user
        has visibility into more than one (client, branch) tuple. The
@@ -235,40 +249,49 @@ export default function Products() {
       }
       return out;
     };
-    (async () => {
-      const [seg, hsn, uom, cond, gst] = await Promise.all([
-        fetchMaster<string>('segments',       r => r.title ?? null),
-        fetchMaster<string>('hsn_codes',      r => r.hsn_code ?? null),
-        // UOM options must mirror what the product card actually shows.
-        // apiToCard maps p.uom = short_code ?? title (e.g. "kg" for the
-        // "Kilogram" master row), so the filter has to do the same — fetching
-        // by `title` alone made "Kilogram" never match the "kg" on the card.
-        fetchMaster<string>('uom',            r => r.short_code ?? r.title ?? null),
-        fetchMaster<string>('conditions',     r => r.title ?? null),
-        fetchMaster<string>('gst_percentage', r => (r.percentage != null ? `${r.percentage}%` : null)),
-      ]);
+
+    const applyBundle = (b: Bundle) => {
+      const seg  = (b.segments  ?? []).map(r => r.title ?? r.name ?? '').filter(Boolean);
+      const hsn  = (b.hsn_codes ?? []).map(r => r.hsn_code ?? '').filter(Boolean);
+      // UOM options must mirror what the product card actually shows.
+      // apiToCard maps p.uom = short_code ?? title (e.g. "kg" for the
+      // "Kilogram" master row), so the filter has to do the same.
+      const uom  = (b.uom       ?? []).map(r => r.short_code ?? r.title ?? '').filter(Boolean);
+      const cond = (b.conditions ?? []).map(r => r.title ?? '').filter(Boolean);
+      const gst  = (b.gst_percentage ?? [])
+        .map(r => r.percentage != null ? `${r.percentage}%` : '')
+        .filter(Boolean);
+      const ven  = (b.vendors ?? []).map(v => v.company_name ?? '').filter(Boolean);
       if (seg.length)  setSegmentOpts(dedupe(seg));
       if (hsn.length)  setHsnOpts(dedupe(hsn));
       if (uom.length)  setUomOpts(dedupe(uom));
       if (cond.length) setConditionOpts(dedupe(cond));
       if (gst.length)  setGstRateOpts(dedupe(gst));
+      if (ven.length)  setVendorOpts(dedupe(ven));
+    };
 
-      // Vendor dropdown — sources from the vendor directory rather than
-      // a master so the filter matches what the user can actually
-      // associate with a product.
-      try {
-        type VendorRow = { id: number; company_name?: string; vendor_code?: string };
-        const res = await api.get<{ data?: VendorRow[] } | VendorRow[]>('/vendors?per_page=200');
-        const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
-        const names = rows.map(v => v.company_name ?? '').filter(Boolean);
-        if (names.length) setVendorOpts(dedupe(names));
-      } catch { /* fall back to hardcoded */ }
+    (async () => {
+      // Try cache first — the page-mount preload usually populates it.
+      const cached = readProductMasterBundle<Bundle>();
+      if (cached) {
+        applyBundle(cached);
+      } else {
+        // Cache miss → fetch and persist. The modal's own effect will
+        // hit the same cache, so even on first load the bundle fires
+        // at most once.
+        try {
+          const res = await api.get<Bundle>('/products/master-bundle');
+          applyBundle(res.data);
+          writeProductMasterBundle(res.data);
+        } catch { /* leave dropdowns on their hardcoded defaults */ }
+      }
 
       // Product Owner dropdown — pulls the user list the backend says
       // is in scope (main branch → whole client, sub branch → own
       // branch only). Empty list means the role has no use for the
       // filter (e.g. client_admin) and the panel will just render
-      // empty.
+      // empty. Kept as a separate fetch because the shape doesn't fit
+      // the master bundle.
       try {
         type OwnerRow = { id: number; name: string; branch_id: number | null; branch_name: string | null; is_main_branch: boolean };
         const res = await api.get<{ data?: OwnerRow[] }>('/products/owners');
