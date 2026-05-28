@@ -6,6 +6,7 @@ import { Navigation, Pagination, Autoplay } from 'swiper/modules';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import Swal from 'sweetalert2';
+import { bustClientFormBundle } from '../client/clientFormBundleCache';
 import 'swiper/css';
 import 'swiper/css/navigation';
 import 'swiper/css/pagination';
@@ -75,6 +76,10 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
     setDeleting(plan.id);
     try {
       await api.delete(`/plans/${plan.id}`);
+      // Plans list is part of /clients/form-bundle — invalidate the cached
+      // copy so the next ClientForm open doesn't offer a deleted plan in
+      // its dropdown.
+      bustClientFormBundle();
       Swal.fire({
         title: 'Deleted!',
         text: `"${plan.name}" has been removed.`,

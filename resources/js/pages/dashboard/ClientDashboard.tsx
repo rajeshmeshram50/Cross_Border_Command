@@ -6,6 +6,7 @@ import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { formatCompact } from '../../utils/formatNumber';
 import { useChartTheme } from '../../hooks/useChartTheme';
+import { readDashboardStats, writeDashboardStats } from './dashboardStatsCache';
 
 const COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#9b72cf'];
 
@@ -134,12 +135,24 @@ export default function ClientDashboard() {
 
   useEffect(() => {
     const controller = new AbortController();
+    // Cache key includes branch_id so admin's "all branches" view and a
+    // sub-branch view don't share entries — different slices of stats.
+    const variant = `client${selectedBranchId ? `:branch:${selectedBranchId}` : ''}`;
+    const cached = readDashboardStats<any>(variant);
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+      return () => controller.abort();
+    }
     setLoading(true);
     api.get('/dashboard/client-stats', {
       params: selectedBranchId ? { branch_id: selectedBranchId } : {},
       signal: controller.signal,
     })
-      .then(res => setData(res.data))
+      .then(res => {
+        setData(res.data);
+        writeDashboardStats(variant, res.data);
+      })
       .catch(err => {
         if (err?.name !== 'CanceledError' && err?.code !== 'ERR_CANCELED') {
           // swallow other errors silently — keep current data on screen

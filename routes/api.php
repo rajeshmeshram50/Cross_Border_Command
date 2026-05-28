@@ -109,10 +109,18 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     // Clients
     Route::get('/clients/stats', [ClientController::class, 'stats']);
+    // Bundle endpoint — returns every dropdown the ClientForm needs in one
+    // round-trip. Declared BEFORE apiResource so the literal 'form-bundle'
+    // segment isn't captured as a {client} id by show/update/destroy.
+    Route::get('/clients/form-bundle', [ClientController::class, 'formBundle']);
     Route::apiResource('clients', ClientController::class);
 
     // Branches
     Route::get('/branches/next-code', [BranchController::class, 'nextCode']);
+    // Bundle endpoint — returns countries + states + next branch code in one
+    // round-trip. Declared BEFORE apiResource so the literal 'form-bundle'
+    // segment isn't captured as a {branch} id.
+    Route::get('/branches/form-bundle', [BranchController::class, 'formBundle']);
     Route::apiResource('branches', BranchController::class);
 
     // Products — step-wise create/update (Core → Sales → Quality → Vendors)

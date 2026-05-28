@@ -11,6 +11,7 @@ import { useToast } from '../../contexts/ToastContext';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import type { Client, PaginatedResponse } from '../../types';
+import { readClientFormBundle, writeClientFormBundle } from './clientFormBundleCache';
 
 interface Props {
   onNavigate: (page: string, data?: any) => void;
@@ -44,6 +45,10 @@ export default function Clients({ onNavigate }: Props) {
     total: 0, active: 0, inactive: 0, plans_count: 0, plan_breakdown: [],
   });
 
+  /* Merged list + stats fetch — /clients?include_stats=1 returns BOTH the
+   * paginated list AND the KPI card stats in one response. Previously we
+   * fired two separate calls (/clients and /clients/stats) sequentially,
+   * doubling the round-trip cost. Now the list page paints in one trip. */
   const fetchClients = useCallback(async () => {
     setLoading(true);
     try {
@@ -51,12 +56,13 @@ export default function Clients({ onNavigate }: Props) {
       // paginate on the client. Avoids the double-pagination conflict where
       // server pagination capped the dataset at 10 rows and react-table then
       // disabled its own next/prev because it only saw one page.
-      const res = await api.get<PaginatedResponse<Client>>('/clients', {
-        params: { search: search || undefined, per_page: 9999 },
+      const res = await api.get<PaginatedResponse<Client> & { stats?: ClientStats }>('/clients', {
+        params: { search: search || undefined, per_page: 9999, include_stats: 1 },
       });
       setClients(res.data.data);
       setTotalPages(res.data.last_page);
       setTotal(res.data.total);
+      if (res.data.stats) setStats(res.data.stats);
     } catch {
       setClients([]);
     } finally {
@@ -64,17 +70,35 @@ export default function Clients({ onNavigate }: Props) {
     }
   }, [search, page]);
 
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await api.get<ClientStats>('/clients/stats');
-      setStats(res.data);
-    } catch {
-      // keep defaults
-    }
-  }, []);
-
   useEffect(() => { fetchClients(); }, [fetchClients]);
-  useEffect(() => { fetchStats(); }, [fetchStats, clients.length]);
+
+  /* Warm the ClientForm master bundle in the background.
+   *
+   * ClientForm.tsx needs /clients/form-bundle (organization-types + plans +
+   * countries + states). By fetching it the moment the Clients list page
+   * mounts, the data lands in sessionStorage by the time the user clicks
+   * "Add Client" — the form hydrates synchronously and feels instant.
+   *
+   * Skips when a fresh cached copy is already present. Uses
+   * requestIdleCallback (with a setTimeout fallback) so the warm-up never
+   * competes with the visible list render. */
+  useEffect(() => {
+    if (readClientFormBundle()) return;
+    const warm = () => {
+      api.get('/clients/form-bundle')
+        .then(res => writeClientFormBundle(res.data))
+        .catch(() => { /* silent — form will retry on open */ });
+    };
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (h: number) => void;
+    };
+    const handle = w.requestIdleCallback ? w.requestIdleCallback(warm) : window.setTimeout(warm, 800);
+    return () => {
+      if (w.requestIdleCallback) w.cancelIdleCallback?.(handle);
+      else window.clearTimeout(handle);
+    };
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 400);
