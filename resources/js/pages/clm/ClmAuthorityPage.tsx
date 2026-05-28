@@ -19,6 +19,32 @@ import {
 
 type Authority = { id: number; code: string; name: string; description: string; status: 'active'|'inactive' };
 
+/**
+ * Mirrors the backend allocator in ClmAuthorityController::nextCode — walks
+ * past max(existing AUTH-### suffix) + 1, skipping any taken codes. The
+ * naive `rows.length + 1` preview drifts whenever the sequence has gaps
+ * (after deletes, or after legacy data was consolidated).
+ */
+function nextAuthorityCode(rows: { code: string }[]): string {
+  let maxN = 0;
+  const taken = new Set<string>();
+  for (const r of rows) {
+    const m = /^AUTH-(\d+)$/.exec(r.code ?? '');
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > maxN) maxN = n;
+    }
+    if (r.code) taken.add(r.code);
+  }
+  let n = maxN;
+  let code: string;
+  do {
+    n++;
+    code = `AUTH-${String(n).padStart(3, '0')}`;
+  } while (taken.has(code));
+  return code;
+}
+
 export default function ClmAuthorityPage() {
   const toast = useToast();
 
@@ -164,7 +190,7 @@ export default function ClmAuthorityPage() {
       {modalOpen && (
         <AuthorityModal
           existing={editing}
-          nextCode={`AUTH-${String(rows.length + 1).padStart(3, '0')}`}
+          nextCode={nextAuthorityCode(rows)}
           onClose={() => { setModalOpen(false); setEditing(null); }}
           onSave={(form) => onSave(form, editing?.id)}
         />

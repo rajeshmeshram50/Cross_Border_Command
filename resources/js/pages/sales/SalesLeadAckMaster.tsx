@@ -1452,6 +1452,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lam-tab-count { background: rgba(255,255,255,.06); color: #c4b5fd; }
 [data-bs-theme="dark"] .lam-tab.is-active .lam-tab-count { background: rgba(0,0,0,.32); color: #fff; }
 
+[data-bs-theme="dark"] .lam-search {
+  background: #1a1530;
+  border-color: rgba(167,139,250,0.25);
+}
 [data-bs-theme="dark"] .lam-search:hover { border-color: rgba(167,139,250,0.40); }
 [data-bs-theme="dark"] .lam-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
 [data-bs-theme="dark"] .lam-search input { color: #e6e8ec; }
