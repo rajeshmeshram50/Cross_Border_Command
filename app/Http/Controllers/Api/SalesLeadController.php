@@ -1540,6 +1540,7 @@ class SalesLeadController extends Controller
                         ->map(fn ($c) => [
                             'value' => (string) $c->id,
                             'label' => $c->company_name ?: ('Customer #' . $c->id),
+                            'code'  => $c->customer_code,
                         ])
                         ->values();
 
@@ -1549,14 +1550,16 @@ class SalesLeadController extends Controller
             'query_types' => $queryTypes,
             'countries'   => $countries,
             'customers'   => $customers,
+            // Filter exposes only the 6 canonical Sales Matrix stages defined
+            // in CLAUDE.md. The Pre-PI CLM (5) and Post-PI CLM (7) checkpoints
+            // are kept in DB for historical leads but excluded here so the
+            // filter UI stays aligned with the visible pipeline.
             'stages'      => [
                 ['value' => '1', 'label' => 'Inquiry Required'],
                 ['value' => '2', 'label' => 'Lead Acknowledgement'],
                 ['value' => '3', 'label' => 'Product Sourcing'],
                 ['value' => '4', 'label' => 'Price Shared'],
-                ['value' => '5', 'label' => 'Pre-PI CLM'],
                 ['value' => '6', 'label' => 'Quotation vs PI'],
-                ['value' => '7', 'label' => 'Post-PI CLM'],
                 ['value' => '8', 'label' => 'Victory'],
             ],
         ]);
