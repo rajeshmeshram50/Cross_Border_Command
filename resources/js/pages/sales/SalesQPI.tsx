@@ -104,7 +104,7 @@ type PI = {
   victoryReached?: boolean;
 };
 
-const ROWS_PER_PAGE = 10;
+const ROWS_PER_PAGE = 5;
 
 /**
  * Render the "Created By" cell as a colored pill with a small sub-label.
@@ -164,13 +164,14 @@ function renderCreatorCell(
     : showAsMainBranch ? 'Main Branch'
     : (name || '—');
 
-  // Sub-label — context line under the pill. For "Main Branch" we
-  // skip the sub-label (the pill already tells the whole story); for
-  // "You" we show the row's branch; otherwise we show the creator's
-  // tier (Main Branch vs the row's branch name) or the role.
+  // Sub-label — context line under the pill. Skipped for "You" and
+  // "Main Branch" so the cell stays compact (the long tenant/company
+  // name as a sub-line was eating too much horizontal space and made
+  // the table look misaligned). For other creators we still show the
+  // role / branch context.
   const subLabel = (() => {
     if (showAsMainBranch) return '';
-    if (isSelf) return branchName || '';
+    if (isSelf) return '';
     if (tone.kind === 'super')  return 'Super Admin';
     if (tone.kind === 'client') return t === 'client_admin' ? 'Client Admin' : 'Client user';
     if (tone.kind === 'branch') return creatorBranchIsMain ? 'Main Branch' : (branchName || 'Branch');
@@ -1234,6 +1235,7 @@ export default function SalesQPI() {
               theadClass="table-light"
               divClass="table-responsive table-card"
               SearchPlaceholder="Search quotations..."
+              condensedPagination
             />
           ) : piSub === 'with' ? (
             <TableContainer
@@ -1245,6 +1247,7 @@ export default function SalesQPI() {
               theadClass="table-light"
               divClass="table-responsive table-card"
               SearchPlaceholder="Search PIs..."
+              condensedPagination
             />
           ) : (
             <TableContainer
@@ -1256,6 +1259,7 @@ export default function SalesQPI() {
               theadClass="table-light"
               divClass="table-responsive table-card"
               SearchPlaceholder="Search PIs..."
+              condensedPagination
             />
           )}
         </div>
@@ -3365,9 +3369,13 @@ const SCOPED_CSS = `
 }
 .qpi-tablebar {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  /* Match SalesCustomers.smc-toolbar exactly — same 14px vertical
+   * padding, same soft lavender wash, same 1px violet bottom border.
+   * Keeps the toolbar / header relationship identical to the customer
+   * page (which is the design baseline the user pointed to). */
   padding: 14px 18px;
-  background: linear-gradient(135deg, rgba(124,58,237,.04), rgba(167,139,250,.02));
-  border-bottom: 1px solid rgba(124,58,237,.15);
+  background: linear-gradient(135deg, rgba(124,58,237,0.04), rgba(167,139,250,0.02));
+  border-bottom: 1px solid rgba(124,58,237,0.15);
   position: relative; z-index: 1;
 }
 /* (removed: legacy .qpi-listpill rules — the toolbar no longer renders
@@ -3475,12 +3483,25 @@ const SCOPED_CSS = `
    but applied to the Bootstrap .table the shared component renders.
    Top padding gives breathing room between the toolbar/tabs row above
    and the violet header row of the table so they don't visually stick. */
-.qpi-table-host { padding: 12px 0 0; }
+/* 14px top padding creates a WHITE GAP between the toolbar's bottom
+ * border and the lavender table header band, so the two lavender
+ * areas don't visually merge into one blob. Mirrors the same
+ * padding 14/14/12 on .smc-table-wrap in SalesCustomers, which is
+ * the visual baseline the user pointed to. */
+.qpi-table-host { padding: 14px 14px 12px; }
+/* Inner table is flush inside .qpi-card (which already provides the
+ * white background + border + 16px outer radius). Giving the table
+ * its OWN border/radius produced a card-within-a-card whose rounded
+ * top corners poked up next to the search pill above and read as
+ * "overlap". Now: no inner border, no inner radius, transparent
+ * background — the white gap above + lavender header band below
+ * are the visual dividers between the toolbar and the row area. */
 .qpi-table-host .table-responsive {
   background: transparent !important;
   border: 0 !important;
   border-radius: 0 !important;
   overflow-x: auto;
+  overflow-y: visible;
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
 }
@@ -3504,18 +3525,23 @@ const SCOPED_CSS = `
   background: linear-gradient(90deg, #f5f0ff 0%, #ede4fc 50%, #e0d7fc 100%) !important;
 }
 .qpi-table-host .table thead.table-light th {
+  /* Header sizing matches SalesCustomers.smc-table-wrap — lighter
+   * weight (600), 12px text, narrower letter-spacing, deeper violet
+   * color. Reads as a muted label row above the body cells instead
+   * of the bolder banner the page had before. */
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
   background: transparent !important;
-  color: #6d28d9 !important;
-  font-size: 10.5px !important;
-  font-weight: 700 !important;
-  letter-spacing: .08em !important;
+  color: #5b21b6 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: .02em !important;
   text-transform: uppercase;
-  padding: 13px 14px !important;
+  padding: 10px 14px !important;
   border-bottom: 1px solid rgba(124,58,237,.18) !important;
   white-space: nowrap;
   vertical-align: middle !important;
+  line-height: 1.3 !important;
 }
 /* Header content is wrapped in a flex span by TableContainer. We need it
  * to behave like inline text so it stacks exactly above the body cell
@@ -3545,17 +3571,25 @@ const SCOPED_CSS = `
   background: transparent;
   transition: background .14s ease;
 }
+/* Hover — solid soft lavender wash matches SalesCustomers (which is
+ * the design baseline the user asked us to match). The earlier
+ * gradient looked subtly different from the customer page. */
 .qpi-table-host .table tbody tr:hover td {
-  background: linear-gradient(180deg, rgba(134,92,226,.04) 0%, rgba(134,92,226,.02) 100%) !important;
+  background: #faf7ff !important;
 }
 .qpi-table-host .table tbody td {
   --bs-table-bg: transparent !important;
   background: transparent !important;
-  padding: 14px 14px !important;
-  border-bottom: 1px solid #f3f4f6 !important;
+  /* 12px vertical padding + 13px font + 500 weight + 1.45 line-height
+   * mirrors .smc-table-wrap so rows have the same density. */
+  padding: 12px 14px !important;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vz-body-color);
+  border-bottom: 1px solid rgba(124,58,237,0.08) !important;
   vertical-align: middle;
   white-space: nowrap;
-  line-height: 1.3;
+  line-height: 1.45;
 }
 .qpi-table-host .table tbody tr:last-child td { border-bottom: 0 !important; }
 
@@ -3577,17 +3611,22 @@ const SCOPED_CSS = `
   color: var(--vz-body-color, #212529);
   font-weight: 700;
 }
-.qpi-table-host .pagination { margin: 0; gap: 6px; }
+/* Pagination — fixed 36×36 buttons (chevron arrows AND numbered
+ * pages) matches SalesCustomers.smc-table-wrap. Numbers and arrows
+ * sit on the same baseline so the strip reads as one tidy row. */
+.qpi-table-host .pagination { align-items: center; margin: 0; gap: 4px; }
+.qpi-table-host .pagination .page-item { display: inline-flex; }
 .qpi-table-host .pagination .page-link {
   border-radius: 8px !important;
-  min-width: 32px; height: 32px;
-  padding: 0 10px;
+  min-width: 36px; height: 36px;
+  padding: 0 !important;
   display: inline-flex; align-items: center; justify-content: center;
   color: #6d28d9 !important;
   background: #fff !important;
   border: 1px solid #e0d9f7 !important;
   font-weight: 600;
   font-size: 13px;
+  line-height: 1;
   margin: 0 !important;
 }
 .qpi-table-host .pagination .page-link:hover {
@@ -3597,30 +3636,35 @@ const SCOPED_CSS = `
 }
 .qpi-table-host .pagination .page-item.active .page-link,
 .qpi-table-host .pagination .page-link.active {
-  background: linear-gradient(135deg, #7c5cfc, #a78bfa) !important;
-  border-color: transparent !important;
+  /* Active state matches SalesCustomers — deeper violet so the
+   * selected page reads clearly on the lighter button row. */
+  background: linear-gradient(135deg, #7c3aed, #6d28d9) !important;
+  border-color: #7c3aed !important;
   color: #fff !important;
-  box-shadow: 0 3px 8px rgba(124,92,252,.25);
+  box-shadow: 0 2px 6px rgba(109,40,217,.25);
 }
 .qpi-table-host .pagination .page-item.disabled .page-link {
   color: #c4b5fd !important;
   background: #faf7ff !important;
   opacity: 1;
 }
-/* Match the Recruitment / Onboarding list footer — replace the chevron
- * icons that TableContainer renders with "Previous" / "Next" text labels.
- * Hide the <i>, swap in the label via ::before, and widen the button so
- * the text fits without truncation. */
+/* Pagination prev/next arrows — match the Customer / Consignee list
+ * style: chevron-icon arrow buttons (not text labels). Keeps the
+ * sliding 2-button condensed pagination from condensedPagination
+ * looking the same across all Sales Matrix tables. */
 .qpi-table-host .pagination .page-item:first-child .page-link,
 .qpi-table-host .pagination .page-item:last-child  .page-link {
-  min-width: auto;
-  padding: 0 14px;
-  gap: 0;
+  min-width: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .qpi-table-host .pagination .page-item:first-child .page-link i,
-.qpi-table-host .pagination .page-item:last-child  .page-link i { display: none; }
-.qpi-table-host .pagination .page-item:first-child .page-link::before { content: 'Previous'; }
-.qpi-table-host .pagination .page-item:last-child  .page-link::before { content: 'Next'; }
+.qpi-table-host .pagination .page-item:last-child  .page-link i {
+  font-size: 16px;
+  line-height: 1;
+}
 
 .qpi-empty {
   text-align: center !important;

@@ -50,6 +50,10 @@ class EmployeeController extends Controller
         'permCountry:id,name',
         'permState:id,name,country_id',
         'reportingManager:id,first_name,middle_name,last_name,display_name,emp_code',
+        // Fallback manager — populated when the picker selected a login User
+        // (Client/Branch admin) instead of an Employee row. Only one of
+        // reportingManager / reportingManagerUser is non-null per employee.
+        'reportingManagerUser:id,name,email,user_type,designation',
         'laptopAsset:id,asset_name,code,asset_number',
         'mobileAsset:id,asset_name,code,asset_number',
         // Passport-size photo doc — fed to the `photo_url` accessor so the
@@ -1132,7 +1136,8 @@ class EmployeeController extends Controller
             'ancillary_role_ids'   => 'nullable|array',
             'ancillary_role_ids.*' => 'integer',
             'work_type' => 'nullable|string|max:50',
-            'reporting_manager_id' => 'nullable|integer',
+            'reporting_manager_id'      => 'nullable|integer',
+            'reporting_manager_user_id' => 'nullable|integer',
             'date_of_joining' => 'nullable|date',
 
             'probation_policy'   => 'nullable|string|max:50',

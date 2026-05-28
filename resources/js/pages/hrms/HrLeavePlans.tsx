@@ -302,9 +302,12 @@ function apiTypeToAssigned(api: ApiLeaveType): LeaveTypeRow {
 function apiEmployeeToPlanEmployee(api: ApiPlanEmployee, idx: number): PlanEmployee {
   const fullName = api.display_name?.trim() || `${api.first_name} ${api.last_name ?? ''}`.trim();
   const initials = fullName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
+  /* Reporting manager name — try the Employee-side relation first, then
+   * fall back to the User-side relation (Branch/Client admin assigned
+   * as manager but not onboarded as an Employee). */
   const rmName = api.reporting_manager
     ? (api.reporting_manager.display_name?.trim() || `${api.reporting_manager.first_name} ${api.reporting_manager.last_name ?? ''}`.trim())
-    : '';
+    : (api.reporting_manager_user?.name?.trim() || '');
   const rmInitials = rmName ? rmName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() : '';
   return {
     id: String(api.id),

@@ -206,6 +206,7 @@ interface ApiEmployee {
   ancillary_role_ids?: number[] | null;
   ancillary_roles_resolved?: { id: number; name: string }[];
   reporting_manager_id: number | null;
+  reporting_manager_user_id?: number | null;
   legal_entity_id: number | null;
   location: string | null;
   user_id: number | null;
@@ -219,6 +220,7 @@ interface ApiEmployee {
   primary_role?: { id: number; name: string } | null;
   ancillary_role?: { id: number; name: string } | null;
   reporting_manager?: { id: number; display_name?: string | null; emp_code?: string | null; first_name?: string | null; last_name?: string | null } | null;
+  reporting_manager_user?: { id: number; name?: string | null; email?: string | null; user_type?: string | null; designation?: string | null } | null;
   legal_entity?: { id: number; entity_name?: string; city?: string | null } | null;
   work_country?: { id: number; name: string } | null;
   nationality_country?: { id: number; name: string } | null;
@@ -286,10 +288,14 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
     ancillaryRoles: (e.ancillary_roles_resolved && e.ancillary_roles_resolved.length > 0)
       ? e.ancillary_roles_resolved.map(r => r.name)
       : (e.ancillary_role?.name ? [e.ancillary_role.name] : []),
+    /* Manager column — prefer the Employee-side relation (canonical),
+     * fall back to the User-side relation when the picker stored a
+     * login User (Client/Branch admin) instead of an Employee row. */
     manager: e.reporting_manager?.display_name
       || (e.reporting_manager
           ? [e.reporting_manager.first_name, e.reporting_manager.last_name].filter(Boolean).join(' ').trim()
           : '')
+      || e.reporting_manager_user?.name
       || '—',
     // Profile % is weighted so the Add Employee wizard (Stage 1 — Basic,
     // Job, Work, Compensation) counts for 40% of the bar; the five remaining
@@ -1231,8 +1237,8 @@ export default function HrEmployees() {
       toast.error('Save the employee first', `Add the basic details, then come back to upload ${docName}.`);
       return;
     }
-    if (file.size > 8 * 1024 * 1024) {
-      toast.error('File too large', `${docName} must be ≤ 8 MB`);
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('File too large', `${docName} must be ≤ 2 MB`);
       return;
     }
     setEDocBusy(p => ({ ...p, [docKey]: true }));
@@ -1350,7 +1356,21 @@ export default function HrEmployees() {
       setEWorkType(raw.work_type || '');
       setELegalEntity(raw.legal_entity_id ? String(raw.legal_entity_id) : '');
       setELocation(raw.location || '');
-      setEReportingMgr(raw.reporting_manager_id ? `employee:${raw.reporting_manager_id}` : '');
+      /* Hydrate the manager picker. Two columns can hold the manager:
+       *   - reporting_manager_id      → an Employee row (kind 'employee')
+       *   - reporting_manager_user_id → a login User (kind === user_type)
+       * The picker value is "kind:id"; rebuild it from whichever side the
+       * backend saved. The reporting_manager_user relation carries the
+       * user_type so we know which kind prefix to use. */
+      const mgrUserId   = raw.reporting_manager_user_id;
+      const mgrUserType = raw.reporting_manager_user?.user_type;
+      if (raw.reporting_manager_id) {
+        setEReportingMgr(`employee:${raw.reporting_manager_id}`);
+      } else if (mgrUserId && mgrUserType) {
+        setEReportingMgr(`${mgrUserType}:${mgrUserId}`);
+      } else {
+        setEReportingMgr('');
+      }
       // Edit hydration — show whatever the admin actually saved. Earlier
       // code special-cased the old "Default Probation Policy" / "Default
       // Notice Period" placeholder strings and cleared them, but that
@@ -1665,10 +1685,25 @@ export default function HrEmployees() {
       work_type: eWorkType || null,
       legal_entity_id: intOrNull(eLegalEntity),
       location:        eLocation || null,
+      /* The picker stores "kind:id" where kind is either 'employee'
+       * (an existing Employee row) or one of 'client_admin' /
+       * 'client_user' / 'branch_user' (a login User who hasn't been
+       * onboarded as an Employee yet). The backend has two columns —
+       * reporting_manager_id (FK → employees) and
+       * reporting_manager_user_id (FK → users) — only one of which is
+       * populated per record. Send the right one and explicit-null the
+       * other so a re-assignment from User → Employee (or back) wipes
+       * the previous side. */
       reporting_manager_id: (() => {
         if (!eReportingMgr) return null;
         const [kind, idStr] = String(eReportingMgr).split(':');
         if (kind !== 'employee') return null;
+        return intOrNull(idStr);
+      })(),
+      reporting_manager_user_id: (() => {
+        if (!eReportingMgr) return null;
+        const [kind, idStr] = String(eReportingMgr).split(':');
+        if (kind === 'employee') return null;
         return intOrNull(idStr);
       })(),
       date_of_joining: eJoinDate || null,
