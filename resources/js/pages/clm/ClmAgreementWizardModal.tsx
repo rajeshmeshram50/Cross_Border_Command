@@ -493,12 +493,11 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   return createPortal(
     <div
       className="agw-overlay"
-      onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}
       role="dialog"
       aria-modal="true"
     >
       <style>{AGW_CSS}</style>
-      <div className="agw-shell" onMouseDown={e => e.stopPropagation()}>
+      <div className="agw-shell">
         {/* Header */}
         <div className="agw-head">
           <div className="agw-head-left">
