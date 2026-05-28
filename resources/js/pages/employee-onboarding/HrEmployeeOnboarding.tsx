@@ -228,9 +228,13 @@ const _mapOnboardStatus = (raw: any): OnboardStatus => {
 const apiToOnboardRow = (e: any): OnboardRow => {
   const name = (e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`).trim() || '—';
   const accent = _accent(name);
+  /* Manager — prefer the Employee-side relation, fall back to the
+   * User-side relation (a login User like a Branch admin assigned as
+   * manager but not onboarded as an Employee). */
   const mgr = e.reporting_manager;
   const mgrName = mgr?.display_name
     || (mgr ? [mgr.first_name, mgr.last_name].filter(Boolean).join(' ').trim() : '')
+    || e.reporting_manager_user?.name
     || '—';
   return {
     id: e.emp_code || `EMP-${e.id}`,
@@ -886,19 +890,28 @@ export default function HrEmployeeOnboarding() {
                               />
                             </td>
                             <td>
-                              <div className="d-flex align-items-center gap-2">
-                                <div
-                                  className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                  style={{
-                                    width: 28, height: 28, fontSize: 10.5,
-                                    background: `linear-gradient(135deg, ${r.managerAccent}, ${r.managerAccent}cc)`,
-                                    boxShadow: `0 2px 5px ${r.managerAccent}40`,
-                                  }}
-                                >
-                                  {r.managerInitials}
+                              {r.managerName === '—' ? (
+                                /* Plain dash when no manager — keeps the row height
+                                 * consistent with the other empty cells. Rendering an
+                                 * orange avatar with a dash inside (the old path) made
+                                 * the row appear taller than its neighbours and pulled
+                                 * the column out of visual alignment with the header. */
+                                <span style={{ fontSize: 13 }} className="text-muted">—</span>
+                              ) : (
+                                <div className="d-flex align-items-center gap-2">
+                                  <div
+                                    className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                                    style={{
+                                      width: 28, height: 28, fontSize: 10.5,
+                                      background: `linear-gradient(135deg, ${r.managerAccent}, ${r.managerAccent}cc)`,
+                                      boxShadow: `0 2px 5px ${r.managerAccent}40`,
+                                    }}
+                                  >
+                                    {r.managerInitials}
+                                  </div>
+                                  <span style={{ fontSize: 13 }}>{r.managerName}</span>
                                 </div>
-                                <span style={{ fontSize: 13 }}>{r.managerName}</span>
-                              </div>
+                              )}
                             </td>
                             <td>
                               {(() => {
@@ -2818,7 +2831,16 @@ useEffect(() => {
     ancillary_role_id: x.ancillary_role_id ? String(x.ancillary_role_id) : '',
     legal_entity_id:  x.legal_entity_id  ? String(x.legal_entity_id)  : '',
     location:         String(x.location ?? ''),
-    reporting_manager: x.reporting_manager_id ? `employee:${x.reporting_manager_id}` : '',
+    /* Reporting manager picker stores "kind:id" — rebuild from whichever
+     * column the backend filled. reporting_manager_user is eager-loaded
+     * by EmployeeController so we know its user_type and can produce
+     * the right kind prefix. Without this fallback the field was empty
+     * even when the employee actually had a Branch/Client user manager. */
+    reporting_manager: x.reporting_manager_id
+      ? `employee:${x.reporting_manager_id}`
+      : (x.reporting_manager_user_id && x.reporting_manager_user?.user_type
+          ? `${x.reporting_manager_user.user_type}:${x.reporting_manager_user_id}`
+          : ''),
     date_of_joining:  x.date_of_joining ? String(x.date_of_joining).slice(0, 10) : '',
     probation_policy: String(x.probation_policy ?? ''),
     notice_period:    String(x.notice_period    ?? ''),
@@ -3061,13 +3083,17 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
       return Number.isFinite(n) ? n : null;
     };
     // Reporting manager uses a composite "kind:id" so the picker can host
-    // both employees and login users in one list. Only persist the FK when
-    // the candidate is an actual employee (the column expects employees.id).
-    const rmId = (() => {
-      if (!s1.reporting_manager) return null;
+    // both employees and login users in one list. The backend has two
+    // columns — reporting_manager_id (FK → employees) and
+    // reporting_manager_user_id (FK → users) — and only one is populated
+    // per record. Split the picker value and route to the correct
+    // column; explicit-null the other side so reassignments wipe the
+    // previous link.
+    const rmIds = (() => {
+      if (!s1.reporting_manager) return { emp: null as number | null, user: null as number | null };
       const [kind, idStr] = String(s1.reporting_manager).split(':');
-      if (kind !== 'employee') return null;
-      return intOrNull(idStr);
+      if (kind === 'employee') return { emp: intOrNull(idStr), user: null };
+      return { emp: null, user: intOrNull(idStr) };
     })();
 
     const payload: Record<string, any> = {
@@ -3079,7 +3105,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
       primary_role_id:  intOrNull(s1.primary_role_id),
       ancillary_role_id: intOrNull(s1.ancillary_role_id),
       legal_entity_id:  intOrNull(s1.legal_entity_id),
-      reporting_manager_id: rmId,
+      reporting_manager_id:      rmIds.emp,
+      reporting_manager_user_id: rmIds.user,
       annual_salary:    s1.annual_salary === '' ? null : Number(s1.annual_salary),
       // Empty strings to null for nullable string columns
       first_name:  s1.first_name.trim() || null,

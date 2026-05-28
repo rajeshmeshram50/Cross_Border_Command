@@ -89,6 +89,18 @@ const SIGNER_DEFAULTS: Record<SignerRoleKey, DocSettings> = {
   supplier:  { x: 220, y: 720, page: 0, width: 150, height: 45 },
 };
 
+/* Role → marker-token mapping. Matches ClmSignatureController's
+ * sigMarkerToken aliases: `{{buyer.signature}}` and
+ * `{{customer.signature}}` both render the CUSTOMER marker, so the
+ * buyer role detects against `customer`. Consignee + supplier are 1:1.
+ * Used only in agreement mode; trade-doc mode derives its single token
+ * directly from `modelName`. */
+const ROLE_TO_MARKER_TOKEN: Record<SignerRoleKey, 'customer' | 'consignee' | 'supplier'> = {
+  buyer:     'customer',
+  consignee: 'consignee',
+  supplier:  'supplier',
+};
+
 // A4 in PDF points (1pt = 1/72in)
 const A4_W = 595;
 const A4_H = 842;
@@ -487,8 +499,14 @@ export default function SalesCustomerSendForSignatureModal({
   /* Per-document set tracking whether the user has manually overridden
    * the signature box. Once they drag the overlay, we stop auto-snapping
    * back to the placeholder-detected position on subsequent fetches —
-   * the dragged value is what they meant to use. */
-  const userOverrodeRef = useRef<Set<number>>(new Set());
+   * the dragged value is what they meant to use.
+   *
+   * Keys are strings to support BOTH the trade-doc flow (single signer,
+   * key = `${docId}`) and the agreement flow (per-role, key =
+   * `${docId}:${role}`). Without the per-role split, dragging the buyer
+   * box would also freeze the consignee's auto-detect, which never gets
+   * a chance to seed from the {{consignee.signature}} placeholder. */
+  const userOverrodeRef = useRef<Set<string>>(new Set());
 
   /* ── Re-render the preview blob when step 2 changes its active doc.
    * After the PDF lands we also run a PDF.js pass over the bytes to find
@@ -544,20 +562,56 @@ export default function SalesCustomerSendForSignatureModal({
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
 
-        // Detect placeholder coords. Only auto-apply when the user
-        // hasn't dragged this doc's overlay yet. Page count comes out
-        // of the same PDF.js load — fed into a state so the page input
-        // can be clamped and the "page X of Y" hint stays accurate.
-        if (userOverrodeRef.current.has(docId)) return;
+        // Detect placeholder coords. The two modes write to different
+        // state slices and track overrides on different keys, so they
+        // share the same PDF.js loader but diverge on what they seed.
+        // Page count comes out of the loader call — fed into state so
+        // the page input can be clamped and "page X of Y" stays accurate.
         try {
-          const detected = await detectSignatureMarker(blob, partyToken, (n) => {
-            if (!cancelled) setPageCount(Math.max(1, n));
-          });
-          if (cancelled || !detected) return;
-          setSettings(prev => ({
-            ...prev,
-            [docId]: { ...DEFAULTS, ...prev[docId], ...detected },
-          }));
+          if (isAgreement) {
+            // Agreement: detect every signer role's marker and seed
+            // signerSettings[docId][role] for each one whose placeholder
+            // we found. Roles the user has already dragged are skipped
+            // so the draft's coord doesn't overwrite their adjustment.
+            const ctxSigners = agreementContext?.signers ?? [];
+            const roles = ctxSigners.map(s => s.role);
+            const parties = roles.map(role => ROLE_TO_MARKER_TOKEN[role]);
+            const uniqueParties = Array.from(new Set(parties));
+            const detected = await detectSignatureMarkers(blob, uniqueParties, (n) => {
+              if (!cancelled) setPageCount(Math.max(1, n));
+            });
+            if (cancelled) return;
+            setSignerSettings(prev => {
+              const docSlice = { ...(prev[docId] ?? {}) };
+              let changed = false;
+              for (const role of roles) {
+                const overrideKey = `${docId}:${role}`;
+                if (userOverrodeRef.current.has(overrideKey)) continue;
+                const partyToken = ROLE_TO_MARKER_TOKEN[role];
+                const found = detected[partyToken];
+                if (!found) continue;
+                const roleSeed = SIGNER_DEFAULTS[role] ?? DEFAULTS;
+                docSlice[role] = { ...roleSeed, ...(docSlice[role] ?? {}), ...found };
+                changed = true;
+              }
+              if (!changed) return prev;
+              return { ...prev, [docId]: docSlice };
+            });
+          } else {
+            // Trade-doc: single signer, single token derived from
+            // modelName. Write to the flat settings map. The override
+            // key for this mode is just the docId.
+            if (userOverrodeRef.current.has(String(docId))) return;
+            const detected = await detectSignatureMarkers(blob, [partyToken], (n) => {
+              if (!cancelled) setPageCount(Math.max(1, n));
+            });
+            const found = detected[partyToken];
+            if (cancelled || !found) return;
+            setSettings(prev => ({
+              ...prev,
+              [docId]: { ...DEFAULTS, ...prev[docId], ...found },
+            }));
+          }
         } catch {
           // Detection failed (e.g., corrupted PDF, worker init issue).
           // Silently keep the previous defaults — the user can still drag.
@@ -771,8 +825,13 @@ export default function SalesCustomerSendForSignatureModal({
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     // First drag on this doc disables placeholder-detection auto-snap so
-    // we don't fight the user's intent on the next preview load.
-    userOverrodeRef.current.add(activeDocId);
+    // we don't fight the user's intent on the next preview load. Agreement
+    // mode keys per-role so dragging the buyer overlay doesn't freeze
+    // the consignee's auto-detect (and vice versa).
+    const overrideKey = isAgreement && activeSignerRole
+      ? `${activeDocId}:${activeSignerRole}`
+      : String(activeDocId);
+    userOverrodeRef.current.add(overrideKey);
     dragStateRef.current = {
       mode,
       startX: e.clientX, startY: e.clientY,
@@ -1539,27 +1598,38 @@ const SSF_EDIT_CSS = `
 [data-bs-theme="dark"] .ssf-edit-body   { color: var(--vz-body-color); }
 `;
 
+type SigMarkerParty = 'customer' | 'consignee' | 'supplier';
+
 /**
- * Find the controller-embedded «CBC-SIG-{PARTY}-9417» marker in the
- * preview PDF and convert its position into Zoho-style (top-left origin,
- * page 0-based) coordinates that we can drop straight into DocSettings.
+ * Find every controller-embedded «CBC-SIG-{PARTY}-9417» marker in the
+ * preview PDF (one per signer party) and convert each position into
+ * Zoho-style (top-left origin, page 0-based) coordinates that drop
+ * straight into DocSettings.
  *
  * PDF.js exposes text items with a `transform` matrix; the last two
  * entries are the baseline (x, y) in PDF user-space (bottom-left origin),
- * so we mirror Y to match Zoho's top-left convention. The token may
+ * so we mirror Y to match Zoho's top-left convention. A marker may
  * appear split across multiple text items (DomPDF sometimes breaks runs
  * at style boundaries) — we therefore concatenate items in reading
  * order and search the joined string, then trace the match back to the
  * item that anchors its start.
  *
- * Returns null when the marker can't be found on any page; callers fall
- * back to the hard-coded DEFAULTS in that case.
+ * Multi-party version: agreement drafts can carry BOTH `{{buyer.signature}}`
+ * and `{{consignee.signature}}` placeholders on the same PDF. We do one
+ * pass per page and check every requested party's marker, so the
+ * draggable overlay for each signer role can open at the draft's
+ * placeholder rather than a hardcoded fallback slot. Returns a partial
+ * map — only parties whose marker was actually found get an entry; the
+ * rest fall back to SIGNER_DEFAULTS / DEFAULTS at the caller.
  */
-async function detectSignatureMarker(
+async function detectSignatureMarkers(
   blob: Blob,
-  party: 'customer' | 'consignee' | 'supplier',
+  parties: SigMarkerParty[],
   onPageCount?: (n: number) => void,
-): Promise<Partial<DocSettings> | null> {
+): Promise<Partial<Record<SigMarkerParty, Partial<DocSettings>>>> {
+  const result: Partial<Record<SigMarkerParty, Partial<DocSettings>>> = {};
+  if (parties.length === 0) return result;
+
   const buffer = await blob.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   onPageCount?.(pdf.numPages);
@@ -1584,6 +1654,10 @@ async function detectSignatureMarker(
 
   try {
     for (let pageIdx = 1; pageIdx <= pdf.numPages; pageIdx++) {
+      // Short-circuit once every requested party is located.
+      const remaining = parties.filter(p => !(p in result));
+      if (remaining.length === 0) break;
+
       const page = await pdf.getPage(pageIdx);
       const viewport = page.getViewport({ scale: 1 });
       const pageHeight = viewport.height;
@@ -1599,36 +1673,38 @@ async function detectSignatureMarker(
         for (let i = 0; i < it.str.length; i++) charToItem.push(idx);
       });
 
-      const re = new RegExp(`«CBC-SIG-${party.toUpperCase()}-9417»`, 'i');
-      const m = re.exec(joined);
-      if (!m || m.index == null) continue;
+      for (const party of remaining) {
+        const re = new RegExp(`«CBC-SIG-${party.toUpperCase()}-9417»`, 'i');
+        const m = re.exec(joined);
+        if (!m || m.index == null) continue;
 
-      const hitItem = items[charToItem[m.index]];
-      if (!hitItem) continue;
+        const hitItem = items[charToItem[m.index]];
+        if (!hitItem) continue;
 
-      // transform = [a, b, c, d, e, f] where (e, f) is the baseline
-      // origin in PDF user-space (bottom-left origin).
-      const xBaseline = hitItem.transform[4];
-      const yBaseline = hitItem.transform[5];
+        // transform = [a, b, c, d, e, f] where (e, f) is the baseline
+        // origin in PDF user-space (bottom-left origin).
+        const xBaseline = hitItem.transform[4];
+        const yBaseline = hitItem.transform[5];
 
-      // PDF.js → Zoho (top-left origin):
-      //   baseline-from-top = pageHeight − baselineInPdfCoords
-      //   box-top-from-top   = baseline-from-top − BASELINE_TO_BOX_TOP_PT
-      const baselineFromTop = pageHeight - yBaseline;
-      const yZoho           = Math.max(0, baselineFromTop - BASELINE_TO_BOX_TOP_PT);
+        // PDF.js → Zoho (top-left origin):
+        //   baseline-from-top = pageHeight − baselineInPdfCoords
+        //   box-top-from-top   = baseline-from-top − BASELINE_TO_BOX_TOP_PT
+        const baselineFromTop = pageHeight - yBaseline;
+        const yZoho           = Math.max(0, baselineFromTop - BASELINE_TO_BOX_TOP_PT);
 
-      return {
-        page:   pageIdx - 1,
-        x:      Math.max(0, xBaseline),
-        y:      yZoho,
-        width:  BOX_WIDTH_PT,
-        height: BOX_HEIGHT_PT,
-      };
+        result[party] = {
+          page:   pageIdx - 1,
+          x:      Math.max(0, xBaseline),
+          y:      yZoho,
+          width:  BOX_WIDTH_PT,
+          height: BOX_HEIGHT_PT,
+        };
+      }
     }
   } finally {
     pdf.destroy();
   }
-  return null;
+  return result;
 }
 
 const SSF_CSS = `

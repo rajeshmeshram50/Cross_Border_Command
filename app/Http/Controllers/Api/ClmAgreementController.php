@@ -314,12 +314,16 @@ class ClmAgreementController extends Controller
                     $signedPaths = is_array($req->signed_document_paths) ? $req->signed_document_paths : [];
                     $first = $signedPaths[0] ?? [];
                     $sigOut = [
-                        'id'              => $req->id,
-                        'status'          => $req->status,
-                        'sent_at'         => optional($req->created_at)->toIso8601String(),
-                        'completed_at'    => optional($req->completed_at)->toIso8601String(),
-                        'signed_url'      => $first['file_url'] ?? $first['url'] ?? null,
-                        'certificate_url' => $req->certificate_path ? file_url($req->certificate_path) : null,
+                        'id'                    => $req->id,
+                        'status'                => $req->status,
+                        'sent_at'               => optional($req->created_at)->toIso8601String(),
+                        'completed_at'          => optional($req->completed_at)->toIso8601String(),
+                        'signed_url'            => $first['file_url'] ?? $first['url'] ?? null,
+                        'certificate_url'       => $req->certificate_path ? file_url($req->certificate_path) : null,
+                        // Reminder counter + last-sent timestamp drive
+                        // the "Sent N times" badge on the Remind button.
+                        'reminder_count'        => (int) ($req->reminder_count ?? 0),
+                        'last_reminder_sent_at' => optional($req->last_reminder_sent_at)->toIso8601String(),
                     ];
                 }
                 return [

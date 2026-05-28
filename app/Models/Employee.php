@@ -38,7 +38,7 @@ class Employee extends Model
         'department_id', 'designation_id',
         'primary_role_id', 'ancillary_role_id', 'ancillary_role_ids',
         'work_type',
-        'reporting_manager_id', 'date_of_joining',
+        'reporting_manager_id', 'reporting_manager_user_id', 'date_of_joining',
 
         'probation_policy', 'probation_months',
         'notice_period', 'notice_period_days',
@@ -320,5 +320,16 @@ class Employee extends Model
     public function reportingManager(): BelongsTo
     {
         return $this->belongsTo(self::class, 'reporting_manager_id');
+    }
+
+    /**
+     * Manager → a login User (Client/Branch user who hasn't been
+     * onboarded as an Employee row). Only ONE of `reporting_manager_id`
+     * or `reporting_manager_user_id` is populated per employee — the
+     * controller picks which based on the picker's `kind`.
+     */
+    public function reportingManagerUser(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\User::class, 'reporting_manager_user_id');
     }
 }

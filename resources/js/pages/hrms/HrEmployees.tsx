@@ -206,6 +206,7 @@ interface ApiEmployee {
   ancillary_role_ids?: number[] | null;
   ancillary_roles_resolved?: { id: number; name: string }[];
   reporting_manager_id: number | null;
+  reporting_manager_user_id?: number | null;
   legal_entity_id: number | null;
   location: string | null;
   user_id: number | null;
@@ -219,6 +220,7 @@ interface ApiEmployee {
   primary_role?: { id: number; name: string } | null;
   ancillary_role?: { id: number; name: string } | null;
   reporting_manager?: { id: number; display_name?: string | null; emp_code?: string | null; first_name?: string | null; last_name?: string | null } | null;
+  reporting_manager_user?: { id: number; name?: string | null; email?: string | null; user_type?: string | null; designation?: string | null } | null;
   legal_entity?: { id: number; entity_name?: string; city?: string | null } | null;
   work_country?: { id: number; name: string } | null;
   nationality_country?: { id: number; name: string } | null;
@@ -286,10 +288,14 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
     ancillaryRoles: (e.ancillary_roles_resolved && e.ancillary_roles_resolved.length > 0)
       ? e.ancillary_roles_resolved.map(r => r.name)
       : (e.ancillary_role?.name ? [e.ancillary_role.name] : []),
+    /* Manager column — prefer the Employee-side relation (canonical),
+     * fall back to the User-side relation when the picker stored a
+     * login User (Client/Branch admin) instead of an Employee row. */
     manager: e.reporting_manager?.display_name
       || (e.reporting_manager
           ? [e.reporting_manager.first_name, e.reporting_manager.last_name].filter(Boolean).join(' ').trim()
           : '')
+      || e.reporting_manager_user?.name
       || '—',
     // Profile % is weighted so the Add Employee wizard (Stage 1 — Basic,
     // Job, Work, Compensation) counts for 40% of the bar; the five remaining
@@ -1231,8 +1237,8 @@ export default function HrEmployees() {
       toast.error('Save the employee first', `Add the basic details, then come back to upload ${docName}.`);
       return;
     }
-    if (file.size > 8 * 1024 * 1024) {
-      toast.error('File too large', `${docName} must be ≤ 8 MB`);
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('File too large', `${docName} must be ≤ 2 MB`);
       return;
     }
     setEDocBusy(p => ({ ...p, [docKey]: true }));
@@ -1350,7 +1356,21 @@ export default function HrEmployees() {
       setEWorkType(raw.work_type || '');
       setELegalEntity(raw.legal_entity_id ? String(raw.legal_entity_id) : '');
       setELocation(raw.location || '');
-      setEReportingMgr(raw.reporting_manager_id ? `employee:${raw.reporting_manager_id}` : '');
+      /* Hydrate the manager picker. Two columns can hold the manager:
+       *   - reporting_manager_id      → an Employee row (kind 'employee')
+       *   - reporting_manager_user_id → a login User (kind === user_type)
+       * The picker value is "kind:id"; rebuild it from whichever side the
+       * backend saved. The reporting_manager_user relation carries the
+       * user_type so we know which kind prefix to use. */
+      const mgrUserId   = raw.reporting_manager_user_id;
+      const mgrUserType = raw.reporting_manager_user?.user_type;
+      if (raw.reporting_manager_id) {
+        setEReportingMgr(`employee:${raw.reporting_manager_id}`);
+      } else if (mgrUserId && mgrUserType) {
+        setEReportingMgr(`${mgrUserType}:${mgrUserId}`);
+      } else {
+        setEReportingMgr('');
+      }
       // Edit hydration — show whatever the admin actually saved. Earlier
       // code special-cased the old "Default Probation Policy" / "Default
       // Notice Period" placeholder strings and cleared them, but that
@@ -1665,10 +1685,25 @@ export default function HrEmployees() {
       work_type: eWorkType || null,
       legal_entity_id: intOrNull(eLegalEntity),
       location:        eLocation || null,
+      /* The picker stores "kind:id" where kind is either 'employee'
+       * (an existing Employee row) or one of 'client_admin' /
+       * 'client_user' / 'branch_user' (a login User who hasn't been
+       * onboarded as an Employee yet). The backend has two columns —
+       * reporting_manager_id (FK → employees) and
+       * reporting_manager_user_id (FK → users) — only one of which is
+       * populated per record. Send the right one and explicit-null the
+       * other so a re-assignment from User → Employee (or back) wipes
+       * the previous side. */
       reporting_manager_id: (() => {
         if (!eReportingMgr) return null;
         const [kind, idStr] = String(eReportingMgr).split(':');
         if (kind !== 'employee') return null;
+        return intOrNull(idStr);
+      })(),
+      reporting_manager_user_id: (() => {
+        if (!eReportingMgr) return null;
+        const [kind, idStr] = String(eReportingMgr).split(':');
+        if (kind === 'employee') return null;
         return intOrNull(idStr);
       })(),
       date_of_joining: eJoinDate || null,
@@ -2094,11 +2129,100 @@ export default function HrEmployees() {
     // looked empty on first load and only populated after a tab switch.
   }, [q, tab, deptFilter, statusFilter, apiRows]);
 
+  /* Client-side pagination — 5 rows per page (matches the Customers /
+   * Consignees lists). Reset to page 1 whenever any of the filters or
+   * the source data change so the user never lands on an empty page
+   * past the new last page. */
+  const ROWS_PER_PAGE = 5;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
+  useEffect(() => { setPage(1); }, [q, tab, deptFilter, statusFilter, apiRows]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
+
   return (
     <>
       <style>{`
         .hr-employees-surface { background: #ffffff; }
         [data-bs-theme="dark"] .hr-employees-surface { background: #1c2531; }
+
+        /* Onboarding Link button — light mode: clean white pill with a
+           purple outline + text so it pairs with the Add Employee CTA.
+           Dark mode: tinted-glass purple surface with a light lavender
+           text + glow so it doesn't look like a stark white sticker on
+           the dark canvas (was using #fff + var(--vz-secondary), which
+           resolves to red in dark mode and clashed with the page). */
+        .hr-emp-onboard-btn.btn {
+          background: #ffffff;
+          color: #6d28d9;
+          border: 1px solid #d8ccff;
+          font-weight: 700;
+          transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .25s ease, transform .15s ease;
+        }
+        .hr-emp-onboard-btn.btn:hover,
+        .hr-emp-onboard-btn.btn:focus {
+          background: #f5f1ff;
+          border-color: #c4b5fd;
+          color: #5b21b6;
+          box-shadow: 0 4px 12px rgba(124,58,237,.22);
+          transform: translateY(-1px);
+        }
+        [data-bs-theme="dark"] .hr-emp-onboard-btn.btn {
+          background: rgba(124,58,237,0.18);
+          color: #ddd6fe;
+          border: 1px solid rgba(167,139,250,0.45);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+        [data-bs-theme="dark"] .hr-emp-onboard-btn.btn:hover,
+        [data-bs-theme="dark"] .hr-emp-onboard-btn.btn:focus {
+          background: rgba(124,58,237,0.32);
+          border-color: #a78bfa;
+          color: #f5f3ff;
+          box-shadow: 0 6px 18px rgba(124,58,237,0.45);
+        }
+        .hr-emp-onboard-btn.btn i { color: inherit; }
+
+        /* Pagination — same purple aesthetic as the Customers /
+           Consignees footers. Uniform 32×32 boxes so the row reads as
+           one tidy strip. */
+        .hr-emp-pag { display: inline-flex; align-items: center; gap: 4px; }
+        .hr-emp-pag-btn {
+          height: 32px; min-width: 32px; padding: 0;
+          border-radius: 8px;
+          border: 1px solid #e0d9f7;
+          background: #fff;
+          color: #6d28d9;
+          font-size: 12.5px; font-weight: 700;
+          font-family: inherit;
+          display: inline-flex; align-items: center; justify-content: center;
+          cursor: pointer;
+          transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .22s ease;
+        }
+        .hr-emp-pag-btn:hover:not(:disabled):not(.is-active) {
+          background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6;
+        }
+        .hr-emp-pag-btn.is-active {
+          background: linear-gradient(135deg, #7c3aed, #6d28d9);
+          border-color: #7c3aed; color: #fff;
+          box-shadow: 0 2px 6px rgba(109,40,217,.30);
+          cursor: default;
+        }
+        .hr-emp-pag-btn:disabled { opacity: .4; cursor: not-allowed; }
+        [data-bs-theme="dark"] .hr-emp-pag-btn {
+          background: rgba(255,255,255,0.04);
+          border-color: rgba(167,139,250,0.30);
+          color: #c4b5fd;
+        }
+        [data-bs-theme="dark"] .hr-emp-pag-btn:hover:not(:disabled):not(.is-active) {
+          background: rgba(124,58,237,0.20);
+          border-color: rgba(167,139,250,0.50);
+          color: #ede9fe;
+        }
+        [data-bs-theme="dark"] .hr-emp-pag-btn.is-active {
+          background: linear-gradient(135deg, #6d28d9, #4c1d95);
+          border-color: #7c3aed; color: #fff;
+          box-shadow: 0 2px 8px rgba(124,58,237,.45);
+        }
 
         /* Unify table typography — every cell + header reads at the same
            13px size so the table looks like a single grid (matches the
@@ -2490,13 +2614,7 @@ export default function HrEmployees() {
               <div className="d-flex align-items-center gap-2 flex-wrap">
                 <Button
                   onClick={() => setOnboardOpen(true)}
-                  className="rounded-pill px-3"
-                  style={{
-                    background: '#fff',
-                    color: 'var(--vz-secondary)',
-                    border: '1px solid var(--vz-secondary)',
-                    fontWeight: 600,
-                  }}
+                  className="rounded-pill px-3 hr-emp-onboard-btn"
                 >
                   <i className="ri-user-add-line align-bottom me-1"></i>Onboarding Link
                 </Button>
@@ -2741,7 +2859,7 @@ export default function HrEmployees() {
                             No employees match your filters
                           </td>
                         </tr>
-                      ) : filtered.map((e, idx) => {
+                      ) : pageRows.map((e, idx) => {
                         const primary = tone(e.primaryRole);
                         return (
                           <tr
@@ -2754,7 +2872,7 @@ export default function HrEmployees() {
                             onClick={() => navigate(`/hr/employees/${encodeURIComponent(e.encryptedId || e.id)}/profile`, { state: { employee: e } })}
                             style={{ cursor: 'pointer' }}
                           >
-                            <td className="ps-3 text-center fs-13 hr-emp-srno">{idx + 1}</td>
+                            <td className="ps-3 text-center fs-13 hr-emp-srno">{(page - 1) * ROWS_PER_PAGE + idx + 1}</td>
                             <td>
                               <div className="d-flex align-items-center gap-2">
                                 {e.photoUrl ? (
@@ -2981,10 +3099,62 @@ export default function HrEmployees() {
                   </table>
                 </div>
 
-                {/* Footer count — matches the rhythm of the Clients table */}
-                <div className="d-flex align-items-center justify-content-between mt-3 pt-2 border-top">
-                  <div className="text-muted" style={{ fontSize: 12 }}>
-                    Showing <span className="fw-bold text-body">{filtered.length}</span> of <span className="fw-bold text-body">{apiRows.filter(e => tab === 'active' ? e.enabled : !e.enabled).length}</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees
+                {/* Footer count + pagination — matches the rhythm of the
+                    Customers / Consignees lists. The "Showing X–Y of N"
+                    range moves with the page; the pagination strip is
+                    always visible (chevrons go disabled when there's
+                    only one page) so the affordance never disappears
+                    on lists with few rows. */}
+                <div className="d-flex align-items-center justify-content-between mt-3 pt-2 border-top flex-wrap gap-2">
+                  {/* Wrap the "Showing …" text in a flex row that's the
+                      same height as the pagination buttons (32px) so its
+                      baseline lines up exactly with the right-side
+                      buttons. Without min-height, the small 12px text
+                      box was shorter than the button strip and got
+                      visually centred at a different y than the buttons,
+                      making the left edge of the footer look like it
+                      was "sinking" below the right. */}
+                  <div
+                    className="text-muted d-inline-flex align-items-center"
+                    style={{ fontSize: 12, minHeight: 32, lineHeight: 1 }}
+                  >
+                    {filtered.length === 0 ? (
+                      <span>Showing <span className="fw-bold text-body">0</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees</span>
+                    ) : (
+                      <span>
+                        Showing <span className="fw-bold text-body">{(page - 1) * ROWS_PER_PAGE + 1}</span>–<span className="fw-bold text-body">{Math.min(page * ROWS_PER_PAGE, filtered.length)}</span> of <span className="fw-bold text-body">{filtered.length}</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees
+                      </span>
+                    )}
+                  </div>
+                  <div className="hr-emp-pag">
+                    <button
+                      type="button"
+                      className="hr-emp-pag-btn"
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      aria-label="Previous page"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    {Array.from({ length: totalPages }, (_, n) => n + 1).map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        className={`hr-emp-pag-btn ${n === page ? 'is-active' : ''}`}
+                        onClick={() => setPage(n)}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="hr-emp-pag-btn"
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
+                      aria-label="Next page"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
                   </div>
                 </div>
               </CardBody>

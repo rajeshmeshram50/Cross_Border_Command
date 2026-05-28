@@ -423,6 +423,7 @@ function ProfileRouter() {
           ancillaryRole: e.ancillary_role?.name,
           manager: e.reporting_manager?.display_name
             || [e.reporting_manager?.first_name, e.reporting_manager?.last_name].filter(Boolean).join(' ').trim()
+            || e.reporting_manager_user?.name
             || undefined,
           // Passport-size photo from onboarding (employee_documents,
           // document_key='photo'). Read by EmployeeProfile's hero avatar.

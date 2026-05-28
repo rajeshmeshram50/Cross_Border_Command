@@ -64,6 +64,7 @@ export interface ApiPlanEmployee {
     last_name: string;
     display_name: string | null;
   } | null;
+  reporting_manager_user?: { id: number; name?: string | null; user_type?: string | null } | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

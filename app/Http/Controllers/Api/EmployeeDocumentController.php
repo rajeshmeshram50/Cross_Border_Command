@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Storage;
 class EmployeeDocumentController extends Controller
 {
     /** Per-document upload size cap (MB). Catalogue can override later. */
-    private const MAX_MB = 8;
+    private const MAX_MB = 2;
     // Canonical MIME list. Variants below cover platform quirks:
     //   - image/x-png: legacy / IE-era PNG MIME some Windows servers
     //     still emit via mime_content_type().

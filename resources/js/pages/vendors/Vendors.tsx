@@ -638,7 +638,7 @@ useEffect(() => {
             </div>
 
             {/* Status pills + search row */}
-            <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+            <div className="d-flex align-items-center flex-wrap gap-2 mb-3">
               <div className="v-status-tabs">
                 <button className={`v-status-tab ${statusTab === 'Active' ? 'on' : ''}`} onClick={() => setStatusTab('Active')}>
                   <span className="v-status-dot is-active" /> Active
@@ -649,7 +649,7 @@ useEffect(() => {
                   <span className="v-status-count">{stats.inactive}</span>
                 </button>
               </div>
-              <div className="search-box" style={{ maxWidth: 320, width: '100%' }}>
+              <div className="search-box" style={{ width: 360 }}>
                 <input
                   type="text"
                   className="form-control"

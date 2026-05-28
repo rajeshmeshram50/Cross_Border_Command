@@ -32,6 +32,34 @@ export type SegmentForm = {
   status: SegStatus;
 };
 
+export type SaveResult = { ok: true } | { ok: false; fieldErrors?: Record<string, string> };
+
+/**
+ * Mirrors the backend allocator in ClmSegmentController::nextCode — walks
+ * past max(existing S-### suffix) + 1, skipping any taken codes. Naive
+ * `rows.length + 1` previews drift whenever the sequence has gaps (after
+ * deletes or after the consolidate-segments migration merged legacy rows).
+ */
+export function nextSegmentCode(rows: { code: string }[]): string {
+  let maxN = 0;
+  const taken = new Set<string>();
+  for (const r of rows) {
+    const m = /^S-(\d+)$/.exec(r.code ?? '');
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > maxN) maxN = n;
+    }
+    if (r.code) taken.add(r.code);
+  }
+  let n = maxN;
+  let code: string;
+  do {
+    n++;
+    code = `S-${String(n).padStart(3, '0')}`;
+  } while (taken.has(code));
+  return code;
+}
+
 export default function ClmSegmentPage() {
   const toast = useToast();
 
@@ -63,15 +91,27 @@ export default function ClmSegmentPage() {
   }, [rows, tab, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page);
 
-  const onSave = async (form: SegmentForm, id?: number) => {
+  const onSave = async (form: SegmentForm, id?: number): Promise<SaveResult> => {
     try {
       if (id) { await api.put(`/clm/segments/${id}`, form); toast.success('Updated', `${form.name} saved`); }
       else    { await api.post('/clm/segments', form);     toast.success('Added',   `${form.name} added`); }
       setModalOpen(false); setEditing(null); reload();
+      return { ok: true };
     } catch (e: any) {
+      const status = e?.response?.status as number | undefined;
       const err = e?.response?.data?.errors as Record<string, string[]> | undefined;
       const first = err ? Object.values(err)[0]?.[0] : undefined;
-      toast.error('Save failed', first ?? e?.response?.data?.message ?? 'Could not save');
+      const message = first ?? e?.response?.data?.message ?? 'Could not save';
+      toast.error('Save failed', message);
+      // Surface duplicate-name conflict back to the modal so it can highlight
+      // the Name field inline instead of relying on the transient toast.
+      if (status === 409 && /already exists/i.test(message)) {
+        return { ok: false, fieldErrors: { name: message } };
+      }
+      if (err?.name?.[0]) {
+        return { ok: false, fieldErrors: { name: err.name[0] } };
+      }
+      return { ok: false };
     }
   };
   const onDelete = async () => {
@@ -209,7 +249,10 @@ export default function ClmSegmentPage() {
       {modalOpen && (
         <SegmentModal
           existing={editing}
-          nextCode={`S-${String(rows.length + 1).padStart(3, '0')}`}
+          nextCode={nextSegmentCode(rows)}
+          existingNames={rows
+            .filter(r => r.id !== editing?.id)
+            .map(r => r.name)}
           onClose={() => { setModalOpen(false); setEditing(null); }}
           onSave={(form) => onSave(form, editing?.id)}
         />
@@ -227,8 +270,8 @@ export default function ClmSegmentPage() {
   );
 }
 
-export function SegmentModal(props: { existing: Segment | null; nextCode: string; onClose: () => void; onSave: (f: SegmentForm) => void; }) {
-  const { existing, nextCode, onClose, onSave } = props;
+export function SegmentModal(props: { existing: Segment | null; nextCode: string; existingNames?: string[]; onClose: () => void; onSave: (f: SegmentForm) => SaveResult | Promise<SaveResult> | void | Promise<void>; }) {
+  const { existing, nextCode, existingNames = [], onClose, onSave } = props;
   const isEdit = !!existing;
 
   const [name, setName]     = useState(existing?.name ?? '');
@@ -241,20 +284,30 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
+    const trimmed = name.trim();
     const next: Record<string, string> = {};
-    if (!name.trim()) next.name = 'Name is required';
-    if (!reg)         next.reg  = 'Regulatory status is required';
-    if (!bc)          next.bc   = 'Buyer / Consignee rule is required';
+    if (!trimmed) next.name = 'Name is required';
+    else {
+      const lower = trimmed.toLowerCase();
+      if (existingNames.some(n => n.trim().toLowerCase() === lower)) {
+        next.name = `A segment named "${trimmed}" already exists. Pick a different name.`;
+      }
+    }
+    if (!reg) next.reg = 'Regulatory status is required';
+    if (!bc)  next.bc  = 'Buyer / Consignee rule is required';
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
     try {
-      await Promise.resolve(onSave({
-        name: name.trim(),
+      const result = await Promise.resolve(onSave({
+        name: trimmed,
         regulatory_status: reg as Reg,
         buyer_consignee: bc as BC,
         status,
       }));
+      if (result && result.ok === false && result.fieldErrors) {
+        setErrors(prev => ({ ...prev, ...result.fieldErrors }));
+      }
     } finally { setSaving(false); }
   };
 
@@ -289,7 +342,32 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
           <div className="clm-field">
             <label className="clm-field-label">Segment Name <span className="clm-req">*</span></label>
             <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. Tobacco, Rice, Food Grade Ethanol" value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
-            {errors.name && <div className="clm-err">{errors.name}</div>}
+            {errors.name && (
+              /already exists/i.test(errors.name) ? (
+                <div role="alert" style={{
+                  marginTop: 6,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  color: '#b91c1c',
+                  fontSize: 12,
+                  lineHeight: 1.4,
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  <span><strong>Duplicate segment.</strong> {errors.name}</span>
+                </div>
+              ) : (
+                <div className="clm-err">{errors.name}</div>
+              )
+            )}
           </div>
 
           <div className="clm-field">

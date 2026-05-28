@@ -443,7 +443,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    * `sync=true` so the backend pulls each inprogress row from Zoho on the
    * same request — that's how completed signings, declines and recalls
    * appear in the table without the user having to reload. */
-  type SigInfo = { status: TdSigStatus; signatureRequestId: number; signedUrl?: string; certificateUrl?: string };
+  type SigInfo = { status: TdSigStatus; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null };
   const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, SigInfo>>({});
 
   useEffect(() => {
@@ -468,6 +468,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           certificate_path?: string | null;
           certificate_url?: string | null;
           file_url?: string | null;
+          reminder_count?: number;
+          last_reminder_sent_at?: string | null;
         }> = Array.isArray(r.data?.data) ? r.data.data : [];
 
         // Latest request wins when a single doc has been resent. The list
@@ -520,6 +522,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               signatureRequestId: row.id,
               signedUrl:      rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
               certificateUrl: rawCertUrl   ? resolveFileUrl(rawCertUrl)   : undefined,
+              reminderCount:  typeof row.reminder_count === 'number' ? row.reminder_count : undefined,
+              lastReminderAt: row.last_reminder_sent_at ?? null,
             };
           }
         }
@@ -550,6 +554,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         signature_request_id: info.signatureRequestId,
         signed_url:      info.signedUrl      ?? d.signed_url,
         certificate_url: info.certificateUrl ?? d.certificate_url,
+        reminder_count:        info.reminderCount  ?? d.reminder_count        ?? 0,
+        last_reminder_sent_at: info.lastReminderAt ?? d.last_reminder_sent_at ?? null,
       };
     }));
   }, [sigStatusByDoc]);
@@ -1714,13 +1720,27 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                   }
                   const bundleCount = tdDocs.filter(d => d.signature_request_id === reqId).length;
                   api.post(`/clm/signature-requests/${reqId}/remind`)
-                    .then(() => {
+                    .then((res) => {
                       setRecentReminds(prev => ({ ...prev, [reqId]: Date.now() + 60_000 }));
                       toast.success('Reminder sent',
                         bundleCount > 1
                           ? `The signer was notified about all ${bundleCount} documents in this signature request.`
                           : 'The signer has been notified.',
                       );
+                      // Bump the "× N" badge on every row in this bundle
+                      // immediately (server is source of truth — its
+                      // returned count overrides the optimistic +1).
+                      const serverCount = Number(res?.data?.data?.reminder_count ?? NaN);
+                      const serverLastAt = (res?.data?.data?.last_reminder_sent_at ?? null) as string | null;
+                      setTdDocs(prev => prev.map(d => (
+                        d.signature_request_id === reqId
+                          ? {
+                              ...d,
+                              reminder_count: Number.isFinite(serverCount) ? serverCount : (d.reminder_count ?? 0) + 1,
+                              last_reminder_sent_at: serverLastAt ?? new Date().toISOString(),
+                            }
+                          : d
+                      )));
                     })
                     .catch(err => toast.error('Reminder failed', err?.response?.data?.message ?? 'Could not send the reminder. Try again later.'));
                   return;
@@ -2929,6 +2949,13 @@ type TdDocRow = {
    * cooldown. The button disables to stop a multi-doc bundle from
    * firing one reminder per doc. */
   cooldownActive?: boolean;
+  /* Reminder counter + last-sent timestamp from the matching
+   * clm_signature_requests row. Drives the "× N" badge that appears
+   * inside the Resend button once at least one reminder has been
+   * dispatched. Polled live on the 15s tick + bumped optimistically
+   * the moment the user clicks Resend. */
+  reminder_count?: number;
+  last_reminder_sent_at?: string | null;
 };
 
 const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: string }> = {
@@ -2991,21 +3018,32 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                         <div className="acm-td-cell-check">
                           <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} disabled={isSigned} />
                           {d.sent ? (
-                            <button
-                              type="button"
-                              className="acm-btn-resend"
-                              onClick={() => { if (!resendLocked) onSend(d.id); }}
-                              disabled={resendLocked}
-                              title={
-                                isSigned   ? 'This document has already been signed.'
+                            (() => {
+                              const remCount = d.reminder_count ?? 0;
+                              const lastAt   = d.last_reminder_sent_at;
+                              const baseTitle = isSigned   ? 'This document has already been signed.'
                                 : onCooldown ? 'Reminder just sent — one reminder covers every document in this bundle.'
-                                : 'Resend for signature'
-                              }
-                              style={resendLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                            >
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
-                              {onCooldown ? 'Sent ✓' : 'Resend'}
-                            </button>
+                                : 'Resend for signature';
+                              const titleWithCount = remCount > 0
+                                ? `${baseTitle} · Reminders sent: ${remCount}${lastAt ? ` (last: ${new Date(lastAt).toLocaleString()})` : ''}`
+                                : baseTitle;
+                              return (
+                                <button
+                                  type="button"
+                                  className="acm-btn-resend"
+                                  onClick={() => { if (!resendLocked) onSend(d.id); }}
+                                  disabled={resendLocked}
+                                  title={titleWithCount}
+                                  style={resendLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+                                  {onCooldown ? 'Sent ✓' : 'Resend'}
+                                  {remCount > 0 && (
+                                    <span className="acm-remind-count" aria-label={`Reminder sent ${remCount} times`}>× {remCount}</span>
+                                  )}
+                                </button>
+                              );
+                            })()
                           ) : (
                             <button type="button" className="acm-btn-send" onClick={() => onSend(d.id)}>
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -4858,6 +4896,13 @@ const SCOPED_CSS = `
 .acm-td-cell-check { display: flex; align-items: center; gap: 10px; }
 .acm-td-cell-check > input[type="checkbox"] { width: 15px; height: 15px; accent-color: #7c3aed; cursor: pointer; margin: 0; }
 .acm-btn-resend { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 20px; border: 1.5px solid #7c3aed; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+/* Reminder-count badge embedded in the Resend pill. White-on-violet so
+   it reads against the existing button gradient without competing for
+   attention with the icon + label. */
+.acm-remind-count { display: inline-flex; align-items: center; justify-content: center;
+  margin-left: 2px; min-width: 18px; padding: 0 5px; height: 16px;
+  border-radius: 999px; background: rgba(255,255,255,.22); color: #fff;
+  font-family: 'Geist Mono', ui-monospace, monospace; font-size: 9.5px; font-weight: 800; letter-spacing: .02em; line-height: 1; }
 .acm-btn-send { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 20px; border: 1.5px solid #7c3aed; background: #fff; color: #6d28d9; font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .acm-btn-send:hover { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; }
 .acm-td-actions { display: flex; justify-content: center; align-items: center; gap: 14px; padding: 16px; border-top: 1px solid #ede9fe; background: linear-gradient(180deg, #faf7ff, #f5efff); flex-wrap: wrap; }
