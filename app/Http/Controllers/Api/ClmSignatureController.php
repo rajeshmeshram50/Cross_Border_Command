@@ -873,6 +873,19 @@ class ClmSignatureController extends Controller
 
         if ($filterPartyId)   $q->where('party_id', $filterPartyId);
         if ($filterModelName) $q->where('model_name', $filterModelName);
+        // Doc-type scoping — the trade-doc and agreement Send flows share
+        // this index but ALWAYS want to see rows of their own doc type.
+        // Without the filter, the LeadAgreementSendModal poller would
+        // pick up trade-doc requests for the same party and try to
+        // project them onto agreement rows that happen to share numeric
+        // IDs. `lead_id` is also accepted so the agreement poller can
+        // scope strictly to the opportunity it's watching.
+        if ($request->filled('document_type')) {
+            $q->where('document_type', (string) $request->document_type);
+        }
+        if ($request->filled('lead_id')) {
+            $q->where('lead_id', (int) $request->lead_id);
+        }
         if ($request->filled('status')) {
             $statuses = is_array($request->status) ? $request->status : [$request->status];
             $q->whereIn('status', $statuses);
@@ -1053,7 +1066,18 @@ class ClmSignatureController extends Controller
             $row->reminder_count        = (int) $row->reminder_count + 1;
             $row->save();
 
-            return response()->json(['status' => true, 'message' => 'Reminder sent', 'data' => $resp]);
+            // Echo the updated counter + timestamp so the frontend can
+            // bump the on-button badge without a full refetch. Customer /
+            // consignee / vendor / agreement flows all read these.
+            return response()->json([
+                'status'  => true,
+                'message' => 'Reminder sent',
+                'data'    => [
+                    'zoho'                  => $resp,
+                    'reminder_count'        => (int) $row->reminder_count,
+                    'last_reminder_sent_at' => optional($row->last_reminder_sent_at)->toIso8601String(),
+                ],
+            ]);
         } catch (\Throwable $e) {
             return response()->json(['status' => false, 'message' => 'Failed to send reminder: ' . $e->getMessage()], 500);
         }
