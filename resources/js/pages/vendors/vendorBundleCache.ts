@@ -17,7 +17,11 @@
  * 5-min TTL as the compromise between freshness and roundtrip savings).
  */
 
-const KEY = 'vendor:master-bundle:v1';
+// v2 bump — discards any pre-tenant-scope cache entries written before
+// MasterVisibility::applyReadScope was added to the server bundle.
+// Without bumping, browsers would keep serving the older potentially-
+// leaky payload until the 5-min TTL expired.
+const KEY = 'vendor:master-bundle:v2';
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 type Envelope<T> = { v: 1; ts: number; data: T };

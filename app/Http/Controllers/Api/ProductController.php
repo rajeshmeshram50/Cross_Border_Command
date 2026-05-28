@@ -661,9 +661,17 @@ class ProductController extends Controller
             // tables but lowercase 'active'/'inactive' on clm_segments, so
             // we compare case-insensitively to handle both shapes without
             // touching the DB.
-            $active = function (string $modelClass, array $cols) {
+            //
+            // Tenant scope — every master here has a `client_id` column, so
+            // we apply MasterVisibility::applyReadScope to match the gate
+            // /master/{slug} uses (MasterController::list). Without this a
+            // client_admin of Client A would see Client B's tenant-scoped
+            // master rows (segments, hsn_codes, etc.). Per-user cache key
+            // is a second line of defence.
+            $active = function (string $modelClass, array $cols) use ($user) {
                 return $modelClass::query()
                     ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->tap(fn ($q) => MasterVisibility::applyReadScope($q, $user))
                     ->orderBy('id')
                     ->get($cols);
             };

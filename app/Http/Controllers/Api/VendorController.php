@@ -784,10 +784,18 @@ class VendorController extends Controller
         $user = $request->user();
         $cacheKey = 'vendor:master-bundle:user:' . ($user?->id ?? 'guest');
 
-        $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () {
-            $active = function (string $modelClass, array $cols) {
+        $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
+            // Tenant scope — apply MasterVisibility::applyReadScope to every
+            // master query, matching the gate /master/{slug} uses for the
+            // canonical endpoint. Without this a client_admin of Client A
+            // would see Client B's tenant-scoped master rows via the bundle.
+            // Per-user cache key is a second line of defence.
+            $scope = fn ($q) => MasterVisibility::applyReadScope($q, $user);
+
+            $active = function (string $modelClass, array $cols) use ($scope) {
                 return $modelClass::query()
                     ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->tap($scope)
                     ->orderBy('id')
                     ->get($cols);
             };
@@ -796,6 +804,7 @@ class VendorController extends Controller
             // cascade off the chosen country without a second round-trip.
             $stateCodes = StateCodes::query()
                 ->whereRaw('LOWER(status) = ?', ['active'])
+                ->tap($scope)
                 ->with('state:id,name,country_id')
                 ->orderBy('id')
                 ->get(['id', 'state_id', 'state_code', 'status']);
