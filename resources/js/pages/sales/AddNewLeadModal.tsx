@@ -524,7 +524,7 @@ const SCOPED_CSS = `
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
 }
 .anl-modal {
-  width: 100%; max-width: 1100px;
+  width: 100%; max-width: 920px;
   margin: auto;
   background: #fff;
   border-radius: 18px;
@@ -585,17 +585,19 @@ const SCOPED_CSS = `
   overflow-y: auto;
 }
 
-/* Existing-customer toggle */
+/* Existing-customer toggle — green border to flag this as the "shortcut"
+   row that pulls saved customer records, distinct from the cyan form
+   below it. */
 .anl-existing-toggle {
   display: flex; align-items: center; gap: 14px;
   padding: 14px 18px;
-  border: 1.5px solid #cffafe;
+  border: 1.5px solid #0e7490 ;
   border-radius: 12px;
-  background: #f0fdfa;
+  background: #f0fdf4;
   cursor: pointer;
   transition: border-color .15s, background .15s;
 }
-.anl-existing-toggle:hover { border-color: #67e8f9; background: #ecfeff; }
+.anl-existing-toggle:hover { border-color: #0e7490 ; background: #ecfdf5; }
 .anl-existing-toggle input[type="checkbox"] {
   width: 18px; height: 18px;
   accent-color: #0891b2;
@@ -666,21 +668,22 @@ const SCOPED_CSS = `
   width: 100%;
 }
 .anl-input {
-  width: 100%; height: 38px;
-  padding: 7px 12px;
-  border: 1px solid #d8e3fa;
+  width: 100%; height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
-  background: #f8fafc;
-  color: #1e1b4b;
-  font-family: inherit; font-size: 13px; font-weight: 400;
+  background: #fff;
+  color: #0f172a;
+  font-family: inherit; font-size: 13px; font-weight: 500;
   outline: none;
   transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
 }
-.anl-input::placeholder { color: #94a3b8; opacity: 0.45; }
+.anl-input::placeholder { color: #94a3b8; opacity: 0.85; font-weight: 400; }
+.anl-input:hover { border-color: #cbd5e1; }
 .anl-input:focus {
   background: #fff;
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+  border-color: #0891b2;
+  box-shadow: 0 0 0 3px rgba(8,145,178,0.15);
 }
 .anl-input:disabled {
   background: #f1f5f9; color: #94a3b8; cursor: not-allowed;
@@ -689,8 +692,9 @@ const SCOPED_CSS = `
 .anl-input-icon {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
   font-size: 15px; color: #94a3b8; pointer-events: none;
+  transition: color .18s ease;
 }
-.anl-input-wrap:focus-within .anl-input-icon { color: #6366f1; }
+.anl-input-wrap:focus-within .anl-input-icon { color: #0891b2; }
 
 /* Select arrow */
 .anl-select { appearance: none; -webkit-appearance: none; padding-right: 32px; cursor: pointer; }
@@ -751,8 +755,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .anl-body  { background: linear-gradient(180deg, #0e2940 0%, #0c1f2e 100%); }
 [data-bs-theme="dark"] .anl-foot  { background: #0e2940; border-top-color: #102a3a; }
 [data-bs-theme="dark"] .anl-input { background: #102a3a; border-color: rgba(34, 211, 238, 0.22); color: #cffafe; }
-[data-bs-theme="dark"] .anl-input:focus { background: #0c1f2e; }
-[data-bs-theme="dark"] .anl-input::placeholder { color: #6b7280; }
+[data-bs-theme="dark"] .anl-input:hover { border-color: rgba(34, 211, 238, 0.40); }
+[data-bs-theme="dark"] .anl-input:focus { background: #0c1f2e; border-color: #06b6d4; box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.20); }
+[data-bs-theme="dark"] .anl-input::placeholder { color: #94a3b8; opacity: 0.7; }
 [data-bs-theme="dark"] .anl-input:disabled { background: #0e2940; color: #6b7280; }
 [data-bs-theme="dark"] .anl-input-icon { color: #6b7280; }
 [data-bs-theme="dark"] .anl-input-wrap:focus-within .anl-input-icon { color: #67e8f9; }
@@ -760,8 +765,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .anl-label { color: #8aa1d9; }
 [data-bs-theme="dark"] .anl-section-label { color: #67e8f9; }
 [data-bs-theme="dark"] .anl-section-icon { background: rgba(8, 145, 178, 0.22); color: #67e8f9; }
-[data-bs-theme="dark"] .anl-existing-toggle { background: #0e2940; border-color: rgba(34, 211, 238, 0.22); }
-[data-bs-theme="dark"] .anl-existing-toggle:hover { background: #13354a; border-color: rgba(34, 211, 238, 0.45); }
+[data-bs-theme="dark"] .anl-existing-toggle { background: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.35); }
+[data-bs-theme="dark"] .anl-existing-toggle:hover { background: rgba(34, 197, 94, 0.14); border-color: rgba(34, 197, 94, 0.55); }
 [data-bs-theme="dark"] .anl-existing-title { color: #67e8f9; }
 [data-bs-theme="dark"] .anl-existing-sub   { color: #94a3b8; }
 [data-bs-theme="dark"] .anl-existing-icon  { background: rgba(8, 145, 178, 0.22); color: #67e8f9; }
