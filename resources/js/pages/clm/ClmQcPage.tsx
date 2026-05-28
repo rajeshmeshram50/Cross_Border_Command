@@ -17,15 +17,12 @@ type Qc = {
   status: 'active'|'inactive';
 };
 type Authority = { id: number; code: string; name: string };
-type Counts = { all: number; cert: number; comp: number };
 
 export default function ClmQcPage() {
   const toast = useToast();
   const [rows, setRows]         = useState<Qc[]>([]);
-  const [counts, setCounts]     = useState<Counts>({ all: 0, cert: 0, comp: 0 });
   const [auths, setAuths]       = useState<Authority[]>([]);
   const [loading, setLoading]   = useState(false);
-  const [tab, setTab]           = useState<'all'|'cert'|'comp'>('all');
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
   const [editing, setEditing]   = useState<Qc | null>(null);
@@ -35,22 +32,21 @@ export default function ClmQcPage() {
   const reload = () => {
     setLoading(true);
     Promise.all([
-      api.get<{ status: boolean; data: Qc[]; counts: Counts }>('/clm/qc-documents'),
+      api.get<{ status: boolean; data: Qc[] }>('/clm/qc-documents'),
       api.get<{ status: boolean; data: Authority[] }>('/clm/authorities'),
-    ]).then(([k, a]) => { setRows(k.data.data ?? []); setCounts(k.data.counts ?? { all: 0, cert: 0, comp: 0 }); setAuths(a.data.data ?? []); })
+    ]).then(([k, a]) => { setRows(k.data.data ?? []); setAuths(a.data.data ?? []); })
       .catch(() => toast.error('Load failed', 'Could not load QC documents'))
       .finally(() => setLoading(false));
   };
   useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
-    const base = tab === 'all' ? rows : rows.filter(r => r.doc_type === tab);
-    if (!search.trim()) return base;
+    if (!search.trim()) return rows;
     const s = search.toLowerCase();
-    return base.filter(r =>
+    return rows.filter(r =>
       r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) ||
       r.purpose.toLowerCase().includes(s) || r.issued_by.toLowerCase().includes(s));
-  }, [rows, tab, search]);
+  }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page);
 
   const onSave = async (form: Omit<Qc, 'id'|'code'|'status'>, id?: number) => {
@@ -96,20 +92,9 @@ export default function ClmQcPage() {
 
       <div className="clm-page-card">
         <div className="clm-tabs-bar">
-          <button className={`clm-tab ${tab === 'all'  ? 'active' : ''}`} onClick={() => { setTab('all');  setPage(1); }}>
-            All <span className="clm-tab-count">{counts.all}</span>
-          </button>
-          <button className={`clm-tab ${tab === 'cert' ? 'active' : ''}`} onClick={() => { setTab('cert'); setPage(1); }}>
-            <span className="clm-tab-dot" style={{ background: '#0891b2' }} /> Certificates <span className="clm-tab-count">{counts.cert}</span>
-          </button>
-          <button className={`clm-tab ${tab === 'comp' ? 'active' : ''}`} onClick={() => { setTab('comp'); setPage(1); }}>
-            <span className="clm-tab-dot" style={{ background: '#7c3aed' }} /> Compliance Docs <span className="clm-tab-count">{counts.comp}</span>
-          </button>
-          <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-            <div className="clm-search">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              <input type="text" placeholder="Search QC documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
-            </div>
+          <div className="clm-search">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="text" placeholder="Search QC documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           </div>
         </div>
 
@@ -118,7 +103,7 @@ export default function ClmQcPage() {
             <div className="clm-empty">
               <div className="clm-empty-ico">{ICO.bCheck}</div>
               <div className="clm-empty-title">No QC documents yet</div>
-              <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add QC Document to create the first record.' : 'No results match the current tab / search.'}</div>
+              <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add QC Document to create the first record.' : 'No results match the current search.'}</div>
             </div>
           ) : (
             <div className="clm-table-wrap">
@@ -229,8 +214,8 @@ function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCod
   };
 
   return createPortal((
-    <div className="clm-modal-bd" onClick={onClose}>
-      <div className="clm-modal clm-modal-wide" onClick={e => e.stopPropagation()}>
+    <div className="clm-modal-bd">
+      <div className="clm-modal clm-modal-wide">
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
