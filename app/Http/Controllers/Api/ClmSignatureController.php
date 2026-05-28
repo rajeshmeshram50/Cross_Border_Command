@@ -1066,7 +1066,18 @@ class ClmSignatureController extends Controller
             $row->reminder_count        = (int) $row->reminder_count + 1;
             $row->save();
 
-            return response()->json(['status' => true, 'message' => 'Reminder sent', 'data' => $resp]);
+            // Echo the updated counter + timestamp so the frontend can
+            // bump the on-button badge without a full refetch. Customer /
+            // consignee / vendor / agreement flows all read these.
+            return response()->json([
+                'status'  => true,
+                'message' => 'Reminder sent',
+                'data'    => [
+                    'zoho'                  => $resp,
+                    'reminder_count'        => (int) $row->reminder_count,
+                    'last_reminder_sent_at' => optional($row->last_reminder_sent_at)->toIso8601String(),
+                ],
+            ]);
         } catch (\Throwable $e) {
             return response()->json(['status' => false, 'message' => 'Failed to send reminder: ' . $e->getMessage()], 500);
         }

@@ -33,6 +33,12 @@ export type AgreementRowSig = {
   completed_at: string | null;
   signed_url: string | null;
   certificate_url: string | null;
+  /* Reminder counter + last-sent timestamp from clm_signature_requests.
+   * Drives the "Sent N times" badge next to the Remind button so the
+   * salesperson can see at a glance how many times the recipient has
+   * already been nudged. */
+  reminder_count?: number;
+  last_reminder_sent_at?: string | null;
 } | null;
 
 export type AgreementRow = {
@@ -339,7 +345,7 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
           },
         });
         const rows = Array.isArray(response.data?.data) ? response.data.data : [];
-        const infoMap: Record<number, { status: string; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }> = {};
+        const infoMap: Record<number, { status: string; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }> = {};
 
         for (const row of rows) {
           const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
@@ -366,6 +372,11 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
               signatureRequestId: row.id,
               signedUrl: rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
               certificateUrl: rawCertUrl ? resolveFileUrl(rawCertUrl) : undefined,
+              // Pull reminder counter + last-sent timestamp so the
+              // Remind button's "× N" badge stays live on the same
+              // 15s tick as the signed-PDF artifacts.
+              reminderCount: typeof row.reminder_count === 'number' ? row.reminder_count : undefined,
+              lastReminderAt: row.last_reminder_sent_at ?? null,
             };
           }
         }
@@ -399,6 +410,8 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                     status: info.status,
                     signed_url: info.signedUrl ?? existing.signed_url,
                     certificate_url: info.certificateUrl ?? existing.certificate_url,
+                    reminder_count: info.reminderCount ?? existing.reminder_count ?? 0,
+                    last_reminder_sent_at: info.lastReminderAt ?? existing.last_reminder_sent_at ?? null,
                   },
                 };
               }),
@@ -427,12 +440,35 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
     try {
       const { data: r } = await api.post(`/clm/signature-requests/${signatureRequestId}/remind`);
       toast.success('Reminder sent', r?.message ?? 'Reminder dispatched to the recipient.');
-      if (leadId) {
-        try {
-          const ref = await api.get(`/clm/leads/${leadId}/agreement-applicable`);
-          setPayload((ref.data?.data ?? null) as ApplicablePayload | null);
-        } catch { /* swallow */ }
-      }
+
+      // Bump the on-button badge locally right away so the salesperson
+      // sees the increment without waiting for the 15s polling tick.
+      // Server is the source of truth — its reminder_count comes back
+      // on the response.data and we project it onto every agreement
+      // row whose signature_request.id matches.
+      const serverCount = Number(r?.data?.reminder_count ?? NaN);
+      const serverLastAt = (r?.data?.last_reminder_sent_at ?? null) as string | null;
+      setPayload(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          segments: prev.segments.map(seg => ({
+            ...seg,
+            agreements: seg.agreements.map(a => {
+              const sig = a.signature_request;
+              if (!sig || sig.id !== signatureRequestId) return a;
+              return {
+                ...a,
+                signature_request: {
+                  ...sig,
+                  reminder_count: Number.isFinite(serverCount) ? serverCount : (sig.reminder_count ?? 0) + 1,
+                  last_reminder_sent_at: serverLastAt ?? new Date().toISOString(),
+                },
+              };
+            }),
+          })),
+        };
+      });
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? 'Could not send the reminder.';
       toast.error('Reminder failed', msg);
@@ -580,8 +616,14 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                                   </button>
                                 </Tooltip>
                               )}
-                              {showReminder && (
-                                <Tooltip label="Resend reminder to the signer(s)">
+                              {showReminder && (() => {
+                                const remCount = sig?.reminder_count ?? 0;
+                                const lastAt   = sig?.last_reminder_sent_at;
+                                const tipLine  = remCount > 0
+                                  ? `Reminder sent ${remCount} time${remCount === 1 ? '' : 's'}${lastAt ? ` (last: ${new Date(lastAt).toLocaleString()})` : ''}`
+                                  : 'Resend reminder to the signer(s)';
+                                return (
+                                <Tooltip label={tipLine}>
                                   <button
                                     type="button"
                                     className="lasm-btn-remind"
@@ -590,9 +632,13 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
                                   >
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
                                     {isRemind ? 'Sending…' : 'Remind'}
+                                    {remCount > 0 && (
+                                      <span className="lasm-remind-count" aria-label={`Sent ${remCount} times`}>× {remCount}</span>
+                                    )}
                                   </button>
                                 </Tooltip>
-                              )}
+                                );
+                              })()}
                               <Tooltip label="Preview agreement PDF">
                                 <button
                                   type="button"
@@ -814,6 +860,12 @@ const LASM_CSS = `
   background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
 .lasm-btn-remind:hover:not(:disabled) { background: #fde68a; border-color: #f59e0b; }
 .lasm-btn-remind:disabled { opacity: .55; cursor: not-allowed; }
+/* Reminder-count badge embedded in the Remind button. Pill-shaped so
+   it sits visually flush with the icon + label inside the button. */
+.lasm-remind-count { display: inline-flex; align-items: center; justify-content: center;
+  margin-left: 2px; min-width: 18px; padding: 0 5px; height: 16px;
+  border-radius: 999px; background: #92400e; color: #fff;
+  font-family: 'Geist Mono', ui-monospace, monospace; font-size: 9.5px; font-weight: 800; letter-spacing: .02em; line-height: 1; }
 
 .lasm-row-selected td { background: rgba(8,145,178,.06) !important; }
 

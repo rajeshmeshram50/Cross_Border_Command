@@ -196,6 +196,11 @@ export type TradeDocRow = {
    * The button locks so a multi-doc bundle can't fire one reminder
    * email per doc. */
   cooldownActive?: boolean;
+  /* Reminder counter + last-sent timestamp from clm_signature_requests.
+   * Drives the "× N" badge on the Resend button so the user can see at
+   * a glance how many times the recipient has already been nudged. */
+  reminder_count?: number;
+  last_reminder_sent_at?: string | null;
 };
 
 /* Step 4 — product-vendor mapping rows with pricing. */
@@ -604,7 +609,7 @@ export default function AddVendorModal(props: {
    * the listed clm_trade_doc_library ids pre-checked. modelName='Vendor'
    * makes the backend resolve {{supplier.*}} tokens with this vendor. */
   const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
-  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }>>({});
+  const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }>>({});
 
   /* Resend cooldown — same pattern as the customer + consignee modals.
    * Zoho's remind API operates per-REQUEST so a multi-doc bundle gets
@@ -910,8 +915,10 @@ export default function AddVendorModal(props: {
           certificate_path?: string | null;
           certificate_url?: string | null;
           file_url?: string | null;
+          reminder_count?: number;
+          last_reminder_sent_at?: string | null;
         }> = Array.isArray(r.data?.data) ? r.data.data : [];
-        const map: Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }> = {};
+        const map: Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }> = {};
         for (const row of rows) {
           const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
           for (let i = 0; i < ids.length; i++) {
@@ -956,6 +963,8 @@ export default function AddVendorModal(props: {
               signatureRequestId: row.id,
               signedUrl:      rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
               certificateUrl: rawCertUrl   ? resolveFileUrl(rawCertUrl)   : undefined,
+              reminderCount:  typeof row.reminder_count === 'number' ? row.reminder_count : undefined,
+              lastReminderAt: row.last_reminder_sent_at ?? null,
             };
           }
         }
@@ -979,6 +988,8 @@ export default function AddVendorModal(props: {
         signatureRequestId: info.signatureRequestId,
         signedUrl:      info.signedUrl      ?? r.signedUrl,
         certificateUrl: info.certificateUrl ?? r.certificateUrl,
+        reminder_count:        info.reminderCount  ?? r.reminder_count        ?? 0,
+        last_reminder_sent_at: info.lastReminderAt ?? r.last_reminder_sent_at ?? null,
       };
     }));
   }, [sigStatusByDoc]);
@@ -1667,13 +1678,27 @@ export default function AddVendorModal(props: {
       }
       const bundleCount = tradeDocRows.filter(r => r.signatureRequestId === reqId).length;
       api.post(`/clm/signature-requests/${reqId}/remind`)
-        .then(() => {
+        .then((res) => {
           setRecentReminds(prev => ({ ...prev, [reqId]: Date.now() + 60_000 }));
           toast.success('Reminder sent',
             bundleCount > 1
               ? `The signer was notified about all ${bundleCount} documents in this signature request.`
               : 'The signer has been notified.',
           );
+          // Optimistic counter bump — server's returned value wins so
+          // the badge stays accurate even when the polling loop is
+          // mid-flight against the same row.
+          const serverCount = Number(res?.data?.data?.reminder_count ?? NaN);
+          const serverLastAt = (res?.data?.data?.last_reminder_sent_at ?? null) as string | null;
+          setTradeDocRows(prev => prev.map(r => (
+            r.signatureRequestId === reqId
+              ? {
+                  ...r,
+                  reminder_count: Number.isFinite(serverCount) ? serverCount : (r.reminder_count ?? 0) + 1,
+                  last_reminder_sent_at: serverLastAt ?? new Date().toISOString(),
+                }
+              : r
+          )));
         })
         .catch(err => toast.error('Reminder failed', err?.response?.data?.message ?? 'Could not send the reminder. Try again later.'));
       return;
@@ -3995,25 +4020,47 @@ function TradeDocsTable(props: {
                             onChange={() => props.onToggleSign(r.code)}
                             disabled={isSigned}
                           />
-                          <button
-                            type="button"
-                            className="avm-btn-primary"
-                            style={{
-                              padding: '6px 14px',
-                              fontSize: 13,
-                              opacity: (isSigned || r.cooldownActive) ? 0.5 : 1,
-                              cursor:  (isSigned || r.cooldownActive) ? 'not-allowed' : 'pointer',
-                            }}
-                            onClick={() => { if (!isSigned && !r.cooldownActive) props.onSend(r.code); }}
-                            disabled={isSigned || !!r.cooldownActive}
-                            title={
-                              isSigned         ? 'This document has already been signed.'
-                              : r.cooldownActive ? 'Reminder just sent — one reminder covers every document in this bundle.'
-                              : (r.status === 'N/A' ? 'Send for signature' : 'Resend for signature')
-                            }
-                          >
-                            <i className="ri-send-plane-line me-1" /> {r.cooldownActive ? 'Sent ✓' : (r.status === 'N/A' ? 'Send' : 'Resend')}
-                          </button>
+                          {(() => {
+                            const remCount = r.reminder_count ?? 0;
+                            const lastAt   = r.last_reminder_sent_at;
+                            const baseTitle = isSigned
+                              ? 'This document has already been signed.'
+                              : r.cooldownActive
+                                ? 'Reminder just sent — one reminder covers every document in this bundle.'
+                                : (r.status === 'N/A' ? 'Send for signature' : 'Resend for signature');
+                            const titleWithCount = remCount > 0
+                              ? `${baseTitle} · Reminders sent: ${remCount}${lastAt ? ` (last: ${new Date(lastAt).toLocaleString()})` : ''}`
+                              : baseTitle;
+                            const isResend = r.status !== 'N/A';
+                            return (
+                              <button
+                                type="button"
+                                className="avm-btn-primary"
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                                  padding: '6px 14px',
+                                  fontSize: 13,
+                                  opacity: (isSigned || r.cooldownActive) ? 0.5 : 1,
+                                  cursor:  (isSigned || r.cooldownActive) ? 'not-allowed' : 'pointer',
+                                }}
+                                onClick={() => { if (!isSigned && !r.cooldownActive) props.onSend(r.code); }}
+                                disabled={isSigned || !!r.cooldownActive}
+                                title={titleWithCount}
+                              >
+                                <i className="ri-send-plane-line me-1" /> {r.cooldownActive ? 'Sent ✓' : (isResend ? 'Resend' : 'Send')}
+                                {isResend && remCount > 0 && (
+                                  <span aria-label={`Reminder sent ${remCount} times`} style={{
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    marginLeft: 2, minWidth: 18, padding: '0 5px', height: 16,
+                                    borderRadius: 999,
+                                    background: 'rgba(255,255,255,.22)', color: '#fff',
+                                    fontFamily: "'Geist Mono', ui-monospace, monospace",
+                                    fontSize: 9.5, fontWeight: 800, letterSpacing: '.02em', lineHeight: 1,
+                                  }}>× {remCount}</span>
+                                )}
+                              </button>
+                            );
+                          })()}
                         </div>
                       );
                     })()}
