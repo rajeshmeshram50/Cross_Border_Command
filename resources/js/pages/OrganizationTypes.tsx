@@ -8,6 +8,7 @@ import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import Swal from 'sweetalert2';
 import { MasterSelect, MasterFormStyles } from './master/masterFormKit';
+import { bustClientFormBundle } from './client/clientFormBundleCache';
 
 interface OrgType {
   id: number;
@@ -107,6 +108,10 @@ export default function OrganizationTypes() {
         await api.post('/organization-types', payload);
         toast.success('Created', 'Organization type added');
       }
+      // Organization types ride on /clients/form-bundle — invalidate the
+      // cached copy so the new/updated row shows in the ClientForm
+      // dropdown on the next open without waiting for the 5-min TTL.
+      bustClientFormBundle();
       setModalOpen(false);
       load();
     } catch (err: any) {
@@ -139,6 +144,9 @@ export default function OrganizationTypes() {
     if (!result.isConfirmed) return;
     try {
       await api.delete(`/organization-types/${t.id}`);
+      // Invalidate the ClientForm bundle so a deleted org-type doesn't
+      // linger in the dropdown until the next 5-min cache window.
+      bustClientFormBundle();
       Swal.fire({ title: 'Deleted!', text: `"${t.name}" removed.`, icon: 'success', timer: 1500, showConfirmButton: false });
       load();
     } catch (err: any) {

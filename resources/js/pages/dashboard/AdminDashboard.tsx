@@ -8,6 +8,7 @@ import api from '../../api';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { formatCompact } from '../../utils/formatNumber';
 import { useChartTheme } from '../../hooks/useChartTheme';
+import { readDashboardStats, writeDashboardStats } from './dashboardStatsCache';
 // Reuse the recruitment module's modal styling so the dashboard popups
 // match the Hiring Requests modal exactly (rec-req-* classes).
 import '../../../css/recruitment.css';
@@ -171,8 +172,21 @@ export default function AdminDashboard() {
   const ct = useChartTheme();
 
   useEffect(() => {
-    api.get('/dashboard/admin-stats').then(res => setData(res.data))
-      .catch(() => {}).finally(() => setLoading(false));
+    // Cache hit — paint instantly from sessionStorage (1-min TTL).
+    // Keeps tab-switch / back-navigation feeling free of network load.
+    const cached = readDashboardStats<any>('admin');
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+      return;
+    }
+    api.get('/dashboard/admin-stats')
+      .then(res => {
+        setData(res.data);
+        writeDashboardStats('admin', res.data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <ShimmerDashboard />;
