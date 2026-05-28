@@ -44,6 +44,11 @@ type AssignProps = {
   mode: Mode;
   leadId?: number | null;        // single mode
   leadIds?: number[];            // selection mode
+  /* Single-mode context pills — customer name + Opp code shown beneath
+   * the header so the user can confirm which lead they're assigning
+   * without bouncing back to the table. Optional; ignored in bulk modes. */
+  customerName?: string | null;
+  oppCode?: string | null;
   /* Pre-select the salesperson dropdown to this user when the modal
    * opens. Used by the row-action assign button to show "this lead is
    * already with X" and by the bulk flow when every selected lead shares
@@ -55,7 +60,7 @@ type AssignProps = {
 };
 
 export default function AssignLeadsModal({
-  open, onClose, onAssigned, mode, leadId, leadIds, accountLabels = [], initialSalespersonId = null,
+  open, onClose, onAssigned, mode, leadId, leadIds, customerName = null, oppCode = null, accountLabels = [], initialSalespersonId = null,
 }: AssignProps) {
   const toast = useToast();
 
@@ -194,9 +199,11 @@ export default function AssignLeadsModal({
               </svg>
             </div>
             <div>
-              <div className="alm-head-title">Assign Leads</div>
+              <div className="alm-head-title">
+                {mode === 'single' ? 'Assign Lead to Salesperson' : 'Assign Leads'}
+              </div>
               <div className="alm-head-sub">
-                {mode === 'single'    && `Assign lead #${leadId} to a salesperson`}
+                {mode === 'single'    && 'Assign this lead to a sales team member'}
                 {mode === 'selection' && `${headerCount} lead${(headerCount ?? 0) === 1 ? '' : 's'} selected from the table`}
                 {mode === 'filters'   && (accountAvailable
                   ? 'Pick an account + date range; every matching lead will be assigned'
@@ -210,6 +217,33 @@ export default function AssignLeadsModal({
             </svg>
           </button>
         </div>
+
+        {/* Single-mode context strip — confirms which lead the user is
+            about to reassign without making them close the modal and re-open
+            from the right row. Only renders when the parent supplied data. */}
+        {mode === 'single' && (customerName || oppCode) && (
+          <div className="alm-context">
+            {customerName && (
+              <span className="alm-ctx-pill">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                <span className="alm-ctx-text" title={customerName}>{customerName}</span>
+              </span>
+            )}
+            {customerName && oppCode && <span className="alm-ctx-sep" aria-hidden="true">|</span>}
+            {oppCode && (
+              <span className="alm-ctx-pill">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M3 10h18" />
+                </svg>
+                <span className="alm-ctx-text">Opp: {oppCode}</span>
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="alm-body">
           {mode === 'filters' && accountAvailable && (
@@ -318,6 +352,35 @@ const ALM_CSS = `
   transition: background .15s;
 }
 .alm-close:hover { background: rgba(255,255,255,.28); }
+
+/* Single-mode context strip — sits between the teal header and the form
+   body. Light cyan band with two pills showing customer + Opp code so
+   the user can confirm what they're assigning. Re-tints in dark mode to
+   sit cleanly against the slate body. */
+.alm-context {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px;
+  background: #ecfeff;
+  border-bottom: 1px solid #cffafe;
+  font-size: 12px;
+}
+.alm-ctx-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: #0e7490; font-weight: 600;
+  min-width: 0;
+}
+.alm-ctx-text {
+  max-width: 240px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.alm-ctx-sep { color: #67e8f9; font-weight: 400; }
+[data-bs-theme="dark"] .alm-context {
+  background: rgba(8,145,178,.12);
+  border-bottom-color: rgba(6,182,212,.25);
+}
+[data-bs-theme="dark"] .alm-ctx-pill { color: #67e8f9; }
+[data-bs-theme="dark"] .alm-ctx-sep  { color: rgba(103,232,249,.45); }
+
 .alm-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .alm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .alm-field { display: flex; flex-direction: column; gap: 4px; position: relative; }
