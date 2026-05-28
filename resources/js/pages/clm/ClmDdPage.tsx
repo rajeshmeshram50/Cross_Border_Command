@@ -198,8 +198,8 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
   };
 
   return createPortal((
-    <div className="clm-modal-bd" onClick={onClose}>
-      <div className="clm-modal" onClick={e => e.stopPropagation()}>
+    <div className="clm-modal-bd">
+      <div className="clm-modal">
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
