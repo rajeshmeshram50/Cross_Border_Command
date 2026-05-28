@@ -730,6 +730,61 @@ const DCP_PAGE_CSS = `
   border-color: #0891b2;
   box-shadow: 0 2px 6px rgba(8,145,178,.28);
 }
+
+/* DocListPopup — section header strip (Mandatory / Optional) and rows.
+   Defined as classes so dark mode can override the light gradient bg
+   that otherwise renders as a stark white strip on the dark theme. */
+.dcp-sec-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 22px;
+  border-top: 1px solid rgba(6,182,212,.1);
+  border-bottom: 1px solid rgba(6,182,212,.12);
+}
+.dcp-sec-head.mandatory {
+  background: linear-gradient(110deg,#f0fdff,#e8f9fd);
+  color: #0891b2;
+}
+.dcp-sec-head.optional {
+  background: linear-gradient(110deg,#fffbeb,#fef9ee);
+  border-top-color: rgba(245,158,11,.1);
+  border-bottom-color: rgba(245,158,11,.12);
+  color: #d97706;
+}
+.dcp-sec-head-label { font-size: 8px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: inherit; }
+.dcp-sec-head-count {
+  font-size: 9px; font-weight: 800; color: #fff;
+  padding: 1px 7px; border-radius: 9px;
+}
+.dcp-sec-head.mandatory .dcp-sec-head-count { background: linear-gradient(135deg,#06b6d4,#0891b2); }
+.dcp-sec-head.optional  .dcp-sec-head-count { background: linear-gradient(135deg,#fbbf24,#d97706); }
+
+.dcp-doc-name { font-size: 13px; font-weight: 700; color: #0c4a6e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcp-doc-auth { font-size: 10px; color: #94a3b8; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcp-doc-idx  { font-size: 10px; font-weight: 700; color: #c0d4e0; width: 22px; text-align: right; flex-shrink: 0; }
+
+.dcp-foot-text { font-size: 11px; color: #0891b2; opacity: .75; }
+.dcp-foot-text b { color: #0c4a6e; font-weight: 700; opacity: 1; }
+
+/* Dark mode — recolour the strips and text so nothing is a stark white
+   slab against the navy modal body. */
+[data-bs-theme="dark"] .dcp-sec-head.mandatory {
+  background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(8,145,178,.10));
+  border-top-color: rgba(6,182,212,.22);
+  border-bottom-color: rgba(6,182,212,.22);
+  color: #67e8f9;
+}
+[data-bs-theme="dark"] .dcp-sec-head.optional {
+  background: linear-gradient(110deg, rgba(245,158,11,.18), rgba(245,158,11,.10));
+  border-top-color: rgba(245,158,11,.22);
+  border-bottom-color: rgba(245,158,11,.22);
+  color: #fbbf24;
+}
+[data-bs-theme="dark"] .dcp-doc-row { border-bottom-color: rgba(255,255,255,.06) !important; }
+[data-bs-theme="dark"] .dcp-doc-name { color: #e2e8f0; }
+[data-bs-theme="dark"] .dcp-doc-auth { color: #94a3b8; }
+[data-bs-theme="dark"] .dcp-doc-idx  { color: #64748b; }
+[data-bs-theme="dark"] .dcp-foot-text { color: #67e8f9; }
+[data-bs-theme="dark"] .dcp-foot-text b { color: #e2e8f0; }
 `;
 
 /* ─── DocListPopup — opens when a count or total cell is clicked ─── */
@@ -772,7 +827,7 @@ function DocListPopup(props: {
 
   const renderRow = (d: Row, idx: number, isLast: boolean) => (
     <div key={`${d.__cat}-${d.code}`} className="dcp-doc-row" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 22px', borderBottom: isLast ? 'none' : '1px solid rgba(6,182,212,.07)' }}>
-      <span style={{ fontSize: 10, fontWeight: 700, color: '#c0d4e0', width: 22, textAlign: 'right', flexShrink: 0 }}>{String(idx + 1).padStart(2, '0')}</span>
+      <span className="dcp-doc-idx">{String(idx + 1).padStart(2, '0')}</span>
       <span className="clm-code-pill" style={{ flexShrink: 0 }}>{d.code}</span>
       {isAll && (
         <span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 8.5, fontWeight: 800, color: '#4f46e5', background: 'rgba(99,102,241,.08)', padding: '2px 7px', borderRadius: 5, border: '1px solid rgba(99,102,241,.2)', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: '.05em', textTransform: 'uppercase' }}>
@@ -780,8 +835,8 @@ function DocListPopup(props: {
         </span>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#0c4a6e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name || d.title}</div>
-        <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.authority || d.issued_by || '—'}</div>
+        <div className="dcp-doc-name">{d.name || d.title}</div>
+        <div className="dcp-doc-auth">{d.authority || d.issued_by || '—'}</div>
       </div>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 14px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
         background: d.__req === 'M' ? 'rgba(8,145,178,.09)' : 'rgba(245,158,11,.09)',
@@ -837,20 +892,20 @@ function DocListPopup(props: {
             <>
               {mand.length > 0 && (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 22px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.12)', borderTop: '1px solid rgba(6,182,212,.1)' }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#0891b2' }}>Mandatory</span>
-                    <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', padding: '1px 7px', borderRadius: 9 }}>{mand.length}</span>
+                  <div className="dcp-sec-head mandatory">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span className="dcp-sec-head-label">Mandatory</span>
+                    <span className="dcp-sec-head-count">{mand.length}</span>
                   </div>
                   {mand.map((d, i) => renderRow(d, i, i === mand.length - 1))}
                 </>
               )}
               {opt.length > 0 && (
                 <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 22px', background: 'linear-gradient(110deg,#fffbeb,#fef9ee)', borderBottom: '1px solid rgba(245,158,11,.12)', borderTop: '1px solid rgba(245,158,11,.1)' }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.8"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="9"/></svg>
-                    <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#d97706' }}>Optional</span>
-                    <span style={{ fontSize: 9, fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg,#fbbf24,#d97706)', padding: '1px 7px', borderRadius: 9 }}>{opt.length}</span>
+                  <div className="dcp-sec-head optional">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8"><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="9"/></svg>
+                    <span className="dcp-sec-head-label">Optional</span>
+                    <span className="dcp-sec-head-count">{opt.length}</span>
                   </div>
                   {opt.map((d, i) => renderRow(d, i, i === opt.length - 1))}
                 </>
@@ -860,8 +915,8 @@ function DocListPopup(props: {
         </div>
 
         <div className="clm-modal-foot" style={{ justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 11, color: '#0891b2', opacity: .75 }}>
-            <b style={{ color: '#0c4a6e', fontWeight: 700, opacity: 1 }}>{totalSel}</b> of <b style={{ color: '#0c4a6e', fontWeight: 700, opacity: 1 }}>{universe}</b> documents configured
+          <span className="dcp-foot-text">
+            <b>{totalSel}</b> of <b>{universe}</b> documents configured
           </span>
           <button className="clm-btn-cancel" onClick={onClose}>Close</button>
         </div>
