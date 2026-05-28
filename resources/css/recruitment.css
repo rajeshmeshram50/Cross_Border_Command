@@ -248,14 +248,87 @@
   color: #ffffff;
   box-shadow: inset 0 1px 1px rgba(0,0,0,0.10);
 }
-.rec-id-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-family: var(--vz-font-monospace, monospace); font-weight: 700; font-size: 11.5px; letter-spacing: 0.02em; }
-.rec-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+/* ID pill — purple-tinted glass token, readable on both themes. */
+.rec-id-pill {
+  display: inline-flex; align-items: center;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: rgba(124,92,252,0.12);
+  color: #5a3fd1;
+  border: 1px solid rgba(124,92,252,0.30);
+  font-family: var(--vz-font-monospace, monospace);
+  font-weight: 700; font-size: 11.5px;
+  letter-spacing: 0.02em;
+}
+[data-bs-theme="dark"] .rec-id-pill {
+  background: rgba(167,139,250,0.20);
+  color: #ddd6fe;
+  border-color: rgba(167,139,250,0.45);
+}
+
+/* Unified row pill (Employment / Work Mode / Priority) — uppercase
+   weight + soft inset highlight + hover lift + border in the same hue
+   as the text. Matches the Customer Type / Risk Level pill family so
+   the visual language stays consistent across HR / Sales tables. */
+.rec-pill {
+  display: inline-flex; align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.20), 0 1px 2px rgba(15,23,42,.05);
+  transition: filter .15s ease, transform .15s ease;
+}
+.rec-pill:hover { filter: brightness(1.05); transform: translateY(-1px); }
+[data-bs-theme="dark"] .rec-pill {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.25);
+}
+
 .rec-num { font-weight: 700; font-size: 14px; color: var(--vz-heading-color, var(--vz-body-color)); }
-.rec-pagebtn { min-width: 32px; height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--vz-border-color); background: #fff; color: var(--vz-secondary-color); font-weight: 600; font-size: 13px; cursor: pointer; transition: all .15s ease; }
-.rec-pagebtn:hover:not(:disabled) { border-color: #a78bfa; color: #7c5cfc; }
-.rec-pagebtn:disabled { opacity: 0.45; cursor: not-allowed; }
-.rec-pagebtn.is-active { background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border-color: transparent; box-shadow: 0 3px 8px rgba(124,92,252,0.25); }
-[data-bs-theme="dark"] .rec-pagebtn { background: var(--vz-secondary-bg); }
+
+/* Pagination buttons — unified with Customers / Employees / Consignees
+   family. Uniform 32px height, 8px radius, purple-tinted border,
+   purple-gradient active fill, soft lavender hover. */
+.rec-pagebtn {
+  min-width: 32px; height: 32px; padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #e0d9f7;
+  background: #fff;
+  color: #6d28d9;
+  font-weight: 700; font-size: 12.5px;
+  font-family: inherit;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .22s ease;
+}
+.rec-pagebtn:hover:not(:disabled):not(.is-active) {
+  background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6;
+}
+.rec-pagebtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.rec-pagebtn.is-active {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  color: #fff;
+  border-color: #7c3aed;
+  box-shadow: 0 2px 6px rgba(109,40,217,.30);
+  cursor: default;
+}
+[data-bs-theme="dark"] .rec-pagebtn {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(167,139,250,0.30);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .rec-pagebtn:hover:not(:disabled):not(.is-active) {
+  background: rgba(124,58,237,0.20);
+  border-color: rgba(167,139,250,0.50);
+  color: #ede9fe;
+}
+[data-bs-theme="dark"] .rec-pagebtn.is-active {
+  background: linear-gradient(135deg, #6d28d9, #4c1d95);
+  border-color: #7c3aed; color: #fff;
+  box-shadow: 0 2px 8px rgba(124,58,237,.45);
+}
 
 /* ---------------------------------------------------------------------
    2. Form modal (Raise / Create) — premium polished look
@@ -1989,29 +2062,9 @@
   color: #fca5a5;
 }
 
-/* Pagination Prev / Next — same family as the numbered page buttons */
-.rec-pagebtn {
-  height: 32px;
-  padding: 0 12px;
-  font-size: 12.5px;
-  font-weight: 600;
-  background: linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
-  display: inline-flex; align-items: center; justify-content: center;
-  gap: 4px;
-}
-.rec-pagebtn:not(:disabled):hover {
-  background: linear-gradient(180deg, #f5f3ff 0%, #ede9fe 100%);
-}
-[data-bs-theme="dark"] .rec-pagebtn {
-  background: var(--vz-secondary-bg);
-  border-color: var(--vz-border-color);
-  color: var(--vz-body-color);
-}
-[data-bs-theme="dark"] .rec-pagebtn:not(:disabled):hover {
-  background: color-mix(in srgb, #7c5cfc 18%, var(--vz-card-bg));
-  border-color: color-mix(in srgb, #7c5cfc 45%, var(--vz-border-color));
-  color: #c4b5fd;
-}
+/* (Pagination .rec-pagebtn styles moved to the unified block near the
+   top of this file — one source of truth shared with the Customers /
+   Employees / Consignees lists.) */
 
 /* ---------------------------------------------------------------------
    11c. Cancel Recruitment modal — premium amber/orange treatment
@@ -3244,7 +3297,13 @@
   background: #ffffff;
   display: flex; flex-direction: column; gap: 14px;
 }
-[data-bs-theme="dark"] .cand-confirm-body { background: var(--vz-card-bg); }
+[data-bs-theme="dark"] .cand-confirm-body {
+  /* Deeper navy slate so the modal card reads as a distinct surface on
+     the dark canvas instead of melting into the page. The summary box,
+     inputs and footer sit on top with progressively brighter tints. */
+  background: #0c1322;
+  color: #e2e8f0;
+}
 
 /* Candidate summary card inside the body */
 .cand-confirm-summary {
@@ -3255,8 +3314,9 @@
   border-radius: 12px;
 }
 [data-bs-theme="dark"] .cand-confirm-summary {
-  background: color-mix(in srgb, #ffffff 4%, var(--vz-card-bg));
-  border-color: var(--vz-border-color);
+  background: #131c33;
+  border-color: rgba(167,139,250,0.22);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.30);
 }
 .cand-confirm-avatar {
   display: inline-flex; align-items: center; justify-content: center;
@@ -3336,9 +3396,22 @@
   box-shadow: 0 0 0 3px rgba(239,68,68,0.16);
 }
 [data-bs-theme="dark"] .cand-confirm-select {
-  background: var(--vz-card-bg);
+  background: #131c33;
   border-color: rgba(239,68,68,0.55);
-  color: var(--vz-body-color);
+  color: #e2e8f0;
+}
+[data-bs-theme="dark"] .cand-confirm-select:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.25);
+}
+/* When the modal is in "select" (not "reject") mode the dropdown isn't
+   reused, but the input border default red doesn't apply there. */
+[data-bs-theme="dark"] .cand-confirm-modal--select .cand-confirm-select {
+  border-color: rgba(34,197,94,0.50);
+}
+[data-bs-theme="dark"] .cand-confirm-modal--select .cand-confirm-select:focus {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.20);
 }
 
 .cand-confirm-textarea {
@@ -3362,9 +3435,15 @@
 }
 .cand-confirm-textarea::placeholder { color: #9ca3af; }
 [data-bs-theme="dark"] .cand-confirm-textarea {
-  background: var(--vz-card-bg);
-  border-color: var(--vz-border-color);
-  color: var(--vz-body-color);
+  background: #131c33;
+  border-color: rgba(167,139,250,0.30);
+  color: #e2e8f0;
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .cand-confirm-textarea::placeholder { color: #64748b; }
+[data-bs-theme="dark"] .cand-confirm-textarea:focus {
+  border-color: rgba(167,139,250,0.65);
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.18);
 }
 
 .cand-confirm-error {
@@ -3384,8 +3463,21 @@
   border-top: 1px solid #ececf2;
 }
 [data-bs-theme="dark"] .cand-confirm-footer {
-  background: var(--vz-card-bg);
-  border-top-color: var(--vz-border-color);
+  background: #11182a;
+  border-top-color: rgba(167,139,250,0.18);
+}
+/* Cancel button in dark mode — was inheriting a light "btn-ghost" wash
+   that read like a bright sticker on the dark footer. Tinted-glass
+   slate with subtle border so it sits inside the modal cleanly. */
+[data-bs-theme="dark"] .cand-confirm-footer .rec-btn-ghost {
+  background: rgba(255,255,255,0.04) !important;
+  color: #cbd5e1 !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+}
+[data-bs-theme="dark"] .cand-confirm-footer .rec-btn-ghost:hover:not(:disabled) {
+  background: rgba(255,255,255,0.08) !important;
+  border-color: rgba(255,255,255,0.18) !important;
+  color: #f1f5f9 !important;
 }
 .cand-confirm-submit {
   height: 38px;

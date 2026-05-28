@@ -1212,8 +1212,8 @@ function CvCell({
 
   const handleFile = async (file: File | null | undefined) => {
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File too large', 'CV must be under 10 MB.');
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('File too large', 'CV must be under 2 MB.');
       return;
     }
     setUploading(true);
@@ -1382,9 +1382,13 @@ function CandidateFormModal({
     if (!mobile.trim()) {
       errs.mobile = 'Mobile number is required';
     } else {
-      // 10–15 digits, optional leading + and country code spaces.
-      const mobileRe = /^\+?[\d\s\-]{10,18}$/;
-      if (!mobileRe.test(mobile.trim())) errs.mobile = 'Enter a valid mobile number (10–15 digits)';
+      // 7–15 digits — count digits only so user can type with spaces /
+      // dashes / a leading + and still pass. Covers India (10), most EU
+      // formats with country code, and longer international variants.
+      const digitsOnly = mobile.replace(/\D/g, '');
+      if (digitsOnly.length < 7 || digitsOnly.length > 15) {
+        errs.mobile = 'Enter a valid mobile number (7–15 digits)';
+      }
     }
 
     if (!qualification.trim()) {
@@ -1425,7 +1429,7 @@ function CandidateFormModal({
     if (cvFile) {
       const okExt = /\.(pdf|doc|docx)$/i.test(cvFile.name);
       if (!okExt) errs.cv = 'CV must be a PDF, DOC, or DOCX file';
-      else if (cvFile.size > 10 * 1024 * 1024) errs.cv = 'CV must be under 10 MB';
+      else if (cvFile.size > 2 * 1024 * 1024) errs.cv = 'CV must be under 2 MB';
     }
 
     if (Object.keys(errs).length > 0) {
@@ -1592,7 +1596,20 @@ function CandidateFormModal({
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Mobile Number<span className="req">*</span></label>
-                  <input type="text" className={`rec-input${errors.mobile ? ' is-invalid' : ''}`} placeholder="+91 9XXXXXXXXX" value={mobile} onChange={e => setMobile(e.target.value)} />
+                  <input
+                    type="text"
+                    className={`rec-input${errors.mobile ? ' is-invalid' : ''}`}
+                    placeholder="9XXXXXXXXX"
+                    value={mobile}
+                    inputMode="tel"
+                    /* Hard-cap the keystroke count so the user can't keep
+                     * typing past 15 digits and then bounce on submit.
+                     * Counted in characters (not digits) to leave room for
+                     * an optional + / spaces / dashes the validator still
+                     * strips before counting. */
+                    maxLength={20}
+                    onChange={e => setMobile(e.target.value)}
+                  />
                   {errors.mobile && <div className="rec-error"><i className="ri-error-warning-line" />{errors.mobile}</div>}
                 </Col>
                 <Col md={6}>
@@ -1686,11 +1703,43 @@ function CandidateFormModal({
                     <p className="rec-form-section-title">Attachment Details</p>
                   </div>
                   <label className="cand-cv-drop" style={errors.cv ? { borderColor: '#f06548' } : undefined}>
-                    <input type="file" accept=".pdf,.doc,.docx" onChange={e => setCvFile(e.target.files?.[0] ?? null)} style={{ display: 'none' }} />
+                    {/* Validate at file-selection time, not just submit.
+                        The native `accept` attribute is a soft hint — users
+                        can override it via "All Files" and end up with a
+                        PNG/JPG that then fails on Submit (frustrating
+                        round-trip). Catching it inline gives instant
+                        feedback and prevents the bad file from sitting in
+                        state at all. */}
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      style={{ display: 'none' }}
+                      onChange={e => {
+                        const f = e.target.files?.[0] ?? null;
+                        // Allow the same file to be re-picked after a reject
+                        // by clearing the input value.
+                        e.target.value = '';
+                        if (!f) { setCvFile(null); return; }
+                        const okExt = /\.(pdf|doc|docx)$/i.test(f.name);
+                        if (!okExt) {
+                          setErrors(prev => ({ ...prev, cv: 'CV must be a PDF, DOC, or DOCX file' }));
+                          toast.error('Unsupported file type', 'Please pick a PDF, DOC, or DOCX file.');
+                          return;
+                        }
+                        if (f.size > 2 * 1024 * 1024) {
+                          setErrors(prev => ({ ...prev, cv: 'CV must be under 2 MB' }));
+                          toast.error('File too large', 'CV must be under 2 MB.');
+                          return;
+                        }
+                        // Valid pick — accept it and clear any previous error.
+                        setErrors(prev => { const n = { ...prev }; delete n.cv; return n; });
+                        setCvFile(f);
+                      }}
+                    />
                     <i className="ri-attachment-2" />
                     <span className="cand-cv-text">
                       <strong>{cvFile ? cvFile.name : 'Attach CV'}</strong>
-                      <span>PDF, DOC, DOCX · Max 10 MB</span>
+                      <span>PDF, DOC, DOCX · Max 2 MB</span>
                     </span>
                   </label>
                   {errors.cv && <div className="rec-error"><i className="ri-error-warning-line" />{errors.cv}</div>}
@@ -1797,7 +1846,7 @@ function CandidateConfirmModal({
   };
 
   return (
-    <Modal isOpen={!!target} toggle={submitting ? undefined : onClose} centered size="md" backdrop="static" contentClassName={`border-0 cand-confirm-modal cand-confirm-modal--${isReject ? 'reject' : 'select'}`}>
+    <Modal isOpen={!!target} toggle={submitting ? undefined : onClose} centered size="lg" backdrop="static" contentClassName={`border-0 cand-confirm-modal cand-confirm-modal--${isReject ? 'reject' : 'select'}`}>
       {/* While the status update is in flight we paint a soft shimmer
           over the candidate summary card so the user can tell the
           modal is "working", and we disable every input + button.

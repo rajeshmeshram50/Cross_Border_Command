@@ -249,25 +249,30 @@ function apiToHiringRequestRow(api: any): HiringRequestRow {
 
 
 // ── Lookup palettes ─────────────────────────────────────────────────────────
+/* Tinted-glass tokens — semi-transparent backgrounds so the pill
+ * inherits the surface tone and reads cleanly on both light and dark
+ * themes (parallels the SalesCustomers / SalesConsignee pills). The
+ * legacy flat pastel hex codes (#dbeafe, #fed7aa, …) rendered as
+ * washed-out stickers on dark canvas. */
 const PRIORITY_TONES: Record<Priority, { bg: string; fg: string }> = {
-  Low:      { bg: '#d1fae5', fg: '#047857' },
-  Medium:   { bg: '#fef3c7', fg: '#b45309' },
-  High:     { bg: '#fed7aa', fg: '#c2410c' },
-  Critical: { bg: '#fce7f3', fg: '#be185d' },
+  Low:      { bg: 'rgba(34,197,94,0.14)',  fg: '#16a34a' },
+  Medium:   { bg: 'rgba(245,158,11,0.14)', fg: '#d97706' },
+  High:     { bg: 'rgba(249,115,22,0.16)', fg: '#ea580c' },
+  Critical: { bg: 'rgba(236,72,153,0.16)', fg: '#db2777' },
 };
 
 const WORK_MODE_TONES: Record<WorkMode, { bg: string; fg: string }> = {
-  'On-site':  { bg: '#dbeafe', fg: '#1d4ed8' },
-  Remote:     { bg: '#ede9fe', fg: '#6d28d9' },
-  Hybrid:     { bg: '#ccfbf1', fg: '#0f766e' },
-  Flexible:   { bg: '#fce7f3', fg: '#be185d' },
+  'On-site':  { bg: 'rgba(59,130,246,0.14)',  fg: '#2563eb' },
+  Remote:     { bg: 'rgba(124,58,237,0.14)',  fg: '#7c3aed' },
+  Hybrid:     { bg: 'rgba(20,184,166,0.14)',  fg: '#0d9488' },
+  Flexible:   { bg: 'rgba(236,72,153,0.14)',  fg: '#db2777' },
 };
 
 const EMPLOY_TYPE_TONES: Record<EmployType, { bg: string; fg: string }> = {
-  'Full Time':  { bg: '#dbeafe', fg: '#1d4ed8' },
-  'Part Time':  { bg: '#fed7aa', fg: '#c2410c' },
-  Contract:     { bg: '#ccfbf1', fg: '#0f766e' },
-  Internship:   { bg: '#fce7f3', fg: '#be185d' },
+  'Full Time':  { bg: 'rgba(59,130,246,0.14)', fg: '#2563eb' },
+  'Part Time':  { bg: 'rgba(249,115,22,0.14)', fg: '#ea580c' },
+  Contract:     { bg: 'rgba(20,184,166,0.14)', fg: '#0d9488' },
+  Internship:   { bg: 'rgba(236,72,153,0.14)', fg: '#db2777' },
 };
 
 // Status → Bootstrap badge color. Used to render the Status pill with the
