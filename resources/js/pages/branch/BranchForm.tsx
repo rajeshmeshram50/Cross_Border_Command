@@ -11,6 +11,7 @@ import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import { validatePhone } from '../../utils/validatePhone';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { readBranchFormBundle, writeBranchFormBundle } from './branchFormBundleCache';
 
 interface Props {
   onBack: () => void;
@@ -406,24 +407,66 @@ export default function BranchForm({ onBack, editId }: Props) {
   // the same canonical dataset.
   const [countries, setCountries] = useState<Array<{ id: number; name: string; iso_code: string; status: string }>>([]);
   const [statesAll, setStatesAll] = useState<Array<{ id: number; country_id: string; name: string; status: string }>>([]);
+  /* True until /branches/form-bundle resolves (or the sessionStorage cache
+   * hits). Drives the form shimmer below — flips to false the moment the
+   * masters land OR cache hit fires (whichever comes first). */
+  const [loadingLookups, setLoadingLookups] = useState(true);
 
+  /* Bundled form fetch — /branches/form-bundle returns countries + states +
+   * next_code in ONE round-trip, replacing the previous 3 separate calls
+   * (/master/countries, /master/states, /branches/next-code).
+   *
+   * Caching strategy:
+   *   • countries + states ARE cached in sessionStorage (5-min TTL via
+   *     branchFormBundleCache) — they're static and worth deduplicating.
+   *   • next_code is NOT cached — branch codes increment as new branches
+   *     are created, so each new-add must fetch a fresh code. We still
+   *     fire the network call on cache hit to get a fresh next_code,
+   *     but countries/states paint instantly from cache so the dropdowns
+   *     never look empty during the bundle fetch.
+   */
   useEffect(() => {
-    Promise.all([
-      api.get('/master/countries').catch(() => ({ data: [] })),
-      api.get('/master/states').catch(() => ({ data: [] })),
-    ]).then(([countryRes, stateRes]) => {
-      const activeCountries = Array.isArray(countryRes.data)
-        ? countryRes.data.filter((c: any) => c.status === 'Active')
-            .sort((a: any, b: any) => a.name.localeCompare(b.name))
-        : [];
-      const activeStates = Array.isArray(stateRes.data)
-        ? stateRes.data.filter((s: any) => s.status === 'Active')
-            .sort((a: any, b: any) => a.name.localeCompare(b.name))
-        : [];
-      setCountries(activeCountries);
-      setStatesAll(activeStates);
-    });
-  }, []);
+    type Bundle = {
+      countries: Array<{ id: number; name: string; iso_code: string; status: string }>;
+      states: Array<{ id: number; country_id: string; name: string; status: string }>;
+      next_code?: string;
+      prefix?: string;
+    };
+
+    const hydrateMasters = (b: Pick<Bundle, 'countries' | 'states'>) => {
+      // Server already returns active+sorted rows — no client filter/sort needed.
+      setCountries(Array.isArray(b.countries) ? b.countries : []);
+      setStatesAll(Array.isArray(b.states) ? b.states : []);
+    };
+
+    // Cache hit — populate dropdowns immediately so loadingLookups flips
+    // false in the same tick. The fresh bundle call still fires below
+    // (we need an up-to-date next_code), but the user already sees the
+    // form ready for input.
+    const cached = readBranchFormBundle<Pick<Bundle, 'countries' | 'states'>>();
+    if (cached) {
+      hydrateMasters(cached);
+      setLoadingLookups(false);
+    }
+
+    api.get<Bundle>('/branches/form-bundle')
+      .then(res => {
+        hydrateMasters(res.data);
+        // Persist only the static masters slice — next_code is mutable per-tenant.
+        writeBranchFormBundle({
+          countries: res.data.countries,
+          states: res.data.states,
+        });
+        // Reuse the bundled next_code so we don't fire a second round-trip
+        // to /branches/next-code (the legacy effect below is now removed).
+        if (!isEdit && res.data.next_code) {
+          setForm(prev => (prev.code ? prev : { ...prev, code: res.data.next_code! }));
+        }
+      })
+      .catch(() => { /* dropdowns stay empty on failure */ })
+      .finally(() => setLoadingLookups(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit]);
 
   const set = useCallback((key: keyof FormState, val: string) => {
     setForm(f => (f[key] === val ? f : { ...f, [key]: val }));
@@ -477,21 +520,11 @@ export default function BranchForm({ onBack, editId }: Props) {
   const fieldError = useCallback((key: string) => serverErrors[key]?.[0] || validationErrors[key], [serverErrors, validationErrors]);
   const fieldInvalid = (key: string) => !!fieldError(key);
 
-  // Pre-fill the Branch Code field with the next auto-allocated value
-  // (BR-001, BR-002, …) on add-mode only. The server is authoritative
-  // — it re-locks and re-allocates inside store(), so the previewed
-  // code matches what gets persisted unless two creates race.
-  useEffect(() => {
-    if (isEdit) return;
-    let cancelled = false;
-    api.get('/branches/next-code')
-      .then(({ data }) => {
-        if (cancelled || !data?.code) return;
-        setForm(prev => (prev.code ? prev : { ...prev, code: data.code }));
-      })
-      .catch(() => { /* falls back to manual entry */ });
-    return () => { cancelled = true; };
-  }, [isEdit]);
+  // next_code is now served from /branches/form-bundle in the masters
+  // effect above — the standalone /branches/next-code call has been
+  // removed to save one round-trip per modal open. The server still
+  // re-locks and re-allocates inside store(), so the previewed code
+  // matches what gets persisted unless two creates race.
 
   useEffect(() => {
     if (!editId) return;
@@ -648,13 +681,17 @@ export default function BranchForm({ onBack, editId }: Props) {
     setLogoFile(null); setLogoPreview(null);
   };
 
-  /* Edit-mode preload — previously a small centered spinner that
-   * gave no preview of the form shape, so the page felt blank for
-   * the ~500ms hydration window. Replaced with a form-shaped
-   * shimmer (banner + four sections × six field cells) so the user
-   * sees the structure they're about to fill in while the data
-   * loads. Matches the ClientForm shimmer pattern. */
-  if (loadingData) return (
+  /* Form-shaped shimmer — fires while EITHER the edit-mode entity
+   * prefill (/branches/{id}) OR the master bundle (/branches/form-bundle)
+   * is in flight. Previously only edit mode showed shimmer, so new-add
+   * mode flashed empty country/state dropdowns. Extending the condition
+   * to `loadingLookups` covers both flows: banner + four sections ×
+   * six field cells mirror the real form layout the user is about to
+   * interact with. Cache hit (sessionStorage) flips loadingLookups
+   * false synchronously, so the shimmer barely appears on warm reopens.
+   * Shimmer component uses the global .shimmer class which already
+   * has light + dark variants in app.css via [data-bs-theme="dark"]. */
+  if (loadingData || loadingLookups) return (
     <div className="p-3">
       <div
         style={{

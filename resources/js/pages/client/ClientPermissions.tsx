@@ -33,12 +33,23 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
   const [fetchedClientName, setFetchedClientName] = useState('');
   const displayClientName = clientName || fetchedClientName;
 
+  /* Hydrate from 2 parallel calls instead of the previous 3-step
+   * waterfall. Previously the flow was:
+   *   1. GET /clients/{id}        ← to learn the admin's user id
+   *   2. GET /modules             ← parallel with step 1
+   *   3. GET /permissions/user/{admin.id}  ← BLOCKED on step 1 finishing
+   *
+   * Step 3 is gone — ClientController::show() now embeds `admin_permissions`
+   * in the same response as `admin_user`, so we get the permission matrix
+   * without a separate round-trip. Both calls fire in parallel via
+   * Promise.all. */
   useEffect(() => {
     Promise.all([
       api.get(`/clients/${clientId}`),
       api.get('/modules'),
-    ]).then(async ([clientRes, modRes]) => {
-      setFetchedClientName(clientRes.data.org_name || '');
+    ]).then(([clientRes, modRes]) => {
+      const clientData = clientRes.data?.client ?? clientRes.data ?? {};
+      setFetchedClientName(clientData.org_name || '');
       const admin = clientRes.data.admin_user;
       setAdminUser(admin);
       const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
@@ -47,21 +58,19 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
       const m: Record<number, Record<PermKey, boolean>> = {};
       mods.forEach(mod => { m[mod.id] = emptyPerms(); });
 
-      if (admin) {
-        try {
-          const permRes = await api.get(`/permissions/user/${admin.id}`);
-          const perms = permRes.data.permissions || [];
-          perms.forEach((p: any) => {
-            if (m[p.module_id]) {
-              m[p.module_id] = {
-                can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
-                can_delete: !!p.can_delete, can_export: !!p.can_export,
-                can_import: !!p.can_import, can_approve: !!p.can_approve,
-              };
-            }
-          });
-        } catch { /* ignore */ }
-      }
+      // admin_permissions arrives inline now — no extra fetch needed.
+      const perms = Array.isArray(clientRes.data?.admin_permissions)
+        ? clientRes.data.admin_permissions
+        : [];
+      perms.forEach((p: any) => {
+        if (m[p.module_id]) {
+          m[p.module_id] = {
+            can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
+            can_delete: !!p.can_delete, can_export: !!p.can_export,
+            can_import: !!p.can_import, can_approve: !!p.can_approve,
+          };
+        }
+      });
       setMatrix(m);
     }).finally(() => setLoading(false));
   }, [clientId]);

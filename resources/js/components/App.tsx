@@ -423,6 +423,7 @@ function ProfileRouter() {
           ancillaryRole: e.ancillary_role?.name,
           manager: e.reporting_manager?.display_name
             || [e.reporting_manager?.first_name, e.reporting_manager?.last_name].filter(Boolean).join(' ').trim()
+            || e.reporting_manager_user?.name
             || undefined,
           // Passport-size photo from onboarding (employee_documents,
           // document_key='photo'). Read by EmployeeProfile's hero avatar.
@@ -502,10 +503,53 @@ function DashboardRoutes({ user }: { user: any }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [splashDone, setSplashDone] = useState(false);
-  
+
   const isClient = user.user_type === 'client_admin' || user.user_type === 'branch_user';
   const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
   const defaultPages = ['/my-plan', '/profile', '/plan-blocked'];
+
+  /* Dashboard stats preload — fires once when this routes wrapper mounts
+   * (i.e. immediately after successful login). Warms the sessionStorage
+   * cache for the dashboard the user is about to land on, so the very
+   * first dashboard paint reads from cache and feels instant. Skips when
+   * the cache is already populated (rare — happens only if the user
+   * navigated back to login without closing the tab).
+   *
+   * Idle-scheduled so it never competes with the splash render or the
+   * initial route resolution. Fire-and-forget — any error keeps the
+   * dashboard's own on-mount fetch as the fallback.
+   *
+   * Cache variants used:
+   *   super_admin → 'admin'
+   *   client_admin / branch_user → 'client' (the default branch slice)
+   */
+  useEffect(() => {
+    const variant = user.user_type === 'super_admin' ? 'admin' : 'client';
+    const endpoint = user.user_type === 'super_admin'
+      ? '/dashboard/admin-stats'
+      : '/dashboard/client-stats';
+    const warm = () => {
+      // Inline imports to keep the splash bundle small.
+      Promise.all([
+        import('../pages/dashboard/dashboardStatsCache'),
+      ]).then(([cache]) => {
+        if (cache.readDashboardStats(variant)) return;
+        api.get(endpoint)
+          .then(res => cache.writeDashboardStats(variant, res.data))
+          .catch(() => { /* silent — dashboard's own fetch covers it */ });
+      });
+    };
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (h: number) => void;
+    };
+    const handle = w.requestIdleCallback ? w.requestIdleCallback(warm) : window.setTimeout(warm, 800);
+    return () => {
+      if (w.requestIdleCallback) w.cancelIdleCallback?.(handle);
+      else window.clearTimeout(handle);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.user_type]);
 
   // Show splash on first login
   if (!splashDone) {

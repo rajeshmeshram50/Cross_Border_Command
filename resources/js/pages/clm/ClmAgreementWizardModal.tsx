@@ -1567,6 +1567,44 @@ const AGW_CSS = `
 [data-bs-theme="dark"] .agw-ph-card-label { color: #cffafe; }
 [data-bs-theme="dark"] .agw-ph-fields-sub { color: #94a3b8; }
 
+/* MasterMultiSelect chips — the segment picker inline-styles each chip
+   with a pale indigo (#eef2ff bg + #4338ca text), which renders as a
+   stark white sticker on this modal's dark navy body. Override the
+   inline values with !important so the chips read as tinted-glass tokens
+   in dark mode. The remove × button (role="button") inherits the chip
+   text colour. masterFormKit.tsx ships the same overrides but only when
+   MasterFormStyles is mounted — this modal doesn't pull that in, so the
+   rules have to live here too. */
+[data-bs-theme="dark"] .master-select-toggle > span > span.d-inline-flex {
+  background: rgba(8,145,178,.18) !important;
+  color: #cffafe !important;
+  border: 1px solid rgba(103,232,249,.35) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+[data-bs-theme="dark"] .master-select-toggle > span > span.d-inline-flex > span[role="button"] {
+  color: #ecfeff !important;
+  opacity: .85;
+}
+[data-bs-theme="dark"] .master-select-toggle > span > span.d-inline-flex > span[role="button"]:hover {
+  color: #fff !important;
+  opacity: 1;
+}
+[data-bs-theme="dark"] .master-multi-more {
+  background: rgba(8,145,178,.22) !important;
+  color: #cffafe !important;
+  border-color: rgba(103,232,249,.45) !important;
+}
+[data-bs-theme="dark"] .master-multi-more:hover {
+  background: rgba(8,145,178,.32) !important;
+  color: #fff !important;
+}
+[data-bs-theme="dark"] .master-select-toggle > span.d-inline-flex.flex-wrap {
+  scrollbar-color: rgba(103,232,249,.45) transparent;
+}
+[data-bs-theme="dark"] .master-select-toggle > span.d-inline-flex.flex-wrap::-webkit-scrollbar-thumb {
+  background: rgba(103,232,249,.45);
+}
+
 /* Responsive */
 @media (max-width: 900px) {
   .agw-overlay { padding: 16px; }

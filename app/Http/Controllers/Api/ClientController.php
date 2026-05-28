@@ -5,8 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\Masters\Countries;
+use App\Models\Masters\States;
+use App\Models\OrganizationType;
+use App\Models\Plan;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
@@ -50,32 +55,54 @@ class ClientController extends Controller
 
         $clients = $query->orderBy('created_at', 'desc')->paginate($request->query('per_page', 15));
 
+        // Opt-in stats — when the caller asks (`?include_stats=1`), embed the
+        // same totals/breakdown the standalone /clients/stats endpoint returns.
+        // Lets the Clients list page render its KPI cards in 1 round-trip
+        // instead of 2 (list + stats) without breaking the standalone endpoint
+        // or other consumers that don't need stats.
+        if ($request->boolean('include_stats')) {
+            $stats = $this->computeStats();
+            $payload = $clients->toArray();
+            $payload['stats'] = $stats;
+            return response()->json($payload);
+        }
+
         return response()->json($clients);
     }
 
     /**
-     * KPI card stats for the Clients listing page.
+     * Shared stats computation — used by both stats() and index() with
+     * include_stats=1 so the two endpoints stay in lockstep.
      */
-    public function stats()
+    private function computeStats(): array
     {
         $total    = Client::count();
         $active   = Client::where('status', 'active')->count();
         $inactive = Client::where('status', '!=', 'active')->count();
 
-        // Plan-wise breakdown by name (Free for un-planned)
         $planBreakdown = Client::leftJoin('plans', 'clients.plan_id', '=', 'plans.id')
             ->select(DB::raw("COALESCE(plans.name, 'Free') as plan_name"), DB::raw('count(*) as count'))
             ->groupBy('plan_name')
             ->orderByDesc('count')
             ->get();
 
-        return response()->json([
+        return [
             'total'           => $total,
             'active'          => $active,
             'inactive'        => $inactive,
             'plans_count'     => $planBreakdown->count(),
             'plan_breakdown'  => $planBreakdown,
-        ]);
+        ];
+    }
+
+    /**
+     * KPI card stats for the Clients listing page. Kept as a standalone
+     * endpoint for backward compatibility; new callers should prefer
+     * /clients?include_stats=1 which returns list + stats in one call.
+     */
+    public function stats()
+    {
+        return response()->json($this->computeStats());
     }
 
     public function store(Request $request)
@@ -332,6 +359,7 @@ class ClientController extends Controller
         // payload to avoid leaking creds across tenant boundaries.
         $isSuperAdmin = optional(request()->user())->user_type === 'super_admin';
         $adminPayload = null;
+        $adminPermissions = [];
         if ($adminUser) {
             $adminPayload = $adminUser->only(['id', 'name', 'email', 'phone', 'designation', 'status']);
             if ($isSuperAdmin && $adminUser->password_encrypted) {
@@ -343,11 +371,22 @@ class ClientController extends Controller
                     $adminPayload['password_plain'] = null;
                 }
             }
+
+            // Embed the admin user's permissions so ClientPermissions page
+            // can hydrate in 2 API calls instead of 3 (was: clients/{id} +
+            // modules + permissions/user/{id} waterfall — admin id wasn't
+            // known until clients/{id} resolved, forcing the waterfall).
+            // Now permissions ride on the clients/{id} response, eliminating
+            // the third sequential round-trip.
+            $adminPermissions = \App\Models\Permission::where('user_id', $adminUser->id)
+                ->with('module:id,name,slug,icon')
+                ->get();
         }
 
         return response()->json([
             'client' => $client,
             'admin_user' => $adminPayload,
+            'admin_permissions' => $adminPermissions,
         ]);
     }
 
@@ -631,5 +670,70 @@ class ClientController extends Controller
             $stored = substr($stored, strlen('storage/'));
         }
         return $stored;
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * GET /clients/form-bundle
+     *
+     * Bundle every master dropdown the ClientForm needs into ONE response.
+     * Replaces 4 separate round-trips:
+     *   /organization-types, /plans, /master/countries, /master/states
+     *
+     * Cached server-side via Cache::remember (5-min TTL, per-user) — these
+     * masters change rarely so the cache absorbs the bulk of repeat opens.
+     * The frontend mirrors this with sessionStorage in
+     * clientFormBundleCache.ts.
+     *
+     * Country + state status filter is case-insensitive (master_* tables
+     * use 'Active' enum; clm_* tables use lowercase 'active'). Plans use
+     * lowercase 'active'. Same `LOWER()` filter handles both.
+     * ────────────────────────────────────────────────────────────── */
+    public function formBundle(Request $request)
+    {
+        $user = $request->user();
+        $cacheKey = 'client:form-bundle:user:' . ($user?->id ?? 'guest');
+
+        $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
+            // Tenant safety — apply MasterVisibility::applyReadScope to every
+            // master query, mirroring the gate MasterController::list() uses
+            // for the canonical /master/{slug} endpoint. Without this a
+            // client_admin of Client A could see Client B's tenant-scoped
+            // master rows via the bundle endpoint. Per-user cache key is a
+            // second line of defence — cache entries are never shared across
+            // users so blast radius stays bounded even if scope ever regresses.
+            $scope = fn ($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
+
+            return [
+                // organization_types — uses lowercase status string
+                'organization_types' => OrganizationType::query()
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->tap($scope)
+                    ->orderBy('sort_order')
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'slug', 'icon', 'status', 'sort_order']),
+
+                // plans — admin/SaaS-level master, lowercase status
+                'plans' => Plan::query()
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->tap($scope)
+                    ->orderBy('sort_order')
+                    ->orderBy('id')
+                    ->get(['id', 'name', 'slug', 'price', 'period', 'status', 'trial_days', 'is_featured', 'sort_order']),
+
+                'countries' => Countries::query()
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->tap($scope)
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'iso_code', 'status']),
+
+                'states' => States::query()
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->tap($scope)
+                    ->orderBy('name')
+                    ->get(['id', 'country_id', 'name', 'status']),
+            ];
+        });
+
+        return response()->json($bundle);
     }
 }

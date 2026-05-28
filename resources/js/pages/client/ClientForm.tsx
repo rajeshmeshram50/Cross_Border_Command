@@ -8,6 +8,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { Shimmer } from '../../components/ui/Shimmer';
+import { readClientFormBundle, writeClientFormBundle } from './clientFormBundleCache';
 
 interface Props {
   onBack: () => void;
@@ -218,28 +219,47 @@ export default function ClientForm({ onBack, editId }: Props) {
   const [statesAll, setStatesAll] = useState<Array<{ id: number; country_id: string; name: string; status: string }>>([]);
   const [loadingLookups, setLoadingLookups] = useState(true);
 
+  /* Bundled form fetch — /clients/form-bundle returns every dropdown
+   * (organization_types, plans, countries, states) in ONE round-trip,
+   * replacing the previous 4-parallel Promise.all. The server already
+   * filters to active rows and applies the canonical sort, so the
+   * client-side filter+sort below is dropped on the bundled path.
+   *
+   * Caching: the bundle is read from sessionStorage first (5-min TTL).
+   * Cache hit ⇒ synchronous hydration, 0 API calls. Cache miss ⇒ fetch
+   * + persist for next time. */
   useEffect(() => {
-    Promise.all([
-      api.get('/organization-types', { params: { active_only: 1 } }).catch(() => ({ data: [] })),
-      api.get('/plans').catch(() => ({ data: [] })),
-      api.get('/master/countries').catch(() => ({ data: [] })),
-      api.get('/master/states').catch(() => ({ data: [] })),
-    ]).then(([otRes, planRes, countryRes, stateRes]) => {
-      setOrgTypes(Array.isArray(otRes.data) ? otRes.data : []);
-      const allPlans: PlanOption[] = Array.isArray(planRes.data) ? planRes.data : [];
-      setPlans(allPlans.filter(p => p.status === 'active'));
-      // Sort countries A→Z so the dropdown reads alphabetically (QA requirement).
-      const activeCountries = Array.isArray(countryRes.data)
-        ? countryRes.data.filter((c: any) => c.status === 'Active')
-            .sort((a: any, b: any) => a.name.localeCompare(b.name))
-        : [];
-      const activeStates = Array.isArray(stateRes.data)
-        ? stateRes.data.filter((s: any) => s.status === 'Active')
-            .sort((a: any, b: any) => a.name.localeCompare(b.name))
-        : [];
-      setCountries(activeCountries);
-      setStatesAll(activeStates);
-    }).finally(() => setLoadingLookups(false));
+    type Bundle = {
+      organization_types: OrgType[];
+      plans: PlanOption[];
+      countries: Array<{ id: number; name: string; iso_code: string; status: string }>;
+      states: Array<{ id: number; country_id: string; name: string; status: string }>;
+    };
+
+    const hydrate = (b: Bundle) => {
+      setOrgTypes(Array.isArray(b.organization_types) ? b.organization_types : []);
+      // Server already returns active plans only.
+      setPlans(Array.isArray(b.plans) ? b.plans : []);
+      // Server already returns active+sorted countries.
+      setCountries(Array.isArray(b.countries) ? b.countries : []);
+      setStatesAll(Array.isArray(b.states) ? b.states : []);
+    };
+
+    // Cache hit — hydrate immediately, skip the network entirely.
+    const cached = readClientFormBundle<Bundle>();
+    if (cached) {
+      hydrate(cached);
+      setLoadingLookups(false);
+      return;
+    }
+
+    api.get<Bundle>('/clients/form-bundle')
+      .then(res => {
+        hydrate(res.data);
+        writeClientFormBundle(res.data);
+      })
+      .catch(() => { /* dropdowns stay empty on failure */ })
+      .finally(() => setLoadingLookups(false));
   }, []);
 
   // Auto-sync plan_type (free/paid) when user picks a plan
@@ -474,12 +494,15 @@ export default function ClientForm({ onBack, editId }: Props) {
     setLogoFile(null); setLogoPreview(null); setFaviconFile(null); setFaviconPreview(null);
   };
 
-  /* Edit-mode preload — was a single centered spinner that gave no
-   * preview of the form shape; the page felt like a dead screen for
-   * the ~500ms fetch. Replaced with a form-shaped shimmer (header
-   * banner + four sections × three field rows) so the user sees the
-   * structure they're about to fill in while the data hydrates. */
-  if (loadingData) return (
+  /* Form-shaped shimmer — fires while EITHER the edit-mode entity
+   * prefill (/clients/{id}) OR the master bundle (/clients/form-bundle)
+   * is in flight. Previously only edit mode showed shimmer, so new-add
+   * mode flashed empty dropdowns. Extending the condition to
+   * `loadingLookups` covers both flows: header banner + four sections
+   * × three field rows mirror the real form layout the user is about
+   * to interact with. Cache-hit (sessionStorage) flips loadingLookups
+   * false immediately, so the shimmer barely appears on warm reopens. */
+  if (loadingData || loadingLookups) return (
     <div className="p-3">
       <div
         style={{

@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row, Input, Spinner, Alert, Form, InputGroup, Inpu
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
+import { bustClientFormBundle } from '../client/clientFormBundleCache';
 
 interface Props { onBack: () => void; editId?: number; }
 interface ModuleOption { id: number; name: string; slug: string; icon: string; }
@@ -200,6 +201,11 @@ export default function AddPlan({ onBack, editId }: Props) {
         toast.success('Plan Created', `"${form.name}" created successfully`);
         setTimeout(() => onBack(), 1000);
       }
+      // Plans list is part of /clients/form-bundle — invalidate the cached
+      // copy so the next ClientForm open refetches fresh data and the new
+      // / updated plan appears in the dropdown. Server cache still has its
+      // own 5-min TTL; this just makes the SAME-USER reopen instant-fresh.
+      bustClientFormBundle();
     } catch (err: any) {
       if (err.response?.status === 422) {
         setErrors(err.response.data.errors || {});
