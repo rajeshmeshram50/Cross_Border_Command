@@ -196,8 +196,7 @@ class ShipmentOrderController extends Controller
             'remarks'             => 'nullable|string|max:2000',
         ]);
 
-        // Append new attachments to existing list rather than replacing —
-        // preserves history of uploaded shipping documents.
+        
         if ($request->hasFile('attachments')) {
             $existing = (array) ($row->attachments ?? []);
             foreach ((array) $request->file('attachments') as $file) {
