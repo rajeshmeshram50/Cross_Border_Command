@@ -4912,12 +4912,18 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         const r = await api.get(`/employees/${emp.dbId}/previous-employments`);
         if (cancelled) return;
         const list: any[] = Array.isArray(r.data) ? r.data : [];
+        /* Prefer the explicit `has_prior_experience` flag (set when the
+         * HR picks Yes/No and Save & Next flushes). Falls back to "list
+         * length > 0 means yes" so legacy rows saved before the column
+         * existed still hydrate correctly. */
+        const raw = (emp as any)?.raw ?? {};
+        const flag = raw.has_prior_experience;
         if (list.length === 0) {
           setPrevCompanies([]);
-          setHasExperience(null);
+          setHasExperience(flag === true ? 'yes' : flag === false ? 'no' : null);
           return;
         }
-        setHasExperience('yes');
+        setHasExperience(flag === false ? 'no' : 'yes');
         setPrevCompanies(list.map(p => ({
           id: p.id,
           company_name:   p.company_name   ?? '',
@@ -5024,6 +5030,18 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         .filter(c => c.company_name.trim())
         .map(c => persistCompany(c._localKey));
       await Promise.all(work);
+      /* Persist the Yes/No answer onto the employee row so the radio
+       * group rehydrates on revisit. Without this, a "No — first job"
+       * pick had nowhere to live (no previous_employments rows would be
+       * created) and the radio reset to unanswered every time the wizard
+       * was reopened. */
+      if (emp?.dbId && hasExperience !== null) {
+        try {
+          await api.put(`/employees/${emp.dbId}`, {
+            has_prior_experience: hasExperience === 'yes',
+          });
+        } catch { /* non-fatal — keep the in-memory state */ }
+      }
     },
     validate: () => {
       if (hasExperience === null) {

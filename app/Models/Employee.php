@@ -38,7 +38,7 @@ class Employee extends Model
         'department_id', 'designation_id',
         'primary_role_id', 'ancillary_role_id', 'ancillary_role_ids',
         'work_type',
-        'reporting_manager_id', 'reporting_manager_user_id', 'date_of_joining',
+        'reporting_manager_id', 'reporting_manager_user_id', 'has_prior_experience', 'date_of_joining',
 
         'probation_policy', 'probation_months',
         'notice_period', 'notice_period_days',
@@ -102,6 +102,7 @@ class Employee extends Model
         'notice_period_days' => 'integer',
         'attendance_tracking' => 'boolean',
         'enable_payroll' => 'boolean',
+        'has_prior_experience' => 'boolean',
         'bonus_in_annual' => 'boolean',
         'pf_eligible' => 'boolean',
         'detailed_breakup' => 'boolean',

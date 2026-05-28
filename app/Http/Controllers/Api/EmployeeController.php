@@ -1138,6 +1138,11 @@ class EmployeeController extends Controller
             'work_type' => 'nullable|string|max:50',
             'reporting_manager_id'      => 'nullable|integer',
             'reporting_manager_user_id' => 'nullable|integer',
+            // Stage 2 Yes/No — "Has the employee worked anywhere before?".
+            // Persisted so the radio group can rehydrate on revisit; the
+            // legacy "derive from previous_employments row count" was
+            // unable to distinguish "No, first job" from "not answered yet".
+            'has_prior_experience'      => 'nullable|boolean',
             'date_of_joining' => 'nullable|date',
 
             'probation_policy'   => 'nullable|string|max:50',
@@ -1285,31 +1290,30 @@ class EmployeeController extends Controller
     }
 
     /**
-     * Reject duplicate human-being entries within the same tenant.
+     * Reject duplicate employee entries within the same tenant.
      *
-     * Two signature checks run in order:
-     *   1. Mobile number — most reliable single field; same person almost
-     *      always reuses their phone.
-     *   2. (first_name + last_name + date_of_birth) — covers the case
-     *      where the admin retyped the mobile with a typo but everything
-     *      else points to the same human.
+     * Only mobile number is treated as a hard duplicate signal — it's the
+     * single most reliable per-person identifier. The legacy
+     * (first_name + last_name + date_of_birth) check was removed because
+     * two unrelated employees can legitimately share both: common names
+     * + birthdays collide more often than the check's authors assumed,
+     * and the false positives blocked legitimate hires (admins reported
+     * being unable to onboard a new Bhavika because an EMP-004 already
+     * had the same name + DOB). Mobile uniqueness still protects against
+     * the same-person-typed-twice case the second check was meant for.
      *
-     * Each check skips if its key fields are missing so partial drafts
-     * still persist. Soft-deleted employees don't block fresh hires.
+     * The check skips when mobile is empty so partial drafts persist.
+     * Soft-deleted employees don't block fresh hires.
      */
     private function guardDuplicate(array $data, $clientId, ?int $excludeId): void
     {
-        $mobile    = trim((string) ($data['mobile']     ?? ''));
-        $firstName = trim((string) ($data['first_name'] ?? ''));
-        $lastName  = trim((string) ($data['last_name']  ?? ''));
-        $dob       = $data['date_of_birth'] ?? null;
+        $mobile = trim((string) ($data['mobile'] ?? ''));
 
         $tenantScope = function ($q) use ($clientId, $excludeId) {
             $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
             if ($excludeId !== null) $q->where('id', '!=', $excludeId);
         };
 
-        // 1) Same mobile number in this tenant → same person.
         if ($mobile !== '') {
             $q = \App\Models\Employee::query()->where('mobile', $mobile);
             $tenantScope($q);
@@ -1321,26 +1325,6 @@ class EmployeeController extends Controller
                     'mobile' => [sprintf(
                         'This mobile number is already in use by %s (%s).',
                         $name ?: 'another employee',
-                        $existing->emp_code ?: ('#' . $existing->id),
-                    )],
-                ]);
-            }
-        }
-
-        // 2) Same name + DOB triple → same person even with new mobile.
-        if ($firstName !== '' && $lastName !== '' && $dob) {
-            $q = \App\Models\Employee::query()
-                ->whereRaw('LOWER(first_name) = ?', [mb_strtolower($firstName)])
-                ->whereRaw('LOWER(last_name)  = ?', [mb_strtolower($lastName)])
-                ->whereDate('date_of_birth', $dob);
-            $tenantScope($q);
-            $existing = $q->first(['id', 'emp_code', 'display_name']);
-            if ($existing) {
-                $name = $existing->display_name ?: ($firstName . ' ' . $lastName);
-                throw \Illuminate\Validation\ValidationException::withMessages([
-                    'first_name' => [sprintf(
-                        'An employee with this name and date of birth already exists (%s — %s).',
-                        $name,
                         $existing->emp_code ?: ('#' . $existing->id),
                     )],
                 ]);
