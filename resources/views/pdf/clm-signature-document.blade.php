@@ -74,11 +74,26 @@
         margin-right: 25px;
       }
 
-      /* Footer + page number now render via page_text scripts at the
-         bottom of the file — see the <script type="text/php"> block.
-         No more position:fixed band; the @page margin-bottom reserves
-         the band's vertical space and the scripts stamp the text at a
-         shared baseline Y on every page. */
+      /* FOOTER — fixed at the bottom of every page. Background / colour
+         come from the saved footer_config so a tenant whose footer band
+         was configured dark renders correctly on every page. */
+      .pdf-footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        border-top: 1px solid #e5e7eb;
+        padding: 8px 14px;
+        background: {{ $footerBg }};
+        color: {{ $footerColor }};
+        z-index: 1000;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 11px;
+      }
+
+      .pdf-footer table { width: 100%; border-collapse: collapse; margin: 0; }
+      .pdf-footer td    { vertical-align: middle; }
 
       body {
         margin: 0;
