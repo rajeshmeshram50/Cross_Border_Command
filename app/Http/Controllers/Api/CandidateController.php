@@ -46,8 +46,8 @@ class CandidateController extends Controller
         'Walk', 'Bicycle', 'Two-wheeler', 'Four-wheeler', 'Public Transport', 'Other',
     ];
 
-    /** Max CV upload size matches the front-end drop-zone (10 MB). */
-    private const CV_MAX_KB     = 10240;
+    /** Max CV upload size matches the front-end drop-zone (2 MB). */
+    private const CV_MAX_KB     = 2048;
     private const CV_MIME_TYPES = 'pdf,doc,docx';
 
     /* ─────────────────────────────────────────────────────────────────
@@ -831,7 +831,15 @@ class CandidateController extends Controller
 
             'name'                => [$isUpdate ? 'sometimes' : 'required', 'string', 'max:150'],
             'email'               => 'nullable|email|max:191',
-            'mobile'              => 'nullable|string|max:30',
+            // Mobile: allow optional + / spaces / dashes; the digit count
+            // must land between 7 and 15. Matches the frontend validator
+            // so a payload that slips past the SPA still fails at the API.
+            'mobile'              => ['nullable', 'string', 'max:20', 'regex:/^\+?[\d\s\-]*$/', function ($attr, $val, $fail) {
+                $digits = preg_replace('/\D/', '', (string) $val);
+                if ($digits === '') return;
+                $len = strlen($digits);
+                if ($len < 7 || $len > 15) $fail('Mobile must be 7–15 digits.');
+            }],
             'current_address'     => 'nullable|string|max:500',
             'qualification'       => 'nullable|string|max:191',
             'experience_years'    => 'nullable|numeric|min:0|max:99.99',
