@@ -209,6 +209,11 @@ export default function SalesLeadWorksheet() {
     mode: 'single' | 'selection' | 'filters';
     leadId?: number | null;
     leadIds?: number[];
+    /* Single-mode context — the customer name and Opp code of the lead
+     * being reassigned. Shown as pills under the modal header so the user
+     * can confirm what they're acting on. */
+    customerName?: string | null;
+    oppCode?: string | null;
     /* When the picked row(s) already have an owner, we pre-select that
      * person in the modal's salesperson dropdown so the user sees "this
      * lead is currently with X" instead of an empty box. For 'selection'
@@ -495,6 +500,8 @@ export default function SalesLeadWorksheet() {
     open: true,
     mode: 'single',
     leadId: l.id,
+    customerName: l.customer,
+    oppCode: l.oppId,
     initialSalespersonId: l.salespersonId,
   });
   const onOpenLead      = (l: Lead) => openMatrixDetail(l);
@@ -1018,6 +1025,8 @@ export default function SalesLeadWorksheet() {
         mode={assignModal.mode}
         leadId={assignModal.leadId ?? null}
         leadIds={assignModal.leadIds ?? []}
+        customerName={assignModal.customerName ?? null}
+        oppCode={assignModal.oppCode ?? null}
         initialSalespersonId={assignModal.initialSalespersonId ?? null}
         /* Account list comes from the .env-configured IndiaMart key labels
          * for this branch (via /sales/leads/sync/config). If nothing is

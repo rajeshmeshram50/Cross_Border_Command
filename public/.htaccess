@@ -23,3 +23,25 @@
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
 </IfModule>
+
+# ── gzip / DEFLATE compression ───────────────────────────────────────
+# Compresses JSON API responses and other text payloads on the wire
+# before they hit the browser. A 140 KB master bundle drops to ~25 KB
+# typical, ~10 KB on highly repetitive JSON. mod_deflate is included
+# with Apache by default on XAMPP; if `apachectl -M | grep deflate`
+# shows nothing on production, enable it with `a2enmod deflate`.
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE application/json
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/xml
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE text/plain
+    AddOutputFilterByType DEFLATE text/xml
+    AddOutputFilterByType DEFLATE image/svg+xml
+
+    # Some old proxies/AVs strip Content-Length on compressed responses
+    # and Apache then refuses to send. Force Vary so downstream caches
+    # don't serve the compressed body to non-supporting clients.
+    Header append Vary Accept-Encoding env=!dont-vary
+</IfModule>

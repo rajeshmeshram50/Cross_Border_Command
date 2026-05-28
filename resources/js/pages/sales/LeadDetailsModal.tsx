@@ -279,21 +279,6 @@ export default function LeadDetailsModal({ open, leadId, onClose }: Props) {
                 </Card>
               )}
 
-              {lead.query_message && (
-                <div className="ldv-card ldv-card-wide">
-                  <div className="ldv-card-head">
-                    <div className="ldv-card-icon" style={{ background: '#fee2e2', color: '#dc2626' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                      </svg>
-                    </div>
-                    <span className="ldv-label">QUERY MESSAGE</span>
-                  </div>
-                  <div className="ldv-card-body">
-                    <p className="ldv-message">{lead.query_message}</p>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -399,7 +384,11 @@ const LDV_CSS = `
 .ldv-close:hover { background: rgba(255,255,255,.32); }
 
 .ldv-body { padding: 14px 18px; flex: 1; overflow-y: auto; background: #f8fafc; }
-.ldv-loading { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ldv-loading {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 10px;
+}
 .ldv-skel {
   height: 56px; border-radius: 10px;
   background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
@@ -411,7 +400,11 @@ const LDV_CSS = `
   100% { background-position: -200% 0; }
 }
 
-.ldv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ldv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 10px;
+}
 .ldv-card {
   display: flex; align-items: center; gap: 10px;
   padding: 9px 11px; background: #fff;
@@ -450,12 +443,6 @@ const LDV_CSS = `
 .ldv-chip-cyan   { background: #ecfeff; color: #0e7490; border-color: #a5f3fc; }
 .ldv-chip-slate  { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
 
-.ldv-message {
-  font-size: 11px; color: #334155; line-height: 1.5; margin: 0;
-  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
-  padding: 8px 11px; white-space: pre-wrap; word-break: break-word;
-}
-
 .ldv-foot {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 18px; background: #fff; border-top: 1px solid #e2e8f0;
@@ -478,7 +465,6 @@ const LDV_CSS = `
 [data-bs-theme="dark"] .ldv-card { background: #0f172a; border-color: #1e293b; }
 [data-bs-theme="dark"] .ldv-card:hover { border-color: #334155; }
 [data-bs-theme="dark"] .ldv-value { color: #e2e8f0; }
-[data-bs-theme="dark"] .ldv-message { background: #0b1226; border-color: #1e293b; color: #cbd5e1; }
 [data-bs-theme="dark"] .ldv-foot { background: #0f172a; border-color: #1e293b; }
 [data-bs-theme="dark"] .ldv-link { color: #67e8f9; }
 
@@ -494,7 +480,6 @@ const LDV_CSS = `
 }
 
 @media (max-width: 720px) {
-  .ldv-grid, .ldv-loading { grid-template-columns: 1fr; }
   .ldv-head { padding: 14px 16px; flex-wrap: wrap; gap: 10px; }
   .ldv-head-title { font-size: 16px; }
   .ldv-head-icon { width: 36px; height: 36px; }

@@ -25,11 +25,12 @@
  * gracefully: read returns null, write is a no-op.
  */
 
-// v2 bump (SAAS-OPT-016) — discards any pre-tenant-scope cache entries
-// written before MasterVisibility::applyReadScope was added to the
-// server bundle. Without bumping, browsers would keep serving the
-// older potentially-leaky payload until the 5-min TTL expired.
-const KEY = 'client:form-bundle:v2';
+// v3 bump — bundle shape changed: states master removed (was 87% of
+// payload, now lazy-loaded by country). Old v2 entries had a `states`
+// array that the new hydrator ignores anyway, but bumping the key
+// guarantees no browser keeps reading stale shape during the window.
+// v2 was added in SAAS-OPT-016 for MasterVisibility::applyReadScope.
+const KEY = 'client:form-bundle:v3';
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 type Envelope<T> = { v: 1; ts: number; data: T };
