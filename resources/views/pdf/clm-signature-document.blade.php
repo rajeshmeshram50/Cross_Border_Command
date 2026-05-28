@@ -74,26 +74,11 @@
         margin-right: 25px;
       }
 
-      /* FOOTER — fixed at the bottom of every page. Background / colour
-         come from the saved footer_config so a tenant whose footer band
-         was configured dark renders correctly on every page. */
-      .pdf-footer {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        width: 100%;
-        border-top: 1px solid #e5e7eb;
-        padding: 8px 14px;
-        background: {{ $footerBg }};
-        color: {{ $footerColor }};
-        z-index: 1000;
-        font-family: Arial, Helvetica, sans-serif;
-        font-size: 11px;
-      }
-
-      .pdf-footer table { width: 100%; border-collapse: collapse; margin: 0; }
-      .pdf-footer td    { vertical-align: middle; }
+      /* Footer + page number now render via page_text scripts at the
+         bottom of the file — see the <script type="text/php"> block.
+         No more position:fixed band; the @page margin-bottom reserves
+         the band's vertical space and the scripts stamp the text at a
+         shared baseline Y on every page. */
 
       body {
         margin: 0;
@@ -196,39 +181,12 @@
   </head>
 
   <body>
-    {{-- FOOTER — fixed on every page, driven by footer_config. Three
-         cells (left / center / right) mirror HeaderFooterPanel's preview
-         so footer.text lands in the cell matching its `align`, and the
-         page number (when enabled) lands in the cell matching its
-         `page_number_align`. Cells can overlap on the same side. --}}
-    <div class="pdf-footer">
-      <table>
-        <tr>
-          @foreach (['left', 'center', 'right'] as $cell)
-            @php
-              $showText = $footerAlign === $cell;
-              $showNum  = $showPageNumber && $pageNumberAlign === $cell;
-              $justify  = $cell === 'left' ? 'left' : ($cell === 'right' ? 'right' : 'center');
-            @endphp
-            <td style="width: 33.33%; text-align: {{ $justify }};">
-              @if ($showText)
-                <span>{{ $footerText }}</span>
-              @endif
-              @if ($showNum)
-                <span class="pdf-footer-pageno" data-format="{{ $pageNumberFormat }}"
-                      style="display:inline-block; padding:2px 6px; margin-left:{{ $showText ? '8px' : '0' }};
-                             font-weight:700; font-size:10.5px;">
-                  {{-- Actual page numbers are stamped by the dompdf script
-                       at the bottom (positioned absolutely); this span just
-                       reserves visual room in the right cell. --}}
-                  &nbsp;
-                </span>
-              @endif
-            </td>
-          @endforeach
-        </tr>
-      </table>
-    </div>
+    {{-- FOOTER + page number are painted via dompdf page_text scripts at
+         the bottom of the file — both stamps share one baseline Y, so
+         they always sit on the same line regardless of body length.
+         The previous `position: fixed; bottom: 0` approach drifted
+         upward on short documents because dompdf falls back to natural
+         flow when the body doesn't fill a page. --}}
 
     {{-- HEADER — driven by header_config, no hardcoded brand block. --}}
     <div class="content-wrapper main-content first-page-fix">
@@ -282,33 +240,70 @@
       </div>
     </div>
 
-    {{-- Page-number stamp — renders into whichever footer cell the user
-         picked via page_number_align. Hidden entirely when the user
-         turned off `show_page_number` on the draft. --}}
-    @if ($showPageNumber)
-      <script type="text/php">
-        if (isset($pdf)) {
-          $font   = $fontMetrics->get_font("helvetica", "normal");
-          $size   = 9;
-          $align  = "{{ $pageNumberAlign }}";
-          $format = "{{ $pageNumberFormat }}";
+    {{-- Footer-text + page-number stamps. Both are painted via dompdf
+         `page_text()` at the SAME baseline Y so they always line up
+         regardless of how short the body is. The earlier approach used
+         a `position: fixed; bottom: 0` `<div class="pdf-footer">` for
+         the text, but dompdf renders that in NATURAL FLOW when the
+         body doesn't fill the page — pushing the footer text high up
+         while the page_text page-number remained at the bottom edge,
+         producing a big vertical gap on short documents.
+
+         Both stamps live on every page. Margins (28pt from edges) +
+         a shared baseline Y produce the customer/consignee/vendor
+         layout you've already seen for trade-doc sends. --}}
+    <script type="text/php">
+      if (isset($pdf)) {
+        $font  = $fontMetrics->get_font("helvetica", "normal");
+        $size  = 9;
+        $color = array(0.42, 0.45, 0.5);
+
+        $pageWidth   = $pdf->get_width();
+        $sideMargin  = 28;
+        // Footer baseline — 22pt above the page bottom edge. Tracks the
+        // @page { margin-bottom: 70px } reservation so the band always
+        // sits inside the bottom margin, never overlapping body content.
+        $y           = $pdf->get_height() - 22;
+
+        // ── Footer text (footer.text) ──
+        $footerText  = "{!! addslashes($footerText) !!}";
+        $footerAlign = "{{ $footerAlign }}";
+        if ($footerText !== "") {
+          $tw = $fontMetrics->getTextWidth($footerText, $font, $size);
+          if ($footerAlign === "left")        $fx = $sideMargin;
+          elseif ($footerAlign === "right")   $fx = $pageWidth - $tw - $sideMargin;
+          else                                $fx = ($pageWidth - $tw) / 2;
+          $pdf->page_text($fx, $y, $footerText, $font, $size, $color);
+        }
+
+        @if ($showPageNumber)
+          // ── Page number (show_page_number + page_number_format) ──
+          $pnAlign  = "{{ $pageNumberAlign }}";
+          $pnFormat = "{{ $pageNumberFormat }}";
 
           // Match HeaderFooterPanel's format options 1:1.
-          $text = $format === "N"           ? "{PAGE_NUM}"
-                : ($format === "Page N"     ? "Page {PAGE_NUM}"
-                : ($format === "N / M"      ? "{PAGE_NUM} / {PAGE_COUNT}"
-                :                              "Page {PAGE_NUM} of {PAGE_COUNT}"));
+          $pnText = $pnFormat === "N"           ? "{PAGE_NUM}"
+                  : ($pnFormat === "Page N"     ? "Page {PAGE_NUM}"
+                  : ($pnFormat === "N / M"      ? "{PAGE_NUM} / {PAGE_COUNT}"
+                  :                                "Page {PAGE_NUM} of {PAGE_COUNT}"));
 
-          $color      = array(0.42, 0.45, 0.5);
-          $pageWidth  = $pdf->get_width();
-          $textWidth  = $fontMetrics->getTextWidth($text, $font, $size);
-          if ($align === "left")        $x = 28;
-          elseif ($align === "right")   $x = $pageWidth - $textWidth - 28;
-          else                          $x = ($pageWidth - $textWidth) / 2;
-          $y = $pdf->get_height() - 22;
-          $pdf->page_text($x, $y, $text, $font, $size, $color);
-        }
-      </script>
-    @endif
+          $pnw = $fontMetrics->getTextWidth($pnText, $font, $size);
+          if ($pnAlign === "left")        $px = $sideMargin;
+          elseif ($pnAlign === "right")   $px = $pageWidth - $pnw - $sideMargin;
+          else                            $px = ($pageWidth - $pnw) / 2;
+
+          // If footer text + page number both land on the same cell
+          // (e.g. both centre-aligned), nudge the page number rightwards
+          // so they don't overlap into an unreadable smear.
+          if ($pnAlign === $footerAlign && $footerText !== "") {
+            if ($pnAlign === "center") $px = ($pageWidth - $pnw) / 2 + ($fontMetrics->getTextWidth($footerText, $font, $size) / 2) + 12;
+            elseif ($pnAlign === "left") $px = $sideMargin + $fontMetrics->getTextWidth($footerText, $font, $size) + 12;
+            else $px = $pageWidth - $pnw - $sideMargin - $fontMetrics->getTextWidth($footerText, $font, $size) - 12;
+          }
+
+          $pdf->page_text($px, $y, $pnText, $font, $size, $color);
+        @endif
+      }
+    </script>
   </body>
 </html>

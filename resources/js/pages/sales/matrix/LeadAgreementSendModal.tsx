@@ -317,56 +317,58 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
   };
 
   /* Poll every 15 seconds for agreement signature-request status updates
-   * on the current lead's applicable parties. This reuses the same backend
-   * /clm/signature-requests?sync=1 path used by customer/consignee trade-
-   * document tabs so completed PDFs and certificates appear live. */
+   * on the current lead. Mirrors the customer/consignee/vendor trade-
+   * document polling but scoped tightly by `document_type=agreement` and
+   * `lead_id` so trade-doc requests on the same party can't bleed into
+   * agreement rows. ?sync=1 nudges the backend to round-trip Zoho for
+   * any still-inprogress rows, which flips them to `completed` +
+   * downloads the signed PDF + completion certificate the moment the
+   * recipient finishes signing. */
   useEffect(() => {
-    if (!open || !payload) return;
-
-    const customerId = payload.lead.customer?.id;
-    const consigneeId = payload.lead.consignee?.id;
-    const parties: Array<{ id: number; model: 'Customer' | 'Consignee' }> = [];
-    if (customerId) parties.push({ id: customerId, model: 'Customer' });
-    if (consigneeId) parties.push({ id: consigneeId, model: 'Consignee' });
-    if (parties.length === 0) return;
+    if (!open || !payload || !leadId) return;
 
     let cancelled = false;
 
     const fetchAndUpdate = async (withSync: boolean) => {
       try {
+        const response = await api.get('/clm/signature-requests', {
+          params: {
+            lead_id: leadId,
+            document_type: 'agreement',
+            sync: withSync ? 1 : 0,
+          },
+        });
+        const rows = Array.isArray(response.data?.data) ? response.data.data : [];
         const infoMap: Record<number, { status: string; signatureRequestId: number; signedUrl?: string; certificateUrl?: string }> = {};
 
-        await Promise.all(parties.map(async (party) => {
-          const response = await api.get('/clm/signature-requests', {
-            params: { party_id: party.id, model_name: party.model, sync: withSync ? 1 : 0 },
-          });
-          const rows = Array.isArray(response.data?.data) ? response.data.data : [];
-          for (const row of rows) {
-            const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
-            for (let i = 0; i < ids.length; i += 1) {
-              const agreementId = Number(ids[i]);
-              if (!agreementId || infoMap[agreementId]) continue;
+        for (const row of rows) {
+          const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
+          for (let i = 0; i < ids.length; i += 1) {
+            const agreementId = Number(ids[i]);
+            // `latest()` ordering means the first hit is the freshest
+            // request for this agreement — skip older ones so a recalled
+            // request can't overwrite a later in-progress one.
+            if (!agreementId || infoMap[agreementId]) continue;
 
-              const signedArr = row.signed_document_paths;
-              let rawSignedUrl: string | null = null;
-              if (Array.isArray(signedArr)) {
-                const entry = signedArr[i] as { url?: string; path?: string; file_url?: string } | string | undefined;
-                if (typeof entry === 'string') rawSignedUrl = entry;
-                else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
-              }
-              if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
-              if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
-
-              const rawCertUrl = row.certificate_url || row.certificate_path || null;
-              infoMap[agreementId] = {
-                status: row.status,
-                signatureRequestId: row.id,
-                signedUrl: rawSignedUrl ? rawSignedUrl : undefined,
-                certificateUrl: rawCertUrl ? rawCertUrl : undefined,
-              };
+            const signedArr = row.signed_document_paths;
+            let rawSignedUrl: string | null = null;
+            if (Array.isArray(signedArr)) {
+              const entry = signedArr[i] as { url?: string; path?: string; file_url?: string } | string | undefined;
+              if (typeof entry === 'string') rawSignedUrl = entry;
+              else if (entry && typeof entry === 'object') rawSignedUrl = entry.url || entry.file_url || entry.path || null;
             }
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
+            if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
+
+            const rawCertUrl = row.certificate_url || row.certificate_path || null;
+            infoMap[agreementId] = {
+              status: row.status,
+              signatureRequestId: row.id,
+              signedUrl: rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
+              certificateUrl: rawCertUrl ? resolveFileUrl(rawCertUrl) : undefined,
+            };
           }
-        }));
+        }
 
         if (cancelled) return;
 
@@ -408,10 +410,13 @@ export default function LeadAgreementSendModal({ open, leadId, tier, onClose, da
       }
     };
 
+    // Fire once immediately (no sync) so the table reflects whatever is
+    // already in the DB without waiting for the first 15s tick, then
+    // hand off to the interval which forces a Zoho round-trip every tick.
     fetchAndUpdate(false);
     const intervalId = window.setInterval(() => fetchAndUpdate(true), 15000);
     return () => { cancelled = true; window.clearInterval(intervalId); };
-  }, [open, payload?.lead.customer?.id, payload?.lead.consignee?.id]);
+  }, [open, leadId, payload?.lead.id]);
 
   /* Resend a Zoho reminder for an existing in-progress signature
    * request. Hits the same /clm/signature-requests/{id}/remind
