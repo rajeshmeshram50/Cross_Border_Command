@@ -54,13 +54,27 @@ class ClmAgreementController extends Controller
             'name'        => 'required|string|max:255',
             'description' => 'required|string|max:500',
         ]);
-        $row = DB::transaction(function () use ($user, $data) {
+
+        // Reject duplicate agreement-type names per client (case-insensitive).
+        // Mirrors ClmSegmentController / ClmAuthorityController.
+        $name = trim($data['name']);
+        $exists = ClmAgreementType::where('client_id', $user->client_id)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->exists();
+        if ($exists) {
+            return response()->json([
+                'status'  => false,
+                'message' => "An agreement type named \"{$name}\" already exists. Pick a different name.",
+            ], 409);
+        }
+
+        $row = DB::transaction(function () use ($user, $data, $name) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $code = sprintf('AT-%03d', ClmAgreementType::where('client_id', $user->client_id)->count() + 1);
             return ClmAgreementType::create([
                 'client_id'   => $user->client_id,
                 'code'        => $code,
-                'name'        => trim($data['name']),
+                'name'        => $name,
                 'description' => trim($data['description']),
                 'created_by'  => $user->id,
                 'updated_by'  => $user->id,
@@ -79,6 +93,21 @@ class ClmAgreementController extends Controller
         ]);
         if (isset($data['name']))        $data['name']        = trim($data['name']);
         if (isset($data['description'])) $data['description'] = trim($data['description']);
+
+        // Reject rename to a duplicate (case-insensitive, excluding self).
+        if (isset($data['name'])) {
+            $clash = ClmAgreementType::where('client_id', $user->client_id)
+                ->where('id', '!=', $row->id)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
+                ->exists();
+            if ($clash) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => "Another agreement type named \"{$data['name']}\" already exists. Pick a different name.",
+                ], 409);
+            }
+        }
+
         $data['updated_by'] = $user->id;
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh()]);

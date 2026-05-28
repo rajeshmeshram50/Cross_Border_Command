@@ -248,9 +248,11 @@ export default function PublicOnboarding() {
     const digits = raw.replace(/[^0-9]/g, '');
     return /^\d{7,15}$/.test(digits);
   };
-  // Pincode: 4-10 digits (covers India 6, US 5/9, UK alphanumeric is rare
-  // here and the field is a "pincode" in IN context).
-  const isValidPincode = (raw: string) => /^\d{4,10}$/.test(raw.trim());
+  // Pincode: India PIN code is exactly 6 digits, no leading zero. Loose
+  // 4–10 digit ranges were letting through obvious garbage like
+  // "12365444" (8 digits). Tightening to the IN format catches typos at
+  // the source instead of pushing them downstream to address services.
+  const isValidPincode = (raw: string) => /^[1-9]\d{5}$/.test(raw.trim());
 
   // Per-step validators
   const validateStep1 = (): Record<string, string> => {
@@ -294,12 +296,12 @@ export default function PublicOnboarding() {
     if (!curCountry)        e.country_id    = 'Country is required';
     if (!curState)          e.state_id      = 'State is required';
     if (!curPin.trim())     e.pincode       = 'Pincode is required';
-    else if (!isValidPincode(curPin)) e.pincode = 'Pincode must be 4–10 digits';
+    else if (!isValidPincode(curPin)) e.pincode = 'Pincode must be 6 digits';
     // Permanent pincode is optional UNLESS the candidate explicitly typed
     // one. Only validate the format when present, since the field is
     // hidden (and treated as null) when "Same as current" is checked.
     if (!sameAsCurrent && permPin.trim() && !isValidPincode(permPin))
-      e.perm_pincode = 'Pincode must be 4–10 digits';
+      e.perm_pincode = 'Pincode must be 6 digits';
     return e;
   };
 
@@ -417,15 +419,184 @@ export default function PublicOnboarding() {
 
   if (done) {
     return (
-      <div style={{ minHeight: '100vh', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ maxWidth: 480, padding: 36, border: '1px solid #c5e3d4', background: '#ecfaf3', borderRadius: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 40 }}>✅</div>
-          <h2 style={{ fontSize: 22, fontWeight: 800, marginTop: 14, marginBottom: 8, color: '#0a8a78' }}>Welcome aboard!</h2>
-          <p style={{ fontSize: 14, color: '#0a6e5d', margin: '0 0 12px' }}>Your employee profile has been created.</p>
-          <div style={{ display: 'inline-block', padding: '6px 14px', background: '#fff', borderRadius: 999, color: '#0a8a78', fontWeight: 700, fontSize: 13 }}>
-            {done.emp_code} · {done.display_name}
+      <div
+        style={{
+          minHeight: '100vh',
+          background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 50%, #ccfbf1 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        <style>{`
+          @keyframes onb-pop {
+            0%   { transform: scale(0);   opacity: 0; }
+            60%  { transform: scale(1.1); opacity: 1; }
+            100% { transform: scale(1);   opacity: 1; }
+          }
+          @keyframes onb-check {
+            0%   { stroke-dashoffset: 48; }
+            100% { stroke-dashoffset: 0; }
+          }
+          @keyframes onb-rise {
+            0%   { transform: translateY(12px); opacity: 0; }
+            100% { transform: translateY(0);    opacity: 1; }
+          }
+          @keyframes onb-pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(16,185,129,.55); }
+            70%  { box-shadow: 0 0 0 22px rgba(16,185,129,0); }
+            100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+          }
+          .onb-done-card {
+            animation: onb-rise .5s ease-out both;
+            animation-delay: .15s;
+          }
+          .onb-done-badge {
+            animation: onb-pop .55s cubic-bezier(.22,1.4,.36,1) both,
+                       onb-pulse 2.2s ease-out 1s infinite;
+          }
+          .onb-done-check path {
+            stroke-dasharray: 48;
+            stroke-dashoffset: 48;
+            animation: onb-check .45s ease-out .55s forwards;
+          }
+          .onb-done-line { animation: onb-rise .5s ease-out both; }
+          .onb-done-blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(60px);
+            opacity: .55;
+            pointer-events: none;
+          }
+        `}</style>
+
+        {/* Soft background blobs to add depth without being noisy */}
+        <div className="onb-done-blob" style={{ top: -120, left: -120, width: 320, height: 320, background: '#34d399' }} />
+        <div className="onb-done-blob" style={{ bottom: -140, right: -140, width: 360, height: 360, background: '#5eead4' }} />
+
+        <div
+          className="onb-done-card"
+          style={{
+            position: 'relative',
+            maxWidth: 520,
+            width: '100%',
+            padding: '44px 36px 36px',
+            background: '#ffffff',
+            borderRadius: 24,
+            textAlign: 'center',
+            boxShadow: '0 32px 80px -20px rgba(6,95,70,.25), 0 12px 30px rgba(6,95,70,.10)',
+            border: '1px solid rgba(16,185,129,.18)',
+          }}
+        >
+          {/* Animated check badge */}
+          <div
+            className="onb-done-badge"
+            style={{
+              width: 84,
+              height: 84,
+              borderRadius: '50%',
+              margin: '0 auto 20px',
+              background: 'linear-gradient(135deg,#10b981 0%,#059669 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <svg className="onb-done-check" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12.5l4.2 4.2L19 7" />
+            </svg>
           </div>
-          <p style={{ fontSize: 12, color: '#0a6e5d', marginTop: 16 }}>Login credentials have been emailed to {invite?.invitee_email}.</p>
+
+          <h2
+            className="onb-done-line"
+            style={{
+              fontSize: 26,
+              fontWeight: 800,
+              margin: '0 0 6px',
+              background: 'linear-gradient(135deg,#059669,#0d9488)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              letterSpacing: '-0.02em',
+              animationDelay: '.25s',
+            }}
+          >
+            Welcome aboard!
+          </h2>
+          <p
+            className="onb-done-line"
+            style={{ fontSize: 14.5, color: '#475569', margin: '0 0 22px', animationDelay: '.32s' }}
+          >
+            Your employee profile has been created.
+          </p>
+
+          {/* Employee identity card */}
+          <div
+            className="onb-done-line"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '12px 18px',
+              background: 'linear-gradient(135deg, rgba(16,185,129,.10), rgba(20,184,166,.10))',
+              border: '1px solid rgba(16,185,129,.30)',
+              borderRadius: 14,
+              animationDelay: '.4s',
+            }}
+          >
+            <div
+              style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: 'linear-gradient(135deg,#0d9488,#0f766e)',
+                color: '#fff', fontWeight: 800, fontSize: 13,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                letterSpacing: '0.02em',
+              }}
+            >
+              {(done.display_name || 'E').trim().split(/\s+/).map(s => s[0]).join('').slice(0, 2).toUpperCase()}
+            </div>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#0d9488', letterSpacing: '.08em', textTransform: 'uppercase' }}>
+                Employee Code
+              </div>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: '#064e3b', lineHeight: 1.25 }}>
+                {done.emp_code} · {done.display_name}
+              </div>
+            </div>
+          </div>
+
+          {/* Email confirmation strip */}
+          <div
+            className="onb-done-line"
+            style={{
+              marginTop: 24,
+              padding: '12px 16px',
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              textAlign: 'left',
+              animationDelay: '.48s',
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0d9488" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+              <polyline points="22,6 12,13 2,6" />
+            </svg>
+            <div style={{ fontSize: 12.5, color: '#475569', lineHeight: 1.45 }}>
+              Login credentials sent to{' '}
+              <span style={{ fontWeight: 700, color: '#0f172a' }}>{invite?.invitee_email}</span>
+            </div>
+          </div>
+
+          {/* Footer note */}
+          <p className="onb-done-line" style={{ fontSize: 12, color: '#94a3b8', margin: '20px 0 0', animationDelay: '.55s' }}>
+            You can safely close this page.
+          </p>
         </div>
       </div>
     );
@@ -1481,7 +1652,14 @@ export default function PublicOnboarding() {
                 <div className="onb-hrow">
                   <label className="emp-label">Pincode<span className="req">*</span></label>
                   <div className="onb-hrow-input">
-                    <input className={`emp-input${errs.pincode ? ' is-invalid' : ''}`} value={curPin} onChange={e => { setCurPin(e.target.value); clearErr('pincode'); }} />
+                    <input
+                      className={`emp-input${errs.pincode ? ' is-invalid' : ''}`}
+                      value={curPin}
+                      onChange={e => { setCurPin(e.target.value.replace(/\D/g, '').slice(0, 6)); clearErr('pincode'); }}
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="6-digit PIN"
+                    />
                     {errs.pincode && <small className="emp-err">{errs.pincode}</small>}
                   </div>
                 </div>
@@ -1530,7 +1708,15 @@ export default function PublicOnboarding() {
                 <div className="onb-hrow">
                   <label className="emp-label">Pincode</label>
                   <div className="onb-hrow-input">
-                    <input className={`emp-input${errs.perm_pincode ? ' is-invalid' : ''}`} value={permPin} onChange={e => { setPermPin(e.target.value); clearErr('perm_pincode'); }} disabled={sameAsCurrent} />
+                    <input
+                      className={`emp-input${errs.perm_pincode ? ' is-invalid' : ''}`}
+                      value={permPin}
+                      onChange={e => { setPermPin(e.target.value.replace(/\D/g, '').slice(0, 6)); clearErr('perm_pincode'); }}
+                      disabled={sameAsCurrent}
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="6-digit PIN"
+                    />
                     {errs.perm_pincode && <small className="emp-err">{errs.perm_pincode}</small>}
                   </div>
                 </div>

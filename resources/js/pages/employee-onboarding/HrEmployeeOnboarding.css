@@ -114,8 +114,28 @@
         .onb-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
         .onb-pill .d { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
         .onb-id-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-family: var(--vz-font-monospace, monospace); font-weight: 700; font-size: 12px; letter-spacing: 0.02em; }
-        .onb-role-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: #eef2f6; color: #374151; font-size: 11px; font-weight: 600; }
-        [data-bs-theme="dark"] .onb-role-pill { background: var(--vz-secondary-bg); color: var(--vz-body-color); }
+        .onb-role-pill {
+          display: inline-flex; align-items: center;
+          padding: 4px 12px;
+          border-radius: 999px;
+          background: rgba(124,92,252,0.10);
+          color: #5a3fd1;
+          border: 1px solid rgba(124,92,252,0.22);
+          font-size: 11px; font-weight: 700;
+          letter-spacing: 0.02em;
+          white-space: nowrap;
+        }
+        /* Dark-mode role pill — tinted-glass violet so the badge is
+           clearly readable on the dark canvas. The previous
+           var(--vz-secondary-bg) + var(--vz-body-color) combo rendered
+           as near-transparent grey text on a near-transparent grey
+           background — effectively invisible. */
+        [data-bs-theme="dark"] .onb-role-pill {
+          background: rgba(167,139,250,0.18);
+          color: #ddd6fe;
+          border: 1px solid rgba(167,139,250,0.40);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        }
 
         /* Action buttons in row */
         .onb-edit-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--vz-border-color); background: #fff; color: #6b7280; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all .15s ease; }

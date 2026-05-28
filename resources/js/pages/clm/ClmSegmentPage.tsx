@@ -312,8 +312,8 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
   };
 
   return createPortal((
-    <div className="clm-modal-bd" onClick={onClose}>
-      <div className="clm-modal" onClick={e => e.stopPropagation()}>
+    <div className="clm-modal-bd">
+      <div className="clm-modal">
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico">{isEdit ? (

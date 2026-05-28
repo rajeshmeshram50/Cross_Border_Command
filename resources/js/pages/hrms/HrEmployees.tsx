@@ -3045,12 +3045,6 @@ export default function HrEmployees() {
                                       border: 'none',
                                     }}
                                   >
-                                    <span
-                                      style={{
-                                        width: 6, height: 6, borderRadius: '50%',
-                                        background: ob.dot, flexShrink: 0,
-                                      }}
-                                    />
                                     {e.onboarding}
                                   </span>
                                 );

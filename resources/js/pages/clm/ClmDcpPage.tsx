@@ -438,8 +438,8 @@ function SegmentRuleModal(props: {
   };
 
   return createPortal((
-    <div className="clm-modal-bd" onClick={onClose}>
-      <div className="clm-modal" style={{ maxWidth: 1080, width: '100%' }} onClick={e => e.stopPropagation()}>
+    <div className="clm-modal-bd">
+      <div className="clm-modal" style={{ maxWidth: 1080, width: '100%' }}>
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>

@@ -3136,7 +3136,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
       // entirely; otherwise it's a partial save (Stage 3 advance, etc).
       if (markComplete) {
         toast.success('Stage 1 saved', 'Setup details persisted.');
-      } else if (!skipValidate) {
+      } else if (skipValidate) {
+        // Save Draft path — partial save without marking the stage
+        // complete. Surface a "Draft saved" toast so the user gets
+        // explicit feedback that their typed-but-incomplete values are
+        // safe on the server (and will rehydrate next time they open
+        // this employee's form).
+        toast.success('Draft saved', 'Your changes have been saved. You can finish the rest later.');
+      } else {
         toast.success('Saved', 'Your changes have been persisted.');
       }
       return true;
@@ -4377,9 +4384,20 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
       (activeStage !== 1 && activeStage !== 3 && activeStage !== 4)
     }
     onClick={() => {
-      if (activeStage === 1) return saveStage1(true);
-      // Stage 3 saves the asset edits too (no wizard bump).
-      if (activeStage === 3) return saveStage1(false);
+      /* Save Draft = "persist whatever the user has typed so far, even
+       * if incomplete." Bypassing validation here is intentional:
+       *   - skipValidate=true → required-field gates don't block the PUT
+       *   - markComplete=false → wizard_step_completed is NOT bumped,
+       *     so the row still shows In Progress and the user has to
+       *     hit Next Stage (which runs full validation) to mark Stage 1
+       *     officially done.
+       * Previously Save Draft called saveStage1(true), which forced full
+       * validation — if any required field was empty the PUT never fired
+       * and the user's partial input disappeared on close. */
+      if (activeStage === 1) return saveStage1(false, true);
+      // Stage 3 saves the asset edits too (no wizard bump). skipValidate
+      // already applied there.
+      if (activeStage === 3) return saveStage1(false, true);
       if (activeStage === 4) return saveStage4(stage4Pass === stage4Total4);
     }}
   >

@@ -224,12 +224,11 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, k
   return createPortal(
     <div
       className="tnw-overlay"
-      onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onClose(); }}
       role="dialog"
       aria-modal="true"
     >
       <style>{TNW_CSS}</style>
-      <div className="tnw-shell" onMouseDown={e => e.stopPropagation()}>
+      <div className="tnw-shell">
         {/* ── Header ── */}
         <div className="tnw-head">
           <div className="tnw-head-left">

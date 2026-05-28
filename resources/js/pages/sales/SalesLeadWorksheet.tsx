@@ -87,6 +87,22 @@ const initials = (name: string): string => {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 };
 
+/* IndiaMart query_type codes → friendly labels shown in the table's
+ * Lead Type column and in the Filter modal's Lead Type facet. Mirrors
+ * IDIMS_6.0's getQueryTypeLabel() helper. Unknown codes fall through to
+ * whatever the server sent (or "Manual" for null). */
+const LEAD_TYPE_LABEL: Record<string, string> = {
+  BUY:               'Buy Leads',
+  P:                 'PNS Calls',
+  W:                 'Direct Enquiries',
+  BIZ:               'Catalog-View Leads',
+  'Product Inquiry': 'Product Inquiry',
+  WA:                'WhatsApp-Enquiries',
+  B:                 'Buy-Leads',
+};
+const prettyLeadType = (t: string | null | undefined): string =>
+  LEAD_TYPE_LABEL[t ?? ''] ?? (t || 'Manual');
+
 /* Build human-readable chips for whatever filter fields are active. Looks
  * each value up against the parent's cached options list so the chip shows
  * the label ('Inquiry Required') rather than the wire value ('1'). */
@@ -134,7 +150,7 @@ const mapServerToLead = (r: ServerLead): Lead => {
     : '—';
   return {
     id:       r.id,
-    type:     r.query_type || 'Manual',
+    type:     prettyLeadType(r.query_type),
     date,
     source:   r.platform || '—',
     assigned: r.salesperson?.name ?? 'Unassigned',
@@ -274,7 +290,7 @@ export default function SalesLeadWorksheet() {
       .then(r => setFilterOptions({
         stages: r.data.stages,
         platforms:  (r.data.platforms  ?? []).map(p => ({ value: p, label: p })),
-        queryTypes: (r.data.query_types ?? []).map(t => ({ value: t, label: t })),
+        queryTypes: (r.data.query_types ?? []).map(t => ({ value: t, label: prettyLeadType(t) })),
         countries:  r.data.countries ?? [],
         customers:  r.data.customers ?? [],
       }))
@@ -612,12 +628,13 @@ export default function SalesLeadWorksheet() {
               button. Same flow as IDIMS_6.0's POST /lead_store. */}
           {syncCfg.enabled && (
             <button
-              className="lwp-bact lwp-bact-sync"
+              className={`lwp-bact lwp-bact-sync lwp-bact-icon-only ${syncing ? 'is-syncing' : ''}`}
               onClick={onSyncLeads}
               disabled={syncing}
-              title={`Pull new leads from IndiaMart (${syncCfg.labels.join(', ') || 'configured keys'})`}
+              title={syncing ? 'Syncing…' : `Pull new leads from IndiaMart (${syncCfg.labels.join(', ') || 'configured keys'})`}
+              aria-label={syncing ? 'Syncing leads' : 'Sync leads from IndiaMart'}
             >
-              {syncing ? 'Syncing…' : 'Sync'}
+              <IconSync />
             </button>
           )}
           <span className="lwp-banner-divider" />
@@ -915,69 +932,63 @@ export default function SalesLeadWorksheet() {
 
       {/* ── CTQ Confirmation Modal ── */}
       {ctqLead && (
-        <div className="lwp-ctq-overlay" onMouseDown={() => setCtqLead(null)}>
-          <div className="lwp-ctq-modal" onMouseDown={e => e.stopPropagation()}>
-            <button className="lwp-ctq-close" onClick={() => setCtqLead(null)} aria-label="Close">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-
-            {/* Big illustrated icon — sits half over the body to draw the eye
-                to "this is a state-change confirmation, not a generic dialog". */}
-            <div className="lwp-ctq-hero">
-              <div className="lwp-ctq-hero-ring">
-                <div className="lwp-ctq-hero-icon">
-                  <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                </div>
+        <div className="lwp-ctq-overlay">
+          <div className="lwp-ctq-modal">
+            {/* Teal header strip with title + close button */}
+            <div className="lwp-ctq-head">
+              <div className="lwp-ctq-head-ico">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
               </div>
+              <div className="lwp-ctq-head-text">
+                <div className="lwp-ctq-head-title">Convert to Qualified</div>
+                <div className="lwp-ctq-head-sub">Lead qualification confirmation</div>
+              </div>
+              <button className="lwp-ctq-close" onClick={() => setCtqLead(null)} aria-label="Close">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
             </div>
 
             <div className="lwp-ctq-body">
-              <div className="lwp-ctq-title">Convert this lead to Qualified?</div>
-              <div className="lwp-ctq-sub">
-                Lead <span className="lwp-ctq-opp">{ctqLead.oppId}</span> will move to the Qualified bucket and reappear in the sales pipeline.
-              </div>
-
-              {/* Disqualified → Qualified — visual transition arrow */}
-              <div className="lwp-ctq-transition">
-                <span className="lwp-ctq-pill lwp-ctq-pill-from">
-                  <span className="lwp-ctq-pill-dot" />
-                  Disqualified
-                </span>
-                <span className="lwp-ctq-arrow">
-                  <svg width="18" height="14" viewBox="0 0 24 18" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="3" y1="9" x2="20" y2="9" />
-                    <polyline points="14 3 20 9 14 15" />
+              {/* Question row — clock icon + heading + descriptive copy */}
+              <div className="lwp-ctq-question">
+                <div className="lwp-ctq-q-ico">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
                   </svg>
-                </span>
-                <span className="lwp-ctq-pill lwp-ctq-pill-to">
-                  <span className="lwp-ctq-pill-dot" />
-                  Qualified
-                </span>
-              </div>
-
-              {/* Lead summary card */}
-              <div className="lwp-ctq-lead-card">
-                <div className="lwp-ctq-lead-avatar">{initials(ctqLead.customer)}</div>
-                <div className="lwp-ctq-lead-meta">
-                  <div className="lwp-ctq-lead-name">{ctqLead.customer}</div>
-                  <div className="lwp-ctq-lead-row">
-                    <span>{ctqLead.product === '—' ? 'No product specified' : ctqLead.product}</span>
-                    <span className="lwp-ctq-lead-dot" />
-                    <span>{ctqLead.country}</span>
+                </div>
+                <div className="lwp-ctq-q-text">
+                  <div className="lwp-ctq-title">Convert this lead to Qualified?</div>
+                  <div className="lwp-ctq-sub">
+                    Lead <span className="lwp-ctq-opp">{ctqLead.oppId}</span> will be moved from
+                    {' '}<span className="lwp-ctq-from">Disqualified</span> to
+                    {' '}<span className="lwp-ctq-to">Qualified</span>. This action can be reversed.
                   </div>
                 </div>
               </div>
 
-              <div className="lwp-ctq-hint">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M12 8v4" /><path d="M12 16h.01" />
-                </svg>
-                You can reverse this any time from the Qualified tab.
+              {/* Info grid — CUSTOMER / LEAD SOURCE / PRODUCT / LEAD DATE */}
+              <div className="lwp-ctq-info">
+                <div className="lwp-ctq-info-cell">
+                  <div className="lwp-ctq-info-label">CUSTOMER</div>
+                  <div className="lwp-ctq-info-val">{ctqLead.customer || '—'}</div>
+                </div>
+                <div className="lwp-ctq-info-cell">
+                  <div className="lwp-ctq-info-label">LEAD SOURCE</div>
+                  <div className="lwp-ctq-info-val lwp-ctq-info-val-accent">{ctqLead.source || '—'}</div>
+                </div>
+                <div className="lwp-ctq-info-cell">
+                  <div className="lwp-ctq-info-label">PRODUCT</div>
+                  <div className="lwp-ctq-info-val">{ctqLead.product === '—' ? '—' : ctqLead.product}</div>
+                </div>
+                <div className="lwp-ctq-info-cell">
+                  <div className="lwp-ctq-info-label">LEAD DATE</div>
+                  <div className="lwp-ctq-info-val">{ctqLead.date || '—'}</div>
+                </div>
               </div>
 
               <div className="lwp-ctq-actions">
@@ -1058,6 +1069,13 @@ const IconFilter = () => (
     <line x1="3" y1="5" x2="21" y2="5" /><circle cx="8" cy="5" r="2" fill="currentColor" stroke="none" />
     <line x1="3" y1="12" x2="21" y2="12" /><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none" />
     <line x1="3" y1="19" x2="21" y2="19" /><circle cx="10" cy="19" r="2" fill="currentColor" stroke="none" />
+  </svg>
+);
+const IconSync = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="23 4 23 10 17 10" />
+    <polyline points="1 20 1 14 7 14" />
+    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
   </svg>
 );
 const IconEye = () => (
@@ -1225,15 +1243,32 @@ const SCOPED_CSS = `
   box-shadow: 0 8px 24px rgba(14,116,144,.5), 0 3px 8px rgba(21,94,117,.28), 0 1px 0 rgba(255,255,255,.15) inset;
 }
 .lwp-root .lwp-bact-sync {
-  background: linear-gradient(135deg, #16a34a 0%, #15803d 55%, #166534 100%);
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%);
   color: #fff;
-  box-shadow: 0 4px 16px rgba(22,163,74,.40), 0 2px 6px rgba(21,128,61,.22), 0 1px 0 rgba(255,255,255,.18) inset;
+  box-shadow: 0 4px 16px rgba(124,58,237,.40), 0 2px 6px rgba(91,33,182,.22), 0 1px 0 rgba(255,255,255,.18) inset;
   text-shadow: 0 1px 2px rgba(0,0,0,.15);
 }
 .lwp-root .lwp-bact-sync:hover {
-  background: linear-gradient(135deg, #22c55e 0%, #16a34a 55%, #15803d 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #6d28d9 100%);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(22,163,74,.50), 0 3px 8px rgba(21,128,61,.28), 0 1px 0 rgba(255,255,255,.18) inset;
+  box-shadow: 0 8px 24px rgba(124,58,237,.50), 0 3px 8px rgba(91,33,182,.28), 0 1px 0 rgba(255,255,255,.18) inset;
+}
+
+/* Icon-only variant — compact square button for the Sync action. The
+   default .lwp-bact has horizontal padding sized for text + icon; this
+   collapses it to a clean square that matches the height of its
+   text-bearing siblings. */
+.lwp-root .lwp-bact-icon-only {
+  padding: 0;
+  width: 34px;
+  flex: 0 0 34px;
+  justify-content: center;
+}
+.lwp-root .lwp-bact-sync.is-syncing { cursor: progress; }
+.lwp-root .lwp-bact-sync.is-syncing svg { animation: lwp-spin 1s linear infinite; }
+@keyframes lwp-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 .lwp-root .lwp-bact-sync:disabled {
   background: linear-gradient(135deg, #86efac 0%, #6ee7b7 100%);
@@ -1652,132 +1687,103 @@ const SCOPED_CSS = `
 .lwp-ctq-modal {
   position: relative;
   background: #fff;
-  border-radius: 20px; width: min(94vw, 460px);
-  box-shadow: 0 24px 60px rgba(8,145,178,.22), 0 8px 24px rgba(0,0,0,.12);
-  overflow: visible;
+  border-radius: 16px; width: min(94vw, 520px);
+  box-shadow: 0 24px 60px rgba(8,145,178,.28), 0 8px 24px rgba(0,0,0,.18);
+  overflow: hidden;
   font-family: 'DM Sans', 'Inter', sans-serif;
   animation: lwpCtqIn .22s cubic-bezier(.22,1,.36,1);
 }
 @keyframes lwpCtqIn {
-  from { opacity: 0; transform: scale(.93) translateY(10px); }
+  from { opacity: 0; transform: scale(.95) translateY(10px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
+
+/* ── Teal/cyan header strip ── */
+.lwp-ctq-head {
+  position: relative;
+  display: flex; align-items: center; gap: 14px;
+  padding: 18px 22px;
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
+  color: #fff;
+}
+.lwp-ctq-head-ico {
+  width: 44px; height: 44px; border-radius: 11px; flex-shrink: 0;
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.28);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.lwp-ctq-head-text { flex: 1; min-width: 0; }
+.lwp-ctq-head-title {
+  font-size: 17px; font-weight: 700; letter-spacing: -.2px;
+  color: #fff; line-height: 1.2;
+}
+.lwp-ctq-head-sub {
+  font-size: 12px; color: rgba(255,255,255,.82);
+  margin-top: 2px; letter-spacing: .1px;
+}
 .lwp-ctq-close {
-  position: absolute; top: 14px; right: 14px;
-  width: 30px; height: 30px; border-radius: 9px; border: none;
-  background: #f1f5f9; color: #475569; cursor: pointer;
+  width: 32px; height: 32px; border-radius: 9px; border: none;
+  background: rgba(255,255,255,.16); color: #fff; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: background .15s, color .15s; z-index: 2;
+  transition: background .15s; flex-shrink: 0;
 }
-.lwp-ctq-close:hover { background: #e2e8f0; color: #0f172a; }
+.lwp-ctq-close:hover { background: rgba(255,255,255,.28); }
 
-/* Hero icon — emerald gradient circle floating above the body so the
-   confirmation feels celebratory rather than a generic dialog. */
-.lwp-ctq-hero {
-  display: flex; justify-content: center;
-  padding: 28px 0 8px;
-}
-.lwp-ctq-hero-ring {
-  width: 84px; height: 84px; border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, rgba(34,197,94,.15), rgba(34,197,94,0) 70%);
-  display: flex; align-items: center; justify-content: center;
-}
-.lwp-ctq-hero-icon {
-  width: 64px; height: 64px; border-radius: 50%;
-  background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
-  box-shadow: 0 10px 28px rgba(34,197,94,.35), 0 0 0 5px rgba(34,197,94,.10);
-  display: flex; align-items: center; justify-content: center;
-  animation: lwpCtqPop .35s cubic-bezier(.34,1.56,.64,1) .05s both;
-}
-@keyframes lwpCtqPop {
-  from { transform: scale(0); opacity: 0; }
-  to   { transform: scale(1); opacity: 1; }
-}
+.lwp-ctq-body { padding: 22px 24px 20px; }
 
-.lwp-ctq-body { padding: 4px 26px 24px; text-align: center; }
+/* ── Question row: clock icon + text ── */
+.lwp-ctq-question {
+  display: flex; align-items: flex-start; gap: 14px;
+  margin-bottom: 18px;
+}
+.lwp-ctq-q-ico {
+  width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
+  background: #ecfeff; border: 1px solid #a5f3fc; color: #0891b2;
+  display: flex; align-items: center; justify-content: center;
+}
+.lwp-ctq-q-text { flex: 1; min-width: 0; }
 .lwp-ctq-title {
-  font-size: 17px; font-weight: 700; color: #0f172a;
-  letter-spacing: -.3px; margin-bottom: 8px;
+  font-size: 16px; font-weight: 700; color: #0f172a;
+  letter-spacing: -.2px; margin-bottom: 6px;
 }
 .lwp-ctq-sub {
-  font-size: 12.5px; color: #64748b; line-height: 1.55;
-  margin-bottom: 18px;
+  font-size: 12.5px; color: #475569; line-height: 1.55;
 }
 .lwp-ctq-opp {
   font-weight: 700; color: #0891b2;
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  background: #ecfeff; padding: 1px 7px; border-radius: 5px;
 }
+.lwp-ctq-from { color: #dc2626; font-weight: 600; }
+.lwp-ctq-to   { color: #15803d; font-weight: 600; }
 
-/* From / To pill row */
-.lwp-ctq-transition {
-  display: flex; align-items: center; justify-content: center; gap: 10px;
-  margin-bottom: 18px;
-}
-.lwp-ctq-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px; border-radius: 999px;
-  font-size: 11.5px; font-weight: 600;
-  border: 1.5px solid;
-}
-.lwp-ctq-pill-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: currentColor; opacity: .9;
-}
-.lwp-ctq-pill-from {
-  background: #fef2f2; color: #b91c1c; border-color: #fecaca;
-}
-.lwp-ctq-pill-to {
-  background: #f0fdf4; color: #15803d; border-color: #bbf7d0;
-}
-.lwp-ctq-arrow {
-  display: inline-flex; align-items: center; color: #0891b2;
-  animation: lwpCtqArrow 1.6s ease-in-out infinite;
-}
-@keyframes lwpCtqArrow {
-  0%, 100% { transform: translateX(0); }
-  50%      { transform: translateX(3px); }
-}
-
-/* Lead summary card */
-.lwp-ctq-lead-card {
-  display: flex; align-items: center; gap: 12px;
+/* ── Info grid card: 2-col layout for Customer / Lead Source / Product / Lead Date ── */
+.lwp-ctq-info {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 14px 22px;
   background: linear-gradient(135deg, #f0fdfe, #ecfeff);
   border: 1px solid #a5f3fc; border-radius: 12px;
-  padding: 12px 14px; margin-bottom: 14px; text-align: left;
+  padding: 16px 18px; margin-bottom: 20px;
 }
-.lwp-ctq-lead-avatar {
-  width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
-  background: linear-gradient(135deg, #0891b2, #0e7490);
-  color: #fff; font-size: 12.5px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 4px 12px rgba(8,145,178,.25);
+.lwp-ctq-info-cell { min-width: 0; }
+.lwp-ctq-info-label {
+  font-size: 10px; font-weight: 700;
+  color: #64748b; letter-spacing: .14em; text-transform: uppercase;
+  margin-bottom: 4px;
 }
-.lwp-ctq-lead-meta { flex: 1; min-width: 0; }
-.lwp-ctq-lead-name {
-  font-size: 13px; font-weight: 700; color: #0f172a;
-  line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.lwp-ctq-info-val {
+  font-size: 13px; font-weight: 600; color: #0f172a;
+  line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.lwp-ctq-lead-row {
-  display: flex; align-items: center; gap: 8px; margin-top: 4px;
-  font-size: 11px; color: #475569;
-}
-.lwp-ctq-lead-dot {
-  width: 3px; height: 3px; border-radius: 50%; background: #94a3b8;
-  flex-shrink: 0;
-}
+.lwp-ctq-info-val-accent { color: #0891b2; }
 
-.lwp-ctq-hint {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; color: #94a3b8; margin-bottom: 18px;
-}
-
+/* ── Action row: right-aligned Cancel + Confirm ── */
 .lwp-ctq-actions {
-  display: flex; gap: 10px; justify-content: center;
+  display: flex; gap: 10px; justify-content: flex-end;
 }
 .lwp-ctq-btn-cancel {
-  flex: 1; max-width: 140px;
-  padding: 11px 22px; border-radius: 10px;
+  padding: 10px 22px; border-radius: 10px;
   border: 1.5px solid #e2e8f0; background: #fff;
   color: #475569; font-family: inherit;
   font-size: 12.5px; font-weight: 600; cursor: pointer;
@@ -1785,16 +1791,39 @@ const SCOPED_CSS = `
 }
 .lwp-ctq-btn-cancel:hover { border-color: #94a3b8; background: #f8fafc; }
 .lwp-ctq-btn-confirm {
-  flex: 1.4; padding: 11px 24px; border-radius: 10px; border: none;
-  background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
+  padding: 10px 22px; border-radius: 10px; border: none;
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
   color: #fff; font-family: inherit;
   font-size: 12.5px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 4px 14px rgba(34,197,94,.35);
+  box-shadow: 0 4px 14px rgba(8,145,178,.35);
   transition: all .15s;
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
 }
 .lwp-ctq-btn-confirm:hover { transform: translateY(-1px); filter: brightness(1.05); }
 .lwp-ctq-btn-confirm:active { transform: translateY(0); }
+
+/* Dark mode — body flips to slate but the teal header stays (intentional
+   to mirror the cyan brand strip used across CLM modals). */
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-modal { background: #0f172a; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-title { color: #e2e8f0; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-sub { color: #94a3b8; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-q-ico {
+  background: rgba(8,145,178,.18); border-color: rgba(6,182,212,.35); color: #67e8f9;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-opp { color: #67e8f9; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-info {
+  background: rgba(8,145,178,.10);
+  border-color: rgba(6,182,212,.25);
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-info-label { color: #94a3b8; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-info-val { color: #e2e8f0; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-info-val-accent { color: #67e8f9; }
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-btn-cancel {
+  background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.14); color: #cbd5e1;
+}
+[data-bs-theme="dark"] .lwp-root .lwp-ctq-btn-cancel:hover {
+  background: rgba(255,255,255,.08); border-color: rgba(103,232,249,.4); color: #ecfeff;
+}
 
 /* ════════════════════════════════════════════════════════════════════
    Dark-mode adaptation — every panel re-tints against the deep slate
