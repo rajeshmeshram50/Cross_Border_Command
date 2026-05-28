@@ -11,6 +11,7 @@ import { MasterMultiSelect } from '../master/masterFormKit';
 import {
   readCustomerMasterBundle,
   writeCustomerMasterBundle,
+  bustCustomerMasterBundle,
 } from './customerBundleCache';
 
 /* Stage 3 → Trade Documents → Send for Signature.
@@ -4457,6 +4458,9 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
       });
       const row = data?.data ?? data;
       onSaved(String(row?.title ?? title.trim()));
+      // Cached customer/consignee bundle now stale — bust it so the next
+      // open of either modal refetches the fresh doctype list.
+      bustCustomerMasterBundle();
     } catch (err: any) {
       const apiErrors = err?.response?.data?.errors;
       if (apiErrors && typeof apiErrors === 'object') {

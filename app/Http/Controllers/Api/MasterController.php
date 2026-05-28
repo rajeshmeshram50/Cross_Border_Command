@@ -289,6 +289,19 @@ class MasterController extends Controller
             });
         }
 
+        // country_id cascade filter — used by forms that resolve states /
+        // ports off the chosen Country (ClientForm, BranchForm, vendor
+        // address sub-modal). Replaces the prior "load 1797 states upfront"
+        // pattern with "load ~30 states once a country is picked".
+        if ($countryId = $request->integer('country_id')) {
+            $schema = self::SCHEMAS[$slug] ?? ['fields' => []];
+            $hasCountryId = collect($schema['fields'] ?? [])
+                ->contains(fn ($f) => ($f['n'] ?? null) === 'country_id');
+            if ($hasCountryId) {
+                $q->where('country_id', $countryId);
+            }
+        }
+
         return response()->json($q->get()->map(fn ($r) => $this->withOwnership($r)));
     }
 

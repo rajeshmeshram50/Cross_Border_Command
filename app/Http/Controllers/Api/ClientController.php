@@ -696,13 +696,16 @@ class ClientController extends Controller
         $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
             // Tenant safety — apply MasterVisibility::applyReadScope to every
             // master query, mirroring the gate MasterController::list() uses
-            // for the canonical /master/{slug} endpoint. Without this a
-            // client_admin of Client A could see Client B's tenant-scoped
-            // master rows via the bundle endpoint. Per-user cache key is a
-            // second line of defence — cache entries are never shared across
-            // users so blast radius stays bounded even if scope ever regresses.
+            // for the canonical /master/{slug} endpoint. Per-user cache key
+            // is a second line of defence.
             $scope = fn ($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
 
+            // NOTE: states master is intentionally NOT included here.
+            // It's 1797 rows (~122 KB JSON) and the user only ever sees
+            // states for ONE country at a time. Shipping all of them upfront
+            // was 87% of the bundle payload. The frontend now fetches
+            // /master/states?country_id=X lazily after a country is picked
+            // (or, in edit mode, after the saved country hydrates).
             return [
                 // organization_types — uses lowercase status string
                 'organization_types' => OrganizationType::query()
@@ -725,12 +728,6 @@ class ClientController extends Controller
                     ->tap($scope)
                     ->orderBy('name')
                     ->get(['id', 'name', 'iso_code', 'status']),
-
-                'states' => States::query()
-                    ->whereRaw('LOWER(status) = ?', ['active'])
-                    ->tap($scope)
-                    ->orderBy('name')
-                    ->get(['id', 'country_id', 'name', 'status']),
             ];
         });
 

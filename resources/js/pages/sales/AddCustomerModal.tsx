@@ -10,6 +10,7 @@ import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureM
 import {
   readCustomerMasterBundle,
   writeCustomerMasterBundle,
+  bustCustomerMasterBundle,
 } from './customerBundleCache';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -3671,6 +3672,12 @@ function AddDocumentTypeMasterModal({ onClose, onSaved }:
       // documentTypes list and auto-select the new entry.
       const row = data?.data ?? data;
       onSaved({ id: Number(row?.id ?? 0), name: String(row?.title ?? title.trim()) });
+      // The cached customer bundle is now stale — it doesn't contain the
+      // doctype we just created. Bust the sessionStorage entry so the next
+      // modal open refetches fresh data. The in-memory documentTypes list
+      // is updated by the parent via onSaved() above, so the CURRENT
+      // dropdown shows the new entry instantly regardless of this bust.
+      bustCustomerMasterBundle();
     } catch (err: any) {
       const apiErrors = err?.response?.data?.errors;
       if (apiErrors && typeof apiErrors === 'object') {

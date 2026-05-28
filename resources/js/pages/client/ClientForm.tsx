@@ -219,11 +219,11 @@ export default function ClientForm({ onBack, editId }: Props) {
   const [statesAll, setStatesAll] = useState<Array<{ id: number; country_id: string; name: string; status: string }>>([]);
   const [loadingLookups, setLoadingLookups] = useState(true);
 
-  /* Bundled form fetch — /clients/form-bundle returns every dropdown
-   * (organization_types, plans, countries, states) in ONE round-trip,
-   * replacing the previous 4-parallel Promise.all. The server already
-   * filters to active rows and applies the canonical sort, so the
-   * client-side filter+sort below is dropped on the bundled path.
+  /* Bundled form fetch — /clients/form-bundle returns organization_types,
+   * plans, and countries in ONE round-trip. States are NO LONGER bundled
+   * because the master table has ~1797 rows (was 87% of the old payload)
+   * and the user only ever sees states for one country at a time. States
+   * are now fetched lazily by the country-change effect below.
    *
    * Caching: the bundle is read from sessionStorage first (5-min TTL).
    * Cache hit ⇒ synchronous hydration, 0 API calls. Cache miss ⇒ fetch
@@ -233,7 +233,6 @@ export default function ClientForm({ onBack, editId }: Props) {
       organization_types: OrgType[];
       plans: PlanOption[];
       countries: Array<{ id: number; name: string; iso_code: string; status: string }>;
-      states: Array<{ id: number; country_id: string; name: string; status: string }>;
     };
 
     const hydrate = (b: Bundle) => {
@@ -242,7 +241,6 @@ export default function ClientForm({ onBack, editId }: Props) {
       setPlans(Array.isArray(b.plans) ? b.plans : []);
       // Server already returns active+sorted countries.
       setCountries(Array.isArray(b.countries) ? b.countries : []);
-      setStatesAll(Array.isArray(b.states) ? b.states : []);
     };
 
     // Cache hit — hydrate immediately, skip the network entirely.
@@ -261,6 +259,48 @@ export default function ClientForm({ onBack, editId }: Props) {
       .catch(() => { /* dropdowns stay empty on failure */ })
       .finally(() => setLoadingLookups(false));
   }, []);
+
+  /* Lazy states fetch — fires whenever the selected country changes.
+   *
+   * Was: all 1797 states shipped in /clients/form-bundle on every modal
+   * open (~122 KB / 87% of payload).
+   *
+   * Now: states for ONE country only, fetched after the country is picked.
+   * Typical country has 20-50 states → 1-2 KB payload. ClientForm stores
+   * country/state by NAME (not id) for legacy reasons, so the resolver
+   * below converts the picked country name → id → states query.
+   *
+   * In-flight requests get cancelled on rapid country switches so we
+   * never end up rendering states for the previous country. */
+  useEffect(() => {
+    if (!form.country) {
+      setStatesAll([]);
+      return;
+    }
+    if (countries.length === 0) return; // wait until country list lands
+    const selected = countries.find(c => c.name === form.country);
+    if (!selected) {
+      setStatesAll([]);
+      return;
+    }
+    const controller = new AbortController();
+    api.get<Array<{ id: number; country_id: string | number; name: string; status: string }>>(
+      '/master/states',
+      { params: { country_id: selected.id }, signal: controller.signal }
+    )
+      .then(res => {
+        const rows = Array.isArray(res.data) ? res.data : [];
+        const active = rows
+          .filter(s => String(s.status ?? '').toLowerCase() === 'active')
+          .map(s => ({ ...s, country_id: String(s.country_id) }));
+        setStatesAll(active);
+      })
+      .catch(err => {
+        if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
+        setStatesAll([]);
+      });
+    return () => controller.abort();
+  }, [form.country, countries]);
 
   // Auto-sync plan_type (free/paid) when user picks a plan
   useEffect(() => {
