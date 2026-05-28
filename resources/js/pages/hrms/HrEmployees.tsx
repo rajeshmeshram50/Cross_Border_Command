@@ -2129,11 +2129,100 @@ export default function HrEmployees() {
     // looked empty on first load and only populated after a tab switch.
   }, [q, tab, deptFilter, statusFilter, apiRows]);
 
+  /* Client-side pagination — 5 rows per page (matches the Customers /
+   * Consignees lists). Reset to page 1 whenever any of the filters or
+   * the source data change so the user never lands on an empty page
+   * past the new last page. */
+  const ROWS_PER_PAGE = 5;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ROWS_PER_PAGE));
+  useEffect(() => { setPage(1); }, [q, tab, deptFilter, statusFilter, apiRows]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
+
   return (
     <>
       <style>{`
         .hr-employees-surface { background: #ffffff; }
         [data-bs-theme="dark"] .hr-employees-surface { background: #1c2531; }
+
+        /* Onboarding Link button — light mode: clean white pill with a
+           purple outline + text so it pairs with the Add Employee CTA.
+           Dark mode: tinted-glass purple surface with a light lavender
+           text + glow so it doesn't look like a stark white sticker on
+           the dark canvas (was using #fff + var(--vz-secondary), which
+           resolves to red in dark mode and clashed with the page). */
+        .hr-emp-onboard-btn.btn {
+          background: #ffffff;
+          color: #6d28d9;
+          border: 1px solid #d8ccff;
+          font-weight: 700;
+          transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .25s ease, transform .15s ease;
+        }
+        .hr-emp-onboard-btn.btn:hover,
+        .hr-emp-onboard-btn.btn:focus {
+          background: #f5f1ff;
+          border-color: #c4b5fd;
+          color: #5b21b6;
+          box-shadow: 0 4px 12px rgba(124,58,237,.22);
+          transform: translateY(-1px);
+        }
+        [data-bs-theme="dark"] .hr-emp-onboard-btn.btn {
+          background: rgba(124,58,237,0.18);
+          color: #ddd6fe;
+          border: 1px solid rgba(167,139,250,0.45);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+        [data-bs-theme="dark"] .hr-emp-onboard-btn.btn:hover,
+        [data-bs-theme="dark"] .hr-emp-onboard-btn.btn:focus {
+          background: rgba(124,58,237,0.32);
+          border-color: #a78bfa;
+          color: #f5f3ff;
+          box-shadow: 0 6px 18px rgba(124,58,237,0.45);
+        }
+        .hr-emp-onboard-btn.btn i { color: inherit; }
+
+        /* Pagination — same purple aesthetic as the Customers /
+           Consignees footers. Uniform 32×32 boxes so the row reads as
+           one tidy strip. */
+        .hr-emp-pag { display: inline-flex; align-items: center; gap: 4px; }
+        .hr-emp-pag-btn {
+          height: 32px; min-width: 32px; padding: 0;
+          border-radius: 8px;
+          border: 1px solid #e0d9f7;
+          background: #fff;
+          color: #6d28d9;
+          font-size: 12.5px; font-weight: 700;
+          font-family: inherit;
+          display: inline-flex; align-items: center; justify-content: center;
+          cursor: pointer;
+          transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .22s ease;
+        }
+        .hr-emp-pag-btn:hover:not(:disabled):not(.is-active) {
+          background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6;
+        }
+        .hr-emp-pag-btn.is-active {
+          background: linear-gradient(135deg, #7c3aed, #6d28d9);
+          border-color: #7c3aed; color: #fff;
+          box-shadow: 0 2px 6px rgba(109,40,217,.30);
+          cursor: default;
+        }
+        .hr-emp-pag-btn:disabled { opacity: .4; cursor: not-allowed; }
+        [data-bs-theme="dark"] .hr-emp-pag-btn {
+          background: rgba(255,255,255,0.04);
+          border-color: rgba(167,139,250,0.30);
+          color: #c4b5fd;
+        }
+        [data-bs-theme="dark"] .hr-emp-pag-btn:hover:not(:disabled):not(.is-active) {
+          background: rgba(124,58,237,0.20);
+          border-color: rgba(167,139,250,0.50);
+          color: #ede9fe;
+        }
+        [data-bs-theme="dark"] .hr-emp-pag-btn.is-active {
+          background: linear-gradient(135deg, #6d28d9, #4c1d95);
+          border-color: #7c3aed; color: #fff;
+          box-shadow: 0 2px 8px rgba(124,58,237,.45);
+        }
 
         /* Unify table typography — every cell + header reads at the same
            13px size so the table looks like a single grid (matches the
@@ -2525,13 +2614,7 @@ export default function HrEmployees() {
               <div className="d-flex align-items-center gap-2 flex-wrap">
                 <Button
                   onClick={() => setOnboardOpen(true)}
-                  className="rounded-pill px-3"
-                  style={{
-                    background: '#fff',
-                    color: 'var(--vz-secondary)',
-                    border: '1px solid var(--vz-secondary)',
-                    fontWeight: 600,
-                  }}
+                  className="rounded-pill px-3 hr-emp-onboard-btn"
                 >
                   <i className="ri-user-add-line align-bottom me-1"></i>Onboarding Link
                 </Button>
@@ -2776,7 +2859,7 @@ export default function HrEmployees() {
                             No employees match your filters
                           </td>
                         </tr>
-                      ) : filtered.map((e, idx) => {
+                      ) : pageRows.map((e, idx) => {
                         const primary = tone(e.primaryRole);
                         return (
                           <tr
@@ -2789,7 +2872,7 @@ export default function HrEmployees() {
                             onClick={() => navigate(`/hr/employees/${encodeURIComponent(e.encryptedId || e.id)}/profile`, { state: { employee: e } })}
                             style={{ cursor: 'pointer' }}
                           >
-                            <td className="ps-3 text-center fs-13 hr-emp-srno">{idx + 1}</td>
+                            <td className="ps-3 text-center fs-13 hr-emp-srno">{(page - 1) * ROWS_PER_PAGE + idx + 1}</td>
                             <td>
                               <div className="d-flex align-items-center gap-2">
                                 {e.photoUrl ? (
@@ -3016,10 +3099,62 @@ export default function HrEmployees() {
                   </table>
                 </div>
 
-                {/* Footer count — matches the rhythm of the Clients table */}
-                <div className="d-flex align-items-center justify-content-between mt-3 pt-2 border-top">
-                  <div className="text-muted" style={{ fontSize: 12 }}>
-                    Showing <span className="fw-bold text-body">{filtered.length}</span> of <span className="fw-bold text-body">{apiRows.filter(e => tab === 'active' ? e.enabled : !e.enabled).length}</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees
+                {/* Footer count + pagination — matches the rhythm of the
+                    Customers / Consignees lists. The "Showing X–Y of N"
+                    range moves with the page; the pagination strip is
+                    always visible (chevrons go disabled when there's
+                    only one page) so the affordance never disappears
+                    on lists with few rows. */}
+                <div className="d-flex align-items-center justify-content-between mt-3 pt-2 border-top flex-wrap gap-2">
+                  {/* Wrap the "Showing …" text in a flex row that's the
+                      same height as the pagination buttons (32px) so its
+                      baseline lines up exactly with the right-side
+                      buttons. Without min-height, the small 12px text
+                      box was shorter than the button strip and got
+                      visually centred at a different y than the buttons,
+                      making the left edge of the footer look like it
+                      was "sinking" below the right. */}
+                  <div
+                    className="text-muted d-inline-flex align-items-center"
+                    style={{ fontSize: 12, minHeight: 32, lineHeight: 1 }}
+                  >
+                    {filtered.length === 0 ? (
+                      <span>Showing <span className="fw-bold text-body">0</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees</span>
+                    ) : (
+                      <span>
+                        Showing <span className="fw-bold text-body">{(page - 1) * ROWS_PER_PAGE + 1}</span>–<span className="fw-bold text-body">{Math.min(page * ROWS_PER_PAGE, filtered.length)}</span> of <span className="fw-bold text-body">{filtered.length}</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees
+                      </span>
+                    )}
+                  </div>
+                  <div className="hr-emp-pag">
+                    <button
+                      type="button"
+                      className="hr-emp-pag-btn"
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page === 1}
+                      aria-label="Previous page"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    {Array.from({ length: totalPages }, (_, n) => n + 1).map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        className={`hr-emp-pag-btn ${n === page ? 'is-active' : ''}`}
+                        onClick={() => setPage(n)}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="hr-emp-pag-btn"
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page === totalPages}
+                      aria-label="Next page"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
                   </div>
                 </div>
               </CardBody>

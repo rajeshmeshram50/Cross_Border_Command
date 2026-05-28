@@ -37,6 +37,17 @@
 .onb-list-table .onb-id-pill,
 .onb-list-table .onb-role-pill { font-size: 11.5px; font-weight: 700; }
 
+/* ACTION column — header text and the button group both centred so
+   the column reads as one visual axis. The cell's content is wrapped
+   in a flex row, so we also push that row to centre via the > div.d-flex
+   descendant selector. Without these, the header text sat at the left
+   edge of the column while the wide button group (pencil + Initiate
+   Onboarding pill) drifted toward the centre/right, making the header
+   look detached from its contents. */
+.onb-list-table thead th:last-child,
+.onb-list-table tbody td:last-child { text-align: center; }
+.onb-list-table tbody td:last-child > .d-flex { justify-content: center; }
+
 /* Dark-mode contrast bump — the default body-color in dark mode
    sits at rgba ~0.65 which renders thin-on-thin against the card
    background. Lift to a near-white for primary content + a softer
