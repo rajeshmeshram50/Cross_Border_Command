@@ -922,9 +922,16 @@
         [data-bs-theme="dark"] .onb-pol-section-title { color: var(--vz-heading-color, var(--vz-body-color)); }
         .onb-pol-section-pill { padding: 3px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-size: 10.5px; font-weight: 800; }
 
-        .onb-pol-doc { padding: 12px 16px; border-bottom: 1px solid #f1eff7; background: #fff; }
+        .onb-pol-doc { padding: 12px 16px; border-bottom: 1px solid #f1eff7; background: #fff; transition: background .15s ease; }
         [data-bs-theme="dark"] .onb-pol-doc { border-color: var(--vz-border-color); }
         .onb-pol-doc:last-child { border-bottom: none; }
+        /* Hover affordance — the row is now click-to-expand, so it
+           highlights softly under the cursor. Expanded rows keep the
+           accent so the user can tell which one they opened. */
+        .onb-pol-doc:hover { background: #faf8ff; }
+        .onb-pol-doc.is-expanded { background: #faf8ff; }
+        [data-bs-theme="dark"] .onb-pol-doc:hover,
+        [data-bs-theme="dark"] .onb-pol-doc.is-expanded { background: rgba(124,92,252,0.08); }
         .onb-pol-doc-row { display: flex; align-items: center; gap: 11px; }
         .onb-pol-doc-icon { width: 32px; height: 32px; border-radius: 8px; background: #f3edff; color: #7c3aed; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .onb-pol-doc-meta { min-width: 0; flex-grow: 1; }

@@ -861,6 +861,16 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const [businessImpact, setBusinessImpact] = useState('Low');
   const [replacementNeeded, setReplacementNeeded] = useState('Yes — Immediate');
   const [stage1Saving, setStage1Saving] = useState(false);
+  /* Per-field error map for Stage 1's required-field guard. Lit up by
+   * saveStage1() when the user clicks Next Stage with blanks; each
+   * field's onChange wipes its own entry so the red ring drops the
+   * moment the user starts fixing it. Keys mirror the field names. */
+  type Stage1FieldKey = 'exitType' | 'reasonForExit' | 'noticeDate' | 'lwd';
+  const [s1Errors, setS1Errors] = useState<Set<Stage1FieldKey>>(new Set());
+  const clearS1Err = (k: Stage1FieldKey) => setS1Errors(prev => {
+    if (!prev.has(k)) return prev;
+    const n = new Set(prev); n.delete(k); return n;
+  });
   // Brief "advancing" flag for stages 2+ where Next Stage doesn't hit the
   // network but still benefits from a visual ack so the user doesn't
   // double-click. Cleared in the requestAnimationFrame callback after
@@ -1181,11 +1191,13 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
     // row with NULL columns, leaving the wizard in a "looks completed"
     // state without actual data.
     const missing: string[] = [];
-    if (!exitType.trim())               missing.push('Exit Type');
-    if (!reasonForExit.trim())          missing.push('Reason for Exit');
-    if (!noticeDate)                    missing.push('Notice Date');
-    if (!lwd)                           missing.push('Last Working Day');
+    const errs = new Set<Stage1FieldKey>();
+    if (!exitType.trim())      { missing.push('Exit Type');        errs.add('exitType'); }
+    if (!reasonForExit.trim()) { missing.push('Reason for Exit');  errs.add('reasonForExit'); }
+    if (!noticeDate)           { missing.push('Notice Date');      errs.add('noticeDate'); }
+    if (!lwd)                  { missing.push('Last Working Day'); errs.add('lwd'); }
     if (missing.length) {
+      setS1Errors(errs);
       toast.error(
         'Fill the required fields',
         missing.length === 1
@@ -1194,6 +1206,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
       );
       return false;
     }
+    setS1Errors(new Set());
     // Date-in-the-past guard runs BEFORE we flip the loading flag — no
     // network round-trip needed and the toast fires immediately. Used to
     // return false silently here, so clicking "Next Stage" with a past
@@ -1297,7 +1310,60 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
           <aside className="ep-sidebar">
             {EXIT_STAGES.map(s => {
               const st = statusOf(s.num);
-              const stagePct = st === 'Completed' ? 100 : st === 'In Progress' ? (s.num === stage ? 35 : 0) : 0;
+              /* Live per-stage progress. The old formula hard-coded
+               * `In Progress ? (currentStage ? 35% : 0%) : 0%` — so a
+               * fully filled-out stage 2 (all clearances Approved,
+               * asset handed over, notes typed) still read 35% in the
+               * sidebar, and once the user moved to stage 3 it dropped
+               * back to 0%. Compute the real share of completed sub-
+               * items for each stage instead so the pill reflects
+               * actual work. */
+              const computeStagePct = (n: number): number => {
+                if (st === 'Completed') return 100;
+                if (st === 'Pending')   return 0;
+                if (n === 1) {
+                  /* Stage 1 required fields (mirrors what saveStage1
+                   * needs to advance): exit type, reason, last working
+                   * day, reporting manager. */
+                  const items = [
+                    !!String(exitType).trim(),
+                    !!String(reasonForExit).trim(),
+                    !!String(lwd).trim(),
+                    !!reportingManagerId,
+                  ];
+                  return Math.round((items.filter(Boolean).length / items.length) * 100);
+                }
+                if (n === 2) {
+                  const assetIds  = Object.keys(assetReturns);
+                  const assetDone = assetIds.filter(k => assetReturns[Number(k)]?.status === 'Handed Over').length;
+                  const clrDone   = clearances.filter(c => c.status === 'Approved').length;
+                  const notesDone = handoverNotes.trim() ? 1 : 0;
+                  const total = assetIds.length + clearances.length + 1;
+                  const done  = assetDone + clrDone + notesDone;
+                  return total === 0 ? 0 : Math.round((done / total) * 100);
+                }
+                if (n === 3) {
+                  const total = exitTemplates.length;
+                  if (total === 0) return 0;
+                  const done = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
+                  return Math.round((done / total) * 100);
+                }
+                if (n === 4) {
+                  /* 5 validation checkboxes + 4 final-action selects.
+                   * A select "counts" once it moves off its starting
+                   * default (Active / Unlocked / Open / Pending). */
+                  const validationDone = validation.filter(Boolean).length;
+                  const finalsDone =
+                    (empStatus !== 'Active' ? 1 : 0)
+                    + (profileLock === 'Locked' ? 1 : 0)
+                    + (exitCaseStatus === 'Closed' ? 1 : 0)
+                    + (hrSignOff !== 'Pending' ? 1 : 0);
+                  const total = validation.length + 4;
+                  return Math.round(((validationDone + finalsDone) / total) * 100);
+                }
+                return 0;
+              };
+              const stagePct = computeStagePct(s.num);
               return (
                 <button
                   key={s.num}
@@ -1332,56 +1398,72 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                 <div className="ep-section-label">Exit Details</div>
                 <Row className="g-2 mb-2">
                   <Col md={6}>
-                    <EpField label="Exit Type" required>
+                    <EpField label="Exit Type" required invalid={s1Errors.has('exitType')}>
                       <EpSelect
                         value={exitType}
-                        onChange={setExitType}
+                        onChange={(v) => { setExitType(v); clearS1Err('exitType'); }}
                         options={['Resignation', 'Termination', 'Retirement', 'End of Contract', 'Absconding', 'Other']}
+                        invalid={s1Errors.has('exitType')}
                       />
-                    </EpField>
-                  </Col>
-                  <Col md={6}>
-                    <EpField label="Reason for Exit" required>
-                      {/* Free-text now (was a dropdown). HR rarely fits a
-                          real-world reason into a fixed enum, so the form
-                          asks them to type whatever's accurate. */}
-                      <EpInput
-                        value={reasonForExit}
-                        onChange={setReasonForExit}
-                        placeholder="Describe the reason for exit"
-                        maxLength={60}
-                      />
-                    </EpField>
-                  </Col>
-                  <Col md={6}>
-                    <EpField label="Notice Date" required>
-                      <EpInput
-                        type="date"
-                        value={noticeDate}
-                        onChange={setNoticeDate}
-                        // Browser-level guard so the picker can't open on
-                        // a past day; the inline error below catches
-                        // pasted / typed values that bypass the picker.
-                        min={todayIso}
-                      />
-                      {noticeDateInvalid && (
+                      {s1Errors.has('exitType') && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <i className="ri-error-warning-line" />Notice date must be after today.
+                          <i className="ri-error-warning-line" />Exit type is required.
                         </div>
                       )}
                     </EpField>
                   </Col>
                   <Col md={6}>
-                    <EpField label="Last Working Day" required>
+                    <EpField label="Reason for Exit" required invalid={s1Errors.has('reasonForExit')}>
+                      {/* Free-text now (was a dropdown). HR rarely fits a
+                          real-world reason into a fixed enum, so the form
+                          asks them to type whatever's accurate. */}
+                      <EpInput
+                        value={reasonForExit}
+                        onChange={(v) => { setReasonForExit(v); clearS1Err('reasonForExit'); }}
+                        placeholder="Describe the reason for exit"
+                        maxLength={60}
+                        invalid={s1Errors.has('reasonForExit')}
+                      />
+                      {s1Errors.has('reasonForExit') && (
+                        <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <i className="ri-error-warning-line" />Reason for exit is required.
+                        </div>
+                      )}
+                    </EpField>
+                  </Col>
+                  <Col md={6}>
+                    <EpField label="Notice Date" required invalid={s1Errors.has('noticeDate') || noticeDateInvalid}>
+                      <EpInput
+                        type="date"
+                        value={noticeDate}
+                        onChange={(v) => { setNoticeDate(v); clearS1Err('noticeDate'); }}
+                        // Browser-level guard so the picker can't open on
+                        // a past day; the inline error below catches
+                        // pasted / typed values that bypass the picker.
+                        min={todayIso}
+                        invalid={s1Errors.has('noticeDate') || noticeDateInvalid}
+                      />
+                      {(s1Errors.has('noticeDate') || noticeDateInvalid) && (
+                        <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <i className="ri-error-warning-line" />
+                          {noticeDateInvalid ? 'Notice date must be after today.' : 'Notice date is required.'}
+                        </div>
+                      )}
+                    </EpField>
+                  </Col>
+                  <Col md={6}>
+                    <EpField label="Last Working Day" required invalid={s1Errors.has('lwd') || lwdInvalid}>
                       <EpInput
                         type="date"
                         value={lwd}
-                        onChange={setLwd}
+                        onChange={(v) => { setLwd(v); clearS1Err('lwd'); }}
                         min={todayIso}
+                        invalid={s1Errors.has('lwd') || lwdInvalid}
                       />
-                      {lwdInvalid && (
+                      {(s1Errors.has('lwd') || lwdInvalid) && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <i className="ri-error-warning-line" />Last working day must be after today.
+                          <i className="ri-error-warning-line" />
+                          {lwdInvalid ? 'Last working day must be after today.' : 'Last working day is required.'}
                         </div>
                       )}
                     </EpField>
@@ -2073,9 +2155,9 @@ function describeArc(cx: number, cy: number, r: number, startAngle: number, endA
 }
 
 // ─── Tiny presentational helpers used inside the Exit Process modal ─────────
-function EpField({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function EpField({ label, required, invalid, children }: { label: string; required?: boolean; invalid?: boolean; children: React.ReactNode }) {
   return (
-    <div className="ep-field">
+    <div className={`ep-field${invalid ? ' ep-field--invalid' : ''}`}>
       <div className="ep-field-label">
         {label}
         {required && (
@@ -2089,7 +2171,7 @@ function EpField({ label, required, children }: { label: string; required?: bool
     </div>
   );
 }
-function EpInput({ value, onChange, type = 'text', disabled = false, placeholder, min, max, maxLength }: { value: string; onChange: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string; min?: string; max?: string; maxLength?: number }) {
+function EpInput({ value, onChange, type = 'text', disabled = false, placeholder, min, max, maxLength, invalid }: { value: string; onChange: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string; min?: string; max?: string; maxLength?: number; invalid?: boolean }) {
   if (type === 'date') {
     return (
       <MasterDatePicker
@@ -2099,12 +2181,23 @@ function EpInput({ value, onChange, type = 'text', disabled = false, placeholder
         placeholder={placeholder ?? 'dd-mm-yyyy'}
         minDate={min}
         maxDate={max}
+        invalid={invalid}
       />
     );
   }
-  return <input type={type} className="ep-input" value={value} disabled={disabled} placeholder={placeholder} min={min} max={max} maxLength={maxLength} onChange={e => onChange(e.target.value)} />;
+  return (
+    <input
+      type={type}
+      className={`ep-input${invalid ? ' ep-input--invalid' : ''}`}
+      value={value}
+      disabled={disabled}
+      placeholder={placeholder}
+      min={min} max={max} maxLength={maxLength}
+      onChange={e => onChange(e.target.value)}
+    />
+  );
 }
-function EpSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
+function EpSelect({ value, onChange, options, invalid }: { value: string; onChange: (v: string) => void; options: string[]; invalid?: boolean }) {
   // Render via MasterSelect so the modal dropdowns match the look + dark-mode
   // behaviour of every other HR form (rounded toggle, chevron, portalled menu
   // with proper z-index, search when the option list is long). Native
@@ -2115,7 +2208,7 @@ function EpSelect({ value, onChange, options }: { value: string; onChange: (v: s
     value: o,
     label: o.startsWith('— ') ? o : (o === 'Pending' ? '— Pending —' : o),
   }));
-  return <MasterSelect value={value} onChange={onChange} options={items} placeholder="Select…" />;
+  return <MasterSelect value={value} onChange={onChange} options={items} placeholder="Select…" invalid={invalid} />;
 }
 function EpApprovalCard({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return (
@@ -2659,16 +2752,38 @@ function apiToExitRow(e: any): EmployeeRow {
     || (mgr ? [mgr.first_name, mgr.last_name].filter(Boolean).join(' ').trim() : '')
     || '—';
 
-  // Map server status → ExitStatus bucket. Soft-deleted rows take
-  // priority over the status string so a "deleted" employee always
-  // shows up in the Exited tab regardless of their last status.
+  // Map server status → ExitStatus bucket.
+  // Priority order:
+  //   1. Soft-deleted (`deleted_at`) → always Exited.
+  //   2. Last Working Day on or before today → auto-Exited. This is
+  //      the "notice period elapsed → employee has left" rule QA
+  //      asked for. Used to require Stage 4's manual final-deactivate
+  //      flip, so a resigned employee whose LWD had already passed
+  //      stayed in the In-Progress bucket forever if HR forgot to
+  //      close the case. Computing it from the date here keeps the
+  //      list accurate without a backend cron.
+  //   3. Exit-flow `status` (`Resigned` / `Notice Period`) OR a
+  //      future-dated LWD → Exit In Progress (notice period running).
+  //   4. Required-field guards → Missing Details.
+  //   5. Otherwise → Active.
   const trashed   = !!e.deleted_at;
   const rawStatus = String(e.status ?? 'Active');
+  /* last_working_day comes off the eager-loaded `exit` relation
+   * (employee_exits table is 1:1 on employee_id). The projector still
+   * tolerates a flat top-level field for any caller that flattens the
+   * row before handing it to this function. */
+  const lwdSrc    = e?.exit?.last_working_day ?? e?.last_working_day ?? null;
+  const lwdRaw    = lwdSrc ? String(lwdSrc).slice(0, 10) : '';
+  const todayIso  = new Date().toISOString().slice(0, 10);
+  const lwdPassed = !!lwdRaw && lwdRaw <= todayIso;
+  const lwdFuture = !!lwdRaw && lwdRaw >  todayIso;
+  const exitFlow  = rawStatus === 'Resigned' || rawStatus === 'Notice Period';
   let status: ExitStatus;
-  if (trashed)                                                  status = 'Exited';
-  else if (rawStatus === 'Resigned' || rawStatus === 'Notice Period') status = 'Exit In Progress';
-  else if (!e.email || !e.department_id || !e.designation_id)   status = 'Missing Details';
-  else                                                          status = 'Active';
+  if      (trashed)                                              status = 'Exited';
+  else if (lwdPassed && exitFlow)                                status = 'Exited';
+  else if (exitFlow || lwdFuture)                                status = 'Exit In Progress';
+  else if (!e.email || !e.department_id || !e.designation_id)    status = 'Missing Details';
+  else                                                           status = 'Active';
 
   // Exit readiness — soft proxy until the dedicated checklist endpoint
   // exists. Active = wizard progress (50% from Stage 1 + bumps from the

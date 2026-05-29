@@ -333,4 +333,16 @@ class Employee extends Model
     {
         return $this->belongsTo(\App\Models\User::class, 'reporting_manager_user_id');
     }
+
+    /**
+     * The exit record for this employee (notice_date, last_working_day,
+     * reason, etc.). At most one row per employee — `employee_exits`
+     * carries a UNIQUE constraint on `employee_id`. Eager-loaded on the
+     * Employee list/detail JSON so HrExitManagement.tsx can read
+     * `last_working_day` directly off the row without a second call.
+     */
+    public function exit(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(\App\Models\EmployeeExit::class, 'employee_id');
+    }
 }

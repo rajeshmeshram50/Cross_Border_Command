@@ -4796,6 +4796,29 @@
   box-shadow: 0 0 0 3px rgba(124,58,237,0.16);
 }
 .ep-input:disabled { background: #f9fafb; color: var(--vz-secondary-color); }
+/* Required-field guard ring — the Stage 1 saveStage1() guard now sets
+ * an `invalid` flag on each missing field so the user sees WHICH field
+ * is empty without having to re-read the toast. Same red palette the
+ * rest of the project uses for invalid form controls. */
+.ep-input--invalid,
+.ep-input.ep-input--invalid {
+  border-color: #ef4444 !important;
+  background: #fef2f2;
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.15);
+}
+.ep-input--invalid:focus,
+.ep-input.ep-input--invalid:focus {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220,38,38,0.22);
+}
+.ep-field--invalid .ep-field-label { color: #b91c1c; }
+[data-bs-theme="dark"] .ep-input--invalid,
+[data-bs-theme="dark"] .ep-input.ep-input--invalid {
+  background: rgba(239,68,68,0.10);
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.22);
+}
+[data-bs-theme="dark"] .ep-field--invalid .ep-field-label { color: #fca5a5; }
 .ep-textarea {
   width: 100%;
   min-height: 56px;

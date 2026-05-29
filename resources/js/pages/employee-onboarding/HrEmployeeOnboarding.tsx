@@ -3881,7 +3881,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
                 total={stage4Total4}
               />
             )}
-            {activeStage === 5 && <Stage5Policies />}
+            {activeStage === 5 && <Stage5Policies emp={emp} />}
             {activeStage === 6 && <Stage6Verify emp={emp} stagesView={stagesView} onActivated={onSaved} />}
 
             {activeStage === 1 && (
@@ -6370,72 +6370,255 @@ function Stage4Payroll({
 }
 
 // ── Stage 5 — Policies & Agreements ────────────────────────────────────────
-function Stage5Policies() {
-  const docs: { id: string; name: string; sub: string; optional?: boolean }[] = [
-    { id: 'nda',     name: 'NDA — Non-Disclosure Agreement',         sub: 'Must be signed before Day 1' },
-    { id: 'emp',     name: 'Employment Agreement / Appointment Letter', sub: 'Original signed copy required' },
-    { id: 'coc',     name: 'Code of Conduct Policy',                  sub: 'Acknowledgement required' },
-    { id: 'it_sec',  name: 'IT Security & Acceptable Use Policy',     sub: 'Digital sign required' },
-    { id: 'leave',   name: 'Leave & Attendance Policy',               sub: 'Read & acknowledge' },
-    { id: 'conf',    name: 'Confidentiality Agreement',               sub: 'Binding for duration of employment' },
-    { id: 'gratuity',name: 'Gratuity & Benefit Policy',               sub: 'Statutory acknowledgement', optional: true },
-  ];
+function Stage5Policies({ emp }: { emp: OnboardRow }) {
+  type Tpl = {
+    id: number;
+    code: string;
+    name: string;
+    doc_type: string | null;
+    status: 'Active' | 'Draft' | 'Deprecated';
+    /* JSON column on hr_document_templates carrying the configured
+     * signing pipeline (Reporting Manager → Employee → Client CEO …).
+     * Each entry holds at least { role_name, designation_name, action,
+     * days }. Already shipped by the /match endpoint thanks to the
+     * model's `signers => array` cast. */
+    signers?: any;
+  };
+
+  const toast = useToast();
+  const [templates, setTemplates] = useState<Tpl[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [generatingId, setGeneratingId] = useState<number | null>(null);
+  /* Click-to-expand: the row a user has clicked, revealing the
+   * signing-workflow stepper underneath. Single-row open at a time so
+   * Stage 5 doesn't turn into a long unscrollable wall when every
+   * matched template is expanded simultaneously. Null = all collapsed. */
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  /* Parse the signers column off a template. Mirrors the helper inside
+   * the Evidence Vault component above — the cast usually returns an
+   * array, but a stale serializer can leave it as a JSON string. */
+  const parseSigners = (raw: any): Array<{ role_name?: string | null; designation_name?: string | null; action?: string | null }> => {
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string' && raw.trim()) {
+      try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
+    }
+    return [];
+  };
+
+  /* Fetch matched onboarding templates — same endpoint the Evidence
+   * Vault tab uses (/hr-document-templates/match with trigger_keyword
+   * = onboarding), so a template configured once in HR > Document
+   * Templates surfaces on both surfaces without double bookkeeping.
+   * Leave / Attendance templates are filtered out client-side because
+   * those belong to the HR > Leave & Attendance module — letting them
+   * also appear here would double-prompt the employee to acknowledge
+   * the same policy. */
+  useEffect(() => {
+    if (!emp?.dbId) { setTemplates([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const { data } = await api.get('/hr-document-templates/match', {
+          params: { employee_id: emp.dbId, trigger_keyword: 'onboarding' },
+        });
+        if (cancelled) return;
+        const raw: Tpl[] = Array.isArray(data?.templates) ? data.templates : [];
+        const filtered = raw.filter(t => !/\b(leave|attendance)\b/i.test(t.name || ''));
+        setTemplates(filtered);
+      } catch {
+        if (!cancelled) setTemplates([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [emp?.dbId]);
+
+  const handleGenerate = async (tpl: Tpl) => {
+    if (!emp?.dbId) return;
+    setGeneratingId(tpl.id);
+    try {
+      const resp = await api.get(`/hr-document-templates/${tpl.id}/generate`, {
+        params: { employee_id: emp.dbId },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([resp.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(emp.name || 'employee').replace(/\s+/g, '-')}-${tpl.code || tpl.id}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Document generated', `${tpl.code || tpl.name} downloaded.`);
+    } catch (err: any) {
+      toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setGeneratingId(null);
+    }
+  };
 
   return (
-    // Stage 5 backend (digital signing, doc generation, audit trail)
-    // isn't wired yet, so the whole pane is wrapped in ComingSoonShell.
-    // The Next Stage button in the modal footer stays clickable —
-    // ComingSoonShell only blocks pointer events INSIDE the shell, so
-    // the user can preview the layout and skip ahead.
-    <ComingSoonShell
-      title="Policies & Agreements"
-      subtitle="Digital signing, doc generation, and audit trail"
-    >
-      {/* Per-stage progress banner removed — sidebar already shows this. */}
-
+    <>
       {/* Status legend */}
       <div className="onb-pol-legend">
         <span style={{ fontWeight: 700, color: '#374151' }}>Signing Status:</span>
         <span className="onb-pol-legend-item"><span className="dot" style={{ background: '#10b981' }} /> Signed</span>
         <span className="onb-pol-legend-item"><span className="dot" style={{ background: '#f59e0b' }} /> Pending</span>
         <span className="onb-pol-legend-item"><span className="dot" style={{ background: '#7c5cfc' }} /> Awaiting</span>
-        <span className="onb-pol-legend-link">Click "Sign Now" to simulate digital signing →</span>
       </div>
 
-      {/* Organizational documents */}
+      {/* Organizational documents — pulled from HR > Document Templates */}
       <div className="onb-pol-section">
         <div className="onb-pol-section-head">
           <span className="onb-pol-section-icon"><i className="ri-shield-check-line" /></span>
           <h6 className="onb-pol-section-title">Organizational Documents &amp; Agreements</h6>
-          <span className="onb-pol-section-pill">0 / {docs.length} signed</span>
+          <span className="onb-pol-section-pill">0 / {templates.length} signed</span>
         </div>
-        {docs.map(d => (
-          <div key={d.id} className="onb-pol-doc">
-            <div className="onb-pol-doc-row">
-              <span className="onb-pol-doc-icon"><i className="ri-file-text-line" /></span>
-              <div className="onb-pol-doc-meta">
-                <h6 className="onb-pol-doc-name">
-                  {d.name}
-                  {d.optional && <span className="onb-doc-tag">Optional</span>}
-                </h6>
-                <p className="onb-pol-doc-sub">{d.sub}</p>
-              </div>
-              <span className="onb-pol-doc-status">
-                <span className="dot" />
-                Not Generated
-              </span>
-              <button type="button" className="onb-pol-gen-btn">
-                <i className="ri-file-add-line" /> Generate
-              </button>
-            </div>
-            <p className="onb-pol-doc-help">
-              <i className="ri-information-line" />
-              Generate this document first to activate the signing tracker and notify signers.
-            </p>
+
+        {loading && (
+          <div style={{ padding: 20, textAlign: 'center', color: '#6b7280', fontSize: 12.5 }}>
+            <i className="ri-loader-4-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
+            Loading matched templates…
           </div>
-        ))}
+        )}
+
+        {!loading && templates.length === 0 && (
+          <div style={{ padding: 22, textAlign: 'center', borderRadius: 10, background: '#f9fafb', border: '1px dashed #e5e7eb' }}>
+            <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8, color: '#9ca3af' }} />
+            <div style={{ fontSize: 13, color: '#6b7280' }}>
+              No matching policy / agreement templates for this employee&rsquo;s department &amp; role.
+            </div>
+          </div>
+        )}
+
+        {!loading && templates.map(tpl => {
+          const isGenerating = generatingId === tpl.id;
+          const canGenerate = tpl.status === 'Active' && !!emp.dbId && !isGenerating;
+          const isExpanded = expandedId === tpl.id;
+          const signers = parseSigners(tpl.signers);
+          const toggle = () => setExpandedId(prev => prev === tpl.id ? null : tpl.id);
+          return (
+            /* Whole CARD is the toggle target — used to be just the
+             * inner row, so clicking on the grey "Generate this document
+             * first…" help-strip (still inside the card visually) did
+             * nothing. Moving the onClick up here means the entire patti
+             * the user sees is one click-zone. Clicks on the Generate
+             * button still bubble-stop so they don't toggle the panel. */
+            <div
+              key={tpl.id}
+              className={`onb-pol-doc${isExpanded ? ' is-expanded' : ''}`}
+              role="button"
+              tabIndex={0}
+              style={{ cursor: 'pointer' }}
+              onClick={toggle}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  toggle();
+                }
+              }}
+            >
+              <div className="onb-pol-doc-row">
+                <span className="onb-pol-doc-icon"><i className="ri-file-text-line" /></span>
+                <div className="onb-pol-doc-meta">
+                  <h6 className="onb-pol-doc-name">
+                    {tpl.name || '(unnamed template)'}{' '}
+                    <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4, marginLeft: 6 }}>{tpl.code}</span>
+                    {tpl.status === 'Draft' && <span className="onb-doc-tag" style={{ marginLeft: 6 }}>Draft</span>}
+                    {signers.length > 0 && (
+                      <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
+                        · {signers.length} signer{signers.length === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </h6>
+                  <p className="onb-pol-doc-sub">{tpl.doc_type || 'Document'}</p>
+                </div>
+                <span className="onb-pol-doc-status">
+                  <span className="dot" />
+                  Not Generated
+                </span>
+                <button
+                  type="button"
+                  className="onb-pol-gen-btn"
+                  disabled={!canGenerate}
+                  onClick={(e) => { e.stopPropagation(); handleGenerate(tpl); }}
+                  title={
+                    isGenerating       ? 'Generating…'
+                    : tpl.status !== 'Active' ? 'Only Active templates can be generated'
+                    : !emp.dbId        ? 'Save the employee first'
+                    : 'Generate DOCX with this employee\'s data'
+                  }
+                  style={{ opacity: canGenerate ? 1 : 0.6, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
+                >
+                  <i className={isGenerating ? 'ri-loader-4-line' : 'ri-file-add-line'} /> {isGenerating ? 'Generating…' : 'Generate'}
+                </button>
+                <span
+                  className="onb-pol-doc-chev"
+                  style={{
+                    marginLeft: 6, color: 'var(--vz-secondary-color)', fontSize: 18,
+                    transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform .18s ease',
+                  }}
+                  aria-hidden
+                >
+                  <i className="ri-arrow-down-s-line" />
+                </span>
+              </div>
+
+              {/* Signing-workflow stepper — same .ep-signing / .ep-signer
+                  classes Exit Management and the Evidence Vault use.
+                  recruitment.css is already imported at the top of this
+                  file so they resolve here too. No live signing-run yet
+                  in Stage 5, so we always render the PREVIEW pipeline
+                  with each signer in 'Pending' and step 1 as the
+                  active one — matches the "who will sign" affordance. */}
+              {isExpanded && (
+                signers.length > 0 ? (
+                  <div className="ep-signing" style={{ margin: '4px 16px 12px' }}>
+                    <div className="ep-signing-head">
+                      <i className="ri-shield-check-line" />Signing Workflow
+                      <span className="ep-signing-pct">Not yet sent</span>
+                    </div>
+                    <div className="ep-signing-flow">
+                      {signers.map((s, i) => (
+                        <div key={i} className={`ep-signer${i === 0 ? ' is-active' : ''}`}>
+                          <span className="ep-signer-dot">{i + 1}</span>
+                          <span className="ep-signer-name">
+                            {s.role_name || s.designation_name || `Signer ${i + 1}`}
+                            {s.action && (
+                              <span style={{ marginLeft: 6, fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
+                                ({s.action})
+                              </span>
+                            )}
+                          </span>
+                          <span className="ep-signer-state">Pending</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="onb-pol-doc-help" style={{ paddingLeft: 16 }}>
+                    <i className="ri-information-line" />
+                    No signers configured on this template — open it in
+                    <strong> HR &rsaquo; Document Templates</strong> and add a Signing Workflow.
+                  </p>
+                )
+              )}
+
+              {!isExpanded && (
+                <p className="onb-pol-doc-help">
+                  <i className="ri-information-line" />
+                  Generate this document first to activate the signing tracker and notify signers.
+                </p>
+              )}
+            </div>
+          );
+        })}
       </div>
-    </ComingSoonShell>
+    </>
   );
 }
 
