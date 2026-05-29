@@ -16,6 +16,7 @@ use App\Models\ProductQcRecord;
 use App\Models\ProductVendorMap;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -653,7 +654,7 @@ class ProductController extends Controller
         // the modal after the 5-min TTL also picks up changes made elsewhere.
         // No cross-controller invalidation needed for the Product module to
         // stay self-contained.
-        $cacheKey = 'product:master-bundle:user:' . ($user?->id ?? 'guest');
+        $cacheKey = MasterBundleCache::key('product:master-bundle', $user?->id);
 
         $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
             // Helper — pulls active rows with a fixed column projection.

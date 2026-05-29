@@ -20,6 +20,7 @@ use App\Models\VendorDocument;
 use App\Models\VendorGstScrutiny;
 use App\Models\VendorOwner;
 use App\Models\VendorProductMapping;
+use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -782,7 +783,7 @@ class VendorController extends Controller
     public function masterBundle(Request $request): JsonResponse
     {
         $user = $request->user();
-        $cacheKey = 'vendor:master-bundle:user:' . ($user?->id ?? 'guest');
+        $cacheKey = MasterBundleCache::key('vendor:master-bundle', $user?->id);
 
         $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
             // Tenant scope — apply MasterVisibility::applyReadScope to every

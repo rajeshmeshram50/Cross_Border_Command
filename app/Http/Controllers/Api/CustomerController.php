@@ -14,6 +14,7 @@ use App\Models\Masters\DocumentType;
 use App\Models\Masters\RiskLevels;
 use App\Models\Masters\Segments;
 use App\Models\Masters\States;
+use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -507,7 +508,7 @@ class CustomerController extends Controller
     public function masterBundle(Request $request): JsonResponse
     {
         $user = $request->user();
-        $cacheKey = 'customer:master-bundle:user:' . ($user?->id ?? 'guest');
+        $cacheKey = MasterBundleCache::key('customer:master-bundle', $user?->id);
 
         $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
             // Tenant scope — apply MasterVisibility::applyReadScope to every

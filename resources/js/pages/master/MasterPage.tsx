@@ -22,7 +22,28 @@ import {
 } from './masterConfigs';
 import { MasterSelect, MasterDatePicker, MasterFileInput, MasterFormStyles } from './masterFormKit';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
+import { bustCustomerMasterBundle } from '../sales/customerBundleCache';
+import { bustProductMasterBundle } from '../products/productBundleCache';
+import { bustVendorMasterBundle } from '../vendors/vendorBundleCache';
+import { bustClientFormBundle } from '../client/clientFormBundleCache';
+import { bustBranchFormBundle } from '../branch/branchFormBundleCache';
 import '../../../css/master.css';
+
+/**
+ * Master rows (risk levels, segments, customer types, designations …) feed
+ * the cached "*-bundle" dropdown payloads used by the Customer, Consignee,
+ * Product, Vendor, Client and Branch forms. Those bundles live in
+ * sessionStorage with a 5-min TTL, so a master added here wouldn't appear in
+ * those dropdowns until the TTL expired. Clearing every bundle on any master
+ * create/update/delete makes the new entry show on the next form open.
+ */
+function bustAllMasterBundles(): void {
+  bustCustomerMasterBundle();
+  bustProductMasterBundle();
+  bustVendorMasterBundle();
+  bustClientFormBundle();
+  bustBranchFormBundle();
+}
 
 export default function MasterPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -952,6 +973,10 @@ function MasterPageInner({
         setRecords(prev => [data, ...prev]);
         toast.success('Created', `${cfg.titleSingular || cfg.title} created successfully`);
       }
+      // The form-bundle caches (Customer/Consignee/Product/Vendor/Client/
+      // Branch) may now be stale — drop them so this new/edited master shows
+      // in their dropdowns on the next form open instead of after the TTL.
+      bustAllMasterBundles();
       setModalOpen(false);
     } catch (err: any) {
       if (err?.response?.status === 422 && err?.response?.data?.errors) {
@@ -998,6 +1023,7 @@ function MasterPageInner({
     try {
       await api.delete(`${masterEndpoint(cfg)}/${deleteTarget.id}`);
       setRecords(prev => prev.filter(r => r.id !== deleteTarget.id));
+      bustAllMasterBundles();
       toast.success('Deleted', `"${label}" removed successfully`);
       setDeleteOpen(false);
       setDeleteTarget(null);
