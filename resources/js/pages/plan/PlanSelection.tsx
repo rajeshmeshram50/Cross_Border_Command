@@ -65,6 +65,16 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
       .catch(() => {}).finally(() => setLoading(false));
   }, []);
 
+  // Swiper's loop mode needs noticeably more physical slides than fit on
+  // screen to build its clone buffer. With only 4–5 plans + centeredSlides,
+  // the loop can't keep the peek symmetric — one side runs out of slides
+  // and the carousel lands in awkward asymmetric states between transitions.
+  // Repeating the set until there are enough slides lets the loop wrap
+  // seamlessly: the centered card always has a balanced peek on both sides.
+  const loopSlides = plans.length > 1 && plans.length < 8
+    ? Array.from({ length: Math.ceil(8 / plans.length) }).flatMap(() => plans)
+    : plans;
+
   const getPrice = (plan: Plan, cycle: string) => {
     const base = plan.price;
     const mult = cycle === 'quarter' ? 3 : cycle === 'year' ? 12 : 1;
@@ -448,29 +458,23 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
             navigation={{ prevEl: prevRef.current, nextEl: nextRef.current }}
             pagination={{ clickable: true, dynamicBullets: true }}
             loop={plans.length > 1}
-            // Open the carousel centered on the Super-Admin-suggested plan
-            // when one is set. Falls back to slide 0 otherwise.
             initialSlide={(() => {
               const sid = user?.plan?.suggested_plan_id;
               if (!sid) return 0;
-              const idx = plans.findIndex(p => p.id === sid);
+              const idx = loopSlides.findIndex(p => p.id === sid);
               return idx >= 0 ? idx : 0;
             })()}
-            // disableOnInteraction: false so autoplay resumes after a user
-            // click/swipe — otherwise a single nav-button press would stop
-            // the carousel permanently.
-            autoplay={{ delay: 2000, disableOnInteraction: false, pauseOnMouseEnter: true }}
-            speed={450}
-            /* Centered-slides focus mode — active card scales up to crisp 1.0
-               (no transform = pixel-perfect HD text) and side cards shrink. */
+            autoplay={{ delay: 4000, disableOnInteraction: false, pauseOnMouseEnter: true }}
+            speed={750}
             grabCursor={true}
             centeredSlides={true}
             slidesPerView="auto"
+            slidesPerGroup={1}
             spaceBetween={24}
             watchSlidesProgress={true}
             className="plans-swiper plans-swiper-center pb-5"
           >
-          {plans.map(p => {
+          {loopSlides.map((p, slideIdx) => {
             const price = getPrice(p, billingCycle);
             const isCurrent = hasPlan && user?.plan?.plan_name?.toLowerCase() === p.name.toLowerCase();
             // Plan suggested by the Super Admin (from the Client form). We
@@ -487,7 +491,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
               { l: 'Support',  v: p.support_level || '—',                      ic: 'ri-headphone-line'    },
             ];
             return (
-              <SwiperSlide key={p.id}>
+              <SwiperSlide key={`${p.id}-${slideIdx}`}>
                 <Card
                   className={`w-100 mb-0 position-relative d-flex flex-column plan-card-animated plan-card-v2 ${p.is_featured ? 'is-featured' : ''} ${isSuggested ? 'is-suggested' : ''}`}
                   style={{

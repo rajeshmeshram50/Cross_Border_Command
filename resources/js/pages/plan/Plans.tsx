@@ -212,13 +212,12 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
             navigation={{ prevEl: prevRef.current, nextEl: nextRef.current }}
             pagination={{ clickable: true, dynamicBullets: true }}
             loop={plans.length > 1}
-            autoplay={{ delay: 3500, disableOnInteraction: true, pauseOnMouseEnter: true }}
-            speed={450}
-            /* Centered-slides focus mode — active card scales up to crisp 1.0
-               (no transform = pixel-perfect HD text) and side cards shrink. */
+            autoplay={{ delay: 4000, disableOnInteraction: false, pauseOnMouseEnter: true }}
+            speed={750}
             grabCursor={true}
             centeredSlides={true}
             slidesPerView="auto"
+            slidesPerGroup={1}
             spaceBetween={24}
             watchSlidesProgress={true}
             className="plans-swiper plans-swiper-center pb-5"

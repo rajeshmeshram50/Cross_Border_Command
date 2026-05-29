@@ -72,11 +72,19 @@
 }
 
 /* ───────── Centered-slides focus mode ─────────
-   Active slide has NO transform so text renders pixel-perfect HD;
-   only non-active slides get scaled to indicate focus. */
-.plans-swiper-center .swiper-wrapper { align-items: stretch; }
+   Active (center) card lifts up slightly and stays full size + opacity.
+   Side cards scale down to 0.92 and dim so the center reads as focus.
+   Smooth ease-out bezier on the wrapper translate makes the glide soft. */
+.plans-swiper-center .swiper-wrapper {
+  align-items: stretch;
+  transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1) !important;
+}
 .plans-swiper-center .swiper-slide {
-  /* Mobile-first — never exceed the viewport, leave room for peeks on each side */
+  /* Fixed-width slides keep every card at its natural size — cards do NOT
+     get stretched to fill the viewport. With centeredSlides=true and
+     slidesPerView=auto, Swiper centers the active card and lets the
+     neighbours peek in from both sides (half-card visible on each edge
+     hints there's more to scroll). */
   width: min(82vw, 300px);
   max-width: calc(100vw - 32px);
   height: auto;
@@ -84,16 +92,18 @@
      isolated and the swiper transition stays smooth even when the active
      card has its own running animations. */
   transform: scale(0.92) translate3d(0, 0, 0);
-  opacity: 0.88;
-  transition: transform .26s cubic-bezier(0.25, 0.8, 0.3, 1), opacity .26s ease-out;
+  opacity: 0.72;
+  transition:
+    transform .55s cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity .55s ease-out;
   will-change: transform, opacity;
-  /* `contain: layout style` (no `paint`) keeps the per-slide layout/style
-     isolation that makes transitions cheap, without the paint clipping
-     that was cropping the hover-lift's top edge inside the slide. */
   contain: layout style;
 }
+/* Active (center) card — lifts up 10px and stays full size + opacity.
+   The lift gives the visible "pops up" feel; scale stays at 1.0 so text
+   inside the active card is pixel-perfect. */
 .plans-swiper-center .swiper-slide-active {
-  transform: translate3d(0, 0, 0);
+  transform: translate3d(0, -10px, 0);
   opacity: 1;
   z-index: 2;
 }
