@@ -1077,7 +1077,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
 
   // Errors — only fields still on the form.
   type RaiseErrors = Partial<Record<
-    'title' | 'jobRole' | 'department' | 'openings' | 'employType' | 'workMode' | 'urgency'
+    'title' | 'jobRole' | 'department' | 'targetDate' | 'openings' | 'employType' | 'workMode' | 'urgency'
     | 'jobDesc' | 'requiredSkills' | 'requiredExp',
     string
   >>;
@@ -1120,6 +1120,16 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
     if (!title.trim())          e.title          = 'Request title is required';
     if (!jobRole.trim())        e.jobRole        = 'Job role is required';
     if (!departmentId)          e.department     = 'Department is required';
+    // Target Join Date — optional, but if supplied must not be in the
+    // past. Backs up the picker's minDate guard (paste / devtools /
+    // legacy row hydration can bypass the UI control).
+    if (targetDate) {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const picked = new Date(targetDate); picked.setHours(0, 0, 0, 0);
+      if (picked.getTime() < today.getTime()) {
+        e.targetDate = 'Target join date cannot be in the past';
+      }
+    }
     if (!openings.trim() || Number(openings) <= 0) e.openings = 'Openings must be at least 1';
     if (!employType)            e.employType     = 'Employment type is required';
     if (!workMode)              e.workMode       = 'Work mode is required';
@@ -1327,11 +1337,18 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
               </Col>
               <Col md={3}>
                 <label className="rec-form-label">Target Join Date</label>
+                {/* minDate = today so the picker physically blocks
+                    selecting a date in the past. errors.targetDate
+                    catches values that bypass the picker (paste,
+                    devtools, hydration of legacy rows). */}
                 <MasterDatePicker
                   value={targetDate}
-                  onChange={setTargetDate}
+                  onChange={(v) => { setTargetDate(v); clear('targetDate'); }}
                   placeholder="dd-mm-yyyy"
+                  invalid={!!errors.targetDate}
+                  minDate={new Date().toISOString().slice(0, 10)}
                 />
+                {errors.targetDate && <div className="rec-error"><i className="ri-error-warning-line" />{errors.targetDate}</div>}
               </Col>
             </Row>
           </div>

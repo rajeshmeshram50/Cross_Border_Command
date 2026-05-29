@@ -2316,6 +2316,140 @@ export default function HrEmployees() {
           .hr-emp-kpi-nav { display: none; }
         }
 
+        /* ──────────────────────────────────────────────────────────────
+           RESPONSIVE BREAKPOINTS — Employees page
+
+           Approach: pure CSS. The JSX already uses Bootstrap's grid
+           (Col md=6, flex-wrap, etc.) but several spots need tighter
+           rules to keep the page usable on tablets + phones:
+             - Header buttons (Onboarding Link / Add Employee) must
+               grow to full-width when the page header wraps.
+             - Filter row's Department label hides on narrow widths so
+               the dropdown gets the full column.
+             - Tabs shrink padding + drop the text label below 480px,
+               keeping just the icon + count badge.
+             - Table parent gets explicit overflow-x: auto so the
+               12-column grid never spills outside the card.
+             - Profile %% cell shrinks from 120 → 88px on phones.
+             - Pagination footer stacks vertically so the "Showing X–Y"
+               line and the page buttons each get their own row.
+           ────────────────────────────────────────────────────────────── */
+
+        /* Always allow the wide table to scroll horizontally inside its
+           wrapper rather than overflow the card edge. */
+        .hr-employees-surface .table-responsive {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        /* Tablet portrait — ≤ 991.98px */
+        @media (max-width: 991.98px) {
+          /* Header buttons keep their width but the whole right-side
+             group can wrap below the title on narrow widths. */
+          .hr-emp-onboard-btn.btn,
+          .hr-employees-surface .btn-label {
+            font-size: 12.5px;
+          }
+          /* Filter row — let the Department label / dropdown wrap
+             cleanly under the search box. */
+          .hr-employees-surface .search-box + .col-md-6,
+          .hr-employees-surface [class*="col-md-6"] {
+            margin-top: 8px;
+          }
+        }
+
+        /* Tablet portrait + small landscape — ≤ 767.98px */
+        @media (max-width: 767.98px) {
+          /* Page-header title text shrinks slightly so the header row
+             still has room for the action buttons. */
+          .hr-employees-surface h4,
+          .hr-employees-surface h5 { font-size: 17px; }
+
+          /* Onboarding Link / Add Employee buttons grow to fill their
+             half of the wrapping flex row so they don't look stranded. */
+          .hr-emp-onboard-btn.btn,
+          .hr-employees-surface .btn-label {
+            flex: 1 1 auto;
+            min-width: 0;
+          }
+
+          /* Active / Disabled tab buttons — tighter padding so both fit
+             on one row even on small screens. */
+          .hr-employees-surface .btn.flex-grow-1 {
+            padding: 7px 10px !important;
+            font-size: 12px !important;
+            gap: 6px !important;
+          }
+
+          /* Department filter — stack label above the dropdown to avoid
+             squeezing the dropdown into a narrow stub. */
+          .hr-employees-surface .col-md-6.d-flex.justify-content-md-end {
+            justify-content: flex-start !important;
+          }
+        }
+
+        /* Phone — ≤ 575.98px */
+        @media (max-width: 575.98px) {
+          /* Header CTAs go full-width and stack so the tap target is
+             obvious and the labels never truncate. */
+          .hr-emp-onboard-btn.btn,
+          .hr-employees-surface .btn-label {
+            width: 100%;
+            justify-content: center;
+          }
+
+          /* Hide the inline "DEPARTMENT" caption — the placeholder text
+             inside the picker already says what the field is and the
+             label was eating half the row's width. */
+          .hr-employees-surface .col-md-6.d-flex .text-uppercase.fw-semibold {
+            display: none;
+          }
+          .hr-employees-surface .col-md-6.d-flex > div[style*="minWidth"],
+          .hr-employees-surface .col-md-6.d-flex > div:has(> .master-select-wrap) {
+            width: 100%;
+            min-width: 0 !important;
+          }
+          .hr-employees-surface .col-md-6.d-flex .d-flex.align-items-center.gap-2 {
+            width: 100%;
+          }
+
+          /* Profile-% bar shrinks so the column doesn't push the table
+             too wide. The 120-px badge container is set via inline style
+             on the cell — override via the wrapper. */
+          .hr-employees-surface .table tbody td > div[style*="width: 120px"],
+          .hr-employees-surface .table tbody td > div[style*="width:120px"] {
+            width: 88px !important;
+          }
+
+          /* Active / Disabled tab buttons — drop the inline label below
+             480px so the icon + count chip alone show. Keeps the
+             dual-tab strip readable on the smallest screens. */
+          .hr-employees-surface .btn.flex-grow-1 > i + * { font-size: 11px; }
+
+          /* Pagination footer — stack the "Showing …" text above the
+             button row instead of cramming them side-by-side. */
+          .hr-employees-surface .border-top.mt-3.pt-2 {
+            flex-direction: column;
+            align-items: stretch !important;
+            gap: 12px !important;
+          }
+          .hr-employees-surface .border-top.mt-3.pt-2 > .text-muted {
+            justify-content: center;
+            text-align: center;
+            min-height: 0 !important;
+          }
+          .hr-emp-pag { justify-content: center; flex-wrap: wrap; }
+        }
+
+        /* Very narrow phones — ≤ 380px */
+        @media (max-width: 380px) {
+          /* Hide the tab label text entirely on the very narrowest
+             devices so the icon + count badge fit cleanly. */
+          .hr-employees-surface .btn.flex-grow-1 > :not(i):not(.badge) {
+            display: none;
+          }
+        }
+
         .hr-emp-kpi-grid {
           position: relative;
           /* scrollLeft-based auto-scroll runs all the time — overflow-x:auto

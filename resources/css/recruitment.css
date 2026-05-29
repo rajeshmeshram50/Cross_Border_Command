@@ -858,7 +858,13 @@
   border-color: #a78bfa;
   color: #7c5cfc;
   background: linear-gradient(180deg, #f5f3ff 0%, #ede9fe 100%);
+  /* Lift + soft violet glow so the Close / Cancel button visibly
+     responds to hover instead of just shifting color. Matches the
+     primary CTA's feel without competing with it. */
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(124,92,252,0.18);
 }
+.rec-btn-ghost:active { transform: translateY(0); box-shadow: 0 1px 3px rgba(124,92,252,0.14); }
 [data-bs-theme="dark"] .rec-btn-ghost,
 [data-layout-mode="dark"] .rec-btn-ghost {
   background: var(--vz-secondary-bg);
@@ -874,6 +880,8 @@
   background: rgba(124,92,252,0.16);
   border-color: rgba(167,139,250,0.55);
   color: #c4b5fd;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(124,92,252,0.32);
 }
 
 /* Secondary CTA — vivid blue gradient that pairs with the purple primary */
@@ -1453,6 +1461,19 @@
   border: 1px solid #ede9fe;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(91,63,209,0.06);
+  /* Hover lift on the read-only cards so the View modal doesn't read
+     as a static slab — keeps the same affordance vocabulary as the
+     interactive forms elsewhere in the module. */
+  transition: transform .18s ease, box-shadow .22s ease, border-color .18s ease;
+}
+.rec-view-card:hover {
+  transform: translateY(-1px);
+  border-color: #c4b5fd;
+  box-shadow: 0 8px 24px rgba(91,63,209,0.12);
+}
+[data-bs-theme="dark"] .rec-view-card:hover {
+  border-color: rgba(167,139,250,0.50);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.50);
 }
 [data-bs-theme="dark"] .rec-view-body {
   background: var(--vz-secondary-bg, #1f2630);
@@ -8875,4 +8896,31 @@
 [data-bs-theme="dark"] .ep-audit-popover .ep-audit-stage-badge--approved {
   background: rgba(16,185,129,0.20) !important;
   color: #6ee7b7 !important;
+}
+
+/* ---------------------------------------------------------------------
+   99. Create/Edit Recruitment form — icon-overload cleanup
+   QA flagged that every field label + the Job Title input were
+   carrying their own leading icon, on top of the per-section header
+   icons. The result reads as visual noise — a wall of tiny purple
+   glyphs that fight each other for attention. We keep the colored
+   section-header icons (one per section, helps orient the reader)
+   and strip the per-label + leading-input glyphs so the form
+   surfaces the actual content.
+   --------------------------------------------------------------------- */
+.rec-form-modal .rec-form-label i,
+.rec-form-modal-navy .rec-form-label i {
+  display: none !important;
+}
+.rec-form-modal .rec-input-icon-leading,
+.rec-form-modal-navy .rec-input-icon-leading {
+  display: none !important;
+}
+/* When the leading icon is hidden the input no longer needs the
+   extra 32px of left padding that was making room for it. Drop back
+   to the default 11px so the placeholder/value aligns with every
+   other input row. */
+.rec-form-modal .rec-input.has-leading-icon,
+.rec-form-modal-navy .rec-input.has-leading-icon {
+  padding-left: 11px !important;
 }
