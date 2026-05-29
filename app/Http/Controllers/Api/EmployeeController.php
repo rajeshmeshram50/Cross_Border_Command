@@ -59,6 +59,12 @@ class EmployeeController extends Controller
         // Passport-size photo doc — fed to the `photo_url` accessor so the
         // list/detail JSON exposes it without an N+1 lookup.
         'photoDocument:id,employee_id,document_key,file_path',
+        // Exit record (1:1) — surfaces last_working_day / notice_date on
+        // the list payload so HrExitManagement can auto-flip Exit In
+        // Progress → Exited once the notice period elapses, without an
+        // extra round-trip per row. Selected columns only; the full row
+        // is loaded on the exit modal itself via /employees/{id}/exit.
+        'exit:id,employee_id,notice_date,last_working_day',
     ];
 
     /* ─────────────────────────────────────────────────────────────────
