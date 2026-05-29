@@ -307,12 +307,16 @@ const RFL_CSS = `
   to   { transform: scale(1);   opacity: 1; }
 }
 
-/* ─── Header (teal gradient) ─── */
+/* ─── Header (teal gradient) ───
+   Prototype spec: 135° sweep from deep emerald through dark teal to
+   bright teal. Same layout properties as the other matrix popups so
+   the header stays in a single row at any width. */
 .rfl-head {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%);
+  gap: 12px;
+  padding: 14px 22px;
+  background: linear-gradient(135deg, #065F46 0%, #0F766E 55%, #14B8A6 100%);
   color: #fff;
 }
 .rfl-head::before {
@@ -352,7 +356,8 @@ const RFL_CSS = `
 
 /* ─── Body ─── */
 .rfl-body {
-  padding: 20px 22px;
+  padding: 18px 22px;
+  background: #F0FDFA;
   flex: 1; overflow-y: auto;
 }
 .rfl-body::-webkit-scrollbar { width: 5px; }
@@ -370,7 +375,7 @@ const RFL_CSS = `
 }
 .rfl-lbl-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .rfl-lbl {
-  font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  font-size: 11px; font-weight: 600; letter-spacing: .08em;
   color: #0f766e; text-transform: uppercase;
 }
 .rfl-req { color: #ef4444; }
@@ -451,7 +456,7 @@ const RFL_CSS = `
 .rfl-input-ro {
   background: rgba(20, 184, 166, .08);
   color: #0f766e;
-  font-weight: 700;
+  font-weight: 400;
   cursor: not-allowed;
 }
 .rfl-textarea {
@@ -521,11 +526,11 @@ const RFL_CSS = `
 
 .rfl-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 9px 20px;
-  border-radius: 9px;
+  padding: 6px 14px;
+  border-radius: 8px;
   border: 1.5px solid transparent;
   font-family: inherit;
-  font-size: 13px; font-weight: 700;
+  font-size: 12.5px; font-weight: 700;
   cursor: pointer;
   transition: all .15s;
 }

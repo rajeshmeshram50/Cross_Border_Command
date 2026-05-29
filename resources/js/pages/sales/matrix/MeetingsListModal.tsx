@@ -267,9 +267,13 @@ const MLM_CSS = `
   overflow: hidden; display: flex; flex-direction: column;
 }
 .mlm-head {
+  /* Lighter 4-stop violet sweep matching the prototype + the rest of
+     the matrix modals (Product Directory family). */
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px; color: #fff;
-  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  gap: 12px; flex-shrink: 0;
+  padding: 16px 22px; color: #fff;
+  position: relative; overflow: hidden;
+  background: linear-gradient(115deg, #7c3aed 0%, #8b5cf6 45%, #a78bfa 80%, #c4b5fd 100%);
 }
 .mlm-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .mlm-head-icon {
@@ -304,8 +308,15 @@ const MLM_CSS = `
   overflow: auto;
 }
 .mlm-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 880px; }
+/* Table header — gradient lives on the tr so a single 90° sweep
+   spans the whole row instead of each th rendering its own copy
+   (which caused visible stitch lines between columns). */
+.mlm-table thead tr {
+  background: linear-gradient(90deg, #7c3aed 0%, #8b5cf6 50%, #a78bfa 100%);
+}
 .mlm-table thead th {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff;
+  background: transparent;
+  color: #fff;
   font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
   text-align: left; padding: 11px 12px;
   position: sticky; top: 0; z-index: 2;

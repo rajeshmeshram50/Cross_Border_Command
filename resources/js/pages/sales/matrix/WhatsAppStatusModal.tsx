@@ -41,17 +41,19 @@ export default function WhatsAppStatusModal({
   const [picked, setPicked] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
-  /* Hydrate on open. Map the legacy 4-status server value into the yes/no
-   * binary the UI uses: 'connected' is the only positive outcome, anything
-   * else lands as "No" so the reason textarea pre-fills. */
+  /* Always open clean — neither Yes nor No selected, no pre-filled reason
+   * or file. The user explicitly wants the form to start fresh on every
+   * click, even when the lead already has a previously saved status, so
+   * we deliberately ignore `currentStatus` / `currentReason` here.
+   * (`currentScreenshot` is still consulted when rendering the file
+   * label inside the Yes branch, so the prior upload is discoverable
+   * if the user actively chooses Yes.) */
   useEffect(() => {
     if (!open) { setPicked(null); setSaving(false); return; }
-    if (currentStatus === 'connected') setChoice('yes');
-    else if (currentStatus) setChoice('no');
-    else setChoice('');
-    setReason(currentReason ?? '');
+    setChoice('');
+    setReason('');
     if (fileRef.current) fileRef.current.value = '';
-  }, [open, currentStatus, currentReason]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -92,12 +94,13 @@ export default function WhatsAppStatusModal({
     }
   };
 
-  const fileLabel =
-    picked
-      ? picked.name
-      : currentScreenshot
-        ? (currentScreenshot.split('/').pop() ?? 'View existing')
-        : '';
+  /* File label only reflects what the USER has just picked. We
+   * deliberately ignore `currentScreenshot` (the previously saved
+   * upload) so the Yes branch opens in the same clean "No file chosen"
+   * state shown in image 2, instead of pre-populating with the old
+   * hashed filename + a stray "View" link. Matches the fresh-form
+   * behaviour applied to the radio + reason fields. */
+  const fileLabel = picked ? picked.name : '';
 
   const clearPicked = () => {
     setPicked(null);
@@ -169,28 +172,18 @@ export default function WhatsAppStatusModal({
                     Choose File
                   </button>
                   <span className="was-file-name">
-                    {fileLabel
-                      ? (
-                          <>
-                            <span className="was-file-name-text" title={fileLabel}>{fileLabel}</span>
-                            {!picked && currentScreenshot && (
-                              <a
-                                className="was-link"
-                                href={`/storage/${currentScreenshot}`}
-                                target="_blank"
-                                rel="noreferrer"
-                              >View</a>
-                            )}
-                            {picked && (
-                              <button type="button" className="was-file-x" onClick={clearPicked} aria-label="Remove">
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                                </svg>
-                              </button>
-                            )}
-                          </>
-                        )
-                      : <span className="was-file-empty">No file chosen</span>}
+                    {fileLabel ? (
+                      <>
+                        <span className="was-file-name-text" title={fileLabel}>{fileLabel}</span>
+                        <button type="button" className="was-file-x" onClick={clearPicked} aria-label="Remove">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                      </>
+                    ) : (
+                      <span className="was-file-empty">No file chosen</span>
+                    )}
                   </span>
                 </div>
                 <div className="was-formats">
@@ -246,7 +239,7 @@ const WAS_CSS = `
 
 .was-modal {
   width: min(560px, 100%); max-height: 92vh;
-  background: linear-gradient(180deg, #f5f3ff 0%, #ede9fe 100%);
+  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
   border-radius: 16px;
   box-shadow: 0 18px 48px rgba(15, 23, 42, .28);
   overflow: hidden;
@@ -258,12 +251,20 @@ const WAS_CSS = `
   to   { transform: scale(1);   opacity: 1; }
 }
 
-/* ── Header — violet gradient with top sheen ── */
+/* ── Header — WhatsApp green gradient with top sheen.
+   Matches the HTML prototype: 115° sweep from a deep emerald at the
+   top-left through bright green to a soft mint at the bottom-right,
+   so the panel reads like daylight falling across one corner. */
 .was-head {
-  position: relative; overflow: hidden;
+  position: relative; overflow: hidden; flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 18px;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #5b21b6 100%);
+  gap: 12px;
+  padding: 16px 22px;
+  background: linear-gradient(115deg,
+    rgb(22, 163, 74)   0%,
+    rgb(34, 197, 94)  45%,
+    rgb(74, 222, 128) 80%,
+    rgb(134, 239, 172) 100%);
   color: #fff;
 }
 .was-head::before {
@@ -300,11 +301,11 @@ const WAS_CSS = `
   background: #fff;
   border-radius: 12px;
   padding: 22px 22px 20px;
-  box-shadow: 0 2px 12px rgba(124, 58, 237, .07);
+  box-shadow: 0 2px 12px rgba(16, 185, 129, .08);
 }
 
 .was-q {
-  font-size: 14px; font-weight: 700; color: #1e1b4b;
+  font-size: 14px; font-weight: 700; color: #064e3b;
   text-align: center;
   letter-spacing: -.1px;
   margin-bottom: 14px;
@@ -317,20 +318,20 @@ const WAS_CSS = `
 }
 .was-radio {
   display: inline-flex; align-items: center; gap: 8px;
-  font-size: 13px; font-weight: 600; color: #1e1b4b;
+  font-size: 13px; font-weight: 600; color: #064e3b;
   cursor: pointer;
   user-select: none;
 }
 .was-radio input[type="radio"] {
-  accent-color: #7c3aed;
-  width: 16px; height: 16px;
-  margin: 0;
+  width: 17px; height: 17px;
+  accent-color: #16a34a;
   cursor: pointer;
+  margin: 0;
 }
 
 /* ── Conditional prompt heading ── */
 .was-prompt {
-  font-size: 13px; font-weight: 700; color: #1e1b4b;
+  font-size: 13px; font-weight: 700; color: #064e3b;
   text-align: center;
   margin: 18px 0 12px;
   line-height: 1.5;
@@ -341,27 +342,27 @@ const WAS_CSS = `
 /* ── File upload row (Yes branch) ── */
 .was-file-row {
   display: flex; align-items: stretch;
-  border: 1.5px solid #c4b5fd;
+  border: 1.5px solid #6ee7b7;
   border-radius: 10px;
   overflow: hidden;
   background: #fff;
 }
 .was-file-pick {
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  border: none; border-right: 1.5px solid #c4b5fd;
+  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+  border: none; border-right: 1.5px solid #6ee7b7;
   padding: 10px 18px;
-  font-size: 13px; font-weight: 700; color: #5b21b6;
+  font-size: 13px; font-weight: 700; color: #047857;
   cursor: pointer;
   font-family: inherit;
   white-space: nowrap;
   transition: background .15s;
 }
-.was-file-pick:hover { background: linear-gradient(135deg, #ddd6fe, #c4b5fd); }
+.was-file-pick:hover { background: linear-gradient(135deg, #a7f3d0, #6ee7b7); }
 .was-file-name {
   flex: 1; min-width: 0;
   padding: 0 12px;
   display: flex; align-items: center; gap: 8px;
-  font-size: 12.5px; color: #1e1b4b;
+  font-size: 12.5px; color: #064e3b;
   background: #fff;
   overflow: hidden;
 }
@@ -380,17 +381,17 @@ const WAS_CSS = `
 }
 .was-file-x:hover { background: rgba(239, 68, 68, .10); }
 .was-link {
-  color: #7c3aed; font-weight: 700; text-decoration: none;
+  color: #10b981; font-weight: 700; text-decoration: none;
   font-size: 11.5px;
   padding: 3px 8px; border-radius: 6px;
-  border: 1px solid rgba(124, 58, 237, .25);
+  border: 1px solid rgba(16, 185, 129, .30);
   flex-shrink: 0;
 }
-.was-link:hover { background: rgba(124, 58, 237, .08); }
+.was-link:hover { background: rgba(16, 185, 129, .08); }
 
 .was-formats {
   margin-top: 12px;
-  font-size: 11.5px; color: #7c3aed;
+  font-size: 11.5px; color: #059669;
   text-align: center;
   font-weight: 600;
 }
@@ -399,10 +400,10 @@ const WAS_CSS = `
 .was-textarea {
   width: 100%;
   min-height: 100px;
-  border: 1.5px solid #c4b5fd;
+  border: 1.5px solid #6ee7b7;
   border-radius: 10px;
   padding: 10px 14px;
-  font-size: 13px; font-weight: 500; color: #1e1b4b;
+  font-size: 13px; font-weight: 500; color: #064e3b;
   background: #fff;
   outline: none;
   font-family: inherit;
@@ -410,8 +411,8 @@ const WAS_CSS = `
   transition: border-color .15s, box-shadow .15s;
 }
 .was-textarea:focus {
-  border-color: #7c3aed;
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, .15);
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, .18);
 }
 .was-textarea::placeholder { color: #94a3b8; }
 
@@ -422,7 +423,7 @@ const WAS_CSS = `
   text-align: center;
   line-height: 1.55;
 }
-.was-note strong { color: #7c3aed; font-weight: 700; }
+.was-note strong { color: #059669; font-weight: 700; }
 
 /* ── Footer buttons ── */
 .was-foot {
@@ -442,7 +443,7 @@ const WAS_CSS = `
 .was-btn-ghost {
   background: #fff;
   border-color: #cbd5e1;
-  color: #1e1b4b;
+  color: #064e3b;
 }
 .was-btn-ghost:hover:not(:disabled) {
   background: #f8fafc;
@@ -450,57 +451,57 @@ const WAS_CSS = `
 }
 .was-btn-primary {
   position: relative; overflow: hidden;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #5b21b6 100%);
+  background: linear-gradient(135deg, #34d399 0%, #10b981 50%, #059669 100%);
   color: #fff;
   box-shadow:
-    0 4px 14px rgba(124, 58, 237, .40),
+    0 4px 14px rgba(16, 185, 129, .40),
     inset 0 1px 0 rgba(255, 255, 255, .18);
   border-color: transparent;
 }
 .was-btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow:
-    0 6px 18px rgba(124, 58, 237, .50),
+    0 6px 18px rgba(16, 185, 129, .50),
     inset 0 1px 0 rgba(255, 255, 255, .18);
 }
 
 /* ── Dark mode ── */
 [data-bs-theme="dark"] .was-modal {
-  background: linear-gradient(180deg, #1a1538 0%, #20184a 100%);
+  background: linear-gradient(180deg, #0c2a20 0%, #0f3a2c 100%);
 }
 [data-bs-theme="dark"] .was-card {
-  background: #14102a;
+  background: #082a20;
   box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
 }
 [data-bs-theme="dark"] .was-q,
-[data-bs-theme="dark"] .was-prompt        { color: #ede9fe; }
-[data-bs-theme="dark"] .was-radio         { color: #ede9fe; }
+[data-bs-theme="dark"] .was-prompt        { color: #d1fae5; }
+[data-bs-theme="dark"] .was-radio         { color: #d1fae5; }
 [data-bs-theme="dark"] .was-textarea {
-  background: #1f1845;
-  border-color: rgba(167, 139, 250, .30);
-  color: #ede9fe;
+  background: #0f3a2c;
+  border-color: rgba(110, 231, 183, .30);
+  color: #d1fae5;
 }
 [data-bs-theme="dark"] .was-textarea::placeholder { color: #6b7280; }
 [data-bs-theme="dark"] .was-textarea:focus {
-  border-color: #a78bfa;
-  box-shadow: 0 0 0 3px rgba(167, 139, 250, .20);
+  border-color: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, .20);
 }
 [data-bs-theme="dark"] .was-file-row {
-  background: #1f1845; border-color: rgba(167, 139, 250, .30);
+  background: #0f3a2c; border-color: rgba(110, 231, 183, .30);
 }
 [data-bs-theme="dark"] .was-file-pick {
-  background: linear-gradient(135deg, #2a2150, #1f1845);
-  border-right-color: rgba(167, 139, 250, .30);
-  color: #d8b4fe;
+  background: linear-gradient(135deg, #134e3a, #0f3a2c);
+  border-right-color: rgba(110, 231, 183, .30);
+  color: #6ee7b7;
 }
-[data-bs-theme="dark"] .was-file-pick:hover { background: linear-gradient(135deg, #3b2f6e, #2a2150); }
-[data-bs-theme="dark"] .was-file-name      { background: #1f1845; color: #ede9fe; }
-[data-bs-theme="dark"] .was-note           { color: #c4b5fd; }
-[data-bs-theme="dark"] .was-formats        { color: #a78bfa; }
+[data-bs-theme="dark"] .was-file-pick:hover { background: linear-gradient(135deg, #166649, #134e3a); }
+[data-bs-theme="dark"] .was-file-name      { background: #0f3a2c; color: #d1fae5; }
+[data-bs-theme="dark"] .was-note           { color: #a7f3d0; }
+[data-bs-theme="dark"] .was-formats        { color: #6ee7b7; }
 [data-bs-theme="dark"] .was-btn-ghost {
-  background: #1f1845; border-color: rgba(167, 139, 250, .30); color: #ede9fe;
+  background: #0f3a2c; border-color: rgba(110, 231, 183, .30); color: #d1fae5;
 }
-[data-bs-theme="dark"] .was-btn-ghost:hover:not(:disabled) { background: #2a2150; }
+[data-bs-theme="dark"] .was-btn-ghost:hover:not(:disabled) { background: #134e3a; }
 
 @media (max-width: 520px) {
   .was-backdrop { padding: 0; }
