@@ -365,15 +365,15 @@ const SCOPED_CSS = `
   font-family: inherit;
 }
 
-/* ── Header — 4-stop violet sweep matching the matrix-modal family
-   (Product Directory, Map Product, Change Owner, Remarks, Key
-   Opportunity, Reminders/Meetings list). */
+/* ── Header — light lavender wash with dark text, matching the
+   Price Shared modal's chrome so the two Stage-3/Stage-4 popups
+   read as the same family. */
 .psm-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; flex-shrink: 0;
   padding: 16px 22px;
-  background: linear-gradient(115deg, #7c3aed 0%, #8b5cf6 45%, #a78bfa 80%, #c4b5fd 100%);
-  color: #fff;
+  background: linear-gradient(135deg, #ede9fe 0%, #c4b5fd 50%, #a78bfa 100%);
+  color: #1e1b4b;
   position: relative; overflow: hidden;
 }
 .psm-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -386,23 +386,23 @@ const SCOPED_CSS = `
 }
 .psm-head-title {
   font-size: 16px; font-weight: 800; line-height: 1.2;
-  color: #fff; letter-spacing: -.2px;
+  color: #1e1b4b; letter-spacing: -.2px;
 }
 .psm-head-sub {
-  font-size: 11.5px; font-weight: 500; color: rgba(255, 255, 255, .88);
+  font-size: 11.5px; font-weight: 600; color: #5b21b6;
   margin-top: 4px;
   display: inline-flex; align-items: center; gap: 6px;
 }
 .psm-head-dot {
   width: 7px; height: 7px; border-radius: 50%;
-  background: #4ade80; box-shadow: 0 0 0 2px rgba(255, 255, 255, .35);
+  background: #22c55e; box-shadow: 0 0 0 2px rgba(34, 197, 94, .25);
 }
 .psm-close {
   width: 30px; height: 30px; border: none; cursor: pointer;
-  background: rgba(255, 255, 255, .20); color: #fff; border-radius: 9px;
+  background: rgba(255, 255, 255, .55); color: #4c1d95; border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
 }
-.psm-close:hover { background: rgba(255, 255, 255, .34); }
+.psm-close:hover { background: rgba(255, 255, 255, .85); }
 
 /* ── Tabs ── */
 .psm-tabs {
@@ -511,14 +511,16 @@ const SCOPED_CSS = `
 /* ── Table ── */
 .psm-table-wrap   { overflow: auto; max-height: 56vh; }
 .psm-table        { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1080px; }
-/* Table header — gradient on the tr so a single 90° sweep spans
-   the whole row (matches Product Directory). */
+/* Table header — gradient on the tr so a single sweep spans the
+   whole row instead of each th rendering its own copy (which
+   created visible stitch lines between columns). Cells stay
+   transparent so the row gradient shows through. */
 .psm-table thead tr {
-  background: linear-gradient(90deg, #7c3aed 0%, #8b5cf6 50%, #a78bfa 100%);
+  background: linear-gradient(180deg, #ede9fe 0%, #c4b5fd 50%, #a78bfa 100%);
 }
 .psm-table thead th {
   background: transparent;
-  color: #fff;
+  color: #4c1d95;
   font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
   text-align: left; padding: 11px 12px;
   position: sticky; top: 0; z-index: 2;

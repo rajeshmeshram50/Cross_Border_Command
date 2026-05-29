@@ -618,8 +618,18 @@ const SCOPED_CSS = `
   box-shadow: 0 2px 12px rgba(124, 58, 237, .07);
 }
 .prs-table        { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1080px; }
+/* Table header — gradient on the tr so a single sweep spans the
+   whole row instead of each th rendering its own copy (which
+   created visible stitch lines between columns). Uses the same
+   light lavender wash as the popup header so the two surfaces
+   flow as one continuous violet panel. Cells stay transparent so
+   the row gradient shows through. */
+.prs-table thead tr {
+  background: linear-gradient(135deg, #ede9fe 0%, #c4b5fd 50%, #a78bfa 100%);
+}
 .prs-table thead th {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff;
+  background: transparent;
+  color: #4c1d95;
   font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
   text-align: left; padding: 11px 12px;
   position: sticky; top: 0; z-index: 2;
@@ -799,8 +809,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .prs-tab-shared  { border-color: rgba(165, 180, 252, .30); color: #c7d2fe; }
 [data-bs-theme="dark"] .prs-body        { background: #1a1538; }
 [data-bs-theme="dark"] .prs-table-wrap  { background: #14102a; border-color: rgba(167, 139, 250, .25); }
-[data-bs-theme="dark"] .prs-table thead th {
+[data-bs-theme="dark"] .prs-table thead tr {
   background: linear-gradient(135deg, #20184a, #2a2150);
+}
+[data-bs-theme="dark"] .prs-table thead th {
+  background: transparent;
   color: #c4b5fd;
 }
 [data-bs-theme="dark"] .prs-table tbody tr        { border-color: rgba(167, 139, 250, .15); }
