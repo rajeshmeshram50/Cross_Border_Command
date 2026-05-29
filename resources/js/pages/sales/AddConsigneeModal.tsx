@@ -5564,7 +5564,9 @@ const SCOPED_CSS = `
 
 /* ─── Phase B — Wizard ─── */
 .acm-wiz {
-  width: 100%; max-width: 1440px;
+  /* Cap at 1224 (≈85% of the prior 1440 cap, matches what the form
+     looked like at 85% browser zoom rendered at 100%). */
+  width: 100%; max-width: 1224px;
   /* Locked height so all three stages occupy the same viewport
      footprint — switching between Stage 1 (lots of fields), Stage 2
      (single row table), and Stage 3 no longer makes the modal grow
@@ -7081,7 +7083,11 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
    the entire screen edge-to-edge — give it breathing room. */
 @media (max-width: 1440px) {
   .acm-overlay { padding: 10px; }
-  .acm-wiz, .acm-pick {
+  .acm-wiz {
+    max-width: min(1224px, calc(100vw - 20px));
+    max-height: min(94vh, calc(100vh - 16px));
+  }
+  .acm-pick {
     max-width: calc(100vw - 20px);
     max-height: min(94vh, calc(100vh - 16px));
   }
