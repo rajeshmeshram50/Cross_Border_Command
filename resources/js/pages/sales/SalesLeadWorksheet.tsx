@@ -114,7 +114,7 @@ const renderFilterChips = (
     platforms: Array<{ value: string; label: string }>;
     queryTypes: Array<{ value: string; label: string }>;
     countries: Array<{ value: string; label: string }>;
-    customers: Array<{ value: string; label: string }>;
+    customers: Array<{ value: string; label: string; code?: string | null }>;
   },
   salespersonNames: Record<number, string> = {},
 ): FilterChip[] => {
@@ -244,7 +244,7 @@ export default function SalesLeadWorksheet() {
     platforms: Array<{ value: string; label: string }>;
     queryTypes: Array<{ value: string; label: string }>;
     countries: Array<{ value: string; label: string }>;
-    customers: Array<{ value: string; label: string }>;
+    customers: Array<{ value: string; label: string; code?: string | null }>;
   }>({ stages: [], platforms: [], queryTypes: [], countries: [], customers: [] });
   const [activeFilters, setActiveFilters] = useState<LeadFilters>({});
 
@@ -290,7 +290,7 @@ export default function SalesLeadWorksheet() {
       platforms:   string[];
       query_types: string[];
       countries:   Array<{ value: string; label: string }>;
-      customers:   Array<{ value: string; label: string }>;
+      customers:   Array<{ value: string; label: string; code?: string | null }>;
     }>('/sales/leads/filter-options')
       .then(r => setFilterOptions({
         stages: r.data.stages,
@@ -1252,15 +1252,15 @@ const SCOPED_CSS = `
   box-shadow: 0 8px 24px rgba(14,116,144,.5), 0 3px 8px rgba(21,94,117,.28), 0 1px 0 rgba(255,255,255,.15) inset;
 }
 .lwp-root .lwp-bact-sync {
-  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%);
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
   color: #fff;
-  box-shadow: 0 4px 16px rgba(124,58,237,.40), 0 2px 6px rgba(91,33,182,.22), 0 1px 0 rgba(255,255,255,.18) inset;
+  box-shadow: 0 4px 16px rgba(6,182,212,.40), 0 2px 6px rgba(14,116,144,.22), 0 1px 0 rgba(255,255,255,.18) inset;
   text-shadow: 0 1px 2px rgba(0,0,0,.15);
 }
 .lwp-root .lwp-bact-sync:hover {
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #6d28d9 100%);
+  background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 55%, #0891b2 100%);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(124,58,237,.50), 0 3px 8px rgba(91,33,182,.28), 0 1px 0 rgba(255,255,255,.18) inset;
+  box-shadow: 0 8px 24px rgba(6,182,212,.50), 0 3px 8px rgba(14,116,144,.28), 0 1px 0 rgba(255,255,255,.18) inset;
 }
 
 /* Icon-only variant — compact square button for the Sync action. The

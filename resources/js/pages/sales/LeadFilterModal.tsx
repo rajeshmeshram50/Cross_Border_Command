@@ -31,8 +31,53 @@ export type LeadFilters = {
 
 const EMPTY_FILTERS: LeadFilters = {};
 
-type Opt = { value: string; label: string };
+type Opt = { value: string; label: string; code?: string | null };
 type FacetKey = 'stage' | 'platform' | 'leadType' | 'country' | 'customer' | 'date';
+
+/* Inline icon glyphs — one per facet. Render as currentColor so the
+ * sidebar's active/inactive states drive the tint without per-item CSS. */
+const ICONS: Record<FacetKey, JSX.Element> = {
+  stage: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <polyline points="8 12 11 15 16 9" />
+    </svg>
+  ),
+  platform: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M2 12h20" />
+      <path d="M12 2a14 14 0 0 1 0 20a14 14 0 0 1 0-20z" />
+    </svg>
+  ),
+  leadType: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="6" y="3" width="12" height="18" rx="2" />
+      <path d="M10 7h4" /><path d="M9 17h6" />
+    </svg>
+  ),
+  country: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20" />
+      <path d="M12 2a15 15 0 0 1 0 20a15 15 0 0 1 0-20z" />
+    </svg>
+  ),
+  customer: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+    </svg>
+  ),
+  date: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  ),
+};
 
 const MENU: Array<{ key: FacetKey; label: string }> = [
   { key: 'stage',     label: 'Stage Wise Lead' },
@@ -42,6 +87,50 @@ const MENU: Array<{ key: FacetKey; label: string }> = [
   { key: 'customer',  label: 'Customer' },
   { key: 'date',      label: 'Date' },
 ];
+
+/* Date quick-presets shown in the Date facet pane. Picking one fills
+ * filters.start_date + filters.end_date with the corresponding range;
+ * the custom From / To calendar pickers below stay available so the user
+ * can override with an arbitrary range. */
+type DatePresetKey = 'today' | 'yesterday' | 'last7' | 'last30' | 'thisMonth' | 'lastMonth';
+const DATE_PRESETS: Array<{ key: DatePresetKey; label: string }> = [
+  { key: 'today',     label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: 'last7',     label: 'Last 7 Days' },
+  { key: 'last30',    label: 'Last 30 Days' },
+  { key: 'thisMonth', label: 'This Month' },
+  { key: 'lastMonth', label: 'Last Month' },
+];
+
+const toISO = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+const datePresetRange = (k: DatePresetKey): { start: string; end: string } => {
+  const today = new Date(); today.setHours(0,0,0,0);
+  switch (k) {
+    case 'today':     return { start: toISO(today), end: toISO(today) };
+    case 'yesterday': { const y = new Date(today); y.setDate(y.getDate() - 1); return { start: toISO(y), end: toISO(y) }; }
+    case 'last7':     { const s = new Date(today); s.setDate(s.getDate() - 6);  return { start: toISO(s), end: toISO(today) }; }
+    case 'last30':    { const s = new Date(today); s.setDate(s.getDate() - 29); return { start: toISO(s), end: toISO(today) }; }
+    case 'thisMonth': { const s = new Date(today.getFullYear(), today.getMonth(), 1); return { start: toISO(s), end: toISO(today) }; }
+    case 'lastMonth': {
+      const s = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const e = new Date(today.getFullYear(), today.getMonth(), 0);
+      return { start: toISO(s), end: toISO(e) };
+    }
+  }
+};
+const matchedDatePreset = (start?: string, end?: string): DatePresetKey | null => {
+  if (!start || !end) return null;
+  for (const p of DATE_PRESETS) {
+    const r = datePresetRange(p.key);
+    if (r.start === start && r.end === end) return p.key;
+  }
+  return null;
+};
 
 const facetToField: Record<FacetKey, keyof LeadFilters | null> = {
   stage:    'lead_stage_id',
@@ -138,6 +227,9 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
   const radioField = facetToField[active];
   const radioValue = radioField ? filters[radioField] : undefined;
 
+  const activeMenu = MENU.find(m => m.key === active);
+  const activePreset = matchedDatePreset(filters.start_date, filters.end_date);
+
   return createPortal((
     /* Backdrop click intentionally not wired — the filter form holds
      * the user's in-flight filter selections; an accidental click
@@ -147,7 +239,19 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
       <style>{LFM_CSS}</style>
       <div className="lfm-modal">
         <div className="lfm-head">
-          <div className="lfm-head-title">Filters</div>
+          <div className="lfm-head-left">
+            <div className="lfm-head-ico">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="6" y1="12" x2="18" y2="12" />
+                <line x1="9" y1="18" x2="15" y2="18" />
+              </svg>
+            </div>
+            <div>
+              <div className="lfm-head-title">Filter Leads</div>
+              <div className="lfm-head-sub">Select filters to narrow down results</div>
+            </div>
+          </div>
           <button className="lfm-close" onClick={onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -157,78 +261,115 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
 
         <div className="lfm-body">
           <div className="lfm-left">
-            {MENU.map(m => {
-              const field = facetToField[m.key];
-              const hasValue = field
-                ? !!filters[field]
-                : (!!filters.start_date || !!filters.end_date);
-              return (
-                <div
-                  key={m.key}
-                  className={`lfm-menu-item ${active === m.key ? 'on' : ''}`}
-                  onClick={() => { setActive(m.key); setSearch(''); }}
-                >
-                  <span>{m.label}</span>
-                  {hasValue && <span className="lfm-dot" />}
-                </div>
-              );
-            })}
+            <div className="lfm-left-label">FILTER BY</div>
+            <div className="lfm-menu">
+              {MENU.map(m => {
+                const field = facetToField[m.key];
+                const hasValue = field
+                  ? !!filters[field]
+                  : (!!filters.start_date || !!filters.end_date);
+                const isOn = active === m.key;
+                return (
+                  <button
+                    type="button"
+                    key={m.key}
+                    className={`lfm-menu-item ${isOn ? 'on' : ''}`}
+                    onClick={() => { setActive(m.key); setSearch(''); }}
+                  >
+                    <span className="lfm-menu-ico">{ICONS[m.key]}</span>
+                    <span className="lfm-menu-label">{m.label}</span>
+                    {hasValue && <span className="lfm-menu-dot" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
             <div className="lfm-left-foot">
-              <button className="lfm-btn lfm-btn-ghost" onClick={onClear}>Clear all</button>
               <button className="lfm-btn lfm-btn-primary" onClick={onApplyClick}>Apply Filter</button>
+              <button className="lfm-btn-reset" onClick={onClear}>Reset All</button>
             </div>
           </div>
 
           <div className="lfm-right">
-            {active !== 'date' && (
+            <div className="lfm-search-wrap">
+              <svg className="lfm-search-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
               <input
                 className="lfm-search"
-                placeholder={`Search ${MENU.find(m => m.key === active)?.label.toLowerCase()}…`}
+                placeholder={`Search ${(activeMenu?.label ?? '').toLowerCase()}…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
-            )}
+            </div>
+
             <div className="lfm-options">
               {active === 'date' ? (
-                /* Date filters use the shared MasterDatePicker
-                 * (same picker the master forms, recruitment and
-                 * onboarding flows all use) so the calendar visual
-                 * language is consistent across the app. Previously
-                 * this was a raw <input type="date"> which rendered
-                 * with the browser-default chrome and looked nothing
-                 * like the themed pickers everywhere else. */
-                <div className="lfm-date-grid">
-                  <div className="lfm-field">
-                    <label className="lfm-label">From</label>
-                    <MasterDatePicker
-                      value={filters.start_date ?? ''}
-                      onChange={(v) => setFilters(prev => ({ ...prev, start_date: v || undefined }))}
-                      placeholder="Select start date"
-                      maxDate={filters.end_date || undefined}
-                    />
+                <>
+                  {/* Custom range first — the calendar pickers let the user
+                   * pick an arbitrary window. Presets below act as quick
+                   * shortcuts for common ranges. */}
+                  <div className="lfm-custom-range lfm-custom-range-top">
+                    <div className="lfm-custom-range-title">Pick a custom range</div>
+                    <div className="lfm-date-grid">
+                      <div className="lfm-field">
+                        <label className="lfm-label">From</label>
+                        <MasterDatePicker
+                          value={filters.start_date ?? ''}
+                          onChange={(v) => setFilters(prev => ({ ...prev, start_date: v || undefined }))}
+                          placeholder="Select start date"
+                          maxDate={filters.end_date || undefined}
+                        />
+                      </div>
+                      <div className="lfm-field">
+                        <label className="lfm-label">To</label>
+                        <MasterDatePicker
+                          value={filters.end_date ?? ''}
+                          onChange={(v) => setFilters(prev => ({ ...prev, end_date: v || undefined }))}
+                          placeholder="Select end date"
+                          minDate={filters.start_date || undefined}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="lfm-field">
-                    <label className="lfm-label">To</label>
-                    <MasterDatePicker
-                      value={filters.end_date ?? ''}
-                      onChange={(v) => setFilters(prev => ({ ...prev, end_date: v || undefined }))}
-                      placeholder="Select end date"
-                      minDate={filters.start_date || undefined}
-                    />
-                  </div>
-                </div>
+
+                  <div className="lfm-preset-divider">Or pick a quick range</div>
+
+                  {/* Quick presets — radio cards that fill filters.start_date /
+                   * end_date with a computed range. Picking the same preset
+                   * twice clears the range so the field can be deselected. */}
+                  {DATE_PRESETS
+                    .filter(p => !search.trim() || p.label.toLowerCase().includes(search.toLowerCase()))
+                    .map(p => {
+                      const checked = activePreset === p.key;
+                      return (
+                        <label key={p.key} className={`lfm-card ${checked ? 'on' : ''}`}>
+                          <input
+                            type="radio"
+                            name="facet-date"
+                            checked={checked}
+                            readOnly
+                            onClick={() => {
+                              if (checked) {
+                                setFilters(prev => ({ ...prev, start_date: undefined, end_date: undefined }));
+                              } else {
+                                const r = datePresetRange(p.key);
+                                setFilters(prev => ({ ...prev, start_date: r.start, end_date: r.end }));
+                              }
+                            }}
+                          />
+                          <span className="lfm-card-label">{p.label}</span>
+                        </label>
+                      );
+                    })}
+                </>
               ) : searched.length === 0 ? (
                 <div className="lfm-empty">No options available</div>
               ) : (
                 searched.map(opt => {
-                  // Radios don't natively toggle off — `onClick` handles both
-                  // the "select" and "deselect" cases so pickRadio (which
-                  // already toggles when value matches) only fires once per
-                  // interaction. Stopping React's synthesized onChange via
-                  // readOnly is the cleanest way to suppress double-fire.
                   const checked = radioValue === opt.value;
                   return (
-                    <label key={opt.value} className="lfm-radio">
+                    <label key={opt.value} className={`lfm-card ${checked ? 'on' : ''}`}>
                       <input
                         type="radio"
                         name={`facet-${active}`}
@@ -236,7 +377,15 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
                         readOnly
                         onClick={() => pickRadio(active, opt.value)}
                       />
-                      <span>{opt.label}</span>
+                      <span className="lfm-card-label">
+                        {opt.code && (
+                          <>
+                            <span className="lfm-card-code">{opt.code}</span>
+                            <span className="lfm-card-sep">:</span>
+                          </>
+                        )}
+                        <span className="lfm-card-name">{opt.label}</span>
+                      </span>
                     </label>
                   );
                 })
@@ -257,126 +406,248 @@ const LFM_CSS = `
   animation: lfm-fade .15s ease-out;
 }
 @keyframes lfm-fade { from { opacity: 0; } to { opacity: 1; } }
+
 .lfm-modal {
-  width: 680px; max-width: 95vw; height: 480px; max-height: 88vh;
-  background: #fff; border-radius: 14px; box-shadow: 0 18px 48px rgba(15,23,42,.25);
+  width: 760px; max-width: 95vw; height: 540px; max-height: 90vh;
+  background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(8,145,178,.18), 0 8px 24px rgba(15,23,42,.20);
   overflow: hidden; display: flex; flex-direction: column;
   animation: lfm-pop .18s ease-out;
 }
 @keyframes lfm-pop { from { transform: scale(.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* ── Header strip ── */
 .lfm-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px; background: linear-gradient(135deg, #0e7490, #0891b2); color: #fff;
+  position: relative;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 18px 22px;
+  background: linear-gradient(135deg, #0e7490 0%, #0891b2 60%, #06b6d4 100%);
+  color: #fff;
+  overflow: hidden;
 }
-.lfm-head-title { font-size: 15px; font-weight: 600; }
+.lfm-head::after {
+  content: ''; position: absolute; top: -40%; right: -10%;
+  width: 240px; height: 200px;
+  background: radial-gradient(ellipse, rgba(255,255,255,.18), transparent 70%);
+  pointer-events: none;
+}
+.lfm-head-left { display: flex; align-items: center; gap: 14px; min-width: 0; position: relative; z-index: 1; }
+.lfm-head-ico {
+  width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
+  background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28);
+  display: flex; align-items: center; justify-content: center;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.lfm-head-title { font-size: 17px; font-weight: 700; letter-spacing: -.2px; line-height: 1.2; }
+.lfm-head-sub   { font-size: 12px; color: rgba(255,255,255,.85); margin-top: 2px; }
 .lfm-close {
-  width: 28px; height: 28px; border: none; background: rgba(255,255,255,.15);
-  color: #fff; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border: none; border-radius: 9px;
+  background: rgba(255,255,255,.16); color: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s; flex-shrink: 0; position: relative; z-index: 1;
 }
 .lfm-close:hover { background: rgba(255,255,255,.28); }
-.lfm-body { flex: 1; display: flex; min-height: 0; }
+
+.lfm-body { flex: 1; display: flex; min-height: 0; background: #f8fafc; }
+
+/* ── Sidebar ── */
 .lfm-left {
-  width: 200px; border-right: 1px solid #e2e8f0; background: #f8fafc;
+  width: 240px; flex-shrink: 0;
+  background: #fff;
+  border-right: 1px solid #e2e8f0;
   display: flex; flex-direction: column;
+  padding: 16px 12px 12px;
 }
+.lfm-left-label {
+  font-size: 10px; font-weight: 700; color: #94a3b8;
+  letter-spacing: .15em; text-transform: uppercase;
+  padding: 0 10px 8px;
+}
+.lfm-menu { display: flex; flex-direction: column; gap: 4px; }
 .lfm-menu-item {
-  padding: 11px 16px; font-size: 12.5px; color: #475569; cursor: pointer;
-  border-left: 3px solid transparent; transition: background .12s, color .12s;
-  display: flex; align-items: center; justify-content: space-between;
-}
-.lfm-menu-item:hover { background: #f1f5f9; }
-.lfm-menu-item.on {
-  background: #ecfeff; color: #0e7490; font-weight: 600;
-  border-left-color: #0891b2;
-}
-.lfm-dot { width: 7px; height: 7px; border-radius: 50%; background: #0891b2; }
-.lfm-left-foot {
-  margin-top: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px;
-  border-top: 1px solid #e2e8f0;
-}
-.lfm-right { flex: 1; display: flex; flex-direction: column; padding: 14px 18px; min-width: 0; }
-.lfm-search {
-  height: 34px; padding: 0 12px; font-size: 12.5px;
-  border: 1.5px solid #cbd5e1; border-radius: 8px;
-  background: #fff; color: #0f172a; outline: none; margin-bottom: 10px;
-}
-.lfm-search:focus { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.15); }
-.lfm-options { flex: 1; overflow-y: auto; padding-right: 4px; }
-.lfm-empty { text-align: center; color: #94a3b8; font-style: italic; padding: 30px 12px; font-size: 12px; }
-.lfm-radio {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px; border-radius: 6px; cursor: pointer;
-  font-size: 12.5px; color: #1e293b; transition: background .12s;
+  padding: 10px 12px; border-radius: 10px;
+  border: 1.5px solid transparent;
+  background: transparent;
+  font: inherit; font-size: 12.5px; font-weight: 500; color: #475569;
+  cursor: pointer; text-align: left;
+  transition: background .15s, border-color .15s, color .15s;
 }
-.lfm-radio:hover { background: #f1f5f9; }
-.lfm-radio input { accent-color: #0891b2; cursor: pointer; }
+.lfm-menu-item:hover { background: #f1f5f9; color: #0f172a; }
+.lfm-menu-ico {
+  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff; border: 1.5px solid #e2e8f0; color: #64748b;
+  transition: all .15s;
+}
+.lfm-menu-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lfm-menu-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #0891b2; flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(8,145,178,.18);
+}
+.lfm-menu-item.on {
+  background: #ecfeff;
+  border-color: #67e8f9;
+  color: #0e7490; font-weight: 700;
+}
+.lfm-menu-item.on .lfm-menu-ico {
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  border-color: #0891b2; color: #fff;
+  box-shadow: 0 4px 12px rgba(8,145,178,.30);
+}
+
+.lfm-left-foot {
+  margin-top: auto; padding-top: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.lfm-btn {
+  padding: 11px 14px; border-radius: 10px;
+  font: inherit; font-size: 13px; font-weight: 700;
+  cursor: pointer; border: none; transition: all .15s;
+}
+.lfm-btn-primary {
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(8,145,178,.35), 0 1px 0 rgba(255,255,255,.18) inset;
+}
+.lfm-btn-primary:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.lfm-btn-reset {
+  background: transparent; border: none; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; color: #94a3b8;
+  padding: 4px 0; transition: color .15s;
+}
+.lfm-btn-reset:hover { color: #0891b2; }
+
+/* ── Right pane ── */
+.lfm-right { flex: 1; display: flex; flex-direction: column; padding: 18px 22px; min-width: 0; gap: 12px; background: #fff; }
+.lfm-search-wrap { position: relative; }
+.lfm-search-ico {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: #94a3b8; pointer-events: none;
+}
+.lfm-search {
+  width: 100%; height: 40px; padding: 0 12px 0 36px;
+  font: inherit; font-size: 13px;
+  border: 1px solid #e2e8f0; border-radius: 10px;
+  background: #f8fafc; color: #0f172a; outline: none;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.lfm-search::placeholder { color: #94a3b8; }
+.lfm-search:hover { border-color: #cbd5e1; }
+.lfm-search:focus { background: #fff; border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.15); }
+
+.lfm-options { flex: 1; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 8px; }
+.lfm-empty { text-align: center; color: #94a3b8; font-style: italic; padding: 30px 12px; font-size: 12.5px; }
+
+/* Each radio option is a bordered card. Clicking anywhere on the card
+   toggles its radio. The radio uses accent-color so it picks up the
+   modal's cyan. */
+.lfm-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; border-radius: 10px;
+  background: #fff; border: 1px solid #e2e8f0;
+  font: inherit; font-size: 13px; color: #0f172a; font-weight: 500;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.lfm-card:hover { border-color: #67e8f9; background: #ecfeff; }
+.lfm-card.on {
+  border-color: #0891b2; background: #ecfeff;
+  box-shadow: 0 0 0 1px #0891b2 inset;
+}
+.lfm-card input { accent-color: #0891b2; cursor: pointer; width: 16px; height: 16px; flex-shrink: 0; }
+.lfm-card-label {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 8px;
+  white-space: nowrap;
+}
+.lfm-card-code {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; font-weight: 700; color: #0891b2;
+  flex-shrink: 0; letter-spacing: .02em;
+}
+.lfm-card-sep { color: #94a3b8; font-weight: 600; flex-shrink: 0; }
+.lfm-card-name {
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lfm-card.on .lfm-card-code { color: #0e7490; }
+
+/* Divider label between the custom range picker and the preset list in
+   the Date facet — small uppercase caption with hairlines on both sides. */
+.lfm-preset-divider {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 10.5px; font-weight: 700; color: #94a3b8;
+  letter-spacing: .14em; text-transform: uppercase;
+  margin: 4px 0 4px;
+}
+.lfm-preset-divider::before,
+.lfm-preset-divider::after {
+  content: ''; flex: 1; height: 1px; background: #e2e8f0;
+}
+.lfm-custom-range-top { margin-bottom: 4px; padding-top: 0; border-top: none; }
+
+/* Date facet — custom range pickers sit under the preset cards */
+.lfm-custom-range {
+  margin-top: 6px; padding-top: 14px;
+  border-top: 1px dashed #cbd5e1;
+}
+.lfm-custom-range-title {
+  font-size: 11px; font-weight: 700; color: #64748b;
+  letter-spacing: .1em; text-transform: uppercase; margin-bottom: 10px;
+}
 .lfm-date-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .lfm-field { display: flex; flex-direction: column; gap: 4px; }
 .lfm-label { font-size: 11.5px; font-weight: 600; color: #334155; }
-.lfm-input {
-  height: 36px; padding: 0 10px; font-size: 12.5px;
-  border: 1.5px solid #cbd5e1; border-radius: 8px;
-  background: #fff; color: #0f172a; outline: none;
-}
-.lfm-input:focus { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.15); }
-.lfm-btn {
-  padding: 8px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600;
-  cursor: pointer; border: 1.5px solid transparent; transition: all .15s;
-}
-.lfm-btn-ghost { background: #fff; border-color: #cbd5e1; color: #475569; }
-.lfm-btn-ghost:hover { background: #f1f5f9; }
-.lfm-btn-primary { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; }
-.lfm-btn-primary:hover { filter: brightness(1.08); }
 
+/* ── Dark mode ── */
 [data-bs-theme="dark"] .lfm-modal { background: #0f172a; color: #e2e8f0; }
-[data-bs-theme="dark"] .lfm-left { background: #1e293b; border-color: #334155; }
-[data-bs-theme="dark"] .lfm-menu-item { color: #94a3b8; }
-[data-bs-theme="dark"] .lfm-menu-item:hover { background: #0f172a; }
-[data-bs-theme="dark"] .lfm-menu-item.on { background: rgba(8,145,178,.20); color: #67e8f9; border-left-color: #22d3ee; }
-[data-bs-theme="dark"] .lfm-left-foot { border-color: #334155; }
-[data-bs-theme="dark"] .lfm-search,
-[data-bs-theme="dark"] .lfm-input { background: #1e293b; border-color: #334155; color: #e2e8f0; }
+[data-bs-theme="dark"] .lfm-body  { background: #0b1220; }
+[data-bs-theme="dark"] .lfm-left  { background: #0f172a; border-right-color: #1e293b; }
+[data-bs-theme="dark"] .lfm-right { background: #0f172a; }
+[data-bs-theme="dark"] .lfm-left-label { color: #94a3b8; }
+[data-bs-theme="dark"] .lfm-menu-item { color: #cbd5e1; }
+[data-bs-theme="dark"] .lfm-menu-item:hover { background: rgba(8,145,178,.10); color: #ecfeff; }
+[data-bs-theme="dark"] .lfm-menu-ico { background: #1e293b; border-color: #334155; color: #94a3b8; }
+[data-bs-theme="dark"] .lfm-menu-item.on { background: rgba(8,145,178,.18); border-color: rgba(103,232,249,.45); color: #67e8f9; }
+[data-bs-theme="dark"] .lfm-menu-item.on .lfm-menu-ico { background: linear-gradient(135deg,#06b6d4,#0891b2); border-color: rgba(103,232,249,.6); color: #fff; }
+[data-bs-theme="dark"] .lfm-btn-reset { color: #94a3b8; }
+[data-bs-theme="dark"] .lfm-btn-reset:hover { color: #67e8f9; }
+[data-bs-theme="dark"] .lfm-search { background: #1e293b; border-color: #334155; color: #e2e8f0; }
+[data-bs-theme="dark"] .lfm-search:focus { background: #0f172a; }
+[data-bs-theme="dark"] .lfm-card { background: #1e293b; border-color: #334155; color: #e2e8f0; }
+[data-bs-theme="dark"] .lfm-card:hover { background: rgba(8,145,178,.12); border-color: rgba(103,232,249,.4); }
+[data-bs-theme="dark"] .lfm-card.on { background: rgba(8,145,178,.20); border-color: #67e8f9; box-shadow: 0 0 0 1px #67e8f9 inset; }
+[data-bs-theme="dark"] .lfm-custom-range { border-top-color: #334155; }
+[data-bs-theme="dark"] .lfm-custom-range-title { color: #94a3b8; }
 [data-bs-theme="dark"] .lfm-label { color: #cbd5e1; }
-[data-bs-theme="dark"] .lfm-radio { color: #e2e8f0; }
-[data-bs-theme="dark"] .lfm-radio:hover { background: #1e293b; }
-[data-bs-theme="dark"] .lfm-btn-ghost { background: #0f172a; border-color: #334155; color: #cbd5e1; }
+[data-bs-theme="dark"] .lfm-card-code { color: #67e8f9; }
+[data-bs-theme="dark"] .lfm-card-sep  { color: #64748b; }
+[data-bs-theme="dark"] .lfm-card.on .lfm-card-code { color: #a5f3fc; }
+[data-bs-theme="dark"] .lfm-preset-divider { color: #64748b; }
+[data-bs-theme="dark"] .lfm-preset-divider::before,
+[data-bs-theme="dark"] .lfm-preset-divider::after { background: #1e293b; }
 
-/* Tablet — narrower left menu, tighter padding */
+/* ── Tablet — sidebar collapses to top row, options stack ── */
 @media (max-width: 720px) {
-  .lfm-modal { height: auto; max-height: 92vh; }
+  .lfm-modal { height: auto; max-height: 92vh; width: 95vw; }
   .lfm-body  { flex-direction: column; }
-  .lfm-left {
-    width: 100%;
-    flex-direction: row; flex-wrap: wrap;
+  .lfm-left  {
+    width: 100%; flex-direction: column; padding: 12px;
     border-right: none; border-bottom: 1px solid #e2e8f0;
-    padding: 6px;
   }
-  [data-bs-theme="dark"] .lfm-left { border-bottom-color: #334155; }
-  .lfm-menu-item {
-    flex: 1 0 auto; border-left: none;
-    border-radius: 8px; padding: 8px 12px;
-    text-align: center; font-size: 11.5px;
-  }
-  .lfm-menu-item.on {
-    background: linear-gradient(135deg, #ecfeff, #cffafe);
-    border-left: none;
-  }
-  .lfm-left-foot {
-    flex: 1 0 100%; flex-direction: row; gap: 8px; padding: 8px 6px 4px;
-    border-top: 1px solid #e2e8f0; margin-top: 6px;
-  }
-  [data-bs-theme="dark"] .lfm-left-foot { border-top-color: #334155; }
-  .lfm-left-foot .lfm-btn { flex: 1; }
-  .lfm-right { padding: 12px 14px; }
-  .lfm-options { max-height: 280px; }
+  [data-bs-theme="dark"] .lfm-left { border-bottom-color: #1e293b; }
+  .lfm-menu { flex-direction: row; flex-wrap: wrap; }
+  .lfm-menu-item { flex: 1 0 auto; min-width: 130px; }
+  .lfm-left-foot { padding-top: 10px; }
+  .lfm-right { padding: 14px 16px; max-height: 60vh; }
 }
 
-/* Phone — single-column date picker, slightly smaller modal padding */
+/* ── Phone — single-column date picker, edge-to-edge modal ── */
 @media (max-width: 480px) {
   .lfm-backdrop { padding: 0; }
   .lfm-modal { width: 100%; height: 100vh; max-height: 100vh; border-radius: 0; }
   .lfm-date-grid { grid-template-columns: 1fr; }
-  .lfm-head { padding: 12px 16px; }
-  .lfm-head-title { font-size: 14px; }
+  .lfm-head { padding: 14px 16px; }
+  .lfm-head-title { font-size: 15px; }
 }
 `;

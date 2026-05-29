@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useNavigateContext } from '../../components/App';
@@ -54,7 +54,8 @@ export default function AssignedLeadsModal() {
     total_sales_persons: 0, total_leads: 0, assigned_leads: 0, unassigned_leads: 0,
   });
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const onClose = () => navigate('sales.workplace');
   /* Route to the dedicated Leads Details page (ports the SalesMatrix_v4_9
@@ -89,24 +90,24 @@ export default function AssignedLeadsModal() {
       .finally(() => setLoading(false));
   }, [toast]);
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const s = search.toLowerCase();
-    return rows.filter(r =>
-      r.salesperson_name.toLowerCase().includes(s) ||
-      r.salesperson_code.toLowerCase().includes(s) ||
-      (r.department ?? '').toLowerCase().includes(s) ||
-      (r.designation ?? '').toLowerCase().includes(s) ||
-      (r.primary_role ?? '').toLowerCase().includes(s) ||
-      (r.ancillary_role ?? '').toLowerCase().includes(s),
-    );
-  }, [rows, search]);
+  const totalCount = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const safePage   = Math.min(page, totalPages);
+  const startIdx   = totalCount === 0 ? 0 : (safePage - 1) * pageSize;
+  const endIdx     = Math.min(startIdx + pageSize, totalCount);
+  const pageRows   = rows.slice(startIdx, endIdx);
+
+  // Clamp page back into range whenever the dataset shrinks (search/filter).
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   return (
     <div className="ldp-page">
       <style>{LDP_CSS}</style>
-      <div className="ldp-shell">
-        {/* ── Header ───────────────────────────────────────────────── */}
+
+      {/* ── Header card (standalone container) ─────────────────────── */}
+      <div className="ldp-header-card">
         <div className="ldp-header">
           <div className="ldp-header-left">
             <div className="ldp-header-icon">
@@ -144,7 +145,9 @@ export default function AssignedLeadsModal() {
             </button>
           </div>
         </div>
+      </div>
 
+      <div className="ldp-shell">
         {/* ── KPI cards ────────────────────────────────────────────── */}
         <div className="ldp-stats">
           <StatCard
@@ -197,22 +200,6 @@ export default function AssignedLeadsModal() {
           />
         </div>
 
-        {/* ── Search ───────────────────────────────────────────────── */}
-        <div className="ldp-toolbar">
-          <div className="ldp-search">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2">
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search by name, EMP code, department, role…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-          </div>
-        </div>
-
         {/* ── Table ────────────────────────────────────────────────── */}
         <div className="ldp-table-wrap">
           <table className="ldp-table">
@@ -235,23 +222,19 @@ export default function AssignedLeadsModal() {
                   <td colSpan={9} className="ldp-status">Loading salesperson summary…</td>
                 </tr>
               )}
-              {!loading && filtered.length === 0 && (
+              {!loading && rows.length === 0 && (
                 <tr>
                   <td colSpan={9} className="ldp-status">
-                    {rows.length === 0
-                      ? 'No active salespeople yet for this tenant.'
-                      : 'No salespeople match the search.'}
+                    No active salespeople yet for this tenant.
                   </td>
                 </tr>
               )}
-              {!loading && filtered.map((r, i) => {
-                // Single hash key so all three role/department chips in
-                // a row share the same palette colour (matches the
-                // designed look — each row reads as one tonal family).
-                const rowKey = r.department || r.salesperson_name;
+              {!loading && pageRows.map((r, i) => {
                 return (
                 <tr key={r.salesperson_id}>
-                  <td className="ldp-td-num">{i + 1}</td>
+                  <td className="ldp-td-num">
+                    <span className="ldp-sr-badge">{startIdx + i + 1}</span>
+                  </td>
                   <td>
                     <div className="ldp-person">
                       <div
@@ -265,7 +248,7 @@ export default function AssignedLeadsModal() {
                   </td>
                   <td>
                     {r.department
-                      ? <span className="ldp-chip" style={chipStyle(rowKey)}>{r.department}</span>
+                      ? <span className="ldp-chip ldp-chip-dept">{r.department}</span>
                       : <span className="ldp-muted">—</span>}
                   </td>
                   <td className="ldp-text">
@@ -273,12 +256,12 @@ export default function AssignedLeadsModal() {
                   </td>
                   <td>
                     {r.primary_role
-                      ? <span className="ldp-chip" style={chipStyle(rowKey)}>{r.primary_role}</span>
+                      ? <span className="ldp-chip ldp-chip-primary">{r.primary_role}</span>
                       : <span className="ldp-muted">—</span>}
                   </td>
                   <td>
                     {r.ancillary_role
-                      ? <span className="ldp-chip" style={chipStyle(rowKey)}>{r.ancillary_role}</span>
+                      ? <span className="ldp-chip ldp-chip-ancillary">{r.ancillary_role}</span>
                       : <span className="ldp-muted">—</span>}
                   </td>
                   <td className="ldp-text">
@@ -304,13 +287,74 @@ export default function AssignedLeadsModal() {
               })}
             </tbody>
           </table>
+
+          {/* ── Pagination footer ──────────────────────────────────── */}
+          {!loading && totalCount > 0 && (
+            <div className="ldp-pagination">
+              <div className="ldp-pagination-info">
+                Showing {startIdx + 1}–{endIdx} of {totalCount}
+              </div>
+              <div className="ldp-pagination-controls">
+                <label className="ldp-rows-per-page">
+                  <span>Rows per page:</span>
+                  <select
+                    value={pageSize}
+                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </label>
+                <div className="ldp-page-indicator">
+                  {safePage}/{totalPages}
+                </div>
+                <button
+                  type="button"
+                  className="ldp-page-btn"
+                  disabled={safePage <= 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  aria-label="Previous page"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="ldp-page-btn"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  aria-label="Next page"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-/* ─── Stat card primitive ─────────────────────────────────────────── */
+/* ─── Stat card primitive ─────────────────────────────────────────────
+ * Matches the AdminDashboard `admin-kpi-card` look: white surface with
+ * a 16px radius, soft 1px border + 0/2/20 shadow, a 3px gradient strip
+ * at the top, and a 42×42 gradient icon tile. Each tone resolves to a
+ * single hue-family gradient so adjacent cards read as a harmonious
+ * palette (same gradient choices used on the admin dashboard).
+ * ───────────────────────────────────────────────────────────────────── */
+const STAT_GRADIENTS: Record<'slate' | 'amber' | 'green' | 'red', string> = {
+  slate: 'linear-gradient(135deg,#3a4b85,#6691e7)',
+  amber: 'linear-gradient(135deg,#e89a2e,#ffce6e)',
+  green: 'linear-gradient(135deg,#0a8f7e,#16d3b8)',
+  red:   'linear-gradient(135deg,#d94a3d,#ff8a76)',
+};
+
 function StatCard(props: {
   label: string;
   value: number;
@@ -318,14 +362,20 @@ function StatCard(props: {
   tone: 'amber' | 'green' | 'red' | 'slate';
   icon: React.ReactNode;
 }) {
+  const gradient = STAT_GRADIENTS[props.tone];
   return (
-    <div className={`ldp-stat ldp-stat-${props.tone}`}>
-      <div className="ldp-stat-row">
-        <div className="ldp-stat-label">{props.label}</div>
-        <div className="ldp-stat-icon">{props.icon}</div>
+    <div className="ldp-stat admin-kpi-card">
+      <div className="ldp-stat-stripe" style={{ background: gradient }} />
+      <div className="ldp-stat-body">
+        <div className="ldp-stat-text">
+          <div className="ldp-stat-label">{props.label}</div>
+          <div className="ldp-stat-value">{props.value.toLocaleString()}</div>
+          <div className="ldp-stat-sub">{props.sub}</div>
+        </div>
+        <div className="ldp-stat-icon admin-kpi-icon" style={{ background: gradient }}>
+          {props.icon}
+        </div>
       </div>
-      <div className="ldp-stat-value">{props.value.toLocaleString()}</div>
-      <div className="ldp-stat-sub">{props.sub}</div>
     </div>
   );
 }
@@ -363,21 +413,6 @@ const AVATAR_PALETTE = [
 const avatarColor = (name: string): string =>
   AVATAR_PALETTE[hashStr(name) % AVATAR_PALETTE.length];
 
-const CHIP_PALETTE = [
-  { bg: '#fef3c7', color: '#92400e', border: '#fde68a' },  // amber
-  { bg: '#dcfce7', color: '#166534', border: '#bbf7d0' },  // green
-  { bg: '#fee2e2', color: '#991b1b', border: '#fecaca' },  // red
-  { bg: '#dbeafe', color: '#1e40af', border: '#bfdbfe' },  // blue
-  { bg: '#ede9fe', color: '#6d28d9', border: '#ddd6fe' },  // violet
-  { bg: '#cffafe', color: '#155e75', border: '#a5f3fc' },  // cyan
-  { bg: '#fce7f3', color: '#9d174d', border: '#fbcfe8' },  // pink
-];
-
-const chipStyle = (label: string): React.CSSProperties => {
-  const p = CHIP_PALETTE[hashStr(label) % CHIP_PALETTE.length];
-  return { background: p.bg, color: p.color, borderColor: p.border };
-};
-
 const LDP_CSS = `
 /* Page wrapper — fills the in-app content area edge-to-edge. */
 .ldp-page {
@@ -399,12 +434,22 @@ const LDP_CSS = `
   overflow: hidden;
 }
 
+/* ── Header card (its own standalone container above the shell) ─── */
+.ldp-header-card {
+  width: 100%;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  border: 1px solid #fde68a;
+  box-shadow: 0 6px 22px rgba(217,119,6,.10);
+  overflow: hidden;
+  background: #fffbeb;
+}
+
 /* ── Header ─────────────────────────────────────────────────────── */
 .ldp-header {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; padding: 13px 18px;
-  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 60%, #fcd34d 100%);
-  border-bottom: 1px solid #fbbf24;
+  gap: 12px; padding: 14px 20px;
+  background: linear-gradient(135deg, #fef9c3 0%, #fef3c7 50%, #fde68a 100%);
 }
 .ldp-header-left { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .ldp-header-icon {
@@ -418,92 +463,100 @@ const LDP_CSS = `
 .ldp-header-title { font-size: 14.5px; font-weight: 800; color: #1f2937; letter-spacing: -.2px; }
 .ldp-header-sub   { font-size: 10.5px; color: #57534e; margin-top: 2px; }
 
-.ldp-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ldp-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .ldp-header-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 11px; border-radius: 999px;
-  background: rgba(255,255,255,.65); border: 1.5px solid #fcd34d;
-  font-size: 10.5px; font-weight: 700; color: #b45309;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 14px; border-radius: 999px;
+  background: #ffffff; border: 1px solid #fde68a;
+  font-size: 11px; font-weight: 700; color: #92400e;
+  box-shadow: 0 1px 2px rgba(217,119,6,.06);
 }
 .ldp-header-pill-dot {
-  width: 6px; height: 6px; border-radius: 50%; background: #f59e0b;
-  box-shadow: 0 0 0 2px rgba(245,158,11,.22);
+  width: 7px; height: 7px; border-radius: 50%; background: #f59e0b;
 }
 .ldp-back-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 16px; border-radius: 9px; border: none;
+  padding: 8px 18px; border-radius: 9px; border: none;
   background: linear-gradient(135deg, #f59e0b, #ea580c); color: #fff;
-  font-size: 11px; font-weight: 700; cursor: pointer;
+  font-size: 11.5px; font-weight: 700; cursor: pointer;
   box-shadow: 0 4px 12px rgba(234,88,12,.32);
-  transition: filter .15s, transform .12s;
+  transition: filter .15s, transform .12s, box-shadow .15s;
 }
-.ldp-back-btn:hover  { filter: brightness(1.07); transform: translateY(-1px); }
+.ldp-back-btn:hover  {
+  filter: brightness(1.07); transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(234,88,12,.38);
+}
 .ldp-back-btn:active { transform: translateY(0); }
 
-/* ── Stats row ──────────────────────────────────────────────────── */
+/* ── Stats row — Admin Dashboard KPI card style ─────────────────── */
 .ldp-stats {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px;
-  padding: 14px 18px 4px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  padding: 12px 18px 4px;
 }
 .ldp-stat {
-  background: #fff; border: 1.5px solid #f5e9d4;
-  border-radius: 12px; padding: 11px 13px;
-  box-shadow: 0 2px 8px rgba(217,119,6,.05);
-  transition: box-shadow .15s, transform .15s;
+  position: relative;
+  background: #ffffff;
+  border: 1px solid var(--vz-border-color, #e9ebec);
+  border-radius: 12px;
+  /* Extra left padding clears the 3px accent strip on that edge. */
+  padding: 12px 14px 10px 16px;
+  box-shadow: 0 2px 14px rgba(0,0,0,0.05);
+  overflow: hidden;
+  height: 100%;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
-.ldp-stat:hover { box-shadow: 0 8px 22px rgba(217,119,6,.10); transform: translateY(-1px); }
-.ldp-stat-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ldp-stat:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 12px 24px -8px rgba(15, 23, 42, 0.16),
+    0 4px 10px rgba(124, 92, 252, 0.10);
+  border-color: rgba(124, 92, 252, 0.45);
+}
+/* Accent strip — vertical bar on the left edge (was a top bar). */
+.ldp-stat-stripe {
+  position: absolute; top: 0; left: 0; bottom: 0; width: 3px;
+}
+.ldp-stat-body {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+}
+.ldp-stat-text { flex: 1; min-width: 0; }
 .ldp-stat-label {
-  font-size: 9px; font-weight: 800; color: #78716c;
-  letter-spacing: .10em;
+  font-size: 10px; font-weight: 700;
+  color: var(--vz-secondary-color, #878a99);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  margin: 0 0 6px;
 }
+.ldp-stat-value {
+  font-size: clamp(14px, 1.3vw, 20px);
+  font-weight: 800;
+  color: var(--vz-heading-color, var(--vz-body-color, #212529));
+  line-height: 1.1;
+  word-break: break-word;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+.ldp-stat-sub {
+  margin-top: 6px;
+  font-size: 10px; font-weight: 600;
+  color: var(--vz-secondary-color, #878a99);
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.ldp-stat-sub::after { content: "›"; font-size: 11px; line-height: 1; opacity: .8; }
 .ldp-stat-icon {
-  width: 26px; height: 26px; border-radius: 7px;
+  width: 32px; height: 32px; border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: transform .18s ease, box-shadow .18s ease;
 }
-.ldp-stat-icon svg { width: 13px; height: 13px; }
-.ldp-stat-value { font-size: 22px; font-weight: 800; color: #1f2937; margin-top: 6px; line-height: 1.1; }
-.ldp-stat-sub   { font-size: 10px; margin-top: 5px; display: flex; align-items: center; gap: 5px; }
-.ldp-stat-sub::after { content: "›"; font-size: 12px; line-height: 1; opacity: .8; }
-
-.ldp-stat-slate .ldp-stat-icon { background: #f1f5f9; color: #475569; }
-.ldp-stat-slate .ldp-stat-sub  { color: #475569; }
-
-.ldp-stat-amber .ldp-stat-icon { background: #fef3c7; color: #b45309; }
-.ldp-stat-amber .ldp-stat-sub  { color: #b45309; }
-
-.ldp-stat-green {
-  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
-  border-color: #bbf7d0;
+.ldp-stat:hover .ldp-stat-icon {
+  transform: scale(1.06);
+  box-shadow: 0 6px 14px rgba(0,0,0,0.16);
 }
-.ldp-stat-green .ldp-stat-icon { background: #bbf7d0; color: #15803d; }
-.ldp-stat-green .ldp-stat-sub  { color: #15803d; }
-
-.ldp-stat-red {
-  background: linear-gradient(135deg, #fef2f2 0%, #ffffff 100%);
-  border-color: #fecaca;
-}
-.ldp-stat-red .ldp-stat-icon { background: #fecaca; color: #b91c1c; }
-.ldp-stat-red .ldp-stat-sub  { color: #b91c1c; }
-
-/* ── Toolbar / search ───────────────────────────────────────────── */
-.ldp-toolbar { padding: 11px 18px 8px; }
-.ldp-search {
-  max-width: 360px;
-  display: flex; align-items: center; gap: 7px;
-  padding: 0 11px; height: 34px;
-  background: #fff; border: 1.5px solid #fde68a; border-radius: 9px;
-  transition: border-color .15s, box-shadow .15s;
-}
-.ldp-search:focus-within { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
-.ldp-search input {
-  flex: 1; border: none; outline: none; background: transparent;
-  font-size: 11px; color: #1f2937;
-}
+.ldp-stat-icon svg { width: 15px; height: 15px; color: #fff; }
 
 /* ── Table ──────────────────────────────────────────────────────── */
 .ldp-table-wrap {
-  margin: 0 18px 18px;
+  margin: 14px 18px 18px;
   background: #fff; border: 1px solid #fde68a; border-radius: 10px;
   overflow: auto;
 }
@@ -544,10 +597,23 @@ const LDP_CSS = `
 .ldp-person-name { font-size: 11.5px; font-weight: 700; color: #1f2937; }
 
 .ldp-chip {
-  display: inline-block; padding: 2px 10px; border-radius: 999px;
-  font-size: 10px; font-weight: 700; border: 1.5px solid;
+  display: inline-block; padding: 3px 12px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; border: 1.5px solid;
   white-space: nowrap;
 }
+/* Column-specific chip palettes — each column reads as one tonal
+   family across rows (amber / rose / peach) instead of the old
+   per-row hash that made adjacent rows look mismatched. */
+.ldp-chip-dept {
+  background: #fef3c7; color: #92400e; border-color: #fde68a;
+}
+.ldp-chip-primary {
+  background: #ffe4e6; color: #9f1239; border-color: #fecdd3;
+}
+.ldp-chip-ancillary {
+  background: #fce7f3; color: #9d174d; border-color: #fbcfe8;
+}
+/* Legacy classes — retained for any callers outside this file. */
 .ldp-chip-green {
   background: #dcfce7; color: #166534; border-color: #bbf7d0;
 }
@@ -555,25 +621,46 @@ const LDP_CSS = `
   background: #fff; color: #b45309; border-color: #fde68a;
 }
 
+/* Total Leads badge — outlined amber pill (white surface, amber
+   border, amber text). Matches the page's amber tonal family so it
+   reads as part of the same accent set as the header/back button
+   without competing with the red Unassigned KPI for attention. */
 .ldp-total {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 30px; padding: 3px 10px;
-  background: linear-gradient(135deg, #f59e0b, #ea580c); color: #fff;
-  border-radius: 999px; font-size: 10.5px; font-weight: 800;
-  box-shadow: 0 3px 8px rgba(234,88,12,.25);
+  min-width: 30px; padding: 3px 12px;
+  background: #ffffff; color: #b45309;
+  border: 1.5px solid #fbbf24;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* SR NO badge — small outlined circle so the row index reads as a
+   discrete chip instead of a loose number. Same outline recipe as
+   the Total Leads pill (white surface, amber stroke) so the two
+   numeric columns feel related. */
+.ldp-sr-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  background: #ffffff; color: #b45309;
+  border: 1.5px solid #fde68a;
+  border-radius: 50%;
+  font-size: 10.5px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .ldp-view-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 11px; border-radius: 7px;
-  background: #fff; border: 1.5px solid #fbbf24; color: #b45309;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 7px;
+  background: #ffffff; border: 1.5px solid #fed7aa; color: #ea580c;
   font-size: 10.5px; font-weight: 700; cursor: pointer;
-  transition: background .15s, color .15s, transform .12s;
+  transition: background .15s, color .15s, border-color .15s, transform .12s, box-shadow .15s;
   white-space: nowrap;
 }
 .ldp-view-btn:hover {
-  background: linear-gradient(135deg, #fde68a, #fcd34d);
-  color: #92400e; transform: translateY(-1px);
+  background: #fff7ed; border-color: #fdba74; color: #c2410c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(234,88,12,.15);
 }
 .ldp-view-btn:active { transform: translateY(0); }
 
@@ -582,11 +669,60 @@ const LDP_CSS = `
   color: #a8a29e; font-style: italic; font-size: 11px;
 }
 
+/* ── Pagination footer ──────────────────────────────────────────── */
+.ldp-pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 14px;
+  background: #fffbeb; border-top: 1px solid #fde68a;
+  font-size: 11px; color: #57534e;
+  flex-wrap: wrap;
+}
+.ldp-pagination-info { font-weight: 600; color: #78716c; }
+.ldp-pagination-controls {
+  display: flex; align-items: center; gap: 14px;
+}
+.ldp-rows-per-page {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; color: #57534e; font-weight: 600;
+}
+.ldp-rows-per-page select {
+  border: 1.5px solid #fde68a; border-radius: 7px;
+  background: #fff; color: #1f2937;
+  padding: 3px 22px 3px 8px; font-size: 11px; font-weight: 700;
+  cursor: pointer; outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2392400e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+}
+.ldp-rows-per-page select:focus { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
+.ldp-page-indicator {
+  font-size: 11px; font-weight: 700; color: #1f2937;
+  min-width: 36px; text-align: center;
+}
+.ldp-page-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 7px;
+  background: #fff; border: 1.5px solid #fde68a; color: #b45309;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s, transform .12s;
+}
+.ldp-page-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #fde68a, #fcd34d);
+  color: #92400e; transform: translateY(-1px);
+}
+.ldp-page-btn:active:not(:disabled) { transform: translateY(0); }
+.ldp-page-btn:disabled {
+  opacity: .45; cursor: not-allowed;
+}
+
 /* ── Dark mode adaptation ───────────────────────────────────────── */
 [data-bs-theme="dark"] .ldp-shell { background: #1c1410; }
+[data-bs-theme="dark"] .ldp-header-card {
+  background: #1c1410; border-color: #422006;
+}
 [data-bs-theme="dark"] .ldp-header {
   background: linear-gradient(135deg, #422006 0%, #78350f 60%, #92400e 100%);
-  border-color: #b45309;
 }
 [data-bs-theme="dark"] .ldp-header-title { color: #fef3c7; }
 [data-bs-theme="dark"] .ldp-header-sub   { color: #fcd34d; }
@@ -599,10 +735,6 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-stat-slate .ldp-stat-icon { background: #1e293b; color: #cbd5e1; }
 [data-bs-theme="dark"] .ldp-stat-green { background: linear-gradient(135deg, rgba(20,83,45,.30) 0%, #1f1611 100%); border-color: #166534; }
 [data-bs-theme="dark"] .ldp-stat-red   { background: linear-gradient(135deg, rgba(127,29,29,.30) 0%, #1f1611 100%); border-color: #991b1b; }
-[data-bs-theme="dark"] .ldp-search {
-  background: #1f1611; border-color: #422006;
-}
-[data-bs-theme="dark"] .ldp-search input { color: #fef3c7; }
 [data-bs-theme="dark"] .ldp-table-wrap { background: #1f1611; border-color: #422006; }
 [data-bs-theme="dark"] .ldp-table tbody tr { border-color: #422006; }
 [data-bs-theme="dark"] .ldp-table tbody tr:nth-child(even) { background: #28190e; }
@@ -611,8 +743,31 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-person-name   { color: #fef3c7; }
 [data-bs-theme="dark"] .ldp-text          { color: #fde68a; }
 [data-bs-theme="dark"] .ldp-chip-outline  { background: #1f1611; }
-[data-bs-theme="dark"] .ldp-view-btn      { background: #1f1611; }
-[data-bs-theme="dark"] .ldp-view-btn:hover{ color: #fef3c7; }
+[data-bs-theme="dark"] .ldp-chip-dept {
+  background: rgba(146, 64, 14, .25); color: #fcd34d; border-color: rgba(253, 230, 138, .35);
+}
+[data-bs-theme="dark"] .ldp-chip-primary {
+  background: rgba(159, 18, 57, .25); color: #fda4af; border-color: rgba(254, 205, 211, .35);
+}
+[data-bs-theme="dark"] .ldp-chip-ancillary {
+  background: rgba(157, 23, 77, .25); color: #f9a8d4; border-color: rgba(251, 207, 232, .35);
+}
+[data-bs-theme="dark"] .ldp-view-btn      { background: #1f1611; border-color: #7c2d12; color: #fdba74; }
+[data-bs-theme="dark"] .ldp-view-btn:hover{ background: #28190e; border-color: #c2410c; color: #fed7aa; }
+[data-bs-theme="dark"] .ldp-total {
+  background: #1f1611; color: #fcd34d; border-color: #b45309;
+}
+[data-bs-theme="dark"] .ldp-sr-badge {
+  background: #1f1611; color: #fcd34d; border-color: #422006;
+}
+[data-bs-theme="dark"] .ldp-pagination    { background: #28190e; border-color: #422006; color: #d6d3d1; }
+[data-bs-theme="dark"] .ldp-pagination-info { color: #d6d3d1; }
+[data-bs-theme="dark"] .ldp-rows-per-page { color: #d6d3d1; }
+[data-bs-theme="dark"] .ldp-rows-per-page select {
+  background-color: #1f1611; color: #fef3c7; border-color: #422006;
+}
+[data-bs-theme="dark"] .ldp-page-indicator { color: #fef3c7; }
+[data-bs-theme="dark"] .ldp-page-btn { background: #1f1611; border-color: #422006; color: #fcd34d; }
 
 /* Tablet — 2-up stats, header pills wrap below the back button */
 @media (max-width: 1100px) {
@@ -625,6 +780,9 @@ const LDP_CSS = `
    horizontally, header collapses to a tighter stack. */
 @media (max-width: 640px) {
   .ldp-page { padding: 0; }
+  .ldp-header-card {
+    border-radius: 0; border-left: none; border-right: none; margin-bottom: 10px;
+  }
   .ldp-shell {
     width: 100%; border-radius: 0; border-left: none; border-right: none;
   }
@@ -640,9 +798,11 @@ const LDP_CSS = `
   .ldp-header-pill { flex: 1; justify-content: center; }
   .ldp-stats { grid-template-columns: 1fr; padding: 14px 16px 4px; gap: 10px; }
   .ldp-stat-value { font-size: 24px; }
-  .ldp-toolbar { padding: 12px 16px 8px; }
-  .ldp-search  { max-width: none; }
-  .ldp-table-wrap { margin: 0 16px 16px; }
+  .ldp-table-wrap { margin: 12px 16px 16px; }
+  .ldp-pagination {
+    flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px;
+  }
+  .ldp-pagination-controls { justify-content: space-between; gap: 8px; }
   .ldp-table thead th, .ldp-table tbody td { padding: 10px 12px; font-size: 11.5px; }
   .ldp-person-name { font-size: 12px; }
   .ldp-avatar { width: 30px; height: 30px; font-size: 11px; }
