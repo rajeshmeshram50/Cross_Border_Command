@@ -2977,7 +2977,11 @@ const SCOPED_CSS = `
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
 }
 .apm-modal {
-  width: 100%; max-width: 1360px;
+  /* Capped at 1224 to match the Customer and Consignee wizards
+     (both reduced from their original ~1440 cap to the same 1224
+     value for visual consistency across the three onboarding
+     forms). */
+  width: 100%; max-width: 1224px;
   max-height: calc(100vh - 48px);
   margin: auto;
   background: #fff;

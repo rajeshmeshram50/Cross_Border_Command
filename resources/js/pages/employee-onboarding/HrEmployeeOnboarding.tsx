@@ -17,6 +17,11 @@ import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import './HrEmployeeOnboarding.css';
+// Pulls in the .ep-signing* + .ep-signer* CSS that Exit Management uses
+// for its per-template signing-workflow stepper. We reuse those classes
+// verbatim so the Onboarding Evidence Vault renders the same numbered
+// "Reporting Manager → Employee → Client" pipeline below each row.
+import '../../../css/recruitment.css';
 
 // ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
 const OPT = (...vals: string[]) => vals.map(v => ({ value: v, label: v }));
@@ -1264,6 +1269,25 @@ function VaultModal({
     id: number; code: string; name: string; doc_type: string | null;
     status: 'Active' | 'Draft' | 'Deprecated';
     trigger_point?: { id: number; module_name: string } | null;
+    /* JSON column on hr_document_templates — already serialized into
+     * the /match endpoint response thanks to the `signers => array`
+     * cast on the Eloquent model. Each entry holds at least
+     * { role_name, designation_name, action, days } as authored in
+     * the template builder. Defensive `any` because legacy rows
+     * occasionally arrive as the raw JSON string before the cast
+     * materialises. */
+    signers?: any;
+    signing_mode?: 'Sequential' | 'Parallel' | string | null;
+  };
+  /* Parse the signers column off a template. Mirrors HrExitManagement
+   * — the cast normally returns an array, but a stale serializer can
+   * leave it as a JSON string. Tolerate both, return [] otherwise. */
+  const parseSigners = (raw: any): Array<{ role_name?: string | null; designation_name?: string | null; action?: string | null }> => {
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string' && raw.trim()) {
+      try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
+    }
+    return [];
   };
   const [orgTemplates, setOrgTemplates] = useState<MatchedTemplate[]>([]);
   const [orgMeta, setOrgMeta] = useState<{ employee_category: string; role_type: string | null; department_name: string | null; designation_name: string | null } | null>(null);
@@ -1513,10 +1537,17 @@ function VaultModal({
     return out;
   }, [empDocs, prevCompanies]);
 
-  // Org tab now shows only templates whose signing workflow is Completed —
-  // matches "whatever he sign" semantics for the vault as an archive.
-  const signedTemplates = useMemo(
-    () => orgTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed'),
+  // Org tab shows EVERY matching template the rule engine surfaced for
+  // this employee's (department × category × role-type), so HR can
+  // see what's pending and act on it (Send / Generate) — not just the
+  // already-Completed archive. Mirrors HrExitManagement, which lists
+  // every matching exit template with its own per-row workflow status.
+  // Previously this was filtered to status === 'Completed', which hid
+  // every template until it was signed — making the tab look empty
+  // even when the "Matched Templates" banner above said matches existed.
+  const signedTemplates = orgTemplates;
+  const completedCount = useMemo(
+    () => orgTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length,
     [orgTemplates, runByTemplateId],
   );
 
@@ -1524,8 +1555,13 @@ function VaultModal({
   const counts = {
     total:    allDocs.length + signedTemplates.length,
     verified: allDocs.filter(d => d.status === 'Verified').length,
-    signed:   signedTemplates.length,
-    pending:  allDocs.filter(d => d.status === 'Pending' || d.status === 'Uploaded').length,
+    // SIGNED KPI = how many of the matched templates the employee has
+    // actually completed signing. Used to read signedTemplates.length,
+    // which is now the WHOLE template list, so the tile was about to
+    // misrepresent every matched-but-unsigned template as "signed".
+    signed:   completedCount,
+    pending:  allDocs.filter(d => d.status === 'Pending' || d.status === 'Uploaded').length
+              + (signedTemplates.length - completedCount),
     notGen:   0,
   };
   const empCount = allDocs.length;
@@ -1932,11 +1968,16 @@ function VaultModal({
 
                   <div className="d-flex align-items-center justify-content-between mb-2">
                     <div>
-                      <div className="fw-bold" style={{ fontSize: 14 }}>Signed Company Documents</div>
+                      {/* Heading was "Signed Company Documents", which implied
+                          the list only carried Completed signings. The tab now
+                          lists every matched template (mirrors HrExitManagement)
+                          with each row's per-workflow status visible, so the
+                          heading + sub-copy reflect that wider scope. */}
+                      <div className="fw-bold" style={{ fontSize: 14 }}>Company Documents</div>
                       <div className="text-muted" style={{ fontSize: 11.5 }}>
                         {orgLoading ? 'Loading matching templates…'
-                          : signedTemplates.length === 0 ? 'No documents have been signed by this employee yet.'
-                          : `${signedTemplates.length} signed document${signedTemplates.length === 1 ? '' : 's'}`}
+                          : signedTemplates.length === 0 ? 'No templates matched this employee’s department / category.'
+                          : `${signedTemplates.length} template${signedTemplates.length === 1 ? '' : 's'} · ${completedCount} signed`}
                       </div>
                     </div>
                     <span className="vault-doc-count d-inline-flex align-items-center"
@@ -1956,8 +1997,10 @@ function VaultModal({
                     <div className="vault-org-empty" style={{ padding: 22, textAlign: 'center', borderRadius: 10 }}>
                       <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
                       <div style={{ fontSize: 13 }}>
-                        Nothing has been signed yet. Documents will appear here as
-                        their signing workflow reaches <strong>Completed</strong>.
+                        No HR Document Templates matched this employee’s
+                        <strong> Department / Category </strong> rule. Configure
+                        templates under <strong>HR &rsaquo; Document Templates</strong>
+                        and they will surface here automatically.
                       </div>
                     </div>
                   )}
@@ -1981,8 +2024,15 @@ function VaultModal({
                         : run?.status === 'In Progress' ? 'warning'
                         : run ? 'info'
                         : null;
+                      // Configured signers for this template (from the
+                      // template builder JSON). Used as the preview when
+                      // no run exists yet so HR sees who *will* sign;
+                      // when a run exists we render run.signers below
+                      // so the live per-step status comes through.
+                      const tplSigners = parseSigners(tpl.signers);
                       return (
-                        <div key={tpl.id} className="vault-doc-row flex-wrap" style={{ position: 'relative' }}>
+                        <div key={tpl.id} className="vault-tpl-card">
+                        <div className="vault-doc-row flex-wrap" style={{ position: 'relative' }}>
                           <div className="vault-doc-icon" style={{ background: '#eef2ff', color: '#4338ca' }}>
                             <i className="ri-file-text-line" />
                           </div>
@@ -2065,6 +2115,66 @@ function VaultModal({
                             )}
                           </div>
                         </div>
+
+                        {/* Signing Workflow stepper — renders the same
+                            numbered "Reporting Manager → Employee → …"
+                            pipeline that Exit Management shows under each
+                            template. When a live run exists we pull each
+                            step's name + per-step status from run.signers
+                            (so a Pending / Awaiting / Completed / Rejected
+                            badge appears against the right step). When no
+                            run has been launched yet we preview the
+                            template's configured signers so HR can see who
+                            *will* sign before clicking Send. Same .ep-
+                            signing/.ep-signer classes Exit Management uses
+                            — recruitment.css is now imported at the top of
+                            this file so they resolve. */}
+                        {(tplSigners.length > 0 || run) && (
+                          <div className="ep-signing">
+                            <div className="ep-signing-head">
+                              <i className="ri-shield-check-line" />Signing Workflow
+                              {run ? (
+                                <span className="ep-signing-pct">
+                                  {run.signers.filter((s: any) => s.status === 'Done').length}/{run.signers.length} signed
+                                </span>
+                              ) : (
+                                <span className="ep-signing-pct">Not yet sent</span>
+                              )}
+                            </div>
+                            <div className="ep-signing-flow">
+                              {(run
+                                ? run.signers.map((s: any, i: number) => ({
+                                    name:   s.name || s.role_name || `Signer ${i + 1}`,
+                                    action: s.action,
+                                    status: s.status === 'Done' ? 'Completed'
+                                          : s.status === 'Rejected' ? 'Rejected'
+                                          : (i === run.current_index ? 'Awaiting' : 'Pending'),
+                                    active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
+                                  }))
+                                : tplSigners.map((s, i) => ({
+                                    name:   s.role_name || s.designation_name || `Signer ${i + 1}`,
+                                    action: s.action,
+                                    status: 'Pending' as string,
+                                    active: i === 0,
+                                  }))
+                              ).map((sg, i) => (
+                                <div key={i} className={`ep-signer${sg.active ? ' is-active' : ''}`}>
+                                  <span className="ep-signer-dot">{i + 1}</span>
+                                  <span className="ep-signer-name">
+                                    {sg.name}
+                                    {sg.action && (
+                                      <span style={{ marginLeft: 6, fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
+                                        ({sg.action})
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="ep-signer-state">{sg.status}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        </div>
                       );
                     })}
                   </div>
@@ -2096,6 +2206,7 @@ function VaultModal({
                 </div>
               </div>
               <button type="button" onClick={() => setPreviewOpen(false)} aria-label="Close"
+                className="tpl-prev-x"
                 style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32 }}>
                 <i className="ri-close-line" style={{ fontSize: 18 }} />
               </button>
@@ -2141,11 +2252,13 @@ function VaultModal({
 
           <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', background: '#fff', display: 'flex', justifyContent: 'flex-end', gap: 8, borderRadius: '0 0 6px 6px' }}>
             <button type="button" onClick={() => setPreviewOpen(false)}
+              className="tpl-prev-btn tpl-prev-btn--ghost"
               style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
               Close
             </button>
             {previewTpl && previewTpl.status === 'Active' && (
               <button type="button" onClick={() => { handleGenerate(previewTpl); }}
+                className="tpl-prev-btn tpl-prev-btn--download"
                 style={{ padding: '7px 14px', background: 'linear-gradient(135deg,#16a34a,#22c55e)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
                 <i className="ri-download-2-line me-1" /> Download DOCX
               </button>

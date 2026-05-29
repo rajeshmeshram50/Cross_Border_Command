@@ -712,7 +712,10 @@ class SalesLeadController extends Controller
         $this->applyScope($leadQ, $user);
         $lead = $leadQ->findOrFail($leadId);
 
-        $rows = LeadProduct::with(['product:id,product_code,name,status'])
+        $rows = LeadProduct::with([
+                'product:id,product_code,name,status,segment_id',
+                'product.segment:id,name',
+            ])
             ->where('lead_id', $lead->id)
             ->orderByDesc('id')
             ->get();
@@ -732,6 +735,10 @@ class SalesLeadController extends Controller
             'product_code'     => $r->product?->product_code,
             'product_name'     => $r->product?->name,
             'product_status'   => $r->product?->status,
+            // Segment name surfaced as the row's category — used by the
+            // directory modal to render the small badge under the
+            // product name (matches the prototype design).
+            'product_category' => $r->product?->segment?->name,
             'currency'         => $r->currency,
             'quantity'         => $r->quantity,
             'target_price'     => $r->target_price,
@@ -932,7 +939,8 @@ class SalesLeadController extends Controller
 
         $rows = LeadProductSharedPrice::with([
             'leadProduct:id,product_id,currency,quantity,target_price',
-            'leadProduct.product:id,product_code,name,status',
+            'leadProduct.product:id,product_code,name,status,segment_id',
+            'leadProduct.product.segment:id,name',
         ])
             ->where('lead_id', $lead->id)
             // Defense-in-depth: the lead-scope check above already rejects
@@ -943,17 +951,18 @@ class SalesLeadController extends Controller
             ->orderByDesc('shared_at')
             ->get()
             ->map(fn ($e) => [
-                'id'              => $e->id,
-                'lead_product_id' => $e->lead_product_id,
-                'product_id'      => $e->leadProduct?->product_id,
-                'product_code'    => $e->leadProduct?->product?->product_code,
-                'product_name'    => $e->leadProduct?->product?->name,
-                'product_status'  => $e->leadProduct?->product?->status,
-                'currency'        => $e->leadProduct?->currency,
-                'quantity'        => $e->leadProduct?->quantity,
-                'target_price'    => $e->leadProduct?->target_price,
-                'quoted_price'    => $e->quoted_price,
-                'shared_at'       => $e->shared_at,
+                'id'               => $e->id,
+                'lead_product_id'  => $e->lead_product_id,
+                'product_id'       => $e->leadProduct?->product_id,
+                'product_code'     => $e->leadProduct?->product?->product_code,
+                'product_name'     => $e->leadProduct?->product?->name,
+                'product_status'   => $e->leadProduct?->product?->status,
+                'product_category' => $e->leadProduct?->product?->segment?->name,
+                'currency'         => $e->leadProduct?->currency,
+                'quantity'         => $e->leadProduct?->quantity,
+                'target_price'     => $e->leadProduct?->target_price,
+                'quoted_price'     => $e->quoted_price,
+                'shared_at'        => $e->shared_at,
             ]);
 
         return response()->json(['status' => true, 'data' => $rows]);
@@ -1113,7 +1122,13 @@ class SalesLeadController extends Controller
             'created_by'   => $user->id,
         ]);
 
-        return response()->json(['status' => true, 'data' => $row->fresh(['product:id,product_code,name'])], 201);
+        // Eager-load segment + status alongside product so the frontend can
+        // populate the optimistic row (category badge + status pill) without
+        // a follow-up GET.
+        return response()->json(['status' => true, 'data' => $row->fresh([
+            'product:id,product_code,name,status,segment_id',
+            'product.segment:id,name',
+        ])], 201);
     }
 
     /* ─────────────────────────────────────────────────────────────────

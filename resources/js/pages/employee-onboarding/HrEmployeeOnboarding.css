@@ -371,6 +371,61 @@
         .vault-tab-btn.is-active .vault-tab-count { background: #ece6ff; color: #5a3fd1; }
         .vault-doc-row { display: flex; align-items: center; gap: 14px; padding: 14px 4px; border-bottom: 1px solid var(--vz-border-color); }
         .vault-doc-row:last-child { border-bottom: none; }
+        /* Wrapper card around the doc row + signing-workflow stepper.
+           The row used to carry the divider itself; now the stepper
+           sits underneath it, so the divider moves onto the wrapper
+           and the row inside it goes border-less. */
+        .vault-tpl-card { border-bottom: 1px solid var(--vz-border-color); padding-bottom: 8px; margin-bottom: 4px; }
+        .vault-tpl-card:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .vault-tpl-card .vault-doc-row { border-bottom: none; padding-bottom: 6px; }
+        .vault-tpl-card .ep-signing { margin: 6px 4px 4px; }
+
+        /* ── Document preview modal — button hover polish ──
+           The Close / Download DOCX / header-X buttons were inline
+           styles only, so they sat flat under the cursor. Real hover
+           states (color shift + 1px lift + soft shadow) bring them in
+           line with the rest of the module's interactive feel. The
+           inline `style` props above each button still set the base
+           paint; these rules only kick in on hover/active. */
+        .tpl-prev-btn { transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease, box-shadow .18s ease; }
+        .tpl-prev-btn:hover { transform: translateY(-1px); }
+        .tpl-prev-btn:active { transform: translateY(0); }
+
+        .tpl-prev-btn--ghost:hover {
+          background: #f5f3ff !important;
+          border-color: #a78bfa !important;
+          color: #6d28d9 !important;
+          box-shadow: 0 4px 14px rgba(124,92,252,0.18);
+        }
+
+        .tpl-prev-btn--download:hover {
+          background: linear-gradient(135deg,#15803d,#16a34a) !important;
+          box-shadow: 0 6px 18px rgba(22,163,74,0.40);
+        }
+
+        /* Top-right close X in the purple preview header. Sits on a
+           translucent white pill — bump opacity + rotate the glyph
+           slightly so the press feels deliberate. */
+        .tpl-prev-x { transition: background .15s ease, transform .15s ease, box-shadow .18s ease; }
+        .tpl-prev-x:hover {
+          background: rgba(255,255,255,0.32) !important;
+          transform: scale(1.05);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.22);
+        }
+        .tpl-prev-x:active { transform: scale(0.96); }
+
+        /* Dark-mode polish — keep the same lift, paint the ghost
+           button against the dark surface instead of bright violet. */
+        [data-bs-theme="dark"] .tpl-prev-btn--ghost:hover {
+          background: rgba(124,92,252,0.16) !important;
+          border-color: rgba(167,139,250,0.55) !important;
+          color: #c4b5fd !important;
+          box-shadow: 0 4px 16px rgba(124,92,252,0.32);
+        }
+        [data-bs-theme="dark"] .tpl-prev-btn--download:hover {
+          background: linear-gradient(135deg,#15803d,#22c55e) !important;
+          box-shadow: 0 6px 20px rgba(22,163,74,0.50);
+        }
         .vault-doc-icon { width: 40px; height: 40px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
         .vault-doc-meta { min-width: 0; flex: 1; }
         .vault-doc-name { font-size: 14px; font-weight: 700; color: var(--vz-heading-color, var(--vz-body-color)); }
