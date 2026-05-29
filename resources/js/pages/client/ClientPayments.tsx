@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Col, Row } from 'reactstrap';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import api from '../../api';
-import { ShimmerTable } from '../../components/ui/Shimmer';
+import { Shimmer, ShimmerTable } from '../../components/ui/Shimmer';
 
 interface Props {
   clientId: number;
@@ -253,9 +253,13 @@ export default function ClientPayments({ clientId, onBack }: Props) {
                         <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
                           {k.label}
                         </p>
-                        <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {k.value}
-                        </h3>
+                        {loading ? (
+                          <Shimmer width={72} height={26} radius={6} style={{ marginTop: 2 }} />
+                        ) : (
+                          <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {k.value}
+                          </h3>
+                        )}
                       </div>
                       <div className="payments-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
                         <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />

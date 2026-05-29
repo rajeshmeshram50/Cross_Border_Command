@@ -4394,11 +4394,13 @@ const SCOPED_CSS = `
 .acm-root *, .acm-root *::before, .acm-root *::after { box-sizing: border-box; }
 
 .acm-card {
-  /* Stable card size: width caps at 1440, height pins at 92vh so the
-     modal doesn't reflow each time the user switches between Stage 1
-     sub-tabs. Clean white body (was a heavy lavender wash that made
-     everything look blurred together) with a defined violet border. */
-  width: 100%; max-width: 1440px;
+  /* Stable card size: width caps at 1224 (≈85% of the prior 1440 cap,
+     matches what the form looked like at 85% browser zoom), height pins
+     at 92vh so the modal doesn't reflow each time the user switches
+     between Stage 1 sub-tabs. Clean white body (was a heavy lavender
+     wash that made everything look blurred together) with a defined
+     violet border. */
+  width: 100%; max-width: 1224px;
   height: min(92vh, calc(100vh - 24px));
   background: #ffffff;
   border: 1px solid #d6c5ff;

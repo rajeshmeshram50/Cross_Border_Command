@@ -7,7 +7,7 @@ import {
 import TableContainer from '../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
 import Tooltip from '../components/ui/Tooltip';
-import { ShimmerTable } from '../components/ui/Shimmer';
+import { Shimmer, ShimmerTable } from '../components/ui/Shimmer';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
@@ -439,8 +439,17 @@ export default function Payments() {
                     <div className="pmt-kpi-row">
                       <div>
                         <p className="pmt-kpi-label">{k.label}</p>
-                        <h3 className="pmt-kpi-value">{k.value}</h3>
-                        <small className="pmt-kpi-hint">{k.hint}</small>
+                        {loading ? (
+                          <>
+                            <Shimmer width={80} height={26} radius={6} style={{ margin: '2px 0 8px' }} />
+                            <Shimmer width={56} height={10} radius={4} />
+                          </>
+                        ) : (
+                          <>
+                            <h3 className="pmt-kpi-value">{k.value}</h3>
+                            <small className="pmt-kpi-hint">{k.hint}</small>
+                          </>
+                        )}
                       </div>
                       <div className="pmt-kpi-icon" style={{ background: k.gradient }}>
                         <i className={k.icon} />
