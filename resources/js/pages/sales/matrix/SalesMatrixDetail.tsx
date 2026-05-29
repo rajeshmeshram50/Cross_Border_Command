@@ -8,6 +8,8 @@ import AddCustomerModal, { type EditCustomer } from '../AddCustomerModal';
 import AddConsigneeModal from '../AddConsigneeModal';
 import AddProductModal from '../../products/AddProductModal';
 import ProductDirectoryModal from './ProductDirectoryModal';
+import ProductSourcingModal from './ProductSourcingModal';
+import PriceSharedModal from './PriceSharedModal';
 import ChangeOwnerModal from './ChangeOwnerModal';
 import RemarksModal from './RemarksModal';
 import KeyOpportunityModal from './KeyOpportunityModal';
@@ -139,6 +141,8 @@ export default function SalesMatrixDetail() {
 
   const [productAddOpen, setProductAddOpen] = useState(false);
   const [productDirectoryOpen, setProductDirectoryOpen] = useState(false);
+  const [productSourcingOpen, setProductSourcingOpen]   = useState(false);
+  const [priceSharedOpen, setPriceSharedOpen]           = useState(false);
   const [changeOwnerOpen, setChangeOwnerOpen] = useState(false);
   const [remarksOpen, setRemarksOpen] = useState(false);
   const [keyOppOpen, setKeyOppOpen] = useState(false);
@@ -603,6 +607,18 @@ export default function SalesMatrixDetail() {
           </div>
         </div>
         <div className="smd-cust-meta">
+          <button
+            type="button"
+            className={`smd-hdr-wa ${serverHeader.whatsappStatus === 'connected' ? 'smd-hdr-wa-on' : ''}`}
+            onClick={() => setWhatsappOpen(true)}
+            aria-label="WhatsApp Status"
+          >
+            <span className="smd-hdr-wa-icon">
+              <IconWhats />
+            </span>
+            <span className="smd-hdr-wa-text">WhatsApp Status</span>
+          </button>
+          <span className="smd-cust-sep" aria-hidden="true"><i /><i /><i /></span>
           <Meta icon={<IconListLines />} label="OPPORTUNITY ID"   value={header.oppId} />
           <span className="smd-cust-sep" aria-hidden="true"><i /><i /><i /></span>
           <Meta icon={<IconCalendar />}  label="OPPORTUNITY DATE" value={header.oppDate} />
@@ -671,23 +687,22 @@ export default function SalesMatrixDetail() {
           onClick={() => setProductAddOpen(true)} />
         <ActionBtn icon={<IconBook />}     label="Product Directory"
           onClick={() => setProductDirectoryOpen(true)} />
+        <ActionBtn icon={<IconSourcing />} label="Product Sourcing"
+          onClick={() => setProductSourcingOpen(true)} />
+        <ActionBtn icon={<IconDollar />}   label="Share Prices"
+          onClick={() => setPriceSharedOpen(true)} />
         <ActionBtn icon={<IconUserCog />}  label="Change Owner"
           onClick={() => setChangeOwnerOpen(true)} />
         <ActionBtn icon={<IconMsg />}      label="Remark"
           onClick={() => setRemarksOpen(true)} />
-        <span className="smd-act-sep" aria-hidden="true" />
         <ActionBtn icon={<IconStar />}     label="Key Opportunity"
           className={isKeyOpportunity ? 'smd-act-key' : ''}
           onClick={() => setKeyOppOpen(true)} />
+        <span className="smd-act-sep" aria-hidden="true" />
         <ActionBtn icon={<IconBell />}     label="Reminder"
           onClick={() => setRemindersOpen(true)} />
         <ActionBtn icon={<IconCalSmall />} label="Meetings"
           onClick={() => setMeetingsOpen(true)} />
-        <ActionBtn icon={<IconDollar />}   label="Share Prices"
-          onClick={() => toast.info('Coming next', 'Share Prices flow ships in the Stage 4 (Price Shared) build')} />
-        <ActionBtn icon={<IconWhats />}    label="WhatsApp Status"
-          className={`smd-act-wa ${serverHeader.whatsappStatus === 'connected' ? 'smd-act-wa-on' : ''}`}
-          onClick={() => setWhatsappOpen(true)} />
         </div>
       </div>
 
@@ -1132,6 +1147,22 @@ export default function SalesMatrixDetail() {
         }}
       />
 
+      {/* ── Product Sourcing (Stage 3) popup ── */}
+      <ProductSourcingModal
+        open={productSourcingOpen}
+        leadId={resolvedLeadId ?? null}
+        onClose={() => setProductSourcingOpen(false)}
+        onChanged={() => { void reloadLead(); }}
+      />
+
+      {/* ── Price Shared (Stage 4) popup ── */}
+      <PriceSharedModal
+        open={priceSharedOpen}
+        leadId={resolvedLeadId ?? null}
+        onClose={() => setPriceSharedOpen(false)}
+        onChanged={() => { void reloadLead(); }}
+      />
+
       {/* ── Change Lead Owner popup ── */}
       <ChangeOwnerModal
         open={changeOwnerOpen}
@@ -1373,6 +1404,7 @@ const IconUser     = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill
 const IconTruck    = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>);
 const IconPlusSq   = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>);
 const IconBook     = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>);
+const IconSourcing = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>);
 const IconUserCog  = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><circle cx="19" cy="11" r="2"/></svg>);
 const IconMsg      = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>);
 const IconStar     = () => (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polygon points="12 2 15 9 22 9 17 14 19 22 12 18 5 22 7 14 2 9 9 9 12 2"/></svg>);

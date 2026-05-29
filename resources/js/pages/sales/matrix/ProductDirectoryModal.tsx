@@ -20,15 +20,19 @@ import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
  * ───────────────────────────────────────────────────────────────────────── */
 
 type DirectoryRow = {
-  id:             number;
-  product_id:     number;
-  product_code:   string | null;
-  product_name:   string | null;
-  product_status: string | null;
-  currency:       string;
-  quantity:       string | number | null;
-  target_price:   string | number | null;
-  notes:          string | null;
+  id:               number;
+  product_id:       number;
+  product_code:     string | null;
+  product_name:     string | null;
+  product_status:   string | null;
+  /* Segment name surfaced as category — rendered as the small badge
+   * under the product name (e.g. "VEGETABLES", "GRAINS"). May be null
+   * if the product master has no segment assigned. */
+  product_category: string | null;
+  currency:         string;
+  quantity:         string | number | null;
+  target_price:     string | number | null;
+  notes:            string | null;
 };
 
 type ProductOpt = {
@@ -58,6 +62,34 @@ const CURRENCIES_FALLBACK: CurrencyOpt[] = [
   { code: 'CNY', name: 'Chinese Yuan',       symbol: '¥' },
   { code: 'JPY', name: 'Japanese Yen',       symbol: '¥' },
 ];
+
+/* Maps a currency code to its display symbol — used to prefix the target
+ * price column (e.g. "$ 290.00", "₹ 290.00"). Falls back to the raw code
+ * (e.g. "AED 290.00") so unknown currencies still render meaningfully. */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', INR: '₹', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', AUD: 'A$', SGD: 'S$',
+};
+const currencySymbol = (code: string | null | undefined): string => {
+  if (!code) return '';
+  const c = String(code).toUpperCase();
+  return CURRENCY_SYMBOLS[c] ?? c;
+};
+
+/* Renders the green Active / red Inactive pill in the STATUS column.
+ * Uses the same Bootstrap badge classes the Clients table uses for
+ * organisation status (see Clients.tsx), so the look stays consistent
+ * across the product. Bootstrap's *-subtle utilities also adapt to
+ * dark mode automatically. */
+function StatusPill({ status }: { status: string | null | undefined }) {
+  const norm = String(status ?? '').toLowerCase();
+  const isActive = norm === 'active' || norm === '1' || norm === 'true';
+  const color = isActive ? 'success' : 'danger';
+  return (
+    <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2 fs-13`}>
+      {isActive ? 'Active' : 'Inactive'}
+    </span>
+  );
+}
 
 type DraftRow = {
   product_id:   number | null;
@@ -191,7 +223,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
     }
     setSaving(true);
     try {
-      const { data } = await api.post<{ status: boolean; data: { id: number; product: { product_code: string; name: string; status: string } } }>(
+      const { data } = await api.post<{ status: boolean; data: { id: number; product: { product_code: string; name: string; status: string; segment?: { name: string | null } | null } } }>(
         `/sales/leads/${leadId}/products`,
         {
           product_id:   draft.product_id,
@@ -204,15 +236,16 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
       const created = data.data;
       const pmaster = productsById.get(draft.product_id);
       setRows(prev => [{
-        id:             created.id,
-        product_id:     draft.product_id!,
-        product_code:   created.product?.product_code ?? pmaster?.product_code ?? null,
-        product_name:   created.product?.name         ?? pmaster?.name         ?? null,
-        product_status: created.product?.status       ?? null,
-        currency:       draft.currency,
-        quantity:       draft.quantity     ? Number(draft.quantity)     : null,
-        target_price:   draft.target_price ? Number(draft.target_price) : null,
-        notes:          draft.notes || null,
+        id:               created.id,
+        product_id:       draft.product_id!,
+        product_code:     created.product?.product_code ?? pmaster?.product_code ?? null,
+        product_name:     created.product?.name         ?? pmaster?.name         ?? null,
+        product_status:   created.product?.status       ?? null,
+        product_category: created.product?.segment?.name ?? null,
+        currency:         draft.currency,
+        quantity:         draft.quantity     ? Number(draft.quantity)     : null,
+        target_price:     draft.target_price ? Number(draft.target_price) : null,
+        notes:            draft.notes || null,
       }, ...prev]);
       setDraft(EMPTY_DRAFT); setDraftOpen(false);
       toast.success('Product mapped', 'Added to the directory');
@@ -306,11 +339,12 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
               </svg>
               Map Product
             </button>
-            {onAddProduct && (
-              <button className="pdm-map-btn pdm-map-btn-ghost" onClick={onAddProduct}>
-                + Add Product
-              </button>
-            )}
+            {/* "+ Add Product" ghost button intentionally hidden — the
+                prototype design (image 1) keeps the header to a single
+                action (Map Product) plus the close pill. The toolbar's
+                own "Add Product" button still covers the new-master
+                flow, and the `onAddProduct` prop is preserved on the
+                component API for future re-use. */}
             <button className="pdm-close" onClick={onClose} aria-label="Close">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -335,84 +369,29 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
             <table className="pdm-table">
               <thead>
                 <tr>
-                  <th style={{ width: 36 }}>#</th>
-                  <th>PRODUCT</th>
-                  <th style={{ width: 90 }}>CURRENCY</th>
+                  <th style={{ width: 70 }}>SR NO</th>
+                  <th style={{ width: 140 }}>PRODUCT CODE</th>
+                  <th>PRODUCT NAME</th>
+                  <th style={{ width: 120 }}>STATUS</th>
                   <th style={{ width: 110 }}>QUANTITY</th>
-                  <th style={{ width: 130 }}>TARGET PRICE</th>
-                  <th style={{ width: 130 }}>ACTION</th>
+                  <th style={{ width: 150 }}>TARGET PRICE</th>
+                  <th style={{ width: 100 }}>CURRENCY</th>
+                  <th style={{ width: 110 }}>ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
-                {/* New-mapping draft row */}
-                {draftOpen && (
-                  <tr className="pdm-draft-row">
-                    <td>+</td>
-                    <td>
-                      <MasterSelect
-                        value={draft.product_id != null ? String(draft.product_id) : ''}
-                        onChange={(v) => setDraft(p => ({ ...p, product_id: v ? Number(v) : null }))}
-                        options={availableProducts.map(p => ({ value: String(p.id), label: `${p.product_code} · ${p.name}` }))}
-                        placeholder={productsLoading ? 'Loading…' : 'Select product…'}
-                        disabled={productsLoading}
-                      />
-                    </td>
-                    <td>
-                      {/* When a currency is already locked by an existing
-                       *  mapping, show ONLY that option and disable the
-                       *  picker so the user can't try to mix INR + USD on
-                       *  one lead. Hover hint explains why. */}
-                      <MasterSelect
-                        value={draft.currency}
-                        onChange={(v) => setDraft(p => ({ ...p, currency: v }))}
-                        options={
-                          lockedCurrency
-                            ? [{ value: lockedCurrency, label: lockedCurrency }]
-                            : currencies.map(c => ({
-                                value: c.code,
-                                label: c.name ? `${c.code} – ${c.name}` : c.code,
-                              }))
-                        }
-                        placeholder="Currency"
-                        disabled={!!lockedCurrency}
-                        loading={currenciesLoading && currencies.length === 0}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number" min="0" step="any" className="pdm-input"
-                        placeholder="0"
-                        value={draft.quantity}
-                        onChange={e => setDraft(p => ({ ...p, quantity: e.target.value }))}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number" min="0" step="any" className="pdm-input"
-                        placeholder="0.00"
-                        value={draft.target_price}
-                        onChange={e => setDraft(p => ({ ...p, target_price: e.target.value }))}
-                      />
-                    </td>
-                    <td className="pdm-act-cell">
-                      <button className="pdm-row-btn pdm-row-btn-primary" onClick={() => void saveDraft()} disabled={saving}>
-                        {saving ? 'Saving…' : 'Save'}
-                      </button>
-                      <button className="pdm-row-btn" onClick={() => { setDraft(EMPTY_DRAFT); setDraftOpen(false); }} disabled={saving}>
-                        Cancel
-                      </button>
-                    </td>
-                  </tr>
-                )}
+                {/* The Map-Product draft is no longer inline — it now lives in
+                    the dedicated popup form (rendered below) so the table
+                    stays clean and the form has room for proper labels. */}
 
                 {loading && (
                   <tr>
-                    <td colSpan={6} className="pdm-status">Loading mapped products…</td>
+                    <td colSpan={8} className="pdm-status">Loading mapped products…</td>
                   </tr>
                 )}
                 {!loading && rows.length === 0 && !draftOpen && (
                   <tr>
-                    <td colSpan={6} className="pdm-status">
+                    <td colSpan={8} className="pdm-status">
                       No products mapped yet — click <strong>Map Product</strong> to add the first.
                     </td>
                   </tr>
@@ -423,40 +402,25 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   if (isEditing) {
                     return (
                       <tr key={r.id} className="pdm-draft-row">
-                        <td>{i + 1}</td>
+                        <td><span className="pdm-sr-pill">{i + 1}</span></td>
                         <td>
-                          <div className="pdm-prod-cell">
-                            <span className="pdm-prod-code">{r.product_code ?? '—'}</span>
+                          <span className="pdm-code-chip" title={r.product_code ?? ''}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                              <rect x="4" y="4" width="16" height="16" rx="2.5" />
+                            </svg>
+                            {r.product_code ?? '—'}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="pdm-name-cell">
                             <span className="pdm-prod-name">{r.product_name ?? '—'}</span>
+                            {r.product_category && (
+                              <span className="pdm-cat-badge">{r.product_category.toUpperCase()}</span>
+                            )}
                           </div>
                         </td>
                         <td>
-                          {/* Edit-mode currency lock: if there's ONLY one
-                           *  row on the lead (this one), the user can
-                           *  switch freely. If there are OTHER rows with
-                           *  a currency set, the picker is restricted to
-                           *  that currency so the lead stays unimixed.
-                           *  Matches the backend rule in
-                           *  SalesLeadController::updateLeadProduct. */}
-                          <MasterSelect
-                            value={editDraft.currency}
-                            onChange={(v) => setEditDraft(p => ({ ...p, currency: v }))}
-                            options={(() => {
-                              const others = rows.filter(x => x.id !== r.id && x.currency).map(x => String(x.currency).toUpperCase());
-                              const otherCurrency = others[0] ?? null;
-                              if (otherCurrency) {
-                                // Only the locked option is selectable.
-                                return [{ value: otherCurrency, label: otherCurrency }];
-                              }
-                              return currencies.map(c => ({
-                                value: c.code,
-                                label: c.name ? `${c.code} – ${c.name}` : c.code,
-                              }));
-                            })()}
-                            placeholder="Currency"
-                            disabled={rows.some(x => x.id !== r.id && !!x.currency)}
-                            loading={currenciesLoading && currencies.length === 0}
-                          />
+                          <StatusPill status={r.product_status} />
                         </td>
                         <td>
                           <input
@@ -472,6 +436,33 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                             onChange={e => setEditDraft(p => ({ ...p, target_price: e.target.value }))}
                           />
                         </td>
+                        <td>
+                          {/* Edit-mode currency lock: if there's ONLY one
+                           *  row on the lead (this one), the user can
+                           *  switch freely. If there are OTHER rows with
+                           *  a currency set, the picker is restricted to
+                           *  that currency so the lead stays un-mixed.
+                           *  Matches the backend rule in
+                           *  SalesLeadController::updateLeadProduct. */}
+                          <MasterSelect
+                            value={editDraft.currency}
+                            onChange={(v) => setEditDraft(p => ({ ...p, currency: v }))}
+                            options={(() => {
+                              const others = rows.filter(x => x.id !== r.id && x.currency).map(x => String(x.currency).toUpperCase());
+                              const otherCurrency = others[0] ?? null;
+                              if (otherCurrency) {
+                                return [{ value: otherCurrency, label: otherCurrency }];
+                              }
+                              return currencies.map(c => ({
+                                value: c.code,
+                                label: c.name ? `${c.code} – ${c.name}` : c.code,
+                              }));
+                            })()}
+                            placeholder="Currency"
+                            disabled={rows.some(x => x.id !== r.id && !!x.currency)}
+                            loading={currenciesLoading && currencies.length === 0}
+                          />
+                        </td>
                         <td className="pdm-act-cell">
                           <button className="pdm-row-btn pdm-row-btn-primary" onClick={() => void saveEdit()} disabled={saving}>
                             {saving ? 'Saving…' : 'Save'}
@@ -485,26 +476,42 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   }
                   return (
                     <tr key={r.id}>
-                      <td>{i + 1}</td>
+                      <td><span className="pdm-sr-pill">{i + 1}</span></td>
                       <td>
-                        <div className="pdm-prod-cell">
-                          <span className="pdm-prod-code">{r.product_code ?? '—'}</span>
+                        <span className="pdm-code-chip" title={r.product_code ?? ''}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                            <rect x="4" y="4" width="16" height="16" rx="2.5" />
+                          </svg>
+                          {r.product_code ?? '—'}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="pdm-name-cell">
                           <span className="pdm-prod-name">{r.product_name ?? '—'}</span>
+                          {r.product_category && (
+                            <span className="pdm-cat-badge">{r.product_category.toUpperCase()}</span>
+                          )}
                         </div>
                       </td>
-                      <td><span className="pdm-curr-pill">{r.currency}</span></td>
+                      <td>
+                        <StatusPill status={r.product_status} />
+                      </td>
                       <td className="pdm-num">{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
-                      <td className="pdm-num">{r.target_price != null ? Number(r.target_price).toLocaleString() : '—'}</td>
+                      <td className="pdm-num pdm-price">
+                        {r.target_price != null
+                          ? `${currencySymbol(r.currency)} ${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : '—'}
+                      </td>
+                      <td><span className="pdm-curr-pill">{r.currency}</span></td>
                       <td className="pdm-act-cell">
-                        <button className="pdm-row-btn pdm-row-btn-edit" onClick={() => startEdit(r)} title="Edit">
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <button className="pdm-icon-btn pdm-icon-btn-edit" onClick={() => startEdit(r)} aria-label="Edit" title="Edit">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                           </svg>
-                          Edit
                         </button>
-                        <button className="pdm-row-btn pdm-row-btn-del" onClick={() => setPendingDelete(r)} title="Unmap">
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <button className="pdm-icon-btn pdm-icon-btn-del" onClick={() => setPendingDelete(r)} aria-label="Unmap" title="Unmap">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                             <polyline points="3 6 5 6 21 6" />
                             <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
                           </svg>
@@ -517,7 +524,172 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
             </table>
           </div>
         </div>
+
+        {/* Footer — left status text + right Close button. Pinned below
+            the body so it stays visible while the table scrolls. */}
+        <div className="pdm-foot">
+          <div className="pdm-foot-status">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <circle cx="12" cy="16" r="0.5" fill="currentColor" />
+            </svg>
+            {loading
+              ? 'Loading…'
+              : rows.length === 0
+                ? 'No products mapped yet for this opportunity'
+                : 'Showing all products for this opportunity'}
+          </div>
+          <button className="pdm-foot-close" onClick={onClose}>Close</button>
+        </div>
       </div>
+
+      {/* ── Map Product popup form ── opened by the header's "Map
+          Product" button. Lives over the directory backdrop with a
+          higher z-index so it sits on top of the directory body. */}
+      {draftOpen && (
+        <div className="pdm-form-backdrop" onClick={() => { setDraft(EMPTY_DRAFT); setDraftOpen(false); }}>
+          <div className="pdm-form-modal" onClick={e => e.stopPropagation()}>
+            <div className="pdm-form-head">
+              <div className="pdm-form-head-left">
+                <div className="pdm-form-head-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
+                    <circle cx="18" cy="5"  r="3" />
+                    <circle cx="6"  cy="12" r="3" />
+                    <circle cx="18" cy="19" r="3" />
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="pdm-form-head-title">Map Product to Lead</div>
+                  <div className="pdm-form-head-sub">Select a product and define pricing details</div>
+                </div>
+              </div>
+              <button
+                className="pdm-form-close"
+                onClick={() => { setDraft(EMPTY_DRAFT); setDraftOpen(false); }}
+                disabled={saving}
+                aria-label="Close"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="pdm-form-body">
+              <div className="pdm-form-field">
+                <label className="pdm-form-label">SELECT PRODUCT <span className="pdm-form-req">*</span></label>
+                <MasterSelect
+                  value={draft.product_id != null ? String(draft.product_id) : ''}
+                  onChange={(v) => setDraft(p => ({ ...p, product_id: v ? Number(v) : null }))}
+                  options={availableProducts.map(p => ({ value: String(p.id), label: `${p.product_code} · ${p.name}` }))}
+                  placeholder={productsLoading ? 'Loading…' : 'Select product'}
+                  disabled={productsLoading}
+                />
+              </div>
+
+              <div className="pdm-form-grid-2">
+                <div className="pdm-form-field">
+                  <label className="pdm-form-label">QUANTITY <span className="pdm-form-req">*</span></label>
+                  <div className="pdm-form-input-wrap">
+                    <span className="pdm-form-input-icon" aria-hidden>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <rect x="3" y="3"  width="7" height="7" rx="1" />
+                        <rect x="14" y="3"  width="7" height="7" rx="1" />
+                        <rect x="3" y="14" width="7" height="7" rx="1" />
+                        <rect x="14" y="14" width="7" height="7" rx="1" />
+                      </svg>
+                    </span>
+                    <input
+                      type="number" min="0" step="any"
+                      className="pdm-form-input"
+                      placeholder="Enter quantity"
+                      value={draft.quantity}
+                      onChange={e => setDraft(p => ({ ...p, quantity: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="pdm-form-field">
+                  <label className="pdm-form-label">TARGET PRICE <span className="pdm-form-req">*</span></label>
+                  <div className="pdm-form-input-wrap">
+                    <span className="pdm-form-input-icon" aria-hidden>$</span>
+                    <input
+                      type="number" min="0" step="any"
+                      className="pdm-form-input"
+                      placeholder="Enter target price"
+                      value={draft.target_price}
+                      onChange={e => setDraft(p => ({ ...p, target_price: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pdm-form-field">
+                <label className="pdm-form-label">CURRENCY <span className="pdm-form-req">*</span></label>
+                {/* Single-currency-per-lead lock — see saveDraft comment
+                    in the parent. When the lead already has a currency
+                    set we limit the picker to that one option. */}
+                <MasterSelect
+                  value={draft.currency}
+                  onChange={(v) => setDraft(p => ({ ...p, currency: v }))}
+                  options={
+                    lockedCurrency
+                      ? [{ value: lockedCurrency, label: lockedCurrency }]
+                      : currencies.map(c => ({
+                          value: c.code,
+                          label: c.name ? `${c.code} – ${c.name}` : c.code,
+                        }))
+                  }
+                  placeholder="Select currency"
+                  disabled={!!lockedCurrency}
+                  loading={currenciesLoading && currencies.length === 0}
+                />
+              </div>
+
+              <div className="pdm-form-note">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="12" />
+                  <circle cx="12" cy="8" r="0.5" fill="currentColor" />
+                </svg>
+                <span>
+                  All fields marked <span className="pdm-form-req">*</span> are required to map the product.
+                </span>
+              </div>
+            </div>
+
+            <div className="pdm-form-foot">
+              <button
+                className="pdm-form-btn pdm-form-btn-ghost"
+                onClick={() => { setDraft(EMPTY_DRAFT); setDraftOpen(false); }}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                className="pdm-form-btn pdm-form-btn-primary"
+                onClick={() => void saveDraft()}
+                disabled={saving || !draft.product_id}
+              >
+                {saving ? 'Saving…' : (
+                  <>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
+                      <circle cx="18" cy="5"  r="3" />
+                      <circle cx="6"  cy="12" r="3" />
+                      <circle cx="18" cy="19" r="3" />
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                    </svg>
+                    Map Product
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Themed delete (unmap) confirmation */}
       <DeleteConfirmModal
@@ -544,15 +716,21 @@ const SCOPED_CSS = `
   padding: 16px;
 }
 .pdm-modal {
-  width: min(960px, 100%); max-height: 90vh;
+  width: min(1180px, 100%); max-height: 90vh;
   background: #fff; border-radius: 16px;
   box-shadow: 0 18px 48px rgba(15,23,42,.28);
   overflow: hidden; display: flex; flex-direction: column;
 }
 .pdm-head {
+  /* Prototype gradient — 115° sweep from deep violet at the top-left
+     through soft lilac at the bottom-right, matching the HTML mockup.
+     gap + flex-shrink lock the header to a single row so the title,
+     map button and close pill stay aligned at any width. */
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px; color: #fff;
-  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  gap: 12px; flex-shrink: 0;
+  padding: 16px 22px; color: #fff;
+  position: relative; overflow: hidden;
+  background: linear-gradient(115deg, #7c3aed 0%, #8b5cf6 45%, #a78bfa 80%, #c4b5fd 100%);
 }
 .pdm-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .pdm-head-icon {
@@ -585,9 +763,17 @@ const SCOPED_CSS = `
   background: #fff; border: 1px solid #e9d5ff; border-radius: 12px;
   overflow: auto;
 }
-.pdm-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 760px; }
+.pdm-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1000px; }
+/* Table header — gradient lives on the <tr> so a single 90° sweep
+   spans the whole row instead of each <th> rendering its own copy
+   (which caused the visible "stitch" lines between columns). Cells
+   stay transparent so they overlay the row gradient cleanly. */
+.pdm-table thead tr {
+  background: linear-gradient(90deg, #7c3aed 0%, #8b5cf6 50%, #a78bfa 100%);
+}
 .pdm-table thead th {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff;
+  background: transparent;
+  color: #fff;
   font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
   text-align: left; padding: 11px 12px;
   position: sticky; top: 0; z-index: 2;
@@ -603,11 +789,124 @@ const SCOPED_CSS = `
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10.5px; color: #7c3aed; font-weight: 700;
 }
-.pdm-prod-name { font-size: 12.5px; color: #0f172a; font-weight: 600; }
-.pdm-curr-pill {
-  display: inline-block; padding: 2px 10px; border-radius: 999px;
-  background: #ede9fe; color: #6d28d9; font-size: 10.5px; font-weight: 700;
+.pdm-prod-name { font-size: 13px; color: #0f172a; font-weight: 700; line-height: 1.3; }
+
+/* ── SR NO badge ── compact pale-lilac chip with a soft violet
+   outline. Squared corners (radius 8px) instead of the previous
+   full-pill so it reads as a "chip" rather than a numeric pill. */
+.pdm-sr-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; padding: 3px 10px;
+  background: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  font-size: 11.5px; font-weight: 700;
 }
+
+/* ── PRODUCT CODE chip ── monospace code with the single-square
+   icon. Shares the SR badge's lilac palette so the two leading
+   columns read as one coherent chip family. */
+.pdm-code-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  background: #f5f3ff; border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; font-weight: 700; color: #6d28d9;
+}
+.pdm-code-chip svg { color: #7c3aed; flex-shrink: 0; }
+
+/* ── PRODUCT NAME cell — name + category badge stacked.
+   Slightly larger gap so the badge breathes below the name. */
+.pdm-name-cell { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+
+/* Category badge sits as a quiet slate chip below the product name —
+   muted on purpose so the product name reads first and the badge
+   functions as a secondary tag (matches the prototype's restrained
+   treatment, was a punchy violet that competed with the SR/code
+   chips for attention). */
+.pdm-cat-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  background: #f1f5f9; color: #475569;
+  border-radius: 6px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+/* ── STATUS pill ── soft pastel pill with a leading dot — green
+   for Active, red/pink for Inactive. Chunkier padding + slightly
+   larger font so the badge reads as a confident state indicator
+   matching the prototype. */
+.pdm-status-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 14px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700;
+  line-height: 1.1;
+}
+.pdm-status-pill .pdm-status-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+}
+.pdm-status-on  { background: #dcfce7; color: #15803d; }
+.pdm-status-off { background: #fee2e2; color: #b91c1c; }
+
+/* ── TARGET PRICE — vivid emerald green text. The .pdm-table tbody
+   td rule below sets a cell-wide default of #1e293b (slate) with
+   specificity (0,1,2); we mirror that scope here to win the cascade
+   without resorting to !important. Same trick again for dark mode. */
+.pdm-table tbody td.pdm-price { color: #16a34a; font-weight: 800; }
+.pdm-table tbody td.pdm-price * { color: inherit; }
+
+/* ── CURRENCY badge ── squared chip (radius 8px) instead of a
+   full pill, sharing the SR / code chip shape so the row's chips
+   are visually a family. Blue palette kept — only the geometry
+   was changed. */
+.pdm-curr-pill {
+  display: inline-block; padding: 3px 12px; border-radius: 8px;
+  background: #dbeafe; color: #1d4ed8;
+  font-size: 11px; font-weight: 800; letter-spacing: .02em;
+  border: 1px solid #bfdbfe;
+}
+
+/* ── Icon-only action buttons ── square chip the same size and
+   radius as the SR badge so the row's chips stay one family.
+   Edit uses the SR-badge lilac palette; Delete keeps a parallel
+   red palette so destructive intent reads at a glance. */
+.pdm-icon-btn {
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px; border: 1px solid transparent;
+  background: #fff; cursor: pointer;
+  transition: all .12s;
+}
+.pdm-icon-btn-edit {
+  background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe;
+}
+.pdm-icon-btn-edit:hover { background: #ede9fe; border-color: #c4b5fd; }
+.pdm-icon-btn-del {
+  background: #fef2f2; color: #b91c1c; border-color: #fecaca;
+}
+.pdm-icon-btn-del:hover { background: #fee2e2; border-color: #fca5a5; }
+
+/* ── Footer ── pinned below the body, status text + Close button */
+.pdm-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  background: #fff; border-top: 1px solid #e2e8f0;
+}
+.pdm-foot-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px; color: #64748b; font-weight: 500;
+}
+.pdm-foot-status svg { color: #94a3b8; flex-shrink: 0; }
+.pdm-foot-close {
+  padding: 8px 22px; border-radius: 8px;
+  background: #fff; border: 1.5px solid #cbd5e1;
+  font-size: 12.5px; font-weight: 700; color: #1e293b;
+  cursor: pointer; transition: all .15s;
+}
+.pdm-foot-close:hover { background: #f8fafc; border-color: #94a3b8; }
 /* Currency-lock banner — shown above the table when at least one
  * product is mapped, explaining why the currency picker is disabled. */
 .pdm-curr-lock-banner {
@@ -740,9 +1039,246 @@ const SCOPED_CSS = `
 /* Empty-state row */
 [data-bs-theme="dark"] .pdm-status { color: rgba(196, 181, 253, .55); }
 
+/* Dark-mode for the new visual chrome introduced for the redesign. */
+[data-bs-theme="dark"] .pdm-sr-pill   { background: rgba(167, 139, 250, .22); color: #d8b4fe; }
+[data-bs-theme="dark"] .pdm-code-chip {
+  background: rgba(167, 139, 250, .15);
+  border-color: rgba(167, 139, 250, .35);
+  color: #d8b4fe;
+}
+[data-bs-theme="dark"] .pdm-code-chip svg { color: #c4b5fd; }
+[data-bs-theme="dark"] .pdm-cat-badge {
+  background: rgba(148, 163, 184, .18);
+  color: #cbd5e1;
+}
+[data-bs-theme="dark"] .pdm-status-on  { background: rgba(34, 197, 94, .18);  color: #86efac; }
+[data-bs-theme="dark"] .pdm-status-off { background: rgba(239, 68, 68, .18);  color: #fca5a5; }
+[data-bs-theme="dark"] .pdm-table tbody td.pdm-price      { color: #34d399; }
+[data-bs-theme="dark"] .pdm-curr-pill  {
+  background: rgba(59, 130, 246, .22);
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, .40);
+}
+[data-bs-theme="dark"] .pdm-icon-btn-edit {
+  background: rgba(59, 130, 246, .22);
+  border-color: rgba(59, 130, 246, .40);
+  color: #93c5fd;
+}
+[data-bs-theme="dark"] .pdm-icon-btn-edit:hover { background: rgba(59, 130, 246, .35); }
+[data-bs-theme="dark"] .pdm-icon-btn-del {
+  background: rgba(239, 68, 68, .18);
+  border-color: rgba(252, 165, 165, .40);
+  color: #fca5a5;
+}
+[data-bs-theme="dark"] .pdm-icon-btn-del:hover { background: rgba(239, 68, 68, .28); }
+[data-bs-theme="dark"] .pdm-foot {
+  background: #14102a;
+  border-top-color: rgba(167, 139, 250, .25);
+}
+[data-bs-theme="dark"] .pdm-foot-status      { color: #c4b5fd; }
+[data-bs-theme="dark"] .pdm-foot-status svg  { color: #a78bfa; }
+[data-bs-theme="dark"] .pdm-foot-close {
+  background: #1f1845;
+  border-color: rgba(167, 139, 250, .30);
+  color: #ede9fe;
+}
+[data-bs-theme="dark"] .pdm-foot-close:hover { background: #2a2150; }
+
+/* ════════════════════════════════════════════════════════════════════
+ *  Map-Product popup form
+ *  Opened by the directory header's "Map Product" button. Sits on top
+ *  of the directory backdrop so the user can see context behind it.
+ * ════════════════════════════════════════════════════════════════════ */
+.pdm-form-backdrop {
+  position: fixed; inset: 0; z-index: 1090;
+  background: rgba(15,23,42,.30); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  animation: pdmFormFade .15s ease-out;
+}
+@keyframes pdmFormFade { from { opacity: 0; } to { opacity: 1; } }
+.pdm-form-modal {
+  width: min(620px, 100%); max-height: 90vh;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 22px 56px rgba(15,23,42,.32);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  animation: pdmFormPop .18s cubic-bezier(.34,1.4,.64,1);
+}
+@keyframes pdmFormPop {
+  from { transform: scale(.94); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+/* ── Form header — same violet sweep as the directory popup ── */
+.pdm-form-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-shrink: 0;
+  padding: 16px 22px; color: #fff;
+  position: relative; overflow: hidden;
+  background: linear-gradient(115deg, #7c3aed 0%, #8b5cf6 45%, #a78bfa 80%, #c4b5fd 100%);
+}
+.pdm-form-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pdm-form-head-icon {
+  width: 38px; height: 38px; border-radius: 11px;
+  background: rgba(255,255,255,.20);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.pdm-form-head-title {
+  font-size: 16px; font-weight: 800; line-height: 1.2;
+  color: #fff; letter-spacing: -.2px;
+}
+.pdm-form-head-sub {
+  font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.88);
+  margin-top: 3px;
+}
+.pdm-form-close {
+  width: 30px; height: 30px; border: none; cursor: pointer;
+  background: rgba(255,255,255,.20); color: #fff; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.pdm-form-close:hover:not(:disabled) { background: rgba(255,255,255,.34); }
+.pdm-form-close:disabled { opacity: .55; cursor: not-allowed; }
+
+/* ── Body ── */
+.pdm-form-body {
+  flex: 1; overflow-y: auto;
+  padding: 20px 22px;
+  background: #faf5ff;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.pdm-form-field { display: flex; flex-direction: column; gap: 6px; }
+.pdm-form-grid-2 {
+  display: grid; gap: 14px;
+  grid-template-columns: 1fr 1fr;
+}
+.pdm-form-label {
+  font-size: 10.5px; font-weight: 800;
+  color: #6d28d9; letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.pdm-form-req { color: #ef4444; font-weight: 800; margin-left: 2px; }
+
+/* ── Input with icon prefix (quantity + target price) ── */
+.pdm-form-input-wrap {
+  display: flex; align-items: center;
+  background: #fff;
+  border: 1.5px solid #e9d5ff;
+  border-radius: 10px;
+  height: 40px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.pdm-form-input-wrap:focus-within {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.16);
+}
+.pdm-form-input-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 100%;
+  color: #7c3aed;
+  font-size: 14px; font-weight: 700;
+  border-right: 1px solid #f3e8ff;
+}
+.pdm-form-input {
+  flex: 1; min-width: 0;
+  height: 100%; padding: 0 12px;
+  border: none; outline: none; background: transparent;
+  font-size: 13px; font-weight: 500; color: #1e293b;
+  font-family: inherit;
+}
+.pdm-form-input::placeholder { color: #cbd5e1; font-weight: 400; }
+
+/* MasterSelect inside the form picks up the same chrome via its
+   class. If your MasterSelect doesn't honour it, the violet border
+   on the wrapper still hints at the form's design language. */
+
+/* ── Helper note (info icon + asterisk reminder) ── */
+.pdm-form-note {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid #ede9fe;
+  border-radius: 10px;
+  font-size: 11.5px; color: #5b21b6; font-weight: 500;
+  line-height: 1.55;
+}
+.pdm-form-note svg { color: #7c3aed; flex-shrink: 0; margin-top: 1px; }
+
+/* ── Footer buttons ── */
+.pdm-form-foot {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px;
+  background: #fff;
+  border-top: 1px solid #f3e8ff;
+}
+.pdm-form-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 10px 22px;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  font-size: 13px; font-weight: 700;
+  font-family: inherit; cursor: pointer;
+  transition: all .15s;
+}
+.pdm-form-btn:disabled { opacity: .55; cursor: not-allowed; }
+.pdm-form-btn-ghost {
+  background: #fff; border-color: #cbd5e1; color: #1e293b;
+  /* Lighter weight than the primary button — Cancel is secondary,
+     so it shouldn't compete with Map Product for emphasis. */
+  font-weight: 500;
+}
+.pdm-form-btn-ghost:hover:not(:disabled) { background: #f8fafc; border-color: #94a3b8; }
+.pdm-form-btn-primary {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, .35);
+}
+.pdm-form-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(124, 58, 237, .45);
+}
+
+/* ── Dark mode for the popup form ── */
+[data-bs-theme="dark"] .pdm-form-modal { background: #14102a; }
+[data-bs-theme="dark"] .pdm-form-body  { background: #1a1538; }
+[data-bs-theme="dark"] .pdm-form-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .pdm-form-input-wrap {
+  background: #1f1845; border-color: rgba(167, 139, 250, .30);
+}
+[data-bs-theme="dark"] .pdm-form-input-wrap:focus-within {
+  border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167, 139, 250, .22);
+}
+[data-bs-theme="dark"] .pdm-form-input-icon {
+  color: #c4b5fd; border-right-color: rgba(167, 139, 250, .20);
+}
+[data-bs-theme="dark"] .pdm-form-input { color: #ede9fe; }
+[data-bs-theme="dark"] .pdm-form-input::placeholder { color: rgba(196, 181, 253, .45); }
+[data-bs-theme="dark"] .pdm-form-note {
+  background: #14102a; border-color: rgba(167, 139, 250, .25); color: #d8b4fe;
+}
+[data-bs-theme="dark"] .pdm-form-note svg { color: #a78bfa; }
+[data-bs-theme="dark"] .pdm-form-foot {
+  background: #14102a; border-top-color: rgba(167, 139, 250, .25);
+}
+[data-bs-theme="dark"] .pdm-form-btn-ghost {
+  background: #1f1845; border-color: rgba(167, 139, 250, .30); color: #ede9fe;
+}
+[data-bs-theme="dark"] .pdm-form-btn-ghost:hover:not(:disabled) { background: #2a2150; }
+
 @media (max-width: 640px) {
   .pdm-backdrop { padding: 0; }
   .pdm-modal { border-radius: 0; max-height: 100vh; }
   .pdm-head-actions { flex-wrap: wrap; }
+  .pdm-foot { flex-direction: column-reverse; gap: 10px; align-items: stretch; }
+  .pdm-foot-close { width: 100%; }
+  .pdm-form-backdrop { padding: 0; }
+  .pdm-form-modal { border-radius: 0; max-height: 100vh; }
+  .pdm-form-grid-2 { grid-template-columns: 1fr; }
+  .pdm-form-foot { flex-direction: column-reverse; gap: 8px; }
+  .pdm-form-btn { width: 100%; }
 }
 `;
