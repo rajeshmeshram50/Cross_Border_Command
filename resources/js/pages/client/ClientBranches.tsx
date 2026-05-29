@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Col, Row, Input, Spinner } from 'reactstrap';
+import { Col, Row, Input } from 'reactstrap';
 import api from '../../api';
+import { ShimmerTableRows } from '../../components/ui/Shimmer';
 
 interface Props {
   clientId: number;
@@ -210,7 +211,7 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={6} className="text-center py-5"><Spinner color="primary" /></td></tr>
+                    <ShimmerTableRows rows={5} cols={6} />
                   ) : filtered.length === 0 ? (
                     <tr><td colSpan={6} className="text-center text-muted py-5">No branches found</td></tr>
                   ) : filtered.map(b => {

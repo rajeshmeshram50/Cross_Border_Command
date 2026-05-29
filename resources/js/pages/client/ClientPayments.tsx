@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Col, Row, Spinner } from 'reactstrap';
+import { Col, Row } from 'reactstrap';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import api from '../../api';
+import { ShimmerTable } from '../../components/ui/Shimmer';
 
 interface Props {
   clientId: number;
@@ -276,22 +277,27 @@ export default function ClientPayments({ clientId, onBack }: Props) {
             </Row>
 
             {/* ── Table ── */}
-            <TableContainer
-              columns={columns}
-              data={payments}
-              isGlobalFilter={true}
-              customPageSize={10}
-              tableClass="align-middle table-nowrap mb-0 "
-              theadClass="table-light"
-              divClass="table-responsive table-card border rounded"
-              SearchPlaceholder="Search by plan, txn ID, method..."
-            />
-            {loading && <div className="text-center py-5"><Spinner color="primary" /></div>}
-            {!loading && payments.length === 0 && (
-              <div className="text-center text-muted py-5">
-                <i className="ri-bill-line display-4 d-block mb-2"></i>
-                No payment records for this client yet.
-              </div>
+            {loading ? (
+              <ShimmerTable rows={6} cols={8} />
+            ) : (
+              <>
+                <TableContainer
+                  columns={columns}
+                  data={payments}
+                  isGlobalFilter={true}
+                  customPageSize={10}
+                  tableClass="align-middle table-nowrap mb-0 "
+                  theadClass="table-light"
+                  divClass="table-responsive table-card border rounded"
+                  SearchPlaceholder="Search by plan, txn ID, method..."
+                />
+                {payments.length === 0 && (
+                  <div className="text-center text-muted py-5">
+                    <i className="ri-bill-line display-4 d-block mb-2"></i>
+                    No payment records for this client yet.
+                  </div>
+                )}
+              </>
             )}
           </div>
         </Col>

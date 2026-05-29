@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type CSSProperties } from 'react';
 import { Card, CardBody, Col, Row, Input, Spinner, Alert, Form, InputGroup, InputGroupText } from 'reactstrap';
 import api from '../../api';
+import { Shimmer } from '../../components/ui/Shimmer';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { bustClientFormBundle } from '../client/clientFormBundleCache';
@@ -225,7 +226,63 @@ export default function AddPlan({ onBack, editId }: Props) {
   );
 
   if (loadingData) {
-    return <div className="text-center py-5"><Spinner color="primary" /> <span className="ms-2 text-muted">Loading plan...</span></div>;
+    const shimCard: CSSProperties = {
+      background: 'var(--shim-card-bg, #fff)',
+      border: '1px solid var(--shim-border, #e5e7eb)',
+      borderRadius: 16,
+      padding: 20,
+    };
+    return (
+      <>
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <Shimmer width={36} height={36} radius={999} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Shimmer width={160} height={16} />
+            <Shimmer width={240} height={11} />
+          </div>
+        </div>
+        <Row className="g-3">
+          {/* Left: form fields card */}
+          <Col xl={8}>
+            <div style={shimCard}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+                <Shimmer width={32} height={32} radius={8} />
+                <Shimmer width={180} height={14} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16 }}>
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <Shimmer width={`${45 + (i % 3) * 12}%`} height={10} />
+                    <Shimmer width="100%" height={38} radius={8} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Col>
+          {/* Right: modules / summary card */}
+          <Col xl={4}>
+            <div style={{ ...shimCard, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Shimmer width={32} height={32} radius={8} />
+                <Shimmer width={140} height={14} />
+              </div>
+              <Shimmer width="100%" height={38} radius={8} />
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <Shimmer width={28} height={28} radius={8} />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <Shimmer width="70%" height={11} />
+                    <Shimmer width="45%" height={9} />
+                  </div>
+                  <Shimmer width={64} height={24} radius={999} />
+                </div>
+              ))}
+            </div>
+          </Col>
+        </Row>
+      </>
+    );
   }
 
   return (
