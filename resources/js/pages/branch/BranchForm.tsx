@@ -695,8 +695,8 @@ export default function BranchForm({ onBack, editId }: Props) {
     <div className="p-3">
       <div
         style={{
-          background: 'var(--vz-card-bg, #fff)',
-          border: '1px solid var(--vz-border-color)',
+          background: 'var(--shim-card-bg, #fff)',
+          border: '1px solid var(--shim-border, #e5e7eb)',
           borderRadius: 16,
           padding: 24,
           marginBottom: 16,
@@ -714,8 +714,8 @@ export default function BranchForm({ onBack, editId }: Props) {
         <div
           key={sectionIdx}
           style={{
-            background: 'var(--vz-card-bg, #fff)',
-            border: '1px solid var(--vz-border-color)',
+            background: 'var(--shim-card-bg, #fff)',
+            border: '1px solid var(--shim-border, #e5e7eb)',
             borderRadius: 16,
             padding: 20,
             marginBottom: 14,

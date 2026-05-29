@@ -100,6 +100,16 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
     }
   };
 
+  // Swiper's loop mode needs noticeably more physical slides than fit on
+  // screen to build its clone buffer. With only a handful of plans it can't,
+  // so the carousel dead-stops on the last card instead of wrapping. Repeating
+  // the set until there are enough slides lets the loop wrap seamlessly — the
+  // first card appears right after the last. Composite keys (id + position)
+  // keep React keys unique across the repeated copies.
+  const loopSlides = plans.length > 1 && plans.length < 8
+    ? Array.from({ length: Math.ceil(8 / plans.length) }).flatMap(() => plans)
+    : plans;
+
   return (
     <>
 
@@ -213,7 +223,7 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
             watchSlidesProgress={true}
             className="plans-swiper plans-swiper-center pb-5"
           >
-          {plans.map((p) => {
+          {loopSlides.map((p, slideIdx) => {
             const modules = p.modules || [];
             const moduleCount = modules.length;
             const periodShort = p.period === 'month' ? 'mo' : p.period === 'quarter' ? 'qtr' : p.period === 'year' ? 'yr' : p.period;
@@ -233,7 +243,7 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
               ...(p.yearly_discount && p.yearly_discount > 0 ? [{ label: `${p.yearly_discount}% yearly discount` }] : []),
             ];
             return (
-              <SwiperSlide key={p.id}>
+              <SwiperSlide key={`${p.id}-${slideIdx}`}>
                 <Card
                   className={`w-100 mb-0 position-relative d-flex flex-column plan-card-animated plan-card-v2 ${p.is_featured ? 'is-featured' : ''}`}
                   style={{
