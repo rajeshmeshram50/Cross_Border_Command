@@ -107,6 +107,53 @@ export const SALES_MATRIX_DETAIL_CSS = `
   z-index: 1;
 }
 
+/* WhatsApp Status — green pill that lives at the head of the meta row
+   (relocated from the action toolbar). Solid green gradient with a
+   translucent-white icon badge on the left, matching the prototype's
+   header design. When the lead is marked connected the pill gets a
+   slightly deeper green + small status dot. */
+.smd-hdr-wa {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 14px 6px 6px;
+  border: none; cursor: pointer;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 55%, #15803d 100%);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(34, 197, 94, .35), inset 0 1px 0 rgba(255, 255, 255, .25);
+  font-family: inherit;
+  transition: transform .12s, box-shadow .15s, filter .15s;
+}
+.smd-hdr-wa:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(34, 197, 94, .45), inset 0 1px 0 rgba(255, 255, 255, .25);
+  filter: brightness(1.05);
+}
+.smd-hdr-wa-icon {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .22);
+  color: #fff;
+  flex-shrink: 0;
+}
+.smd-hdr-wa-icon svg { width: 14px; height: 14px; }
+.smd-hdr-wa-text {
+  font-size: 12.5px; font-weight: 700; letter-spacing: .01em;
+  white-space: nowrap;
+}
+/* Connected variant — slightly deeper gradient + tiny status dot
+   appended after the label so the user can see at a glance that
+   WhatsApp communication is already on record. */
+.smd-hdr-wa-on {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 55%, #166534 100%);
+}
+.smd-hdr-wa-on .smd-hdr-wa-text::after {
+  content: ''; display: inline-block; vertical-align: middle;
+  width: 6px; height: 6px; margin-left: 7px;
+  border-radius: 50%; background: #bbf7d0;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .25);
+}
+
 /* 3-dot vertical separator between pills */
 .smd-cust-sep {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -995,6 +1042,16 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 [data-bs-theme="dark"] .smd-root .smd-act:hover .smd-act-icon,
 [data-bs-theme="dark"] .smd-root .smd-act:hover .smd-act-trail { color: #fff; }
+/* Header WhatsApp pill — keep the green wash in dark mode but soften
+   the glow so it doesn't blow out against the darker banner. */
+[data-bs-theme="dark"] .smd-root .smd-hdr-wa {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 55%, #14532d 100%);
+  box-shadow: 0 3px 12px rgba(22, 163, 74, .45), inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+[data-bs-theme="dark"] .smd-root .smd-hdr-wa-on {
+  background: linear-gradient(135deg, #15803d 0%, #166534 55%, #14532d 100%);
+}
+
 [data-bs-theme="dark"] .smd-root .smd-act-wa {
   background: linear-gradient(135deg, rgba(16,185,129,.18), rgba(16,185,129,.10));
   border-color: rgba(110, 231, 183, .45);

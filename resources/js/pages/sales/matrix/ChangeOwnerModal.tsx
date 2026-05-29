@@ -82,14 +82,8 @@ export default function ChangeOwnerModal(props: {
         <div className="com-body">
           {/* Current owner card */}
           <div className="com-current">
-            <div className="com-current-avatar">
-              {isUnassigned ? (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2">
-                  <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-              ) : (
-                <span>{currentOwner.charAt(0).toUpperCase()}</span>
-              )}
+            <div className={`com-current-avatar ${isUnassigned ? 'com-current-avatar-q' : ''}`}>
+              {isUnassigned ? <span aria-hidden>?</span> : <span>{currentOwner.charAt(0).toUpperCase()}</span>}
             </div>
             <div className="com-current-meta">
               <div className="com-current-label">Current Owner</div>
@@ -161,12 +155,14 @@ const SCOPED_CSS = `
 .com-modal *, .com-modal *::before, .com-modal *::after { box-sizing: border-box; }
 
 .com-head {
+  /* Lighter 4-stop violet sweep matching the prototype + the rest of
+     the matrix modals (Product Directory, Map Product form). */
   position: relative;
   padding: 16px 22px;
-  background: linear-gradient(115deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%);
+  background: linear-gradient(115deg, #7c3aed 0%, #8b5cf6 45%, #a78bfa 80%, #c4b5fd 100%);
   color: #fff;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  overflow: hidden;
+  overflow: hidden; flex-shrink: 0;
 }
 .com-head::after {
   content: ''; position: absolute;
@@ -217,6 +213,14 @@ const SCOPED_CSS = `
   font-size: 18px; font-weight: 700;
   flex-shrink: 0;
 }
+/* Question-mark avatar — quiet slate fill with a bold "?" glyph for
+   the Unassigned state, matching the prototype. */
+.com-current-avatar-q {
+  background: #e2e8f0;
+  color: #64748b;
+  font-size: 22px; font-weight: 800;
+  line-height: 1;
+}
 .com-current-meta { flex: 1; min-width: 0; }
 .com-current-label {
   font-size: 10px; font-weight: 700; letter-spacing: .08em;
@@ -228,9 +232,9 @@ const SCOPED_CSS = `
 }
 .com-unassigned-pill {
   padding: 4px 12px; border-radius: 999px;
-  background: #f1f5f9; color: #64748b;
+  background: #ede9fe; color: #6d28d9;
   font-size: 11px; font-weight: 600;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #ddd6fe;
 }
 
 /* Vertical arrow link */
@@ -248,7 +252,9 @@ const SCOPED_CSS = `
 .com-arrow-wrap::before { left: 0; }
 .com-arrow-wrap::after  { right: 0; }
 .com-arrow {
-  width: 34px; height: 34px; border-radius: 50%;
+  /* Rounded square (was a full circle) matching the prototype's
+     "flow-step" chip silhouette. */
+  width: 34px; height: 34px; border-radius: 10px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
   display: inline-flex; align-items: center; justify-content: center;
   box-shadow: 0 4px 12px rgba(124, 58, 237, .35);
@@ -258,7 +264,7 @@ const SCOPED_CSS = `
 /* Field */
 .com-field { display: flex; flex-direction: column; gap: 8px; }
 .com-field-label {
-  font-size: 10.5px; font-weight: 500;
+  font-size: 10.5px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase;
   color: #5b21b6;
 }
@@ -294,8 +300,8 @@ const SCOPED_CSS = `
 }
 .com-btn-ghost, .com-btn-primary {
   display: inline-flex; align-items: center; gap: 8px;
-  height: 38px; padding: 0 18px;
-  border-radius: 10px;
+  height: 34px; padding: 0 16px;
+  border-radius: 9px;
   font-family: inherit; font-size: 13px; font-weight: 600;
   cursor: pointer;
   transition: background .15s, border-color .15s, transform .12s, box-shadow .15s;
