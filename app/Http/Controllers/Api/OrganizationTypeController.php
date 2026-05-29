@@ -41,6 +41,9 @@ class OrganizationTypeController extends Controller
 
         $type = OrganizationType::create($data);
 
+        // Org types feed the cached client form-bundle dropdown — refresh it.
+        \App\Support\MasterBundleCache::bump();
+
         return response()->json($type, 201);
     }
 
@@ -67,6 +70,8 @@ class OrganizationTypeController extends Controller
 
         $organizationType->update($data);
 
+        \App\Support\MasterBundleCache::bump();
+
         return response()->json($organizationType);
     }
 
@@ -83,6 +88,8 @@ class OrganizationTypeController extends Controller
         }
 
         $organizationType->delete();
+
+        \App\Support\MasterBundleCache::bump();
 
         return response()->json(['message' => 'Organization type deleted']);
     }

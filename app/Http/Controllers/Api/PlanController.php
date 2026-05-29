@@ -118,6 +118,9 @@ class PlanController extends Controller
 
         $plan->load('modules:id,name,slug,icon');
 
+        // Plans appear in the cached client form-bundle dropdown — refresh it.
+        \App\Support\MasterBundleCache::bump();
+
         return response()->json(['message' => 'Plan created successfully', 'plan' => $plan], 201);
     }
 
@@ -201,6 +204,8 @@ class PlanController extends Controller
 
         $plan->load('modules:id,name,slug,icon');
 
+        \App\Support\MasterBundleCache::bump();
+
         return response()->json(['message' => 'Plan updated successfully', 'plan' => $plan]);
     }
 
@@ -214,6 +219,8 @@ class PlanController extends Controller
             PlanModule::where('plan_id', $plan->id)->delete();
             $plan->delete();
         });
+
+        \App\Support\MasterBundleCache::bump();
 
         return response()->json(['message' => 'Plan deleted successfully']);
     }

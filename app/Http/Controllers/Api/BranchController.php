@@ -782,7 +782,7 @@ class BranchController extends Controller
     public function formBundle(Request $request)
     {
         $user = $request->user();
-        $cacheKey = 'branch:form-bundle:masters:user:' . ($user?->id ?? 'guest');
+        $cacheKey = \App\Support\MasterBundleCache::key('branch:form-bundle:masters', $user?->id);
 
         // Masters portion — cached. Countries + states are global lookups
         // but MasterVisibility::applyReadScope is still applied so any

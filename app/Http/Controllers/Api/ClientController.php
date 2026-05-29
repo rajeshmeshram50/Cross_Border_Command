@@ -691,7 +691,7 @@ class ClientController extends Controller
     public function formBundle(Request $request)
     {
         $user = $request->user();
-        $cacheKey = 'client:form-bundle:user:' . ($user?->id ?? 'guest');
+        $cacheKey = \App\Support\MasterBundleCache::key('client:form-bundle', $user?->id);
 
         $bundle = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
             // Tenant safety — apply MasterVisibility::applyReadScope to every

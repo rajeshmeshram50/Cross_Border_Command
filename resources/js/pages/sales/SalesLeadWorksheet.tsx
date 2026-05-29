@@ -808,12 +808,14 @@ export default function SalesLeadWorksheet() {
                     <td style={{ color: '#64748b' }}>{l.date}</td>
                     <td style={{ color: '#64748b' }}>{l.source}</td>
                     <td>
-                      <div className="lwp-asgn">
-                        <div className={`lwp-av-xs ${ua ? 'u' : ''}`}>{initials(l.assigned)}</div>
-                        <span className={ua ? 'u' : ''}>
-                          {ua ? 'Unassigned' : l.assigned}
-                        </span>
-                      </div>
+                      <Tooltip label={l.assigned} disabled={ua || !l.assigned}>
+                        <div className="lwp-asgn">
+                          <div className={`lwp-av-xs ${ua ? 'u' : ''}`}>{initials(l.assigned)}</div>
+                          <span className={ua ? 'u' : ''}>
+                            {ua ? 'Unassigned' : l.assigned}
+                          </span>
+                        </div>
+                      </Tooltip>
                     </td>
                     <td>
                       <span className="lwp-wa-badge"><span className="lwp-wa-dot" />Pending</span>
@@ -824,14 +826,38 @@ export default function SalesLeadWorksheet() {
                         onClick={e => { e.stopPropagation(); onOpenOpp(l.oppId); }}
                       >{l.oppId}</span>
                     </td>
-                    <td><span className="lwp-cust-name">{l.customer}</span></td>
-                    <td style={{ color: '#64748b', fontSize: 11.5 }}>{l.phone}</td>
-                    <td style={{ color: '#64748b', fontSize: 11.5 }}>{l.email}</td>
-                    <td style={{ color: '#64748b' }}>
-                      {l.product === '—' ? <span style={{ color: '#cbd5e1' }}>—</span> : l.product}
+                    <td>
+                      <Tooltip label={l.customer} disabled={!l.customer}>
+                        <span className="lwp-cust-name">{l.customer}</span>
+                      </Tooltip>
+                    </td>
+                    <td style={{ color: '#64748b', fontSize: 11.5 }}>
+                      <Tooltip label={l.phone} disabled={!l.phone || l.phone === '—'}>
+                        <span>{l.phone}</span>
+                      </Tooltip>
+                    </td>
+                    <td style={{ color: '#64748b', fontSize: 11.5 }}>
+                      <Tooltip label={l.email} disabled={!l.email || l.email === '—'}>
+                        <span>{l.email}</span>
+                      </Tooltip>
                     </td>
                     <td style={{ color: '#64748b' }}>
-                      {l.company === '—' ? <span style={{ color: '#cbd5e1' }}>—</span> : l.company}
+                      {l.product === '—' ? (
+                        <span style={{ color: '#cbd5e1' }}>—</span>
+                      ) : (
+                        <Tooltip label={l.product}>
+                          <span>{l.product}</span>
+                        </Tooltip>
+                      )}
+                    </td>
+                    <td style={{ color: '#64748b' }}>
+                      {l.company === '—' ? (
+                        <span style={{ color: '#cbd5e1' }}>—</span>
+                      ) : (
+                        <Tooltip label={l.company}>
+                          <span>{l.company}</span>
+                        </Tooltip>
+                      )}
                     </td>
                     <td><span className="lwp-ctag">{l.country}</span></td>
                     <td>

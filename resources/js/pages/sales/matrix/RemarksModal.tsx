@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../contexts/ToastContext';
+import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Remark — single editable note attached to the opportunity.
@@ -28,6 +29,8 @@ export default function RemarksModal(props: {
 
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   // Re-seed on every open so pre-fill stays in sync after a save +
   // reopen, and so dismiss-without-save discards an in-progress edit.
@@ -63,9 +66,20 @@ export default function RemarksModal(props: {
 
   const handleClear = () => {
     if (!hasExisting) return;
-    if (!confirm('Clear the existing remark? This cannot be undone.')) return;
-    setDraft('');
-    void onSave?.('');
+    /* Opens the themed DeleteConfirmModal — replaces the previous
+     * browser-native `confirm()` dialog that surfaced the ugly
+     * "localhost:8000 says" banner. */
+    setClearConfirmOpen(true);
+  };
+  const confirmClear = async () => {
+    setClearing(true);
+    try {
+      setDraft('');
+      await onSave?.('');
+      setClearConfirmOpen(false);
+    } finally {
+      setClearing(false);
+    }
   };
 
   return createPortal((
@@ -80,10 +94,8 @@ export default function RemarksModal(props: {
               </svg>
             </div>
             <div>
-              <div className="rmk-head-title">Remark</div>
-              <div className="rmk-head-sub">
-                {hasExisting ? 'Edit the remark for this opportunity' : 'Add a remark to this opportunity'}
-              </div>
+              <div className="rmk-head-title">Remarks</div>
+              <div className="rmk-head-sub">Add or view remarks for this opportunity</div>
             </div>
           </div>
           <button className="rmk-close" onClick={onClose} aria-label="Close">
@@ -95,7 +107,7 @@ export default function RemarksModal(props: {
 
         <div className="rmk-body">
           <label className="rmk-label">
-            {hasExisting ? 'Your remark' : 'Write your remark'} <span className="rmk-req">*</span>
+            Write Your Remark <span className="rmk-req">*</span>
           </label>
           <textarea
             className="rmk-textarea"
@@ -106,32 +118,43 @@ export default function RemarksModal(props: {
             disabled={saving}
           />
 
-          {hasExisting && (
-            <div className="rmk-existing-hint">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
-              </svg>
-              <span>This opportunity already has a remark — editing will overwrite it.</span>
+          {/* ── Stored remarks panel ── single-remark backend so the count
+              is 0 or 1; matches the prototype's design language without
+              promising a thread that doesn't exist yet. */}
+          <div className="rmk-stored">
+            <div className="rmk-stored-head">
+              <div className="rmk-stored-chip" aria-hidden>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 12 7 12 10 5 14 19 17 12 21 12" />
+                </svg>
+              </div>
+              <span className="rmk-stored-label">Stored Remarks</span>
+              <span className="rmk-stored-count">{hasExisting ? 1 : 0}</span>
             </div>
-          )}
+            {hasExisting ? (
+              <div className="rmk-stored-item">
+                <span className="rmk-stored-item-text">{currentRemark}</span>
+                <button
+                  type="button"
+                  className="rmk-stored-clear"
+                  onClick={handleClear}
+                  disabled={saving}
+                  title="Remove the saved remark"
+                  aria-label="Clear remark"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <div className="rmk-stored-empty">No remarks added yet.</div>
+            )}
+          </div>
         </div>
 
         <div className="rmk-foot">
-          {hasExisting && (
-            <button
-              className="rmk-btn-danger"
-              onClick={handleClear}
-              disabled={saving}
-              title="Remove the saved remark"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
-              </svg>
-              Clear
-            </button>
-          )}
           <div className="rmk-foot-right">
             <button className="rmk-btn-ghost" onClick={onClose} disabled={saving}>Close</button>
             <button
@@ -144,11 +167,26 @@ export default function RemarksModal(props: {
                 <polyline points="17 21 17 13 7 13 7 21" />
                 <polyline points="7 3 7 8 15 8" />
               </svg>
-              {saving ? 'Saving…' : (hasExisting ? 'Update Remark' : 'Add Remark')}
+              {saving ? 'Saving…' : 'Save Remark'}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Themed clear-remark confirmation — replaces the native
+          browser confirm() dialog. */}
+      <DeleteConfirmModal
+        open={clearConfirmOpen}
+        title="Clear Remark"
+        itemName="this remark"
+        actionVerb="Clear"
+        confirmLabel="Clear"
+        confirmingLabel="Clearing…"
+        subMessage="Clearing the remark will remove it from this opportunity. This action cannot be undone."
+        loading={clearing}
+        onClose={() => { if (!clearing) setClearConfirmOpen(false); }}
+        onConfirm={() => void confirmClear()}
+      />
     </div>
   ), document.body);
 }
@@ -179,12 +217,14 @@ const SCOPED_CSS = `
 .rmk-modal *, .rmk-modal *::before, .rmk-modal *::after { box-sizing: border-box; }
 
 .rmk-head {
+  /* Lighter 4-stop violet sweep matching the prototype + the other
+     matrix modals (Product Directory, Map Product, Change Owner). */
   position: relative;
   padding: 16px 22px;
-  background: linear-gradient(115deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%);
+  background: linear-gradient(115deg, #7c3aed 0%, #8b5cf6 45%, #a78bfa 80%, #c4b5fd 100%);
   color: #fff;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  overflow: hidden;
+  overflow: hidden; flex-shrink: 0;
 }
 .rmk-head::after {
   content: ''; position: absolute;
@@ -249,6 +289,71 @@ const SCOPED_CSS = `
   padding: 7px 11px; border-radius: 8px;
 }
 
+/* ── Stored remarks panel — chip + label + count badge, then either
+   the saved remark text or an italic empty-state line. Sits below
+   the textarea on the body's lilac wash. */
+.rmk-stored {
+  display: flex; flex-direction: column; gap: 14px;
+  margin-top: 4px;
+}
+.rmk-stored-head {
+  display: inline-flex; align-items: center; gap: 9px;
+}
+.rmk-stored-chip {
+  width: 22px; height: 22px; border-radius: 7px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 6px rgba(124, 58, 237, .25);
+}
+.rmk-stored-label {
+  font-size: 10.5px; font-weight: 700;
+  color: #5b21b6;
+  letter-spacing: .08em; text-transform: uppercase;
+}
+.rmk-stored-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 6px; border-radius: 999px;
+  background: #7c3aed; color: #fff;
+  font-size: 10px; font-weight: 800;
+}
+.rmk-stored-empty {
+  text-align: center; padding: 18px 12px;
+  font-size: 12px; font-style: italic;
+  color: #a78bfa;
+}
+.rmk-stored-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #ede9fe;
+  border-radius: 10px;
+  font-size: 13px; color: #1e1b4b; font-weight: 500;
+  line-height: 1.55;
+}
+.rmk-stored-item-text {
+  flex: 1; min-width: 0;
+  white-space: pre-wrap; word-break: break-word;
+}
+/* Trash chip anchored to the right edge of the saved remark card.
+   Stays muted at rest, lights up red on hover so the destructive
+   intent reads only when the user reaches for it. */
+.rmk-stored-clear {
+  flex-shrink: 0;
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #fff;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #b91c1c;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.rmk-stored-clear:hover:not(:disabled) {
+  background: #fee2e2; border-color: #fca5a5;
+}
+.rmk-stored-clear:disabled { opacity: .55; cursor: not-allowed; }
+
 .rmk-foot {
   display: flex; justify-content: space-between; align-items: center; gap: 8px;
   padding: 14px 22px;
@@ -284,6 +389,12 @@ const SCOPED_CSS = `
   color: #b91c1c;
 }
 .rmk-btn-danger:hover:not(:disabled) { background: #fee2e2; border-color: #fca5a5; }
+/* Icon-only variant — collapses padding so the button reads as a
+   square trash chip rather than a wide pill with empty text space. */
+.rmk-btn-danger-icon {
+  width: 38px; padding: 0;
+  justify-content: center; gap: 0;
+}
 
 /* Dark mode */
 [data-bs-theme="dark"] .rmk-modal { background: #14102a; color: #ede9fe; }
@@ -303,6 +414,23 @@ const SCOPED_CSS = `
   background: rgba(239,68,68,.10); border-color: rgba(248,113,113,.35); color: #fca5a5;
 }
 [data-bs-theme="dark"] .rmk-btn-danger:hover:not(:disabled) { background: rgba(239,68,68,.22); }
+
+[data-bs-theme="dark"] .rmk-stored-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .rmk-stored-empty { color: rgba(196, 181, 253, .65); }
+[data-bs-theme="dark"] .rmk-stored-item {
+  background: #1f1845;
+  border-color: rgba(167, 139, 250, .25);
+  color: #ede9fe;
+}
+[data-bs-theme="dark"] .rmk-stored-clear {
+  background: rgba(239, 68, 68, .14);
+  border-color: rgba(252, 165, 165, .40);
+  color: #fca5a5;
+}
+[data-bs-theme="dark"] .rmk-stored-clear:hover:not(:disabled) {
+  background: rgba(239, 68, 68, .26);
+  border-color: #fca5a5;
+}
 
 @media (max-width: 520px) {
   .rmk-backdrop { padding: 12px; }

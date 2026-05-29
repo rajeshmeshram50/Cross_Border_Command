@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -343,6 +344,10 @@ class MasterController extends Controller
         // Sync any embedded sublist payloads (e.g. legal_entities → banks).
         $this->syncSublists($request, $slug, $row);
 
+        // Invalidate the form-bundle dropdown caches so this new master shows
+        // in the Customer/Product/Vendor/Client/Branch forms immediately.
+        MasterBundleCache::bump();
+
         $row->load(self::OWNERSHIP_WITH);
         return response()->json($this->withOwnership($row), 201);
     }
@@ -382,6 +387,9 @@ class MasterController extends Controller
 
         // Sync any embedded sublist payloads (e.g. legal_entities → banks).
         $this->syncSublists($request, $slug, $row);
+
+        // Edited values may feed cached form-bundle dropdowns — refresh them.
+        MasterBundleCache::bump();
 
         $row->load(self::OWNERSHIP_WITH);
         return response()->json($this->withOwnership($row));
@@ -502,6 +510,10 @@ class MasterController extends Controller
         }
 
         $row->delete();
+
+        // Removing a master must drop it from the cached form-bundle dropdowns.
+        MasterBundleCache::bump();
+
         return response()->json(['message' => 'Deleted']);
     }
 

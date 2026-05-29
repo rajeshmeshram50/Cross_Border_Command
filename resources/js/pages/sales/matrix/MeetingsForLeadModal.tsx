@@ -378,12 +378,16 @@ const MFL_CSS = `
   to   { transform: scale(1);   opacity: 1; }
 }
 
-/* ─── Header (teal gradient) ─── */
+/* ─── Header (cyan gradient) ───
+   Prototype spec: 135° sweep from deep cyan-blue through teal-blue to
+   bright cyan. Distinct from the Reminder modal's emerald-teal family
+   so the two side-by-side popups have a clear visual identity. */
 .mfl-head {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%);
+  gap: 12px;
+  padding: 14px 22px;
+  background: linear-gradient(135deg, #155E75 0%, #0E7490 55%, #0891B2 100%);
   color: #fff;
 }
 .mfl-head::before {
@@ -424,10 +428,11 @@ const MFL_CSS = `
 /* ─── Body ─── */
 .mfl-body {
   padding: 18px 22px;
+  background: #F0FDFA;
   flex: 1; overflow-y: auto;
 }
 .mfl-body::-webkit-scrollbar { width: 5px; }
-.mfl-body::-webkit-scrollbar-thumb { background: rgba(20, 184, 166, .35); border-radius: 999px; }
+.mfl-body::-webkit-scrollbar-thumb { background: rgba(14, 116, 144, .35); border-radius: 999px; }
 
 .mfl-grid {
   display: grid;
@@ -446,7 +451,7 @@ const MFL_CSS = `
 .mfl-lbl-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mfl-lbl {
   font-size: 11px; font-weight: 800; letter-spacing: .08em;
-  color: #0f766e; text-transform: uppercase;
+  color: #0F766E; text-transform: uppercase;
 }
 .mfl-req { color: #ef4444; }
 
@@ -458,14 +463,14 @@ const MFL_CSS = `
   text-transform: uppercase;
 }
 .mfl-pill-fetched {
-  background: rgba(20, 184, 166, .12);
-  border: 1px solid rgba(20, 184, 166, .40);
-  color: #0f766e;
+  background: rgba(14, 116, 144, .12);
+  border: 1px solid rgba(14, 116, 144, .40);
+  color: #0F766E;
 }
 .mfl-pill-dot {
   width: 5px; height: 5px; border-radius: 50%;
-  background: #14b8a6;
-  box-shadow: 0 0 6px rgba(20, 184, 166, .55);
+  background: #0891B2;
+  box-shadow: 0 0 6px rgba(14, 116, 144, .55);
   animation: mfl-pulse 1.4s ease-in-out infinite;
 }
 @keyframes mfl-pulse {
@@ -477,8 +482,8 @@ const MFL_CSS = `
 .mfl-toggle {
   display: flex; gap: 8px;
   padding: 4px;
-  background: rgba(20, 184, 166, .10);
-  border: 1.5px solid rgba(20, 184, 166, .25);
+  background: rgba(14, 116, 144, .10);
+  border: 1.5px solid rgba(14, 116, 144, .25);
   border-radius: 12px;
   margin-bottom: 14px;
 }
@@ -488,24 +493,26 @@ const MFL_CSS = `
   padding: 9px 14px;
   border: none; border-radius: 9px;
   background: transparent;
-  color: #0f766e;
+  color: #0F766E;
   font-family: inherit;
   font-size: 12.5px; font-weight: 700;
   cursor: pointer;
   transition: all .15s;
 }
-.mfl-toggle-btn:hover:not(.active) { background: rgba(20, 184, 166, .14); }
+.mfl-toggle-btn:hover:not(.active) { background: rgba(14, 116, 144, .14); }
 .mfl-toggle-btn.active {
-  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  /* Prototype spec — deep teal → cyan-blue. */
+  background: linear-gradient(135deg, #0F766E, #0E7490);
   color: #fff;
-  box-shadow: 0 3px 10px rgba(20, 184, 166, .35);
+  border-color: #0F766E;
+  box-shadow: 0 3px 10px rgba(15, 118, 110, .30);
 }
 
 /* Inputs */
 .mfl-input {
   width: 100%;
   padding: 9px 12px;
-  border: 1.5px solid rgba(20, 184, 166, .35);
+  border: 1.5px solid rgba(14, 116, 144, .35);
   border-radius: 9px;
   background: #fff;
   font-family: inherit;
@@ -515,8 +522,8 @@ const MFL_CSS = `
 }
 .mfl-input::placeholder { color: #94a3b8; font-weight: 400; }
 .mfl-input:focus {
-  border-color: #0d9488;
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, .18);
+  border-color: #0E7490;
+  box-shadow: 0 0 0 3px rgba(14, 116, 144, .18);
 }
 
 /* MasterSelect + MasterDatePicker + MasterTimePicker triggers — re-skin
@@ -527,7 +534,7 @@ const MFL_CSS = `
 .mfl-modal .master-timepicker-toggle {
   height: 40px;
   background: #fff !important;
-  border: 1.5px solid rgba(20, 184, 166, .35) !important;
+  border: 1.5px solid rgba(14, 116, 144, .35) !important;
   border-radius: 9px !important;
   color: #0f172a !important;
   font-size: 13px;
@@ -538,13 +545,13 @@ const MFL_CSS = `
 .mfl-modal .master-select-toggle:hover:not(:disabled),
 .mfl-modal .master-datepicker-toggle:hover:not(:disabled),
 .mfl-modal .master-timepicker-toggle:hover:not(:disabled) {
-  border-color: rgba(20, 184, 166, .55) !important;
+  border-color: rgba(14, 116, 144, .55) !important;
 }
 .mfl-modal .master-select-wrap.show .master-select-toggle,
 .mfl-modal .master-datepicker-toggle.open,
 .mfl-modal .master-timepicker-toggle.open {
-  border-color: #0d9488 !important;
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, .18) !important;
+  border-color: #0E7490 !important;
+  box-shadow: 0 0 0 3px rgba(14, 116, 144, .18) !important;
 }
 .mfl-modal .master-select-placeholder,
 .mfl-modal .master-datepicker-placeholder,
@@ -555,10 +562,10 @@ const MFL_CSS = `
 }
 .mfl-modal .master-datepicker-icon,
 .mfl-modal .master-timepicker-icon,
-.mfl-modal .master-select-caret { color: #0d9488; }
+.mfl-modal .master-select-caret { color: #0E7490; }
 .mfl-input-ro {
-  background: rgba(20, 184, 166, .08);
-  color: #0f766e;
+  background: rgba(14, 116, 144, .08);
+  color: #0F766E;
   font-weight: 700;
   cursor: not-allowed;
 }
@@ -583,7 +590,7 @@ const MFL_CSS = `
   gap: 12px;
   padding: 14px 20px;
   background: #fff;
-  border-top: 1px solid rgba(20, 184, 166, .20);
+  border-top: 1px solid rgba(14, 116, 144, .20);
 }
 .mfl-foot-note {
   display: inline-flex; align-items: center; gap: 6px;
@@ -591,8 +598,8 @@ const MFL_CSS = `
 }
 .mfl-foot-dot {
   width: 6px; height: 6px; border-radius: 50%;
-  background: #14b8a6;
-  box-shadow: 0 0 4px rgba(20, 184, 166, .55);
+  background: #0891B2;
+  box-shadow: 0 0 4px rgba(14, 116, 144, .55);
 }
 .mfl-foot-actions { display: flex; align-items: center; gap: 8px; }
 
@@ -614,14 +621,16 @@ const MFL_CSS = `
 }
 .mfl-btn-ghost:hover:not(:disabled) { background: #f8fafc; border-color: #94a3b8; }
 .mfl-btn-primary {
-  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  /* Same prototype gradient as the active toggle tab so the
+     "primary action" reads as the same surface across the form. */
+  background: linear-gradient(135deg, #0F766E, #0E7490);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(20, 184, 166, .35);
+  box-shadow: 0 3px 10px rgba(15, 118, 110, .30);
 }
 .mfl-btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #0d9488, #0f766e);
+  background: linear-gradient(135deg, #0E7490, #155E75);
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(20, 184, 166, .45);
+  box-shadow: 0 6px 16px rgba(15, 118, 110, .45);
 }
 
 /* ─── Dark mode ─── */
@@ -632,19 +641,19 @@ const MFL_CSS = `
 [data-bs-theme="dark"] .mfl-lbl  { color: #5eead4; }
 [data-bs-theme="dark"] .mfl-input {
   background: #0f1f1c;
-  border-color: rgba(20, 184, 166, .35);
+  border-color: rgba(14, 116, 144, .35);
   color: #ecfdf5;
 }
 [data-bs-theme="dark"] .mfl-input::placeholder { color: #475569; }
 [data-bs-theme="dark"] .mfl-input:focus {
-  border-color: #14b8a6;
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, .25);
+  border-color: #0891B2;
+  box-shadow: 0 0 0 3px rgba(14, 116, 144, .25);
 }
 [data-bs-theme="dark"] .mfl-modal .master-select-toggle,
 [data-bs-theme="dark"] .mfl-modal .master-datepicker-toggle,
 [data-bs-theme="dark"] .mfl-modal .master-timepicker-toggle {
   background: #0f1f1c !important;
-  border-color: rgba(20, 184, 166, .35) !important;
+  border-color: rgba(14, 116, 144, .35) !important;
   color: #ecfdf5 !important;
 }
 [data-bs-theme="dark"] .mfl-modal .master-select-placeholder,
@@ -653,18 +662,18 @@ const MFL_CSS = `
   color: rgba(94, 234, 212, .50) !important;
 }
 [data-bs-theme="dark"] .mfl-input-ro {
-  background: rgba(20, 184, 166, .12);
+  background: rgba(14, 116, 144, .12);
   color: #5eead4;
 }
 [data-bs-theme="dark"] .mfl-toggle {
-  background: rgba(20, 184, 166, .12);
-  border-color: rgba(20, 184, 166, .35);
+  background: rgba(14, 116, 144, .12);
+  border-color: rgba(14, 116, 144, .35);
 }
 [data-bs-theme="dark"] .mfl-toggle-btn { color: #5eead4; }
-[data-bs-theme="dark"] .mfl-toggle-btn:hover:not(.active) { background: rgba(20, 184, 166, .18); }
+[data-bs-theme="dark"] .mfl-toggle-btn:hover:not(.active) { background: rgba(14, 116, 144, .18); }
 [data-bs-theme="dark"] .mfl-pill-fetched {
-  background: rgba(20, 184, 166, .18);
-  border-color: rgba(20, 184, 166, .45);
+  background: rgba(14, 116, 144, .18);
+  border-color: rgba(14, 116, 144, .45);
   color: #5eead4;
 }
 [data-bs-theme="dark"] .mfl-form-error {
@@ -674,12 +683,12 @@ const MFL_CSS = `
 }
 [data-bs-theme="dark"] .mfl-foot {
   background: #0f1f1c;
-  border-top-color: rgba(20, 184, 166, .25);
+  border-top-color: rgba(14, 116, 144, .25);
 }
 [data-bs-theme="dark"] .mfl-foot-note { color: #94a3b8; }
 [data-bs-theme="dark"] .mfl-btn-ghost {
   background: #1e293b;
-  border-color: rgba(20, 184, 166, .30);
+  border-color: rgba(14, 116, 144, .30);
   color: #d1fae5;
 }
 [data-bs-theme="dark"] .mfl-btn-ghost:hover:not(:disabled) { background: #243b3a; }
