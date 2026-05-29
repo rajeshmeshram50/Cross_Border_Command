@@ -273,7 +273,32 @@ class HiringRequestController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401, 'Authentication required');
-        if ($user->isSuperAdmin()) return;
+        // Tenant-level admins always pass.
+        if ($user->isSuperAdmin())     return;
+        if ($user->isClientAdmin())    return;
+        if ($user->isMainBranchUser()) return;
+
+        // Reporting managers get implicit access without needing an
+        // explicit Permission row. Anyone listed as the manager on at
+        // least one Employee record is the one who actually raises the
+        // hiring request for their direct reports, so making them go
+        // through the Permissions matrix first was just bookkeeping
+        // overhead. Two FK shapes to cover:
+        //   - reporting_manager_user_id → direct User FK (Client /
+        //     Branch users who aren't themselves onboarded as Employees)
+        //   - reporting_manager_id      → Employee FK (managers who ARE
+        //     onboarded; resolve via this user's own Employee row).
+        $isReportingManager = \App\Models\Employee::query()
+            ->where(function ($q) use ($user) {
+                $q->where('reporting_manager_user_id', $user->id)
+                  ->orWhereIn('reporting_manager_id', function ($sub) use ($user) {
+                      $sub->select('id')
+                          ->from('employees')
+                          ->where('user_id', $user->id);
+                  });
+            })
+            ->exists();
+        if ($isReportingManager) return;
 
         $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
         if (!$moduleId) {
@@ -441,7 +466,10 @@ class HiringRequestController extends Controller
             'current_team_gap'       => 'nullable|string',
             'what_if_not_filled'     => 'nullable|string',
 
-            'target_join_date' => 'nullable|date',
+            // Optional, but a date in the past doesn't make sense for a
+            // future hire — backs up the picker's minDate guard so a
+            // crafted POST / legacy row can't smuggle one in.
+            'target_join_date' => 'nullable|date|after_or_equal:today',
             'status'           => ['nullable', Rule::in(self::STATUSES)],
         ]);
     }

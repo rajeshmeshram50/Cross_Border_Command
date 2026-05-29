@@ -233,7 +233,29 @@ class RecruitmentController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401, 'Authentication required');
-        if ($user->isSuperAdmin()) return;
+        // Tenant-level admins always pass.
+        if ($user->isSuperAdmin())     return;
+        if ($user->isClientAdmin())    return;
+        if ($user->isMainBranchUser()) return;
+
+        // Reporting managers get implicit access — they own the hiring
+        // pipeline for their direct reports, so the Recruitment module
+        // is effectively part of their day-to-day. Mirrors the rule in
+        // HiringRequestController so both sides of the flow stay in
+        // sync. Two FK shapes — reporting_manager_user_id (direct User
+        // FK) and reporting_manager_id (Employee FK, resolved through
+        // this user's own employees.user_id row).
+        $isReportingManager = \App\Models\Employee::query()
+            ->where(function ($q) use ($user) {
+                $q->where('reporting_manager_user_id', $user->id)
+                  ->orWhereIn('reporting_manager_id', function ($sub) use ($user) {
+                      $sub->select('id')
+                          ->from('employees')
+                          ->where('user_id', $user->id);
+                  });
+            })
+            ->exists();
+        if ($isReportingManager) return;
 
         $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
         if (!$moduleId) {
