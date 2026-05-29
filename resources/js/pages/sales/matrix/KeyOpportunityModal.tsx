@@ -119,12 +119,15 @@ const SCOPED_CSS = `
 .kop-modal *, .kop-modal *::before, .kop-modal *::after { box-sizing: border-box; }
 
 .kop-head {
+  /* Lighter 4-stop violet sweep matching the prototype + the rest of
+     the matrix modals (Product Directory, Map Product, Change Owner,
+     Remarks). */
   position: relative;
   padding: 16px 22px;
-  background: linear-gradient(115deg, #a855f7 0%, #8b5cf6 55%, #7c3aed 100%);
+  background: linear-gradient(115deg, #7c3aed 0%, #8b5cf6 45%, #a78bfa 80%, #c4b5fd 100%);
   color: #fff;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  overflow: hidden;
+  overflow: hidden; flex-shrink: 0;
 }
 .kop-head::after {
   content: ''; position: absolute;
@@ -188,10 +191,10 @@ const SCOPED_CSS = `
   background: #fff;
 }
 .kop-btn-ghost, .kop-btn-primary {
-  display: inline-flex; align-items: center; gap: 8px;
-  height: 40px; padding: 0 22px;
-  border-radius: 10px;
-  font-family: inherit; font-size: 13px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 13px;
+  border-radius: 8px;
+  font-family: inherit; font-size: 12px; font-weight: 600;
   cursor: pointer;
   transition: background .15s, border-color .15s, transform .12s, box-shadow .15s;
 }
