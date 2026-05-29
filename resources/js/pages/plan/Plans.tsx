@@ -4,6 +4,7 @@ import { Card, CardBody, Badge, Button, Spinner, Modal, ModalBody } from 'reacts
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination, Autoplay } from 'swiper/modules';
 import { useToast } from '../../contexts/ToastContext';
+import { ShimmerPlanCards } from '../../components/ui/Shimmer';
 import api from '../../api';
 import Swal from 'sweetalert2';
 import { bustClientFormBundle } from '../client/clientFormBundleCache';
@@ -160,7 +161,7 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
         </div>
 
       {loading ? (
-        <div className="text-center py-3"><Spinner color="primary" /></div>
+        <ShimmerPlanCards count={4} />
       ) : plans.length === 0 ? (
         <Card>
           <CardBody className="text-center py-5">
