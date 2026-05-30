@@ -155,7 +155,67 @@ class CustomerController extends Controller
             ->forUser($user)
             ->with(['primaryAddress', 'addresses'])
             ->findOrFail($id);
-        return response()->json(['data' => $this->shape($row)]);
+
+        /* Stage 2 + Stage 3 data embedded inline.
+         *
+         * The AddCustomerModal edit-mode previously fired 4 parallel HTTP
+         * requests on open (/customers/{id} + /customers/{id}/documents +
+         * /customers/{id}/owners + /segment-uploads/customer/{id}). On the
+         * single-threaded `php artisan serve` and even on a multi-process
+         * Apache, each request paid a ~500ms Laravel framework boot tax.
+         * Result: edit-modal opens cost 2-5 sec of pure framework overhead
+         * even though the SQL was sub-50ms.
+         *
+         * Bundling the three nested resources into this response collapses
+         * 4 round-trips into 1 — same proven pattern we used for
+         * ClientPermissions (embedded admin_permissions in clients/{id}).
+         *
+         * Each delegated controller's index() reuses its own resolveCustomer()
+         * which applies the same `forUser` tenant scope, so security stays
+         * exactly where it was. Wrapped in try/catch so a single nested
+         * controller's failure (e.g. segment_uploads 404 on a customer with
+         * no uploads yet) does not break the entire show() response — the
+         * key just lands as an empty list and the frontend falls back to
+         * its existing on-tab fetch.
+         */
+        $documents = $this->safeDelegate(
+            fn () => (new CustomerDocumentController())->index($request, $id)
+        );
+        $owners = $this->safeDelegate(
+            fn () => (new CustomerOwnerController())->index($request, $id)
+        );
+        $segmentUploads = $this->safeDelegate(
+            fn () => (new SegmentDocUploadController())->index($request, 'customer', $id)
+        );
+
+        return response()->json([
+            'data'            => $this->shape($row),
+            'documents'       => $documents['data'] ?? [],
+            'owners'          => $owners['data'] ?? [],
+            // segment_uploads keeps its full shape (data + by_category + count)
+            // because the frontend reads `data[].category` for the per-tab
+            // bucketing in Stage 2 KYC. Fallback to a stable empty shape so
+            // consumers don't have to null-check.
+            'segment_uploads' => $segmentUploads ?: ['data' => [], 'by_category' => [], 'count' => 0],
+        ]);
+    }
+
+    /**
+     * Run a delegated controller call and unwrap its JSON response, returning
+     * `null` on any failure. Used by show() to embed nested resources without
+     * letting a single inner failure (404, validation, etc.) take down the
+     * whole response. Caller decides how to default the missing key.
+     */
+    private function safeDelegate(\Closure $call): ?array
+    {
+        try {
+            $res = $call();
+            $decoded = json_decode($res->getContent(), true);
+            return is_array($decoded) ? $decoded : null;
+        } catch (\Throwable $e) {
+            \Log::warning('CustomerController::show safeDelegate failed: ' . $e->getMessage());
+            return null;
+        }
     }
 
     public function store(Request $request): JsonResponse

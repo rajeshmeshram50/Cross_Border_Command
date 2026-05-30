@@ -117,7 +117,52 @@ class VendorController extends Controller
     {
         $user = $request->user();
         $vendor = Vendor::query()->forUser($user)->with(self::SHOW_WITH)->findOrFail($id);
-        return response()->json(['data' => $this->shape($vendor)]);
+
+        /* Segment-rule reference uploads embedded inline. AddVendorModal
+         * previously fired GET /segment-uploads/supplier/{id} as a
+         * second round-trip on edit-mode open; on `php artisan serve`
+         * that single-threaded server made each call pay the full
+         * Laravel boot tax. Bundling it into the show response collapses
+         * 2 round-trips into 1 — same proven pattern we used for
+         * Customer + Consignee.
+         *
+         * Vendor docs / owners / bank accounts / addresses already
+         * arrive via the SHOW_WITH eager load, so they do NOT need
+         * delegation (unlike Customer / Consignee where each was a
+         * separate controller). Only segment_uploads remains as an
+         * external resource — keep its full shape (data + by_category
+         * + count) so the frontend's per-tab bucketing still works.
+         *
+         * Wrapped in try/catch so a single inner failure (e.g. fresh
+         * vendor with zero uploads returning an empty list) cannot
+         * break the whole show response.
+         */
+        $segmentUploads = $this->safeDelegate(
+            fn () => (new \App\Http\Controllers\Api\SegmentDocUploadController())->index($request, 'supplier', $id)
+        );
+
+        return response()->json([
+            'data'            => $this->shape($vendor),
+            'segment_uploads' => $segmentUploads ?: ['data' => [], 'by_category' => [], 'count' => 0],
+        ]);
+    }
+
+    /**
+     * Run a delegated controller call and unwrap its JSON response,
+     * returning `null` on any failure. Used by show() to embed nested
+     * resources without letting a single inner failure take down the
+     * whole response. Caller decides how to default the missing key.
+     */
+    private function safeDelegate(\Closure $call): ?array
+    {
+        try {
+            $res = $call();
+            $decoded = json_decode($res->getContent(), true);
+            return is_array($decoded) ? $decoded : null;
+        } catch (\Throwable $e) {
+            \Log::warning('VendorController::show safeDelegate failed: ' . $e->getMessage());
+            return null;
+        }
     }
 
     public function destroy(Request $request, int $id): JsonResponse
