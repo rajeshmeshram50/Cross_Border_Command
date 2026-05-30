@@ -32,6 +32,13 @@ export default function Stage1InquiryReceived({ header, onNext, reloadLead }: St
    * Mirrors Stage 2/3/4's onSaveAndNext pattern. */
   const onSaveAndNext = async () => {
     if (inFlightRef.current || advancing) return;
+    /* Purchase Decision Maker must be captured before advancing. The button
+     * is no longer disabled, so the click lands here and we surface the
+     * requirement as a toast instead of silently doing nothing. */
+    if (!tm?.name || !tm?.mobile_no || !tm?.email) {
+      toast.warning('Incomplete', 'Fill in the Purchase Decision Maker details to proceed to the next stage.');
+      return;
+    }
     if (!header.leadId) {
       // No lead id in context (deep-link without backing row) — just
       // navigate, nothing to persist.
@@ -82,7 +89,7 @@ export default function Stage1InquiryReceived({ header, onNext, reloadLead }: St
           </div>
           <div>
             <div className="smd-stg-head-title">Stage 1: Inquiry Received</div>
-            <div className="smd-stg-head-sub">● Lead inquiry captured and logged</div>
+            <div className="smd-stg-head-sub"><span className="smd-stg-head-dot" />Lead inquiry captured and logged</div>
           </div>
         </div>
         <span className={`smd-stg-head-badge s1-badge s1-badge-${status}`}>
@@ -110,9 +117,7 @@ export default function Stage1InquiryReceived({ header, onNext, reloadLead }: St
             <Cell label="OPPORTUNITY DATE" value={header.oppDate} />
             <Cell label="CUSTOMER NAME"    value={header.customer} />
             <Cell label="BUYING PLAN"      value={buyingPlanDate} muted={buyingPlanDate === '—'} />
-          </div>
-          <div className="s1-grid-1">
-            <Cell label="ORDER VALUE" value={orderValue} muted={orderValue === '—'} />
+            <Cell label="ORDER VALUE"      value={orderValue} muted={orderValue === '—'} full />
           </div>
         </div>
 
@@ -130,9 +135,7 @@ export default function Stage1InquiryReceived({ header, onNext, reloadLead }: St
           <div className="smd-sect-grid">
             <Cell label="NAME"          value={dmName}   muted={dmName   === '—'} />
             <Cell label="MOBILE NUMBER" value={dmMobile} muted={dmMobile === '—'} />
-          </div>
-          <div className="s1-grid-1">
-            <Cell label="EMAIL" value={dmEmail} muted={dmEmail === '—'} />
+            <Cell label="EMAIL"         value={dmEmail}  muted={dmEmail   === '—'} full />
           </div>
         </div>
 
@@ -160,7 +163,7 @@ export default function Stage1InquiryReceived({ header, onNext, reloadLead }: St
           type="button"
           className="smd-stg-btn smd-stg-btn-primary"
           onClick={() => void onSaveAndNext()}
-          disabled={advancing || !tm?.name || !tm?.mobile_no || !tm?.email}
+          disabled={advancing}
         >
           {advancing ? 'Advancing…' : 'Save & Next →'}
         </button>
@@ -169,9 +172,9 @@ export default function Stage1InquiryReceived({ header, onNext, reloadLead }: St
   );
 }
 
-function Cell({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+function Cell({ label, value, muted, full }: { label: string; value: string; muted?: boolean; full?: boolean }) {
   return (
-    <div className="smd-sect-field">
+    <div className={full ? 'smd-sect-field smd-sect-field-full' : 'smd-sect-field'}>
       <div className="smd-sect-label">{label}</div>
       <div className={muted ? 'smd-sect-value-muted' : 'smd-sect-value'}>{value}</div>
     </div>
@@ -186,27 +189,26 @@ function formatINR(n: number): string {
 }
 
 const STAGE1_CSS = `
-/* Single full-width row that visually continues the .smd-sect-grid above
- * it — same cell tinting, same horizontal divider, no side gutter. The
- * wrapper gets its own border so the row reads as a self-contained
- * rounded card (matches the bordered .smd-sect-grid above it). */
-.s1-grid-1 {
-  display: grid; grid-template-columns: 1fr; gap: 0;
-  border: 1.5px solid #ddd6fe;
-  border-radius: 10px;
-  overflow: hidden;
-  margin-top: -1px;
-}
-.s1-grid-1 .smd-sect-field {
-  border-right: none;
-  border-bottom: none;
-  background: #f5f3ff;
-}
-[data-bs-theme="dark"] .s1-grid-1 {
-  border-color: rgba(167, 139, 250, .25);
-}
-[data-bs-theme="dark"] .s1-grid-1 .smd-sect-field {
-  background: rgba(124, 58, 237, .08);
+/* Full-width trailing row (ORDER VALUE / EMAIL) — lives INSIDE the section
+ * grid and spans both columns, so it reads as a seamless final row of the
+ * same table, inheriting its borders + zebra striping (no separate box,
+ * no negative-margin seam). nth-child handles its background:
+ * Opportunity ORDER VALUE = cell 5 = lavender; PDM EMAIL = cell 3 = white. */
+.smd-sect-field-full { grid-column: 1 / -1; }
+
+/* The shared .smd-stg-head-badge::before paints a generic green pulsing
+ * "active" dot. The status badge supplies its own colour-coded dot
+ * (.s1-badge-dot below), so suppress the shared one — otherwise every
+ * status (QUALIFIED/DISQUALIFIED/PENDING) shows a duplicate dot and reads
+ * as the generic "active" pill. */
+.s1-badge::before { display: none; }
+
+/* Green status dot in the stage sub-header, replacing the literal ●. */
+.smd-stg-head-dot {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34,197,94,.22);
+  margin-right: 6px; vertical-align: middle;
 }
 
 /* Badge sits on the shared dark-purple pill (.smd-stg-head-badge) and
