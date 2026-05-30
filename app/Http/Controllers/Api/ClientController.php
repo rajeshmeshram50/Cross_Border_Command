@@ -383,10 +383,48 @@ class ClientController extends Controller
                 ->get();
         }
 
+        /* Bundle the states for this client's country into the same
+         * response so the edit form doesn't need a separate
+         * GET /master/states?country_id=X round-trip after hydration.
+         *
+         * On `php artisan serve` (and even on production with PHP-FPM)
+         * that follow-up call paid ~1 sec of boot tax per open on
+         * production (cbc.idims.in network panel showed 1.05 sec for
+         * a 0.6 KB payload). Bundling collapses the serial chain
+         * (clients/{id} → set country → states) into a single round-trip.
+         *
+         * The client row stores country by NAME (legacy schema), so we
+         * resolve name → id → states inline. Wrapped in try/catch so a
+         * stale country value or missing master row doesn't break the
+         * whole show() — frontend falls back to its lazy /master/states
+         * fetch when this comes back empty.
+         */
+        $states = [];
+        try {
+            if ($client->country) {
+                $country = \App\Models\Masters\Countries::query()
+                    ->where('name', $client->country)
+                    ->first(['id']);
+                if ($country) {
+                    // Match the existing /master/states behaviour: ship all
+                    // rows, let the frontend filter active vs inactive (it
+                    // does a case-insensitive compare since the DB stores
+                    // 'Active' with capital A on most rows).
+                    $states = \App\Models\Masters\States::query()
+                        ->where('country_id', $country->id)
+                        ->orderBy('name')
+                        ->get(['id', 'country_id', 'name', 'status']);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('ClientController::show states bundle failed: ' . $e->getMessage());
+        }
+
         return response()->json([
             'client' => $client,
             'admin_user' => $adminPayload,
             'admin_permissions' => $adminPermissions,
+            'states' => $states,
         ]);
     }
 

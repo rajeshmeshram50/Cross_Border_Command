@@ -260,6 +260,14 @@ export default function ClientForm({ onBack, editId }: Props) {
       .finally(() => setLoadingLookups(false));
   }, []);
 
+  /* When the edit-mode hydration seeded statesAll from the bundled
+   * /clients/{id} response, this ref holds the country name those
+   * states belong to. The lazy fetch below skips its first run for
+   * that same country, avoiding a redundant /master/states round-trip
+   * that would just overwrite the bundled list with identical data.
+   * Subsequent user-driven country changes still fetch as before. */
+  const bundledStatesCountryRef = useRef<string>('');
+
   /* Lazy states fetch — fires whenever the selected country changes.
    *
    * Was: all 1797 states shipped in /clients/form-bundle on every modal
@@ -281,6 +289,13 @@ export default function ClientForm({ onBack, editId }: Props) {
     const selected = countries.find(c => c.name === form.country);
     if (!selected) {
       setStatesAll([]);
+      return;
+    }
+    /* Skip-once: edit-mode hydration already seeded statesAll from the
+     * /clients/{id} response for this exact country. Clear the ref so
+     * a later user-driven re-selection of the same country still works. */
+    if (bundledStatesCountryRef.current && bundledStatesCountryRef.current === form.country) {
+      bundledStatesCountryRef.current = '';
       return;
     }
     const controller = new AbortController();
@@ -481,6 +496,27 @@ export default function ClientForm({ onBack, editId }: Props) {
       if (c.logo_url    || c.logo)    setLogoPreview(c.logo_url    || c.logo);
       if (c.favicon_url || c.favicon) setFaviconPreview(c.favicon_url || c.favicon);
       if (c.profile_photo_url || c.profile_photo) setProfilePhotoPreview(c.profile_photo_url || c.profile_photo);
+
+      /* States for the saved country now arrive bundled inside the
+       * /clients/{id} response — seed `statesAll` immediately so the
+       * State dropdown renders on first paint without waiting for a
+       * second /master/states round-trip. The lazy fetch below stays
+       * as fallback for cases where the bundled list is empty (e.g.
+       * country name didn't resolve to a master row server-side) and
+       * still fires whenever the user CHANGES the country to a new
+       * one (no bundled list for that). Production network panel
+       * showed this saved ~1 sec per edit-mode open on cbc.idims.in. */
+      const bundledStates: any[] = Array.isArray(res.data.states) ? res.data.states : [];
+      if (bundledStates.length > 0) {
+        const active = bundledStates
+          .filter(s => String(s.status ?? '').toLowerCase() === 'active')
+          .map(s => ({ ...s, country_id: String(s.country_id) }));
+        setStatesAll(active);
+        // Mark this country as pre-seeded so the lazy /master/states
+        // effect below skips its first run for the same country.
+        // Subsequent user-driven country changes still fetch normally.
+        bundledStatesCountryRef.current = c.country || '';
+      }
     }).catch(()=>{}).finally(()=>setLoadingData(false));
   }, [editId]);
 
