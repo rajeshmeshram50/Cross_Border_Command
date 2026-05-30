@@ -1053,6 +1053,27 @@ class EmployeeController extends Controller
             $request->merge(['email' => mb_strtolower(trim($request->input('email')))]);
         }
 
+        // Canonicalise PAN to upper-case so storage + the uniqueness check
+        // below always compare the same form (PANs are case-insensitive; the
+        // frontend already upper-cases, this guards direct API callers).
+        if ($request->filled('pan_number')) {
+            $request->merge(['pan_number' => mb_strtoupper(trim($request->input('pan_number')))]);
+        }
+        // PAN uniqueness — a duplicate PAN is hard-blocked at the DB level,
+        // scoped to the tenant (a government ID can't belong to two employees
+        // of the same client). Ignores the current employee on update and
+        // skips soft-deleted rows. Combined with the format regex below this
+        // satisfies the QA "duplicate PAN hard-blocked" + "format enforced"
+        // cases. client_id comes from the authenticated user, never the body.
+        $panRule = ['nullable', 'string', 'regex:/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/'];
+        if ($request->filled('pan_number')) {
+            $panClientId = optional($request->user())->client_id;
+            $panRule[] = Rule::unique('employees', 'pan_number')
+                ->whereNull('deleted_at')
+                ->where(fn($q) => $panClientId ? $q->where('client_id', $panClientId) : $q)
+                ->ignore($employeeId);
+        }
+
         // Email rules: required + unique on store; nullable + still-unique on
         // update so partial step-3/step-4 PATCHes don't fail validation.
         // The uniqueness check now compares LOWER(email) to dodge the
@@ -1197,8 +1218,8 @@ class EmployeeController extends Controller
             'bank_account_type'     => 'nullable|string|max:30',
             // UAN: exactly 12 digits when present.
             'uan_number'            => 'nullable|string|regex:/^\d{12}$/',
-            // PAN: 5 letters, 4 digits, 1 letter.
-            'pan_number'            => 'nullable|string|regex:/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/',
+            // PAN: 5 letters, 4 digits, 1 letter + tenant-unique (see $panRule above).
+            'pan_number'            => $panRule,
             'pf_deduction'          => 'nullable|string|max:50',
             'esi_applicable'        => 'nullable|in:Yes,No',
             'gratuity_nominee_name' => 'nullable|string|max:150',

@@ -358,9 +358,12 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
         <div className="st2-pick-backdrop" onClick={closePicker}>
           <div className="st2-pick-modal" onClick={(e) => e.stopPropagation()}>
             <div className={`st2-pick-head ${BUCKET_META[pickerBucket].pill}`}>
-              <div className="st2-pick-title">
-                {BUCKET_META[pickerBucket].label}
-                <span className="st2-pick-sub">Pick one or more reasons to log</span>
+              <div className="st2-pick-head-left">
+                <div className="st2-pick-head-icon"><BucketIcon bucket={pickerBucket} /></div>
+                <div className="st2-pick-title">
+                  {BUCKET_META[pickerBucket].label}
+                  <span className="st2-pick-sub">Pick one or more reasons to log</span>
+                </div>
               </div>
               <button className="st2-pick-close" onClick={closePicker} aria-label="Close">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -439,6 +442,27 @@ function ReasonRow({ reason, checked, onToggle }: { reason: MasterReason; checke
       <input type="checkbox" checked={checked} onChange={onToggle} />
       <span>{reason.reason}</span>
     </label>
+  );
+}
+
+/* Per-bucket header icon for the reason-picker modal: check / clock / cross. */
+function BucketIcon({ bucket }: { bucket: Bucket }) {
+  if (bucket === 'qualified')
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+        <circle cx="12" cy="12" r="10" /><path d="M9 12l2 2 4-4" />
+      </svg>
+    );
+  if (bucket === 'clarity_pending')
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+        <circle cx="12" cy="12" r="10" /><polyline points="12 7 12 12 15.5 14" />
+      </svg>
+    );
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+      <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+    </svg>
   );
 }
 
@@ -669,6 +693,15 @@ const STAGE2_CSS = `
 .st2-pick-head.smd-st2-pill-q { background: linear-gradient(115deg, #7c3aed, #8b5cf6, #a78bfa, #c4b5fd); }
 .st2-pick-head.smd-st2-pill-c { background: linear-gradient(115deg, #f59e0b, #d97706, #fbbf24, #fde68a); }
 .st2-pick-head.smd-st2-pill-d { background: linear-gradient(115deg, #f43f5e, #e11d48, #fb7185, #fda4af); }
+.st2-pick-head-left { display: flex; align-items: center; gap: 12px; position: relative; z-index: 1; }
+.st2-pick-head-icon {
+  width: 38px; height: 38px; border-radius: 10px;
+  background: rgba(255,255,255,.20);
+  border: 1px solid rgba(255,255,255,.30);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; flex-shrink: 0;
+  box-shadow: 0 3px 10px rgba(0,0,0,.12);
+}
 .st2-pick-title { font-size: 15px; font-weight: 800; line-height: 1.2; letter-spacing: -.2px; }
 .st2-pick-sub   { display: block; font-size: 11px; color: rgba(255,255,255,.85); margin-top: 3px; font-weight: 500; }
 .st2-pick-close {

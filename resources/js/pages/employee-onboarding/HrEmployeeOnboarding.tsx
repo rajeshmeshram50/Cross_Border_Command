@@ -1760,7 +1760,12 @@ export function VaultModal({
 
       <ModalBody
         className="p-0 d-flex flex-column"
-        style={{ background: 'var(--vz-card-bg)', maxHeight: '90vh' }}
+        // Fixed height (not maxHeight) so the vault is the SAME size for every
+        // employee — previously it shrank to a stub for 0 docs and stretched
+        // toward full-screen for many, which read as the modal "jumping"
+        // small/big between rows. The document list now scrolls inside this
+        // consistent frame. Capped to 90vh so it still fits short screens.
+        style={{ background: 'var(--vz-card-bg)', height: 'min(90vh, 720px)' }}
       >
         {/* Header — indigo gradient with status ring (fixed, non-scrolling) */}
         <div
@@ -1889,6 +1894,18 @@ export function VaultModal({
 
             {/* Section list */}
             <div>
+              {/* Employee tab — empty state so the fixed-height vault doesn't
+                  show a blank body when the employee has no uploads yet
+                  (mirrors the Organizational tab's empty state). */}
+              {tab === 'employee' && sections.length === 0 && (
+                <div className="vault-org-empty" style={{ padding: 22, textAlign: 'center', borderRadius: 10, marginTop: 16 }}>
+                  <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
+                  <div style={{ fontSize: 13 }}>
+                    No employee documents uploaded yet. Documents added during
+                    onboarding will appear here automatically.
+                  </div>
+                </div>
+              )}
               {/* Employee tab — static doc catalogue (Identity / Address / Education / Employment) */}
               {tab === 'employee' && sections.map(section => (
                 <div key={section.title} style={{ paddingTop: 16 }}>
@@ -3408,6 +3425,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
         );
         return false;
       }
+    }
+
+    // PAN format hard-block — a malformed PAN (wrong length / pattern, e.g.
+    // 'ABCD1234E' or '12345ABCDE') must be REJECTED before the save, not just
+    // flagged with an inline hint. Mirrors the AAAAA9999A rule the backend
+    // also enforces, so the user gets a clear message instead of a raw 422.
+    const panVal = s4.pan_number.trim().toUpperCase();
+    if (panVal && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(panVal)) {
+      toast.error('Invalid PAN', 'PAN must be in the format AAAAA9999A — 5 letters, 4 digits, then 1 letter.');
+      return false;
     }
 
     setS4Saving(true);

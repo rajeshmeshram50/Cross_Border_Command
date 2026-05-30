@@ -4,6 +4,7 @@ import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import Tooltip from '../../components/ui/Tooltip';
 import '../../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -57,12 +58,12 @@ const PRIORITY_TONES: Record<AnnPriority, { bg: string; fg: string }> = {
   High:     { bg: '#fed7aa', fg: '#c2410c' },
   Critical: { bg: '#fee2e2', fg: '#b91c1c' },
 };
-const STATUS_TONES: Record<AnnStatus, { bg: string; fg: string; dot: string }> = {
-  Draft:     { bg: '#f3f4f6', fg: '#4b5563', dot: '#9ca3af' },
-  Scheduled: { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' },
-  Active:    { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' },
-  Expired:   { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' },
-  Archived:  { bg: '#e0e7ff', fg: '#4338ca', dot: '#6366f1' },
+const STATUS_TONES: Record<AnnStatus, { bg: string; fg: string }> = {
+  Draft:     { bg: '#f3f4f6', fg: '#4b5563' },
+  Scheduled: { bg: '#fef3c7', fg: '#92400e' },
+  Active:    { bg: '#dcfce7', fg: '#15803d' },
+  Expired:   { bg: '#fee2e2', fg: '#b91c1c' },
+  Archived:  { bg: '#e0e7ff', fg: '#4338ca' },
 };
 
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -205,7 +206,7 @@ export default function HrBroadcastCentre() {
                 <div className="min-w-0">
                   <h5 className="fw-bold mb-0">
                     Broadcast Centre
-                    <span className="ms-2 rec-pill" style={{ background: '#e0f2fe', color: '#0284c7', fontSize: 11 }}>Communication</span>
+                    <span className="ms-2 rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7', fontSize: 11 }}>Communication</span>
                   </h5>
                   <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
                     Create, schedule and manage company-wide announcements with audience targeting and acknowledgement tracking
@@ -297,32 +298,55 @@ export default function HrBroadcastCentre() {
                                   </a>
                                 )}
                               </td>
-                              <td><span className="rec-pill" style={{ background: tt.bg, color: tt.fg }}>{r.type}</span></td>
-                              <td><span className="rec-pill" style={{ background: pp.bg, color: pp.fg }}>{r.priority}</span></td>
+                              {/* `--pill-fg` carries the badge hue to the dark-mode
+                                  CSS so it can swap the harsh light-pastel fill for a
+                                  translucent same-hue chip (matching the ANN-ID pill).
+                                  Light mode keeps the inline bg/fg untouched. */}
+                              <td><span className="rec-pill" style={{ background: tt.bg, color: tt.fg, ['--pill-fg' as any]: tt.fg }}>{r.type}</span></td>
+                              <td><span className="rec-pill" style={{ background: pp.bg, color: pp.fg, ['--pill-fg' as any]: pp.fg }}>{r.priority}</span></td>
                               <td className="fs-13">
                                 <AudienceCell row={r} />
                               </td>
                               <td>
-                                <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: ss.bg, color: ss.fg }}>
-                                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: ss.dot }} />
+                                {/* Plain pill — same shape as the Type / Priority
+                                    badges in this row (and the rec-pill badges used
+                                    across the app). The leading status dot was
+                                    dropped so the status badge reads consistently
+                                    with the rest. */}
+                                <span className="rec-pill" style={{ background: ss.bg, color: ss.fg, ['--pill-fg' as any]: ss.fg }}>
                                   {r.status}
                                 </span>
                               </td>
                               <td className="fs-13"><span className="rec-date">{r.publish_at ? formatDate(r.publish_at) : (r.status === 'Draft' ? '—' : formatDate(r.created_at))}</span></td>
                               <td className="fs-13"><span className="rec-date">{formatDate(r.expires_at)}</span></td>
-                              <td className="pe-3">
+                              <td className="pe-3 text-center">
+                                {/* text-center on the cell centres the action
+                                    icons under the centered "Actions" header —
+                                    rec-row-actions is display:inline-flex, so its
+                                    own justify-content-center can't position the
+                                    block; the cell's text-align does. */}
                                 <div className="rec-row-actions justify-content-center">
-                                  <button type="button" className="rec-act rec-act-view rec-act--icon" title="View / Edit" onClick={() => { setEditingRow(r); setCreateOpen(true); }}>
-                                    <i className="ri-eye-line" />
-                                  </button>
-                                  {r.status === 'Draft' && (
-                                    <button type="button" className="rec-act rec-act-approve rec-act--icon" title="Publish Now" onClick={() => handlePublishNow(r)}>
-                                      <i className="ri-send-plane-line" />
+                                  {/* Polished portal tooltips (matching the rest of the
+                                      app) replace the slow native `title` attribute, which
+                                      had a ~1s browser delay and plain OS styling — so the
+                                      icons read as "no tooltip" on a quick hover. */}
+                                  <Tooltip label="View / Edit">
+                                    <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="View / Edit" onClick={() => { setEditingRow(r); setCreateOpen(true); }}>
+                                      <i className="ri-eye-line" />
                                     </button>
+                                  </Tooltip>
+                                  {r.status === 'Draft' && (
+                                    <Tooltip label="Publish Now">
+                                      <button type="button" className="rec-act rec-act-approve rec-act--icon" aria-label="Publish Now" onClick={() => handlePublishNow(r)}>
+                                        <i className="ri-send-plane-line" />
+                                      </button>
+                                    </Tooltip>
                                   )}
-                                  <button type="button" className="rec-act rec-act-reject rec-act--icon" title="Delete" onClick={() => handleDelete(r)}>
-                                    <i className="ri-delete-bin-line" />
-                                  </button>
+                                  <Tooltip label="Delete">
+                                    <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" onClick={() => handleDelete(r)}>
+                                      <i className="ri-delete-bin-line" />
+                                    </button>
+                                  </Tooltip>
                                 </div>
                               </td>
                             </tr>
@@ -628,7 +652,7 @@ function CreateAnnouncementModal({
         </div>
 
         {/* Step indicator */}
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', overflowX: 'auto' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--vz-border-color, #e5e7eb)', overflowX: 'auto' }}>
           <div className="d-flex align-items-center" style={{ gap: 16, flexWrap: 'nowrap' }}>
             {STEPS.map(s => {
               const active = step === s.key;
@@ -642,14 +666,14 @@ function CreateAnnouncementModal({
                   className="d-inline-flex align-items-center"
                   style={{
                     gap: 8, padding: '4px 8px', border: 0, background: 'transparent',
-                    color: active ? '#0c63b0' : (done ? '#0ea5e9' : '#9ca3af'),
+                    color: active ? '#0ea5e9' : (done ? '#0ea5e9' : '#9ca3af'),
                     cursor: (done || active) ? 'pointer' : 'default', flexShrink: 0,
                   }}
                 >
                   <span
                     style={{
                       width: 26, height: 26, borderRadius: '50%',
-                      background: active ? '#0c63b0' : (done ? '#0ea5e9' : '#e5e7eb'),
+                      background: active ? '#0c63b0' : (done ? '#0ea5e9' : 'var(--vz-border-color, #e5e7eb)'),
                       color: (active || done) ? '#fff' : '#6b7280',
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 12, fontWeight: 700,
@@ -706,20 +730,27 @@ function CreateAnnouncementModal({
           </div>
 
           {/* Live preview — sits on the right of every step */}
-          <div style={{ flex: '0 0 320px', borderLeft: '1px solid #e5e7eb', padding: 16, background: '#fafafa', maxHeight: '70vh', overflowY: 'auto' }}>
-            <div className="text-uppercase fw-semibold mb-2" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: '#6b7280' }}>Live Preview</div>
-            <div style={{ background: '#e0f2fe', borderRadius: 12, padding: 14, marginBottom: 12 }}>
+          <div style={{ flex: '0 0 320px', borderLeft: '1px solid var(--vz-border-color, #e5e7eb)', padding: 16, background: 'var(--vz-secondary-bg, #fafafa)', maxHeight: '70vh', overflowY: 'auto' }}>
+            <div className="text-uppercase fw-semibold mb-2" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color, #6b7280)' }}>Live Preview</div>
+            {/* Translucent sky tint instead of a solid light-blue fill so the
+                preview card + status box stay legible in dark mode (the solid
+                #e0f2fe / #f0f9ff used to render as bright blocks with washed
+                text on the dark modal). Text now uses theme variables. */}
+            <div style={{ background: 'rgba(56,189,248,0.14)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: 12, padding: 14, marginBottom: 12 }}>
               <div className="d-flex align-items-center justify-content-between mb-2">
-                <i className="ri-send-plane-line" style={{ fontSize: 22, color: '#0284c7' }} />
+                <i className="ri-send-plane-line" style={{ fontSize: 22, color: '#0ea5e9' }} />
               </div>
-              <div className="fw-bold" style={{ fontSize: 14 }}>{title || 'Announcement Title'}</div>
-              <div style={{ fontSize: 12, color: '#475569', minHeight: 18 }}>{description || 'Description appears here…'}</div>
+              {/* wordBreak + overflowWrap so a long title/description (esp. a
+                  pasted no-space string) wraps inside the preview card instead
+                  of spilling past its right edge. */}
+              <div className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{title || 'Announcement Title'}</div>
+              <div style={{ fontSize: 12, color: 'var(--vz-secondary-color, #475569)', minHeight: 18, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{description || 'Description appears here…'}</div>
               <div className="d-flex align-items-center justify-content-between mt-2">
-                <span style={{ fontSize: 11, color: '#0c63b0' }}>{audienceLabel}</span>
-                <span className="rec-pill" style={{ background: TYPE_TONES[type].bg, color: TYPE_TONES[type].fg, fontSize: 10.5 }}>{type}</span>
+                <span style={{ fontSize: 11, color: 'var(--vz-body-color, #0c63b0)' }}>{audienceLabel}</span>
+                <span className="rec-pill" style={{ background: TYPE_TONES[type].bg, color: TYPE_TONES[type].fg, ['--pill-fg' as any]: TYPE_TONES[type].fg, fontSize: 10.5 }}>{type}</span>
               </div>
             </div>
-            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: 12, fontSize: 12.5, color: '#0c4a6e' }}>
+            <div style={{ background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: 10, padding: 12, fontSize: 12.5, color: 'var(--vz-body-color, #0c4a6e)' }}>
               <div><strong>Status:</strong> {editing?.status || 'Active'}</div>
               <div><strong>Priority:</strong> {priority}</div>
               <div><strong>Audience:</strong> {audienceLabel.replace(/^(Roles|Desig): /, '')} ({audienceCount})</div>
@@ -730,7 +761,7 @@ function CreateAnnouncementModal({
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #e5e7eb', background: '#fafafa', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span className="text-muted" style={{ fontSize: 12 }}>Step {step} of {TOTAL_STEPS}</span>
           <div className="d-flex gap-2">
             <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
@@ -776,7 +807,7 @@ function Step1Basic({
 }: any) {
   return (
     <>
-      <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0c63b0' }}>
+      <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0ea5e9' }}>
         <i className="ri-checkbox-blank-line" /> Basic Details
       </div>
       <div className="mb-3">
@@ -794,11 +825,16 @@ function Step1Basic({
           <label className="rec-form-label">Type</label>
           <div className="d-flex gap-2 flex-wrap">
             {(['General','Policy','Urgent'] as AnnType[]).map(v => (
-              <button key={v} type="button" onClick={() => setType(v)} className="rec-priority-pill" style={{
-                background: type === v ? TYPE_TONES[v].bg : '#fff',
-                color: type === v ? TYPE_TONES[v].fg : '#475569',
-                border: type === v ? `1px solid ${TYPE_TONES[v].fg}` : '1px solid #e5e7eb',
-              }}>{v}</button>
+              <button key={v} type="button" onClick={() => setType(v)}
+                className={`rec-priority-pill${type === v ? ' is-active' : ''}`}
+                // Unselected → no inline style, so the .rec-priority-pill class
+                // (which has proper light AND dark backgrounds) owns the look.
+                // Selected → pastel fill for light mode + `--pill-fg` so the
+                // dark-mode CSS swaps it for a translucent same-hue chip.
+                style={type === v ? {
+                  background: TYPE_TONES[v].bg, color: TYPE_TONES[v].fg,
+                  border: `1px solid ${TYPE_TONES[v].fg}`, ['--pill-fg' as any]: TYPE_TONES[v].fg,
+                } : undefined}>{v}</button>
             ))}
           </div>
         </Col>
@@ -806,11 +842,12 @@ function Step1Basic({
           <label className="rec-form-label">Priority<span className="req">*</span></label>
           <div className="d-flex gap-2 flex-wrap">
             {(['Normal','High','Critical'] as AnnPriority[]).map(v => (
-              <button key={v} type="button" onClick={() => setPriority(v)} className="rec-priority-pill" style={{
-                background: priority === v ? PRIORITY_TONES[v].bg : '#fff',
-                color: priority === v ? PRIORITY_TONES[v].fg : '#475569',
-                border: priority === v ? `1px solid ${PRIORITY_TONES[v].fg}` : '1px solid #e5e7eb',
-              }}>{v}</button>
+              <button key={v} type="button" onClick={() => setPriority(v)}
+                className={`rec-priority-pill${priority === v ? ' is-active' : ''}`}
+                style={priority === v ? {
+                  background: PRIORITY_TONES[v].bg, color: PRIORITY_TONES[v].fg,
+                  border: `1px solid ${PRIORITY_TONES[v].fg}`, ['--pill-fg' as any]: PRIORITY_TONES[v].fg,
+                } : undefined}>{v}</button>
             ))}
           </div>
         </Col>
@@ -820,16 +857,16 @@ function Step1Basic({
         <div
           onClick={() => fileRef.current?.click()}
           style={{
-            border: '1px dashed #c7d2fe', borderRadius: 10,
+            border: '1px dashed rgba(99,102,241,0.45)', borderRadius: 10,
             padding: '20px', textAlign: 'center', cursor: 'pointer',
-            background: attachment ? '#eef2ff' : '#fafafa',
+            background: attachment ? 'rgba(99,102,241,0.12)' : 'var(--vz-secondary-bg, #fafafa)',
           }}
         >
           <i className="ri-upload-cloud-line" style={{ fontSize: 24, color: '#6366f1' }} />
-          <div style={{ fontSize: 13, fontWeight: 600, marginTop: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginTop: 4, color: 'var(--vz-body-color)' }}>
             {attachment ? attachment.name : 'Click to upload (PNG, JPG, PDF · max 20MB)'}
           </div>
-          {!attachment && <div style={{ fontSize: 11, color: '#6b7280' }}>or drag and drop here</div>}
+          {!attachment && <div style={{ fontSize: 11, color: 'var(--vz-secondary-color, #6b7280)' }}>or drag and drop here</div>}
           <input ref={fileRef} type="file" accept=".png,.jpg,.jpeg,.pdf" style={{ display: 'none' }} onChange={e => setAttachment(e.target.files?.[0] ?? null)} />
         </div>
       </div>
@@ -850,7 +887,7 @@ function Step2Audience({
 
   return (
     <>
-      <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0c63b0' }}>
+      <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0ea5e9' }}>
         <i className="ri-user-line" /> Audience Selection
       </div>
       <div className="mb-3">
@@ -864,9 +901,9 @@ function Step2Audience({
             const active = audienceType === o.key;
             return (
               <button key={o.key} type="button" onClick={() => setAudienceType(o.key)} className="rec-priority-pill" style={{
-                background: active ? '#e0f2fe' : '#fff',
-                color: active ? '#0c63b0' : '#475569',
-                border: active ? '1px solid #0c63b0' : '1px solid #e5e7eb',
+                background: active ? 'rgba(56,189,248,0.16)' : 'var(--vz-secondary-bg, #fff)',
+                color: active ? '#0ea5e9' : 'var(--vz-body-color, #475569)',
+                border: active ? '1px solid #0ea5e9' : '1px solid var(--vz-border-color, #e5e7eb)',
               }}>{o.label}</button>
             );
           })}
@@ -876,10 +913,10 @@ function Step2Audience({
       {/* All Employees → green delivered banner + tiny "x selected" chip. */}
       {audienceType === 'all_employees' && (
         <>
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 16px', marginBottom: 10, color: '#15803d', fontSize: 13 }}>
-            <i className="ri-checkbox-circle-line me-1" /> Announcement delivered to all <strong>{totalEmps}</strong> employee{totalEmps === 1 ? '' : 's'}.
+          <div style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.30)', borderRadius: 10, padding: '12px 16px', marginBottom: 10, color: 'var(--vz-body-color, #15803d)', fontSize: 13 }}>
+            <i className="ri-checkbox-circle-line me-1" style={{ color: '#22c55e' }} /> Announcement delivered to all <strong>{totalEmps}</strong> employee{totalEmps === 1 ? '' : 's'}.
           </div>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 18, background: '#ecfeff', color: '#0e7490', fontSize: 12.5, fontWeight: 600, border: '1px solid #a5f3fc', marginBottom: 14 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 18, background: 'rgba(34,211,238,0.14)', color: 'var(--vz-body-color, #0e7490)', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(34,211,238,0.30)', marginBottom: 14 }}>
             <i className="ri-user-line" /> {totalEmps} employees selected
           </span>
         </>
@@ -937,7 +974,7 @@ function CheckboxBox({ options, selected, onChange, empty }: {
 }) {
   if (options.length === 0) {
     return (
-      <div style={{ padding: 16, border: '1px solid #e5e7eb', borderRadius: 10, color: '#9ca3af', fontSize: 13, textAlign: 'center' }}>
+      <div style={{ padding: 16, border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 10, color: '#9ca3af', fontSize: 13, textAlign: 'center' }}>
         {empty || 'No options available'}
       </div>
     );
@@ -947,7 +984,7 @@ function CheckboxBox({ options, selected, onChange, empty }: {
     else onChange([...selected, id]);
   };
   return (
-    <div style={{ padding: 14, border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff' }}>
+    <div style={{ padding: 14, border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 10, background: 'var(--vz-secondary-bg, #fff)' }}>
       <div className="d-flex flex-wrap" style={{ gap: 10 }}>
         {options.map(o => {
           const active = selected.includes(o.id);
@@ -957,8 +994,8 @@ function CheckboxBox({ options, selected, onChange, empty }: {
               className="d-inline-flex align-items-center"
               style={{
                 gap: 6, padding: '6px 12px', borderRadius: 8,
-                background: active ? '#e0f2fe' : '#fff',
-                border: active ? '1px solid #0c63b0' : '1px solid #e5e7eb',
+                background: active ? 'rgba(56,189,248,0.16)' : 'var(--vz-secondary-bg, #fff)',
+                border: active ? '1px solid #0c63b0' : '1px solid var(--vz-border-color, #e5e7eb)',
                 cursor: 'pointer', fontSize: 13, userSelect: 'none',
               }}
             >
@@ -998,7 +1035,7 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
           const o = options.find(x => x.id === id);
           if (!o) return null;
           return (
-            <span key={id} className="rec-pill" style={{ background: '#e0f2fe', color: '#0c63b0', fontSize: 11.5 }}>
+            <span key={id} className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: 'var(--vz-body-color, #0c63b0)', fontSize: 11.5 }}>
               {o.label}
               <i className="ri-close-line ms-1" onClick={(e) => { e.stopPropagation(); toggle(id); }} style={{ cursor: 'pointer' }} />
             </span>
@@ -1007,8 +1044,8 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
         {selected.length > 4 && <span className="text-muted" style={{ fontSize: 11.5 }}>+{selected.length - 4} more</span>}
       </div>
       {open && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', zIndex: 10, maxHeight: 240, overflowY: 'auto' }}>
-          <div style={{ padding: 8, borderBottom: '1px solid #e5e7eb' }}>
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--vz-secondary-bg, #fff)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', zIndex: 10, maxHeight: 240, overflowY: 'auto' }}>
+          <div style={{ padding: 8, borderBottom: '1px solid var(--vz-border-color, #e5e7eb)' }}>
             <input className="rec-input" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} autoFocus />
           </div>
           {filtered.length === 0 ? (
@@ -1021,7 +1058,7 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
               <span>{o.label}</span>
             </div>
           ))}
-          <div style={{ padding: 8, borderTop: '1px solid #e5e7eb', textAlign: 'right' }}>
+          <div style={{ padding: 8, borderTop: '1px solid var(--vz-border-color, #e5e7eb)', textAlign: 'right' }}>
             <button type="button" className="rec-btn-ghost" onClick={() => setOpen(false)}>Done</button>
           </div>
         </div>
@@ -1037,7 +1074,7 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
 function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; setNotifyEmail: (v: boolean) => void }) {
   return (
     <>
-      <div className="d-flex align-items-center gap-2 mb-3" style={{ color: '#0c63b0' }}>
+      <div className="d-flex align-items-center gap-2 mb-3" style={{ color: '#0ea5e9' }}>
         <i className="ri-notification-3-line" />
         <span className="fw-semibold" style={{ fontSize: 14 }}>Notification Channels</span>
       </div>
@@ -1046,9 +1083,9 @@ function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
       <label
         className="d-flex align-items-center gap-3 p-3 mb-3"
         style={{
-          border: notifyEmail ? '1.5px solid #0ea5e9' : '1px solid #e5e7eb',
+          border: notifyEmail ? '1.5px solid #0ea5e9' : '1px solid var(--vz-border-color, #e5e7eb)',
           borderRadius: 10, cursor: 'pointer',
-          background: notifyEmail ? '#f0f9ff' : '#fff',
+          background: notifyEmail ? 'rgba(56,189,248,0.12)' : 'var(--vz-secondary-bg, #fff)',
           boxShadow: notifyEmail ? '0 0 0 3px rgba(14,165,233,0.10)' : 'none',
           transition: 'border-color .15s ease, background .15s ease, box-shadow .15s ease',
         }}
@@ -1061,15 +1098,15 @@ function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
         />
         <i className="ri-mail-line" style={{ fontSize: 18, color: notifyEmail ? '#0ea5e9' : '#6b7280' }} />
         <div className="d-flex flex-column">
-          <span className="fw-bold" style={{ fontSize: 14, color: '#111827' }}>Email Notification</span>
-          <span style={{ fontSize: 12, color: '#6b7280' }}>Send directly to each recipient's inbox when you publish</span>
+          <span className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>Email Notification</span>
+          <span style={{ fontSize: 12, color: 'var(--vz-secondary-color, #6b7280)' }}>Send directly to each recipient's inbox when you publish</span>
         </div>
       </label>
 
       <div
         style={{
-          background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 10,
-          padding: '10px 14px', color: '#475569', fontSize: 12.5,
+          background: 'var(--vz-secondary-bg, #f3f4f6)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 10,
+          padding: '10px 14px', color: 'var(--vz-secondary-color, #475569)', fontSize: 12.5,
         }}
       >
         Email notification is optional. The announcement will still be visible in the system regardless.
@@ -1086,17 +1123,17 @@ function Step4Review({
   editing,
 }: any) {
   const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
-    <div style={{ background: '#fafafa', border: '1px solid #e5e7eb', borderRadius: 8, padding: '8px 12px' }}>
-      <div className="text-uppercase fw-semibold" style={{ fontSize: 10, letterSpacing: '0.05em', color: '#6b7280' }}>{label}</div>
+    <div style={{ background: 'var(--vz-secondary-bg, #fafafa)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 8, padding: '8px 12px' }}>
+      <div className="text-uppercase fw-semibold" style={{ fontSize: 10, letterSpacing: '0.05em', color: 'var(--vz-secondary-color, #6b7280)' }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{value || <span className="text-muted">—</span>}</div>
     </div>
   );
   return (
     <>
-      <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0c63b0' }}>
+      <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0ea5e9' }}>
         <i className="ri-file-text-line" /> Review & Publish
       </div>
-      <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+      <div style={{ border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
         <div className="fw-bold" style={{ fontSize: 16 }}>{title || '—'}</div>
         <div className="text-muted mb-3" style={{ fontSize: 13 }}>{description || '—'}</div>
         <Row className="g-2">
@@ -1114,7 +1151,7 @@ function Step4Review({
           {editing.creator?.name ? <> by {editing.creator.name}</> : null}
         </div>
       )}
-      <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: 12, color: '#0c4a6e', fontSize: 13, marginTop: 12 }}>
+      <div style={{ background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: 10, padding: 12, color: 'var(--vz-body-color, #0c4a6e)', fontSize: 13, marginTop: 12 }}>
         <i className="ri-information-line" /> Clicking <strong>Publish</strong> will make this announcement live immediately
         {notifyEmail ? ' and email every selected recipient.' : '.'}
       </div>
