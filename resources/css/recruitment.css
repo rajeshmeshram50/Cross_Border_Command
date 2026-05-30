@@ -285,6 +285,20 @@
 [data-bs-theme="dark"] .rec-pill {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.25);
 }
+/* Dark-mode chip treatment — any .rec-pill that opts in by passing its hue
+   through the inline `--pill-fg` custom property switches from the harsh
+   light-pastel fill (fine on a light page, glaring on a dark one) to a
+   translucent same-hue chip with lifted text, matching the .rec-id-pill
+   aesthetic so coloured badges integrate with the dark table instead of
+   popping against it. Scoped via [style*="--pill-fg"] so other rec-pill
+   tables stay exactly as they are. A custom property (not currentColor) is
+   used so we can lighten the text from the same hue without the colour
+   property self-referencing. */
+[data-bs-theme="dark"] .rec-pill[style*="--pill-fg"] {
+  background: color-mix(in srgb, var(--pill-fg) 20%, transparent) !important;
+  border-color: color-mix(in srgb, var(--pill-fg) 46%, transparent) !important;
+  color: color-mix(in srgb, var(--pill-fg) 55%, #ffffff) !important;
+}
 
 .rec-num { font-weight: 700; font-size: 14px; color: var(--vz-heading-color, var(--vz-body-color)); }
 
@@ -1017,8 +1031,28 @@
               0 0 0 3px rgba(59,130,246,0.10);
 }
 [data-bs-theme="dark"] .rec-priority-pill {
-  background: linear-gradient(180deg, var(--vz-card-bg) 0%, color-mix(in srgb, var(--vz-card-bg) 92%, #000) 100%);
+  /* --vz-secondary-bg (root-level) instead of --vz-card-bg (which is
+     card-scoped and undefined inside modal portals — there it made the
+     gradient invalid and the pill fell back to the base WHITE fill). */
+  background: linear-gradient(180deg, var(--vz-secondary-bg) 0%, color-mix(in srgb, var(--vz-secondary-bg) 92%, #000) 100%);
   border-color: var(--vz-border-color); color: var(--vz-secondary-color);
+  /* The base rule's bright white inset (rgba(255,255,255,0.7)) made dark
+     pills look pale/washed — soften it to a barely-there highlight. */
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 1px rgba(0,0,0,0.25);
+}
+[data-bs-theme="dark"] .rec-priority-pill:hover {
+  border-color: color-mix(in srgb, var(--vz-secondary-bg) 60%, #a78bfa);
+  color: #c4b5fd;
+}
+/* Selected Type / Priority pill — carries `--pill-fg`. In dark mode swap the
+   bright light-pastel fill for a translucent same-hue chip with lifted text
+   (same treatment as the table badges) so the active choice reads as part of
+   the dark theme instead of a glaring pastel block. */
+[data-bs-theme="dark"] .rec-priority-pill[style*="--pill-fg"] {
+  background: color-mix(in srgb, var(--pill-fg) 22%, transparent) !important;
+  border-color: color-mix(in srgb, var(--pill-fg) 50%, transparent) !important;
+  color: color-mix(in srgb, var(--pill-fg) 58%, #ffffff) !important;
+  box-shadow: none !important;
 }
 
 /* ---------------------------------------------------------------------

@@ -1502,7 +1502,7 @@ export default function HrEmployees() {
     if (!eCurCountry)         e.country_id      = 'Country is required';
     if (!eCurState)           e.state_id        = 'State is required';
     if (!eCurPin.trim())      e.pincode         = 'Pincode is required';
-    else if (!/^\d{4,10}$/.test(eCurPin.trim())) e.pincode = 'Enter a valid pincode';
+    else if (!/^\d{6}$/.test(eCurPin.trim())) e.pincode = 'Pincode must be exactly 6 digits';
     return e;
   }, [eWorkCountry, eFirstName, eLastName, eDisplayName, eActualName, eGender, eDob, eNationality,
       eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin]);
@@ -4602,9 +4602,13 @@ export default function HrEmployees() {
                       <input
                         className={`emp-input${eErrors.pincode ? ' is-invalid' : ''}`}
                         type="text"
+                        inputMode="numeric"
+                        maxLength={6}
                         placeholder="6-digit pincode"
                         value={eCurPin}
-                        onChange={e => { setECurPin(e.target.value); clearEErr('pincode'); }}
+                        // Strip non-digits and cap at 6 so the field can never
+                        // hold more/less than a 6-digit pincode.
+                        onChange={e => { setECurPin(e.target.value.replace(/\D/g, '').slice(0, 6)); clearEErr('pincode'); }}
                       />
                       {eErrors.pincode && <small className="emp-err">{eErrors.pincode}</small>}
                     </Col>
@@ -4660,7 +4664,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={3}>
                       <label className="emp-label">Pincode<span className="req">*</span></label>
-                      <input className="emp-input" type="text" placeholder="6-digit pincode" value={ePermPin} onChange={e => setEPermPin(e.target.value)} disabled={eSameAsCurrent} />
+                      <input className="emp-input" type="text" inputMode="numeric" maxLength={6} placeholder="6-digit pincode" value={ePermPin} onChange={e => setEPermPin(e.target.value.replace(/\D/g, '').slice(0, 6))} disabled={eSameAsCurrent} />
                     </Col>
                   </Row>
                 </div>
