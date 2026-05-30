@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
+import { MasterSelect } from '../../../components/ui/MasterSelect';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Product Sourcing — Stage 3 quick-action modal.
@@ -291,23 +292,29 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
                         </td>
                         <td><span className="psm-curr-pill">{r.currency}</span></td>
                         <td>
-                          <select
-                            className="psm-select"
+                          <MasterSelect
                             value={r.sourcing_status ?? ''}
                             disabled={isSaving}
-                            onChange={e => {
-                              const v = e.target.value;
+                            onChange={(v) => {
                               if (v === 'required' || v === 'not_required') {
                                 void updateSourcing(r, v);
                               }
                             }}
-                          >
-                            <option value="">— Select —</option>
-                            <option value="required">Sourcing Required</option>
-                            <option value="not_required" disabled={isInactive}>
-                              Sourcing Not Required{isInactive ? ' (inactive)' : ''}
-                            </option>
-                          </select>
+                            /* Inactive / draft products can only be marked
+                             * Required (backend rule — see
+                             * SalesLeadController::updateLeadProductSourcingStatus).
+                             * MasterSelect doesn't support disabling a single
+                             * option, so we drop the "Not Required" entry
+                             * entirely for those rows. */
+                            options={isInactive
+                              ? [{ value: 'required', label: 'Sourcing Required' }]
+                              : [
+                                  { value: 'required',     label: 'Sourcing Required' },
+                                  { value: 'not_required', label: 'Sourcing Not Required' },
+                                ]
+                            }
+                            placeholder="— Select —"
+                          />
                         </td>
                         <td>
                           {isSaving ? (
