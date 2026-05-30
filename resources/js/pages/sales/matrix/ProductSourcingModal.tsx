@@ -66,7 +66,7 @@ function StatusPill({ status }: { status: string | null | undefined }) {
   const isActive = norm === 'active' || norm === '1' || norm === 'true';
   const color = isActive ? 'success' : 'danger';
   return (
-    <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2 fs-13`}>
+    <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-2 py-1 fs-11`} style={{ whiteSpace: 'nowrap' }}>
       {isActive ? 'Active' : 'Inactive'}
     </span>
   );
@@ -107,7 +107,9 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
   const visibleRows = useMemo(() => {
     if (tab === 'required')     return rows.filter(r => r.sourcing_status === 'required');
     if (tab === 'not_required') return rows.filter(r => r.sourcing_status === 'not_required');
-    return rows;
+    /* "All Mapped Products" mirrors the Stage 3 Product Details tab: only
+     * products that still need a sourcing decision (status not set). */
+    return rows.filter(r => r.sourcing_status == null);
   }, [rows, tab]);
 
   if (!open) return null;
@@ -254,7 +256,7 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
                     <tr>
                       <td colSpan={9} className="psm-status-row">
                         {tab === 'all'
-                          ? 'No products mapped yet — open Product Directory to map the first.'
+                          ? 'All mapped products have a sourcing status — check the Sourcing Required / Not Required tabs.'
                           : tab === 'required'
                             ? 'No products tagged as Sourcing Required.'
                             : 'No products tagged as Sourcing Not Required.'}
@@ -523,11 +525,12 @@ const SCOPED_CSS = `
    created visible stitch lines between columns). Cells stay
    transparent so the row gradient shows through. */
 .psm-table thead tr {
-  background: linear-gradient(180deg, #ede9fe 0%, #c4b5fd 50%, #a78bfa 100%);
+  background: linear-gradient(135deg, #f8f5ff, #ede9fe);
 }
 .psm-table thead th {
   background: transparent;
-  color: #4c1d95;
+  color: #a78bfa;
+  border-bottom: 1px solid #e9d5ff;
   font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
   text-align: left; padding: 11px 12px;
   position: sticky; top: 0; z-index: 2;
@@ -536,7 +539,7 @@ const SCOPED_CSS = `
 .psm-table tbody tr        { border-bottom: 1px solid #f5f3ff; }
 .psm-table tbody tr:last-child { border-bottom: none; }
 .psm-table tbody tr:hover  { background: #faf5ff; }
-.psm-table tbody td        { padding: 10px 12px; color: #1e293b; vertical-align: middle; }
+.psm-table tbody td        { padding: 8px 10px; color: #1e293b; vertical-align: middle; white-space: nowrap; }
 .psm-num                   { font-variant-numeric: tabular-nums; }
 .psm-status-row            {
   text-align: center; padding: 26px 14px;
@@ -546,21 +549,21 @@ const SCOPED_CSS = `
 /* ── SR badge ── squared lilac chip matching Product Directory. */
 .psm-sr-pill {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 28px; padding: 3px 10px;
+  min-width: 22px; padding: 2px 7px;
   background: #f5f3ff; color: #6d28d9;
   border: 1px solid #ddd6fe;
-  border-radius: 8px;
-  font-size: 11.5px; font-weight: 700;
+  border-radius: 7px;
+  font-size: 10px; font-weight: 700;
 }
 
 /* ── CODE chip ── shares the SR badge's lilac palette. */
 .psm-code-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 10px;
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  padding: 2px 7px;
   background: #f5f3ff; border: 1px solid #ddd6fe;
-  border-radius: 8px;
+  border-radius: 7px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px; font-weight: 700; color: #6d28d9;
+  font-size: 10px; font-weight: 700; color: #6d28d9;
 }
 .psm-code-chip svg { color: #7c3aed; flex-shrink: 0; }
 
