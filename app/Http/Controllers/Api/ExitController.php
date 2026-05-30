@@ -121,6 +121,33 @@ class ExitController extends Controller
                 ->find($managerId);
         }
 
+        // Build the manager projection. Prefer the Employee-side manager
+        // (reporting_manager_id). Fall back to the login-User manager
+        // (reporting_manager_user_id) — the employee wizard stores the manager
+        // THERE whenever the chosen manager is a Client/Branch admin who was
+        // never onboarded as an Employee row. Without this fallback the Exit
+        // form showed "Not set on employee record" for every such employee
+        // even though a reporting manager WAS assigned on the employee.
+        $managerPayload = null;
+        if ($manager) {
+            $managerPayload = [
+                'id'           => $manager->id,
+                'display_name' => $manager->display_name
+                                  ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')),
+                'emp_code'     => $manager->emp_code,
+            ];
+        } elseif ($employee->reporting_manager_user_id) {
+            $employee->loadMissing('reportingManagerUser');
+            $u = $employee->reportingManagerUser;
+            if ($u) {
+                $managerPayload = [
+                    'id'           => null,            // not an Employee id
+                    'display_name' => $u->name ?: $u->email,
+                    'emp_code'     => null,
+                ];
+            }
+        }
+
         return [
             'id'                    => $row?->id,
             'employee_id'           => $employee->id,
@@ -131,12 +158,7 @@ class ExitController extends Controller
             'notice_date'           => $row?->notice_date?->toDateString(),
             'last_working_day'      => $row?->last_working_day?->toDateString(),
             'reporting_manager_id'  => $managerId,
-            'reporting_manager'     => $manager ? [
-                'id'           => $manager->id,
-                'display_name' => $manager->display_name
-                                  ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')),
-                'emp_code'     => $manager->emp_code,
-            ] : null,
+            'reporting_manager'     => $managerPayload,
             'comments'              => $row?->comments,
             'business_impact'       => $row?->business_impact,
             'replacement_required'  => $row?->replacement_required,

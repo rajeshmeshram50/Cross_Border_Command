@@ -1252,14 +1252,21 @@ function EditEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose:
 }
 
 // ── Evidence Vault modal ────────────────────────────────────────────────────
-function VaultModal({
-  isOpen, onClose, emp, tab, onTabChange,
+// Exported so the HR Employees directory can reuse the exact same vault
+// (live employee uploads + matched HR Document Templates with the signing
+// workflow) instead of maintaining a second mock copy. The `triggerKeyword`
+// prop scopes which document templates the Organizational tab surfaces:
+// the Onboarding page passes 'onboarding'; pass null to list every template
+// matched to the employee regardless of trigger point.
+export function VaultModal({
+  isOpen, onClose, emp, tab, onTabChange, triggerKeyword = 'onboarding',
 }: {
   isOpen: boolean;
   onClose: () => void;
   emp: OnboardRow | null;
   tab: 'employee' | 'organizational';
   onTabChange: (t: 'employee' | 'organizational') => void;
+  triggerKeyword?: string | null;
 }) {
   // ── Organizational documents (Document Templates) — pulled from the API.
   // The Document Template Master classifies templates by employee_category
@@ -1308,9 +1315,13 @@ function VaultModal({
         // point's name contains "onboarding". Substring keyword match
         // because branch users name their trigger rows freely
         // ("Onboarding point", "Pre-onboarding", etc.) — we can't lock
-        // to a single literal title.
+        // to a single literal title. The Employees directory passes
+        // triggerKeyword=null to list every matched template instead.
         const { data } = await api.get('/hr-document-templates/match', {
-          params: { employee_id: emp.dbId, trigger_keyword: 'onboarding' },
+          params: {
+            employee_id: emp.dbId,
+            ...(triggerKeyword ? { trigger_keyword: triggerKeyword } : {}),
+          },
         });
         if (cancelled) return;
         setOrgTemplates(Array.isArray(data?.templates) ? data.templates : []);
@@ -1327,7 +1338,7 @@ function VaultModal({
       }
     })();
     return () => { cancelled = true; };
-  }, [isOpen, emp?.dbId]);
+  }, [isOpen, emp?.dbId, triggerKeyword]);
 
   // ── In-modal preview state ────────────────────────────────────────────────
   // Click "View" → fetch resolved HTML + header/footer JSON, render inside
@@ -4490,6 +4501,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
   <button
     type="button"
     className="onb-init-btn-outline"
+    // Tooltip makes the disabled state self-explanatory: stages 2 / 5 / 6
+    // have no draftable form (docs upload instantly, policies & final
+    // verification are action-driven), so there's nothing for Save Draft to
+    // persist. Without this the greyed button gave no reason on hover.
+    title={
+      (activeStage !== 1 && activeStage !== 3 && activeStage !== 4)
+        ? 'Nothing to save as a draft on this stage — use the actions above, then Next Stage / Complete Onboarding.'
+        : 'Save your progress so far without marking the stage complete.'
+    }
     disabled={
       (activeStage === 1 && s1Saving) ||
       (activeStage === 3 && s1Saving) ||

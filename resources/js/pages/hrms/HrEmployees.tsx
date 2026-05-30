@@ -7,8 +7,13 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
-import ComingSoonShell from '../../components/ComingSoonShell';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
+// Reuse the Onboarding page's fully wired Evidence Vault (live employee
+// uploads + matched HR Document Templates) so the directory's vault shows
+// real documents instead of the old ComingSoon mock. Its CSS lives in the
+// onboarding stylesheet, imported here so the vault renders identically.
+import { VaultModal } from '../employee-onboarding/HrEmployeeOnboarding';
+import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
 import { Swiper, SwiperSlide } from 'swiper/react';
@@ -22,79 +27,10 @@ import 'swiper/css/navigation';
 // language (gradient primary CTA + soft outlined secondary).
 import '../../../css/recruitment.css';
 
-// ── Evidence Vault — mock document catalogue (per-employee view) ────────────
-type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Signed' | 'Sent' | 'Not Generated';
-interface VaultDoc {
-  id: string;
-  name: string;
-  desc: string;
-  icon: string;
-  tint: string;        // background tint for the icon tile
-  fg: string;          // glyph colour
-  category?: string;   // small category pill (only shown on employee tab)
-  status: VaultStatus;
-}
-interface VaultSection { title: string; docs: VaultDoc[] }
-
-const VAULT_EMPLOYEE_DOCS: VaultSection[] = [
-  {
-    title: 'Identity Documents',
-    docs: [
-      { id: 'aadhaar', name: 'Aadhaar Card',  desc: 'Government issued 12-digit unique identity', icon: 'ri-id-card-line',     tint: '#dceefe', fg: '#0c63b0', category: 'Identity', status: 'Verified' },
-      { id: 'pan',     name: 'PAN Card',      desc: 'Permanent Account Number for taxation',      icon: 'ri-bank-card-line',   tint: '#fdf3d6', fg: '#a06f00', category: 'Identity', status: 'Verified' },
-      { id: 'p_photo', name: 'Passport Photo',desc: 'Recent passport-size photograph',            icon: 'ri-image-line',       tint: '#fdd9ea', fg: '#a02960', category: 'Identity', status: 'Uploaded' },
-      { id: 'p_copy',  name: 'Passport Copy', desc: 'Govt issued travel document (if applicable)',icon: 'ri-passport-line',    tint: '#dceefe', fg: '#0c63b0', category: 'Identity', status: 'Pending'  },
-    ],
-  },
-  {
-    title: 'Address Proof',
-    docs: [
-      { id: 'cur_addr',  name: 'Current Address Proof',   desc: 'Utility bill or bank statement (last 3 months)', icon: 'ri-home-4-line',  tint: '#fde8c4', fg: '#a4661c', category: 'Address', status: 'Uploaded' },
-      { id: 'perm_addr', name: 'Permanent Address Proof', desc: 'Aadhaar / Voter ID — permanent address proof',   icon: 'ri-map-pin-line', tint: '#d6f4e3', fg: '#108548', category: 'Address', status: 'Verified' },
-    ],
-  },
-  {
-    title: 'Education Documents',
-    docs: [
-      { id: 'edu_10',  name: '10th Marksheet',     desc: 'Secondary school certification',         icon: 'ri-graduation-cap-line', tint: '#d6f4e3', fg: '#108548', category: 'Education', status: 'Verified' },
-      { id: 'edu_12',  name: '12th Marksheet',     desc: 'Higher secondary certification',         icon: 'ri-graduation-cap-line', tint: '#d6f4e3', fg: '#108548', category: 'Education', status: 'Verified' },
-      { id: 'edu_deg', name: 'Graduation Degree',  desc: 'Bachelor’s degree certificate',     icon: 'ri-medal-2-line',        tint: '#fdf3d6', fg: '#a06f00', category: 'Education', status: 'Uploaded' },
-      { id: 'edu_pg',  name: 'Post Graduation',    desc: 'Master’s or postgraduate diploma',  icon: 'ri-award-line',          tint: '#dceefe', fg: '#0c63b0', category: 'Education', status: 'Pending'  },
-    ],
-  },
-  {
-    title: 'Employment History',
-    docs: [
-      { id: 'rel_letter', name: 'Relieving Letter',  desc: 'Final relieving from previous employer', icon: 'ri-mail-send-line',    tint: '#fde8c4', fg: '#a4661c', category: 'Employment', status: 'Verified' },
-      { id: 'exp_cert',   name: 'Experience Letter', desc: 'Past employment experience certificate', icon: 'ri-briefcase-line',    tint: '#d3f0ee', fg: '#0a716a', category: 'Employment', status: 'Verified' },
-      { id: 'pay_slip',   name: 'Last 3 Pay Slips',  desc: 'Most recent salary slips for reference', icon: 'ri-money-dollar-circle-line', tint: '#d6f4e3', fg: '#108548', category: 'Employment', status: 'Uploaded' },
-    ],
-  },
-];
-
-const VAULT_ORG_DOCS: VaultSection[] = [
-  {
-    title: 'Signed Company Documents',
-    docs: [
-      { id: 'nda',        name: 'NDA',                       desc: 'Non-Disclosure Agreement — active during and post tenure', icon: 'ri-lock-line',          tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
-      { id: 'emp_agree',  name: 'Employment Agreement',      desc: 'Appointment letter & employment terms and conditions',     icon: 'ri-file-list-3-line',   tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
-      { id: 'coc',        name: 'Code of Conduct Policy',    desc: 'Acknowledgement of company ethical standards and behavior',icon: 'ri-book-2-line',        tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
-      { id: 'it_sec',     name: 'IT Security & Acceptable Use', desc: 'IT asset usage, data access, and acceptable use policy',icon: 'ri-computer-line',      tint: '#dceefe', fg: '#0c63b0', status: 'Signed' },
-      { id: 'leave_pol',  name: 'Leave & Attendance Policy', desc: 'Leave entitlements, attendance rules, and WFH policy',     icon: 'ri-calendar-2-line',    tint: '#dceefe', fg: '#0c63b0', status: 'Sent' },
-      { id: 'conf',       name: 'Confidentiality Agreement', desc: 'Confidential business information protection agreement',   icon: 'ri-shield-check-line',  tint: '#dceefe', fg: '#0c63b0', status: 'Signed' },
-      { id: 'gratuity',   name: 'Gratuity & Benefit Policy', desc: 'Gratuity eligibility, PF, and other employee benefit terms',icon: 'ri-gift-line',          tint: '#fde8c4', fg: '#a4661c', status: 'Not Generated' },
-    ],
-  },
-];
-
-const VAULT_STATUS_TONE: Record<VaultStatus, { bg: string; fg: string; dot: string }> = {
-  'Verified':      { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
-  'Uploaded':      { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Pending':       { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
-  'Signed':        { bg: '#ece6ff', fg: '#5b3fd1', dot: '#7c5cfc' },
-  'Sent':          { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Not Generated': { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
-};
+// The per-employee Evidence Vault is now the shared VaultModal imported from
+// the Onboarding page (live uploads + matched HR Document Templates). The old
+// mock VAULT_EMPLOYEE_DOCS / VAULT_ORG_DOCS catalogues that used to live here
+// were removed when the directory's vault was wired to real data.
 
 // Static option lists. Country / nationality / state / department /
 // designation / role / legal-entity dropdowns are now sourced from the
@@ -1274,6 +1210,38 @@ export default function HrEmployees() {
     });
   };
 
+  // Wizard scroll viewport — used to bring the first highlighted field into
+  // view after a failed validation.
+  const empScrollRef = useRef<HTMLDivElement>(null);
+
+  // After validation fails we don't just toast — we scroll the FIRST errored
+  // field into view (and focus native inputs) so the red highlight is
+  // actually visible. Required fields like the Aadhar / PAN tiles sit at the
+  // bottom of a step, off-screen, so previously the toast fired while the
+  // highlighted field stayed below the fold and the user couldn't tell which
+  // field needed attention. Every errored control either carries `.is-invalid`
+  // / `.has-error` (inputs, doc tiles) or the MasterSelect `.invalid` wrapper,
+  // and renders a trailing `.emp-err` message — so the first match of any of
+  // those, in DOM order, anchors us to the first problem field.
+  const scrollToFirstError = () => {
+    // Double rAF: the submit path can jump the wizard to an earlier step
+    // first (firstStepWithErrors), so we wait for that re-render to commit
+    // before querying the freshly-rendered fields.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const root = empScrollRef.current;
+      if (!root) return;
+      const el = root.querySelector('.is-invalid, .has-error, .master-select-wrap.invalid, .emp-err');
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Focus only native text inputs/areas (not file inputs or custom
+      // selects, which could pop a dropdown on focus). preventScroll keeps
+      // the smooth scroll above from being overridden.
+      const focusable = (el.closest('[class*="col"]') || el.parentElement)
+        ?.querySelector('input:not([type="file"]), textarea') as HTMLElement | null;
+      focusable?.focus?.({ preventScroll: true });
+    }));
+  };
+
   // ── Add Employee — partial save persistence ──────────────────────────
   // Drafts are NOT cached client-side anymore. Instead, every Next click
   // calls `persistCurrentStep()` which writes the row to the backend as a
@@ -1569,6 +1537,22 @@ export default function HrEmployees() {
   const validateStep3 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
     const existing = eExistingDocsRef.current;
+
+    // Leave & Attendance — the fields marked with a red * in the form are
+    // genuinely required. Leave Plan is the one exception: it can only be
+    // required when at least one plan exists for the branch, otherwise a
+    // tenant with zero leave plans could never create an employee. The rest
+    // always have selectable options, so they're unconditionally required.
+    if (leavePlanOptions.length > 0 && !eLeavePlan) {
+      e.leave_plan = 'Leave plan is required';
+    }
+    if (!eHolidayList)        e.holiday_list        = 'Holiday list is required';
+    if (!eShift)              e.shift               = 'Shift is required';
+    if (!eWeeklyOff)          e.weekly_off          = 'Weekly off is required';
+    if (!eTimeTracking)       e.time_tracking       = 'Time tracking policy is required';
+    if (!ePenalizationPolicy) e.penalization_policy = 'Penalization policy is required';
+    if (!eExpensePolicy)      e.expense_policy      = 'Expense policy is required';
+
     if (!eAadharFile && !existing['aadhaar']) {
       e.doc_aadhaar = 'Aadhar Card upload is required';
     }
@@ -1585,7 +1569,8 @@ export default function HrEmployees() {
       e.mobile_master_asset_id = 'Mobile Device is required';
     }
     return e;
-  }, [eAadharFile, ePanFile, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId]);
+  }, [eAadharFile, ePanFile, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId,
+      leavePlanOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eTimeTracking, ePenalizationPolicy, eExpensePolicy]);
 
   // Step 4 — Compensation. Salary is mandatory whenever payroll is enabled
   // for the employee (the default). The "Enable payroll" toggle is the
@@ -1632,7 +1617,7 @@ export default function HrEmployees() {
     const STEP_KEYS: Array<{ step: 1 | 2 | 3 | 4; keys: Set<string> }> = [
       { step: 1, keys: new Set(['work_country_id','first_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
       { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
-      { step: 3, keys: new Set(['doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
+      { step: 3, keys: new Set(['leave_plan','holiday_list','shift','weekly_off','time_tracking','penalization_policy','expense_policy','doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
       { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from']) },
     ];
     for (const s of STEP_KEYS) {
@@ -1809,6 +1794,7 @@ export default function HrEmployees() {
           flat[k] = Array.isArray(fieldErrors[k]) ? fieldErrors[k][0] : String(fieldErrors[k]);
         }
         setEErrors(flat);
+        scrollToFirstError();
       }
       const msg = err?.response?.data?.message || err?.message || 'Save failed';
       toast.error('Could not save', String(msg));
@@ -1840,6 +1826,7 @@ export default function HrEmployees() {
                : validateStep4();
     if (Object.keys(errs).length > 0) {
       setEErrors(errs);
+      scrollToFirstError();
       const count = Object.keys(errs).length;
       toast.error(
         'Please fix the highlighted fields',
@@ -1898,6 +1885,7 @@ export default function HrEmployees() {
       setEErrors(errs);
       const jumpTo = firstStepWithErrors(errs);
       if (jumpTo) setEmpStep(jumpTo);
+      scrollToFirstError();
       const count = Object.keys(errs).length;
       toast.error(
         'Please fix the highlighted fields',
@@ -1965,6 +1953,7 @@ export default function HrEmployees() {
           flat[k] = (Array.isArray(fieldErrors[k]) ? fieldErrors[k][0] : fieldErrors[k]) || 'Invalid';
         }
         setEErrors(flat);
+        scrollToFirstError();
         toast.error('Could not save employee', err?.response?.data?.message || 'Please correct the highlighted fields.');
       } else {
         const apiMsg = err?.response?.data?.message || err?.message || 'Save failed';
@@ -4334,7 +4323,7 @@ export default function HrEmployees() {
           </div>
 
           {/* Body — scrollable */}
-          <div style={{ padding: '18px 22px', maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
+          <div ref={empScrollRef} style={{ padding: '18px 22px', maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
             {empStep === 1 && (
               <>
                 {/* Employee Details */}
@@ -4821,11 +4810,13 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={6}>
                       <label className="emp-label">Leave Plan<span className="req">*</span></label>
-                      <MasterSelect value={eLeavePlan} onChange={setELeavePlan} options={leavePlanOptions} placeholder={leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} />
+                      <MasterSelect value={eLeavePlan} onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }} options={leavePlanOptions} placeholder={leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} invalid={!!eErrors.leave_plan} />
+                      {eErrors.leave_plan && <small className="emp-err">{eErrors.leave_plan}</small>}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Holiday List<span className="req">*</span></label>
-                      <MasterSelect value={eHolidayList} onChange={setEHolidayList} options={HOLIDAY_LIST_OPTIONS} placeholder="Select holiday list" />
+                      <MasterSelect value={eHolidayList} onChange={(v) => { setEHolidayList(v); clearEErr('holiday_list'); }} options={HOLIDAY_LIST_OPTIONS} placeholder="Select holiday list" invalid={!!eErrors.holiday_list} />
+                      {eErrors.holiday_list && <small className="emp-err">{eErrors.holiday_list}</small>}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Attendance Tracking</label>
@@ -4863,11 +4854,13 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Shift<span className="req">*</span></label>
-                      <MasterSelect value={eShift} onChange={setEShift} options={SHIFT_OPTIONS} placeholder="Select shift" />
+                      <MasterSelect value={eShift} onChange={(v) => { setEShift(v); clearEErr('shift'); }} options={SHIFT_OPTIONS} placeholder="Select shift" invalid={!!eErrors.shift} />
+                      {eErrors.shift && <small className="emp-err">{eErrors.shift}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Weekly Off<span className="req">*</span></label>
-                      <MasterSelect value={eWeeklyOff} onChange={setEWeeklyOff} options={WEEKLY_OFF_OPTIONS} placeholder="Select weekly off" />
+                      <MasterSelect value={eWeeklyOff} onChange={(v) => { setEWeeklyOff(v); clearEErr('weekly_off'); }} options={WEEKLY_OFF_OPTIONS} placeholder="Select weekly off" invalid={!!eErrors.weekly_off} />
+                      {eErrors.weekly_off && <small className="emp-err">{eErrors.weekly_off}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Attendance Number</label>
@@ -4887,11 +4880,13 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Time Tracking Policy<span className="req">*</span></label>
-                      <MasterSelect value={eTimeTracking} onChange={setETimeTracking} options={TIME_TRACKING_OPTIONS} placeholder="Select time tracking" />
+                      <MasterSelect value={eTimeTracking} onChange={(v) => { setETimeTracking(v); clearEErr('time_tracking'); }} options={TIME_TRACKING_OPTIONS} placeholder="Select time tracking" invalid={!!eErrors.time_tracking} />
+                      {eErrors.time_tracking && <small className="emp-err">{eErrors.time_tracking}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Penalization Policy<span className="req">*</span></label>
-                      <MasterSelect value={ePenalizationPolicy} onChange={setEPenalizationPolicy} options={PENALIZATION_OPTIONS} placeholder="Select penalization policy" />
+                      <MasterSelect value={ePenalizationPolicy} onChange={(v) => { setEPenalizationPolicy(v); clearEErr('penalization_policy'); }} options={PENALIZATION_OPTIONS} placeholder="Select penalization policy" invalid={!!eErrors.penalization_policy} />
+                      {eErrors.penalization_policy && <small className="emp-err">{eErrors.penalization_policy}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Overtime</label>
@@ -4899,7 +4894,8 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Expense Policy<span className="req">*</span></label>
-                      <MasterSelect value={eExpensePolicy} onChange={setEExpensePolicy} placeholder="Select policy" options={EXPENSE_POLICY_OPTIONS} />
+                      <MasterSelect value={eExpensePolicy} onChange={(v) => { setEExpensePolicy(v); clearEErr('expense_policy'); }} placeholder="Select policy" options={EXPENSE_POLICY_OPTIONS} invalid={!!eErrors.expense_policy} />
+                      {eErrors.expense_policy && <small className="emp-err">{eErrors.expense_policy}</small>}
                     </Col>
                   </Row>
                 </div>
@@ -5627,354 +5623,30 @@ export default function HrEmployees() {
         </ModalBody>
       </Modal>
 
-      {/* ── Evidence Vault modal (per-row Documents / PDF icon) ── */}
-      {(() => {
-        // Pre-compute KPIs across the catalogue so the strip stays in sync if
-        // the mock data ever changes (no manual counting required).
-        const allDocs = [...VAULT_EMPLOYEE_DOCS, ...VAULT_ORG_DOCS].flatMap(s => s.docs);
-        const counts = {
-          total:    allDocs.length,
-          verified: allDocs.filter(d => d.status === 'Verified').length,
-          signed:   allDocs.filter(d => d.status === 'Signed' || d.status === 'Sent').length,
-          pending:  allDocs.filter(d => d.status === 'Pending' || d.status === 'Uploaded').length,
-          notGen:   allDocs.filter(d => d.status === 'Not Generated').length,
-        };
-        const empCount = VAULT_EMPLOYEE_DOCS.flatMap(s => s.docs).length;
-        const orgCount = VAULT_ORG_DOCS.flatMap(s => s.docs).length;
-        // Mock vault completion percent = (verified + signed) / total.
-        const completion = counts.total ? Math.round(((counts.verified + counts.signed) / counts.total) * 100) : 0;
-        const sections = vaultTab === 'employee' ? VAULT_EMPLOYEE_DOCS : VAULT_ORG_DOCS;
-
-        return (
-          <Modal
-            isOpen={vaultOpen}
-            toggle={closeVault}
-            centered
-            size="lg"
-            contentClassName="vault-modal-content border-0"
-            modalClassName="vault-modal-wide"
-            scrollable
-            backdrop="static"
-            keyboard={false}
-          >
-            <style>{`
-              .vault-modal-wide .modal-dialog { max-width: min(1080px, 94vw); }
-              .vault-modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
-              .vault-pill {
-                display: inline-flex; align-items: center; padding: 4px 12px;
-                border-radius: 999px; font-size: 11.5px; font-weight: 600;
-                background: rgba(255,255,255,0.18); color: #fff;
-              }
-              .vault-kpi-card {
-                background: #ffffff;
-                border-radius: 16px;
-                padding: 20px 20px 16px;
-                box-shadow: 0 2px 20px rgba(0,0,0,0.06);
-                border: 1px solid var(--vz-border-color);
-                position: relative;
-                overflow: hidden;
-                height: 100%;
-                cursor: pointer;
-                transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
-              }
-              .vault-kpi-card:hover {
-                transform: translateY(-3px);
-                box-shadow: 0 12px 32px rgba(18,38,63,0.12);
-                border-color: rgba(99,102,241,0.30);
-              }
-              .vault-kpi-card:hover .vault-kpi-icon {
-                transform: scale(1.08);
-              }
-              .vault-kpi-card .vault-kpi-icon {
-                transition: transform .25s ease;
-              }
-              [data-bs-theme="dark"] .vault-kpi-card { background: #1c2531; }
-              [data-bs-theme="dark"] .vault-kpi-card:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.45); }
-              .vault-kpi-card .vault-kpi-strip { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
-              .vault-kpi-card .vault-kpi-icon {
-                width: 46px; height: 46px; border-radius: 12px;
-                display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-              }
-              .vault-kpi-card .vault-kpi-icon i { color: #fff; font-size: 20px; }
-              .vault-kpi-card .vault-kpi-label {
-                font-size: 11px; font-weight: 700;
-                color: var(--vz-secondary-color);
-                letter-spacing: 0.06em; text-transform: uppercase;
-                margin: 0 0 10px;
-              }
-              .vault-kpi-card .vault-kpi-num {
-                font-size: 28px; font-weight: 800; line-height: 1; margin: 0;
-                color: var(--vz-heading-color, var(--vz-body-color));
-              }
-              .vault-tab-btn {
-                background: transparent; border: none; padding: 12px 18px;
-                font-size: 13.5px; font-weight: 600; color: var(--vz-secondary-color);
-                display: inline-flex; align-items: center; gap: 6px;
-                border-bottom: 2px solid transparent;
-                transition: color .15s ease, border-color .15s ease;
-              }
-              .vault-tab-btn:hover { color: #5a3fd1; }
-              .vault-tab-btn.is-active { color: #5a3fd1; border-bottom-color: #7c5cfc; }
-              .vault-tab-count {
-                display: inline-flex; align-items: center; justify-content: center;
-                min-width: 22px; height: 18px; padding: 0 6px;
-                border-radius: 999px; background: var(--vz-light); color: var(--vz-secondary-color);
-                font-size: 10.5px; font-weight: 700;
-              }
-              .vault-tab-btn.is-active .vault-tab-count { background: #ece6ff; color: #5a3fd1; }
-              .vault-doc-row {
-                display: flex; align-items: center; gap: 14px; padding: 14px 4px;
-                border-bottom: 1px solid var(--vz-border-color);
-              }
-              .vault-doc-row:last-child { border-bottom: none; }
-              .vault-doc-icon {
-                width: 40px; height: 40px; border-radius: 10px;
-                display: inline-flex; align-items: center; justify-content: center;
-                font-size: 20px; flex-shrink: 0;
-              }
-              .vault-doc-meta { min-width: 0; flex: 1; }
-              .vault-doc-name { font-size: 14px; font-weight: 700; color: var(--vz-heading-color, var(--vz-body-color)); }
-              .vault-doc-desc { font-size: 12px; color: var(--vz-secondary-color); margin-top: 2px; }
-              .vault-status-pill {
-                display: inline-flex; align-items: center; gap: 6px;
-                padding: 4px 10px; border-radius: 999px;
-                font-size: 11px; font-weight: 600;
-              }
-              .vault-status-dot { width: 6px; height: 6px; border-radius: 50%; }
-              .vault-action-view {
-                display: inline-flex; align-items: center; gap: 5px;
-                padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
-                background: #fff; color: #374151; border: 1px solid #e5e7eb;
-                transition: border-color .15s ease, color .15s ease;
-              }
-              .vault-action-view:hover { color: #5a3fd1; border-color: #c4b5fd; }
-              .vault-action-download {
-                display: inline-flex; align-items: center; gap: 5px;
-                padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
-                background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border: none;
-                box-shadow: 0 4px 10px rgba(124,92,252,0.25);
-              }
-              .vault-action-download:hover { box-shadow: 0 6px 14px rgba(124,92,252,0.35); }
-            `}</style>
-
-            <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
-              {/* Header — indigo gradient with status ring */}
-              <div
-                style={{
-                  padding: '22px 26px',
-                  background: 'linear-gradient(120deg,#5e4dd6 0%,#7c5cfc 60%,#9b7dff 100%)',
-                  color: '#fff',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-              >
-                <div style={{
-                  position: 'absolute', top: -50, right: -40, width: 220, height: 220,
-                  borderRadius: '50%', background: 'rgba(255,255,255,0.08)',
-                }} />
-                <div className="d-flex align-items-start justify-content-between gap-3" style={{ position: 'relative' }}>
-                  <div className="d-flex align-items-start gap-3 min-w-0">
-                    <div
-                      className="d-flex align-items-center justify-content-center flex-shrink-0"
-                      style={{
-                        width: 48, height: 48, borderRadius: 12,
-                        background: 'rgba(255,255,255,0.22)',
-                      }}
-                    >
-                      <i className="ri-folder-shield-2-line" style={{ fontSize: 22 }} />
-                    </div>
-                    <div className="min-w-0">
-                      <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 20, letterSpacing: '-0.01em' }}>
-                        Evidence Vault
-                      </h5>
-                      <div className="mb-2" style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.88)' }}>
-                        Centralized document repository for onboarding, signed organizational, and exit documents
-                      </div>
-                      {vaultEmp && (
-                        <div className="d-flex flex-wrap gap-2">
-                          <span className="vault-pill">{vaultEmp.id}</span>
-                          <span className="vault-pill">{vaultEmp.name}</span>
-                          <span className="vault-pill">{vaultEmp.department}</span>
-                          <span className="vault-pill">{vaultEmp.designation}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="d-flex align-items-start gap-3 flex-shrink-0">
-                    {/* Status ring */}
-                    <div className="text-center">
-                      <div
-                        style={{
-                          width: 64, height: 64, borderRadius: '50%',
-                          background: `conic-gradient(#10b981 ${completion * 3.6}deg, rgba(255,255,255,0.20) 0)`,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        }}
-                      >
-                        <div
-                          className="d-flex align-items-center justify-content-center fw-bold"
-                          style={{
-                            width: 50, height: 50, borderRadius: '50%',
-                            background: '#5b3fd1', color: '#fff', fontSize: 14,
-                          }}
-                        >
-                          {completion}%
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.85)', marginTop: 6 }}>
-                        VAULT STATUS
-                      </div>
-                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.85)' }}>
-                        {completion}% Complete
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={closeVault}
-                      aria-label="Close"
-                      className="btn p-0 d-inline-flex align-items-center justify-content-center"
-                      style={{
-                        width: 32, height: 32, borderRadius: 10,
-                        background: 'rgba(255,255,255,0.20)', border: 'none', color: '#fff',
-                      }}
-                    >
-                      <i className="ri-close-line" style={{ fontSize: 18 }} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Body — wrapped in ComingSoonShell since the document
-                  catalogue, signing flow, and download links aren't
-                  wired to a real backend yet. The shell keeps the
-                  full design visible (KPI strip + tabs + sections)
-                  so reviewers can preview the layout but blocks
-                  interactions with the mock buttons. The header
-                  above stays interactive so the user can still
-                  read the employee context and close the modal. */}
-              <div style={{ padding: '16px 24px 22px' }}>
-                <ComingSoonShell
-                  title="Evidence Vault"
-                  subtitle="Document repository, signed agreements, and ID uploads"
-                >
-                  {/* KPI strip — dashboard-style cards (gradient top + gradient icon tile) */}
-                  <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--vz-border-color)' }}>
-                    <Row className="g-3 align-items-stretch">
-                      {[
-                        { key: 'total',    label: 'Total Docs',     value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
-                        { key: 'verified', label: 'Verified',       value: counts.verified, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-                        { key: 'signed',   label: 'Signed',         value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
-                        { key: 'pending',  label: 'Pending',        value: counts.pending,  icon: 'ri-time-line',             gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
-                        { key: 'notgen',   label: 'Not Generated',  value: counts.notGen,   icon: 'ri-close-circle-line',     gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
-                      ].map(k => (
-                        <Col key={k.key} xl md={4} sm={6} xs={12}>
-                          <div className="vault-kpi-card">
-                            <div className="vault-kpi-strip" style={{ background: k.gradient }} />
-                            <div className="d-flex align-items-start justify-content-between">
-                              <div className="min-w-0">
-                                <p className="vault-kpi-label">{k.label}</p>
-                                <h3 className="vault-kpi-num">{k.value.toLocaleString()}</h3>
-                              </div>
-                              <div className="vault-kpi-icon" style={{ background: k.gradient }}>
-                                <i className={k.icon} />
-                              </div>
-                            </div>
-                          </div>
-                        </Col>
-                      ))}
-                    </Row>
-                  </div>
-
-                  {/* Tabs */}
-                  <div className="d-flex" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-                    <button
-                      type="button"
-                      className={`vault-tab-btn${vaultTab === 'employee' ? ' is-active' : ''}`}
-                      onClick={() => setVaultTab('employee')}
-                    >
-                      <i className="ri-user-line" /> Employee Documents
-                      <span className="vault-tab-count">{empCount}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`vault-tab-btn${vaultTab === 'organizational' ? ' is-active' : ''}`}
-                      onClick={() => setVaultTab('organizational')}
-                    >
-                      <i className="ri-building-line" /> Organizational Documents
-                      <span className="vault-tab-count">{orgCount}</span>
-                    </button>
-                  </div>
-
-                  {/* Section list */}
-                  <div>
-                    {sections.map(section => (
-                      <div key={section.title} style={{ paddingTop: 16 }}>
-                        <div className="d-flex align-items-center justify-content-between mb-2">
-                          <div>
-                            <div className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
-                              {section.title}
-                            </div>
-                            <div className="text-muted" style={{ fontSize: 11.5 }}>
-                              {section.docs.length} document{section.docs.length === 1 ? '' : 's'} in this category
-                            </div>
-                          </div>
-                          <span
-                            className="d-inline-flex align-items-center"
-                            style={{
-                              padding: '4px 12px', borderRadius: 999,
-                              background: '#f5f0ff', color: '#5a3fd1',
-                              fontSize: 11.5, fontWeight: 600,
-                            }}
-                          >
-                            {section.docs.length} docs
-                          </span>
-                        </div>
-                        <div>
-                          {section.docs.map(doc => {
-                            const tone = VAULT_STATUS_TONE[doc.status];
-                            return (
-                              <div key={doc.id} className="vault-doc-row flex-wrap">
-                                <div className="vault-doc-icon" style={{ background: doc.tint, color: doc.fg }}>
-                                  <i className={doc.icon} />
-                                </div>
-                                <div className="vault-doc-meta">
-                                  <div className="vault-doc-name">{doc.name}</div>
-                                  <div className="vault-doc-desc">{doc.desc}</div>
-                                </div>
-                                {doc.category && (
-                                  <span
-                                    className="d-inline-flex align-items-center"
-                                    style={{
-                                      padding: '4px 10px', borderRadius: 999,
-                                      background: '#eef2f6', color: '#475569',
-                                      fontSize: 11, fontWeight: 600,
-                                    }}
-                                  >
-                                    {doc.category}
-                                  </span>
-                                )}
-                                <span className="vault-status-pill" style={{ background: tone.bg, color: tone.fg }}>
-                                  <span className="vault-status-dot" style={{ background: tone.dot }} />
-                                  {doc.status}
-                                </span>
-                                <button type="button" className="vault-action-view" onClick={() => { /* TODO: view doc */ }}>
-                                  <i className="ri-eye-line" /> View
-                                </button>
-                                <button type="button" className="vault-action-download" onClick={() => { /* TODO: download doc */ }}>
-                                  <i className="ri-download-2-line" /> Download
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </ComingSoonShell>
-              </div>
-            </ModalBody>
-          </Modal>
-        );
-      })()}
+      {/* ── Evidence Vault modal (per-row Documents / PDF icon) ──
+          Reuses the Onboarding page's fully wired vault so the directory
+          shows THIS employee's real uploaded documents + the HR Document
+          Templates matched to their department / designation (with the
+          signing workflow), instead of the old ComingSoon mock catalogue.
+          The table's EmployeeRow is adapted to the OnboardRow shape the
+          vault reads (id / name / department / designation / dbId).
+          triggerKeyword={null} lists every matched template, not just
+          onboarding-triggered ones, since this is the full directory. */}
+      <VaultModal
+        isOpen={vaultOpen}
+        onClose={closeVault}
+        emp={vaultEmp ? ({
+          dbId: (vaultEmp as any)._dbId,
+          id: vaultEmp.id,
+          empId: vaultEmp.id,
+          name: vaultEmp.name,
+          department: vaultEmp.department,
+          designation: vaultEmp.designation,
+        } as any) : null}
+        tab={vaultTab}
+        onTabChange={setVaultTab}
+        triggerKeyword={null}
+      />
 
       {/* Face Registration modal — opened from the row action. Posts the
           128-d descriptor (with consent flag) to /api/face/register, with
