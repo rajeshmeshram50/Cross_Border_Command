@@ -260,11 +260,7 @@ const WAS_CSS = `
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px;
   padding: 16px 22px;
-  background: linear-gradient(115deg,
-    rgb(22, 163, 74)   0%,
-    rgb(34, 197, 94)  45%,
-    rgb(74, 222, 128) 80%,
-    rgb(134, 239, 172) 100%);
+  background: linear-gradient(135deg, #22c55e, #16a34a);
   color: #fff;
 }
 .was-head::before {
@@ -451,17 +447,18 @@ const WAS_CSS = `
 }
 .was-btn-primary {
   position: relative; overflow: hidden;
-  background: linear-gradient(135deg, #34d399 0%, #10b981 50%, #059669 100%);
+  padding: 8px 24px; border-radius: 9px; font-size: 12px;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
   color: #fff;
   box-shadow:
-    0 4px 14px rgba(16, 185, 129, .40),
+    0 3px 12px rgba(22, 163, 74, .35),
     inset 0 1px 0 rgba(255, 255, 255, .18);
   border-color: transparent;
 }
 .was-btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow:
-    0 6px 18px rgba(16, 185, 129, .50),
+    0 6px 18px rgba(22, 163, 74, .50),
     inset 0 1px 0 rgba(255, 255, 255, .18);
 }
 

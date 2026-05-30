@@ -1139,7 +1139,69 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   if (!employee) return null;
 
   const statusOf = (n: number): StageStatus => stageStatus[n] || (n === stage ? 'In Progress' : 'Pending');
-  const completed = Object.values(stageStatus).filter(s => s === 'Completed').length;
+
+  // Live per-stage percentage, computed purely from the stage's sub-items
+  // (independent of the stored status). One source of truth for both the
+  // sidebar % pill and the auto-complete rule below, so the colour and the
+  // number can never disagree.
+  const rawStagePct = (n: number): number => {
+    if (n === 1) {
+      // Stage 1 required fields (mirror what saveStage1 needs to advance).
+      const items = [
+        !!String(exitType).trim(),
+        !!String(reasonForExit).trim(),
+        !!String(lwd).trim(),
+        !!reportingManagerId,
+      ];
+      return Math.round((items.filter(Boolean).length / items.length) * 100);
+    }
+    if (n === 2) {
+      const assetIds  = Object.keys(assetReturns);
+      const assetDone = assetIds.filter(k => assetReturns[Number(k)]?.status === 'Handed Over').length;
+      const clrDone   = clearances.filter(c => c.status === 'Approved').length;
+      const notesDone = handoverNotes.trim() ? 1 : 0;
+      const total = assetIds.length + clearances.length + 1;
+      const done  = assetDone + clrDone + notesDone;
+      return total === 0 ? 0 : Math.round((done / total) * 100);
+    }
+    if (n === 3) {
+      const total = exitTemplates.length;
+      if (total === 0) return 0;
+      const done = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
+      return Math.round((done / total) * 100);
+    }
+    if (n === 4) {
+      // 5 validation checkboxes + 4 final-action selects (each select counts
+      // once it moves off its starting default).
+      const validationDone = validation.filter(Boolean).length;
+      const finalsDone =
+        (empStatus !== 'Active' ? 1 : 0)
+        + (profileLock === 'Locked' ? 1 : 0)
+        + (exitCaseStatus === 'Closed' ? 1 : 0)
+        + (hrSignOff !== 'Pending' ? 1 : 0);
+      const total = validation.length + 4;
+      return Math.round(((validationDone + finalsDone) / total) * 100);
+    }
+    return 0;
+  };
+
+  // Effective DISPLAY status — drives the stage card's colour, checkmark and
+  // label. A stage that's 100% done reads as Completed (green + ✓) even when
+  // the user filled every sub-item instead of clicking an explicit complete
+  // action. Previously only Stage 1 (explicitly marked by saveStage1) turned
+  // green, so a fully-filled Stage 2/3/4 stayed grey "In Progress" while its
+  // pill already showed 100% — the mismatch QA flagged. The existing
+  // In Progress / Pending behaviour is otherwise preserved.
+  const effStatusOf = (n: number): StageStatus => {
+    if (stageStatus[n] === 'Completed' || rawStagePct(n) === 100) return 'Completed';
+    if (n === stage || rawStagePct(n) > 0 || stageStatus[n] === 'In Progress') return 'In Progress';
+    return 'Pending';
+  };
+
+  // Overall progress ring counts every effectively-complete stage (100% or
+  // explicitly marked) so the header ring agrees with the green stages in
+  // the sidebar.
+  const completed = EXIT_STAGES.filter(s => effStatusOf(s.num) === 'Completed').length;
   const progressPct = Math.round((completed / EXIT_STAGES.length) * 100);
 
   // Move forward without auto-completing the current stage. The
@@ -1309,61 +1371,11 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
           {/* Sidebar */}
           <aside className="ep-sidebar">
             {EXIT_STAGES.map(s => {
-              const st = statusOf(s.num);
-              /* Live per-stage progress. The old formula hard-coded
-               * `In Progress ? (currentStage ? 35% : 0%) : 0%` — so a
-               * fully filled-out stage 2 (all clearances Approved,
-               * asset handed over, notes typed) still read 35% in the
-               * sidebar, and once the user moved to stage 3 it dropped
-               * back to 0%. Compute the real share of completed sub-
-               * items for each stage instead so the pill reflects
-               * actual work. */
-              const computeStagePct = (n: number): number => {
-                if (st === 'Completed') return 100;
-                if (st === 'Pending')   return 0;
-                if (n === 1) {
-                  /* Stage 1 required fields (mirrors what saveStage1
-                   * needs to advance): exit type, reason, last working
-                   * day, reporting manager. */
-                  const items = [
-                    !!String(exitType).trim(),
-                    !!String(reasonForExit).trim(),
-                    !!String(lwd).trim(),
-                    !!reportingManagerId,
-                  ];
-                  return Math.round((items.filter(Boolean).length / items.length) * 100);
-                }
-                if (n === 2) {
-                  const assetIds  = Object.keys(assetReturns);
-                  const assetDone = assetIds.filter(k => assetReturns[Number(k)]?.status === 'Handed Over').length;
-                  const clrDone   = clearances.filter(c => c.status === 'Approved').length;
-                  const notesDone = handoverNotes.trim() ? 1 : 0;
-                  const total = assetIds.length + clearances.length + 1;
-                  const done  = assetDone + clrDone + notesDone;
-                  return total === 0 ? 0 : Math.round((done / total) * 100);
-                }
-                if (n === 3) {
-                  const total = exitTemplates.length;
-                  if (total === 0) return 0;
-                  const done = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
-                  return Math.round((done / total) * 100);
-                }
-                if (n === 4) {
-                  /* 5 validation checkboxes + 4 final-action selects.
-                   * A select "counts" once it moves off its starting
-                   * default (Active / Unlocked / Open / Pending). */
-                  const validationDone = validation.filter(Boolean).length;
-                  const finalsDone =
-                    (empStatus !== 'Active' ? 1 : 0)
-                    + (profileLock === 'Locked' ? 1 : 0)
-                    + (exitCaseStatus === 'Closed' ? 1 : 0)
-                    + (hrSignOff !== 'Pending' ? 1 : 0);
-                  const total = validation.length + 4;
-                  return Math.round(((validationDone + finalsDone) / total) * 100);
-                }
-                return 0;
-              };
-              const stagePct = computeStagePct(s.num);
+              // Display status + percentage now come from the shared helpers
+              // (rawStagePct / effStatusOf) so a 100% stage turns green here
+              // exactly like Stage 1, and a Completed stage always reads 100%.
+              const st = effStatusOf(s.num);
+              const stagePct = st === 'Completed' ? 100 : rawStagePct(s.num);
               return (
                 <button
                   key={s.num}
@@ -2785,19 +2797,19 @@ function apiToExitRow(e: any): EmployeeRow {
   else if (!e.email || !e.department_id || !e.designation_id)    status = 'Missing Details';
   else                                                           status = 'Active';
 
-  // Exit readiness — soft proxy until the dedicated checklist endpoint
-  // exists. Active = wizard progress (50% from Stage 1 + bumps from the
-  // 6-stage onboarding); Exited = 100; In Progress = 60.
-  const wizardStep  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
-  const macroStage  = Math.max(0, Math.min(6, Number(e.onboarding_stage_completed ?? 0)));
-  const stage1Frac  = macroStage >= 1 ? 1 : wizardStep / 4;
-  const others      = (macroStage >= 2 ? 1 : 0) + (macroStage >= 3 ? 1 : 0)
-                    + (macroStage >= 4 ? 1 : 0) + (macroStage >= 5 ? 1 : 0)
-                    + (macroStage >= 6 ? 1 : 0);
-  const onboardPct  = Math.round(((stage1Frac + others) / 6) * 100);
+  // Exit readiness — how far along the EXIT process this employee is.
+  // Soft proxy until a dedicated exit-checklist endpoint exists.
+  //   • Active  → 0%. The exit hasn't been initiated, so nothing is ready.
+  //     (This column used to read the employee's ONBOARDING completion %
+  //     here, which made a fully-onboarded active employee show "100% exit
+  //     ready" even though the exit had never started — flagged by QA.)
+  //   • Exit In Progress → 60% placeholder (per-stage progress isn't
+  //     persisted server-side yet; the 4 exit stages are tracked inside the
+  //     modal only, so we can't compute the real figure here).
+  //   • Exited → 100%.
   const exitReadiness = status === 'Exited' ? 100
-    : status === 'Exit In Progress' ? Math.max(60, onboardPct)
-    : onboardPct;
+    : status === 'Exit In Progress' ? 60
+    : 0;
 
   return {
     id:         Number(e.id) || 0,

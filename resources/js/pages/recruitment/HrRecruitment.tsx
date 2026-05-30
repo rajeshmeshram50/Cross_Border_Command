@@ -2125,6 +2125,62 @@ interface CreateRecruitmentModalProps {
 }
 
 
+/* Skeleton for the Create / Edit Recruitment form body. Renders while
+ * the four parallel master fetches (departments / designations / roles
+ * / employees) are in flight on modal open. Mirrors the actual section
+ * layout so the swap to the populated form is a single repaint instead
+ * of a layout-shift jolt. */
+function RecruitmentFormShimmer() {
+  const SectionHead = ({ title }: { title: string }) => (
+    <div className="rec-form-section-head" style={{ marginBottom: 10 }}>
+      <span className="rec-form-section-icon rec-form-section-icon--soft">
+        <Shimmer width={18} height={18} radius={4} />
+      </span>
+      <Shimmer width={Math.max(120, title.length * 7)} height={14} />
+    </div>
+  );
+  const FieldBlock = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <Shimmer width={90} height={10} />
+      <Shimmer height={34} radius={8} />
+    </div>
+  );
+  const Grid = ({ cols, items }: { cols: number; items: number }) => (
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 12, marginBottom: 14 }}>
+      {Array.from({ length: items }).map((_, i) => <FieldBlock key={i} />)}
+    </div>
+  );
+  return (
+    <div className="rec-form-section">
+      <SectionHead title="Position Details" />
+      <Grid cols={1} items={1} />
+      <Grid cols={3} items={3} />
+      <Grid cols={3} items={3} />
+      <Grid cols={2} items={2} />
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+        <Shimmer width={70} height={28} radius={14} />
+        <Shimmer width={70} height={28} radius={14} />
+        <Shimmer width={70} height={28} radius={14} />
+      </div>
+
+      <SectionHead title="Hiring Configuration" />
+      <Grid cols={4} items={4} />
+
+      <SectionHead title="Job Details" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <Shimmer width={90} height={10} />
+          <Shimmer height={72} radius={8} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <Shimmer width={90} height={10} />
+          <Shimmer height={72} radius={8} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const HR_TO_REC_EMP_TYPE: Record<string, EmployType> = {
   'Full-time':  'Full Time',
   'Part-time':  'Part Time',
@@ -2182,10 +2238,18 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   const [desigByDept, setDesigByDept]   = useState<Record<string, { value: string; label: string }[]>>({});
   const [roleOptions, setRoleOptions]   = useState<{ value: string; label: string }[]>([]);
   const [employeeOptions, setEmployeeOptions] = useState<{ value: string; label: string }[]>([]);
+  /* Master-data loading flag — flipped on while the four parallel
+   * master fetches run so the form body can show a skeleton instead
+   * of empty fields + non-selectable dropdowns. Used to be hidden:
+   * dropdowns rendered with `[]` options the moment the modal opened
+   * and the user saw "no items" until the fetch landed, which made
+   * Edit Recruitment look broken on slow networks. */
+  const [mastersLoading, setMastersLoading] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
+    setMastersLoading(true);
     (async () => {
       try {
         const [deptRes, desigRes, roleRes, empRes] = await Promise.all([
@@ -2263,6 +2327,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
           setRoleOptions([]);
           setEmployeeOptions([]);
         }
+      } finally {
+        if (!cancelled) setMastersLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -2597,6 +2663,10 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
             </div>
           )}
           <div className="rec-form-card">
+          {mastersLoading ? (
+            <RecruitmentFormShimmer />
+          ) : (
+          <>
           {/* Position Details */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
@@ -2876,6 +2946,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
               </Col>
             </Row>
           </div>
+          </>
+          )}
           </div>
           {/* /rec-form-card */}
 

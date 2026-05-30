@@ -436,6 +436,7 @@ export const SALES_MATRIX_DETAIL_CSS = `
 /* ── Action toolbar — lives inside .smd-stepper-card below the divider ── */
 .smd-toolbar {
   display: flex; align-items: center; gap: 7px;
+  width: 100%;
   flex-wrap: nowrap;
   overflow-x: auto; overflow-y: visible;
   white-space: nowrap;
@@ -446,11 +447,14 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-toolbar::-webkit-scrollbar { height: 3px; }
 .smd-toolbar::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 999px; }
-.smd-toolbar > .smd-act { flex: 0 0 auto; }
+/* Buttons grow to share the full toolbar width edge-to-edge so the row
+   spans the container instead of clustering on the left with empty space
+   on the right. Separators stay fixed-size hairlines. */
+.smd-toolbar > .smd-act { flex: 1 1 auto; justify-content: center; }
 .smd-act-sep {
   display: inline-block;
   width: 1px; height: 22px;
-  flex-shrink: 0;
+  flex: 0 0 auto;
   background: linear-gradient(to bottom, transparent, #ddd6fe, transparent);
 }
 .smd-act {
@@ -532,47 +536,54 @@ export const SALES_MATRIX_DETAIL_CSS = `
   box-shadow: 0 5px 14px rgba(245, 158, 11, .50);
 }
 
-/* ── Body grid ── */
+/* ── Body — flex row: CLM 20% · Stage (fills the rest) · Deal 30%.
+   When a side card is collapsed the JSX swaps it for a thin .smd-rail,
+   whose fixed flex-basis (see .smd-rail below) shrinks that side so the
+   middle stage card absorbs the freed width. ── */
 .smd-body {
-  display: grid; grid-template-columns: 240px minmax(0,1fr) 400px; gap: 10px;
+  display: flex; gap: 10px;
   align-items: stretch;
 }
-.smd-body-clm-collapsed  { grid-template-columns: 44px minmax(0,1fr) 400px; }
-.smd-body-deal-collapsed { grid-template-columns: 240px minmax(0,1fr) 44px; }
-.smd-body-clm-collapsed.smd-body-deal-collapsed { grid-template-columns: 44px minmax(0,1fr) 44px; }
 
 /* ── Collapsed side rail ── */
 .smd-rail {
-  background: linear-gradient(180deg, #7c3aed 0%, #6d28d9 100%);
-  border: 1px solid #6d28d9;
+  flex: 0 0 44px;
+  background: #fff;
+  border: 1px solid #ede9fe;
   border-radius: 14px;
   display: flex; flex-direction: column; align-items: center;
   padding: 8px 0;
   cursor: pointer;
-  color: #fff;
+  color: #5b21b6;
   user-select: none;
-  transition: filter .15s;
+  transition: box-shadow .15s, flex .3s ease;
   min-height: 320px;
+  box-shadow: 0 2px 12px rgba(124,58,237,.07);
 }
-.smd-rail:hover { filter: brightness(1.06); }
+.smd-rail:hover { box-shadow: 0 4px 14px rgba(124,58,237,.15); }
+/* Arrow stays the violet gradient (matches the card-header collapse btn). */
 .smd-rail-btn {
   width: 24px; height: 24px; border-radius: 6px;
-  background: rgba(255,255,255,.18); border: none; color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9); border: none; color: #fff;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(124,58,237,.30);
 }
-.smd-rail-btn:hover { background: rgba(255,255,255,.28); }
+.smd-rail-btn:hover { filter: brightness(1.08); }
 .smd-rail-label {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   margin-top: 14px;
   font-size: 11px; font-weight: 800; letter-spacing: .12em;
-  color: #fff;
+  color: #5b21b6;
 }
 [data-bs-theme="dark"] .smd-root .smd-rail {
-  background: linear-gradient(180deg, #6d28d9 0%, #5b21b6 100%);
-  border-color: rgba(167, 139, 250, .35);
+  background: #14102a;
+  border-color: rgba(167, 139, 250, .22);
+  color: #c4b5fd;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
 }
+[data-bs-theme="dark"] .smd-root .smd-rail-label { color: #c4b5fd; }
 .smd-clm-card, .smd-deal-card, .smd-stage-card {
   background: #fff;
   border: 1px solid #ddd6fe;
@@ -580,6 +591,24 @@ export const SALES_MATRIX_DETAIL_CSS = `
   overflow: hidden; display: flex; flex-direction: column;
   min-width: 0;
   box-shadow: 0 2px 16px rgba(124,58,237,.10);
+}
+/* Per-card flex sizing (CLM 20% · Stage fills · Deal 30%). transition
+   on the side cards lets the width ease when the panels collapse/expand. */
+.smd-clm-card {
+  flex: 0 0 20%;
+  border: 1px solid #ede9fe;
+  box-shadow: 0 2px 12px rgba(124,58,237,.07);
+  transition: flex .3s ease;
+}
+.smd-stage-card {
+  flex: 1 1 0%;
+  box-shadow: 0 2px 16px rgba(124,58,237,.09);
+}
+.smd-deal-card {
+  flex: 0 0 30%;
+  border: 1px solid #ede9fe;
+  box-shadow: 0 2px 12px rgba(124,58,237,.07);
+  transition: flex .3s ease;
 }
 
 /* ── CLM panel ── */
@@ -771,6 +800,13 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 .smd-deal-title { font-size: 11px; font-weight: 900; letter-spacing: -.3px; line-height: 1.2; }
 .smd-deal-sub   { font-size: 7px; color: rgba(255,255,255,.65); font-weight: 600; letter-spacing: .07em; margin-top: 2px; }
+/* Green status dot in the card header sub-lines (Deal + CLM), replacing the literal ●. */
+.smd-deal-dot, .smd-clm-dot {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34,197,94,.25);
+  margin-right: 6px; vertical-align: middle;
+}
 
 /* Tab strip — lavender pill container */
 .smd-deal-tabs {
@@ -806,7 +842,10 @@ export const SALES_MATRIX_DETAIL_CSS = `
   text-transform: uppercase;
 }
 
-.smd-deal-form { padding: 10px 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+/* flex:1 lets the form fill the right card's height so the Save button
+   (margin-top:auto below) drops to the bottom edge, lining up with the
+   middle card's Save & Next footer button. */
+.smd-deal-form { padding: 10px 10px 12px; display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; }
 .smd-deal-row  { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .smd-field     { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .smd-field-label { font-size: 8px; font-weight: 800; letter-spacing: .1em; color: #8b7fc8; text-transform: uppercase; }
@@ -834,10 +873,10 @@ export const SALES_MATRIX_DETAIL_CSS = `
   background: linear-gradient(135deg, #f5f3ff, #ede9fe);
   border-radius: 6px; border-top: none;
 }
-.smd-deal-save-wrap { display: flex; justify-content: center; margin-top: 4px; }
+.smd-deal-save-wrap { display: flex; justify-content: center; margin-top: auto; padding-top: 8px; }
 .smd-deal-save-btn {
-  width: 100%;
-  padding: 9px 28px; border-radius: 10px;
+  min-width: 150px;
+  padding: 8px 32px; border-radius: 10px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
   color: #fff; font-weight: 800; font-size: 12px;
   border: none; cursor: pointer;
@@ -846,6 +885,34 @@ export const SALES_MATRIX_DETAIL_CSS = `
   transition: all .17s;
 }
 .smd-deal-save-btn:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(124,58,237,.45); }
+/* Right-card (Task Manager) inputs — match the prototype's lavender fill
+   (#f5f3ff / #c4b5fd border / #5b21b6 text, focus → #ede9fe). Scoped to
+   the deal form so the middle stage-card inputs keep their own styling. */
+.smd-deal-form .smd-input {
+  background: #f5f3ff;
+  border-color: #c4b5fd;
+  color: #5b21b6;
+}
+.smd-deal-form .smd-input::placeholder { color: #a78bfa; }
+.smd-deal-form .smd-input:focus {
+  border-color: #7c3aed;
+  background: #ede9fe;
+}
+/* Buying Plan date picker — give its trigger the same fill/border/height
+   as the text inputs above. Scoped to the deal form so the shared
+   MasterDatePicker keeps its own styling everywhere else. */
+.smd-deal-form .master-datepicker-toggle {
+  background: #f5f3ff;
+  border: 1.5px solid #c4b5fd;
+  border-radius: 8px;
+  color: #5b21b6;
+  padding: 5px 10px;
+}
+.smd-deal-form .master-datepicker-toggle.open {
+  border-color: #7c3aed;
+  background: #ede9fe;
+}
+.smd-deal-form .master-datepicker-placeholder { color: #a78bfa; }
 
 /* ── Stage card (middle column shell) — 4px rainbow accent on top ── */
 .smd-stage-card {
@@ -861,22 +928,16 @@ export const SALES_MATRIX_DETAIL_CSS = `
   z-index: 2;
 }
 
-@media (max-width: 1500px) {
-  .smd-body { grid-template-columns: 220px minmax(0,1fr) 380px; }
-  .smd-body.smd-body-clm-collapsed  { grid-template-columns: 44px minmax(0,1fr) 380px; }
-  .smd-body.smd-body-deal-collapsed { grid-template-columns: 220px minmax(0,1fr) 44px; }
-  .smd-body.smd-body-clm-collapsed.smd-body-deal-collapsed { grid-template-columns: 44px minmax(0,1fr) 44px; }
-}
+/* Side widths are percentage-based now, so they scale down on their own —
+   no per-breakpoint column overrides needed until the layout stacks. */
 @media (max-width: 1280px) {
-  .smd-body { grid-template-columns: 200px minmax(0,1fr) 340px; }
-  .smd-body.smd-body-clm-collapsed  { grid-template-columns: 44px minmax(0,1fr) 340px; }
-  .smd-body.smd-body-deal-collapsed { grid-template-columns: 200px minmax(0,1fr) 44px; }
-  .smd-body.smd-body-clm-collapsed.smd-body-deal-collapsed { grid-template-columns: 44px minmax(0,1fr) 44px; }
   .smd-stepper-card { padding: 8px 10px; }
   .smd-toolbar { padding: 8px 10px; }
 }
 @media (max-width: 1100px) {
-  .smd-body { grid-template-columns: 1fr; }
+  /* Stack the three panels; each takes full width. */
+  .smd-body { flex-direction: column; }
+  .smd-clm-card, .smd-stage-card, .smd-deal-card { flex: 1 1 auto; }
   .smd-stepper { grid-template-columns: repeat(3,1fr); gap: 4px; }
   .smd-step { margin-right: 0; }
   .smd-step, .smd-step:first-child, .smd-step:last-child {
