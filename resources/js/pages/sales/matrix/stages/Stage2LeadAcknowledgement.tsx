@@ -243,7 +243,7 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
             <span className="smd-st2-status-title">LEAD ACKNOWLEDGEMENT STATUS</span>
             {latestBucket && (
               <span className={`smd-st2-status-current ${BUCKET_META[latestBucket].pill}`}>
-                ● {BUCKET_META[latestBucket].label}
+                {BUCKET_META[latestBucket].label}
               </span>
             )}
           </div>
@@ -253,19 +253,22 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
               className={`smd-st2-pill smd-st2-pill-q ${latestBucket === 'qualified' ? 'active' : ''}`}
               onClick={() => openPicker('qualified')}
             >
-              ● Qualified Lead
+              <svg className="smd-st2-pill-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
+              Qualified Lead
             </button>
             <button
               className={`smd-st2-pill smd-st2-pill-c ${latestBucket === 'clarity_pending' ? 'active' : ''}`}
               onClick={() => openPicker('clarity_pending')}
             >
-              ● Clarity Pending
+              <svg className="smd-st2-pill-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 7 12 12 15.5 14"/></svg>
+              Clarity Pending
             </button>
             <button
               className={`smd-st2-pill smd-st2-pill-d ${latestBucket === 'disqualified' ? 'active' : ''}`}
               onClick={() => openPicker('disqualified')}
             >
-              ● Disqualified
+              <svg className="smd-st2-pill-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+              Disqualified
             </button>
           </div>
 
@@ -320,7 +323,7 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
                       <td>{new Date(row.created_at).toLocaleDateString('en-GB')}</td>
                       <td>
                         <span className={`smd-st2-row-pill ${BUCKET_META[bucket].pill}`}>
-                          ● {BUCKET_META[bucket].label}
+                          {BUCKET_META[bucket].label}
                         </span>
                       </td>
                       <td className="smd-st2-row-reason">{row.reason_snapshot}</td>
@@ -517,12 +520,9 @@ const STAGE2_CSS = `
   background: linear-gradient(115deg, #f43f5e, #e11d48, #fb7185, #fda4af);
   box-shadow: 0 4px 12px rgba(244,63,94,.28), 0 0 0 3px #fca5a5;
 }
-.smd-st2-pill.active::before {
-  content: '';
-  width: 5px; height: 5px; border-radius: 50%;
-  background: rgba(255,255,255,.70);
-  display: inline-block;
-}
+/* Pills now lead with a status icon (check / clock / cross) instead of a
+   plain dot, so the old active ::before dot is dropped. */
+.smd-st2-pill-ico { flex-shrink: 0; }
 
 /* Current-status badge per bucket (inactive-style) */
 .smd-st2-status-current.smd-st2-pill-q { background: #faf5ff; border-color: #ede9fe; color: #9b8ec4; }
@@ -538,6 +538,9 @@ const STAGE2_CSS = `
 .smd-stg-head-badge.st2-badge-qualified       { background: linear-gradient(135deg, #10b981, #047857); color: #fff; border: none; box-shadow: 0 2px 8px rgba(16,185,129,.35); }
 .smd-stg-head-badge.st2-badge-disqualified    { background: linear-gradient(135deg, #f43f5e, #e11d48); color: #fff; border: none; box-shadow: 0 2px 8px rgba(244,63,94,.35); }
 .smd-stg-head-badge.st2-badge-clarity_pending { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; border: none; box-shadow: 0 2px 8px rgba(245,158,11,.35); }
+/* The Stage 2 header badge keeps its own literal ● in the label, so hide
+   the shared green pulsing ::before dot to avoid a doubled dot. */
+.smd-stg-head-badge::before { display: none; }
 
 /* ── Activity Report card ── */
 .smd-st2-activity {

@@ -225,8 +225,8 @@ export const SHARED_STAGE_CSS = `
   overflow: hidden;
 }
 .smd-sect-field {
-  display: flex; flex-direction: column; gap: 2px;
-  padding: 7px 11px;
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 4px 11px;
   background: #f5f3ff;
   border-right: 1.5px solid #ddd6fe;
   border-bottom: 1.5px solid #ddd6fe;

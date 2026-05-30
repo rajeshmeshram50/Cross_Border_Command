@@ -734,7 +734,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     api.get(`/consignees/${consignee.db_id}`)
       .then(r => {
         if (cancelled) return;
-        const d = r.data?.data ?? null;
+        const root = r.data ?? {};
+        const d = root.data ?? null;
         if (!d) return;
         const wa = (d.primary_address?.cp_whatsapp ?? '').toLowerCase();
         setForm1({
@@ -788,12 +789,66 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           cpEmail:       a.cp_email ?? '',
           cpWhatsapp:    (a.cp_whatsapp ?? '').toLowerCase() === 'no' ? 'no' : 'yes',
         })));
+
+        // Stage 2 data — now arrives in the same response as `documents`,
+        // `owners`, and `segment_uploads`. Top-level keys, not inside `data`.
+        // Mirrors the AddCustomerModal hydration shape — ConsigneeController::show()
+        // bundles these in via safeDelegate() so we no longer need the 3
+        // parallel /consignees/{id}/documents + /owners + /segment-uploads
+        // round-trips that used to fire here via refetchKyc().
+        const docs: any[] = Array.isArray(root.documents) ? root.documents : [];
+        const owners: any[] = Array.isArray(root.owners) ? root.owners : [];
+        setKycDocs(docs.map((x: any) => ({
+          id: `db_${x.id}`,
+          kind: x.kind === 'tl' ? 'tl' : 'dd',
+          name: x.name ?? '',
+          license_number: x.license_number ?? '',
+          issuing_authority: x.issuing_authority ?? '',
+          issue_date: x.issue_date ?? '',
+          expiry_date: x.expiry_date ?? '',
+          attachment_path: x.attachment_path ?? '',
+          attachment_url:  x.attachment_url ?? null,
+          attachment_name: x.attachment_name ?? '',
+          status: x.status === 'Inactive' ? 'Inactive' : 'Active',
+        })));
+        setKycOwners(owners.map((x: any) => ({
+          id: `db_${x.id}`,
+          owner_name: x.owner_name ?? '',
+          designation: x.designation ?? '',
+          official_email: x.official_email ?? '',
+          phone_number: x.phone_number ?? '',
+          id_proof_path:      x.id_proof_path ?? '',
+          id_proof_url:       x.id_proof_url ?? null,
+          id_proof_name:      x.id_proof_name ?? '',
+          address_proof_path: x.address_proof_path ?? '',
+          address_proof_url:  x.address_proof_url ?? null,
+          address_proof_name: x.address_proof_name ?? '',
+          photograph_path:    x.photograph_path ?? '',
+          photograph_url:     x.photograph_url ?? null,
+          photograph_name:    x.photograph_name ?? '',
+          status: x.status === 'Inactive' ? 'Inactive' : 'Active',
+        })));
+
+        // Stage 3 segment-rule reference uploads. Same hydration pattern
+        // as before — only the source moved from a separate call to this
+        // bundled response. British 'trade-licence' spelling matches the
+        // KycSubTab type + render's refKey lookup.
+        const refs: any[] = Array.isArray(root.segment_uploads?.data) ? root.segment_uploads.data : [];
+        const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-licence' };
+        const hydrated: Record<string, SegRefUpload> = {};
+        for (const ref of refs) {
+          const sub = CAT_TO_SUB[ref.category];
+          if (!sub || !ref.doc_code) continue;
+          hydrated[`${sub}::${ref.doc_code}`] = {
+            file: null as unknown as File,
+            url:  ref.attachment_url || '',
+            name: ref.attachment_name || '',
+          };
+        }
+        if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
       })
       .catch(() => { /* silent — toast was added on the save path; on hydration just keep the empty form */ })
       .finally(() => { if (!cancelled) setHydrating(false); });
-    // Stage 2 hydration — pull existing docs + owners so the user
-    // sees what's already been captured before they edit.
-    refetchKyc(consignee.db_id);
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, consignee?.db_id]);
@@ -892,6 +947,19 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * merged row stays 'M'. */
   useEffect(() => {
     if (!open) return;
+    /* Lazy gate — only fire the CLM segment-rules + trade-doc-library
+     * fetches once the user reaches Stage 2 or higher. Stage 1 only
+     * edits identity + address; it doesn't need this data. Previously
+     * these calls fired on modal open and added 1-2 sec to the Stage 1
+     * open even for users who only edit Stage 1. The `stage` value is
+     * in the dep array below so the fetch fires exactly when the user
+     * clicks the Stage 2 (or Stage 3) tab.
+     *
+     * Mirrors the same gate added to AddCustomerModal. We deliberately
+     * do NOT clear segmentDocs when stage<2 — if the user navigates
+     * Stage 2 → Stage 1, the previously-loaded docs stay cached and
+     * are immediately usable when they go back. */
+    if (stage < 2) return;
     const names = (form1.segment ?? []).filter(Boolean);
     if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
     const segRows = names
@@ -957,7 +1025,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, form1.segment, mSegmentIds]);
+  }, [open, stage, form1.segment, mSegmentIds]);
 
   /* Poll the live signature-request list every 15s while the user is on
    * Stage 3 → Trade Documents. The backend's ?sync=true triggers a Zoho

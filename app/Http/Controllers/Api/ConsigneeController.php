@@ -77,7 +77,64 @@ class ConsigneeController extends Controller
             ->forUser($user)
             ->with(['primaryAddress', 'addresses', 'customer'])
             ->findOrFail($id);
-        return response()->json(['data' => $this->shape($row)]);
+
+        /* Stage 2 + Stage 3 data embedded inline — mirrors the
+         * CustomerController::show() bundle pattern. AddConsigneeModal
+         * edit-mode previously fired 4 parallel HTTP requests:
+         *   - GET /consignees/{id}
+         *   - GET /consignees/{id}/documents
+         *   - GET /consignees/{id}/owners
+         *   - GET /segment-uploads/consignee/{id}
+         *
+         * On `php artisan serve` these serialised behind each other,
+         * costing 2-5 sec of pure Laravel boot tax. Bundling collapses
+         * 4 round-trips into 1 — same proven pattern we used for
+         * customer + ClientPermissions.
+         *
+         * Each delegated controller's index() reuses its own
+         * resolveConsignee() which applies the same `forUser` tenant
+         * scope, so security stays exactly where it was. Wrapped in
+         * try/catch so a single nested controller's failure (e.g.
+         * segment_uploads returning 404 on a fresh consignee) does
+         * not break the whole response — the key falls back to an
+         * empty list.
+         */
+        $documents = $this->safeDelegate(
+            fn () => (new ConsigneeDocumentController())->index($request, $id)
+        );
+        $owners = $this->safeDelegate(
+            fn () => (new ConsigneeOwnerController())->index($request, $id)
+        );
+        $segmentUploads = $this->safeDelegate(
+            fn () => (new SegmentDocUploadController())->index($request, 'consignee', $id)
+        );
+
+        return response()->json([
+            'data'            => $this->shape($row),
+            'documents'       => $documents['data'] ?? [],
+            'owners'          => $owners['data'] ?? [],
+            // segment_uploads keeps its full shape (data + by_category + count)
+            // because the frontend reads `data[].category` for per-tab bucketing.
+            'segment_uploads' => $segmentUploads ?: ['data' => [], 'by_category' => [], 'count' => 0],
+        ]);
+    }
+
+    /**
+     * Run a delegated controller call and unwrap its JSON response,
+     * returning `null` on any failure. Used by show() to embed nested
+     * resources without letting a single inner failure take down the
+     * whole response. Caller decides how to default the missing key.
+     */
+    private function safeDelegate(\Closure $call): ?array
+    {
+        try {
+            $res = $call();
+            $decoded = json_decode($res->getContent(), true);
+            return is_array($decoded) ? $decoded : null;
+        } catch (\Throwable $e) {
+            \Log::warning('ConsigneeController::show safeDelegate failed: ' . $e->getMessage());
+            return null;
+        }
     }
 
     public function store(Request $request): JsonResponse

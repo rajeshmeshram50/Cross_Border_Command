@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { resolveFileUrl, viewFile } from '../../utils/resolveFileUrl';
@@ -420,6 +420,13 @@ export default function AddProductModal(props: {
   type SegRefUpload = { file: File | null; url: string; name: string };
   const [qcRefUploads, setQcRefUploads] = useState<Record<string, SegRefUpload>>({});
 
+  /* Stash for the segment_uploads array that now arrives bundled with
+   * the /products/{id} response. Hydrated into qcRefUploads by an
+   * effect declared AFTER the segment-rules useEffect, so the wipe
+   * inside segment-rules runs first and doesn't nuke our entries.
+   * See the wipe-split comment below for the race rationale. */
+  const [bundledQcUploads, setBundledQcUploads] = useState<any[] | null>(null);
+
   /* Persist a QC reference upload to /segment-uploads/product/{id} so
    * the file actually lands in the segment_doc_uploads table (same
    * pipeline customer/consignee/supplier forms use). Without this the
@@ -460,32 +467,16 @@ export default function AddProductModal(props: {
     }
   };
 
-  /* Hydrate qcRefUploads from the server when the modal opens in edit
-   * mode. Same pattern as customer/consignee — fetch the existing
-   * segment_doc_uploads rows and seed the per-row state so re-opens
-   * show what was attached previously. */
-  useEffect(() => {
-    if (!productId) return;
-    let cancelled = false;
-    api.get(`/segment-uploads/product/${productId}?category=qc`)
-      .then(r => {
-        if (cancelled) return;
-        const refs: any[] = Array.isArray(r.data?.data) ? r.data.data : [];
-        const hydrated: Record<string, SegRefUpload> = {};
-        for (const u of refs) {
-          if (u.category !== 'qc' || !u.doc_code) continue;
-          hydrated[`qc::${u.doc_code}`] = {
-            file: null,
-            url:  u.attachment_url || '',
-            name: u.attachment_name || '',
-          };
-        }
-        if (Object.keys(hydrated).length > 0) setQcRefUploads(hydrated);
-      })
-      .catch(() => { /* leave empty — the user can still upload fresh */ });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productId]);
+  /* qcRefUploads hydration moved INLINE into the main edit-mode hydration
+   * effect below (search for `root.segment_uploads`). ProductController::show()
+   * now bundles this data so we no longer need a separate
+   * /segment-uploads/product/{id}?category=qc round-trip on modal open.
+   * Same pattern shipped for Customer / Consignee / Vendor.
+   *
+   * Like the Vendor variant, the actual apply-to-state happens in a
+   * downstream useEffect declared AFTER the segment-rules useEffect so
+   * the wipe-on-segment-change can't nuke our entries. See the comment
+   * in that effect for the race rationale. */
 
   /* ─── Step 2: Vendor ─── */
   const [vendors, setVendors] = useState<VendorEntry[]>([]);
@@ -901,18 +892,38 @@ export default function AddProductModal(props: {
     })();
   }, []);
 
-  /* Segment-rule QC fetch. Whenever the user picks (or hydration sets)
-   * a segment, pull the rule's QC selections so the Quality & Compliance
-   * section can show them as upload-ready rows. Bails out to an empty
-   * list when no segment is picked or no rule exists. */
+  /* QC reference-upload wipe. Runs ONLY on genuine segment changes (not
+   * on tab transitions, not on initial hydration). Used to live inside
+   * the segment-rules fetch effect below, but lazy-gating that effect
+   * on `tab === 'quality'` means `tab` enters its dep array — and a
+   * Core → Quality tab click would then wipe the bundled qcRefUploads.
+   *
+   * Split here with [segmentId] dep alone so tab clicks are no-ops.
+   * The skip-first-fire ref handles the initial hydration case: when
+   * the main edit-mode fetch calls setSegmentId(...), segment changes
+   * from '' → '<id>' which would otherwise wipe what bundledQcUploads
+   * is about to write. Marking the ref true on first fire skips
+   * exactly once — subsequent user-driven changes wipe as expected.
+   * Mirrors the wipe-split shipped on AddVendorModal. */
+  const qcDirtyRef = useRef(false);
   useEffect(() => {
-    /* Segment changed → previously-attached uploads no longer match.
-     * Revoke each blob URL and drop the state. */
+    if (!qcDirtyRef.current) {
+      qcDirtyRef.current = true;
+      return;
+    }
     setQcRefUploads(prev => {
       Object.values(prev).forEach(u => { try { URL.revokeObjectURL(u.url); } catch {} });
       return {};
     });
+  }, [segmentId]);
 
+  /* Segment-rule QC fetch. Lazy-gated to fire only when the user
+   * actually opens the Quality sub-tab — previously fired on every
+   * segmentId hydration (i.e. every edit-mode open), adding ~500ms
+   * to the Stage 1 open even for users who only edit Core or Sales
+   * fields. Bails out to an empty list when no segment is picked. */
+  useEffect(() => {
+    if (tab !== 'quality') return;
     if (!segmentId) { setSegmentQcDocs([]); return; }
     const id = Number(segmentId);
     if (!Number.isFinite(id) || id <= 0) { setSegmentQcDocs([]); return; }
@@ -927,7 +938,29 @@ export default function AddProductModal(props: {
       .catch(() => { if (!cancelled) setSegmentQcDocs([]); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segmentId]);
+  }, [tab, segmentId]);
+
+  /* Apply the bundled segment_uploads payload to qcRefUploads.
+   * Declared AFTER the wipe + segment-rules effects above so it fires
+   * LATER in the same commit cycle — the wipe is gated by the skip-
+   * first-fire ref on the initial hydration, but if any wipe DID run
+   * we still want this effect to overwrite it with the hydrated map.
+   * Fires once per change to bundledQcUploads. Main hydration sets it
+   * exactly once on edit-mode open. */
+  useEffect(() => {
+    if (!bundledQcUploads || bundledQcUploads.length === 0) return;
+    const hydrated: Record<string, SegRefUpload> = {};
+    for (const u of bundledQcUploads) {
+      if (u.category !== 'qc' || !u.doc_code) continue;
+      hydrated[`qc::${u.doc_code}`] = {
+        file: null,
+        url:  u.attachment_url || '',
+        name: u.attachment_name || '',
+      };
+    }
+    if (Object.keys(hydrated).length > 0) setQcRefUploads(hydrated);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bundledQcUploads]);
 
   /**
    * Called by the MasterQuickAddPopup after a successful POST. Pushes
@@ -1012,9 +1045,15 @@ export default function AddProductModal(props: {
           step_completed?: number;
           qc_records?: Array<{ id: number; qc_name: string; qc_purpose?: string; issued_by?: string; qa_testing_parameter?: string; min_acceptance_criteria?: string; attachment_path?: string; attachment_url?: string | null }>;
           vendor_maps?: Array<Record<string, unknown>>;
+          segment_uploads?: { data?: any[] };
         };
         const res = await api.get<ProductDto>(`/products/${initialId}`);
         const p = res.data;
+        /* QC reference uploads — now arrive bundled in the same response
+         * (top-level `segment_uploads` key alongside the product fields).
+         * Stash for the downstream hydration effect to apply AFTER the
+         * segment-rules wipe runs. */
+        setBundledQcUploads(Array.isArray(p.segment_uploads?.data) ? p.segment_uploads!.data! : []);
         setProductId(p.id);
         setProductCodeFromApi(p.product_code ?? '');
         setName(p.name ?? '');

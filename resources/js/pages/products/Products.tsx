@@ -381,38 +381,14 @@ export default function Products() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  /* Warm the Add Product master bundle in the background.
-   *
-   * The Add Product modal needs /products/master-bundle (dropdowns for
-   * segments, HSN, UOM, vendors, etc.). By fetching it the moment the
-   * Products page mounts, the data is already in sessionStorage by the
-   * time the user clicks "Add Product" — the modal hydrates synchronously
-   * and feels instant.
-   *
-   * Skips the fetch if a fresh cached copy is already present so we never
-   * fire a redundant request. Idle-time scheduling via requestIdleCallback
-   * (with a setTimeout fallback) ensures the warm-up never competes with
-   * the visible product-list render.
-   */
-  useEffect(() => {
-    if (readProductMasterBundle()) return;
-    const warm = () => {
-      import('../../api').then(({ default: api }) => {
-        api.get('/products/master-bundle')
-          .then(res => writeProductMasterBundle(res.data))
-          .catch(() => { /* silent — modal will retry on open */ });
-      });
-    };
-    const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
-    const handle = w.requestIdleCallback ? w.requestIdleCallback(warm) : window.setTimeout(warm, 800);
-    return () => {
-      if (w.requestIdleCallback) {
-        (window as unknown as { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback?.(handle);
-      } else {
-        window.clearTimeout(handle);
-      }
-    };
-  }, []);
+  // NOTE: previously there was a separate `requestIdleCallback` preload
+  // here that warmed /products/master-bundle for the Add Product modal.
+  // It was removed because the filter-dropdowns useEffect above already
+  // fetches the same bundle (cache-first + writes sessionStorage on
+  // miss), and the AddProductModal reads from that same cache. Keeping
+  // both effects fired the network request TWICE on first page load —
+  // both effects checked the empty cache, both raced to fetch. Now the
+  // filter effect is the single source of truth that fills the cache.
 
   /* Everything-except-status filter. Drives both the visible grid
    * (after we further narrow by the Active/Inactive tab) and the

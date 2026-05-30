@@ -814,6 +814,26 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     if (!open || !customer?.db_id) return;
     let cancelled = false;
     setHydrating(true);
+
+    /* Edit-mode hydration in ONE round-trip.
+     *
+     * /customers/{id} now embeds `documents`, `owners`, and
+     * `segment_uploads` inline (server-side change in CustomerController::show).
+     * This replaces the prior 4-call edit-mode hydration:
+     *   - GET /customers/{id}
+     *   - GET /customers/{id}/documents
+     *   - GET /customers/{id}/owners
+     *   - GET /segment-uploads/customer/{id}
+     *
+     * On the single-threaded `php artisan serve` those 4 calls used to
+     * serialise behind each other, costing ~2-5s just in Laravel boot tax.
+     * Even on Apache the network round-trips compounded. One bundled
+     * response keeps all the same data with one HTTP call.
+     *
+     * Falls back gracefully if the server hasn't been updated yet — the
+     * embedded keys default to empty so existing behaviour (empty Stage 2
+     * tabs) is preserved instead of crashing.
+     */
     api.get(`/customers/${customer.db_id}`)
       .then(r => {
         if (cancelled) return;
@@ -864,41 +884,33 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           cpEmail:        a.cp_email       ?? '',
           cpWhatsapp:     a.cp_whatsapp === 'no' ? 'no' : 'yes',
         })));
+
+        // Stage 2 data — now arrives in the same response as `documents`,
+        // `owners`, and `segment_uploads`. Top-level keys, not inside `data`.
+        const root = r.data ?? {};
+        setKycDocs(Array.isArray(root.documents) ? root.documents : []);
+        setKycOwners(Array.isArray(root.owners) ? root.owners : []);
+
+        // Stage 3 segment-rule reference uploads. Same hydration pattern
+        // as before — only the source moved from a separate call to this
+        // bundled response. British 'trade-licence' spelling matches the
+        // KycSubTab type + render's refKey lookup.
+        const refs = Array.isArray(root.segment_uploads?.data) ? root.segment_uploads.data : [];
+        const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-licence' };
+        const hydrated: Record<string, SegRefUpload> = {};
+        for (const ref of refs) {
+          const sub = CAT_TO_SUB[ref.category];
+          if (!sub || !ref.doc_code) continue;
+          hydrated[`${sub}::${ref.doc_code}`] = {
+            file: null as unknown as File,
+            url:  ref.attachment_url || '',
+            name: ref.attachment_name || '',
+          };
+        }
+        if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
       })
       .catch(() => { /* hydration failure: leave the thin prefill from the list row */ })
       .finally(() => { if (!cancelled) setHydrating(false); });
-
-    // Stage 2 data — pulled in parallel with the main customer payload.
-    Promise.all([
-      api.get(`/customers/${customer.db_id}/documents`).catch(() => ({ data: { data: [] } })),
-      api.get(`/customers/${customer.db_id}/owners`).catch(() => ({ data: { data: [] } })),
-      /* Segment-rule reference uploads (Stage 2 KYC/DD/TL tables + Stage
-       * 3 Evidence Vault). Hydrate from the same `segment_doc_uploads`
-       * table that the Vault reads so re-open Edit shows what was
-       * previously attached. */
-      api.get(`/segment-uploads/customer/${customer.db_id}`).catch(() => ({ data: { data: [] } })),
-    ]).then(([docsRes, ownersRes, refsRes]) => {
-      if (cancelled) return;
-      setKycDocs(Array.isArray(docsRes.data?.data) ? docsRes.data.data : []);
-      setKycOwners(Array.isArray(ownersRes.data?.data) ? ownersRes.data.data : []);
-      const refs = Array.isArray(refsRes.data?.data) ? refsRes.data.data : [];
-      const hydrated: Record<string, SegRefUpload> = {};
-      // British 'trade-licence' on purpose — matches the KycSubTab
-      // type + the render's refKey lookup. Mismatched spelling here
-      // was the reason hydrated trade-licence uploads weren't
-      // appearing on re-edit.
-      const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-licence' };
-      for (const r of refs) {
-        const sub = CAT_TO_SUB[r.category];
-        if (!sub || !r.doc_code) continue;
-        hydrated[`${sub}::${r.doc_code}`] = {
-          file: null as unknown as File,
-          url:  r.attachment_url || '',
-          name: r.attachment_name || '',
-        };
-      }
-      if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
-    });
 
     return () => { cancelled = true; };
   }, [open, customer?.db_id]);
@@ -919,6 +931,19 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    */
   useEffect(() => {
     if (!open) return;
+    /* Lazy gate — only fire the CLM segment-rules + trade-doc-library
+     * fetches once the user reaches Stage 2 or higher. Stage 1 only
+     * edits identity + address; it doesn't need this data. Previously
+     * these calls fired on modal open and added 1-2 sec to the Stage 1
+     * open even for users who only edit Stage 1. The `stage` value is
+     * in the dep array below so the fetch fires exactly when the user
+     * clicks the Stage 2 (or Stage 3) tab.
+     *
+     * NOTE: we deliberately do NOT clear segmentDocs when stage<2 — if
+     * the user navigates Stage 2 → Stage 1, the previously-loaded docs
+     * stay cached and are immediately usable when they go back. */
+    if (stage < 2) return;
+
     const names = (form.coSeg ?? []).filter(Boolean);
     if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
     const segRows = names
@@ -992,7 +1017,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, form.coSeg, masters.segments]);
+  }, [open, stage, form.coSeg, masters.segments]);
 
   // Inject DM Sans/Inter once
   useEffect(() => {

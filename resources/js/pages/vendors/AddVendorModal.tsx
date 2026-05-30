@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
@@ -435,6 +435,13 @@ export default function AddVendorModal(props: {
   type SegRefUpload = { file: File | null; url: string; name: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
 
+  /* Stash for the segment_uploads array that now arrives bundled with
+   * the /vendors/{id} response. Hydrated into segmentRefUploads by an
+   * effect declared AFTER the segment-rules useEffect, so the wipe
+   * inside segment-rules runs first and doesn't nuke our entries.
+   * See the comment in the main hydration block for the race rationale. */
+  const [bundledSegUploads, setBundledSegUploads] = useState<any[] | null>(null);
+
   /* Persist a segment-rule reference upload so it lands in
    * segment_doc_uploads (where the Evidence Vault reads from). The
    * three vendor KYC sub-tabs map directly onto the three categories:
@@ -580,28 +587,11 @@ export default function AddVendorModal(props: {
      to avoid an extra fetch on initial mount. */
   const [licenseTypeOpts, setLicenseTypeOpts] = useState<Opt[]>([]);
 
-  /* Hydrate segmentRefUploads on edit-mode open so the KYC / DD / Trade
-   * License tables show what was previously attached. Reads the same
-   * segment_doc_uploads table the Evidence Vault uses. */
-  useEffect(() => {
-    if (!initialVendorId) return;
-    let cancelled = false;
-    api.get(`/segment-uploads/supplier/${initialVendorId}`)
-      .then((r) => {
-        if (cancelled) return;
-        const refs: any[] = Array.isArray(r.data?.data) ? r.data.data : [];
-        const CAT_TO_SUB: Record<string, string> = { dd: 'company', kyc: 'owner', tl: 'license' };
-        const hydrated: Record<string, SegRefUpload> = {};
-        for (const x of refs) {
-          const sub = CAT_TO_SUB[x.category];
-          if (!sub || !x.doc_code) continue;
-          hydrated[`${sub}::${x.doc_code}`] = { file: null, url: x.attachment_url || '', name: x.attachment_name || '' };
-        }
-        if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
-      })
-      .catch(() => { /* silent — leave the table empty */ });
-    return () => { cancelled = true; };
-  }, [initialVendorId]);
+  /* segmentRefUploads hydration moved INLINE into the main edit-mode
+   * hydration effect below (search for `root.segment_uploads`). The
+   * VendorController::show() response now bundles this data so we no
+   * longer need a separate /segment-uploads/supplier/{id} round-trip
+   * on modal open. Same pattern shipped for Customer + Consignee. */
 
   /* ─── Step 3: Trade Documents (preset signature workflow) ─── */
   const [tradeDocRows, setTradeDocRows] = useState<TradeDocRow[]>(SEED_TRADE_DOCS);
@@ -807,19 +797,42 @@ export default function AddVendorModal(props: {
     })();
   }, []);
 
+  /* Segment-rule reference-upload wipe. Runs ONLY on genuine segment
+   * changes (not on step transitions, not on initial hydration). The
+   * wipe used to live inside the segment-rules fetch effect below, but
+   * adding `step` to that effect's deps caused Step 1 → Step 2
+   * transitions to wipe the bundled segmentRefUploads. Splitting it
+   * here with [segment] dep alone ensures step transitions are no-ops.
+   *
+   * The skip-first-fire ref handles the initial hydration case: when
+   * the main edit-mode fetch calls setSegment(segIds), segment changes
+   * from [] → [...] which would otherwise wipe what bundledSegUploads
+   * is about to write. Marking the ref true on first fire causes us
+   * to skip exactly once — subsequent user-driven changes wipe as
+   * expected. */
+  const segmentDirtyRef = useRef(false);
+  useEffect(() => {
+    if (!segmentDirtyRef.current) {
+      segmentDirtyRef.current = true;
+      return;
+    }
+    setSegmentRefUploads(prev => {
+      Object.values(prev).forEach(u => { try { URL.revokeObjectURL(u.url); } catch {} });
+      return {};
+    });
+  }, [segment]);
+
   /* Segment-rule template fetch (multi-segment). The supplier
    * `segment` state is an array of DB ids (stringified). For each id
    * we hit the resolver in parallel and merge category arrays —
    * deduped by `code`, with Mandatory winning over Optional so a doc
    * required by any segment stays mandatory in the union. */
   useEffect(() => {
-    /* Selection changed → previously-attached uploads no longer match
-     * (the DCP rule's codes are different). Wipe them and revoke
-     * blob URLs so the GC can reclaim. */
-    setSegmentRefUploads(prev => {
-      Object.values(prev).forEach(u => { try { URL.revokeObjectURL(u.url); } catch {} });
-      return {};
-    });
+    /* Lazy gate — only fire the CLM segment-rules + trade-doc-library
+     * fetches once the user reaches Step 2 or higher. Step 1 only
+     * edits identity + address; it doesn't need this data. Mirrors
+     * the same gate added to AddCustomerModal / AddConsigneeModal. */
+    if (step < 2) return;
 
     const ids = (segment ?? [])
       .map(s => Number(s))
@@ -888,7 +901,35 @@ export default function AddVendorModal(props: {
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segment]);
+  }, [step, segment]);
+
+  /* Apply the bundled segment_uploads payload to segmentRefUploads.
+   * Declared AFTER the segment-rules effect above so it fires LATER in
+   * the same commit cycle — segment-rules wipes segmentRefUploads
+   * synchronously when `segment` changes (including the initial
+   * hydration), and this effect then writes the hydrated entries on
+   * top. The OLD code achieved the same ordering by luck (its fetch
+   * was a network round-trip that resolved after the wipe); we now
+   * achieve it deterministically.
+   *
+   * Fires once per change to bundledSegUploads. Main hydration sets it
+   * exactly once on edit-mode open, so this effect runs once too. */
+  useEffect(() => {
+    if (!bundledSegUploads || bundledSegUploads.length === 0) return;
+    const CAT_TO_SUB: Record<string, string> = { dd: 'company', kyc: 'owner', tl: 'license' };
+    const hydrated: Record<string, SegRefUpload> = {};
+    for (const x of bundledSegUploads) {
+      const sub = CAT_TO_SUB[x.category];
+      if (!sub || !x.doc_code) continue;
+      hydrated[`${sub}::${x.doc_code}`] = {
+        file: null,
+        url:  x.attachment_url || '',
+        name: x.attachment_name || '',
+      };
+    }
+    if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bundledSegUploads]);
 
   /* Poll live signature-request status every 15s while the user is on
    * Step 3 → Trade Documents. ?sync=true makes the backend pull each
@@ -1062,11 +1103,31 @@ export default function AddVendorModal(props: {
       const t0 = performance.now();
       try {
         const [res] = await Promise.all([
-          api.get<{ data: ApiVendor }>(`/vendors/${initialVendorId}`),
+          api.get<{ data: ApiVendor; segment_uploads?: { data?: any[] } }>(`/vendors/${initialVendorId}`),
           fetchProductOptsIfNeeded(),
         ]);
-        const v = res.data?.data;
+        const root = res.data ?? ({} as { data?: ApiVendor; segment_uploads?: { data?: any[] } });
+        const v = root.data;
         if (!v) return;
+
+        /* Stage 2/3 segment-rule reference uploads — now arrive in the
+         * same response as the vendor itself (top-level `segment_uploads`
+         * key, not inside `data`). We stash them in state and let a
+         * dedicated useEffect (declared AFTER the segment-rules effect
+         * below) apply them to segmentRefUploads. Declaration order
+         * matters: the segment-rules effect synchronously wipes
+         * segmentRefUploads whenever `segment` changes — including the
+         * initial hydration where setSegment(segIds) below fires it.
+         * If we hydrated inline here, the wipe would run on the very
+         * next effect-firing cycle and nuke our entries. Routing through
+         * a downstream effect guarantees we run AFTER the wipe.
+         *
+         * The OLD code (separate /segment-uploads fetch) avoided this
+         * race only because the network round-trip delayed the
+         * setSegmentRefUploads(...) past the wipe — bundling collapsed
+         * that delay, so we restore the ordering deterministically. */
+        const refs: any[] = Array.isArray(root.segment_uploads?.data) ? root.segment_uploads!.data! : [];
+        setBundledSegUploads(refs);
 
         // Step 1 — identity
         setVendorCode(v.vendor_code ?? '');

@@ -145,7 +145,50 @@ class ProductController extends Controller
             ])
             ->findOrFail($id);
 
-        return response()->json($product);
+        /* Embed the QC reference uploads inline. AddProductModal previously
+         * fired GET /segment-uploads/product/{id}?category=qc as a second
+         * round-trip on edit-mode open; on `php artisan serve` that single-
+         * threaded server made the call pay the full Laravel boot tax
+         * (~500ms). Bundling collapses 2 round-trips into 1 — same proven
+         * pattern shipped for Customer / Consignee / Vendor.
+         *
+         * SegmentDocUploadController reads the category filter from
+         * $request->query('category'), so we set it on the query bag before
+         * delegating. Wrapped in try/catch so a failure here (e.g. fresh
+         * product with no uploads returning empty) cannot break show().
+         *
+         * Backwards-compat shape: we append `segment_uploads` to the
+         * product's array form rather than wrapping in {data, segment_uploads}.
+         * Other GET callers (ProductView, AddProductModal) read fields
+         * directly off res.data (e.g. res.data.name, res.data.qc_records)
+         * and the new top-level key is additive — nothing else breaks.
+         */
+        $segmentUploads = $this->safeDelegate(function () use ($request, $id) {
+            $request->query->set('category', 'qc');
+            return (new SegmentDocUploadController())->index($request, 'product', $id);
+        });
+
+        $payload = $product->toArray();
+        $payload['segment_uploads'] = $segmentUploads ?: ['data' => [], 'by_category' => [], 'count' => 0];
+
+        return response()->json($payload);
+    }
+
+    /**
+     * Run a delegated controller call and unwrap its JSON response,
+     * returning `null` on any failure. Caller decides how to default
+     * the missing key.
+     */
+    private function safeDelegate(\Closure $call): ?array
+    {
+        try {
+            $res = $call();
+            $decoded = json_decode($res->getContent(), true);
+            return is_array($decoded) ? $decoded : null;
+        } catch (\Throwable $e) {
+            \Log::warning('ProductController::show safeDelegate failed: ' . $e->getMessage());
+            return null;
+        }
     }
 
     /* ──────────────────────────────────────────────────────────────────
