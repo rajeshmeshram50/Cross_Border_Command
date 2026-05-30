@@ -318,6 +318,16 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * page is reloaded. Reset on modal open. */
   const dirtySavedRef = useRef(false);
 
+  /* Skip-once cache for the parent customer's `locations` array.
+   * Stashed by the edit-mode hydration from the bundled
+   * /consignees/{id} response (customer_locations key). Consumed by
+   * the same-as-customer effect below to skip its own
+   * GET /customers/{customer.db_id} round-trip on initial open —
+   * production network panel showed that fetch costing ~3 sec.
+   * Subsequent toggles off/on or linked-customer changes still
+   * fetch as before since the ref is cleared after a single use. */
+  const bundledCustomerLocationsRef = useRef<{ customerId: number; rows: any[] } | null>(null);
+
   /* Stage 3 → Trade Documents → Send for Signature. Mirrors what
    * [[AddCustomerModal]] does — tdDocs is the table state (per-row
    * checkbox + status badge), sendForSignature holds the IDs the user
@@ -697,6 +707,32 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * full record. The primary address already flows through the
      * `customer.address/country/state/city/pin` block above. */
     if (customer.db_id) {
+      /* Skip-once: edit-mode hydration may have already cached the
+       * parent customer's locations from the bundled /consignees/{id}
+       * response (customer_locations key). When the cached customerId
+       * matches the picked customer, consume the cached rows and skip
+       * the network round-trip. Subsequent toggles/customer changes
+       * still fetch normally because the ref is cleared after use. */
+      const cached = bundledCustomerLocationsRef.current;
+      if (cached && cached.customerId === customer.db_id) {
+        const extra = cached.rows;
+        setLocations(extra.map((a: any) => ({
+          id:            `cloc_${a.id ?? Math.random().toString(36).slice(2, 7)}`,
+          type:          a.type ?? '',
+          line:          a.address_line ?? '',
+          country:       a.country ?? '',
+          state:         a.state ?? '',
+          city:          a.city ?? '',
+          pin:           a.pin ?? '',
+          cpName:        a.cp_name ?? '',
+          cpDesignation: a.cp_designation ?? '',
+          cpContact:     a.cp_contact ?? '',
+          cpEmail:       a.cp_email ?? '',
+          cpWhatsapp:    a.cp_whatsapp === 'no' ? 'no' : 'yes',
+        })));
+        bundledCustomerLocationsRef.current = null;
+        return;
+      }
       let cancelled = false;
       api.get(`/customers/${customer.db_id}`)
         .then(r => {
@@ -764,6 +800,19 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           email:          d.primary_address?.cp_email       ?? '',
           whatsapp:       wa === 'yes' ? 'Yes' : 'No',
         });
+        /* Stash the bundled parent customer locations so the
+         * same-as-customer effect above can skip its own
+         * /customers/{customer.db_id} fetch on this initial open.
+         * Only valid when same_as_customer is true AND a customer is
+         * linked — otherwise the effect bails before reaching the
+         * cache check, so stashing harmlessly. */
+        if (Array.isArray(root.customer_locations) && d.customer_id) {
+          bundledCustomerLocationsRef.current = {
+            customerId: Number(d.customer_id),
+            rows:       root.customer_locations,
+          };
+        }
+
         // Restore the toggle from the server so the user sees the
         // same banner state they left in — and so Save & Next keeps
         // the consignee flagged as same-as-customer on update.

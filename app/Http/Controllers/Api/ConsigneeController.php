@@ -109,6 +109,51 @@ class ConsigneeController extends Controller
             fn () => (new SegmentDocUploadController())->index($request, 'consignee', $id)
         );
 
+        /* Bundle the parent customer's non-primary addresses ("locations")
+         * so AddConsigneeModal's same-as-customer effect can skip its own
+         * GET /customers/{customer_id} round-trip on edit-mode open. The
+         * production network panel showed that call costing ~3 sec
+         * (cbc.idims.in). Frontend uses a skip-once ref pattern: if this
+         * bundled list is present it's consumed, otherwise the existing
+         * lazy fetch runs as fallback — preserving every existing flow
+         * (toggle off/on, change linked customer, etc.).
+         *
+         * Shape mirrors CustomerController::shapeAddress() exactly so the
+         * frontend's map at line 705 reads identical fields. Wrapped in
+         * try/catch so a malformed customer reference cannot break show().
+         */
+        $customerLocations = [];
+        try {
+            if ($row->customer_id) {
+                $customer = \App\Models\Customer::query()
+                    ->forUser($user)
+                    ->with('addresses')
+                    ->find($row->customer_id);
+                if ($customer) {
+                    $customerLocations = $customer->addresses
+                        ->where('is_primary', false)
+                        ->values()
+                        ->map(fn ($a) => [
+                            'id'             => $a->id,
+                            'type'           => $a->type,
+                            'address_line'   => $a->address_line,
+                            'country'        => $a->country,
+                            'state'          => $a->state,
+                            'city'           => $a->city,
+                            'pin'            => $a->pin,
+                            'cp_name'        => $a->cp_name,
+                            'cp_designation' => $a->cp_designation,
+                            'cp_contact'     => $a->cp_contact,
+                            'cp_email'       => $a->cp_email,
+                            'cp_whatsapp'    => $a->cp_whatsapp,
+                        ])
+                        ->all();
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('ConsigneeController::show customer_locations bundle failed: ' . $e->getMessage());
+        }
+
         return response()->json([
             'data'            => $this->shape($row),
             'documents'       => $documents['data'] ?? [],
@@ -116,6 +161,10 @@ class ConsigneeController extends Controller
             // segment_uploads keeps its full shape (data + by_category + count)
             // because the frontend reads `data[].category` for per-tab bucketing.
             'segment_uploads' => $segmentUploads ?: ['data' => [], 'by_category' => [], 'count' => 0],
+            // Pre-shaped parent customer locations for the same-as-customer
+            // mirror. Empty array means "no parent customer or no locations" —
+            // the frontend falls through to its existing fetch in that case.
+            'customer_locations' => $customerLocations,
         ]);
     }
 
