@@ -557,7 +557,7 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
   color: #d97706;
 }
-.cps-title { margin: 0; font-size: 18px; font-weight: 800; color: #4c1d95; }
+.cps-title { margin: 0; font-size: 16px; font-weight: 700; color: #4c1d95; }
 .cps-close {
   width: 30px; height: 30px;
   background: #fef3c7; border: none; color: #b45309;
@@ -588,13 +588,13 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
 }
 .cps-section-ico-amber { background: linear-gradient(135deg,#f59e0b,#d97706); color: #fff; }
-.cps-section-title { font-weight: 800; letter-spacing: .06em; color: #78350f; text-transform: uppercase; }
+.cps-section-title { font-size: 12px; font-weight: 700; letter-spacing: .06em; color: #78350f; text-transform: uppercase; }
 .cps-section-hint  { font-size: 11px; font-weight: 500; color: #b45309; font-style: italic; }
 .cps-section-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px;
   background: linear-gradient(135deg,#f59e0b,#d97706); color: #fff;
-  font-size: 10.5px; font-weight: 800;
+  font-size: 10.5px; font-weight: 700;
 }
 
 /* ─── OPP grid (4×2) ─── */
@@ -610,18 +610,18 @@ const SCOPED_CSS = `
 .cps-opp-cell:nth-child(4n)   { border-right: none; }
 .cps-opp-cell:nth-last-child(-n+4) { border-bottom: none; }
 .cps-opp-label {
-  font-size: 9.5px; font-weight: 800; letter-spacing: .1em;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .1em;
   color: #b45309; margin-bottom: 4px; text-transform: uppercase;
 }
-.cps-opp-val { font-size: 13px; color: #1e293b; font-weight: 600; }
+.cps-opp-val { font-size: 12.5px; color: #1e293b; font-weight: 500; }
 .cps-opp-val-amber { color: #d97706; }
-.cps-mono { font-family: 'Inter', monospace; font-weight: 800; }
+.cps-mono { font-family: 'Inter', monospace; font-weight: 700; }
 .cps-bold { font-weight: 700; color: #0f172a; }
 
 /* Status pill */
 .cps-stp {
   display: inline-block; padding: 4px 12px; border-radius: 999px;
-  font-size: 10.5px; font-weight: 800; border: 1.5px solid;
+  font-size: 10.5px; font-weight: 700; border: 1.5px solid;
 }
 .cps-stp-q { background: #fef3c7; color: #b45309; border-color: #fcd34d; }
 .cps-stp-d { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
@@ -635,17 +635,17 @@ const SCOPED_CSS = `
 }
 .cps-field { display: flex; flex-direction: column; gap: 5px; }
 .cps-field-full { padding: 0 16px 16px; background: #fff; }
-.cps-flabel { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: #b45309; text-transform: uppercase; }
+.cps-flabel { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; color: #b45309; text-transform: uppercase; }
 .cps-req { color: #dc2626; }
 
 .cps-input {
-  height: 36px; padding: 0 12px;
-  border: 1.5px solid #fde68a; border-radius: 8px;
-  background: #fffef9; font-size: 12.5px; color: #1e293b;
+  height: 38px; padding: 7px 12px;
+  border: 1.5px solid #94a3b8; border-radius: 10px;
+  background: #fff; font-size: 13px; font-weight: 500; color: #1e293b;
   outline: none; font-family: inherit;
-  transition: border-color .15s, box-shadow .15s;
+  transition: border-color .18s, box-shadow .18s;
 }
-.cps-input:focus { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.16); }
+.cps-input:focus { border-color: #6691e7; box-shadow: 0 0 0 3px rgba(102,145,231,.18); }
 .cps-input-err   { border-color: #ef4444 !important; }
 
 .cps-textarea {
@@ -673,7 +673,7 @@ const SCOPED_CSS = `
   box-shadow: 0 0 6px rgba(245,158,11,.55);
   flex-shrink: 0;
 }
-.cps-status-main { font-size: 12.5px; font-weight: 700; color: #78350f; }
+.cps-status-main { font-size: 12px; font-weight: 600; color: #78350f; }
 .cps-status-sub  { font-size: 10px;   font-weight: 600; color: #b45309; margin-top: 1px; }
 
 /* ─── Sourcing Product Details ─── */
@@ -681,7 +681,7 @@ const SCOPED_CSS = `
 .cps-prods-table { width: 100%; border-collapse: collapse; min-width: 760px; }
 .cps-prods-table thead th {
   padding: 10px 12px; text-align: left;
-  font-size: 9.5px; font-weight: 800; letter-spacing: .1em; color: #78350f;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .1em; color: #78350f;
   background: linear-gradient(180deg, #fef3c7, #fef9c3);
   border-bottom: 1px solid #fde68a; white-space: nowrap;
 }
@@ -693,9 +693,9 @@ const SCOPED_CSS = `
 
 .cps-sr {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 7px;
+  width: 24px; height: 24px; border-radius: 7px;
   background: #fef3c7; color: #b45309;
-  font-size: 11.5px; font-weight: 800;
+  font-size: 11px; font-weight: 700;
 }
 
 .cps-status-pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
@@ -744,7 +744,7 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; border-radius: 3px;
 }
 .cps-chip-dl:hover { background: rgba(217,119,6,.18); }
-.cps-chip-x { font-weight: 800; font-size: 12px; }
+.cps-chip-x { font-weight: 700; font-size: 12px; }
 .cps-chip-x:hover { background: rgba(239,68,68,.18); color: #dc2626; }
 
 /* Row add / del */

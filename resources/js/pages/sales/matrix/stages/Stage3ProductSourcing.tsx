@@ -372,8 +372,14 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                 </div>
               </div>
               <div className="s3-legend">
-                <span className="s3-legend-dot s3-dot-active">● Active: either tab</span>
-                <span className="s3-legend-dot s3-dot-inactive">● Inactive: Required only</span>
+                <span className="s3-legend-pill s3-legend-on">
+                  <span className="s3-legend-pill-dot" />
+                  Active: either tab
+                </span>
+                <span className="s3-legend-pill s3-legend-off">
+                  <span className="s3-legend-pill-dot" />
+                  Inactive: Required only
+                </span>
               </div>
             </div>
 
@@ -988,10 +994,15 @@ const STAGE3_CSS = `
 .s3-card-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
 .s3-card-sub-italic { font-style: italic; color: #b45309; }
 
-.s3-legend { display: flex; gap: 14px; }
-.s3-legend-dot { font-size: 10.5px; font-weight: 700; }
-.s3-dot-active   { color: #10b981; }
-.s3-dot-inactive { color: #ef4444; }
+.s3-legend { display: flex; gap: 8px; flex-wrap: wrap; }
+.s3-legend-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+}
+.s3-legend-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.s3-legend-on  { background: #dcfce7; color: #15803d; }
+.s3-legend-off { background: #fee2e2; color: #b91c1c; }
 
 /* ═══════════════════════════════ TABLE ═══════════════════════════════ */
 .s3-table-wrap { overflow-x: auto; background: #fff; }

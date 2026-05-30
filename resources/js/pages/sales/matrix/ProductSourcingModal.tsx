@@ -99,9 +99,10 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
   }, [open, leadId, toast]);
 
   const counts = useMemo(() => {
-    const req = rows.filter(r => r.sourcing_status === 'required').length;
-    const not = rows.filter(r => r.sourcing_status === 'not_required').length;
-    return { all: rows.length, required: req, not_required: not, set: req + not };
+    const req   = rows.filter(r => r.sourcing_status === 'required').length;
+    const not   = rows.filter(r => r.sourcing_status === 'not_required').length;
+    const unset = rows.filter(r => r.sourcing_status == null).length;
+    return { all: rows.length, unset, required: req, not_required: not, set: req + not };
   }, [rows]);
 
   const visibleRows = useMemo(() => {
@@ -176,7 +177,7 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
               <line x1="9" y1="21" x2="9"  y2="9" />
             </svg>
             Product Details
-            <span className="psm-tab-count">{counts.all}</span>
+            <span className="psm-tab-count">{counts.unset}</span>
           </button>
           <button
             type="button"
@@ -234,7 +235,7 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
             </div>
 
             <div className="psm-table-wrap">
-              <table className="psm-table">
+              <table className={`psm-table ${tab === 'required' ? 'psm-table-amber' : tab === 'not_required' ? 'psm-table-mint' : ''}`}>
                 <thead>
                   <tr>
                     <th style={{ width: 60 }}>SR</th>
@@ -535,6 +536,20 @@ const SCOPED_CSS = `
   text-align: left; padding: 11px 12px;
   position: sticky; top: 0; z-index: 2;
   white-space: nowrap;
+}
+/* Per-tab header accents — mirror the Stage 3 middle card: amber for
+   Sourcing Required, green for Sourcing Not Required. */
+.psm-table-amber thead tr { background: transparent; }
+.psm-table-amber thead th {
+  background: linear-gradient(180deg, #fefce8, #fef9c3);
+  color: #78350f;
+  border-bottom: 1.5px solid #fde68a;
+}
+.psm-table-mint thead tr { background: transparent; }
+.psm-table-mint thead th {
+  background: linear-gradient(180deg, #059669, #047857);
+  color: #fff;
+  border-bottom: 1.5px solid #047857;
 }
 .psm-table tbody tr        { border-bottom: 1px solid #f5f3ff; }
 .psm-table tbody tr:last-child { border-bottom: none; }
