@@ -1444,8 +1444,26 @@ export default function HrEmployees() {
     const emailRe = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
     // Identity
     if (!eWorkCountry)        e.work_country_id = 'Work country is required';
-    if (!eFirstName.trim())   e.first_name      = 'First name is required';
-    if (!eLastName.trim())    e.last_name       = 'Last name is required';
+
+    // Name fields (per QA CBC-HR test cases): letters + spaces only,
+    // 2–50 characters. First & Last are mandatory; Middle is optional but
+    // must satisfy the same alpha + length rules when it IS filled. The
+    // alpha check runs first so "John123@" reports "letters only" rather
+    // than a length message; the length checks then catch the 1-char and
+    // 51-char boundaries.
+    const NAME_RE = /^[A-Za-z ]+$/;
+    const nameError = (val: string, label: string): string | null => {
+      const v = val.trim();
+      if (!NAME_RE.test(v)) return `${label} may contain letters and spaces only`;
+      if (v.length < 2)     return `${label} must be at least 2 characters`;
+      if (v.length > 50)    return `${label} must be at most 50 characters`;
+      return null;
+    };
+    if (!eFirstName.trim()) e.first_name = 'First name is required';
+    else { const m = nameError(eFirstName, 'First name'); if (m) e.first_name = m; }
+    if (!eLastName.trim())  e.last_name  = 'Last name is required';
+    else { const m = nameError(eLastName, 'Last name'); if (m) e.last_name = m; }
+    if (eMiddleName.trim()) { const m = nameError(eMiddleName, 'Middle name'); if (m) e.middle_name = m; }
     if (!eDisplayName.trim()) e.display_name    = 'Display name is required';
     if (!eActualName.trim())  e.actual_name     = 'Employee actual name is required';
     if (!eGender)             e.gender          = 'Gender is required';
@@ -1505,7 +1523,7 @@ export default function HrEmployees() {
     else if (!/^\d{6}$/.test(eCurPin.trim())) e.pincode = 'Pincode must be exactly 6 digits';
     return e;
   }, [eWorkCountry, eFirstName, eLastName, eDisplayName, eActualName, eGender, eDob, eNationality,
-      eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin]);
+      eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin, eMiddleName]);
 
   const validateStep2 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
@@ -1615,7 +1633,7 @@ export default function HrEmployees() {
     if (Object.keys(errs).length === 0) return null;
     const k = Object.keys(errs);
     const STEP_KEYS: Array<{ step: 1 | 2 | 3 | 4; keys: Set<string> }> = [
-      { step: 1, keys: new Set(['work_country_id','first_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
+      { step: 1, keys: new Set(['work_country_id','first_name','middle_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
       { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
       { step: 3, keys: new Set(['leave_plan','holiday_list','shift','weekly_off','time_tracking','penalization_policy','expense_policy','doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
       { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from']) },
@@ -4362,14 +4380,16 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Middle Name</label>
-                      <input className="emp-input" type="text" placeholder="Middle name (optional)" value={eMiddleName} onChange={e => {
+                      <input className={`emp-input${eErrors.middle_name ? ' is-invalid' : ''}`} type="text" placeholder="Middle name (optional)" value={eMiddleName} onChange={e => {
                         const v = e.target.value;
                         setEMiddleName(v);
                         const composed = `${eFirstName} ${v} ${eLastName}`.replace(/\s+/g,' ').trim();
                         if (!eDisplayNameTouched) setEDisplayName(composed);
                         // Actual Name no longer auto-mirrors while
                         // typing — the user fills it explicitly below.
+                        clearEErr('middle_name');
                       }} />
+                      {eErrors.middle_name && <small className="emp-err">{eErrors.middle_name}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Last Name<span className="req">*</span></label>

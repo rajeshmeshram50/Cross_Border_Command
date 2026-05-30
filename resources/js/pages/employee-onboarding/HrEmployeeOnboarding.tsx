@@ -3427,6 +3427,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
       }
     }
 
+    // PAN format hard-block — a malformed PAN (wrong length / pattern, e.g.
+    // 'ABCD1234E' or '12345ABCDE') must be REJECTED before the save, not just
+    // flagged with an inline hint. Mirrors the AAAAA9999A rule the backend
+    // also enforces, so the user gets a clear message instead of a raw 422.
+    const panVal = s4.pan_number.trim().toUpperCase();
+    if (panVal && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(panVal)) {
+      toast.error('Invalid PAN', 'PAN must be in the format AAAAA9999A — 5 letters, 4 digits, then 1 letter.');
+      return false;
+    }
+
     setS4Saving(true);
     // Client-side PAN uniqueness check (best-effort). If backend supports filtering
     // by PAN this avoids a slow round-trip on Save. If not supported we fall back
