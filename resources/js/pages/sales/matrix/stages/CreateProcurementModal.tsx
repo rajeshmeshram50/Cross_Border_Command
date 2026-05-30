@@ -791,13 +791,13 @@ const SCOPED_CSS = `
   background: #f59e0b;
   box-shadow: 0 0 5px rgba(245,158,11,.55);
 }
-.cps-foot-next   { font-family: 'Inter',monospace; font-weight: 800; color: #d97706; padding: 0 6px; }
+.cps-foot-next   { font-family: 'Inter',monospace; font-weight: 700; color: #d97706; padding: 0 6px; }
 .cps-foot-author { color: #94a3b8; font-weight: 500; }
 .cps-foot-actions { display: flex; gap: 10px; }
 
 .cps-btn {
   padding: 9px 22px; border-radius: 8px;
-  font-family: inherit; font-weight: 700; font-size: 12.5px; cursor: pointer;
+  font-family: inherit; font-weight: 600; font-size: 12px; cursor: pointer;
   border: 1.5px solid transparent;
   min-width: 130px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   transition: all .15s;
