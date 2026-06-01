@@ -146,7 +146,10 @@ export function MasterTimePicker({
             top: popupPos.top,
             left: popupPos.left,
             width: popupPos.width,
-            zIndex: 1080,
+            // Sits above modal overlays (Sales Todo modal is z-index 9500,
+            // others up to 10000) so the dropdown never opens behind the
+            // popup. Matches MasterDatePicker's 11100.
+            zIndex: 11100,
           }}
         >
           <div className="master-timepicker-cols">
