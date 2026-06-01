@@ -5856,6 +5856,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-empty { background: #110c25; border-color: #3b2a6b; color: #6d6391; }
 [data-bs-theme="dark"] .avm-foot { background: #14102a; border-top-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-btn-ghost { background: #1a1430; border-color: #3b2a6b; color: #c4b5fd; }
+/* Dark-mode hover — without this the light .avm-btn-ghost:hover rule is
+   overridden by the dark base rule above (equal specificity, defined later),
+   so the Cancel button showed no hover feedback in dark mode (QA report). */
+[data-bs-theme="dark"] .avm-btn-ghost:hover { background: #221852; border-color: #4c1d95; color: #ede9fe; }
 [data-bs-theme="dark"] .avm-btn-outline { background: #1a1430; border-color: #4c1d95; color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-product-row { background: #110c25; border-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-product-row.on { background: #14241a; border-color: #14532d; }
