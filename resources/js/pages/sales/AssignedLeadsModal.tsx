@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useNavigateContext } from '../../components/App';
+import LeadsKpiModal, { type KpiFilter } from './LeadsKpiModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Lead Distribution — full-screen "Assigned Leads" experience.
@@ -57,6 +58,10 @@ export default function AssignedLeadsModal() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  /* KPI popup — clicking a lead-count card opens the prototype's
+   * "Assigned Leads"-style modal scoped to that bucket. `null` = closed. */
+  const [kpiModal, setKpiModal] = useState<{ title: string; filter: KpiFilter } | null>(null);
+
   const onClose = () => navigate('sales.workplace');
   /* Route to the dedicated Leads Details page (ports the SalesMatrix_v4_9
    * `#leadsDetailModal` design). The page reads the salesperson + meta
@@ -90,12 +95,17 @@ export default function AssignedLeadsModal() {
       .finally(() => setLoading(false));
   }, [toast]);
 
-  const totalCount = rows.length;
+  /* Roster shows only salespeople who actually hold leads — an empty
+   * salesperson adds noise to the distribution view. The TOTAL SALES
+   * PERSONS KPI / header pill still count every active member (a
+   * separate metric); this filter is presentational to the table only. */
+  const leadRows   = rows.filter(r => (r.total_assigned_leads ?? 0) > 0);
+  const totalCount = leadRows.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const safePage   = Math.min(page, totalPages);
   const startIdx   = totalCount === 0 ? 0 : (safePage - 1) * pageSize;
   const endIdx     = Math.min(startIdx + pageSize, totalCount);
-  const pageRows   = rows.slice(startIdx, endIdx);
+  const pageRows   = leadRows.slice(startIdx, endIdx);
 
   // Clamp page back into range whenever the dataset shrinks (search/filter).
   useEffect(() => {
@@ -168,6 +178,7 @@ export default function AssignedLeadsModal() {
             value={summary?.total_leads ?? 0}
             sub="All leads"
             tone="amber"
+            onClick={() => setKpiModal({ title: 'Total Leads', filter: {} })}
             icon={
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -180,6 +191,7 @@ export default function AssignedLeadsModal() {
             value={summary?.assigned_leads ?? 0}
             sub="Salesperson assigned"
             tone="green"
+            onClick={() => setKpiModal({ title: 'Assigned Leads', filter: { assigned: true } })}
             icon={
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12" />
@@ -191,6 +203,7 @@ export default function AssignedLeadsModal() {
             value={summary?.unassigned_leads ?? 0}
             sub="Needs assignment"
             tone="red"
+            onClick={() => setKpiModal({ title: 'Unassigned Leads', filter: { assigned: false } })}
             icon={
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <circle cx="12" cy="12" r="10" />
@@ -217,15 +230,28 @@ export default function AssignedLeadsModal() {
               </tr>
             </thead>
             <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan={9} className="ldp-status">Loading salesperson summary…</td>
+              {loading && Array.from({ length: pageSize }).map((_, i) => (
+                <tr key={`sk-${i}`} className="ldp-skel-row">
+                  <td className="ldp-td-num"><span className="ldp-skel ldp-skel-sr" /></td>
+                  <td>
+                    <div className="ldp-person">
+                      <span className="ldp-skel ldp-skel-avatar" />
+                      <span className="ldp-skel ldp-skel-line" style={{ width: '70%' }} />
+                    </div>
+                  </td>
+                  <td><span className="ldp-skel ldp-skel-chip" /></td>
+                  <td><span className="ldp-skel ldp-skel-line" style={{ width: '75%' }} /></td>
+                  <td><span className="ldp-skel ldp-skel-chip" /></td>
+                  <td><span className="ldp-skel ldp-skel-chip" /></td>
+                  <td><span className="ldp-skel ldp-skel-line" style={{ width: '80%' }} /></td>
+                  <td className="ldp-td-num"><span className="ldp-skel ldp-skel-pill" /></td>
+                  <td className="ldp-td-action"><span className="ldp-skel ldp-skel-btn" /></td>
                 </tr>
-              )}
-              {!loading && rows.length === 0 && (
+              ))}
+              {!loading && totalCount === 0 && (
                 <tr>
                   <td colSpan={9} className="ldp-status">
-                    No active salespeople yet for this tenant.
+                    No salespeople have leads assigned yet.
                   </td>
                 </tr>
               )}
@@ -337,42 +363,52 @@ export default function AssignedLeadsModal() {
           )}
         </div>
       </div>
+
+      {/* KPI popup — lists the leads behind the clicked card. */}
+      <LeadsKpiModal
+        open={kpiModal !== null}
+        onClose={() => setKpiModal(null)}
+        title={kpiModal?.title ?? ''}
+        filter={kpiModal?.filter ?? {}}
+      />
     </div>
   );
 }
 
 /* ─── Stat card primitive ─────────────────────────────────────────────
- * Matches the AdminDashboard `admin-kpi-card` look: white surface with
- * a 16px radius, soft 1px border + 0/2/20 shadow, a 3px gradient strip
- * at the top, and a 42×42 gradient icon tile. Each tone resolves to a
- * single hue-family gradient so adjacent cards read as a harmonious
- * palette (same gradient choices used on the admin dashboard).
+ * Matches the Figma KPI design: white surface with a 12px radius and a
+ * tone-tinted border, a soft (light) icon tile carrying the tone-coloured
+ * icon, a tone-coloured value + sub-line, and a thin accent stripe on the
+ * left edge. Tone palette is driven by CSS custom properties (set per
+ * `ldp-stat-<tone>` class) so light + dark modes can each retune the
+ * exact hues without inline styles.
  * ───────────────────────────────────────────────────────────────────── */
-const STAT_GRADIENTS: Record<'slate' | 'amber' | 'green' | 'red', string> = {
-  slate: 'linear-gradient(135deg,#3a4b85,#6691e7)',
-  amber: 'linear-gradient(135deg,#e89a2e,#ffce6e)',
-  green: 'linear-gradient(135deg,#0a8f7e,#16d3b8)',
-  red:   'linear-gradient(135deg,#d94a3d,#ff8a76)',
-};
-
 function StatCard(props: {
   label: string;
   value: number;
   sub: string;
   tone: 'amber' | 'green' | 'red' | 'slate';
   icon: React.ReactNode;
+  /* When provided the card becomes a button that opens the KPI popup. */
+  onClick?: () => void;
 }) {
-  const gradient = STAT_GRADIENTS[props.tone];
+  const clickable = typeof props.onClick === 'function';
   return (
-    <div className="ldp-stat admin-kpi-card">
-      <div className="ldp-stat-stripe" style={{ background: gradient }} />
+    <div
+      className={`ldp-stat ldp-stat-${props.tone}${clickable ? ' ldp-stat-clickable' : ''}`}
+      onClick={props.onClick}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.onClick!(); } } : undefined}
+    >
+      <div className="ldp-stat-stripe" />
       <div className="ldp-stat-body">
         <div className="ldp-stat-text">
           <div className="ldp-stat-label">{props.label}</div>
           <div className="ldp-stat-value">{props.value.toLocaleString()}</div>
           <div className="ldp-stat-sub">{props.sub}</div>
         </div>
-        <div className="ldp-stat-icon admin-kpi-icon" style={{ background: gradient }}>
+        <div className="ldp-stat-icon">
           {props.icon}
         </div>
       </div>
@@ -496,7 +532,8 @@ const LDP_CSS = `
 .ldp-stat {
   position: relative;
   background: #ffffff;
-  border: 1px solid var(--vz-border-color, #e9ebec);
+  /* Tone-tinted border (Figma look) — falls back to neutral. */
+  border: 1.5px solid var(--ldp-tone-border, #e9ebec);
   border-radius: 12px;
   /* Extra left padding clears the 3px accent strip on that edge. */
   padding: 12px 14px 10px 16px;
@@ -509,12 +546,36 @@ const LDP_CSS = `
   transform: translateY(-3px);
   box-shadow:
     0 12px 24px -8px rgba(15, 23, 42, 0.16),
-    0 4px 10px rgba(124, 92, 252, 0.10);
-  border-color: rgba(124, 92, 252, 0.45);
+    0 6px 14px var(--ldp-tone-shadow, rgba(15, 23, 42, 0.08));
+}
+.ldp-stat-clickable { cursor: pointer; }
+.ldp-stat-clickable:focus-visible {
+  outline: 2px solid var(--ldp-tone-accent, #f59e0b); outline-offset: 2px;
+}
+
+/* Per-tone palette — Figma KPI colours. Each tone sets the accent
+   (stripe + icon glyph), a soft icon-tile background, the tinted card
+   border, the value colour, and the sub-line colour. */
+.ldp-stat-slate {
+  --ldp-tone-accent: #6366f1; --ldp-tone-border: #c7d2fe; --ldp-tone-icon-bg: #eef2ff;
+  --ldp-tone-value: #1e293b;  --ldp-tone-sub: #6366f1;    --ldp-tone-shadow: rgba(99,102,241,.16);
+}
+.ldp-stat-amber {
+  --ldp-tone-accent: #d97706; --ldp-tone-border: #fcd34d; --ldp-tone-icon-bg: #fef3c7;
+  --ldp-tone-value: #1e293b;  --ldp-tone-sub: #b45309;    --ldp-tone-shadow: rgba(217,119,6,.16);
+}
+.ldp-stat-green {
+  --ldp-tone-accent: #059669; --ldp-tone-border: #a7f3d0; --ldp-tone-icon-bg: #d1fae5;
+  --ldp-tone-value: #047857;  --ldp-tone-sub: #059669;    --ldp-tone-shadow: rgba(5,150,105,.16);
+}
+.ldp-stat-red {
+  --ldp-tone-accent: #dc2626; --ldp-tone-border: #fecaca; --ldp-tone-icon-bg: #fee2e2;
+  --ldp-tone-value: #dc2626;  --ldp-tone-sub: #dc2626;    --ldp-tone-shadow: rgba(220,38,38,.16);
 }
 /* Accent strip — vertical bar on the left edge (was a top bar). */
 .ldp-stat-stripe {
   position: absolute; top: 0; left: 0; bottom: 0; width: 3px;
+  background: var(--ldp-tone-accent, #6366f1);
 }
 .ldp-stat-body {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
@@ -527,9 +588,9 @@ const LDP_CSS = `
   margin: 0 0 6px;
 }
 .ldp-stat-value {
-  font-size: clamp(14px, 1.3vw, 20px);
+  font-size: clamp(16px, 1.4vw, 22px);
   font-weight: 800;
-  color: var(--vz-heading-color, var(--vz-body-color, #212529));
+  color: var(--ldp-tone-value, #1e293b);
   line-height: 1.1;
   word-break: break-word;
   font-variant-numeric: tabular-nums;
@@ -538,21 +599,24 @@ const LDP_CSS = `
 .ldp-stat-sub {
   margin-top: 6px;
   font-size: 10px; font-weight: 600;
-  color: var(--vz-secondary-color, #878a99);
+  color: var(--ldp-tone-sub, #878a99);
   display: inline-flex; align-items: center; gap: 4px;
 }
 .ldp-stat-sub::after { content: "›"; font-size: 11px; line-height: 1; opacity: .8; }
 .ldp-stat-icon {
-  width: 32px; height: 32px; border-radius: 9px;
+  width: 34px; height: 34px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  /* Soft tinted tile + tone-coloured glyph (Figma) — not a solid fill. */
+  background: var(--ldp-tone-icon-bg, #f1f5f9);
+  color: var(--ldp-tone-accent, #475569);
   transition: transform .18s ease, box-shadow .18s ease;
 }
 .ldp-stat:hover .ldp-stat-icon {
   transform: scale(1.06);
-  box-shadow: 0 6px 14px rgba(0,0,0,0.16);
+  box-shadow: 0 6px 14px var(--ldp-tone-shadow, rgba(0,0,0,0.12));
 }
-.ldp-stat-icon svg { width: 15px; height: 15px; color: #fff; }
+.ldp-stat-icon svg { width: 16px; height: 16px; color: inherit; }
 
 /* ── Table ──────────────────────────────────────────────────────── */
 .ldp-table-wrap {
@@ -669,6 +733,30 @@ const LDP_CSS = `
   color: #a8a29e; font-style: italic; font-size: 11px;
 }
 
+/* ── Loading shimmer — skeleton rows shown while the roster loads ── */
+.ldp-skel-row td { padding: 9px 13px; }
+.ldp-skel {
+  display: inline-block; vertical-align: middle;
+  border-radius: 6px;
+  background: linear-gradient(100deg, #fdf6e8 30%, #fce9c4 50%, #fdf6e8 70%);
+  background-size: 200% 100%;
+  animation: ldp-shimmer 1.2s ease-in-out infinite;
+}
+.ldp-skel-line   { height: 11px; width: 100%; }
+.ldp-skel-sr     { width: 24px; height: 24px; border-radius: 50%; }
+.ldp-skel-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; }
+.ldp-skel-chip   { width: 64px; height: 20px; border-radius: 999px; }
+.ldp-skel-pill   { width: 36px; height: 22px; border-radius: 999px; }
+.ldp-skel-btn    { width: 86px; height: 26px; border-radius: 7px; }
+@keyframes ldp-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+[data-bs-theme="dark"] .ldp-skel {
+  background: linear-gradient(100deg, #2a1d10 30%, #3d2c16 50%, #2a1d10 70%);
+  background-size: 200% 100%;
+}
+
 /* ── Pagination footer ──────────────────────────────────────────── */
 .ldp-pagination {
   display: flex; align-items: center; justify-content: space-between;
@@ -677,7 +765,11 @@ const LDP_CSS = `
   font-size: 11px; color: #57534e;
   flex-wrap: wrap;
 }
-.ldp-pagination-info { font-weight: 600; color: #78716c; }
+.ldp-pagination-info {
+  font-weight: 600; color: #92400e;
+  background: #fff; border: 1.5px solid #fde68a;
+  padding: 4px 13px; border-radius: 999px;
+}
 .ldp-pagination-controls {
   display: flex; align-items: center; gap: 14px;
 }
@@ -686,23 +778,31 @@ const LDP_CSS = `
   font-size: 11px; color: #57534e; font-weight: 600;
 }
 .ldp-rows-per-page select {
-  border: 1.5px solid #fde68a; border-radius: 7px;
-  background: #fff; color: #1f2937;
-  padding: 3px 22px 3px 8px; font-size: 11px; font-weight: 700;
+  border: 1.5px solid #fde68a; border-radius: 999px;
+  /* Amber-gradient pill to match the page-indicator / info pills. */
+  background-color: transparent;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2392400e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"),
+    linear-gradient(135deg, #fef9c3, #fef3c7);
+  background-repeat: no-repeat, no-repeat;
+  background-position: right 9px center, center;
+  background-size: 12px, 100% 100%;
+  color: #78350f;
+  padding: 4px 26px 4px 13px; font-size: 11px; font-weight: 800;
   cursor: pointer; outline: none;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2392400e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
 }
 .ldp-rows-per-page select:focus { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
 .ldp-page-indicator {
-  font-size: 11px; font-weight: 700; color: #1f2937;
+  font-size: 11px; font-weight: 700; color: #78350f;
   min-width: 36px; text-align: center;
+  background: linear-gradient(135deg, #fef9c3, #fef3c7);
+  border: 1.5px solid #fde68a;
+  padding: 4px 12px; border-radius: 999px;
 }
 .ldp-page-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 7px;
+  width: 27px; height: 27px; border-radius: 50%;
   background: #fff; border: 1.5px solid #fde68a; color: #b45309;
   cursor: pointer;
   transition: background .15s, color .15s, border-color .15s, transform .12s;
@@ -727,14 +827,26 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-header-title { color: #fef3c7; }
 [data-bs-theme="dark"] .ldp-header-sub   { color: #fcd34d; }
 [data-bs-theme="dark"] .ldp-header-pill  { background: rgba(0,0,0,.30); color: #fcd34d; border-color: #b45309; }
-[data-bs-theme="dark"] .ldp-stat {
-  background: #1f1611; border-color: #422006; color: #fef3c7;
-}
-[data-bs-theme="dark"] .ldp-stat-value { color: #fef3c7; }
+[data-bs-theme="dark"] .ldp-stat { background: #1f1611; color: #fef3c7; }
 [data-bs-theme="dark"] .ldp-stat-label { color: #d6d3d1; }
-[data-bs-theme="dark"] .ldp-stat-slate .ldp-stat-icon { background: #1e293b; color: #cbd5e1; }
-[data-bs-theme="dark"] .ldp-stat-green { background: linear-gradient(135deg, rgba(20,83,45,.30) 0%, #1f1611 100%); border-color: #166534; }
-[data-bs-theme="dark"] .ldp-stat-red   { background: linear-gradient(135deg, rgba(127,29,29,.30) 0%, #1f1611 100%); border-color: #991b1b; }
+/* Retune each tone for the dark surface — brighter accents, translucent
+   tiles/borders so the cards read against #1f1611 without glare. */
+[data-bs-theme="dark"] .ldp-stat-slate {
+  --ldp-tone-accent: #a5b4fc; --ldp-tone-border: rgba(99,102,241,.40); --ldp-tone-icon-bg: rgba(99,102,241,.18);
+  --ldp-tone-value: #e0e7ff;  --ldp-tone-sub: #a5b4fc;
+}
+[data-bs-theme="dark"] .ldp-stat-amber {
+  --ldp-tone-accent: #fbbf24; --ldp-tone-border: rgba(217,119,6,.45); --ldp-tone-icon-bg: rgba(217,119,6,.18);
+  --ldp-tone-value: #fde68a;  --ldp-tone-sub: #fbbf24;
+}
+[data-bs-theme="dark"] .ldp-stat-green {
+  --ldp-tone-accent: #34d399; --ldp-tone-border: rgba(16,185,129,.40); --ldp-tone-icon-bg: rgba(16,185,129,.18);
+  --ldp-tone-value: #6ee7b7;  --ldp-tone-sub: #34d399;
+}
+[data-bs-theme="dark"] .ldp-stat-red {
+  --ldp-tone-accent: #f87171; --ldp-tone-border: rgba(239,68,68,.40); --ldp-tone-icon-bg: rgba(239,68,68,.18);
+  --ldp-tone-value: #fca5a5;  --ldp-tone-sub: #f87171;
+}
 [data-bs-theme="dark"] .ldp-table-wrap { background: #1f1611; border-color: #422006; }
 [data-bs-theme="dark"] .ldp-table tbody tr { border-color: #422006; }
 [data-bs-theme="dark"] .ldp-table tbody tr:nth-child(even) { background: #28190e; }
@@ -761,12 +873,17 @@ const LDP_CSS = `
   background: #1f1611; color: #fcd34d; border-color: #422006;
 }
 [data-bs-theme="dark"] .ldp-pagination    { background: #28190e; border-color: #422006; color: #d6d3d1; }
-[data-bs-theme="dark"] .ldp-pagination-info { color: #d6d3d1; }
+[data-bs-theme="dark"] .ldp-pagination-info { background: #1f1611; color: #fde68a; border-color: #422006; }
 [data-bs-theme="dark"] .ldp-rows-per-page { color: #d6d3d1; }
 [data-bs-theme="dark"] .ldp-rows-per-page select {
-  background-color: #1f1611; color: #fef3c7; border-color: #422006;
+  color: #fef3c7; border-color: #422006;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23fcd34d' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"),
+    linear-gradient(135deg, #28190e, #1f1611);
 }
-[data-bs-theme="dark"] .ldp-page-indicator { color: #fef3c7; }
+[data-bs-theme="dark"] .ldp-page-indicator {
+  color: #fcd34d; background: linear-gradient(135deg, #28190e, #1f1611); border-color: #422006;
+}
 [data-bs-theme="dark"] .ldp-page-btn { background: #1f1611; border-color: #422006; color: #fcd34d; }
 
 /* Tablet — 2-up stats, header pills wrap below the back button */
