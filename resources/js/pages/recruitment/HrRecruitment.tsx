@@ -1054,10 +1054,13 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
   const [targetDate, setTargetDate]     = useState('');
 
   // Section 2 — Hiring Need
-  const [openings, setOpenings]         = useState('1');
-  const [employType, setEmployType]     = useState('Full-time');
-  const [workMode, setWorkMode]         = useState<'Onsite' | 'Remote' | 'Hybrid' | 'Flexible'>('Onsite');
-  const [urgency, setUrgency]           = useState<RequestUrgency>('Medium');
+  // Start EMPTY so the manager makes an explicit choice for every Hiring
+  // Need field — no silent pre-selected defaults (1 / Full-time / Onsite /
+  // Medium). All four are required, so the validator gates the submit.
+  const [openings, setOpenings]         = useState('');
+  const [employType, setEmployType]     = useState('');
+  const [workMode, setWorkMode]         = useState<'' | 'Onsite' | 'Remote' | 'Hybrid' | 'Flexible'>('');
+  const [urgency, setUrgency]           = useState<'' | RequestUrgency>('');
 
   // Section 3 — Role Details. Preferred Candidate Profile was dropped
   // per product call (overlapped with required_qualification).
@@ -1078,7 +1081,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
   // Errors — only fields still on the form.
   type RaiseErrors = Partial<Record<
     'title' | 'jobRole' | 'department' | 'targetDate' | 'openings' | 'employType' | 'workMode' | 'urgency'
-    | 'jobDesc' | 'requiredSkills' | 'requiredExp',
+    | 'jobDesc' | 'dailyResp' | 'requiredSkills' | 'requiredExp' | 'requiredQual',
     string
   >>;
   const [errors, setErrors] = useState<RaiseErrors>({});
@@ -1106,7 +1109,8 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
       setRequiredQual(String(raw.required_qualification || ''));
     } else {
       setTitle(''); setJobRole(''); setDepartmentId(''); setTargetDate('');
-      setOpenings('1'); setEmployType('Full-time'); setWorkMode('Onsite'); setUrgency('Medium');
+      // Empty defaults — manager must pick these explicitly.
+      setOpenings(''); setEmployType(''); setWorkMode(''); setUrgency('');
       setJobDesc(''); setDailyResp(''); setRequiredSkills(''); setRequiredExp(''); setRequiredQual('');
     }
     setErrors({}); setSaving(false);
@@ -1134,9 +1138,32 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
     if (!employType)            e.employType     = 'Employment type is required';
     if (!workMode)              e.workMode       = 'Work mode is required';
     if (!urgency)               e.urgency        = 'Urgency is required';
-    if (!jobDesc.trim())        e.jobDesc        = 'Job description is required';
-    if (!requiredSkills.trim()) e.requiredSkills = 'Required skills are required';
+    // Job Description — required, 20–5000 chars.
+    const jd = jobDesc.trim();
+    if (!jd)                   e.jobDesc = 'Job description is required';
+    else if (jd.length < 20)   e.jobDesc = 'Job description must be at least 20 characters';
+    else if (jd.length > 5000) e.jobDesc = 'Job description must be at most 5000 characters';
+
+    // Daily Responsibilities — optional, but 20–3000 chars when provided.
+    const dr = dailyResp.trim();
+    if (dr) {
+      if (dr.length < 20)        e.dailyResp = 'Daily responsibilities must be at least 20 characters';
+      else if (dr.length > 3000) e.dailyResp = 'Daily responsibilities must be at most 3000 characters';
+    }
+
+    // Required Skills — required, 2–20 skills (comma / new-line separated).
+    const skillList = requiredSkills.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    if (skillList.length === 0)     e.requiredSkills = 'Required skills are required';
+    else if (skillList.length < 2)  e.requiredSkills = 'Enter at least 2 skills (separate with commas or new lines)';
+    else if (skillList.length > 20) e.requiredSkills = 'Enter at most 20 skills';
+
     if (!requiredExp)           e.requiredExp    = 'Required experience is required';
+
+    // Required Qualification — required, 2–255 chars.
+    const rq = requiredQual.trim();
+    if (!rq)                  e.requiredQual = 'Required qualification is required';
+    else if (rq.length < 2)   e.requiredQual = 'Qualification must be at least 2 characters';
+    else if (rq.length > 255) e.requiredQual = 'Qualification must be at most 255 characters';
     return e;
   };
 
@@ -1373,6 +1400,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
                 <input
                   type="number"
                   min={1}
+                  placeholder="e.g. 1"
                   className={`rec-input${errors.openings ? ' is-invalid' : ''}`}
                   value={openings}
                   onChange={e => { setOpenings(e.target.value); clear('openings'); }}
@@ -1444,11 +1472,12 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
               <Col md={6}>
                 <label className="rec-form-label">Daily Responsibilities</label>
                 <textarea
-                  className="rec-input rec-textarea"
+                  className={`rec-input rec-textarea${errors.dailyResp ? ' is-invalid' : ''}`}
                   placeholder="Day-to-day tasks and deliverables…"
                   value={dailyResp}
-                  onChange={e => setDailyResp(e.target.value)}
+                  onChange={e => { setDailyResp(e.target.value); clear('dailyResp'); }}
                 />
+                {errors.dailyResp && <div className="rec-error"><i className="ri-error-warning-line" />{errors.dailyResp}</div>}
               </Col>
               <Col md={6}>
                 <label className="rec-form-label">Required Skills<span className="req">*</span></label>
@@ -1477,14 +1506,16 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
                 {errors.requiredExp && <div className="rec-error"><i className="ri-error-warning-line" />{errors.requiredExp}</div>}
               </Col>
               <Col md={3}>
-                <label className="rec-form-label">Required Qualification</label>
+                <label className="rec-form-label">Required Qualification<span className="req">*</span></label>
                 <input
                   type="text"
-                  className="rec-input"
+                  maxLength={255}
+                  className={`rec-input${errors.requiredQual ? ' is-invalid' : ''}`}
                   placeholder="e.g. B.Tech, MBA"
                   value={requiredQual}
-                  onChange={e => setRequiredQual(e.target.value)}
+                  onChange={e => { setRequiredQual(e.target.value); clear('requiredQual'); }}
                 />
+                {errors.requiredQual && <div className="rec-error"><i className="ri-error-warning-line" />{errors.requiredQual}</div>}
               </Col>
             </Row>
           </div>

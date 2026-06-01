@@ -470,6 +470,21 @@ export default function HrEmployees() {
     reloadMasters();
   }, [reloadEmployees, reloadMasters]);
 
+  // Auto-refresh the list when the HR returns to this tab/window. A candidate
+  // finishing the public onboarding link does so on THEIR device, so the HR's
+  // open page can't know about it — without this they had to hit browser
+  // refresh to see the new joiner. Refetching on focus/visibility makes the
+  // new entry appear the moment HR switches back to the tab.
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') reloadEmployees().catch(() => {}); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [reloadEmployees]);
+
   // UI-shaped rows derived from `apiEmployees`. Carries `_dbId` + `_raw` so
   // edit/delete handlers can act on the server row without re-fetching.
   const apiRows = useMemo(() => apiEmployees.map(apiToRow), [apiEmployees]);

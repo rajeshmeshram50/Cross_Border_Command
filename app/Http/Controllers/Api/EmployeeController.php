@@ -283,26 +283,24 @@ class EmployeeController extends Controller
         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
         if ($excludeId !== null) $q->where('id', '!=', $excludeId);
 
-        $existing = $q->first(['id', 'emp_code', 'display_name', 'first_name', 'last_name']);
-        if (!$existing) {
+        // Only need to know IF the number is taken — not whose it is. Pulling
+        // just the id (or existence) avoids loading another employee's PII.
+        if (! $q->exists()) {
             return response()->json(['available' => true, 'conflict' => null]);
         }
 
-        $name = $existing->display_name
-            ?: trim($existing->first_name . ' ' . $existing->last_name);
-        $message = sprintf(
-            'This mobile number is already in use by %s (%s).',
-            $name ?: 'another employee',
-            $existing->emp_code ?: ('#' . $existing->id),
-        );
+        // Generic message — we deliberately DON'T reveal the conflicting
+        // employee's name or code. Surfacing another employee's identity (and
+        // implicitly, which number belongs to whom) in a validation message
+        // is a PII-disclosure the QA flagged. The caller only needs to know
+        // the number is taken, not by whom.
+        $message = 'This mobile number is already in use by another employee.';
 
         return response()->json([
             'available' => false,
-            'conflict'  => [
-                'id'       => $existing->id,
-                'emp_code' => $existing->emp_code,
-                'name'     => $name ?: 'another employee',
-            ],
+            // conflict kept as a boolean-ish marker only — no name/emp_code
+            // leaked back to the client.
+            'conflict'  => true,
             'message'   => $message,
         ]);
     }
@@ -1344,16 +1342,11 @@ class EmployeeController extends Controller
         if ($mobile !== '') {
             $q = \App\Models\Employee::query()->where('mobile', $mobile);
             $tenantScope($q);
-            $existing = $q->first(['id', 'emp_code', 'display_name', 'first_name', 'last_name']);
-            if ($existing) {
-                $name = $existing->display_name
-                    ?: trim($existing->first_name . ' ' . $existing->last_name);
+            // Generic message — do NOT disclose the conflicting employee's
+            // name / emp_code (PII leak the QA flagged). Existence is enough.
+            if ($q->exists()) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
-                    'mobile' => [sprintf(
-                        'This mobile number is already in use by %s (%s).',
-                        $name ?: 'another employee',
-                        $existing->emp_code ?: ('#' . $existing->id),
-                    )],
+                    'mobile' => ['This mobile number is already in use by another employee.'],
                 ]);
             }
         }
