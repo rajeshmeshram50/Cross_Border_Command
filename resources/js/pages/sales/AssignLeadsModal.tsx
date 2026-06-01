@@ -92,10 +92,18 @@ export default function AssignLeadsModal({
       .finally(() => setLoadingSp(false));
   }, [open, toast, initialSalespersonId]);
 
-  const accountOptions = useMemo(
-    () => accountLabels.map(l => ({ value: l, label: l })),
-    [accountLabels],
-  );
+  const accountOptions = useMemo(() => {
+    const opts = accountLabels.map(l => ({ value: l, label: l }));
+    // Manual leads (captured via the "Add New Lead" modal) are stored with
+    // platform = "Offline" (SalesLeadController::store). Always surface an
+    // "Offline" option so they can be bulk-assigned the same way as the
+    // .env-configured IndiaMart accounts. Guard against a duplicate in the
+    // unlikely event an IndiaMart label is itself "Offline".
+    if (!opts.some(o => o.value.toLowerCase() === 'offline')) {
+      opts.push({ value: 'Offline', label: 'Offline (Manual)' });
+    }
+    return opts;
+  }, [accountLabels]);
   const accountAvailable = accountOptions.length > 0;
 
   const spOptions = useMemo(
@@ -225,20 +233,26 @@ export default function AssignLeadsModal({
           <div className="alm-context">
             {customerName && (
               <span className="alm-ctx-pill">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
+                <span className="alm-ctx-ico">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                </span>
                 <span className="alm-ctx-text" title={customerName}>{customerName}</span>
               </span>
             )}
             {customerName && oppCode && <span className="alm-ctx-sep" aria-hidden="true">|</span>}
             {oppCode && (
               <span className="alm-ctx-pill">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="16" rx="2" />
-                  <path d="M3 10h18" />
-                </svg>
+                {/* Clipboard glyph — matches the Figma's opportunity icon
+                    (and the OPP-ID card in the Lead Details modal). */}
+                <span className="alm-ctx-ico">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="8" y="2" width="8" height="4" rx="1" />
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                  </svg>
+                </span>
                 <span className="alm-ctx-text">Opp: {oppCode}</span>
               </span>
             )}
@@ -248,7 +262,13 @@ export default function AssignLeadsModal({
         <div className="alm-body">
           {mode === 'filters' && accountAvailable && (
             <div className="alm-field">
-              <label className="alm-label">Select Account <span className="alm-req">*</span></label>
+              <label className="alm-label alm-label-icon">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="5" width="20" height="14" rx="2" />
+                  <line x1="2" y1="10" x2="22" y2="10" />
+                </svg>
+                Select Account <span className="alm-req">*</span>
+              </label>
               <MasterSelect
                 value={account}
                 onChange={setAccount}
@@ -263,7 +283,13 @@ export default function AssignLeadsModal({
           {mode === 'filters' && (
             <div className="alm-grid-2">
               <div className="alm-field">
-                <label className="alm-label">Start Date <span className="alm-req">*</span></label>
+                <label className="alm-label alm-label-icon">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                  Start Date <span className="alm-req">*</span>
+                </label>
                 <MasterDatePicker
                   value={startDate}
                   maxDate={endDate || todayStr}
@@ -274,7 +300,13 @@ export default function AssignLeadsModal({
                 {errors.startDate && <div className="alm-err">{errors.startDate}</div>}
               </div>
               <div className="alm-field">
-                <label className="alm-label">End Date <span className="alm-req">*</span></label>
+                <label className="alm-label alm-label-icon">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                  End Date <span className="alm-req">*</span>
+                </label>
                 <MasterDatePicker
                   value={endDate}
                   minDate={startDate || undefined}
@@ -289,7 +321,13 @@ export default function AssignLeadsModal({
           )}
 
           <div className="alm-field">
-            <label className="alm-label">Select Salesperson <span className="alm-req">*</span></label>
+            <label className="alm-label alm-label-icon">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+              Select Salesperson <span className="alm-req">*</span>
+            </label>
             <MasterSelect
               value={spId}
               onChange={setSpId}
@@ -309,10 +347,20 @@ export default function AssignLeadsModal({
         </div>
 
         <div className="alm-foot">
-          <button className="alm-btn alm-btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
-          <button className="alm-btn alm-btn-primary" onClick={onSubmit} disabled={submitting || loadingSp}>
-            {submitting ? 'Assigning…' : (mode === 'single' ? 'Assign Lead' : 'Assign Leads')}
-          </button>
+          <span className="alm-foot-hint">
+            <span className="alm-foot-star" aria-hidden="true">*</span>
+            {mode === 'filters' ? 'All fields are required' : 'Field is required'}
+          </span>
+          <div className="alm-foot-actions">
+            <button className="alm-btn alm-btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+            <button className="alm-btn alm-btn-primary" onClick={onSubmit} disabled={submitting || loadingSp}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+              {submitting ? 'Assigning…' : (mode === 'single' ? 'Assign Lead' : 'Assign Leads')}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -365,9 +413,16 @@ const ALM_CSS = `
   font-size: 12px;
 }
 .alm-ctx-pill {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; gap: 7px;
   color: #0e7490; font-weight: 600;
   min-width: 0;
+}
+/* Rounded icon tile around each context glyph (Figma). Tinted with the
+   modal's own teal — colour unchanged from ours, only the tile added. */
+.alm-ctx-ico {
+  width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(8,145,178,.12); color: #0891b2;
 }
 .alm-ctx-text {
   max-width: 240px;
@@ -379,12 +434,19 @@ const ALM_CSS = `
   border-bottom-color: rgba(6,182,212,.25);
 }
 [data-bs-theme="dark"] .alm-ctx-pill { color: #67e8f9; }
+[data-bs-theme="dark"] .alm-ctx-ico  { background: rgba(34,211,238,.16); color: #67e8f9; }
 [data-bs-theme="dark"] .alm-ctx-sep  { color: rgba(103,232,249,.45); }
 
 .alm-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .alm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .alm-field { display: flex; flex-direction: column; gap: 4px; position: relative; }
 .alm-label { font-size: 11.5px; font-weight: 600; color: #334155; }
+/* Label with a leading icon (Select Salesperson) — uppercase to match Figma. */
+.alm-label-icon {
+  display: inline-flex; align-items: center; gap: 6px;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.alm-label-icon svg { color: #0891b2; flex-shrink: 0; }
 .alm-req { color: #ef4444; }
 .alm-err { font-size: 10.5px; color: #ef4444; margin-top: 2px; }
 .alm-note {
@@ -392,11 +454,20 @@ const ALM_CSS = `
   border: 1px solid #a5f3fc; border-radius: 8px; padding: 8px 10px;
 }
 .alm-foot {
-  display: flex; justify-content: flex-end; gap: 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 14px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;
   border-radius: 0 0 14px 14px;
 }
+/* "Field is required" hint on the footer's left edge (Figma). */
+.alm-foot-hint {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600; color: #ef4444;
+}
+/* Required-fields marker — an asterisk (star), per the Figma, not a dot. */
+.alm-foot-star { color: #ef4444; font-size: 15px; font-weight: 800; line-height: 1; flex-shrink: 0; }
+.alm-foot-actions { display: flex; align-items: center; gap: 8px; }
 .alm-btn {
+  display: inline-flex; align-items: center; gap: 7px;
   padding: 8px 18px; border-radius: 8px; font-size: 12.5px; font-weight: 600;
   cursor: pointer; border: 1.5px solid transparent; transition: all .15s;
 }
@@ -422,7 +493,9 @@ const ALM_CSS = `
   .alm-head-title { font-size: 15px; }
   .alm-body { padding: 16px; gap: 12px; }
   .alm-grid-2 { grid-template-columns: 1fr; }
-  .alm-foot { padding: 12px 16px; flex-direction: column-reverse; }
-  .alm-foot .alm-btn { width: 100%; }
+  .alm-foot { padding: 12px 16px; flex-direction: column-reverse; align-items: stretch; }
+  .alm-foot-actions { width: 100%; }
+  .alm-foot .alm-btn { flex: 1; justify-content: center; }
+  .alm-foot-hint { justify-content: center; }
 }
 `;

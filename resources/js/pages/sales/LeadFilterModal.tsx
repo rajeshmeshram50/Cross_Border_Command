@@ -18,15 +18,36 @@ import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
  * doesn't fire any network calls.
  * ───────────────────────────────────────────────────────────────────────── */
 
+/* Facet fields are multi-select (checkbox) — each holds an array of the
+ * picked values; the backend turns these into `whereIn`. `salesperson_id`
+ * stays single (set by "View Leads" in the Assigned Leads modal) and the
+ * date facet is a single range. */
 export type LeadFilters = {
-  lead_stage_id?: string;
-  platform?: string;
-  query_type?: string;
-  sender_country_iso?: string;
-  customer_id?: string;
+  lead_stage_id?: string[];
+  platform?: string[];
+  query_type?: string[];
+  sender_country_iso?: string[];
+  customer_id?: string[];
   salesperson_id?: string;   // applied by "View Leads" in the Assigned Leads modal
   start_date?: string;
   end_date?: string;
+};
+
+/* Multi-select facet fields — the ones the checkbox UI toggles. */
+type MultiField = 'lead_stage_id' | 'platform' | 'query_type' | 'sender_country_iso' | 'customer_id';
+
+/* Total number of individually-selected values across all facets — drives
+ * the header "N selected" badge. */
+export const countFilterValues = (f: LeadFilters): number => {
+  let n = 0;
+  n += f.lead_stage_id?.length ?? 0;
+  n += f.platform?.length ?? 0;
+  n += f.query_type?.length ?? 0;
+  n += f.sender_country_iso?.length ?? 0;
+  n += f.customer_id?.length ?? 0;
+  if (f.salesperson_id) n += 1;
+  if (f.start_date && f.end_date) n += 1;
+  return n;
 };
 
 const EMPTY_FILTERS: LeadFilters = {};
@@ -45,9 +66,10 @@ const ICONS: Record<FacetKey, JSX.Element> = {
   ),
   platform: (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M2 12h20" />
-      <path d="M12 2a14 14 0 0 1 0 20a14 14 0 0 1 0-20z" />
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </svg>
   ),
   leadType: (
@@ -188,17 +210,24 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
     }
   };
 
-  const pickRadio = (key: FacetKey, value: string) => {
+  /* Toggle a value in a facet's array — multi-select. Adds when absent,
+   * removes when present; drops the field entirely once its last value
+   * is unchecked so empty arrays never linger in the filter object. */
+  const toggleCheckbox = (key: FacetKey, value: string) => {
     const field = facetToField[key];
-    if (!field) return;
+    if (!field || field === 'salesperson_id') return;
+    const mf = field as MultiField;
     setFilters(prev => {
-      const current = prev[field];
-      return { ...prev, [field]: current === value ? undefined : value };
+      const current = (prev[mf] as string[] | undefined) ?? [];
+      const next = current.includes(value)
+        ? current.filter(v => v !== value)
+        : [...current, value];
+      return { ...prev, [mf]: next.length ? next : undefined };
     });
   };
 
   const onApplyClick = () => {
-    const hasAny = Object.values(filters).some(v => v && String(v).trim() !== '');
+    const hasAny = countFilterValues(filters) > 0;
     if (!hasAny) {
       toast.warning('No filter selected', 'Pick at least one option before applying');
       return;
@@ -224,11 +253,23 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
     ? currentList.filter(o => o.label.toLowerCase().includes(search.toLowerCase()))
     : currentList;
 
-  const radioField = facetToField[active];
-  const radioValue = radioField ? filters[radioField] : undefined;
+  const activeField = facetToField[active];
+  const activeValues: string[] = activeField && activeField !== 'salesperson_id'
+    ? ((filters[activeField as MultiField] as string[] | undefined) ?? [])
+    : [];
 
   const activeMenu = MENU.find(m => m.key === active);
   const activePreset = matchedDatePreset(filters.start_date, filters.end_date);
+  const selectedCount = countFilterValues(filters);
+
+  /* Count of selected values within one facet — drives the per-item
+   * badge in the left menu (the "3" / "2" pills in the design). */
+  const facetCount = (k: FacetKey): number => {
+    const field = facetToField[k];
+    if (!field) return filters.start_date && filters.end_date ? 1 : 0;
+    if (field === 'salesperson_id') return filters.salesperson_id ? 1 : 0;
+    return (filters[field as MultiField] as string[] | undefined)?.length ?? 0;
+  };
 
   return createPortal((
     /* Backdrop click intentionally not wired — the filter form holds
@@ -252,6 +293,9 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
               <div className="lfm-head-sub">Select filters to narrow down results</div>
             </div>
           </div>
+          {selectedCount > 0 && (
+            <span className="lfm-head-count">{selectedCount} selected</span>
+          )}
           <button className="lfm-close" onClick={onClose} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -264,10 +308,7 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
             <div className="lfm-left-label">FILTER BY</div>
             <div className="lfm-menu">
               {MENU.map(m => {
-                const field = facetToField[m.key];
-                const hasValue = field
-                  ? !!filters[field]
-                  : (!!filters.start_date || !!filters.end_date);
+                const count = facetCount(m.key);
                 const isOn = active === m.key;
                 return (
                   <button
@@ -278,7 +319,7 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
                   >
                     <span className="lfm-menu-ico">{ICONS[m.key]}</span>
                     <span className="lfm-menu-label">{m.label}</span>
-                    {hasValue && <span className="lfm-menu-dot" aria-hidden="true" />}
+                    {count > 0 && <span className="lfm-menu-count" aria-hidden="true">{count}</span>}
                   </button>
                 );
               })}
@@ -358,6 +399,11 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
                               }
                             }}
                           />
+                          <span className="lfm-check lfm-check-round" aria-hidden="true">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          </span>
                           <span className="lfm-card-label">{p.label}</span>
                         </label>
                       );
@@ -367,16 +413,20 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
                 <div className="lfm-empty">No options available</div>
               ) : (
                 searched.map(opt => {
-                  const checked = radioValue === opt.value;
+                  const checked = activeValues.includes(opt.value);
                   return (
                     <label key={opt.value} className={`lfm-card ${checked ? 'on' : ''}`}>
                       <input
-                        type="radio"
-                        name={`facet-${active}`}
+                        type="checkbox"
                         checked={checked}
                         readOnly
-                        onClick={() => pickRadio(active, opt.value)}
+                        onClick={() => toggleCheckbox(active, opt.value)}
                       />
+                      <span className="lfm-check" aria-hidden="true">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </span>
                       <span className="lfm-card-label">
                         {opt.code && (
                           <>
@@ -439,6 +489,14 @@ const LFM_CSS = `
 }
 .lfm-head-title { font-size: 17px; font-weight: 700; letter-spacing: -.2px; line-height: 1.2; }
 .lfm-head-sub   { font-size: 12px; color: rgba(255,255,255,.85); margin-top: 2px; }
+/* "N selected" pill — sits between the title and the close button. */
+.lfm-head-count {
+  position: relative; z-index: 1; flex-shrink: 0; margin-left: auto;
+  display: inline-flex; align-items: center;
+  padding: 5px 13px; border-radius: 999px;
+  background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.35);
+  color: #fff; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
 .lfm-close {
   width: 32px; height: 32px; border: none; border-radius: 9px;
   background: rgba(255,255,255,.16); color: #fff; cursor: pointer;
@@ -468,7 +526,7 @@ const LFM_CSS = `
   padding: 10px 12px; border-radius: 10px;
   border: 1.5px solid transparent;
   background: transparent;
-  font: inherit; font-size: 12.5px; font-weight: 500; color: #475569;
+  font: inherit; font-size: 13.5px; font-weight: 600; color: #475569;
   cursor: pointer; text-align: left;
   transition: background .15s, border-color .15s, color .15s;
 }
@@ -484,6 +542,14 @@ const LFM_CSS = `
   width: 7px; height: 7px; border-radius: 50%; background: #0891b2; flex-shrink: 0;
   box-shadow: 0 0 0 3px rgba(8,145,178,.18);
 }
+/* Per-facet selected-count pill in the left menu (replaces the dot). */
+.lfm-menu-count {
+  flex-shrink: 0; min-width: 20px; height: 20px; padding: 0 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; background: #0891b2; color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 1;
+}
+.lfm-menu-item.on .lfm-menu-count { background: #0e7490; }
 .lfm-menu-item.on {
   background: #ecfeff;
   border-color: #67e8f9;
@@ -554,7 +620,20 @@ const LFM_CSS = `
   border-color: #0891b2; background: #ecfeff;
   box-shadow: 0 0 0 1px #0891b2 inset;
 }
-.lfm-card input { accent-color: #0891b2; cursor: pointer; width: 16px; height: 16px; flex-shrink: 0; }
+/* Native input is hidden — the circular .lfm-check indicator stands in
+   for it so the checkbox matches the Figma's round blue checkmark. */
+.lfm-card input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.lfm-check {
+  flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid #cbd5e1; background: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; transition: background .15s, border-color .15s;
+}
+.lfm-check svg { opacity: 0; transition: opacity .12s; }
+.lfm-card.on .lfm-check {
+  background: #0891b2; border-color: #0891b2;
+}
+.lfm-card.on .lfm-check svg { opacity: 1; }
 .lfm-card-label {
   flex: 1; min-width: 0;
   display: flex; align-items: center; gap: 8px;
@@ -617,6 +696,8 @@ const LFM_CSS = `
 [data-bs-theme="dark"] .lfm-card { background: #1e293b; border-color: #334155; color: #e2e8f0; }
 [data-bs-theme="dark"] .lfm-card:hover { background: rgba(8,145,178,.12); border-color: rgba(103,232,249,.4); }
 [data-bs-theme="dark"] .lfm-card.on { background: rgba(8,145,178,.20); border-color: #67e8f9; box-shadow: 0 0 0 1px #67e8f9 inset; }
+[data-bs-theme="dark"] .lfm-check { background: #0f172a; border-color: #475569; }
+[data-bs-theme="dark"] .lfm-card.on .lfm-check { background: #06b6d4; border-color: #06b6d4; }
 [data-bs-theme="dark"] .lfm-custom-range { border-top-color: #334155; }
 [data-bs-theme="dark"] .lfm-custom-range-title { color: #94a3b8; }
 [data-bs-theme="dark"] .lfm-label { color: #cbd5e1; }

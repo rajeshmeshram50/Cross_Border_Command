@@ -171,10 +171,18 @@ type MasterOpt = { value: string; label: string; extra?: Record<string, unknown>
 
 export default function AddProductModal(props: {
   productId?: number | null;
+  /* Optional pre-loaded product payload. When ProductView opens the
+   * Edit modal on top of itself, it already holds the /products/{id}
+   * response in memory — passing it here lets the modal skip its own
+   * refetch (production network panel showed /products/{id} firing
+   * twice — once for ProductView, once for the modal). The shape is
+   * the raw show() response (data fields + segment_uploads). When
+   * absent, the modal falls back to fetching itself. */
+  initialProduct?: any | null;
   onClose: () => void;
   onSaved: (productId: number, finalised: boolean) => void;
 }) {
-  const { productId: initialId, onClose, onSaved } = props;
+  const { productId: initialId, initialProduct, onClose, onSaved } = props;
   const toast = useToast();
 
   /* ─── Wizard nav ─── */
@@ -1047,8 +1055,15 @@ export default function AddProductModal(props: {
           vendor_maps?: Array<Record<string, unknown>>;
           segment_uploads?: { data?: any[] };
         };
-        const res = await api.get<ProductDto>(`/products/${initialId}`);
-        const p = res.data;
+        /* Skip the refetch when the parent (e.g. ProductView) handed us
+         * the already-loaded product as a prop. Eliminates the duplicate
+         * /products/{id} round-trip the prod network panel showed on
+         * the Edit Product flow. Falls back to fetching when called
+         * from contexts that don't have the data in hand (e.g. opened
+         * from the Products list with only an id). */
+        const p: ProductDto = initialProduct
+          ? (initialProduct as ProductDto)
+          : (await api.get<ProductDto>(`/products/${initialId}`)).data;
         /* QC reference uploads — now arrive bundled in the same response
          * (top-level `segment_uploads` key alongside the product fields).
          * Stash for the downstream hydration effect to apply AFTER the

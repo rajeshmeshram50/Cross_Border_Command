@@ -625,11 +625,12 @@ const SCOPED_CSS = `
    flow as one continuous violet panel. Cells stay transparent so
    the row gradient shows through. */
 .prs-table thead tr {
-  background: linear-gradient(135deg, #ede9fe 0%, #c4b5fd 50%, #a78bfa 100%);
+  background: linear-gradient(135deg, #f8f5ff, #ede9fe);
 }
 .prs-table thead th {
   background: transparent;
-  color: #4c1d95;
+  color: #a78bfa;
+  border-bottom: 1px solid #e9d5ff;
   font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
   text-align: left; padding: 11px 12px;
   position: sticky; top: 0; z-index: 2;

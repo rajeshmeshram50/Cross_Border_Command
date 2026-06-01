@@ -146,12 +146,34 @@ class SalesLeadController extends Controller
      */
     private function applyListFilters($q, Request $request): void
     {
-        if ($v = $request->query('platform'))           $q->where('platform', $v);
-        if ($v = $request->query('query_type'))         $q->where('query_type', $v);
-        if ($v = $request->query('salesperson_id'))     $q->where('salesperson_id', $v);
-        if ($v = $request->query('lead_stage_id'))      $q->where('lead_stage_id', $v);
-        if ($v = $request->query('sender_country_iso')) $q->where('sender_country_iso', $v);
-        if ($v = $request->query('customer_id'))        $q->where('customer_id', $v);
+        // Facet filters accept either a single value (?platform=X) or a
+        // multi-select array (?platform[]=X&platform[]=Y) from the Lead
+        // Filter modal's checkbox UI — arrays become whereIn, scalars stay
+        // whereEquals. Empty values are ignored either way.
+        $applyFacet = function (string $column, string $param) use ($q, $request) {
+            $v = $request->query($param);
+            if (is_array($v)) {
+                $vals = array_values(array_filter($v, fn ($x) => $x !== null && $x !== ''));
+                if (count($vals)) $q->whereIn($column, $vals);
+            } elseif ($v !== null && $v !== '') {
+                $q->where($column, $v);
+            }
+        };
+        $applyFacet('platform',           'platform');
+        $applyFacet('query_type',         'query_type');
+        $applyFacet('salesperson_id',     'salesperson_id');
+
+        // Assignment filter — powers the Lead Distribution KPI popups
+        // ("Assigned Leads" / "Unassigned Leads"). assigned=1 → has a
+        // salesperson; assigned=0 → no salesperson yet. Absent = no filter.
+        if ($request->filled('assigned')) {
+            $assigned = filter_var($request->query('assigned'), FILTER_VALIDATE_BOOLEAN);
+            if ($assigned) $q->whereNotNull('salesperson_id');
+            else           $q->whereNull('salesperson_id');
+        }
+        $applyFacet('lead_stage_id',      'lead_stage_id');
+        $applyFacet('sender_country_iso', 'sender_country_iso');
+        $applyFacet('customer_id',        'customer_id');
 
         if ($request->filled('start_date') && $request->filled('end_date')) {
             $q->whereBetween('query_time', [

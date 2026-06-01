@@ -269,9 +269,10 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
    * they fix items. */
   const onSaveAndNext = async () => {
     if (!isReady) {
-      readinessRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setReadinessFlash(true);
-      window.setTimeout(() => setReadinessFlash(false), 1200);
+      toast.warning(
+        pendingChecks[0]?.title ?? 'Not ready to advance',
+        pendingChecks[0]?.sub ?? 'Finish sourcing for every product before advancing to Stage 4.',
+      );
       return;
     }
     setAdvancing(true);
@@ -301,70 +302,13 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
           </div>
           <div>
             <div className="smd-stg-head-title">Stage 3: Product Sourcing</div>
-            <div className="smd-stg-head-sub">● Product and vendor sourcing in progress</div>
+            <div className="smd-stg-head-sub"><span className="smd-stg-head-dot" />Product and vendor sourcing in progress</div>
           </div>
         </div>
         <span className="smd-stg-head-badge">● ACTIVE</span>
       </div>
 
       <div className="smd-stg-body">
-        {/* Readiness checklist — only renders while items remain.
-         *  Replaces a series of one-off toast warnings with a single
-         *  scrollable, clickable summary the user can read at any time.
-         *  When the list empties, it auto-collapses into a slim "ready"
-         *  ribbon so the user knows they're clear to advance. */}
-        <div
-          ref={readinessRef}
-          className={`s3-ready ${isReady ? 's3-ready-ok' : 's3-ready-warn'} ${readinessFlash ? 's3-ready-flash' : ''}`}
-          role={isReady ? 'status' : 'alert'}
-        >
-          <div className="s3-ready-head">
-            <span className="s3-ready-icon" aria-hidden>
-              {isReady ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 9v4M12 17h.01" />
-                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                </svg>
-              )}
-            </span>
-            <div className="s3-ready-text">
-              <div className="s3-ready-title">
-                {isReady
-                  ? 'Ready to advance to Stage 4 — Price Shared'
-                  : `${pendingChecks.length} thing${pendingChecks.length === 1 ? '' : 's'} to finish before advancing`}
-              </div>
-              <div className="s3-ready-sub">
-                {isReady
-                  ? 'All products are classified, active, and sourcing is complete.'
-                  : 'Tick these off in any order — Save & Next will unlock once the list is clear.'}
-              </div>
-            </div>
-          </div>
-
-          {!isReady && (
-            <ul className="s3-ready-list">
-              {pendingChecks.map(c => (
-                <li key={c.key} className="s3-ready-item">
-                  <span className="s3-ready-dot" aria-hidden />
-                  <div className="s3-ready-item-body">
-                    <div className="s3-ready-item-title">{c.title}</div>
-                    <div className="s3-ready-item-sub">{c.sub}</div>
-                  </div>
-                  {c.onCta && (
-                    <button type="button" className="s3-ready-cta" onClick={c.onCta}>
-                      {c.ctaLabel ?? 'Open'} <span aria-hidden>→</span>
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
         {/* Pill tabs */}
         <div className="s3-tabs">
           <button
@@ -428,8 +372,14 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                 </div>
               </div>
               <div className="s3-legend">
-                <span className="s3-legend-dot s3-dot-active">● Active: either tab</span>
-                <span className="s3-legend-dot s3-dot-inactive">● Inactive: Required only</span>
+                <span className="s3-legend-pill s3-legend-on">
+                  <span className="s3-legend-pill-dot" />
+                  Active: either tab
+                </span>
+                <span className="s3-legend-pill s3-legend-off">
+                  <span className="s3-legend-pill-dot" />
+                  Inactive: Required only
+                </span>
               </div>
             </div>
 
@@ -720,7 +670,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
             </div>
 
             <div className="s3-table-wrap">
-              <table className="s3-table">
+              <table className="s3-table s3-table-mint">
                 <thead>
                   <tr>
                     <th style={{ width: 50 }}>SR</th>
@@ -781,24 +731,19 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
           {isReady ? (
             <>✓ <strong>Ready :</strong> All checks passed — click Save &amp; Next to advance.</>
           ) : (
-            <>⚠ <strong>{pendingChecks.length} pending :</strong> See the checklist above to unlock Save &amp; Next.</>
+            <>⚠ <strong>{pendingChecks.length} pending :</strong> Complete sourcing for every product to advance.</>
           )}
         </div>
         <div className="smd-stg-btn-row">
           <button className="smd-stg-btn" onClick={onPrev} type="button">← Previous</button>
           <button
-            className={`smd-stg-btn smd-stg-btn-primary ${!isReady ? 's3-next-blocked' : ''}`}
+            className="smd-stg-btn smd-stg-btn-primary"
             onClick={() => void onSaveAndNext()}
             disabled={advancing}
             type="button"
-            title={isReady ? 'Advance to Stage 4 — Price Shared' : 'Finish the checklist above first'}
-            aria-disabled={!isReady}
+            title="Save & Next"
           >
-            {advancing
-              ? 'Advancing…'
-              : isReady
-                ? 'Save & Next →'
-                : `${pendingChecks.length} to fix`}
+            {advancing ? 'Advancing…' : 'Save & Next →'}
           </button>
         </div>
       </div>
@@ -830,6 +775,16 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
 }
 
 const STAGE3_CSS = `
+/* Header — green status dot (replaces the literal ●) + suppress the shared
+   pulsing ::before dot so the ACTIVE badge's own ● isn't doubled. */
+.smd-stg-head-dot {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34,197,94,.22);
+  margin-right: 6px; vertical-align: middle;
+}
+.smd-stg-head-badge::before { display: none; }
+
 /* ═══════════════════════════════ READINESS PANEL ═══════════════════════════════
  * Persistent, friendly version of what used to be a one-shot toast.
  * Two variants:
@@ -944,17 +899,17 @@ const STAGE3_CSS = `
 /* ═══════════════════════════════ TABS ═══════════════════════════════ */
 .s3-tabs { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .s3-tab {
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 9px 18px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 12px; border-radius: 9px;
   border: 1.5px solid; background: #fff;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  font-family: inherit; font-size: 11px; font-weight: 700;
   cursor: pointer; transition: all .15s;
 }
 .s3-tab-ico { display: inline-flex; align-items: center; justify-content: center; }
 .s3-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px;
-  font-size: 11px; font-weight: 800;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  font-size: 10px; font-weight: 800;
 }
 /* Product Details — violet */
 .s3-tab-details          { color: #7c3aed; border-color: #ddd6fe; }
@@ -1039,18 +994,31 @@ const STAGE3_CSS = `
 .s3-card-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
 .s3-card-sub-italic { font-style: italic; color: #b45309; }
 
-.s3-legend { display: flex; gap: 14px; }
-.s3-legend-dot { font-size: 10.5px; font-weight: 700; }
-.s3-dot-active   { color: #10b981; }
-.s3-dot-inactive { color: #ef4444; }
+.s3-legend { display: flex; gap: 8px; flex-wrap: wrap; }
+.s3-legend-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+}
+.s3-legend-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.s3-legend-on  { background: #dcfce7; color: #15803d; }
+.s3-legend-off { background: #fee2e2; color: #b91c1c; }
 
 /* ═══════════════════════════════ TABLE ═══════════════════════════════ */
 .s3-table-wrap { overflow-x: auto; background: #fff; }
 .s3-table { width: 100%; border-collapse: collapse; min-width: 880px; }
+/* Table header — light lavender gradient matching the Product Sourcing
+   popup's table (gradient on the tr so it sweeps the whole row; cells stay
+   transparent). The amber Sourcing-Required table keeps its own header via
+   the .s3-table-amber override below. */
+.s3-table thead tr {
+  background: linear-gradient(135deg, #f8f5ff, #ede9fe);
+}
 .s3-table thead th {
   padding: 11px 14px; text-align: left;
-  font-size: 10px; font-weight: 800; letter-spacing: .09em; color: #fff;
-  background: linear-gradient(180deg, #1e1b4b, #312e81);
+  font-size: 10px; font-weight: 800; letter-spacing: .09em; color: #a78bfa;
+  background: transparent;
+  border-bottom: 1px solid #e9d5ff;
   white-space: nowrap;
 }
 .s3-table-amber thead th {
@@ -1058,28 +1026,35 @@ const STAGE3_CSS = `
   color: #78350f;
   border-bottom: 1.5px solid #fde68a;
 }
+.s3-table-mint thead tr { background: transparent; }
+.s3-table-mint thead th {
+  background: linear-gradient(180deg, #059669, #047857);
+  color: #fff;
+  border-bottom: 1.5px solid #047857;
+}
 .s3-table tbody tr { transition: background .12s; }
 .s3-table tbody tr:hover { background: #faf5ff; }
 .s3-table-amber tbody tr:hover { background: #fffbeb; }
 .s3-table tbody td {
-  padding: 12px 14px; font-size: 12px; color: #1e293b;
+  padding: 8px 10px; font-size: 11px; color: #1e293b;
   border-bottom: 1px solid #f1f5f9; vertical-align: middle;
+  white-space: nowrap;
 }
 .s3-empty { text-align: center; padding: 26px 14px; color: #94a3b8; font-style: italic; }
 
 .s3-sr {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 8px;
-  font-size: 11.5px; font-weight: 800;
+  width: 22px; height: 22px; border-radius: 7px;
+  font-size: 10px; font-weight: 800;
 }
 .s3-sr-violet { background: #ede9fe; color: #6d28d9; }
 .s3-sr-amber  { background: #fef3c7; color: #b45309; }
 .s3-sr-mint   { background: #d1fae5; color: #047857; }
 
 .s3-code {
-  display: inline-block;
-  font-family: 'Inter',monospace; font-size: 11px; font-weight: 700;
-  padding: 4px 10px; border-radius: 8px; border: 1.5px solid;
+  display: inline-block; white-space: nowrap;
+  font-family: 'Inter',monospace; font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: 7px; border: 1.5px solid;
 }
 .s3-code-violet { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
 .s3-code-amber  { background: #fef3c7; color: #b45309; border-color: #fde68a; }
@@ -1088,9 +1063,9 @@ const STAGE3_CSS = `
 .s3-prod-name { font-weight: 700; color: #1e293b; font-size: 12.5px; }
 
 .s3-pill {
-  display: inline-block;
-  padding: 4px 11px; border-radius: 999px;
-  font-size: 10.5px; font-weight: 800;
+  display: inline-block; white-space: nowrap;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 800;
 }
 .s3-pill-active   { background: #d1fae5; color: #047857; }
 .s3-pill-inactive { background: #fee2e2; color: #dc2626; }

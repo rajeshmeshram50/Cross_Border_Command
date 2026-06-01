@@ -84,22 +84,32 @@ export default function ProductView() {
   type QcUpload = { id: number; doc_code: string; doc_name: string; attachment_name: string | null; attachment_url: string | null; requirement: 'M' | 'O' | null };
   const [qcUploads, setQcUploads] = useState<QcUpload[]>([]);
 
+  /* Map a raw segment_uploads row (server shape) into the QcUpload UI shape.
+   * Shared between the bundled extract inside load() and the standalone
+   * loadQcUploads() fallback used by onReload after individual QC uploads. */
+  const mapQcRow = (r: any): QcUpload => ({
+    id:              Number(r.id),
+    doc_code:        String(r.doc_code ?? ''),
+    doc_name:        String(r.doc_name ?? ''),
+    attachment_name: r.attachment_name ?? null,
+    attachment_url:  r.attachment_url ?? null,
+    requirement:     r.requirement ?? null,
+  });
+
+  /* Standalone QC reload — kept as the `onReload` callback for individual
+   * QC upload actions (QcRowActions). The initial page load no longer
+   * calls this — segment_uploads now arrives bundled in /products/{id}
+   * (see load() below), saving one round-trip on first paint. */
   const loadQcUploads = useCallback(async () => {
     if (!id) return;
     try {
       const res = await api.get(`/segment-uploads/product/${id}?category=qc`);
       const rows = Array.isArray(res.data?.data) ? res.data.data : [];
-      setQcUploads(rows.map((r: any) => ({
-        id:              Number(r.id),
-        doc_code:        String(r.doc_code ?? ''),
-        doc_name:        String(r.doc_name ?? ''),
-        attachment_name: r.attachment_name ?? null,
-        attachment_url:  r.attachment_url ?? null,
-        requirement:     r.requirement ?? null,
-      })));
+      setQcUploads(rows.map(mapQcRow));
     } catch {
       /* silent — empty table just means "no QC docs uploaded yet" */
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const load = async (silent = false) => {
@@ -112,9 +122,22 @@ export default function ProductView() {
     // "Save & Next on Product Core re-renders the same step".
     if (!silent) setLoading(true);
     try {
-      const res = await api.get<ProductDto>(`/products/${id}`);
+      const res = await api.get<ProductDto & { segment_uploads?: { data?: any[] } }>(`/products/${id}`);
       setProduct(res.data);
       setActiveImg(0);
+      /* QC uploads embedded in the same response — drop the separate
+       * GET /segment-uploads/product/{id}?category=qc round-trip.
+       * Production network panel showed that call costing ~1.7s on
+       * cbc.idims.in (boot tax + network latency). Backwards-compat:
+       * if the server hasn't been deployed with the bundled key yet,
+       * segment_uploads is undefined and we fall back to the standalone
+       * fetch so the QC table still hydrates. */
+      const bundled = res.data?.segment_uploads?.data;
+      if (Array.isArray(bundled)) {
+        setQcUploads(bundled.map(mapQcRow));
+      } else {
+        void loadQcUploads();
+      }
     } catch {
       toast.error('Not Found', 'Product not available');
       navigate('/products');
@@ -123,7 +146,7 @@ export default function ProductView() {
     }
   };
 
-  useEffect(() => { load(); void loadQcUploads(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
 
   const images = useMemo(() => {
     if (!product) return [] as string[];
@@ -466,6 +489,10 @@ export default function ProductView() {
       {editOpen && (
         <AddProductModal
           productId={product.id}
+          /* Hand the already-loaded product so the modal can skip its
+           * own /products/{id} refetch. Production network panel
+           * showed that duplicate call costing ~2 sec. */
+          initialProduct={product}
           onClose={() => setEditOpen(false)}
           onSaved={(_pid, finalised) => {
             // Silent refresh — see load()'s note. We want the underlying
