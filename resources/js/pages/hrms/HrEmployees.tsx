@@ -7,6 +7,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
+import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 // Reuse the Onboarding page's fully wired Evidence Vault (live employee
 // uploads + matched HR Document Templates) so the directory's vault shows
@@ -469,6 +470,21 @@ export default function HrEmployees() {
     reloadEmployees();
     reloadMasters();
   }, [reloadEmployees, reloadMasters]);
+
+  // Auto-refresh the list when the HR returns to this tab/window. A candidate
+  // finishing the public onboarding link does so on THEIR device, so the HR's
+  // open page can't know about it — without this they had to hit browser
+  // refresh to see the new joiner. Refetching on focus/visibility makes the
+  // new entry appear the moment HR switches back to the tab.
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') reloadEmployees().catch(() => {}); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [reloadEmployees]);
 
   // UI-shaped rows derived from `apiEmployees`. Carries `_dbId` + `_raw` so
   // edit/delete handlers can act on the server row without re-fetching.
@@ -2147,6 +2163,49 @@ export default function HrEmployees() {
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
   const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
 
+  // ── Export to Excel ────────────────────────────────────────────────────────
+  // Exports EVERY employee currently in the list (the full filtered set —
+  // all pages, respecting the Active/Disabled tab, department filter and
+  // search), not just the visible page. Data is the server-loaded list
+  // (auto-refreshed on focus), so the file reflects the real backend records.
+  // Same xlsx approach the Clients / Branches pages use, for consistency.
+  const [exporting, setExporting] = useState(false);
+  const handleExportEmployees = () => {
+    if (exporting) return;
+    if (filtered.length === 0) {
+      toast.info('Nothing to export', 'No employees match the current view.');
+      return;
+    }
+    setExporting(true);
+    try {
+      const sheetRows = filtered.map((e, i) => ({
+        'Sr No':          i + 1,
+        'Employee':       e.name,
+        'Email':          e.email || '',
+        'Employee ID':    e.id,
+        'Department':     e.department || '',
+        'Designation':    e.designation || '',
+        'Primary Role':   e.primaryRole || '',
+        'Ancillary Role': (e.ancillaryRoles && e.ancillaryRoles.length
+                            ? e.ancillaryRoles.join(', ')
+                            : (e.ancillaryRole || '')),
+        'Manager':        e.manager || '',
+        'Profile %':      e.profile ?? 0,
+        'Onboarding':     e.onboarding || '',
+        'Status':         e.enabled ? 'Active' : 'Disabled',
+      }));
+      const ws = XLSX.utils.json_to_sheet(sheetRows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+      XLSX.writeFile(wb, `Employees_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success('Exported', `${sheetRows.length} employee${sheetRows.length === 1 ? '' : 's'} exported to Excel.`);
+    } catch {
+      toast.error('Export failed', 'Could not generate the Excel file. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <>
       <style>{`
@@ -2753,6 +2812,15 @@ export default function HrEmployees() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
+                <Button
+                  onClick={handleExportEmployees}
+                  disabled={exporting}
+                  className="rounded-pill px-3 hr-emp-onboard-btn"
+                  title="Export the current employee list to Excel"
+                >
+                  <i className={`align-bottom me-1 ${exporting ? 'ri-loader-4-line' : 'ri-file-excel-2-line'}`}></i>
+                  {exporting ? 'Exporting…' : 'Export'}
+                </Button>
                 <Button
                   onClick={() => setOnboardOpen(true)}
                   className="rounded-pill px-3 hr-emp-onboard-btn"

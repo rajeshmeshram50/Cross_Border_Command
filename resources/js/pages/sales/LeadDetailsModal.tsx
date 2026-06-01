@@ -239,12 +239,12 @@ export default function LeadDetailsModal({ open, leadId, onClose }: Props) {
                   <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
                 </svg>
               }>
-                <span className="ldv-chip ldv-chip-slate">
-                  {lead.sender_country_name ?? lead.sender_country_iso ?? '—'}
+                <span className="ldv-chip ldv-chip-cyan" title={lead.sender_country_name ?? undefined}>
+                  {lead.sender_country_iso ?? lead.sender_country_name ?? '—'}
                 </span>
               </Card>
 
-              <Card iconBg="#fef3c7" iconColor="#ca8a04" label="PRODUCT" icon={
+              <Card highlight iconBg="#fde68a" iconColor="#ca8a04" label="PRODUCT" icon={
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                   <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
                   <line x1="3" y1="6" x2="21" y2="6" />
@@ -307,10 +307,12 @@ function Card(props: {
   iconColor: string;
   icon: React.ReactNode;
   children: React.ReactNode;
+  /* Amber-tinted surface — the Figma highlights the PRODUCT card. */
+  highlight?: boolean;
 }) {
-  const { label, iconBg, iconColor, icon, children } = props;
+  const { label, iconBg, iconColor, icon, children, highlight } = props;
   return (
-    <div className="ldv-card">
+    <div className={`ldv-card${highlight ? ' ldv-card-amber' : ''}`}>
       <div className="ldv-card-icon" style={{ background: iconBg, color: iconColor }}>
         {icon}
       </div>
@@ -412,6 +414,9 @@ const LDV_CSS = `
   transition: border-color .15s, box-shadow .15s;
 }
 .ldv-card:hover { border-color: #cbd5e1; box-shadow: 0 2px 10px rgba(15,23,42,.04); }
+/* Highlighted card (PRODUCT) — amber surface + border, matching Figma. */
+.ldv-card-amber { background: #fffbeb; border-color: #fcd34d; }
+.ldv-card-amber:hover { border-color: #fbbf24; box-shadow: 0 2px 10px rgba(217,119,6,.10); }
 .ldv-card-wide { grid-column: 1 / -1; align-items: flex-start; flex-direction: column; gap: 6px; }
 .ldv-card-head { display: flex; align-items: center; gap: 8px; }
 .ldv-card-icon {
@@ -464,6 +469,7 @@ const LDV_CSS = `
 [data-bs-theme="dark"] .ldv-body { background: #0b1226; }
 [data-bs-theme="dark"] .ldv-card { background: #0f172a; border-color: #1e293b; }
 [data-bs-theme="dark"] .ldv-card:hover { border-color: #334155; }
+[data-bs-theme="dark"] .ldv-card-amber { background: rgba(217,119,6,.14); border-color: rgba(251,191,36,.4); }
 [data-bs-theme="dark"] .ldv-value { color: #e2e8f0; }
 [data-bs-theme="dark"] .ldv-foot { background: #0f172a; border-color: #1e293b; }
 [data-bs-theme="dark"] .ldv-link { color: #67e8f9; }

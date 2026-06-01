@@ -85,6 +85,10 @@ export default function AddNewLeadModal(props: {
   const [values, setValues] = useState<LeadFormValues>(EMPTY_LEAD);
   const [pickedCustomerId, setPickedCustomerId] = useState<string>('');
   const [errors, setErrors] = useState<Partial<Record<keyof LeadFormValues, string>>>({});
+  // Guards against double-submission — without this, rapid clicks on
+  // "Save Lead" fire one POST per click before the modal closes,
+  // creating duplicate leads.
+  const [saving, setSaving] = useState(false);
 
   /* Live customer list — fetched once when the modal opens (and only
      if it hasn't been fetched yet). Cached in state so reopening the
@@ -125,6 +129,7 @@ export default function AddNewLeadModal(props: {
       setValues(EMPTY_LEAD);
       setPickedCustomerId('');
       setErrors({});
+      setSaving(false);
     }
   }, [open]);
 
@@ -209,7 +214,10 @@ export default function AddNewLeadModal(props: {
     return Object.keys(next).length === 0;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    // Ignore clicks while a save is already in flight — stops duplicate
+    // leads from rapid double-clicks on the button.
+    if (saving) return;
     if (!validate()) {
       toast.error('Missing details', 'Please complete the highlighted fields');
       return;
@@ -220,9 +228,17 @@ export default function AddNewLeadModal(props: {
     const pickedDbId = useExisting && pickedCustomerId
       ? customerOpts.find(c => c.id === pickedCustomerId)?.dbId ?? null
       : null;
-    onSave(values, pickedDbId);
-    // The parent shows its own toast on save success; the modal stays
-    // quiet here so we don't double-toast.
+    setSaving(true);
+    try {
+      // The parent shows its own toast on save success; the modal stays
+      // quiet here so we don't double-toast.
+      await onSave(values, pickedDbId);
+    } finally {
+      // The parent closes the modal on success (which resets `saving`
+      // via the open effect); on failure we clear the guard so the user
+      // can retry.
+      setSaving(false);
+    }
   };
 
   if (!open) return null;
@@ -428,14 +444,23 @@ export default function AddNewLeadModal(props: {
             <span>Fields marked with <span className="anl-req">*</span> are required</span>
           </div>
           <div className="anl-foot-actions">
-            <button className="anl-btn-ghost" onClick={onClose}>Cancel</button>
-            <button className="anl-btn-primary" onClick={handleSave}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                <polyline points="17 21 17 13 7 13 7 21" />
-                <polyline points="7 3 7 8 15 8" />
-              </svg>
-              Save Lead
+            <button className="anl-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="anl-btn-primary" onClick={handleSave} disabled={saving}>
+              {saving ? (
+                <>
+                  <span className="anl-spinner" aria-hidden="true" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                    <polyline points="17 21 17 13 7 13 7 21" />
+                    <polyline points="7 3 7 8 15 8" />
+                  </svg>
+                  Save Lead
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -750,6 +775,18 @@ const SCOPED_CSS = `
   box-shadow: 0 4px 12px rgba(8, 145, 178, 0.30);
 }
 .anl-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(8, 145, 178, 0.40); }
+.anl-btn-ghost:disabled, .anl-btn-primary:disabled {
+  opacity: 0.65; cursor: not-allowed; transform: none; box-shadow: none;
+}
+.anl-spinner {
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  display: inline-block;
+  animation: anl-spin 0.6s linear infinite;
+}
+@keyframes anl-spin { to { transform: rotate(360deg); } }
 
 [data-bs-theme="dark"] .anl-modal { background: #0c1f2e; color: #cffafe; box-shadow: 0 30px 80px rgba(0,0,0,0.75); }
 [data-bs-theme="dark"] .anl-body  { background: linear-gradient(180deg, #0e2940 0%, #0c1f2e 100%); }

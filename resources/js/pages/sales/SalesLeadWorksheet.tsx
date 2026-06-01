@@ -7,7 +7,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import AddNewLeadModal, { type LeadFormValues } from './AddNewLeadModal';
 import AssignLeadsModal from './AssignLeadsModal';
 import LeadDetailsModal from './LeadDetailsModal';
-import LeadFilterModal, { type LeadFilters } from './LeadFilterModal';
+import LeadFilterModal, { type LeadFilters, countFilterValues } from './LeadFilterModal';
 
 /* Shape returned by GET /sales/leads — Laravel paginator items. Mapped to
  * the table's Lead type below via mapServerToLead(). */
@@ -106,7 +106,10 @@ const prettyLeadType = (t: string | null | undefined): string =>
 /* Build human-readable chips for whatever filter fields are active. Looks
  * each value up against the parent's cached options list so the chip shows
  * the label ('Inquiry Required') rather than the wire value ('1'). */
-type FilterChip = { key: string; label: string; value: string };
+/* One chip per *individually selected value* (facets are multi-select
+ * now). `field` + `rawValue` let the × remove just that one value from
+ * its facet array rather than wiping the whole facet. */
+type FilterChip = { id: string; field: keyof LeadFilters; rawValue?: string; label: string; value: string };
 const renderFilterChips = (
   f: LeadFilters,
   o: {
@@ -123,20 +126,29 @@ const renderFilterChips = (
     v: string | undefined,
   ): string => list.find(o => o.value === v)?.label ?? v ?? '';
   const out: FilterChip[] = [];
-  if (f.lead_stage_id)      out.push({ key: 'lead_stage_id',      label: 'Stage',    value: lookup(o.stages,     f.lead_stage_id) });
-  if (f.platform)           out.push({ key: 'platform',           label: 'Platform', value: lookup(o.platforms,  f.platform) });
-  if (f.query_type)         out.push({ key: 'query_type',         label: 'Type',     value: lookup(o.queryTypes, f.query_type) });
-  if (f.sender_country_iso) out.push({ key: 'sender_country_iso', label: 'Country',  value: lookup(o.countries,  f.sender_country_iso) });
-  if (f.customer_id)        out.push({ key: 'customer_id',        label: 'Customer', value: lookup(o.customers,  f.customer_id) });
+  const pushArr = (
+    field: keyof LeadFilters,
+    label: string,
+    list: Array<{ value: string; label: string }>,
+    vals: string[] | undefined,
+  ) => (vals ?? []).forEach(v =>
+    out.push({ id: `${field}:${v}`, field, rawValue: v, label, value: lookup(list, v) }));
+
+  pushArr('lead_stage_id',      'Stage',    o.stages,     f.lead_stage_id);
+  pushArr('platform',           'Platform', o.platforms,  f.platform);
+  pushArr('query_type',         'Type',     o.queryTypes, f.query_type);
+  pushArr('sender_country_iso', 'Country',  o.countries,  f.sender_country_iso);
+  pushArr('customer_id',        'Customer', o.customers,  f.customer_id);
   if (f.salesperson_id)     out.push({
-    key:   'salesperson_id',
+    id:    'salesperson_id',
+    field: 'salesperson_id',
     label: 'Salesperson',
     // Resolve from the modal-supplied name cache; fall back to the raw
     // id so the chip is still removable if the cache was cleared (e.g.
     // page refresh restoring filters from a future URL-state plumb).
     value: salespersonNames[Number(f.salesperson_id)] ?? `#${f.salesperson_id}`,
   });
-  if (f.start_date && f.end_date) out.push({ key: 'start_date', label: 'Date', value: `${f.start_date} → ${f.end_date}` });
+  if (f.start_date && f.end_date) out.push({ id: 'date', field: 'start_date', label: 'Date', value: `${f.start_date} → ${f.end_date}` });
   return out;
 };
 
@@ -646,15 +658,15 @@ export default function SalesLeadWorksheet() {
           )}
           <span className="lwp-banner-divider" />
           <button
-            className={`lwp-bact lwp-bact-filter ${Object.values(activeFilters).some(v => v) ? 'lwp-bact-filter-active' : ''}`}
+            className={`lwp-bact lwp-bact-filter ${countFilterValues(activeFilters) > 0 ? 'lwp-bact-filter-active' : ''}`}
             title="Filter Leads"
             onClick={onFilter}
           >
             <IconFilter />
             Filter
-            {Object.values(activeFilters).filter(v => v).length > 0 && (
+            {countFilterValues(activeFilters) > 0 && (
               <span className="lwp-bact-badge">
-                {Object.values(activeFilters).filter(v => v).length}
+                {countFilterValues(activeFilters)}
               </span>
             )}
           </button>
@@ -697,11 +709,11 @@ export default function SalesLeadWorksheet() {
       {/* Active-filter chips — one per applied field, with an inline × to
           drop just that filter. Rendered above the table so the user can
           see at a glance why the row count shrank. */}
-      {Object.values(activeFilters).some(v => v) && (
+      {countFilterValues(activeFilters) > 0 && (
         <div className="lwp-chip-strip">
           <span className="lwp-chip-strip-label">Filters:</span>
           {renderFilterChips(activeFilters, filterOptions, salespersonNames).map(c => (
-            <span key={c.key} className="lwp-chip">
+            <span key={c.id} className="lwp-chip">
               <span className="lwp-chip-key">{c.label}:</span>
               <span className="lwp-chip-val">{c.value}</span>
               <button
@@ -710,7 +722,18 @@ export default function SalesLeadWorksheet() {
                 onClick={() => {
                   setActiveFilters(prev => {
                     const next = { ...prev };
-                    delete next[c.key as keyof LeadFilters];
+                    if (c.field === 'start_date') {
+                      delete next.start_date; delete next.end_date;
+                    } else if (c.rawValue !== undefined) {
+                      // Multi-select facet — drop just this value; remove
+                      // the whole field once its last value is gone.
+                      const arr = ((next[c.field] as string[] | undefined) ?? [])
+                        .filter(v => v !== c.rawValue);
+                      if (arr.length) (next[c.field] as string[]) = arr;
+                      else delete next[c.field];
+                    } else {
+                      delete next[c.field];
+                    }
                     return next;
                   });
                   setPage(1);
@@ -1378,14 +1401,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lwp-root .lwp-chip-x { background: rgba(34,211,238,.18); color: #67e8f9; }
 
 /* ─── Pre-table: pills + search ───
- * justify-content was space-between so the search bar was pinned
- * to the far right with a big empty band between it and the tab
- * pills. Changed to flex-start with a small gap so the search bar
- * sits immediately after the pills, and the bar gets flex 1 to
- * take the remaining width up to a sensible max so the layout
- * still feels balanced on wider viewports. */
+ * Tab pills sit on the left, the search bar is pushed to the far right
+ * (space-between) per the Figma. The bar holds a fixed, modest width
+ * (see .lwp-search) rather than stretching across the empty band. */
 .lwp-root .lwp-pre-table {
-  display: flex; align-items: center; justify-content: flex-start;
+  display: flex; align-items: center; justify-content: space-between;
   gap: 12px; margin-bottom: 8px; flex-shrink: 0;
 }
 .lwp-root .lwp-pills {
@@ -1416,11 +1436,12 @@ const SCOPED_CSS = `
   background: #ffffff;
   border: 1.5px solid #a5f3fc;
   border-radius: 12px; padding: 0 14px; gap: 8px;
-  /* Sits adjacent to the pills now and stretches to use whatever
-   * width is left; capped at 480px so it doesn't dominate on wide
-   * desktops. height matches the trimmed pill height for a clean
-   * single-row toolbar. */
-  flex: 1 1 auto; min-width: 220px; height: 42px;
+  /* Sits adjacent to the pills. Was flex:1 1 auto with no cap, so it
+   * stretched edge-to-edge and looked far wider than the Figma. Cap it
+   * at 420px (flex-grow 0) so it stays a modest bar beside the pills
+   * like the design, while still shrinking on narrow viewports. height
+   * matches the trimmed pill height for a clean single-row toolbar. */
+  flex: 0 1 420px; min-width: 220px; max-width: 420px; height: 42px;
   box-shadow: 0 2px 10px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
   transition: all .2s;
 }
