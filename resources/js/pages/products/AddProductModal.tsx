@@ -2174,7 +2174,20 @@ export default function AddProductModal(props: {
                             <td><span className="fs-13">₹{v.gstAmt.toFixed(2)}</span></td>
                             <td><span className="text-success fw-semibold fs-13">₹{v.totalAmt.toLocaleString()}</span></td>
                             <td><span className="fs-13">{v.mapDate || <span className="text-muted">—</span>}</span></td>
-                            <td><span className="fs-13">{v.remarks || <span className="text-muted">—</span>}</span></td>
+                            <td>
+                              {/* Remarks can be arbitrarily long and were
+                                  blowing out the table width / forcing a long
+                                  horizontal scroll. Truncate the display to 25
+                                  chars with an ellipsis and surface the full
+                                  text in a hover tooltip (native title). */}
+                              {v.remarks
+                                ? (
+                                  <span className="fs-13" title={v.remarks}>
+                                    {v.remarks.length > 25 ? `${v.remarks.slice(0, 25)}…` : v.remarks}
+                                  </span>
+                                )
+                                : <span className="text-muted fs-13">—</span>}
+                            </td>
                             <td>
                               <div className="d-flex gap-1">
                                 <QcActionBtn
@@ -2866,7 +2879,7 @@ function QcAddPopup(props: {
  * filter (which strips Inactive rows).
  * ────────────────────────────────────────────────────────────────────── */
 type QuickAddSlug = 'segments' | 'haz_class' | 'uom' | 'hsn_codes' | 'conditions' | 'packaging_material' | 'gst_percentage';
-type QaField = { name: string; label: string; type?: 'text' | 'number'; required?: boolean; placeholder?: string };
+type QaField = { name: string; label: string; type?: 'text' | 'number'; required?: boolean; placeholder?: string; min?: number; max?: number };
 
 const QUICK_ADD_SCHEMAS: Record<QuickAddSlug, { title: string; fields: QaField[] }> = {
   segments:           { title: 'Add Segment',            fields: [{ name: 'title', label: 'Segment Name', required: true, placeholder: 'e.g. Dry Fruits' }] },
@@ -2889,7 +2902,12 @@ const QUICK_ADD_SCHEMAS: Record<QuickAddSlug, { title: string; fields: QaField[]
                           { name: 'title',         label: 'Title', required: true, placeholder: 'e.g. Carton Box' },
                           { name: 'material_type', label: 'Material Type', placeholder: 'e.g. Cardboard' },
                         ] },
-  gst_percentage:     { title: 'Add GST Percentage',     fields: [{ name: 'percentage', label: 'GST %', type: 'number', required: true, placeholder: 'e.g. 18' }] },
+  /* GST % is stored as numeric(18,4) — anything >= ~10^14 throws a raw
+     PostgreSQL overflow that used to surface as a stack trace in the toast.
+     A GST slab is realistically 0..100, so clamp it here (matches the
+     gst_percentage range in masterConfigs.ts) and the user sees a friendly
+     "GST % must be at most 100" instead of the SQL error. */
+  gst_percentage:     { title: 'Add GST Percentage',     fields: [{ name: 'percentage', label: 'GST %', type: 'number', required: true, placeholder: 'e.g. 18', min: 0, max: 100 }] },
 };
 
 function MasterQuickAddPopup(props: {
@@ -2911,18 +2929,81 @@ function MasterQuickAddPopup(props: {
 
   const submit = async () => {
     const errs: Record<string, string> = {};
+    /* Fields whose value is the master's primary label / code — held to a
+       conservative charset so a quick-add can't slip emoji, markup, or
+       symbol-soup into a Segment Name, UOM Title/Short Code, etc. Mirrors
+       the NAME_FIELD_NAMES whitelist in MasterPage.validateForm so the
+       quick-add popup and the full master page reject the same input. */
+    const NAME_FIELDS = new Set(['title', 'short_code', 'name', 'code']);
     schema.fields.forEach(f => {
       const raw = (values[f.name] ?? '').toString().trim();
       if (f.required && !raw) {
         errs[f.name] = `${f.label} is required`;
         return;
       }
+      if (!raw) return;
       /* HSN/SAC code — mirrors the backend's ^[0-9]{4,10}$ pattern so
          the user gets instant feedback if they typed a letter, a hyphen,
          a space, or fewer than 4 digits, instead of hitting the server
          with a 422 round-trip. */
-      if (raw && f.name === 'hsn_code' && !/^[0-9]{4,10}$/.test(raw)) {
-        errs[f.name] = 'HSN / SAC must be 4 to 10 digits';
+      if (f.name === 'hsn_code') {
+        if (!/^[0-9]{4,10}$/.test(raw)) errs[f.name] = 'HSN / SAC must be 4 to 10 digits';
+        return;
+      }
+      /* Numeric fields (e.g. GST %) — validate the value is a number and
+         within range BEFORE it hits the server, so a large value can't
+         overflow the backend column and leak a raw SQL error into the toast
+         (QA bug: GST % numeric overflow). Mirrors the number range guard in
+         MasterPage.validateForm; defaults to 0..999999999 when no per-field
+         min/max is set. */
+      if (f.type === 'number') {
+        const num = Number(raw);
+        if (isNaN(num)) {
+          errs[f.name] = `${f.label} must be a valid number`;
+          return;
+        }
+        const minOverride = typeof f.min === 'number' ? f.min : 0;
+        const maxOverride = typeof f.max === 'number' ? f.max : 999999999;
+        if (num < minOverride) errs[f.name] = `${f.label} must be at least ${minOverride}`;
+        else if (num > maxOverride) errs[f.name] = `${f.label} must be at most ${maxOverride}`;
+        return;
+      }
+
+      /* ── Text security + charset validation ──────────────────────────
+         The quick-add popup previously checked only "required", so SQL/XSS
+         payloads and arbitrary special characters were saved verbatim
+         (QA bugs: HSN Description, Segment Name, UOM Title/Short Code).
+         These rules mirror MasterPage.validateForm exactly so behaviour is
+         identical whether a master is added from its own page or from here.
+         Backend still parameterises queries; this stops the payload being
+         stored and resurfacing later in exports / reports. */
+      const cap = f.name === 'description' ? 150 : 50;
+      if (raw.length > cap) {
+        errs[f.name] = `${f.label} must be ${cap} characters or fewer`;
+        return;
+      }
+      if (/[<>]/.test(raw)) {
+        errs[f.name] = `${f.label} cannot contain HTML characters (< or >)`;
+        return;
+      }
+      if (/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i.test(raw)) {
+        errs[f.name] = `${f.label} contains disallowed patterns (possible SQL/JS injection)`;
+        return;
+      }
+      if (f.required && !/[A-Za-z0-9]/.test(raw)) {
+        errs[f.name] = `${f.label} must contain meaningful text (letters or numbers, not only symbols)`;
+        return;
+      }
+      if (f.name === 'description') {
+        // HSN/SAC commodity descriptions — allow the punctuation real
+        // descriptions use (incl. em/en dash), block everything else.
+        if (!/^[A-Za-z0-9\s\-—–.,()&/'%]+$/.test(raw)) {
+          errs[f.name] = "Description may only contain letters, numbers, spaces, and . , - ( ) & / ' %";
+        }
+      } else if (NAME_FIELDS.has(f.name)) {
+        if (!/^[A-Za-z0-9\s\-.,()&/'%]+$/.test(raw)) {
+          errs[f.name] = `${f.label} may only contain letters, numbers, spaces, and . , - ( ) & / ' %`;
+        }
       }
     });
     if (Object.keys(errs).length) {
@@ -2986,6 +3067,8 @@ function MasterQuickAddPopup(props: {
                   value={values[f.name] ?? ''}
                   inputMode={isHsn ? 'numeric' : undefined}
                   maxLength={isHsn ? 10 : undefined}
+                  min={f.type === 'number' ? f.min : undefined}
+                  max={f.type === 'number' ? f.max : undefined}
                   onChange={(e) => set(
                     f.name,
                     isHsn ? e.target.value.replace(/\D/g, '') : e.target.value,
@@ -3891,8 +3974,12 @@ const SCOPED_CSS = `
   border-radius: 10px;
   transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
 }
-.apm-btn-ghost { background: #fff; border: 1.5px solid #e2e8f0; color: #475569; }
-.apm-btn-ghost:hover { background: #f1f5f9; border-color: #cbd5e1; }
+/* Cancel button — the old #e2e8f0 border was nearly invisible against the
+   white popup surface in light mode (QA: "border very faint / hard to
+   identify"). Use a stronger slate border + subtle shadow so it reads as a
+   clickable button, matching the .avm-btn-ghost fix in AddVendorModal. */
+.apm-btn-ghost { background: #fff; border: 1.5px solid #94a3b8; color: #334155; box-shadow: 0 1px 2px rgba(15,23,42,.06); }
+.apm-btn-ghost:hover { background: #f1f5f9; border-color: #64748b; color: #1e293b; }
 .apm-btn-outline { background: #fff; border: 1.5px solid #c4b5fd; color: #5b21b6; }
 .apm-btn-outline:hover { background: #f5f3ff; border-color: #7c3aed; }
 .apm-btn-primary {
@@ -4089,6 +4176,42 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .apm-vendor-table-title i { color: #a78bfa; }
 [data-bs-theme="dark"] .apm-vendor-table-count { background: #2a1d5c; color: #c4b5fd; border-color: #4c1d95; }
 [data-bs-theme="dark"] .apm-vendor-table-card .table thead th { color: #a89fc7; }
+
+/* ── Embedded tables (QC & Compliance + mapped suppliers) — dark mode ──
+   These render as plain Bootstrap .table + thead.table-light, which had no
+   dark handling: the header stayed light, the QC rows carry an inline
+   background:#fafafa that showed as bright-white strips, and the Auto Code
+   badge (.bg-light.text-dark) collapsed to dark-on-dark. Recolour header,
+   cells, badge, links and row hover for the dark modal surface. Scoped to
+   [data-bs-theme="dark"] so light mode is unchanged. */
+[data-bs-theme="dark"] .apm-modal .table { --bs-table-bg: transparent; }
+[data-bs-theme="dark"] .apm-modal .table thead.table-light th,
+[data-bs-theme="dark"] .apm-modal .table thead th {
+  background: #2a2150 !important;
+  color: #a89fc7 !important;
+  border-bottom-color: #3b2a6b !important;
+}
+/* Neutralise the inline background:#fafafa on not-yet-uploaded QC rows so
+   they inherit the dark surface instead of rendering as white strips. The
+   inline style has no !important, so this wins. */
+[data-bs-theme="dark"] .apm-modal .table tbody tr { background-color: transparent !important; }
+[data-bs-theme="dark"] .apm-modal .table tbody td {
+  color: #cbd5e1;
+  border-top-color: #2a2150;
+}
+[data-bs-theme="dark"] .apm-modal .table tbody td strong { color: #ede9fe; }
+[data-bs-theme="dark"] .apm-modal .table tbody td .text-muted { color: #8579b5 !important; }
+[data-bs-theme="dark"] .apm-modal .table tbody tr:hover td { background-color: rgba(124,92,252,.16) !important; }
+/* Auto-code badge — .bg-light.text-dark was a light pill with dark text;
+   in dark mode that read as an empty dark blob. */
+[data-bs-theme="dark"] .apm-modal .table .badge.bg-light.text-dark,
+[data-bs-theme="dark"] .apm-modal .table .badge.bg-light {
+  background-color: rgba(255,255,255,.08) !important;
+  color: #ddd6fe !important;
+  border-color: rgba(255,255,255,.16) !important;
+}
+/* Teal "view file" link (inline #0d9488) — too dim on the dark surface. */
+[data-bs-theme="dark"] .apm-modal .table a[style*="0d9488"] { color: #5eead4 !important; }
 
 [data-bs-theme="dark"] .apm-foot {
   background: #14102a; border-top-color: #3b2a6b;

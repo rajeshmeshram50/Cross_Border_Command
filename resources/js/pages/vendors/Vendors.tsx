@@ -381,7 +381,12 @@ useEffect(() => {
       },
     },
     {
-      header: () => <div className="text-center">Actions</div>,
+      /* w-100 forces the header label to span the full cell width so it
+         truly centres over the centred action buttons. Without it, when the
+         th establishes a flex/sort layout the text-center div shrinks to its
+         content width and pins left, leaving the header misaligned with the
+         buttons below (QA report). */
+      header: () => <div className="text-center w-100">Actions</div>,
       id: 'actions',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       cell: (info: any) => {
@@ -637,8 +642,10 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Status pills + search row */}
-            <div className="d-flex align-items-center flex-wrap gap-2 mb-3">
+            {/* Status pills + search row — the Active/Inactive toggle and the
+                search box sit in the same horizontal row, search immediately
+                to the right of the toggle (gap-3 for comfortable spacing). */}
+            <div className="d-flex align-items-center flex-wrap gap-3 mb-3">
               <div className="v-status-tabs">
                 <button className={`v-status-tab ${statusTab === 'Active' ? 'on' : ''}`} onClick={() => setStatusTab('Active')}>
                   <span className="v-status-dot is-active" /> Active

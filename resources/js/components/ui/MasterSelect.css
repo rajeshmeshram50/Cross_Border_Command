@@ -187,6 +187,17 @@
     background: var(--vz-secondary-bg) !important;
     color: var(--vz-heading-color, var(--vz-body-color)) !important;
   }
+  /* In dark mode --vz-secondary-bg is nearly identical to the menu's own
+     #2a2f34 background, so the hover was effectively invisible (QA: "no
+     visible hover effect on dropdown"). Pin an explicit violet-tinted hover
+     so the highlighted option is clearly distinguishable on the dark menu. */
+  [data-bs-theme="dark"] .master-select-item:hover,
+  [data-bs-theme="dark"] .master-select-item:focus,
+  [data-layout-mode="dark"] .master-select-item:hover,
+  [data-layout-mode="dark"] .master-select-item:focus {
+    background: rgba(124,92,252,0.28) !important;
+    color: #ffffff !important;
+  }
   .master-select-item.active {
     background: rgba(99,102,241,0.10) !important;
     color: #6366f1 !important;
