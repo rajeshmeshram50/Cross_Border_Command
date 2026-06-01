@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -55,11 +54,6 @@ const TAB_SHORT: Record<OppType, string> = {
   disqualified: 'Disqualified',
   clarity_pending: 'Clarity Pending',
 };
-const TAB_ICON: Record<OppType, string> = {
-  qualified: 'ri-checkbox-circle-line',
-  disqualified: 'ri-close-circle-line',
-  clarity_pending: 'ri-question-line',
-};
 const COLUMN_HEADERS: Record<OppType, string> = {
   qualified: 'Reason For Qualified Opportunity',
   disqualified: 'Reason For Disqualified Opportunity',
@@ -68,7 +62,6 @@ const COLUMN_HEADERS: Record<OppType, string> = {
 
 export default function SalesLeadAckMaster() {
   const toast = useToast();
-  const navigate = useNavigate();
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perm = user?.permissions?.['sales.lead_ack_master'];
@@ -176,24 +169,6 @@ export default function SalesLeadAckMaster() {
   useEffect(() => {
     if (page !== safePage) setPage(safePage);
   }, [page, safePage]);
-
-  // KPI counts — total reasons per tab plus a grand "active" count.
-  // Memoised so the strip doesn't recompute on every keystroke.
-  const stats = useMemo(() => {
-    const count = (arr: Reason[]) => ({
-      total:  arr.length,
-      active: arr.filter(r => r.status === 'active').length,
-    });
-    const qS = count(data.qualified);
-    const dS = count(data.disqualified);
-    const cS = count(data.clarity_pending);
-    return {
-      qualified:       qS,
-      disqualified:    dS,
-      clarity_pending: cS,
-      totalActive:     qS.active + dS.active + cS.active,
-    };
-  }, [data]);
 
   // Tab switch resets page + clears search.
   const switchTab = (next: OppType) => { setTab(next); setPage(1); setQ(''); };
@@ -328,21 +303,13 @@ export default function SalesLeadAckMaster() {
               hero used elsewhere on Sales). ── */}
       <div className="lam-hero">
         <div className="lam-hero-icon">
-          <i className="ri-shield-check-line" />
+          <i className="ri-checkbox-circle-line" />
         </div>
         <div className="lam-hero-text">
-          <div className="lam-hero-title">Lead Acknowledgement Master</div>
-          <div className="lam-hero-sub">Manage qualification, disqualification, and clarity-pending reasons for the sales pipeline</div>
+          <div className="lam-hero-title">Lead Acknowledgement</div>
+          <div className="lam-hero-sub">Manage qualification reasons for the sales pipeline</div>
         </div>
         <div className="lam-hero-actions">
-          <button
-            type="button"
-            className="lam-back-btn"
-            onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/sales'); }}
-          >
-            <i className="ri-arrow-left-line" />
-            Back to Sales Matrix
-          </button>
           {canAdd && (
             <button type="button" className="lam-add-btn" onClick={openAdd}>
               <i className="ri-add-line" />
@@ -350,37 +317,6 @@ export default function SalesLeadAckMaster() {
             </button>
           )}
         </div>
-      </div>
-
-      {/* ── KPI strip ── */}
-      <div className="lam-kpi-grid">
-        <KpiTile
-          label="Qualified Reasons"
-          value={stats.qualified.total}
-          icon="ri-checkbox-circle-line"
-          gradient="linear-gradient(135deg, #16a34a 0%, #4ade80 100%)"
-          onClick={() => switchTab('qualified')}
-        />
-        <KpiTile
-          label="Disqualified Reasons"
-          value={stats.disqualified.total}
-          icon="ri-close-circle-line"
-          gradient="linear-gradient(135deg, #ea580c 0%, #fb923c 100%)"
-          onClick={() => switchTab('disqualified')}
-        />
-        <KpiTile
-          label="Clarity Pending"
-          value={stats.clarity_pending.total}
-          icon="ri-question-line"
-          gradient="linear-gradient(135deg, #2563eb 0%, #60a5fa 100%)"
-          onClick={() => switchTab('clarity_pending')}
-        />
-        <KpiTile
-          label="Total Active"
-          value={stats.totalActive}
-          icon="ri-flashlight-line"
-          gradient="linear-gradient(135deg, #6d28d9 0%, #a78bfa 100%)"
-        />
       </div>
 
       {/* ── Tabs + Search row — tabs sit inside a single segmented
@@ -398,9 +334,7 @@ export default function SalesLeadAckMaster() {
               className={`lam-tab ${tab === t ? 'is-active' : ''}`}
               onClick={() => switchTab(t)}
             >
-              <i className={`${TAB_ICON[t]} lam-tab-icon`} aria-hidden />
-              <span className="lam-tab-label">{TAB_SHORT[t]}</span>
-              <span className="lam-tab-count">{(data[t] || []).length}</span>
+              <span className="lam-tab-label">{TAB_LABELS[t]}</span>
             </button>
           ))}
         </div>
@@ -448,7 +382,7 @@ export default function SalesLeadAckMaster() {
               )}
               {!loading && rows.map((r, i) => (
                 <tr key={r.id}>
-                  <td className="lam-td-sr">{startIdx + i + 1}</td>
+                  <td className="lam-td-sr"><span className="lam-sr-badge">{startIdx + i + 1}</span></td>
                   <td className="lam-td-reason"><ReasonCell text={r.reason} /></td>
                   {tab === 'disqualified' && (
                     <td>
@@ -726,29 +660,6 @@ function ReasonCell({ text }: { text: string }) {
   );
 }
 
-/* ─── KPI tile — project-standard card pattern (mirrors the master
- *      pages' .mp-kpi-tile). Top gradient accent strip, label + value
- *      on the left, gradient icon square on the right. No subtext —
- *      label and big number only, matching the rest of the masters. */
-function KpiTile({ label, value, icon, gradient, onClick }: {
-  label: string; value: number; icon: string; gradient: string; onClick?: () => void;
-}) {
-  return (
-    <button type="button" className={`lam-kpi-tile ${onClick ? 'is-clickable' : ''}`} onClick={onClick} disabled={!onClick}>
-      <span className="lam-kpi-strip-top" style={{ background: gradient }} aria-hidden />
-      <div className="lam-kpi-body">
-        <div className="lam-kpi-text">
-          <div className="lam-kpi-label">{label.toUpperCase()}</div>
-          <div className="lam-kpi-value">{value.toLocaleString()}</div>
-        </div>
-        <div className="lam-kpi-icon" style={{ background: gradient }}>
-          <i className={icon} aria-hidden />
-        </div>
-      </div>
-    </button>
-  );
-}
-
 /* ─── Scoped CSS — violet palette matching the Sales module. Every
  *      rule lives under `.lam-*` so this surface can't leak into
  *      sibling pages. Dark-mode coverage mirrors light-mode pixel
@@ -979,11 +890,13 @@ const SCOPED_CSS = `
 .lam-table { width: 100%; border-collapse: separate; border-spacing: 0; }
 .lam-table thead th {
   position: sticky; top: 0; z-index: 3;
-  padding: 14px 14px; text-align: left; white-space: nowrap;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
-  font-size: 13px; font-weight: 700;
-  color: #334155;
+  padding: 13px 14px; text-align: left; white-space: nowrap;
+  /* Solid violet header bar with white uppercase titles — matches Figma. */
+  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 55%, #8b5cf6 100%);
+  border-bottom: none;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #ffffff;
 }
 .lam-table thead th:first-child { padding-left: 18px; }
 .lam-table tbody tr { transition: background .12s ease; }
@@ -1024,6 +937,15 @@ const SCOPED_CSS = `
 }
 
 .lam-td-sr { font-weight: 700; color: #1e293b; }
+/* Circular Sr-No badge — outlined violet chip matching the Figma. */
+.lam-sr-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #f5f3ff; color: #6d28d9;
+  border: 1.5px solid #ddd6fe;
+  font-size: 11.5px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
 
 /* Status badges — flat pill, no dot. Matches the project-wide
    master pages where the dot indicator was dropped per UX request. */
@@ -1050,22 +972,27 @@ const SCOPED_CSS = `
 .lam-ab {
   width: 30px; height: 30px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--vz-secondary-bg);
-  border: 1px solid var(--vz-border-color);
-  color: var(--vz-secondary-color);
+  border: 1px solid transparent;
   cursor: pointer;
   font-size: 14px; padding: 0;
-  transition: background .15s ease, border-color .15s ease, color .15s ease;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .12s ease;
+}
+/* Coloured tiles by default (Figma) — blue edit, red delete. */
+.lam-edit {
+  background: rgba(37,99,235,0.10);
+  border-color: rgba(37,99,235,0.22);
+  color: #2563eb;
 }
 .lam-edit:hover:not([aria-disabled="true"]) {
-  background: rgba(41,156,219,0.10);
-  border-color: var(--vz-info, #299cdb);
-  color: var(--vz-info, #299cdb);
+  background: rgba(37,99,235,0.18); border-color: #2563eb; transform: translateY(-1px);
+}
+.lam-archive {
+  background: rgba(220,38,38,0.10);
+  border-color: rgba(220,38,38,0.22);
+  color: #dc2626;
 }
 .lam-archive:hover:not([aria-disabled="true"]) {
-  background: rgba(240,101,72,0.10);
-  border-color: var(--vz-danger, #f06548);
-  color: var(--vz-danger, #f06548);
+  background: rgba(220,38,38,0.18); border-color: #dc2626; transform: translateY(-1px);
 }
 .lam-ab[aria-disabled="true"] {
   opacity: 0.55; cursor: not-allowed;
@@ -1468,14 +1395,15 @@ const SCOPED_CSS = `
   box-shadow: 0 8px 32px rgba(0,0,0,.45);
 }
 [data-bs-theme="dark"] .lam-table thead th {
-  background: rgba(255,255,255,0.05);
-  color: #ede9fe;
-  border-bottom-color: rgba(167,139,250,.25);
+  background: linear-gradient(135deg, #5b21b6 0%, #6d28d9 55%, #7c3aed 100%);
+  color: #f5f3ff;
+  border-bottom-color: transparent;
 }
 [data-bs-theme="dark"] .lam-table tbody td { color: #d4d1de; border-bottom-color: rgba(167,139,250,.10); }
 [data-bs-theme="dark"] .lam-table tbody tr:nth-child(even) td { background: rgba(28,20,50,0.50); }
 [data-bs-theme="dark"] .lam-table tbody tr:hover td { background: rgba(124,58,237,.10) !important; }
 [data-bs-theme="dark"] .lam-td-sr     { color: #ede9fe; }
+[data-bs-theme="dark"] .lam-sr-badge  { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .lam-td-reason { color: #ede9fe; }
 [data-bs-theme="dark"] .lam-empty { color: #7a6b9a; }
 [data-bs-theme="dark"] .lam-empty-icon { background: rgba(124,58,237,.16); color: #a78bfa; }

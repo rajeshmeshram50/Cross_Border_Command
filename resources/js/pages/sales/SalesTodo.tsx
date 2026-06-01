@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -191,6 +192,10 @@ export default function SalesTodo() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [meetings,  setMeetings]  = useState<Meeting[]>([]);
   const [loadingData, setLoadingData] = useState<boolean>(true);
+  /* Real opportunities for the picker (code + its opportunity date), so
+   * selecting an opportunity can auto-fill the Opportunity Date. Falls back
+   * to the static OPP_ID_OPTIONS list if the fetch fails / returns none. */
+  const [oppOptions, setOppOptions] = useState<{ value: string; label: string; date: string }[]>([]);
   // Admins (super_admin / client_admin / main_branch_user) see the whole tenant
   // by default; everyone else sees their own rows. Mirrors the controller's
   // applyScope() — the SPA just hints at which scope to ask for.
@@ -266,6 +271,38 @@ export default function SalesTodo() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope]);
+
+  /* Load real opportunities (code + opportunity date) for the picker so
+   * choosing one can auto-fill the Opportunity Date. One-shot on mount;
+   * a failure leaves oppOptions empty and the form falls back to the
+   * static OPP_ID_OPTIONS list. */
+  useEffect(() => {
+    let cancelled = false;
+    api.get<{ data: Array<{ opp_code: string | null; query_time: string | null; created_at: string | null }> }>(
+      '/sales/leads',
+      { params: { status: 'all', per_page: 200, page: 1, with_counts: 0 } },
+    )
+      .then(({ data }) => {
+        if (cancelled) return;
+        const opts = (data.data ?? [])
+          .filter(l => l.opp_code)
+          .map(l => {
+            const raw = (l.query_time ?? l.created_at ?? '').slice(0, 10);
+            return { value: l.opp_code as string, label: l.opp_code as string, date: raw ? isoToDisplay(raw) : '' };
+          });
+        setOppOptions(opts);
+      })
+      .catch(() => { /* keep empty → static fallback */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  /* Picker options for the Opportunity ID select — real opportunities when
+   * available, else the static placeholder list. `oppDateFor` resolves a
+   * code to its opportunity date for the auto-fill. */
+  const oppPickerOptions = oppOptions.length
+    ? oppOptions.map(o => ({ value: o.value, label: o.label }))
+    : OPP_ID_OPTIONS.map(o => ({ value: o, label: o }));
+  const oppDateFor = (code: string): string => oppOptions.find(o => o.value === code)?.date ?? '';
 
   /* ── Reminder filtering ── */
   const filteredReminders = useMemo(() => {
@@ -1143,8 +1180,8 @@ export default function SalesTodo() {
                       <MasterSelect
                         value={form.oppId || ''}
                         placeholder="— Select opportunity —"
-                        options={OPP_ID_OPTIONS.map(o => ({ value: o, label: o }))}
-                        onChange={v => setForm(p => ({ ...p, oppId: v }))}
+                        options={oppPickerOptions}
+                        onChange={v => setForm(p => ({ ...p, oppId: v, oppDate: oppDateFor(v) || p.oppDate }))}
                       />
                     </Field>
                     <Field label="Opportunity Date">
@@ -1301,6 +1338,27 @@ export default function SalesTodo() {
                     >
                       <IconPin /> 🏢 Physical Meeting
                     </button>
+                  </div>
+
+                  {/* Opportunity picker — selecting an opportunity auto-fills
+                      its Opportunity Date (read-only). */}
+                  <div className="td-form-row">
+                    <Field label="Opportunity ID">
+                      <MasterSelect
+                        value={form.oppId || ''}
+                        placeholder="— Select opportunity —"
+                        options={oppPickerOptions}
+                        onChange={v => setForm(p => ({ ...p, oppId: v, oppDate: oppDateFor(v) }))}
+                      />
+                    </Field>
+                    <Field label="Opportunity Date">
+                      <input
+                        className="td-inp"
+                        value={form.oppDate || oppDateFor(form.oppId || '')}
+                        readOnly
+                        placeholder="Auto-filled from opportunity"
+                      />
+                    </Field>
                   </div>
 
                   <div className="td-form-row">

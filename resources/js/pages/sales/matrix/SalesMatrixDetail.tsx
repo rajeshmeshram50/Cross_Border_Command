@@ -6,6 +6,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import EntityPickerModal, { type PickerOption } from '../EntityPickerModal';
 import AddCustomerModal, { type EditCustomer } from '../AddCustomerModal';
 import AddConsigneeModal from '../AddConsigneeModal';
+import LeadEvidenceVaultModal, { type LeadVaultTarget } from '../LeadEvidenceVaultModal';
 import AddProductModal from '../../products/AddProductModal';
 import ProductDirectoryModal from './ProductDirectoryModal';
 import ProductSourcingModal from './ProductSourcingModal';
@@ -138,6 +139,14 @@ export default function SalesMatrixDetail() {
   /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
   const [consigneeEditing, setConsigneeEditing] = useState<any | null>(null);
   const [consigneeAddOpen, setConsigneeAddOpen] = useState(false);
+
+  /* Evidence Vault popups — opened from the left CLM card's Customer /
+   * Consignee rows. Same standalone vault modal used on the Sales
+   * Customers / Consignee list pages: it fetches the live
+   * /segment-uploads/{party}/{id}/vault payload, shows DD / KYC / Trade
+   * License / Trade Documents in tabs, and lets the user send any
+   * missing / unsigned document for e-signature. */
+  const [leadVaultTarget, setLeadVaultTarget] = useState<LeadVaultTarget | null>(null);
 
   const [productAddOpen, setProductAddOpen] = useState(false);
   const [productDirectoryOpen, setProductDirectoryOpen] = useState(false);
@@ -793,13 +802,23 @@ export default function SalesMatrixDetail() {
                 disabled={customerAddOpen || consigneeAddOpen}
                 onClick={() => {
                   if (customerAddOpen || consigneeAddOpen) return;
+                  /* Open the standalone Evidence Vault popup — DD / KYC /
+                   * Trade License / Trade Documents in tabs with the
+                   * send-for-signature action for any missing / unsigned
+                   * doc. Built from the eager-loaded customer row. */
                   const row = serverHeader.customerRow as Record<string, unknown>;
-                  setCustomerEditing({
-                    ...row,
-                    db_id: typeof row.id === 'number' ? (row.id as number) : serverHeader.customerId,
-                  } as unknown as EditCustomer);
-                  setClmInitialStage(3);
-                  setCustomerAddOpen(true);
+                  setLeadVaultTarget({
+                    ownerType:   'customer',
+                    id:          (row.customer_code as string) || header.customerCode || `C-${String(serverHeader.customerId).padStart(3, '0')}`,
+                    db_id:       serverHeader.customerId ?? undefined,
+                    company:     (row.company_name as string) || header.customer,
+                    type:        (row.type    as string | undefined) ?? undefined,
+                    segment:     (row.segment as string | undefined) ?? undefined,
+                    country:     (row.country as string | undefined) ?? header.country,
+                    risk:        (row.risk    as string | undefined) ?? undefined,
+                    contact:     (row.contact_person as string | undefined) ?? (row.primary_contact as string | undefined) ?? undefined,
+                    contactCity: (row.city as string | undefined) ?? undefined,
+                  });
                 }}
               />
             )}
@@ -820,24 +839,21 @@ export default function SalesMatrixDetail() {
                 disabled={customerAddOpen || consigneeAddOpen}
                 onClick={() => {
                   if (customerAddOpen || consigneeAddOpen) return;
+                  /* Same standalone Evidence Vault popup as the customer
+                   * row, scoped to the mapped consignee. */
                   const raw = serverHeader.consigneeRow as Record<string, unknown>;
-                  const customerCode =
-                    (serverHeader.customerRow as Record<string, unknown> | null | undefined)?.customer_code as string | undefined;
-                  const consigneeCode = raw.consignee_code as string | undefined;
-                  setConsigneeEditing({
-                    id:             consigneeCode ?? '',
-                    db_id:          serverHeader.consigneeId,
-                    customerId:     customerCode ?? '',
-                    customer_db_id: serverHeader.customerId ?? undefined,
-                    initials:       String(raw.company_name ?? '?').slice(0, 2).toUpperCase(),
-                    name:           (raw.company_name as string | undefined) ?? '',
-                    legalName:      (raw.legal_name   as string | undefined) ?? '',
-                    segment:        (raw.segment      as string | undefined) ?? '',
-                    type:           (raw.type         as string | undefined) ?? '',
-                    classification: (raw.classification as string | undefined) ?? '',
-                  } as unknown as Parameters<typeof setConsigneeEditing>[0]);
-                  setClmInitialStage(3);
-                  setConsigneeAddOpen(true);
+                  setLeadVaultTarget({
+                    ownerType:   'consignee',
+                    id:          (raw.consignee_code as string | undefined) ?? `CN-${String(serverHeader.consigneeId).padStart(3, '0')}`,
+                    db_id:       serverHeader.consigneeId ?? undefined,
+                    company:     (raw.company_name as string | undefined) ?? '',
+                    type:        (raw.type    as string | undefined) ?? undefined,
+                    segment:     (raw.segment as string | undefined) ?? undefined,
+                    country:     (raw.country as string | undefined) ?? header.country,
+                    risk:        (raw.risk    as string | undefined) ?? undefined,
+                    contact:     (raw.contact_person as string | undefined) ?? undefined,
+                    contactCity: (raw.city as string | undefined) ?? undefined,
+                  });
                 }}
               />
             )}
@@ -1283,6 +1299,23 @@ export default function SalesMatrixDetail() {
           } catch {
             toast.error('Save failed', 'Could not update the key-opportunity flag');
           }
+        }}
+      />
+
+      {/* ── Lead Evidence Vault popup ──
+          Opened from the left CLM card's Customer Details / Consignee
+          Details rows. Dedicated lead-scoped vault: four document tabs
+          (Due Diligence / KYC / Trade License / Trade Documents) with
+          live data + per-document View / Download / Upload-replace /
+          Certificate actions. On close, refresh the matching party's
+          CLM tally so the panel progress bars reflect any upload. */}
+      <LeadEvidenceVaultModal
+        open={!!leadVaultTarget}
+        target={leadVaultTarget}
+        onClose={() => {
+          if (leadVaultTarget?.ownerType === 'consignee') setConsRefreshTick(t => t + 1);
+          else setCustRefreshTick(t => t + 1);
+          setLeadVaultTarget(null);
         }}
       />
     </div>

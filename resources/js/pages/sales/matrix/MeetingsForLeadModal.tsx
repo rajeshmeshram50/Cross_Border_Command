@@ -202,7 +202,49 @@ export default function MeetingsForLeadModal({
         </div>
 
         <div className="mfl-body">
-          {/* Auto-fetched opp ID + opp date — read-only chips up top */}
+          {/* Opportunity ID + date are auto-fetched from the lead in
+              context, so the read-only display row is omitted here — the
+              values are still submitted from props. */}
+
+          {/* Virtual / Physical toggle */}
+          <div className="mfl-toggle">
+            <button
+              type="button"
+              className={`mfl-toggle-btn ${type === 'virtual' ? 'active' : ''}`}
+              onClick={() => { setType('virtual'); setPlatform(''); }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="23 7 16 12 23 17 23 7" />
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+              </svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2" />
+                <line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+              Virtual Meeting
+            </button>
+            <button
+              type="button"
+              className={`mfl-toggle-btn ${type === 'physical' ? 'active' : ''}`}
+              onClick={() => { setType('physical'); setPlatform(''); }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              Physical Meeting
+            </button>
+          </div>
+
+          {/* Auto-fetched opp ID + date — sits below the meeting-type
+              toggle. In the Sales Matrix lead stage these come from the
+              lead in context (read-only). The Productivity Tracker form
+              has its own selectable opportunity picker. */}
           <div className="mfl-grid">
             <div className="mfl-fld">
               <div className="mfl-lbl-row">
@@ -218,32 +260,6 @@ export default function MeetingsForLeadModal({
               </div>
               <input className="mfl-input mfl-input-ro" value={toDisplayDate(oppDate)} readOnly />
             </div>
-          </div>
-
-          {/* Virtual / Physical toggle */}
-          <div className="mfl-toggle">
-            <button
-              type="button"
-              className={`mfl-toggle-btn ${type === 'virtual' ? 'active' : ''}`}
-              onClick={() => { setType('virtual'); setPlatform(''); }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <polygon points="23 7 16 12 23 17 23 7" />
-                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-              </svg>
-              💻 Virtual Meeting
-            </button>
-            <button
-              type="button"
-              className={`mfl-toggle-btn ${type === 'physical' ? 'active' : ''}`}
-              onClick={() => { setType('physical'); setPlatform(''); }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-              🏢 Physical Meeting
-            </button>
           </div>
 
           <div className="mfl-grid">
@@ -482,8 +498,10 @@ const MFL_CSS = `
 .mfl-toggle {
   display: flex; gap: 8px;
   padding: 4px;
-  background: rgba(14, 116, 144, .10);
-  border: 1.5px solid rgba(14, 116, 144, .25);
+  /* Clean white shell with a neutral border (Figma) — inactive segment
+     reads as white, active as solid teal. */
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
   border-radius: 12px;
   margin-bottom: 14px;
 }
@@ -493,13 +511,13 @@ const MFL_CSS = `
   padding: 9px 14px;
   border: none; border-radius: 9px;
   background: transparent;
-  color: #0F766E;
+  color: #64748b;
   font-family: inherit;
   font-size: 12.5px; font-weight: 700;
   cursor: pointer;
   transition: all .15s;
 }
-.mfl-toggle-btn:hover:not(.active) { background: rgba(14, 116, 144, .14); }
+.mfl-toggle-btn:hover:not(.active) { background: #f1f5f9; }
 .mfl-toggle-btn.active {
   /* Prototype spec — deep teal → cyan-blue. */
   background: linear-gradient(135deg, #0F766E, #0E7490);
@@ -666,11 +684,11 @@ const MFL_CSS = `
   color: #5eead4;
 }
 [data-bs-theme="dark"] .mfl-toggle {
-  background: rgba(14, 116, 144, .12);
-  border-color: rgba(14, 116, 144, .35);
+  background: #0b1f24;
+  border-color: rgba(148, 163, 184, .25);
 }
-[data-bs-theme="dark"] .mfl-toggle-btn { color: #5eead4; }
-[data-bs-theme="dark"] .mfl-toggle-btn:hover:not(.active) { background: rgba(14, 116, 144, .18); }
+[data-bs-theme="dark"] .mfl-toggle-btn { color: #94a3b8; }
+[data-bs-theme="dark"] .mfl-toggle-btn:hover:not(.active) { background: rgba(148, 163, 184, .12); }
 [data-bs-theme="dark"] .mfl-pill-fetched {
   background: rgba(14, 116, 144, .18);
   border-color: rgba(14, 116, 144, .45);

@@ -361,8 +361,8 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
               <div className="st2-pick-head-left">
                 <div className="st2-pick-head-icon"><BucketIcon bucket={pickerBucket} /></div>
                 <div className="st2-pick-title">
-                  {BUCKET_META[pickerBucket].label}
-                  <span className="st2-pick-sub">Pick one or more reasons to log</span>
+                  {pickerBucket === 'disqualified' ? 'Disqualified Status' : BUCKET_META[pickerBucket].label}
+                  <span className="st2-pick-sub">Select reason(s) to log in the activity report</span>
                 </div>
               </div>
               <button className="st2-pick-close" onClick={closePicker} aria-label="Close">
@@ -390,7 +390,7 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
                 <div className="st2-pick-cols">
                   <div className="st2-pick-col">
                     <div className="st2-pick-col-head st2-pick-col-head-neg">
-                      ● Negative Disqualification
+                      ● Negative Status
                     </div>
                     {dqNegative.length === 0
                       ? <div className="st2-pick-col-empty">No options</div>
@@ -400,7 +400,7 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
                   </div>
                   <div className="st2-pick-col">
                     <div className="st2-pick-col-head st2-pick-col-head-pos">
-                      ● Positive Disqualification
+                      ● Positive Status
                     </div>
                     {dqPositive.length === 0
                       ? <div className="st2-pick-col-empty">No options</div>
@@ -425,7 +425,7 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
                   onClick={() => void submitPicker()}
                   disabled={selected.size === 0}
                 >
-                  Submit
+                  Confirm
                 </button>
               </div>
             </div>
@@ -726,12 +726,16 @@ const STAGE2_CSS = `
 .st2-pick-row input { accent-color: #7c3aed; cursor: pointer; }
 
 .st2-pick-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+/* Underlined section headers (Figma) — coloured dot + uppercase label
+   over a tinted hairline, instead of the old filled pill. */
 .st2-pick-col-head {
-  font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
-  padding: 6px 10px; border-radius: 8px; margin-bottom: 8px;
+  font-size: 11px; font-weight: 800; letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 0 2px 8px; margin-bottom: 10px;
+  border-bottom: 1.5px solid transparent;
 }
-.st2-pick-col-head-neg { background: #fee2e2; color: #b91c1c; }
-.st2-pick-col-head-pos { background: #dcfce7; color: #15803d; }
+.st2-pick-col-head-neg { color: #e11d48; border-bottom-color: #fecdd3; }
+.st2-pick-col-head-pos { color: #16a34a; border-bottom-color: #bbf7d0; }
 .st2-pick-col-empty {
   font-size: 11px; color: #cbd5e1; font-style: italic;
   text-align: center; padding: 12px 4px;
@@ -838,8 +842,8 @@ const STAGE2_CSS = `
 [data-bs-theme="dark"] .st2-pick-btn-ghost:hover:not(:disabled) {
   background: #2a2150; border-color: rgba(167,139,250,.55);
 }
-[data-bs-theme="dark"] .st2-pick-col-head-neg { background: rgba(239,68,68,.20); color: #fca5a5; }
-[data-bs-theme="dark"] .st2-pick-col-head-pos { background: rgba(34,197,94,.20); color: #86efac; }
+[data-bs-theme="dark"] .st2-pick-col-head-neg { color: #fca5a5; border-bottom-color: rgba(239,68,68,.35); }
+[data-bs-theme="dark"] .st2-pick-col-head-pos { color: #86efac; border-bottom-color: rgba(34,197,94,.35); }
 [data-bs-theme="dark"] .st2-pick-col-empty    { color: rgba(167,139,250,.40); }
 
 /* ── Responsive ────────────────────────────────────────────── */
