@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
+import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * WhatsApp Status — opens off the matrix toolbar's WhatsApp pill.
@@ -40,20 +41,23 @@ export default function WhatsAppStatusModal({
   const [reason, setReason] = useState('');
   const [picked, setPicked] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  // Tracks whether the user removed the previously-saved screenshot in this
+  // session, so the Yes branch stops showing the old proof once cleared.
+  const [removedExisting, setRemovedExisting] = useState(false);
 
-  /* Always open clean — neither Yes nor No selected, no pre-filled reason
-   * or file. The user explicitly wants the form to start fresh on every
-   * click, even when the lead already has a previously saved status, so
-   * we deliberately ignore `currentStatus` / `currentReason` here.
-   * (`currentScreenshot` is still consulted when rendering the file
-   * label inside the Yes branch, so the prior upload is discoverable
-   * if the user actively chooses Yes.) */
+  /* Pre-fill from the lead's previously saved WhatsApp status so reopening
+   * the modal shows what was logged before, rather than a blank form:
+   *   connected     → Yes (+ the saved screenshot is shown)
+   *   not_connected → No  (+ the saved reason is pre-filled)
+   * Other statuses leave the choice unset. */
   useEffect(() => {
     if (!open) { setPicked(null); setSaving(false); return; }
-    setChoice('');
-    setReason('');
+    setChoice(currentStatus === 'connected' ? 'yes' : currentStatus === 'not_connected' ? 'no' : '');
+    setReason(currentReason ?? '');
+    setPicked(null);
+    setRemovedExisting(false);
     if (fileRef.current) fileRef.current.value = '';
-  }, [open]);
+  }, [open, currentStatus, currentReason]);
 
   if (!open) return null;
 
@@ -94,16 +98,17 @@ export default function WhatsAppStatusModal({
     }
   };
 
-  /* File label only reflects what the USER has just picked. We
-   * deliberately ignore `currentScreenshot` (the previously saved
-   * upload) so the Yes branch opens in the same clean "No file chosen"
-   * state shown in image 2, instead of pre-populating with the old
-   * hashed filename + a stray "View" link. Matches the fresh-form
-   * behaviour applied to the radio + reason fields. */
-  const fileLabel = picked ? picked.name : '';
+  /* Show the just-picked file if any; otherwise fall back to the
+   * previously-saved screenshot (until the user clears it) so the prior
+   * proof is visible when the modal is reopened. */
+  const showExisting = !picked && !removedExisting && !!currentScreenshot;
+  const existingName = currentScreenshot ? currentScreenshot.split('/').pop() ?? 'Uploaded file' : '';
+  const fileLabel = picked ? picked.name : (showExisting ? existingName : '');
 
   const clearPicked = () => {
     setPicked(null);
+    // Clearing also drops the previously-saved screenshot from view.
+    if (showExisting) setRemovedExisting(true);
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -175,6 +180,16 @@ export default function WhatsAppStatusModal({
                     {fileLabel ? (
                       <>
                         <span className="was-file-name-text" title={fileLabel}>{fileLabel}</span>
+                        {showExisting && currentScreenshot && (
+                          <a
+                            className="was-link"
+                            href={resolveFileUrl(currentScreenshot)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            View
+                          </a>
+                        )}
                         <button type="button" className="was-file-x" onClick={clearPicked} aria-label="Remove">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                             <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />

@@ -867,11 +867,17 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-input-file:hover { border-color: #7c3aed; background: #f0eeff; }
 .smd-req       { color: #ef4444; }
 .smd-deal-section-label {
+  display: flex; align-items: center; gap: 10px;
   font-size: 8px; font-weight: 800; letter-spacing: .1em; color: #a78bfa;
-  text-align: center; padding: 4px 8px; margin: 2px 0;
+  text-align: center; padding: 2px 0; margin: 6px 0 2px;
   text-transform: uppercase;
-  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
-  border-radius: 6px; border-top: none;
+  /* Centered divider label with hairlines on each side (Figma) — not a
+     filled bar. Same row height as before so the column doesn't shift. */
+  background: none; border-radius: 0; white-space: nowrap;
+}
+.smd-deal-section-label::before,
+.smd-deal-section-label::after {
+  content: ''; flex: 1; height: 1px; background: #ddd6fe;
 }
 .smd-deal-save-wrap { display: flex; justify-content: center; margin-top: auto; padding-top: 8px; }
 .smd-deal-save-btn {
@@ -1225,8 +1231,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
 
 /* PURCHASE DECISION MAKER divider — was lavender pill bleeding light. */
 [data-bs-theme="dark"] .smd-root .smd-deal-section-label {
-  background: linear-gradient(135deg, #1f1845, #2a2150);
+  background: none;
   color: #a78bfa;
+}
+[data-bs-theme="dark"] .smd-root .smd-deal-section-label::before,
+[data-bs-theme="dark"] .smd-root .smd-deal-section-label::after {
+  background: rgba(167,139,250,.30);
 }
 
 /* Attach File button — uses .smd-input + .smd-input-file but it's a

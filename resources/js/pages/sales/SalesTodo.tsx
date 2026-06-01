@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -130,8 +131,14 @@ const TAT_OPTIONS  = ['24 Hours', '48 Hours', '72 Hours', '1 Week', '2 Weeks'];
 // fetch (probably in a useEffect). Hard-coded for now so the dropdown is
 // usable end-to-end without blocking on that work.
 const OPP_ID_OPTIONS = Array.from({ length: 50 }, (_, i) => `OPP-${String(i + 1).padStart(3, '0')}`);
-const VIRTUAL_PLATFORMS  = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Webex', 'Phone Call'];
-const PHYSICAL_PLATFORMS = ['Office Visit', 'Client Site', 'Trade Fair', 'Conference', 'Factory Visit', 'Port Visit'];
+// 'Other' is always last so the user can capture a platform/venue type that
+// isn't in the predefined list (QA: "what if the meeting is scheduled on some
+// another platform"). Selecting it reveals a free-text input.
+const VIRTUAL_PLATFORMS  = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Webex', 'Phone Call', 'Other'];
+const PHYSICAL_PLATFORMS = ['Office Visit', 'Client Site', 'Trade Fair', 'Conference', 'Factory Visit', 'Port Visit', 'Other'];
+// Common ISD dialing codes for the Contact No dropdown. India first since it's
+// the primary market; the rest cover the app's frequent trade corridors.
+const COUNTRY_CODES = ['+91', '+1', '+44', '+971', '+65', '+86', '+81', '+49', '+33', '+61', '+92', '+880', '+94', '+27'];
 const ROWS_OPTIONS = [10, 25];
 
 /* Loose shape — the modal renders one of two field-sets at a time, so the
@@ -162,7 +169,12 @@ type FormShape = {
   customer?: string;
   email?: string;
   contact?: string;
+  // Country dialing code shown in a dropdown beside the Contact No input.
+  // The stored `contact` is rebuilt as "<countryCode> <localNumber>" on save.
+  countryCode?: string;
   platform?: string;
+  // Free-text platform name, only used when `platform === 'Other'`.
+  platformOther?: string;
   date?: string;
   startTime?: string;
   endTime?: string;
@@ -191,6 +203,10 @@ export default function SalesTodo() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [meetings,  setMeetings]  = useState<Meeting[]>([]);
   const [loadingData, setLoadingData] = useState<boolean>(true);
+  /* Real opportunities for the picker (code + its opportunity date), so
+   * selecting an opportunity can auto-fill the Opportunity Date. Falls back
+   * to the static OPP_ID_OPTIONS list if the fetch fails / returns none. */
+  const [oppOptions, setOppOptions] = useState<{ value: string; label: string; date: string }[]>([]);
   // Admins (super_admin / client_admin / main_branch_user) see the whole tenant
   // by default; everyone else sees their own rows. Mirrors the controller's
   // applyScope() — the SPA just hints at which scope to ask for.
@@ -221,7 +237,13 @@ export default function SalesTodo() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm]           = useState<FormShape>({});
-  const [formError, setFormError] = useState('');
+  // Validation errors are kept as a list so every failing field surfaces at
+  // once (QA: "multiple validation errors should be shown at a time") instead
+  // of the old one-error-at-a-time behaviour.
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+  // Read-only "view" modal for reminders — opened from the Actions column so
+  // the user can inspect details + the attachment without entering edit mode.
+  const [viewReminder, setViewReminder] = useState<Reminder | null>(null);
 
   // Calendar view state
   const [view, setView] = useState<'list' | 'calendar'>('list');
@@ -266,6 +288,38 @@ export default function SalesTodo() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope]);
+
+  /* Load real opportunities (code + opportunity date) for the picker so
+   * choosing one can auto-fill the Opportunity Date. One-shot on mount;
+   * a failure leaves oppOptions empty and the form falls back to the
+   * static OPP_ID_OPTIONS list. */
+  useEffect(() => {
+    let cancelled = false;
+    api.get<{ data: Array<{ opp_code: string | null; query_time: string | null; created_at: string | null }> }>(
+      '/sales/leads',
+      { params: { status: 'all', per_page: 200, page: 1, with_counts: 0 } },
+    )
+      .then(({ data }) => {
+        if (cancelled) return;
+        const opts = (data.data ?? [])
+          .filter(l => l.opp_code)
+          .map(l => {
+            const raw = (l.query_time ?? l.created_at ?? '').slice(0, 10);
+            return { value: l.opp_code as string, label: l.opp_code as string, date: raw ? isoToDisplay(raw) : '' };
+          });
+        setOppOptions(opts);
+      })
+      .catch(() => { /* keep empty → static fallback */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  /* Picker options for the Opportunity ID select — real opportunities when
+   * available, else the static placeholder list. `oppDateFor` resolves a
+   * code to its opportunity date for the auto-fill. */
+  const oppPickerOptions = oppOptions.length
+    ? oppOptions.map(o => ({ value: o.value, label: o.label }))
+    : OPP_ID_OPTIONS.map(o => ({ value: o, label: o }));
+  const oppDateFor = (code: string): string => oppOptions.find(o => o.value === code)?.date ?? '';
 
   /* ── Reminder filtering ── */
   const filteredReminders = useMemo(() => {
@@ -394,12 +448,15 @@ export default function SalesTodo() {
   const openAdd = () => {
     if (!canAdd) return;
     setForm(tab === 'reminder'
-      ? { editId: null, oppId:'', oppDate: TODAY_STR, subject:'', setDate: TODAY_STR, tat:'24 Hours', remark:'', status:'In Progress' }
+      // Opportunity Date starts empty — it's derived from the chosen
+      // Opportunity ID, not free-typed. Pre-filling today's date before an
+      // opportunity is picked was misleading (QA bug 29).
+      ? { editId: null, oppId:'', oppDate: '', subject:'', setDate: TODAY_STR, tat:'24 Hours', remark:'', status:'In Progress' }
       // platform left empty intentionally — pre-filling "Zoom" silently
       // satisfied the required validation, so the user could save without
       // ever opening the dropdown. Forcing an active selection.
-      : { editId: null, code:'', oppId:'', customer:'', email:'', contact:'', platform:'', date: TODAY_STR, startTime:'10:00', endTime:'11:00', link:'', venue:'', agenda:'', status:'In Progress', type: meetingSub });
-    setFormError('');
+      : { editId: null, code:'', oppId:'', customer:'', email:'', contact:'', countryCode:'+91', platform:'', platformOther:'', date: TODAY_STR, startTime:'10:00', endTime:'11:00', link:'', venue:'', agenda:'', status:'In Progress', type: meetingSub });
+    setFormErrors([]);
     setModalOpen(true);
   };
 
@@ -411,12 +468,30 @@ export default function SalesTodo() {
       toast.info('Read-only', 'Completed reminders cannot be edited.');
       return;
     }
-    setForm({ ...record, editId: record.id });
-    setFormError('');
+    // For meetings, split the stored "<code> <number>" contact back into a
+    // country-code + local-number pair so the dropdown re-selects correctly,
+    // and map an unrecognised platform onto the "Other" + free-text inputs.
+    if ('code' in record) {
+      const m = record as Meeting;
+      const { code, local } = splitContact(m.contact);
+      const known = (m.type === 'physical' ? PHYSICAL_PLATFORMS : VIRTUAL_PLATFORMS);
+      const isOther = !!m.platform && !known.includes(m.platform);
+      setForm({
+        ...m,
+        editId: m.id,
+        countryCode: code,
+        contact: local,
+        platform: isOther ? 'Other' : m.platform,
+        platformOther: isOther ? m.platform : '',
+      });
+    } else {
+      setForm({ ...record, editId: record.id });
+    }
+    setFormErrors([]);
     setModalOpen(true);
   };
 
-  const close = () => { setModalOpen(false); setForm({}); };
+  const close = () => { setModalOpen(false); setForm({}); setFormErrors([]); };
 
   const setMark = async (record: Reminder | Meeting, status: string) => {
     if (savingRef.current) return;
@@ -503,17 +578,30 @@ export default function SalesTodo() {
 
   const save = async () => {
     if (savingRef.current) return;
-    setFormError('');
+    setFormErrors([]);
 
     if (tab === 'reminder') {
+      // Collect every validation failure so they can all be shown at once,
+      // rather than bailing on the first one.
+      const errs: string[] = [];
       const subj = (form.subject || '').trim();
-      if (!subj)                          { setFormError('Subject is required.'); return; }
-      // Only letters, digits and spaces allowed. Anything else is rejected.
-      if (!/^[A-Za-z0-9 ]+$/.test(subj))  { setFormError('Special characters are not allowed.'); return; }
-      if (subj.length < 3)                { setFormError('Subject must be at least 3 characters.'); return; }
-      if (subj.length > 255)              { setFormError('Subject cannot exceed 255 characters.'); return; }
+      if (!subj)                               errs.push('Subject is required.');
+      else {
+        if (!/^[A-Za-z0-9 ]+$/.test(subj))     errs.push('Special characters are not allowed in the subject.');
+        if (subj.length < 3)                   errs.push('Subject must be at least 3 characters.');
+        if (subj.length > 255)                 errs.push('Subject cannot exceed 255 characters.');
+      }
 
-      if (!form.setDate)                  { setFormError('Set date is required.'); return; }
+      if (!form.setDate) {
+        errs.push('Reminder set date is required.');
+      } else if (!form.editId && displayToIso(form.setDate) < displayToIso(TODAY_STR)) {
+        // Block past reminder dates on new reminders — you can't set a
+        // reminder for a date that has already gone by (QA bug 30). Existing
+        // reminders are exempt so a historic row can still be edited/saved.
+        errs.push('Reminder set date cannot be in the past.');
+      }
+
+      if (errs.length) { setFormErrors(errs); return; }
 
       const payload = {
         opp_id: form.oppId || undefined,
@@ -557,42 +645,58 @@ export default function SalesTodo() {
         }
         close();
       } catch (err: any) {
-        setFormError(prettySaveError(err));
+        setFormErrors([prettySaveError(err)]);
       } finally {
         savingRef.current = false;
         setSaving(false);
       }
     } else {
+      // Accumulate every validation failure so they're all shown together.
+      const errs: string[] = [];
       const cust = (form.customer || '').trim();
-      if (!cust) { setFormError('Customer Name is required.'); return; }
       // Customer name: must contain at least one letter (rejects "!!!", "123",
       // "@@@" etc.) and stay within a sensible length / safe character set.
-      if (!/[A-Za-z]/.test(cust))               { setFormError('Customer Name must contain letters.'); return; }
-      if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) { setFormError('Customer Name has invalid characters or length.'); return; }
-
-      if (!form.date) { setFormError('Meeting Date is required.'); return; }
-      if (!form.startTime) { setFormError('Start Time is required.'); return; }
-      if (!form.endTime)   { setFormError('End Time is required.'); return; }
-
-      // Contact number — REQUIRED. Must be 10–15 digits (10 covers India's
-      // standard mobile length; 15 is the ITU-T E.164 maximum so international
-      // numbers still fit). Leading "+", spaces and dashes are allowed as
-      // separators but only the digit count is enforced.
-      const contactRaw = (form.contact || '').trim();
-      if (!contactRaw) { setFormError('Contact Number is required.'); return; }
-      const digits = contactRaw.replace(/\D/g, '');
-      if (digits.length < 10) {
-        setFormError('Contact Number must be at least 10 digits.'); return;
-      }
-      if (digits.length > 15) {
-        setFormError('Contact Number cannot be more than 15 digits.'); return;
-      }
-      if (!/^\+?[\d\s\-]+$/.test(contactRaw)) {
-        setFormError('Contact Number can only contain digits, spaces, dashes and a leading +.'); return;
+      if (!cust) errs.push('Customer Name is required.');
+      else {
+        if (!/[A-Za-z]/.test(cust))                            errs.push('Customer Name must contain letters.');
+        if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) errs.push('Customer Name has invalid characters or length.');
       }
 
+      // Customer Email — optional, but if given it's trimmed + format-checked
+      // so leading/trailing spaces don't trip the backend (QA: trim spaces).
+      const emailRaw = (form.email || '').trim();
+      if (emailRaw) {
+        if (emailRaw.length > 191)                              errs.push('Customer Email cannot exceed 191 characters.');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw))       errs.push('Customer Email is not a valid email address.');
+      }
+
+      if (!form.date)      errs.push('Meeting Date is required.');
+      if (!form.startTime) errs.push('Start Time is required.');
+      if (!form.endTime)   errs.push('End Time is required.');
+
+      // Contact number — REQUIRED. Combine the selected country code with the
+      // local number, then enforce 10–15 total digits (10 covers India's
+      // standard mobile length; 15 is the ITU-T E.164 maximum).
+      const localNum  = (form.contact || '').trim();
+      const ccode     = (form.countryCode || '+91').trim();
+      const contactRaw = localNum ? `${ccode} ${localNum}`.trim() : '';
+      if (!localNum) {
+        errs.push('Contact Number is required.');
+      } else {
+        const digits = contactRaw.replace(/\D/g, '');
+        if (digits.length < 10)  errs.push('Contact Number must be at least 10 digits.');
+        if (digits.length > 15)  errs.push('Contact Number cannot be more than 15 digits.');
+        if (!/^\+?[\d\s\-]+$/.test(contactRaw)) errs.push('Contact Number can only contain digits, spaces, dashes and a leading +.');
+      }
+
+      // Resolve the platform/type, honouring the free-text "Other" choice.
+      const platformVal = form.platform === 'Other'
+        ? (form.platformOther || '').trim()
+        : (form.platform || '');
       if (!form.platform) {
-        setFormError(meetingSub === 'physical' ? 'Meeting Type is required.' : 'Platform is required.'); return;
+        errs.push(meetingSub === 'physical' ? 'Meeting Type is required.' : 'Platform is required.');
+      } else if (form.platform === 'Other' && !platformVal) {
+        errs.push(meetingSub === 'physical' ? 'Please specify the meeting type.' : 'Please specify the platform.');
       }
 
       const isVirtual = ((form.type as MeetingSub) || meetingSub) === 'virtual';
@@ -601,38 +705,39 @@ export default function SalesTodo() {
 
       if (isVirtual) {
         // Virtual meeting link — REQUIRED, must be a valid http(s) URL.
-        if (!linkRaw) { setFormError('Meeting Link is required.'); return; }
-        try {
-          const u = new URL(linkRaw);
-          if (!/^https?:$/.test(u.protocol)) throw new Error();
-        } catch {
-          setFormError('Meeting Link must be a valid http(s) URL (e.g. https://meet.google.com/abc-def-ghi).'); return;
+        if (!linkRaw) {
+          errs.push('Meeting Link is required.');
+        } else {
+          let ok = false;
+          try { const u = new URL(linkRaw); ok = /^https?:$/.test(u.protocol); } catch { ok = false; }
+          if (!ok) errs.push('Meeting Link must be a valid http(s) URL (e.g. https://meet.google.com/abc-def-ghi).');
         }
       } else {
         // Physical meeting — venue is REQUIRED and must look like a real
         // place name (at least one letter, sensible length, safe punctuation).
-        if (!venueRaw) { setFormError('Place / Venue is required.'); return; }
-        if (!/[A-Za-z]/.test(venueRaw)) { setFormError('Venue must contain letters, not just symbols or digits.'); return; }
-        if (venueRaw.length < 3 || venueRaw.length > 200) {
-          setFormError('Venue must be between 3 and 200 characters.'); return;
-        }
-        if (!/^[A-Za-z0-9 .,'&()#\/\-\n\r]+$/.test(venueRaw)) {
-          setFormError('Venue contains invalid characters.'); return;
+        if (!venueRaw) {
+          errs.push('Place / Venue is required.');
+        } else {
+          if (!/[A-Za-z]/.test(venueRaw))                            errs.push('Venue must contain letters, not just symbols or digits.');
+          if (venueRaw.length < 3 || venueRaw.length > 200)          errs.push('Venue must be between 3 and 200 characters.');
+          if (!/^[A-Za-z0-9 .,'&()#\/\-\n\r]+$/.test(venueRaw))      errs.push('Venue contains invalid characters.');
         }
       }
 
       // Meeting agenda — REQUIRED for both meeting types.
       const agendaRaw = (form.agenda || '').trim();
-      if (!agendaRaw) { setFormError('Meeting Agenda is required.'); return; }
-      if (agendaRaw.length < 3) { setFormError('Meeting Agenda must be at least 3 characters.'); return; }
+      if (!agendaRaw)              errs.push('Meeting Agenda is required.');
+      else if (agendaRaw.length < 3) errs.push('Meeting Agenda must be at least 3 characters.');
+
+      if (errs.length) { setFormErrors(errs); return; }
 
       const payload = {
         type: ((form.type as 'virtual' | 'physical') || meetingSub),
         opp_id: form.oppId || undefined,
         customer: cust,
-        email: form.email || undefined,
+        email: emailRaw || undefined,
         contact: contactRaw,
-        platform: form.platform || undefined,
+        platform: platformVal || undefined,
         date: displayToIso(form.date),
         start_time: form.startTime || undefined,
         end_time: form.endTime || undefined,
@@ -662,7 +767,7 @@ export default function SalesTodo() {
         }
         close();
       } catch (err: any) {
-        setFormError(prettySaveError(err));
+        setFormErrors([prettySaveError(err)]);
       } finally {
         savingRef.current = false;
         setSaving(false);
@@ -936,6 +1041,13 @@ export default function SalesTodo() {
                       <td><StatusBadge status={r.status} /></td>
                       <td>
                         <div className="td-actions">
+                          {/* View — read-only details + attachment. Always
+                              available (even for completed reminders) so the
+                              row can be inspected without entering edit mode
+                              (QA bug 31). */}
+                          <Tooltip label="View details">
+                            <button type="button" className="td-ab td-ab-view" aria-label="View" onClick={() => setViewReminder(r)}><IconEye /></button>
+                          </Tooltip>
                           {canEdit && r.status !== 'Done' && (
                             <Tooltip label="Edit">
                               <button type="button" className="td-ab td-ab-edit" aria-label="Edit" onClick={() => openEdit(r)}><IconEdit /></button>
@@ -1060,6 +1172,15 @@ export default function SalesTodo() {
                               </Tooltip>
                             </>
                           )}
+                          {/* Undo / revert — once a meeting is Done, Postponed
+                              or Cancelled it can be moved back to In Progress
+                              so a mistaken status change is recoverable (QA bug
+                              34). */}
+                          {m.status !== 'In Progress' && canEdit && (
+                            <Tooltip label="Revert to In Progress">
+                              <button className="td-ab td-ab-revert" aria-label="Revert to In Progress" onClick={() => setMark(m, 'In Progress')}><IconRevert /></button>
+                            </Tooltip>
+                          )}
                           {canDel && (
                             <Tooltip label="Delete">
                               <button className="td-ab td-ab-del" aria-label="Delete" onClick={() => del(m)}><IconTrash /></button>
@@ -1144,14 +1265,25 @@ export default function SalesTodo() {
                         value={form.oppId || ''}
                         placeholder="— Select opportunity —"
                         options={OPP_ID_OPTIONS.map(o => ({ value: o, label: o }))}
-                        onChange={v => setForm(p => ({ ...p, oppId: v }))}
+                        onChange={v => setForm(p => ({
+                          ...p,
+                          oppId: v,
+                          // Opportunity Date is derived from the chosen
+                          // opportunity, not free-typed. Until the
+                          // /opportunities endpoint exposes each lead's real
+                          // date we stamp today's date as the default; the
+                          // field is read-only either way. Clearing the
+                          // opportunity clears the date (QA bug 29).
+                          oppDate: v ? TODAY_STR : '',
+                        }))}
                       />
                     </Field>
                     <Field label="Opportunity Date">
                       <MasterDatePicker
                         value={toInputDate(form.oppDate)}
-                        onChange={iso => setForm(p => ({ ...p, oppDate: fromInputDate(iso) }))}
-                        placeholder="dd-mm-yyyy"
+                        onChange={() => { /* derived — not user-editable */ }}
+                        placeholder="Auto-filled from opportunity"
+                        disabled
                       />
                     </Field>
                   </div>
@@ -1193,6 +1325,9 @@ export default function SalesTodo() {
                         value={toInputDate(form.setDate)}
                         onChange={iso => setForm(p => ({ ...p, setDate: fromInputDate(iso) }))}
                         placeholder="dd-mm-yyyy"
+                        // New reminders can't be dated in the past (QA bug 30).
+                        // Existing rows are exempt so historic data stays editable.
+                        minDate={form.editId ? undefined : toInputDate(TODAY_STR)}
                       />
                     </Field>
                     <Field label="TAT" required>
@@ -1269,17 +1404,26 @@ export default function SalesTodo() {
                           // mirrors the backend's ATTACH_MAX_KB (20 MB).
                           const MAX_BYTES = 20 * 1024 * 1024;
                           if (f && f.size > MAX_BYTES) {
-                            setFormError(`Attachment is too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Please upload a file under 20 MB.`);
+                            setFormErrors([`Attachment is too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Please upload a file under 20 MB.`]);
                             e.target.value = '';
                             return;
                           }
-                          setFormError('');
+                          setFormErrors([]);
                           setForm(p => ({ ...p, attachmentName: f ? f.name : '', attachmentFile: f || null }));
                         }}
                       />
                     </div>
                     <Field label="Remark">
-                      <textarea className="td-inp" rows={3} value={form.remark || ''} onChange={e => setForm(p => ({ ...p, remark: e.target.value }))} placeholder="Add a remark…" style={{ resize: 'none', minHeight: 72 }} />
+                      <textarea
+                        className="td-inp"
+                        rows={3}
+                        value={form.remark || ''}
+                        maxLength={2000}
+                        onChange={e => setForm(p => ({ ...p, remark: e.target.value }))}
+                        placeholder="Add a remark…"
+                        style={{ resize: 'none', minHeight: 72 }}
+                      />
+                      <span className="td-char-count">{(form.remark || '').length}/2000</span>
                     </Field>
                   </div>
                 </>
@@ -1290,17 +1434,38 @@ export default function SalesTodo() {
                     <button
                       type="button"
                       className={`td-mtg-toggle-btn ${meetingSub === 'virtual' ? 'active' : ''}`}
-                      onClick={() => { setMeetingSub('virtual'); setForm(p => ({ ...p, type: 'virtual', platform: '' })); }}
+                      onClick={() => { setMeetingSub('virtual'); setForm(p => ({ ...p, type: 'virtual', platform: '', platformOther: '' })); }}
                     >
                       <IconCam /> 💻 Virtual Meeting
                     </button>
                     <button
                       type="button"
                       className={`td-mtg-toggle-btn ${meetingSub === 'physical' ? 'active' : ''}`}
-                      onClick={() => { setMeetingSub('physical'); setForm(p => ({ ...p, type: 'physical', platform: '' })); }}
+                      onClick={() => { setMeetingSub('physical'); setForm(p => ({ ...p, type: 'physical', platform: '', platformOther: '' })); }}
                     >
                       <IconPin /> 🏢 Physical Meeting
                     </button>
+                  </div>
+
+                  {/* Opportunity picker — selecting an opportunity auto-fills
+                      its Opportunity Date (read-only). */}
+                  <div className="td-form-row">
+                    <Field label="Opportunity ID">
+                      <MasterSelect
+                        value={form.oppId || ''}
+                        placeholder="— Select opportunity —"
+                        options={oppPickerOptions}
+                        onChange={v => setForm(p => ({ ...p, oppId: v, oppDate: oppDateFor(v) }))}
+                      />
+                    </Field>
+                    <Field label="Opportunity Date">
+                      <input
+                        className="td-inp"
+                        value={form.oppDate || oppDateFor(form.oppId || '')}
+                        readOnly
+                        placeholder="Auto-filled from opportunity"
+                      />
+                    </Field>
                   </div>
 
                   <div className="td-form-row">
@@ -1308,36 +1473,63 @@ export default function SalesTodo() {
                       <input className="td-inp" value={form.customer || ''} onChange={e => setForm(p => ({ ...p, customer: e.target.value }))} placeholder="Customer name" />
                     </Field>
                     <Field label="Customer Email">
-                      <input className="td-inp" type="email" value={form.email || ''} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="Email address" />
+                      <input
+                        className="td-inp"
+                        type="email"
+                        maxLength={191}
+                        value={form.email || ''}
+                        onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                        placeholder="Email address"
+                      />
                     </Field>
                   </div>
                   <div className="td-form-row">
                     <Field label="Contact No" required>
-                      <input
-                        className="td-inp"
-                        type="tel"
-                        inputMode="tel"
-                        maxLength={20}
-                        value={form.contact || ''}
-                        onChange={e => {
-                          // Allow only digits, spaces, dashes and a leading +.
-                          // Strip everything else as the user types so the
-                          // field can never end up in an invalid state.
-                          const cleaned = e.target.value
-                            .replace(/[^\d\s+\-]/g, '')
-                            .replace(/(?!^)\+/g, '');
-                          setForm(p => ({ ...p, contact: cleaned }));
-                        }}
-                        placeholder="e.g. +91 98765 43210"
-                      />
+                      {/* Country code dropdown + local number. The two combine
+                          into a single stored contact on save (QA bug 34). */}
+                      <div className="td-contact-row">
+                        <select
+                          className="td-inp td-cc-select"
+                          value={form.countryCode || '+91'}
+                          onChange={e => setForm(p => ({ ...p, countryCode: e.target.value }))}
+                          aria-label="Country code"
+                        >
+                          {COUNTRY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <input
+                          className="td-inp"
+                          type="tel"
+                          inputMode="tel"
+                          maxLength={15}
+                          value={form.contact || ''}
+                          onChange={e => {
+                            // Local number only — digits, spaces and dashes.
+                            // The country code lives in the dropdown beside it.
+                            const cleaned = e.target.value.replace(/[^\d\s\-]/g, '');
+                            setForm(p => ({ ...p, contact: cleaned }));
+                          }}
+                          placeholder="e.g. 98765 43210"
+                        />
+                      </div>
                     </Field>
                     <Field label={meetingSub === 'physical' ? 'Meeting Type' : 'Platform'} required>
                       <MasterSelect
                         value={form.platform || ''}
                         placeholder={meetingSub === 'physical' ? 'Select type' : 'Select platform'}
                         options={(meetingSub === 'physical' ? PHYSICAL_PLATFORMS : VIRTUAL_PLATFORMS).map(p => ({ value: p, label: p }))}
-                        onChange={v => setForm(p => ({ ...p, platform: v }))}
+                        onChange={v => setForm(p => ({ ...p, platform: v, platformOther: v === 'Other' ? p.platformOther : '' }))}
                       />
+                      {/* Free-text capture when "Other" is picked (QA bug 34). */}
+                      {form.platform === 'Other' && (
+                        <input
+                          className="td-inp"
+                          style={{ marginTop: 6 }}
+                          value={form.platformOther || ''}
+                          maxLength={100}
+                          onChange={e => setForm(p => ({ ...p, platformOther: e.target.value }))}
+                          placeholder={meetingSub === 'physical' ? 'Specify meeting type…' : 'Specify platform…'}
+                        />
+                      )}
                     </Field>
                   </div>
                   {meetingSub === 'virtual' ? (
@@ -1377,7 +1569,20 @@ export default function SalesTodo() {
                   </Field>
                 </>
               )}
-              {formError && <div className="td-form-error">{formError}</div>}
+              {formErrors.length > 0 && (
+                <div className="td-form-error" role="alert">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 1 }}>
+                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  {formErrors.length === 1
+                    ? <span>{formErrors[0]}</span>
+                    : (
+                      <ul className="td-form-error-list">
+                        {formErrors.map((msg, i) => <li key={i}>{msg}</li>)}
+                      </ul>
+                    )}
+                </div>
+              )}
             </div>
             <div className="td-modal-footer">
               <div className="td-footer-hint">
@@ -1401,6 +1606,64 @@ export default function SalesTodo() {
                     </>
                   )}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reminder View (read-only) Modal ── */}
+      {viewReminder && (
+        <div className="td-overlay" onMouseDown={() => setViewReminder(null)}>
+          <div className="td-modal td-view-modal" onMouseDown={e => e.stopPropagation()}>
+            <div className="td-modal-header">
+              <div className="td-modal-header-left">
+                <div className="td-modal-header-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
+                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" />
+                  </svg>
+                </div>
+                <div>
+                  <div className="td-modal-title-row">
+                    <span className="td-modal-title">Reminder Details</span>
+                    <span className="td-modal-pill">REMINDER</span>
+                  </div>
+                  <div className="td-modal-sub">Read-only</div>
+                </div>
+              </div>
+              <button className="td-modal-close" onClick={() => setViewReminder(null)}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div className="td-modal-body">
+              <div className="td-view-grid">
+                <div className="td-view-item"><span className="td-view-label">Opportunity ID</span><span className="td-view-val">{viewReminder.oppId || '—'}</span></div>
+                <div className="td-view-item"><span className="td-view-label">Opportunity Date</span><span className="td-view-val">{viewReminder.oppDate || '—'}</span></div>
+                <div className="td-view-item td-view-item-full"><span className="td-view-label">Subject</span><span className="td-view-val">{viewReminder.subject || '—'}</span></div>
+                <div className="td-view-item"><span className="td-view-label">Set Date</span><span className="td-view-val">{viewReminder.setDate || '—'}</span></div>
+                <div className="td-view-item"><span className="td-view-label">TAT</span><span className="td-view-val">{viewReminder.tat || '—'}</span></div>
+                <div className="td-view-item"><span className="td-view-label">Status</span><span className="td-view-val"><StatusBadge status={viewReminder.status} /></span></div>
+                <div className="td-view-item"><span className="td-view-label">Attachment</span>
+                  <span className="td-view-val">
+                    {viewReminder.attachmentUrl
+                      ? <a href={viewReminder.attachmentUrl} target="_blank" rel="noreferrer" className="td-cell-link">{viewReminder.attachmentName || 'Open attachment'}</a>
+                      : '—'}
+                  </span>
+                </div>
+                <div className="td-view-item td-view-item-full"><span className="td-view-label">Remark</span><span className="td-view-val td-view-val-multiline">{viewReminder.remark || '—'}</span></div>
+              </div>
+            </div>
+            <div className="td-modal-footer">
+              <div className="td-footer-hint" />
+              <div className="td-footer-actions">
+                <button type="button" className="td-btn-cancel" onClick={() => setViewReminder(null)}>Close</button>
+                {canEdit && viewReminder.status !== 'Done' && (
+                  <button type="button" className="td-btn-save" onClick={() => { const r = viewReminder; setViewReminder(null); openEdit(r); }}>
+                    <IconEdit /> Edit
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1695,6 +1958,16 @@ function fromInputDate(d?: string) {
   return `${p[2]}/${p[1]}/${p[0]}`;
 }
 
+/* Split a stored contact string ("<code> <number>") into its dialing-code
+ * and local-number parts so the edit form can re-hydrate the country-code
+ * dropdown. Falls back to +91 when no leading code is present. */
+function splitContact(raw?: string): { code: string; local: string } {
+  const v = (raw || '').trim();
+  const m = /^(\+\d{1,4})[\s-]+(.+)$/.exec(v);
+  if (m) return { code: m[1], local: m[2].trim() };
+  return { code: '+91', local: v };
+}
+
 /* ─── TdSelect — themed dropdown that matches the rest of the form.
  *  Native <select> elements can't be styled when their options panel is
  *  open (browsers refuse to honour CSS on <option>), so we build a tiny
@@ -1832,6 +2105,8 @@ const IconVideo = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="no
 const IconClock = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>;
 const IconCam   = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>;
 const IconPin   = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>;
+const IconEye   = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>;
+const IconRevert = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></svg>;
 
 /* ─── Scoped CSS ─── */
 const SCOPED_CSS = `
@@ -2146,6 +2421,10 @@ const SCOPED_CSS = `
 }
 .td-root .td-ab-edit { background:#ccfbf1; color:#0d9488; }
 .td-root .td-ab-edit:hover { background:#0d9488; color:#fff; }
+.td-root .td-ab-view { background:#e0f2fe; color:#0369a1; }
+.td-root .td-ab-view:hover { background:#0369a1; color:#fff; }
+.td-root .td-ab-revert { background:#ede9fe; color:#7c3aed; }
+.td-root .td-ab-revert:hover { background:#7c3aed; color:#fff; }
 .td-root .td-ab-del  { background:#fff1f2; color:#f43f5e; }
 .td-root .td-ab-del:hover { background:#f43f5e; color:#fff; }
 .td-root .td-ab-join { background:#dcfce7; color:#15803d; }
@@ -2261,7 +2540,10 @@ const SCOPED_CSS = `
   width:26px; height:26px; border-radius:7px; border:none;
   background: rgba(255,255,255,.2); color:#fff; cursor:pointer;
   display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  transition: background .15s, transform .15s;
 }
+.td-modal-close:hover { background: rgba(255,255,255,.4); transform: rotate(90deg); }
+.td-modal-close:active { background: rgba(255,255,255,.55); }
 .td-modal-body {
   padding: 18px 22px 14px; background: #f0fdfa;
   overflow-y: auto; flex: 1;
@@ -2511,7 +2793,27 @@ const SCOPED_CSS = `
   background-position: right 10px center;
   padding-right: 28px;
 }
-.td-form-error { font-size:11.5px; color:#e11d48; margin-top:10px; }
+.td-form-error {
+  font-size:11.5px; color:#e11d48; margin-top:10px;
+  display:flex; align-items:flex-start; gap:6px;
+  background:#fff1f2; border:1px solid #fecdd3; border-radius:8px;
+  padding:8px 10px;
+}
+.td-form-error-list { margin:0; padding-left:16px; display:flex; flex-direction:column; gap:2px; }
+.td-form-error-list li { line-height:1.4; }
+.td-char-count { font-size:10px; color:#94a3b8; align-self:flex-end; margin-top:2px; }
+.td-contact-row { display:flex; gap:6px; align-items:stretch; }
+.td-cc-select { flex:0 0 78px; width:78px; padding-right:6px; background-position:right 6px center; }
+/* Read-only reminder "view" modal */
+.td-view-modal { max-width: 560px; }
+.td-view-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; }
+.td-view-item { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.td-view-item-full { grid-column:span 2; }
+.td-view-label { font-size:10px; font-weight:600; color:#64748b; letter-spacing:.04em; text-transform:uppercase; }
+.td-view-val { font-size:12.5px; color:#0f172a; font-weight:500; word-break:break-word; }
+.td-view-val-multiline { white-space:pre-wrap; }
+[data-bs-theme="dark"] .td-view-label { color:#94a3b8; }
+[data-bs-theme="dark"] .td-view-val { color:#e2e8f0; }
 
 .td-modal-footer {
   display:flex; align-items:center; justify-content:space-between;

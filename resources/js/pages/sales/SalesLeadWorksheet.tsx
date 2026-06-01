@@ -69,6 +69,9 @@ type Lead = {
   company: string;        // '—' for empty
   country: string;        // ISO-2 code
   status: LeadStatus;
+  /* WhatsApp communication status — drives the WhatsApp Status column
+   * badge (connected → Yes, not_connected → No, else Pending). */
+  whatsappStatus: string | null;
   /* Saved pipeline stage — clamped to 1..6 when the user clicks into the
    * matrix detail page so they resume where they left off. */
   leadStageId: number;
@@ -175,8 +178,17 @@ const mapServerToLead = (r: ServerLead): Lead => {
     company:  r.sender_company || '—',
     country:  r.sender_country_iso || '—',
     status:   r.disqualified ? 'disqualified' : 'qualified',
+    whatsappStatus: r.whatsapp_status ?? null,
     leadStageId: Math.min(6, Math.max(1, Number(r.lead_stage_id) || 1)),
   };
+};
+
+/* WhatsApp status column → { label, css-modifier }. 'connected' reads as
+ * Yes, 'not_connected' as No, everything else (incl. null) as Pending. */
+const waBadge = (s: string | null): { label: string; mod: string } => {
+  if (s === 'connected')      return { label: 'Yes', mod: 'lwp-wa-yes' };
+  if (s === 'not_connected')  return { label: 'No',  mod: 'lwp-wa-no' };
+  return { label: 'Pending', mod: 'lwp-wa-pending' };
 };
 
 export default function SalesLeadWorksheet() {
@@ -841,7 +853,9 @@ export default function SalesLeadWorksheet() {
                       </Tooltip>
                     </td>
                     <td>
-                      <span className="lwp-wa-badge"><span className="lwp-wa-dot" />Pending</span>
+                      {(() => { const wa = waBadge(l.whatsappStatus); return (
+                        <span className={`lwp-wa-badge ${wa.mod}`}><span className="lwp-wa-dot" />{wa.label}</span>
+                      ); })()}
                     </td>
                     <td>
                       <span
@@ -1561,6 +1575,10 @@ const SCOPED_CSS = `
   padding: 1px 6px; border-radius: 20px; font-size: 10px; font-weight: 600;
   background: #fef3c7; color: #92400e;
 }
+/* Yes = connected (green), No = not_connected (red), Pending = amber base. */
+.lwp-root .lwp-wa-yes     { background: #dcfce7; color: #15803d; }
+.lwp-root .lwp-wa-no      { background: #fee2e2; color: #b91c1c; }
+.lwp-root .lwp-wa-pending { background: #fef3c7; color: #92400e; }
 .lwp-root .lwp-wa-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity:.8; flex-shrink:0; }
 .lwp-root .lwp-asgn { display: flex; align-items: center; gap: 4px; overflow: hidden; }
 .lwp-root .lwp-asgn span {
@@ -2057,6 +2075,9 @@ const SCOPED_CSS = `
   background: rgba(245, 158, 11, 0.16);
   color: #fbbf24;
 }
+[data-bs-theme="dark"] .lwp-root .lwp-wa-yes { background: rgba(34, 197, 94, 0.18); color: #86efac; }
+[data-bs-theme="dark"] .lwp-root .lwp-wa-no  { background: rgba(239, 68, 68, 0.18); color: #fca5a5; }
+[data-bs-theme="dark"] .lwp-root .lwp-wa-pending { background: rgba(245, 158, 11, 0.16); color: #fbbf24; }
 [data-bs-theme="dark"] .lwp-root .lwp-pill-pending {
   background: rgba(245, 158, 11, 0.18); color: #fbbf24; border-color: rgba(245, 158, 11, 0.40);
 }
