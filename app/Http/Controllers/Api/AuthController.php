@@ -100,6 +100,10 @@ class AuthController extends Controller
             ]);
         }
 
+        // Onboarding gate — an employee whose onboarding isn't fully complete
+        // cannot enter the app yet (logs the blocked attempt for audit).
+        $this->assertOnboardingComplete($user, $request);
+
         $user->update([
             'last_login_at' => now(),
             'last_login_ip' => $request->ip(),
@@ -113,6 +117,61 @@ class AuthController extends Controller
         return response()->json([
             'token' => $token,
             'user' => $this->formatUser($user),
+        ]);
+    }
+
+    /**
+     * Block login for an employee whose onboarding isn't fully complete.
+     *
+     * Employees become login-capable as soon as HR adds them, but per the HR
+     * Core 3.5 rule they MUST NOT enter the app until all 6 onboarding stages
+     * are done (onboarding_stage_completed = 6 — "Final Verification &
+     * Activation"). Only users linked to an Employee row are affected; admins
+     * / branch users (no Employee.user_id link) sign in normally. The blocked
+     * attempt is written to activity_logs so HR has an audit trail.
+     */
+    private function assertOnboardingComplete(User $user, Request $request): void
+    {
+        $employee = \App\Models\Employee::where('user_id', $user->id)
+            ->first(['id', 'client_id', 'branch_id', 'onboarding_stage_completed']);
+
+        // No linked employee → not an onboarded-employee account; allow.
+        if (! $employee) {
+            return;
+        }
+
+        $stage = (int) ($employee->onboarding_stage_completed ?? 0);
+        if ($stage >= 6) {
+            return; // onboarding complete — login allowed
+        }
+
+        // Audit the blocked attempt. Never let a logging failure swallow the
+        // security gate, so wrap it defensively.
+        try {
+            \App\Models\ActivityLog::create([
+                'user_id'     => $user->id,
+                'client_id'   => $employee->client_id,
+                'branch_id'   => $employee->branch_id,
+                'action'      => 'login_blocked',
+                'module'      => 'auth',
+                'target_type' => \App\Models\Employee::class,
+                'target_id'   => $employee->id,
+                'description' => "Login blocked — onboarding incomplete (stage {$stage} of 6).",
+                'ip_address'  => $request->ip(),
+                'user_agent'  => $request->userAgent(),
+                'url'         => $request->fullUrl(),
+                'method'      => $request->method(),
+                'created_at'  => now(),
+            ]);
+        } catch (\Throwable $e) {
+            // swallow — auditing must not block the gate
+        }
+
+        throw ValidationException::withMessages([
+            'email' => [
+                'Your onboarding is not complete yet (Stage ' . $stage . ' of 6 done). '
+                . 'You can sign in once HR finishes your onboarding.',
+            ],
         ]);
     }
 
@@ -198,6 +257,9 @@ class AuthController extends Controller
                 'email' => ['Your branch is not active. Contact administrator.'],
             ]);
         }
+
+        // Same onboarding gate as password login — can't bypass via face.
+        $this->assertOnboardingComplete($user, $request);
 
         $user->update([
             'last_login_at' => now(),
@@ -288,6 +350,9 @@ class AuthController extends Controller
                 'message' => 'Your branch is not active. Contact administrator.',
             ], 403);
         }
+
+        // Same onboarding gate as password / face login — can't bypass via Google.
+        $this->assertOnboardingComplete($user, $request);
 
         // Clear the failure counter on success — mirrors password / face paths.
         Cache::forget($lockKey);

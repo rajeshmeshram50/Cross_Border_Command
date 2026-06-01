@@ -1,4 +1,4 @@
-import { Fragment, forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { Fragment, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
@@ -425,9 +425,9 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
     title: 'Document Management',
     subtitle: 'Identity, education, address & employment documents',
     checkpoints: [
-      { title: 'Aadhaar Card uploaded',                          desc: `Front & back, PDF or image, max ${DOC_MAX_MB} MB`,                                  badges: ['REQUIRED', 'ALL'] },
-      { title: 'PAN Card uploaded',                              desc: `PDF or image, max ${DOC_MAX_MB} MB`,                                                badges: ['REQUIRED', 'ALL'] },
-      { title: 'Passport-size Photograph uploaded',              desc: `JPG/PNG, max ${DOC_MAX_MB} MB, white background preferred`,                         badges: ['REQUIRED', 'ALL'] },
+      { title: 'Aadhaar Card uploaded',                          desc: `Front & back, PDF or image, max 2 MB`,                                  badges: ['REQUIRED', 'ALL'] },
+      { title: 'PAN Card uploaded',                              desc: `PDF or image, max 2 MB`,                                                badges: ['REQUIRED', 'ALL'] },
+      { title: 'Passport-size Photograph uploaded',              desc: `JPG/PNG, max 2 MB, white background preferred`,                         badges: ['REQUIRED', 'ALL'] },
       { title: 'Current & permanent address proof submitted',    desc: 'Utility bill or rent agreement (max 6 months old)',                               badges: ['REQUIRED', 'ALL'] },
       { title: '10th & 12th marksheets uploaded',                desc: 'SSC/HSC board certificates with marksheets',                                      badges: ['REQUIRED', 'ALL'] },
       { title: 'Graduation / Degree certificate uploaded',       desc: 'Official degree or provisional certificate',                                      badges: ['REQUIRED', 'ALL'] },
@@ -2709,31 +2709,31 @@ const STAGE2_CATEGORIES: DocCategory[] = [
   {
     id: 'identity', title: 'Identity Documents', icon: 'ri-id-card-line', tint: '#ece6ff', fg: '#5a3fd1',
     docs: [
-      { id: 'aadhaar',    name: 'Aadhaar Card (Front & Back)', sub: 'PDF or Image · max 5 MB', maxMb: 5, status: 'Pending' },
-      { id: 'pan',        name: 'PAN Card',                    sub: 'PDF or Image · max 5 MB', maxMb: 5, status: 'Pending' },
+      { id: 'aadhaar',    name: 'Aadhaar Card (Front & Back)', sub: 'PDF or Image · max 2 MB', maxMb: 2, status: 'Pending' },
+      { id: 'pan',        name: 'PAN Card',                    sub: 'PDF or Image · max 2 MB', maxMb: 2, status: 'Pending' },
       { id: 'photo',      name: 'Passport-size Photograph',    sub: 'JPG / PNG · max 2 MB',    maxMb: 2, status: 'Pending' },
     ],
   },
   {
     id: 'address', title: 'Address Proof', icon: 'ri-map-pin-line', tint: '#dceefe', fg: '#0c63b0',
     docs: [
-      { id: 'cur_addr',  name: 'Current Address Proof',   sub: 'Utility Bill / Rent Agreement — max 6 months old · 5 MB', maxMb: 5, status: 'Pending' },
-      { id: 'perm_addr', name: 'Permanent Address Proof', sub: 'Govt-issued address proof · max 5 MB',                    maxMb: 5, status: 'Pending' },
+      { id: 'cur_addr',  name: 'Current Address Proof',   sub: 'Utility Bill / Rent Agreement — max 6 months old · 2 MB', maxMb: 2, status: 'Pending' },
+      { id: 'perm_addr', name: 'Permanent Address Proof', sub: 'Govt-issued address proof · max 2 MB',                    maxMb: 2, status: 'Pending' },
     ],
   },
   {
     id: 'education', title: 'Education Documents', icon: 'ri-graduation-cap-line', tint: '#d3f0ee', fg: '#0a716a',
     docs: [
-      { id: 'ssc',  name: '10th Marksheet (SSC / Matriculation)', sub: 'Board certificate + mark sheet · max 5 MB',         maxMb: 5, status: 'Pending'  },
-      { id: 'hsc',  name: '12th Marksheet (HSC / Intermediate)',  sub: 'Board certificate + mark sheet · max 5 MB',         maxMb: 5, status: 'Pending'  },
-      { id: 'grad', name: 'Graduation Certificate / Degree',      sub: 'Official degree or provisional certificate · 5 MB', maxMb: 5, status: 'Pending'  },
-      { id: 'pg',   name: 'Post-graduation Certificate',          sub: 'If applicable · max 5 MB',                          maxMb: 5, status: 'Optional' },
+      { id: 'ssc',  name: '10th Marksheet (SSC / Matriculation)', sub: 'Board certificate + mark sheet · max 2 MB',         maxMb: 2, status: 'Pending'  },
+      { id: 'hsc',  name: '12th Marksheet (HSC / Intermediate)',  sub: 'Board certificate + mark sheet · max 2 MB',         maxMb: 2, status: 'Pending'  },
+      { id: 'grad', name: 'Graduation Certificate / Degree',      sub: 'Official degree or provisional certificate · 2 MB', maxMb: 2, status: 'Pending'  },
+      { id: 'pg',   name: 'Post-graduation Certificate',          sub: 'If applicable · max 2 MB',                          maxMb: 2, status: 'Optional' },
     ],
   },
   {
     id: 'bank', title: 'Bank Details', icon: 'ri-money-dollar-circle-line', tint: '#d6f4e3', fg: '#108548',
     docs: [
-      { id: 'cheque', name: 'Cancelled Cheque', sub: 'Cancelled cheque leaf with account number & IFSC clearly visible · max 5 MB', maxMb: 5, status: 'Pending' },
+      { id: 'cheque', name: 'Cancelled Cheque', sub: 'Cancelled cheque leaf with account number & IFSC clearly visible · max 2 MB', maxMb: 2, status: 'Pending' },
     ],
   },
 ];
@@ -6507,6 +6507,62 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
     }
   };
 
+  // ── Signing runs — the SAME workflow Exit Management uses. "Send" creates
+  // a row in hr_document_signatures with the template's configured signers;
+  // each signer then signs in-app sequentially. We list the runs for this
+  // employee so the row reflects the LIVE signing status (Awaiting / Signed)
+  // instead of the old hardcoded "Not Generated". No third-party — fully
+  // internal (Zoho is only for CLM trade agreements, not HR docs).
+  type RunSigner = { name?: string | null; role_name?: string | null; action?: string | null; status?: string };
+  type SignatureRun = {
+    id: number; code: string | null;
+    status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
+    template_id: number; signers: RunSigner[]; current_index: number;
+  };
+  const [runs, setRuns] = useState<SignatureRun[]>([]);
+  const [sendingId, setSendingId] = useState<number | null>(null);
+
+  const fetchRuns = useCallback(async () => {
+    if (!emp?.dbId) { setRuns([]); return; }
+    try {
+      const { data } = await api.get('/hr-document-signatures', { params: { employee_id: emp.dbId } });
+      setRuns(Array.isArray(data) ? data : []);
+    } catch {
+      setRuns([]);
+    }
+  }, [emp?.dbId]);
+  useEffect(() => { fetchRuns(); }, [fetchRuns]);
+
+  // Latest run per template (highest id wins) → drives each row's status pill.
+  const runByTemplateId = useMemo(() => {
+    const m = new Map<number, SignatureRun>();
+    for (const r of runs) {
+      const existing = m.get(r.template_id);
+      if (!existing || r.id > existing.id) m.set(r.template_id, r);
+    }
+    return m;
+  }, [runs]);
+
+  const signedCount = templates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
+
+  const handleSend = async (tpl: Tpl) => {
+    if (!emp?.dbId) return;
+    if (!window.confirm(`Send "${tpl.name}" for signing?\n\nThe configured signers will be notified to sign in sequence. Placeholders are locked with this employee's data at send time.`)) return;
+    setSendingId(tpl.id);
+    try {
+      const { data } = await api.post('/hr-document-signatures', {
+        template_id: tpl.id,
+        employee_id: emp.dbId,
+      });
+      toast.success('Sent for signing', `${data?.code || tpl.code || 'Document'} entered the signing workflow.`);
+      await fetchRuns();
+    } catch (err: any) {
+      toast.error('Could not send', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setSendingId(null);
+    }
+  };
+
   return (
     <>
       {/* Status legend */}
@@ -6522,7 +6578,7 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
         <div className="onb-pol-section-head">
           <span className="onb-pol-section-icon"><i className="ri-shield-check-line" /></span>
           <h6 className="onb-pol-section-title">Organizational Documents &amp; Agreements</h6>
-          <span className="onb-pol-section-pill">0 / {templates.length} signed</span>
+          <span className="onb-pol-section-pill">{signedCount} / {templates.length} signed</span>
         </div>
 
         {loading && (
@@ -6547,6 +6603,18 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
           const isExpanded = expandedId === tpl.id;
           const signers = parseSigners(tpl.signers);
           const toggle = () => setExpandedId(prev => prev === tpl.id ? null : tpl.id);
+          // Live signing run for this template (if Sent). Drives the status
+          // pill + whether Send is offered (can't send while a run is active).
+          const run = runByTemplateId.get(tpl.id) || null;
+          const isSending = sendingId === tpl.id;
+          const runActive = !!run && (run.status === 'Pending' || run.status === 'In Progress');
+          const canSend = tpl.status === 'Active' && !!emp.dbId && !isSending && !runActive;
+          // Status pill text/colour derived from the run.
+          const statusInfo = run?.status === 'Completed'  ? { label: 'Signed',      color: '#10b981' }
+                           : run?.status === 'Rejected'   ? { label: 'Rejected',    color: '#ef4444' }
+                           : run?.status === 'Cancelled'  ? { label: 'Cancelled',   color: '#878a99' }
+                           : runActive                    ? { label: 'Awaiting Sign', color: '#7c5cfc' }
+                           :                                 { label: 'Not Sent',    color: '#9ca3af' };
           return (
             /* Whole CARD is the toggle target — used to be just the
              * inner row, so clicking on the grey "Generate this document
@@ -6583,9 +6651,9 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                   </h6>
                   <p className="onb-pol-doc-sub">{tpl.doc_type || 'Document'}</p>
                 </div>
-                <span className="onb-pol-doc-status">
-                  <span className="dot" />
-                  Not Generated
+                <span className="onb-pol-doc-status" style={{ color: statusInfo.color }}>
+                  <span className="dot" style={{ background: statusInfo.color }} />
+                  {statusInfo.label}
                 </span>
                 <button
                   type="button"
@@ -6601,6 +6669,32 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                   style={{ opacity: canGenerate ? 1 : 0.6, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
                 >
                   <i className={isGenerating ? 'ri-loader-4-line' : 'ri-file-add-line'} /> {isGenerating ? 'Generating…' : 'Generate'}
+                </button>
+                {/* Send for signing — kicks off the signing workflow (same as
+                    Exit Stage 3). Hidden while a run is already active; once
+                    signed/rejected/cancelled it can be re-sent. */}
+                <button
+                  type="button"
+                  className="onb-pol-gen-btn"
+                  disabled={!canSend}
+                  onClick={(e) => { e.stopPropagation(); handleSend(tpl); }}
+                  title={
+                    isSending          ? 'Sending…'
+                    : runActive        ? 'Already sent — signing in progress'
+                    : tpl.status !== 'Active' ? 'Only Active templates can be sent'
+                    : !emp.dbId        ? 'Save the employee first'
+                    : 'Send through the configured signing workflow'
+                  }
+                  style={{
+                    marginLeft: 8,
+                    background: canSend ? 'linear-gradient(135deg,#7c3aed,#a855f7)' : '#e5e7eb',
+                    color: canSend ? '#fff' : '#9ca3af',
+                    border: 0,
+                    opacity: canSend ? 1 : 0.7,
+                    cursor: canSend ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  <i className={isSending ? 'ri-loader-4-line' : 'ri-send-plane-line'} /> {isSending ? 'Sending…' : (run && !runActive ? 'Resend' : 'Send')}
                 </button>
                 <span
                   className="onb-pol-doc-chev"
@@ -6623,25 +6717,47 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                   with each signer in 'Pending' and step 1 as the
                   active one — matches the "who will sign" affordance. */}
               {isExpanded && (
-                signers.length > 0 ? (
+                (run || signers.length > 0) ? (
                   <div className="ep-signing" style={{ margin: '4px 16px 12px' }}>
                     <div className="ep-signing-head">
                       <i className="ri-shield-check-line" />Signing Workflow
-                      <span className="ep-signing-pct">Not yet sent</span>
+                      <span className="ep-signing-pct">
+                        {run
+                          ? `${run.signers.filter(s => s.status === 'Done').length}/${run.signers.length} signed`
+                          : 'Not yet sent'}
+                      </span>
                     </div>
                     <div className="ep-signing-flow">
-                      {signers.map((s, i) => (
-                        <div key={i} className={`ep-signer${i === 0 ? ' is-active' : ''}`}>
+                      {/* When SENT → live per-signer status from the run; else
+                          → preview the template's configured signers. Same as
+                          Exit Management / Evidence Vault. */}
+                      {(run
+                        ? run.signers.map((s, i) => ({
+                            name:   s.name || s.role_name || `Signer ${i + 1}`,
+                            action: s.action,
+                            state:  s.status === 'Done' ? 'Completed'
+                                  : s.status === 'Rejected' ? 'Rejected'
+                                  : (i === run.current_index ? 'Awaiting' : 'Pending'),
+                            active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
+                          }))
+                        : signers.map((s, i) => ({
+                            name:   s.role_name || s.designation_name || `Signer ${i + 1}`,
+                            action: s.action,
+                            state:  'Pending' as string,
+                            active: i === 0,
+                          }))
+                      ).map((sg, i) => (
+                        <div key={i} className={`ep-signer${sg.active ? ' is-active' : ''}`}>
                           <span className="ep-signer-dot">{i + 1}</span>
                           <span className="ep-signer-name">
-                            {s.role_name || s.designation_name || `Signer ${i + 1}`}
-                            {s.action && (
+                            {sg.name}
+                            {sg.action && (
                               <span style={{ marginLeft: 6, fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
-                                ({s.action})
+                                ({sg.action})
                               </span>
                             )}
                           </span>
-                          <span className="ep-signer-state">Pending</span>
+                          <span className="ep-signer-state">{sg.state}</span>
                         </div>
                       ))}
                     </div>
@@ -6658,7 +6774,11 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
               {!isExpanded && (
                 <p className="onb-pol-doc-help">
                   <i className="ri-information-line" />
-                  Generate this document first to activate the signing tracker and notify signers.
+                  {runActive
+                    ? 'Sent — waiting on the signers. Expand to see who\'s next.'
+                    : run?.status === 'Completed'
+                    ? 'All signers have signed. ✓'
+                    : 'Click Send to start the signing workflow and notify the signers.'}
                 </p>
               )}
             </div>

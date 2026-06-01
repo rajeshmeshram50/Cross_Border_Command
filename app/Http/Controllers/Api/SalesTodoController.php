@@ -478,7 +478,10 @@ class SalesTodoController extends Controller
         $prefix = $type === SalesMeeting::TYPE_PHYSICAL ? 'P-' : 'M-';
 
         return DB::transaction(function () use ($prefix, $clientId, $branchId) {
-            $q = SalesMeeting::query()
+            // withTrashed() is essential: the unique index on
+            // (client_id, branch_id, code) still counts soft-deleted rows, so
+            // reusing a deleted meeting's code would violate it on insert.
+            $q = SalesMeeting::withTrashed()
                 ->where('code', 'like', $prefix . '%')
                 ->lockForUpdate();
             if ($clientId !== null) $q->where('client_id', $clientId);
@@ -502,7 +505,9 @@ class SalesTodoController extends Controller
     private function peekNextCode(string $type, ?int $clientId, ?int $branchId): string
     {
         $prefix = $type === SalesMeeting::TYPE_PHYSICAL ? 'P-' : 'M-';
-        $q = SalesMeeting::query()->where('code', 'like', $prefix . '%');
+        // Match allocateMeetingCode(): include trashed rows so the preview
+        // matches the code that will actually be assigned.
+        $q = SalesMeeting::withTrashed()->where('code', 'like', $prefix . '%');
         if ($clientId !== null) $q->where('client_id', $clientId);
         else                    $q->whereNull('client_id');
         if ($branchId !== null) $q->where('branch_id', $branchId);
