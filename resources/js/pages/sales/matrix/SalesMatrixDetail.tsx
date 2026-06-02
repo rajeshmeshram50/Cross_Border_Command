@@ -228,11 +228,15 @@ export default function SalesMatrixDetail() {
   }, [changeOwnerOpen]);
 
   const fetchCustomers = async () => {
-    if (customerOpts.length > 0) return;
+    // Always refetch (no length cache) so newly-added customers and any
+    // customers mapped elsewhere are always reflected.
     setCustomerLoading(true);
     try {
       type Row = EditCustomer & { db_id?: number };
-      const res = await api.get<{ data?: Row[] } | Row[]>('/customers');
+      // tab=all → every customer, INCLUDING those already attached to an
+      // opportunity: a single customer may be used across multiple
+      // opportunities, so the picker must not hide already-used customers.
+      const res = await api.get<{ data?: Row[] } | Row[]>('/customers', { params: { tab: 'all' } });
       const rows = Array.isArray(res.data) ? res.data : ((res.data as { data?: Row[] })?.data ?? []);
       const cache: Record<string, EditCustomer> = {};
       const opts: PickerOption[] = [];
@@ -508,12 +512,31 @@ export default function SalesMatrixDetail() {
     document.head.appendChild(link);
   }, []);
 
-  // Stage tracker click → navigate to the same opportunity at a new stage.
-  const goToStage = (n: StageNum) => navigate('sales.matrix_detail', { oppId, stage: n });
+  // Furthest stage the user is allowed to jump to via the tracker: the
+  // lead's stored stage (lead_stage_id, 1..6) — but never less than the
+  // stage currently being viewed, so a deep-linked URL still works. Steps
+  // beyond this are LOCKED: you can step back to completed stages but can't
+  // skip ahead to a stage you haven't reached yet (the stage must be
+  // completed first — advance with the stage's own "Save & Next").
+  const furthestStage = Math.max(stage, serverHeader.leadStageId ?? 0);
 
-  // Save & Next  /  Previous helpers
-  const goPrev = () => stage > 1 && goToStage((stage - 1) as StageNum);
-  const goNext = () => stage < 6 && goToStage((stage + 1) as StageNum);
+  // Unlocked navigation primitive — used by the stage components' own
+  // "Save & Next" / "Previous" buttons, which gate forward movement
+  // themselves (e.g. Stage 4 requires a customer + consignee before
+  // advancing). These must always navigate.
+  const navStage = (n: StageNum) => navigate('sales.matrix_detail', { oppId, stage: n });
+
+  // Stage tracker click → navigate to the same opportunity at a new stage.
+  // No-op for locked (not-yet-reached) future steps: you can step back to
+  // completed stages but can't skip ahead to one you haven't reached.
+  const goToStage = (n: StageNum) => {
+    if (n > furthestStage) return;
+    navStage(n);
+  };
+
+  // Save & Next  /  Previous helpers (bypass the tracker lock).
+  const goPrev = () => stage > 1 && navStage((stage - 1) as StageNum);
+  const goNext = () => stage < 6 && navStage((stage + 1) as StageNum);
 
   const goBack = () => navigate('sales.lead_worksheet');
 
@@ -651,11 +674,15 @@ export default function SalesMatrixDetail() {
         <div className="smd-stepper">
           {STAGES.map(s => {
             const state = s.n < stage ? 'done' : s.n === stage ? 'active' : 'idle';
+            // A step is locked when it's beyond the furthest stage reached —
+            // clicking it must not navigate (the stage isn't completed yet).
+            const locked = s.n > furthestStage;
             return (
               <div
                 key={s.n}
-                className={`smd-step smd-step-${state}`}
+                className={`smd-step smd-step-${state}${locked ? ' smd-step-locked' : ''}`}
                 onClick={() => goToStage(s.n)}
+                title={locked ? 'Complete the current stage to unlock this step' : undefined}
               >
                 <div className="smd-step-head">
                   <span className="smd-step-num">Step 0{s.n}</span>
@@ -921,8 +948,12 @@ export default function SalesMatrixDetail() {
         </aside>
         )}
 
-        {/* Middle — stage-specific content */}
+        {/* Middle — stage-specific content. The inner .smd-stg-scroll wrapper
+            scrolls internally when a stage's content (e.g. Stage 6's shipment
+            summary) is taller than the column, so the centre matches the side
+            panels' height instead of stretching the whole row. */}
         <section className="smd-stage-card">
+          <div className="smd-stg-scroll">
           <StageComponent
             header={header}
             stage={stage}
@@ -939,6 +970,7 @@ export default function SalesMatrixDetail() {
             // becomes enabled with live segment counts.
             onPiChange={() => setAgreementRefreshTick(t => t + 1)}
           />
+          </div>
         </section>
 
         {/* Right — Deal Execution & Decision Engine (or thin rail when collapsed) */}

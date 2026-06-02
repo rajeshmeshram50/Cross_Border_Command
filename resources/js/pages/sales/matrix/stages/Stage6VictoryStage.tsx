@@ -121,21 +121,33 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
   const [shipment, setShipment]     = useState<Shipment | null>(null);
   const [confetti, setConfetti]     = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  // KPI counts shown above the Create-Shipment CTA (figma): how many
+  // products / quotations / PIs the opportunity produced.
+  const [counts, setCounts] = useState<{ products: number; quotations: number; pis: number }>(
+    { products: 0, quotations: 0, pis: 0 });
 
   const fetchAll = async (silent = false) => {
     if (!leadId) return;
     if (!silent) setLoading(true);
-    const [leadRes, qtRes, piRes, shpRes] = await Promise.allSettled([
+    type Paged = { status: boolean; data: DealDoc[]; pagination?: { total: number } };
+    const [leadRes, qtRes, piRes, shpRes, prodRes] = await Promise.allSettled([
       api.get<{ status: boolean; data: LeadDetail }>(`/sales/leads/${leadId}`),
-      api.get<{ status: boolean; data: DealDoc[] }>('/sales/quotations',        { params: { opp_id: leadId, per_page: 1 } }),
-      api.get<{ status: boolean; data: DealDoc[] }>('/sales/proforma-invoices', { params: { opp_id: leadId, per_page: 1 } }),
+      api.get<Paged>('/sales/quotations',        { params: { opp_id: leadId, per_page: 1 } }),
+      api.get<Paged>('/sales/proforma-invoices', { params: { opp_id: leadId, per_page: 1 } }),
       api.get<{ status: boolean; data: Shipment | null }>(`/sales/leads/${leadId}/shipment-order`),
+      api.get<{ status: boolean; data: unknown[] }>(`/sales/leads/${leadId}/products`),
     ]);
     if (leadRes.status === 'fulfilled') setLead(leadRes.value.data.data);
     else toast.error('Load failed', 'Could not load the lead summary.');
     if (qtRes.status === 'fulfilled')   setLatestQt(qtRes.value.data.data?.[0] ?? null);
     if (piRes.status === 'fulfilled')   setLatestPi(piRes.value.data.data?.[0] ?? null);
     if (shpRes.status === 'fulfilled')  setShipment(shpRes.value.data.data ?? null);
+    // Counts: quotations / PIs come from pagination.total (the per_page:1
+    // call still reports the full total); products from the array length.
+    const qtTotal   = qtRes.status === 'fulfilled' ? (qtRes.value.data.pagination?.total ?? qtRes.value.data.data?.length ?? 0) : 0;
+    const piTotal   = piRes.status === 'fulfilled' ? (piRes.value.data.pagination?.total ?? piRes.value.data.data?.length ?? 0) : 0;
+    const prodTotal = prodRes.status === 'fulfilled' && Array.isArray(prodRes.value.data.data) ? prodRes.value.data.data.length : 0;
+    setCounts({ products: prodTotal, quotations: qtTotal, pis: piTotal });
     if (!silent) setLoading(false);
   };
 
@@ -152,6 +164,16 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
   }, [leadId]);
 
   const wonOn = useMemo(() => fmtDate(lead?.won_at ?? null), [lead?.won_at]);
+
+  // Days the opportunity took: from its open date to the won date (or
+  // today if it isn't stamped yet). Null when dates are unusable.
+  const days = useMemo(() => {
+    const start = header.oppDate ? new Date(header.oppDate) : null;
+    const end   = lead?.won_at ? new Date(lead.won_at) : new Date();
+    if (!start || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    const d = Math.floor((end.getTime() - start.getTime()) / 86_400_000);
+    return d >= 0 ? d : null;
+  }, [header.oppDate, lead?.won_at]);
 
   const dealValue = useMemo(() => {
     if (latestPi?.grand_total != null) return fmtMoney(latestPi.grand_total, latestPi.currency);
@@ -256,6 +278,19 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
               latestPi={latestPi}
               dealValue={dealValue}
             />
+
+            {/* KPI strip (figma) — quick deal-effort metrics shown before
+                the Shipment ID is created. */}
+            <div className="s6-kpis smd-fade-in">
+              <KpiTile tone="blue"    label="PRODUCTS"  value={counts.products}   loading={loading}
+                icon={<><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 8l2.5-5h13L21 8M12 3v5"/></>} />
+              <KpiTile tone="violet"  label="QUOTATIONS" value={counts.quotations} loading={loading}
+                icon={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></>} />
+              <KpiTile tone="green"   label="PI ISSUED"  value={counts.pis}        loading={loading}
+                icon={<><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3h6v3H9zM8 11h8M8 15h5"/></>} />
+              <KpiTile tone="amber"   label="DAYS"       value={days ?? '—'}       loading={loading}
+                icon={<><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>} />
+            </div>
           </>
         )}
 
@@ -427,6 +462,27 @@ function SummaryCell({ tone, label, children }: {
   );
 }
 
+/* ── KPI tile (pre-shipment metrics strip) ── */
+function KpiTile({ tone, label, value, icon, loading }: {
+  tone: 'blue' | 'violet' | 'green' | 'amber';
+  label: string;
+  value: number | string;
+  icon: React.ReactNode;
+  loading: boolean;
+}) {
+  return (
+    <div className={`s6-kpi s6-kpi-${tone}`}>
+      <div className="s6-kpi-ico">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          {icon}
+        </svg>
+      </div>
+      <div className="s6-kpi-num">{loading ? <span className="smd-skel" style={{ width: 28, height: 22, borderRadius: 6 }} /> : value}</div>
+      <div className="s6-kpi-label">{label}</div>
+    </div>
+  );
+}
+
 function Cell({ label, value, amber, blue, emerald }: {
   label: string; value: string;
   amber?: boolean; blue?: boolean; emerald?: boolean;
@@ -555,6 +611,33 @@ const STAGE6_CSS = `
 .s6-value { font-variant-numeric: tabular-nums; color: #047857; font-weight: 800; }
 .s6-status { display: inline-block; padding: 3px 11px; border-radius: 999px; background: #d1fae5; color: #047857; font-size: 10.5px; font-weight: 800; }
 
+/* ── KPI strip (pre-shipment metrics, figma) — 4 pastel tiles each with
+   an icon, a big number and an uppercase label. ── */
+.s6-kpis {
+  width: 100%; max-width: 760px; margin-top: 10px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+}
+.s6-kpi {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 12px 8px; border-radius: 12px;
+  border: 1.5px solid; background: #fff;
+}
+.s6-kpi-ico {
+  width: 34px; height: 34px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-bottom: 2px;
+}
+.s6-kpi-num { font-size: 22px; font-weight: 800; line-height: 1; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.s6-kpi-label { font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.s6-kpi-blue   { background: linear-gradient(180deg,#eff6ff,#fff); border-color: #bfdbfe; }
+.s6-kpi-blue   .s6-kpi-ico { background:#dbeafe; color:#2563eb; } .s6-kpi-blue   .s6-kpi-num { color:#1e40af; } .s6-kpi-blue   .s6-kpi-label { color:#2563eb; }
+.s6-kpi-violet { background: linear-gradient(180deg,#f5f3ff,#fff); border-color: #ddd6fe; }
+.s6-kpi-violet .s6-kpi-ico { background:#ede9fe; color:#7c3aed; } .s6-kpi-violet .s6-kpi-num { color:#5b21b6; } .s6-kpi-violet .s6-kpi-label { color:#7c3aed; }
+.s6-kpi-green  { background: linear-gradient(180deg,#ecfdf5,#fff); border-color: #a7f3d0; }
+.s6-kpi-green  .s6-kpi-ico { background:#d1fae5; color:#059669; } .s6-kpi-green  .s6-kpi-num { color:#047857; } .s6-kpi-green  .s6-kpi-label { color:#059669; }
+.s6-kpi-amber  { background: linear-gradient(180deg,#fffbeb,#fff); border-color: #fde68a; }
+.s6-kpi-amber  .s6-kpi-ico { background:#fef3c7; color:#d97706; } .s6-kpi-amber  .s6-kpi-num { color:#b45309; } .s6-kpi-amber  .s6-kpi-label { color:#d97706; }
+
 /* ── Post-shipment view ── */
 .s6-shp-wrap { width: 100%; display: flex; flex-direction: column; gap: 14px; padding: 4px 0; }
 
@@ -635,6 +718,15 @@ const STAGE6_CSS = `
 [data-bs-theme="dark"] .s6-muted { color: rgba(167, 139, 250, .45); }
 [data-bs-theme="dark"] .s6-value { color: #6ee7b7; }
 [data-bs-theme="dark"] .s6-status { background: rgba(16,185,129,.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .s6-kpi { background: #14102a; }
+[data-bs-theme="dark"] .s6-kpi-blue   { border-color: rgba(96,165,250,.35); }
+[data-bs-theme="dark"] .s6-kpi-blue   .s6-kpi-ico { background: rgba(96,165,250,.18); color:#93c5fd; } [data-bs-theme="dark"] .s6-kpi-blue   .s6-kpi-num { color:#93c5fd; } [data-bs-theme="dark"] .s6-kpi-blue   .s6-kpi-label { color:#93c5fd; }
+[data-bs-theme="dark"] .s6-kpi-violet { border-color: rgba(167,139,250,.35); }
+[data-bs-theme="dark"] .s6-kpi-violet .s6-kpi-ico { background: rgba(124,58,237,.20); color:#c4b5fd; } [data-bs-theme="dark"] .s6-kpi-violet .s6-kpi-num { color:#c4b5fd; } [data-bs-theme="dark"] .s6-kpi-violet .s6-kpi-label { color:#c4b5fd; }
+[data-bs-theme="dark"] .s6-kpi-green  { border-color: rgba(110,231,183,.35); }
+[data-bs-theme="dark"] .s6-kpi-green  .s6-kpi-ico { background: rgba(16,185,129,.18); color:#6ee7b7; } [data-bs-theme="dark"] .s6-kpi-green  .s6-kpi-num { color:#6ee7b7; } [data-bs-theme="dark"] .s6-kpi-green  .s6-kpi-label { color:#6ee7b7; }
+[data-bs-theme="dark"] .s6-kpi-amber  { border-color: rgba(252,191,36,.35); }
+[data-bs-theme="dark"] .s6-kpi-amber  .s6-kpi-ico { background: rgba(252,191,36,.18); color:#fcd34d; } [data-bs-theme="dark"] .s6-kpi-amber  .s6-kpi-num { color:#fde68a; } [data-bs-theme="dark"] .s6-kpi-amber  .s6-kpi-label { color:#fcd34d; }
 [data-bs-theme="dark"] .s6-success-banner { background: rgba(16,185,129,.14); border-color: rgba(110,231,183,.40); }
 [data-bs-theme="dark"] .s6-success-title { color: #6ee7b7; }
 [data-bs-theme="dark"] .s6-success-sub   { color: rgba(110,231,183,.75); }
@@ -651,9 +743,11 @@ const STAGE6_CSS = `
 @media (max-width: 900px) {
   .s6-summary-grid { grid-template-columns: 1fr 1fr; }
   .s6-shp-grid-3, .s6-shp-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .s6-kpis { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 520px) {
   .s6-summary-grid, .s6-shp-grid-3, .s6-shp-grid-4 { grid-template-columns: 1fr; }
+  .s6-kpis { grid-template-columns: repeat(2, 1fr); }
   .s6-title { font-size: 24px; }
 }
 `;
