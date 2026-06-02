@@ -287,6 +287,21 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
     const trimmed = name.trim();
     const next: Record<string, string> = {};
     if (!trimmed) next.name = 'Name is required';
+    /* Security + charset validation on the Segment Name. Previously only
+       "required" + duplicate were checked, so SQL/XSS payloads and symbol
+       soup were saved verbatim (QA bug: "Add Product >> add Segment").
+       These rules mirror MasterPage.validateForm so a segment added here,
+       from the product quick-add, or from the segments master all reject
+       the same input. */
+    else if (trimmed.length > 50) next.name = 'Segment Name must be 50 characters or fewer';
+    else if (/[<>]/.test(trimmed)) next.name = 'Segment Name cannot contain HTML characters (< or >)';
+    else if (/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i.test(trimmed)) {
+      next.name = 'Segment Name contains disallowed patterns (possible SQL/JS injection)';
+    }
+    else if (!/[A-Za-z0-9]/.test(trimmed)) next.name = 'Segment Name must contain meaningful text (letters or numbers, not only symbols)';
+    else if (!/^[A-Za-z0-9\s\-.,()&/'%]+$/.test(trimmed)) {
+      next.name = "Segment Name may only contain letters, numbers, spaces, and . , - ( ) & / ' %";
+    }
     else {
       const lower = trimmed.toLowerCase();
       if (existingNames.some(n => n.trim().toLowerCase() === lower)) {

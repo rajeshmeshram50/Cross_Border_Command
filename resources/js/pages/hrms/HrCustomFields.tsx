@@ -492,8 +492,11 @@ function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'info' 
     danger: { bg: '#fee2e2', fg: '#b91c1c' },
   };
   const c = palette[tone];
+  // data-tooltip uses the app's global styled tooltip (app.css) — an instant,
+  // themed bubble instead of the slow/unstyled native `title`. aria-label keeps
+  // it accessible for screen readers.
   return (
-    <button type="button" onClick={onClick} title={title}
+    <button type="button" onClick={onClick} data-tooltip={title} aria-label={title}
       style={{ width: 30, height: 30, borderRadius: 8, border: 0, background: c.bg, color: c.fg, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
       <i className={icon} />
     </button>

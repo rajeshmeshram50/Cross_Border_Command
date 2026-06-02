@@ -9,6 +9,7 @@ import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import AddProductModal from './AddProductModal';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import Tooltip from '../../components/ui/Tooltip';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Products
@@ -1080,9 +1081,11 @@ function ProductCard(props: {
         <div className="prd-card-hover">
           <button className="prd-card-hover-btn" onClick={(e) => { e.stopPropagation(); onAction('View'); }}>View</button>
           <button className="prd-card-hover-btn primary" onClick={(e) => { e.stopPropagation(); onAction('Edit'); }}>Edit</button>
-          <button className="prd-card-hover-btn danger" onClick={(e) => { e.stopPropagation(); onAction('Delete'); }}>
+          <Tooltip label="Delete product">
+          <button className="prd-card-hover-btn danger" aria-label="Delete product" onClick={(e) => { e.stopPropagation(); onAction('Delete'); }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
           </button>
+          </Tooltip>
         </div>
       </div>
 
@@ -1213,9 +1216,11 @@ function ProductRow(props: {
       <div className="prd-row-actions">
         <button className="prd-card-hover-btn" onClick={(e) => { e.stopPropagation(); onAction('View'); }}>View</button>
         <button className="prd-card-hover-btn primary" onClick={(e) => { e.stopPropagation(); onAction('Edit'); }}>Edit</button>
-        <button className="prd-card-hover-btn danger" onClick={(e) => { e.stopPropagation(); onAction('Delete'); }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
-        </button>
+        <Tooltip label="Delete product">
+          <button className="prd-card-hover-btn danger" aria-label="Delete product" onClick={(e) => { e.stopPropagation(); onAction('Delete'); }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
+          </button>
+        </Tooltip>
       </div>
     </div>
   );
@@ -1409,6 +1414,10 @@ const SCOPED_CSS = `
   color: #5b21b6 !important;
 }
 .prd-ms-wrap .master-select-wrap .master-select-toggle:hover {
+  /* Tint the background on hover (not just the border) so the dropdown
+     triggers give the same clear hover feedback as the Filters button —
+     QA reported the old border-only hover was not noticeable. */
+  background: #faf5ff !important;
   border-color: #c4b5fd !important;
 }
 .prd-ms-wrap .master-select-wrap.show .master-select-toggle {
@@ -1595,7 +1604,7 @@ const SCOPED_CSS = `
 }
 .prd-card-hover {
   position: absolute; inset: 0;
-  background: rgba(15, 23, 42, .55);
+  background: rgba(15, 23, 42, .62);
   display: flex; align-items: center; justify-content: center; gap: 8px;
   opacity: 0; transition: opacity .22s;
 }
@@ -2084,8 +2093,11 @@ const SCOPED_CSS = `
 
 /* Status tabs — dark */
 [data-bs-theme="dark"] .prd-status-tabs { background: #1a1430; border-color: #3b2a6b; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
-[data-bs-theme="dark"] .prd-status-tab { color: #a89fc7; }
-[data-bs-theme="dark"] .prd-status-tab:hover { background: #221852; color: #c4b5fd; }
+/* Was #a89fc7 — too dim against the dark tab strip, so the inactive (not
+   selected) Active / Inactive toggle text read as faded (QA report). Lift to
+   a light lavender for clear contrast; hover goes to full white. */
+[data-bs-theme="dark"] .prd-status-tab { color: #d8d0f0; }
+[data-bs-theme="dark"] .prd-status-tab:hover { background: #221852; color: #ffffff; }
 [data-bs-theme="dark"] .prd-status-count { background: #2a1d5c; color: #c4b5fd; }
 [data-bs-theme="dark"] .prd-shim-thumb,
 [data-bs-theme="dark"] .prd-shim-bar,
@@ -2113,7 +2125,10 @@ const SCOPED_CSS = `
   color: #d8c9ff !important;
 }
 [data-bs-theme="dark"] .prd-ms-wrap .master-select-wrap .master-select-toggle:hover {
-  border-color: #4c1d95 !important;
+  /* Match the Filters button's dark hover (bg + border) so all three
+     dropdown triggers show clear, consistent hover feedback in dark mode. */
+  background: #221852 !important;
+  border-color: #7c3aed !important;
 }
 [data-bs-theme="dark"] .prd-ms-wrap .master-select-wrap.show .master-select-toggle {
   background: #1a1430 !important;
@@ -2168,6 +2183,49 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .prd-card-reviews { color: #8579b5; }
 [data-bs-theme="dark"] .prd-card-hover-btn { background: rgba(26,20,48,.92); color: #ddd6fe; border-color: rgba(167,139,250,.35); }
 [data-bs-theme="dark"] .prd-card-hover-btn:hover { background: #1a1430; }
+/* Edit (primary) button — in dark mode it had a transparent border + no hover
+   feedback, so it read as flat / un-highlighted against the dark row. Give it
+   a soft violet border + glow at rest, a brighter gradient + ring on hover,
+   and a focus ring. Delete (danger) gets a translucent-red treatment instead
+   of the light-pink light-mode fill so it doesn't glare on the dark surface. */
+[data-bs-theme="dark"] .prd-card-hover-btn.primary {
+  border-color: rgba(167,139,250,.55);
+  box-shadow: 0 2px 8px rgba(124,58,237,.35);
+}
+[data-bs-theme="dark"] .prd-card-hover-btn.primary:hover {
+  background: linear-gradient(135deg, #a78bfa, #8b5cf6);
+  border-color: #c4b5fd;
+  box-shadow: 0 6px 16px rgba(124,58,237,.55), 0 0 0 2px rgba(167,139,250,.30);
+}
+[data-bs-theme="dark"] .prd-card-hover-btn.danger {
+  background: rgba(239,68,68,.16); color: #fca5a5; border-color: rgba(239,68,68,.45);
+}
+[data-bs-theme="dark"] .prd-card-hover-btn.danger:hover {
+  background: rgba(239,68,68,.28); border-color: #f87171; color: #fecaca;
+}
+[data-bs-theme="dark"] .prd-card-hover-btn:focus-visible {
+  outline: none; box-shadow: 0 0 0 3px rgba(167,139,250,.40);
+}
+/* GRID card hover-overlay buttons — the overlay sits on a dark scrim in BOTH
+   themes, so the dark-mode dark-fill buttons above rendered nearly invisible
+   (dark-on-dark) inside the card hover. Force a light, high-contrast
+   treatment here regardless of theme so View / Edit / Delete pop on the
+   scrim. (List-view rows keep the dark-mode dark buttons — only the hover
+   overlay is overridden.) */
+[data-bs-theme="dark"] .prd-card-hover .prd-card-hover-btn {
+  background: rgba(255,255,255,.96); color: #5b21b6; border-color: rgba(255,255,255,.5);
+}
+[data-bs-theme="dark"] .prd-card-hover .prd-card-hover-btn:hover { background: #fff; }
+[data-bs-theme="dark"] .prd-card-hover .prd-card-hover-btn.primary {
+  background: linear-gradient(135deg, #a78bfa, #7c3aed); color: #fff; border-color: transparent;
+  box-shadow: 0 3px 10px rgba(124,58,237,.5);
+}
+[data-bs-theme="dark"] .prd-card-hover .prd-card-hover-btn.danger {
+  background: #fff; color: #dc2626; border-color: #fecaca;
+}
+[data-bs-theme="dark"] .prd-card-hover .prd-card-hover-btn.danger:hover {
+  background: #fee2e2; border-color: #fca5a5;
+}
 
 /* New card pieces — dark */
 [data-bs-theme="dark"] .prd-card-title-link { color: #c4b5fd; }

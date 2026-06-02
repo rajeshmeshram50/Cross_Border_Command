@@ -280,27 +280,18 @@ export default function ProductView() {
               <div className="pv2-head-actions">
                 {/* Back-to-list pill — matches the master pages so the
                     visual language is consistent across detail screens. */}
+                {/* Uses the .pv2-back class (which already defines a proper
+                    hover: bg + border + colour + lift, plus a dark-mode
+                    variant) instead of inline styles with a JS hover whose
+                    8%->14% colour-mix delta was imperceptible — QA reported
+                    "no hover effect". rounded-pill keeps the pill shape. */}
                 <button
                   type="button"
                   onClick={() => navigate('/products')}
                   title="Back to Products"
-                  className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
-                  style={{
-                    height: 38,
-                    padding: '0 18px',
-                    background: 'color-mix(in srgb, #405189 8%, #ffffff)',
-                    color: '#405189',
-                    border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'background 0.18s ease',
-                    whiteSpace: 'nowrap',
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
+                  className="pv2-back rounded-pill"
                 >
-                  <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
+                  <i className="ri-arrow-left-line"></i>
                   Back to Products
                 </button>
                 <button className="pv2-edit" onClick={() => setEditOpen(true)}>
@@ -1021,6 +1012,19 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .pv2-price-val   { color: #c4b5fd; }
 [data-bs-theme="dark"] .pv2-edit { box-shadow: 0 4px 12px rgba(64,81,137,.45); }
 [data-bs-theme="dark"] .pv2-edit:hover { box-shadow: 0 6px 18px rgba(64,81,137,.55); }
+/* Back-to-Products — the base rule is background:#fff, which rendered as a
+   bright/near-white pill in dark mode. Give it the violet-dark surface used
+   across the product pages, with a clearly visible hover. */
+[data-bs-theme="dark"] .pv2-back {
+  background: #1a1430;
+  border-color: #3b2a6b;
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .pv2-back:hover {
+  background: #221852;
+  border-color: #4c1d95;
+  color: #ddd6fe;
+}
 [data-bs-theme="dark"] .pv2-info-grid { border-top-color: rgba(255,255,255,.08); }
 [data-bs-theme="dark"] .pv2-info-heading { color: #c4b5fd; }
 [data-bs-theme="dark"] .pv2-info-row .pv2-info-key { color: #adb5bd; font-weight: 500; }

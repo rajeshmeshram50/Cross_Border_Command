@@ -688,10 +688,15 @@ body > .dropdown-menu.master-select-menu,
 }
 .clm-btn-cancel {
   padding: 10px 24px; border-radius: 10px;
-  border: 1px solid #d1d5db;
+  /* Border lifted from #d1d5db to a stronger slate + a subtle shadow — the
+     old border was too faint to identify against the white modal surface in
+     light mode (QA report). Matches the .apm-btn-ghost / .avm-btn-ghost
+     cancel-button treatment in the product & vendor modals. */
+  border: 1.5px solid #94a3b8;
   background: #fff; font-family: inherit;
-  font-size: 13px; font-weight: 700; color: #475569;
+  font-size: 13px; font-weight: 700; color: #334155;
   cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15,23,42,.06);
   transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .22s ease;
 }
 .clm-btn-cancel:hover:not(:disabled) {

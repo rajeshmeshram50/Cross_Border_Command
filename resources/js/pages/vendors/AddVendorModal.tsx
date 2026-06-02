@@ -1604,9 +1604,13 @@ export default function AddVendorModal(props: {
      dedicated row in the modal. Picking a file flips the row's
      fileName so the action button switches to "Uploaded". */
   const attachFileToDd = (id: string, file: File) => {
+    const err = validateVendorUpload(file);
+    if (err) { toast.error(err.title, err.body); return; }
     setDdRows(prev => prev.map(r => r.id === id ? { ...r, file, fileName: file.name } : r));
   };
   const attachFileToLicense = (id: string, file: File) => {
+    const err = validateVendorUpload(file);
+    if (err) { toast.error(err.title, err.body); return; }
     setLicenseRows(prev => prev.map(r => r.id === id ? { ...r, file, fileName: file.name } : r));
   };
 
@@ -2603,10 +2607,10 @@ export default function AddVendorModal(props: {
                                         <span className="text-muted fs-13" title="Edit on the Vendor Identification tab">—</span>
                                       ) : (
                                         <>
-                                          <button type="button" className="btn btn-sm btn-soft-info" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} title="Edit">
+                                          <button type="button" className="btn btn-sm btn-soft-info" onClick={() => r.contactId !== undefined && openContactEdit(r.contactId)} data-tooltip="Edit" aria-label="Edit">
                                             <i className="ri-pencil-line" />
                                           </button>
-                                          <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} title="Remove">
+                                          <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} data-tooltip="Remove" aria-label="Remove">
                                             <i className="ri-delete-bin-line" />
                                           </button>
                                         </>
@@ -3412,6 +3416,26 @@ const FILE_ALLOWED_MIME_RE  = /^(image\/(jpeg|png)|application\/(pdf|msword|vnd\
  * lets them past the allow-list. Belt-and-suspenders behind the whitelist. */
 const FILE_DENY_EXT_RE = /\.(exe|bat|cmd|com|scr|msi|js|jse|vbs|vbe|ws[hf]?|ps1|psm1|jar|sh|app|apk|dll|deb|rpm|html?|svg|php|asp[x]?|jsp)$/i;
 
+/* Shared upload validator for the inline KYC / DD / Trade-Document / segment
+ * table upload buttons. FileChooser already runs these three checks inline,
+ * but the table <input type="file"> handlers bypassed them, so unsupported /
+ * oversized files (e.g. .exe) were accepted (QA bug). Returns a toast-ready
+ * { title, body } when the file must be rejected, or null when it's allowed. */
+function validateVendorUpload(file: File): { title: string; body: string } | null {
+  if (FILE_DENY_EXT_RE.test(file.name)) {
+    return { title: 'Unsafe file type blocked', body: `${file.name} — executable / script files are not allowed` };
+  }
+  const mimeOk = file.type && FILE_ALLOWED_MIME_RE.test(file.type);
+  const extOk  = FILE_ALLOWED_EXT_RE.test(file.name);
+  if (!mimeOk && !extOk) {
+    return { title: 'Unsupported file', body: `Only ${FILE_TYPE_LABEL} files are allowed` };
+  }
+  if (file.size > FILE_MAX_BYTES) {
+    return { title: 'File too large', body: `${file.name} exceeds the 2 MB limit` };
+  }
+  return null;
+}
+
 function FileChooser(props: {
   file: File | null;
   onPick: (f: File | null) => void;
@@ -3514,7 +3538,7 @@ function FileChooser(props: {
             target="_blank"
             rel="noopener noreferrer"
             className="avm-fc-action avm-fc-view"
-            title="View attachment"
+            data-tooltip="View attachment"
             aria-label="View attachment"
             onClick={(e) => e.stopPropagation()}
           >
@@ -3524,7 +3548,7 @@ function FileChooser(props: {
         <button
           type="button"
           className="avm-fc-action avm-fc-delete"
-          title="Delete attachment"
+          data-tooltip="Delete attachment"
           aria-label="Delete attachment"
           onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPick(null); }}
         >
@@ -3561,11 +3585,16 @@ function SupplierSegmentRefTable(props: {
   persistUpload: (refKey: string, file: File, docName: string) => Promise<void> | void;
 }) {
   const { title, tabKey, rows, uploads, setUploads, persistUpload } = props;
+  const toast = useToast();
   /* Show the blob URL immediately for instant feedback, then fire the
    * server upload — the persist callback swaps the blob URL for a
    * permanent attachment_url once the row lands in segment_doc_uploads. */
   const onPick = (refKey: string, docName: string, f: File | undefined) => {
     if (!f) return;
+    /* Reject unsupported / oversized files BEFORE the optimistic UI shows
+       the row as uploaded (QA: Company DD / Trade Document accepted .exe). */
+    const err = validateVendorUpload(f);
+    if (err) { toast.error(err.title, err.body); return; }
     setUploads(prev => {
       const existing = prev[refKey];
       if (existing?.url && existing.url.startsWith('blob:')) {
@@ -3613,21 +3642,21 @@ function SupplierSegmentRefTable(props: {
                 </td>
                 <td>
                   {!uploaded ? (
-                    <label className="btn btn-sm btn-soft-primary mb-0" title="Upload" style={{ cursor: 'pointer' }}>
+                    <label className="btn btn-sm btn-soft-primary mb-0" data-tooltip="Upload" aria-label="Upload" style={{ cursor: 'pointer' }}>
                       <i className="ri-upload-2-line" />
-                      <input type="file" hidden onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
+                      <input type="file" hidden accept={FILE_ACCEPT} onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
                     </label>
                   ) : (
                     <div className="hstack gap-1">
-                      <a href={uploaded.url} target="_blank" rel="noreferrer" className="btn btn-sm btn-soft-info" title={`View ${uploaded.name}`}>
+                      <a href={uploaded.url} target="_blank" rel="noreferrer" className="btn btn-sm btn-soft-info" data-tooltip="View" aria-label={`View ${uploaded.name}`}>
                         <i className="ri-eye-line" />
                       </a>
-                      <a href={uploaded.url} download={uploaded.name} className="btn btn-sm btn-soft-secondary" title={`Download ${uploaded.name}`}>
+                      <a href={uploaded.url} download={uploaded.name} className="btn btn-sm btn-soft-secondary" data-tooltip="Download" aria-label={`Download ${uploaded.name}`}>
                         <i className="ri-download-2-line" />
                       </a>
-                      <label className="btn btn-sm btn-soft-primary mb-0" title="Re-upload (replace file)" style={{ cursor: 'pointer' }}>
+                      <label className="btn btn-sm btn-soft-primary mb-0" data-tooltip="Re-upload" aria-label="Re-upload (replace file)" style={{ cursor: 'pointer' }}>
                         <i className="ri-refresh-line" />
-                        <input type="file" hidden onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
+                        <input type="file" hidden accept={FILE_ACCEPT} onChange={e => onPick(refKey, r.name, e.target.files?.[0])} />
                       </label>
                     </div>
                   )}
@@ -3686,7 +3715,7 @@ function AttachmentCell(props: {
           rel="noopener noreferrer"
           className="btn btn-sm btn-soft-primary p-0 d-inline-flex align-items-center justify-content-center"
           style={{ width: 26, height: 26 }}
-          title="View attachment"
+          data-tooltip="View attachment"
           aria-label="View attachment"
         >
           <i className="ri-eye-line" style={{ fontSize: 13 }} />
@@ -3698,7 +3727,7 @@ function AttachmentCell(props: {
           onClick={onClear}
           className="btn btn-sm btn-soft-danger p-0 d-inline-flex align-items-center justify-content-center"
           style={{ width: 26, height: 26 }}
-          title="Delete attachment"
+          data-tooltip="Delete attachment"
           aria-label="Delete attachment"
         >
           <i className="ri-delete-bin-line" style={{ fontSize: 13 }} />
@@ -3760,16 +3789,16 @@ function DdTable(props: {
                         instead of going through the Add modal, since their
                         row metadata is already populated. */}
                     {props.onAttach && (
-                      <label className="btn btn-sm btn-soft-primary mb-0" title="Upload">
+                      <label className="btn btn-sm btn-soft-primary mb-0" data-tooltip="Upload" aria-label="Upload">
                         <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
-                        <input type="file" hidden onChange={e => {
+                        <input type="file" hidden accept={FILE_ACCEPT} onChange={e => {
                           const f = e.target.files?.[0];
                           if (f && props.onAttach) props.onAttach(r.id, f);
                         }} />
                       </label>
                     )}
                     {props.onRemove && !r.mandatory && (
-                      <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} title="Remove">
+                      <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
                         <i className="ri-delete-bin-line" />
                       </button>
                     )}
@@ -3834,7 +3863,7 @@ function OwnerKycTable(props: {
               </td>
               {!props.readOnly && (
                 <td>
-                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} title="Remove">
+                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
                     <i className="ri-delete-bin-line" />
                   </button>
                 </td>
@@ -3896,7 +3925,7 @@ function TradeLicenseTable(props: {
                   <td>
                     <div className="hstack gap-1">
                       {props.onAttach && (
-                        <label className="btn btn-sm btn-soft-primary mb-0" title="Upload">
+                        <label className="btn btn-sm btn-soft-primary mb-0" data-tooltip="Upload" aria-label="Upload">
                           <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
                           <input type="file" hidden onChange={e => {
                             const f = e.target.files?.[0];
@@ -3905,7 +3934,7 @@ function TradeLicenseTable(props: {
                         </label>
                       )}
                       {props.onRemove && !isSeed && (
-                        <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} title="Remove">
+                        <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
                           <i className="ri-delete-bin-line" />
                         </button>
                       )}
@@ -3957,7 +3986,7 @@ function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; on
                 />
               </td>
               <td>
-                <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} title="Remove">
+                <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
                   <i className="ri-delete-bin-line" />
                 </button>
               </td>
@@ -3999,7 +4028,7 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[]; onRemove?: (id: strin
               <td>{r.prevNonGst2aInvoice || '—'}</td>
               <td>{r.redFlags || '—'}</td>
               <td>
-                <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} title="Remove">
+                <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
                   <i className="ri-delete-bin-line" />
                 </button>
               </td>
@@ -4137,7 +4166,8 @@ function TradeDocsTable(props: {
                         rel={r.signedUrl ? 'noreferrer' : undefined}
                         onClick={e => { if (!canView) e.preventDefault(); }}
                         className="btn btn-sm btn-soft-secondary"
-                        title={r.signedUrl ? 'View signed document' : 'View'}
+                        data-tooltip={r.signedUrl ? 'View signed document' : 'View'}
+                        aria-label={r.signedUrl ? 'View signed document' : 'View'}
                         style={{ opacity: canView ? 1 : 0.5, pointerEvents: canView ? 'auto' : 'none' }}
                       >
                         <i className="ri-eye-line" />
@@ -4147,7 +4177,8 @@ function TradeDocsTable(props: {
                         download={r.signedUrl ? '' : undefined}
                         onClick={e => { if (!r.signedUrl) e.preventDefault(); }}
                         className="btn btn-sm btn-soft-secondary"
-                        title={r.signedUrl ? 'Download signed document' : 'Download'}
+                        data-tooltip={r.signedUrl ? 'Download signed document' : 'Download'}
+                        aria-label={r.signedUrl ? 'Download signed document' : 'Download'}
                         style={{ opacity: r.signedUrl ? 1 : 0.5, pointerEvents: r.signedUrl ? 'auto' : 'none' }}
                       >
                         <i className="ri-download-2-line" />
@@ -4166,7 +4197,8 @@ function TradeDocsTable(props: {
                           rel="noreferrer"
                           download=""
                           className="btn btn-sm btn-soft-info"
-                          title="Download Certificate of Completion"
+                          data-tooltip="Download Certificate of Completion"
+                          aria-label="Download Certificate of Completion"
                           style={{ pointerEvents: 'auto' }}
                         >
                           <i className="ri-award-line" />
@@ -4232,11 +4264,11 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td>
                 <div className="hstack gap-1">
                   {props.onEdit && (
-                    <button type="button" className="btn btn-sm btn-soft-info" onClick={() => props.onEdit?.(r.id)} title="Edit">
+                    <button type="button" className="btn btn-sm btn-soft-info" onClick={() => props.onEdit?.(r.id)} data-tooltip="Edit product" aria-label="Edit product">
                       <i className="ri-pencil-line" />
                     </button>
                   )}
-                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove(r.id)} title="Remove">
+                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove(r.id)} data-tooltip="Remove product" aria-label="Remove product">
                     <i className="ri-delete-bin-line" />
                   </button>
                 </div>
@@ -4314,10 +4346,10 @@ function DocTable(props: {
                   )}
                   <td>
                     <div className="hstack gap-1">
-                      <button type="button" className={`btn btn-sm ${done ? 'btn-soft-success' : 'btn-soft-primary'}`} onClick={() => props.onUpload(r.code)} title={done ? 'Uploaded' : 'Upload'}>
+                      <button type="button" className={`btn btn-sm ${done ? 'btn-soft-success' : 'btn-soft-primary'}`} onClick={() => props.onUpload(r.code)} data-tooltip={done ? 'Uploaded' : 'Upload'} aria-label={done ? 'Uploaded' : 'Upload'}>
                         <i className={done ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
                       </button>
-                      <button type="button" className="btn btn-sm btn-soft-secondary" title="Download" disabled={!done}>
+                      <button type="button" className="btn btn-sm btn-soft-secondary" data-tooltip="Download" aria-label="Download" disabled={!done}>
                         <i className="ri-download-2-line" />
                       </button>
                     </div>
@@ -5503,14 +5535,20 @@ const SCOPED_CSS = `
 .avm-modal .table tbody td {
   font-size: 13px;
   font-weight: 400;
-  color: #495057;
+  /* Theme-adaptive — was hardcoded #495057 (dark text), which on the modal's
+     dark surface in dark mode rendered the KYC cell text nearly invisible.
+     var(--vz-body-color) is dark in light mode and light in dark mode, so the
+     cells stay readable in BOTH without depending on theme-prefixed overrides. */
+  color: var(--vz-body-color, #495057);
   padding: 10px 12px;
   vertical-align: middle;
   border-top: 1px solid #f3f4f6;
 }
 .avm-modal .table tbody td strong {
   font-weight: 600;
-  color: #1e293b;
+  /* was #1e293b (near-black) — invisible on the dark modal. Emphasis colour
+     adapts per theme (near-black in light, near-white in dark). */
+  color: var(--vz-emphasis-color, var(--vz-heading-color, #1e293b));
 }
 
 /* Action buttons inside vendor-modal tables — 30x30 outline pills,
@@ -5714,7 +5752,13 @@ const SCOPED_CSS = `
 .avm-kyc-table td .avm-pill,
 .avm-kyc-table td .btn,
 .avm-kyc-table td .hstack,
-.avm-kyc-table td .font-monospace { white-space: nowrap; }
+.avm-kyc-table td .font-monospace,
+/* td.font-monospace — the numeric columns (PRICE, GST %, GST AMT, TOTAL) put
+   the class on the <td> itself, not a child, so the descendant selector above
+   missed them and the cells inherited word-break/overflow-wrap. In a narrow
+   column that broke "12.00%" so the % dropped to a second line (QA report).
+   Matching the td directly keeps the value + % on one line. */
+.avm-kyc-table td.font-monospace { white-space: nowrap; }
 /* Action / SR / status columns stay narrow so they don't fight the
  * text columns for horizontal space. The last column is action icons
  * across every KYC table; first is the row number. */
@@ -5723,6 +5767,38 @@ const SCOPED_CSS = `
   white-space: nowrap;
   max-width: none;
   width: 1%;
+}
+/* Dark-mode KYC tables — cell text + row hover. The DD document name and
+   plain cells rendered too dim on the modal's dark surface, and the inherited
+   (Velzon/Bootstrap) row-hover background washed them out to near-invisible.
+   Brighten the cell text and pin a subtle violet hover wash with readable
+   white text. Pills / badges / buttons keep their own colours (they set
+   their own colour on their own element, so the td colour does not override
+   them); muted secondary cells also keep their muted tone. */
+[data-bs-theme="dark"] .avm-kyc-table {
+  --bs-table-color: #e5e7eb;
+  --bs-table-bg: transparent;
+  --bs-table-border-color: rgba(255,255,255,.10);
+  color: #e5e7eb;
+}
+/* Force readable cell text (the inherited table colour was rendering as a
+   faint purple on the dark gradient). !important + the strong override so the
+   DD document name and plain cells are clearly visible. */
+[data-bs-theme="dark"] .avm-kyc-table tbody td {
+  color: #e5e7eb !important;
+}
+[data-bs-theme="dark"] .avm-kyc-table tbody td strong {
+  color: #f5f3ff !important;
+}
+/* Secondary / muted cells (issuing authority, expiry, "Not uploaded") — keep
+   them dimmer than the main text but still legible. */
+[data-bs-theme="dark"] .avm-kyc-table tbody td .text-muted,
+[data-bs-theme="dark"] .avm-kyc-table tbody td .avm-prev-v {
+  color: rgba(255,255,255,.62) !important;
+}
+[data-bs-theme="dark"] .avm-kyc-table tbody tr:hover td {
+  background-color: rgba(124,92,252,.16) !important;
+  color: #ffffff !important;
 }
 
 @media (max-width: 880px) {
@@ -5780,6 +5856,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-empty { background: #110c25; border-color: #3b2a6b; color: #6d6391; }
 [data-bs-theme="dark"] .avm-foot { background: #14102a; border-top-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-btn-ghost { background: #1a1430; border-color: #3b2a6b; color: #c4b5fd; }
+/* Dark-mode hover — without this the light .avm-btn-ghost:hover rule is
+   overridden by the dark base rule above (equal specificity, defined later),
+   so the Cancel button showed no hover feedback in dark mode (QA report). */
+[data-bs-theme="dark"] .avm-btn-ghost:hover { background: #221852; border-color: #4c1d95; color: #ede9fe; }
 [data-bs-theme="dark"] .avm-btn-outline { background: #1a1430; border-color: #4c1d95; color: #c4b5fd; }
 [data-bs-theme="dark"] .avm-product-row { background: #110c25; border-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-product-row.on { background: #14241a; border-color: #14532d; }
@@ -6057,4 +6137,49 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-pill-danger  { background: #3a0e0e; color: #f87171; border-color: #b91c1c; }
 [data-bs-theme="dark"] .avm-pill-primary { background: #0f1e3a; color: #60a5fa; border-color: #1d4ed8; }
 [data-bs-theme="dark"] .avm-pill-muted   { background: rgba(255,255,255,0.06); color: #cbd5e1; border-color: rgba(255,255,255,0.14); }
+
+/* ════════════════════════════════════════════════════════════════════════
+ * Dark mode — completeness pass across every stage of the Supplier wizard.
+ * Each element below either carried a hardcoded light value with no dark
+ * counterpart, or an inline style on the element that the earlier dark
+ * rules could not reach. Every override is gated on [data-bs-theme="dark"]
+ * so light mode is byte-for-byte unchanged.
+ * ════════════════════════════════════════════════════════════════════ */
+
+/* The segment / DD reference rows carry an inline background:#fafafa on the
+   <tr> (near-white). In dark mode that washed the whole row to near-white
+   beneath the light cell text, leaving the document names unreadable.
+   Neutralise it so the row inherits the dark table surface; !important is
+   required to beat the inline style, which otherwise wins on specificity. */
+[data-bs-theme="dark"] .avm-kyc-table tbody tr { background-color: transparent !important; }
+
+/* File links inside the KYC / segment tables were hardcoded inline as teal
+   (#0d9488) or indigo (#4338ca) — both too dim against the dark surface.
+   Substring matching on the inline colour lifts each to its lighter
+   counterpart without touching any other anchor. */
+[data-bs-theme="dark"] .avm-modal a[style*="0d9488"] { color: #5eead4 !important; }
+[data-bs-theme="dark"] .avm-modal a[style*="4338ca"] { color: #c4b5fd !important; }
+
+/* Doc-table banners (Trade Document Management, Steps 3 & 4) were light
+   amber / teal panels with no dark variant — bright blocks on the dark body. */
+[data-bs-theme="dark"] .avm-doctable-banner.tone-amber {
+  background: linear-gradient(135deg, #3a2a08, #2a2105); color: #fcd34d; border-color: #78521a;
+}
+[data-bs-theme="dark"] .avm-doctable-banner.tone-teal {
+  background: linear-gradient(135deg, #0c2522, #08201d); color: #5eead4; border-color: #155e56;
+}
+[data-bs-theme="dark"] .avm-doctable-banner-sub { color: #fbbf24; }
+
+/* Purple section tone — the only section colour left without a dark border. */
+[data-bs-theme="dark"] .avm-section-purple { border-color: #3b2a6b; border-left-color: #818cf8; }
+
+/* Extra-contact card: the navy heading + light-red remove button were tuned
+   for the white card and disappeared / glared on the dark card surface. */
+[data-bs-theme="dark"] .avm-extra-head   { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-extra-remove { background: #3a0e0e; border-color: #b91c1c; color: #fca5a5; }
+
+/* Remaining navy (#405189) accents that dim out against the dark surface. */
+[data-bs-theme="dark"] .avm-product-code     { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-filechooser-icon { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-tab:hover        { color: #c4b5fd; }
 `;
