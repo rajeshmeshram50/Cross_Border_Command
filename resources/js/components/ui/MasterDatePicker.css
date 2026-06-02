@@ -42,6 +42,26 @@
     opacity: 0.85;
     box-shadow: none;
   }
+  /* Dark mode — the toggle's `--vz-card-bg` resolves to white in some
+     panels (e.g. the Sales Matrix Deal column, whose other inputs use
+     the darker `--vz-input-bg`), so the date box rendered as a bright
+     white strip. Force a dark surface + light text to match its siblings. */
+  [data-bs-theme="dark"] .master-datepicker-toggle,
+  [data-layout-mode="dark"] .master-datepicker-toggle {
+    background: var(--vz-input-bg, #1a1d21);
+    color: var(--vz-body-color, #ced4da);
+    border-color: var(--vz-border-color, rgba(255, 255, 255, 0.12));
+    box-shadow: none;
+  }
+  [data-bs-theme="dark"] .master-datepicker-value,
+  [data-layout-mode="dark"] .master-datepicker-value {
+    color: var(--vz-heading-color, #e9ecef);
+  }
+  [data-bs-theme="dark"] .master-datepicker-placeholder,
+  [data-layout-mode="dark"] .master-datepicker-placeholder {
+    color: rgba(255, 255, 255, 0.45);
+  }
+
   /* Extra left padding when inside a master-field wrapper with a prefix icon */
   .master-field .master-datepicker-toggle { padding-left: 36px; }
   /* Hide the internal right-side calendar icon when already shown as prefix */
