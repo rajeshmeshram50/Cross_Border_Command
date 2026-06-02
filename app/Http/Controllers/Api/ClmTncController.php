@@ -93,10 +93,12 @@ class ClmTncController extends Controller
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
         $data = $request->validate([
-            'segment'  => 'nullable|string|max:64',
-            'category' => 'required|string|max:255',
-            'party'    => 'required|string|max:255',
-            'content'  => 'nullable|string',
+            // segment now holds a CSV (one for "highly", many for "less").
+            'segment'    => 'nullable|string|max:1024',
+            'regulatory' => 'nullable|in:highly,less',
+            'category'   => 'required|string|max:255',
+            'party'      => 'required|string|max:255',
+            'content'    => 'nullable|string',
         ]);
 
         $row = DB::transaction(function () use ($user, $data) {
@@ -106,6 +108,7 @@ class ClmTncController extends Controller
                 'client_id'  => $user->client_id,
                 'code'       => $code,
                 'segment'    => $data['segment'] ?? 'General',
+                'regulatory' => $data['regulatory'] ?? 'highly',
                 'category'   => trim($data['category']),
                 'party'      => trim($data['party']),
                 'content'    => $data['content'] ?? null,
@@ -122,10 +125,11 @@ class ClmTncController extends Controller
         $row  = ClmTncLibrary::where('client_id', $user->client_id)->findOrFail($id);
 
         $data = $request->validate([
-            'segment'  => 'nullable|string|max:64',
-            'category' => 'sometimes|required|string|max:255',
-            'party'    => 'sometimes|required|string|max:255',
-            'content'  => 'nullable|string',
+            'segment'    => 'nullable|string|max:1024',
+            'regulatory' => 'nullable|in:highly,less',
+            'category'   => 'sometimes|required|string|max:255',
+            'party'      => 'sometimes|required|string|max:255',
+            'content'    => 'nullable|string',
         ]);
         $data['updated_by'] = $user->id;
         $row->update($data);

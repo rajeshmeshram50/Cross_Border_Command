@@ -243,16 +243,38 @@
 
         $currentPageNumber = 1;
 
-        // Resolve logo once — prefer the issuing Branch's uploaded logo
-        // (passed in as a base64 data URI on $companyDetails->logo_data),
-        // fall back to the bundled IGC default for branches that haven't
-        // uploaded one yet.
+        // Resolve logo once — the issuing Branch's uploaded logo (passed in
+        // as a base64 data URI on $companyDetails->logo_data). When the
+        // branch hasn't uploaded one, DON'T fall back to a bundled default;
+        // instead build an initials monogram from the org/branch name
+        // (e.g. "Inorbvict Health Care" → "IHC") in the brand color.
         $logoData = $companyDetails->logo_data ?? null;
+        $logoFallbackHtml = '';
         if (!$logoData) {
-            $fallbackPath = public_path('images/igc-logo.png');
-            $logoData = file_exists($fallbackPath)
-                ? 'data:image/png;base64,' . base64_encode(file_get_contents($fallbackPath))
-                : null;
+            $skipWords = ['pvt','ltd','private','limited','llp','inc','co','company','and','the','of'];
+            $initials  = '';
+            foreach (preg_split('/[\s\-_.,&]+/', trim((string) ($companyDetails->name ?? ''))) as $word) {
+                $clean = preg_replace('/[^A-Za-z0-9]/', '', (string) $word);
+                if ($clean === '' || in_array(strtolower($clean), $skipWords, true)) continue;
+                $initials .= strtoupper($clean[0]);
+                if (strlen($initials) >= 4) break;
+            }
+            // Single-word (or empty) names: a lone initial looks sparse, so
+            // use the first 3 letters of the name instead (e.g. "ACME" → "ACM").
+            if (strlen($initials) < 2) {
+                $bare = preg_replace('/[^A-Za-z0-9]/', '', (string) ($companyDetails->name ?? ''));
+                $initials = strtoupper(substr($bare, 0, 3)) ?: ($initials ?: 'NA');
+            }
+            $logoBrand = $companyDetails->primary_color ?? '#7CB342';
+            // Rendered as a single-cell table so DomPDF reliably centers the
+            // initials both ways inside the brand-colored monogram tile.
+            $logoFallbackHtml =
+                '<table style="border-collapse:collapse;"><tr>'
+              . '<td style="width:74px; height:74px; background:' . $logoBrand . '; border-radius:12px; '
+              . 'text-align:center; vertical-align:middle; color:#ffffff; font-size:26px; '
+              . 'font-weight:bold; letter-spacing:1px; font-family:Arial,sans-serif;">'
+              . e($initials)
+              . '</td></tr></table>';
         }
         // Authorised-signatory image rendered inside the "with signature"
         // block — also base64 from the branch's signature upload. When
@@ -285,6 +307,8 @@
                             <td style="width:45%; vertical-align:top; font-size:9px; padding:0; margin:0;">
                                 @if($logoData)
                                     <img src="{{ $logoData }}" alt="Logo" width="200" height="80" style="width:200px; height:auto; max-width:200px; max-height:90px; display:block; object-fit:contain;">
+                                @else
+                                    {!! $logoFallbackHtml !!}
                                 @endif
 
                                 {{-- Letterhead block — each row only renders when the
@@ -478,6 +502,8 @@
                             <td style="width:45%; vertical-align:top; font-size:9px; padding:0; margin:0;">
                                 @if($logoData)
                                     <img src="{{ $logoData }}" alt="Logo" width="200" height="80" style="width:200px; height:auto; max-width:200px; max-height:90px; display:block; object-fit:contain;">
+                                @else
+                                    {!! $logoFallbackHtml !!}
                                 @endif
                             </td>
                             <td style="width:60%; vertical-align:top; padding:0; margin:0;">
@@ -718,14 +744,24 @@
                          renders when non-empty. nl2br preserves line
                          breaks the user typed (DomPDF collapses raw
                          \n otherwise). -->
-                    @if(!empty(trim($quotation->terms_and_conditions ?? '')))
+                    @php($segTncs = $segmentTermsConditions ?? [])
+                    @if(!empty(trim($quotation->terms_and_conditions ?? '')) || !empty($segTncs))
                         <section style="margin-top: 14px; margin-bottom: 8px; page-break-inside: avoid;">
                             <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
                                 Terms &amp; Conditions
                             </div>
-                            <div style="font-size: 9px; color: #555; line-height: 14px;">
-                                {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
-                            </div>
+                            @if(!empty(trim($quotation->terms_and_conditions ?? '')))
+                                <div style="font-size: 9px; color: #555; line-height: 14px;">
+                                    {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
+                                </div>
+                            @endif
+                            @foreach($segTncs as $tnc)
+                                @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))
+                                    <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
+                                        {!! $tnc['content'] !!}
+                                    </div>
+                                @endif
+                            @endforeach
                         </section>
                     @endif
                 </div>
@@ -744,6 +780,8 @@
                         <td style="width:45%; vertical-align:top; font-size:9px; padding:0; margin:0;">
                             @if($logoData)
                                 <img src="{{ $logoData }}" alt="Logo" width="200" height="80" style="width:200px; height:auto; max-width:200px; max-height:90px; display:block; object-fit:contain;">
+                            @else
+                                {!! $logoFallbackHtml !!}
                             @endif
                         </td>
                         <td style="width:60%; vertical-align:top; padding:0; margin:0;">
@@ -888,14 +926,24 @@
                      last-product-page footer above. Rendered AFTER the
                      signature block per requirement. Same data source
                      ($quotation->terms_and_conditions ← form's `terms`). --}}
-                @if(!empty(trim($quotation->terms_and_conditions ?? '')))
+                @php($segTncs = $segmentTermsConditions ?? [])
+                @if(!empty(trim($quotation->terms_and_conditions ?? '')) || !empty($segTncs))
                     <section style="margin-top: 14px; margin-bottom: 8px; page-break-inside: avoid;">
                         <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
                             Terms &amp; Conditions
                         </div>
-                        <div style="font-size: 9px; color: #555; line-height: 14px;">
-                            {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
-                        </div>
+                        @if(!empty(trim($quotation->terms_and_conditions ?? '')))
+                            <div style="font-size: 9px; color: #555; line-height: 14px;">
+                                {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
+                            </div>
+                        @endif
+                        @foreach($segTncs as $tnc)
+                            @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))
+                                <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
+                                    {!! $tnc['content'] !!}
+                                </div>
+                            @endif
+                        @endforeach
                     </section>
                 @endif
             </div>

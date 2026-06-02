@@ -134,6 +134,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/products/master-bundle',        [ProductController::class, 'masterBundle']);
     Route::get('/products',                      [ProductController::class, 'index']);
     Route::get('/products/{id}',                 [ProductController::class, 'show'])->whereNumber('id');
+    Route::get('/products/{id}/vendor-maps',     [ProductController::class, 'vendorMaps'])->whereNumber('id');
     Route::post('/products/step/core',           [ProductController::class, 'storeCore']);
     Route::put('/products/{id}/step/sales',      [ProductController::class, 'storeSales'])->whereNumber('id');
     Route::put('/products/{id}/step/quality',    [ProductController::class, 'storeQuality'])->whereNumber('id');
@@ -262,6 +263,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // and reject the request with 405 against the PUT/DELETE handlers.
     Route::post  ('/clm/trade-doc-library/upload-header-logo',[ClmTradeDocumentController::class, 'uploadHeaderLogo']);
     Route::get   ('/clm/trade-doc-library/for-party/{party}', [ClmTradeDocumentController::class, 'libraryForParty']);
+    
     Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx'])->whereNumber('id');
     Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx'])->whereNumber('id');
     Route::put   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryUpdate'])->whereNumber('id');
