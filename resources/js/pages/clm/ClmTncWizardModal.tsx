@@ -10,6 +10,7 @@ import { MasterSelect } from '../../components/ui/MasterSelect';
 import Tooltip from '../../components/ui/Tooltip';
 import { SimpleNameModal } from './clmCommon';
 import { deriveShortCode } from './ClmTncPage';
+import ClmClauseInsertPanel from './ClmClauseInsertPanel';
 
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → T&C Master → Library → "Add New T&C" (2-step wizard modal)
@@ -571,12 +572,6 @@ function TncEditor({
               Clause Library
             </button>
           </Tooltip>
-          <Tooltip label="Insert a signature block">
-            <button type="button" className="tnw-editor-btn" onClick={onOpenSignature}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17c2-2 4-3 6-3s3 1 5 2 4 1 7-2"/><path d="M14 6l4 4"/><path d="M3 21h18"/></svg>
-              Signature
-            </button>
-          </Tooltip>
         </div>
       </div>
 
@@ -691,27 +686,10 @@ function TncEditor({
       <div className="tnw-editor-area">
         <EditorContent editor={editor} className="tnw-editor" />
         {clauseOpen && (
-          <div className="tnw-clause-panel">
-            <div className="tnw-clause-panel-head">
-              <span>Insert a clause</span>
-              <button type="button" className="tnw-clause-close" onClick={onCloseClauseLibrary} aria-label="Close clause library">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-            <div className="tnw-clause-panel-body">
-              {CLAUSE_PRESETS.map((c, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className="tnw-clause-item"
-                  onClick={() => { editor.chain().focus().insertContent(c.html).run(); onCloseClauseLibrary(); }}
-                >
-                  <span className="tnw-clause-item-title">{c.title}</span>
-                  <span className="tnw-clause-item-sub">{c.sub}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          <ClmClauseInsertPanel
+            onClose={onCloseClauseLibrary}
+            onInsert={(html) => { editor.chain().focus().insertContent(html).run(); onCloseClauseLibrary(); }}
+          />
         )}
         {signatureOpen && (
           <div className="tnw-clause-panel">
@@ -757,9 +735,6 @@ function TncEditor({
 
       <div className="tnw-editor-foot">
         <span className="tnw-editor-foot-hint">ℹ T&amp;C Content — write the actual rules / terms text using the rich editor above</span>
-        <Tooltip label="Insert {{PLACEHOLDER}} token at the cursor">
-          <button type="button" className="tnw-editor-foot-tag" onClick={onInsertPlaceholder}>{'{{PLACEHOLDER}}'}</button>
-        </Tooltip>
       </div>
     </div>
   );
@@ -1034,18 +1009,6 @@ function SignaturePad({
     document.body,
   );
 }
-
-/* Stock clauses for the "Clause Library" popover. Plain HTML — Tiptap
- * inserts each one at the caret via insertContent(). Replace with a real
- * fetch from /clm/tnc-library when we want cross-doc clause reuse. */
-const CLAUSE_PRESETS = [
-  { title: 'Force Majeure',  sub: 'Standard force-majeure clause',           html: '<h3>Force Majeure</h3><p>Neither Party shall be liable for any failure or delay in performance under this Agreement caused by acts of God, war, terrorism, riots, fire, flood, epidemic, or any other event beyond the reasonable control of such Party.</p>' },
-  { title: 'Confidentiality', sub: 'Mutual NDA clause',                       html: '<h3>Confidentiality</h3><p>Each Party agrees to hold the other Party\'s Confidential Information in strict confidence and not to disclose such information to any third party without prior written consent.</p>' },
-  { title: 'Governing Law',  sub: 'Jurisdiction & dispute resolution',       html: '<h3>Governing Law</h3><p>This Agreement shall be governed by and construed in accordance with the laws of [Jurisdiction]. Any disputes arising hereunder shall be subject to the exclusive jurisdiction of the courts of [Jurisdiction].</p>' },
-  { title: 'Payment Terms',  sub: '30-day net payment terms',                html: '<h3>Payment Terms</h3><p>All invoices shall be payable within thirty (30) days from the invoice date. Late payments shall accrue interest at the rate of 1.5% per month or the maximum rate permitted by law, whichever is lower.</p>' },
-  { title: 'Termination',    sub: 'Termination-for-convenience clause',      html: '<h3>Termination</h3><p>Either Party may terminate this Agreement at any time upon thirty (30) days\' prior written notice to the other Party. All accrued obligations shall survive such termination.</p>' },
-  { title: 'Indemnification', sub: 'Mutual indemnity provisions',             html: '<h3>Indemnification</h3><p>Each Party shall indemnify, defend, and hold harmless the other Party from and against any claims, damages, losses, and expenses arising out of or relating to the indemnifying Party\'s breach of this Agreement.</p>' },
-];
 
 /* Signature block presets — Tiptap-friendly HTML rendered with a thin
  * horizontal rule as the signature line and tokenised placeholders so the

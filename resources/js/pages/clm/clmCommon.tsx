@@ -363,16 +363,40 @@ export function LockedConf(props: { title: string; sub: string; onClose: () => v
   const { title, sub, onClose } = props;
   return createPortal((
     <div className="clm-conf-bd" onClick={onClose}>
-      <div className="clm-conf" onClick={e => e.stopPropagation()}>
-        <div className="clm-conf-ico" style={{ background: '#fef3c7', borderColor: '#fcd34d' }}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
-          </svg>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: 460, background: '#fff', borderRadius: 12, overflow: 'hidden',
+          boxShadow: '0 24px 60px rgba(15,23,42,.45)', border: '1px solid #fecaca',
+          fontFamily: "'DM Sans','Inter',system-ui,sans-serif",
+        }}
+      >
+        {/* Red alert header band */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, background: 'linear-gradient(180deg,#ef4444 0%,#dc2626 100%)', color: '#fff', padding: '13px 18px' }}>
+          <span style={{ width: 30, height: 30, borderRadius: 8, background: 'rgba(255,255,255,.20)', border: '1px solid rgba(255,255,255,.35)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: '-.01em' }}>{title}</span>
         </div>
-        <div className="clm-conf-title">{title}</div>
-        <div className="clm-conf-sub">{sub}</div>
-        <div className="clm-conf-btns" style={{ justifyContent: 'center' }}>
-          <button className="clm-btn-cancel" onClick={onClose}>Cancel</button>
+
+        {/* Body */}
+        <div style={{ padding: '16px 18px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9, color: '#b91c1c', fontWeight: 800, fontSize: 13 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+            Action not allowed
+          </div>
+          <div style={{ fontSize: 13.5, color: '#334155', lineHeight: 1.6 }}>{sub}</div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '12px 18px', borderTop: '1px solid #f1f5f9', background: '#fef2f2' }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
