@@ -1263,6 +1263,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         return null;
       case 'address':
         if (!f.address.trim()) return 'Address is required';
+        if (f.address.trim().length < 4) return 'Address must be at least 4 characters';
+        if (f.address.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        // Must contain at least one letter — blocks gibberish like "1234"
+        // or "...." while still allowing genuine addresses that mix
+        // letters, numbers, commas, hyphens, etc.
+        if (!/[A-Za-z]/.test(f.address)) return 'Address must contain at least one letter';
         return null;
       case 'country':
         if (!f.country) return 'Select country';
@@ -4962,6 +4968,9 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'line':
         if (!dd.line.trim()) return 'Address is required';
+        if (dd.line.trim().length < 4) return 'Address must be at least 4 characters';
+        if (dd.line.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        if (!/[A-Za-z]/.test(dd.line)) return 'Address must contain at least one letter';
         return null;
       case 'country':
         if (!dd.country) return 'Select country';

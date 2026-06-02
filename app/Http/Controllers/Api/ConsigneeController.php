@@ -511,7 +511,28 @@ class ConsigneeController extends Controller
         $rules = [
             'customer_id'      => 'required|integer|exists:customers,id',
             'company_name'     => 'required|string|max:255',
-            'legal_name'       => 'nullable|string|max:255',
+            /* Legal (registered entity) name must be unique per tenant — two
+             * consignees can't share the same legal name. Case-insensitive,
+             * client-scoped, ignores the row being edited, and skips the
+             * check when blank (legal_name stays optional). Mirrors the
+             * uniqueness rule on customers.legal_name. */
+            'legal_name'       => [
+                'nullable', 'string', 'max:255',
+                function ($attribute, $value, $fail) use ($clientId, $consigneeId) {
+                    if (!trim((string) $value)) return;
+                    $exists = Consignee::query()
+                        ->whereNull('deleted_at')
+                        ->where(function ($q) use ($clientId) {
+                            $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                        })
+                        ->whereRaw('LOWER(legal_name) = ?', [mb_strtolower(trim((string) $value))])
+                        ->when($consigneeId, fn ($q) => $q->where('id', '!=', $consigneeId))
+                        ->exists();
+                    if ($exists) {
+                        $fail('This legal name is already used by another consignee.');
+                    }
+                },
+            ],
             'segment'          => 'nullable|string|max:1024',
             'classification'   => 'nullable|string|max:64',
             'risk_level'       => 'nullable|string|max:32',
@@ -523,7 +544,7 @@ class ConsigneeController extends Controller
 
             'primary_address'                => 'required|array',
             'primary_address.type'           => 'required|string|max:64',
-            'primary_address.address_line'   => 'required|string|max:1000',
+            'primary_address.address_line'   => 'required|string|min:4|max:1000',
             'primary_address.country'        => 'nullable|string|max:64',
             'primary_address.state'          => 'nullable|string|max:64',
             'primary_address.city'           => 'nullable|string|max:64',
@@ -535,7 +556,7 @@ class ConsigneeController extends Controller
 
             'locations'                  => 'sometimes|array',
             'locations.*.type'           => 'required_with:locations|string|max:64',
-            'locations.*.address_line'   => 'required_with:locations|string|max:1000',
+            'locations.*.address_line'   => 'required_with:locations|string|min:4|max:1000',
             'locations.*.country'        => 'nullable|string|max:64',
             'locations.*.state'          => 'nullable|string|max:64',
             'locations.*.city'           => 'nullable|string|max:64',

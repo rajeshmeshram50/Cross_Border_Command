@@ -469,7 +469,7 @@ class CustomerController extends Controller
 
             'primary_address'                => 'required|array',
             'primary_address.type'           => 'required|string|max:64',
-            'primary_address.address_line'   => 'required|string|max:1000',
+            'primary_address.address_line'   => 'required|string|min:4|max:1000',
             'primary_address.country'        => 'nullable|string|max:64',
             'primary_address.state'          => 'nullable|string|max:64',
             'primary_address.city'           => 'nullable|string|max:64',
@@ -514,7 +514,7 @@ class CustomerController extends Controller
 
             'locations'                  => 'sometimes|array',
             'locations.*.type'           => 'required_with:locations|string|max:64',
-            'locations.*.address_line'   => 'required_with:locations|string|max:1000',
+            'locations.*.address_line'   => 'required_with:locations|string|min:4|max:1000',
             'locations.*.country'        => 'nullable|string|max:64',
             'locations.*.state'          => 'nullable|string|max:64',
             'locations.*.city'           => 'nullable|string|max:64',

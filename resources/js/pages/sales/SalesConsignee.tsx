@@ -448,7 +448,7 @@ export default function SalesConsignee() {
       {/* ── Main card — toolbar (search + Add Consignee) + table + pagination ── */}
       <div className="smcg-table-card">
 
-        {/* Toolbar — search only (Add Consignee lives in the hero strip). */}
+        {/* Toolbar — search + column filters (Segment / Country / Risk). */}
         <div className="smcg-toolbar">
           <div className="smcg-search">
             <i className="ri-search-line smcg-search-icon" />
