@@ -1,4 +1,5 @@
 import { useState, useEffect, CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../../api';
 import CustomerEvidenceVaultModal, { type CustomerVaultTarget } from '../sales/CustomerEvidenceVaultModal';
 import ConsigneeEvidenceVaultModal, { type ConsigneeVaultTarget } from '../sales/ConsigneeEvidenceVaultModal';
@@ -484,6 +485,8 @@ export default function ClmBuyerProfilePage() {
   // Evidence Vault popups (same modals the Customer / Consignee tables use).
   const [buyerVault, setBuyerVault] = useState<CustomerVaultTarget | null>(null);
   const [consVault, setConsVault]   = useState<ConsigneeVaultTarget | null>(null);
+  // "Consignees for this buyer" popup — opened from the CONSIGNEES count cell.
+  const [consListBuyer, setConsListBuyer] = useState<BuyerRow | null>(null);
 
   // ── Live data from GET /clm/buyer-profile ──
   const [bp, setBp] = useState<BpData>(EMPTY_BP);
@@ -992,7 +995,8 @@ export default function ClmBuyerProfilePage() {
                             </td>
                             <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                              <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform .15s,box-shadow .15s' }}
+                              <div title="View consignees for this buyer" style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform .15s,box-shadow .15s' }}
+                                onClick={() => setConsListBuyer(r)}
                                 onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.15)'; e.currentTarget.style.boxShadow = '0 3px 10px rgba(6,182,212,.45)'; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}>
                                 <span style={{ fontSize: '9px', fontWeight: 800, color: '#fff' }}>{r.cn}</span>
@@ -1095,7 +1099,100 @@ export default function ClmBuyerProfilePage() {
           Sales-Matrix tables. */}
       <CustomerEvidenceVaultModal open={!!buyerVault} customer={buyerVault} onClose={() => setBuyerVault(null)} />
       <ConsigneeEvidenceVaultModal open={!!consVault} consignee={consVault} onClose={() => setConsVault(null)} />
+
+      {/* Consignees-for-buyer popup. */}
+      {consListBuyer && (
+        <BuyerConsigneesModal
+          buyer={consListBuyer}
+          rows={bpConsData.filter((c) => c.cid === consListBuyer.id)}
+          onClose={() => setConsListBuyer(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Consignees-for-buyer popup — opened by clicking the CONSIGNEES count in the
+ * buyer list. Shows the consignees mapped to that buyer (filtered from the
+ * already-loaded consignee dataset) in the same column layout.
+ * ────────────────────────────────────────────────────────────────────────── */
+function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows: ConsRow[]; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const headChip: CSSProperties = { fontSize: '12px', fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,.16)', border: '1px solid rgba(255,255,255,.26)', borderRadius: '8px', padding: '5px 12px', whiteSpace: 'nowrap' };
+
+  return createPortal(
+    <div className="bcm-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true"
+      style={{ position: 'fixed', inset: 0, zIndex: 200000, background: 'rgba(7,30,50,.55)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: "'DM Sans','Inter',system-ui,sans-serif" }}>
+      <div onMouseDown={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 1180, maxHeight: 'calc(100vh - 48px)', background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 28px 70px rgba(15,23,42,.45)' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '16px 22px', background: 'linear-gradient(110deg,#0c6680 0%,#0e7490 35%,#0891b2 75%,#06b6d4 100%)', color: '#fff', flexShrink: 0 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.28)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.01em' }}>Consignees</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.86)', marginTop: 2 }}>Consignee identity, shipment delivery ownership & compliance readiness for this buyer.</div>
+            </div>
+          </div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.12em', color: 'rgba(255,255,255,.78)' }}>CONSIGNEES FOR</span>
+            <span style={headChip}>{buyer.id}</span>
+            <span style={headChip}>{buyer.name}</span>
+            {buyer.country && buyer.country !== '—' && <span style={headChip}>{buyer.country}</span>}
+            <button type="button" onClick={onClose} aria-label="Close" style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.14)', border: '1px solid rgba(255,255,255,.22)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: '#fff' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+            <thead>
+              <tr style={txnTableHeaderRow}>
+                {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements'].map((h, i) => (
+                  <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr><td colSpan={12} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>No consignees mapped to this buyer yet.</td></tr>
+              ) : rows.map((r, i) => (
+                <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : 'rgba(240,253,255,.45)', borderBottom: '1px solid rgba(6,182,212,.07)' }}>
+                  <td style={{ padding: '9px 12px', textAlign: 'center' }}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{i + 1}</span></td>
+                  <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px' }}>{r.id}</span></td>
+                  <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
+                  <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
+                  <td style={{ padding: '9px 11px', textAlign: 'center', minWidth: '140px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center', alignItems: 'center' }}>
+                      {r.seg.split(',').filter(Boolean).map((s) => <span key={s} style={{ fontSize: '8.5px', fontWeight: 600, color: r.sc, background: r.sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{s.trim()}</span>)}
+                    </div>
+                  </td>
+                  <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
+                  <ProgCell obj={r.kyc} /><ProgCell obj={r.dd} /><ProgCell obj={r.tl} /><ProgCell obj={r.td} />
+                  <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={r.ship} /></td>
+                  <ProgCell obj={r.agr} />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderTop: '1.5px solid #A5F3FC', flexShrink: 0 }}>
+          <span style={{ fontSize: '11px', fontWeight: 600, color: '#0891b2' }}>Showing <strong>{rows.length}</strong> consignee{rows.length === 1 ? '' : 's'}</span>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
