@@ -501,12 +501,13 @@ class CustomerController extends Controller
                     }
                 },
             ],
-            // Strict email format — username@domain.extension. Domain is
-            // letters-only (no digits) so junk like "x@gmail12.com" is
-            // rejected. Frontend uses the same regex for inline feedback.
+            // Standard email format — username@domain.extension. Allows
+            // digit-containing domains (office365.com, 7eleven.com) but
+            // still rejects malformed inputs like "x@.com", "x@gmail",
+            // or "x@gmail.c". Frontend uses the same regex inline.
             'primary_address.cp_email'       => [
                 'required', 'email', 'max:255',
-                'regex:/^[A-Za-z0-9._%+-]+@(?:[A-Za-z]+\.)+[A-Za-z]{2,}$/',
+                'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/',
                 Rule::unique('customers', 'primary_email')
                     ->where(function ($q) use ($clientId) {
                         $q->whereNull('deleted_at');
@@ -526,7 +527,7 @@ class CustomerController extends Controller
             'locations.*.cp_name'        => 'required_with:locations|string|max:255',
             'locations.*.cp_designation' => 'nullable|string|max:128',
             'locations.*.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
-            'locations.*.cp_email'       => ['nullable', 'email', 'max:255', 'regex:/^[A-Za-z0-9._%+-]+@(?:[A-Za-z]+\.)+[A-Za-z]{2,}$/'],
+            'locations.*.cp_email'       => ['nullable', 'email', 'max:255', 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/'],
             'locations.*.cp_whatsapp'    => 'nullable|in:yes,no',
         ]);
 

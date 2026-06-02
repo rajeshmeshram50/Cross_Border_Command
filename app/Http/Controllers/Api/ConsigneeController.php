@@ -564,10 +564,11 @@ class ConsigneeController extends Controller
             'locations.*.cp_name'        => 'required_with:locations|string|max:255',
             'locations.*.cp_designation' => 'nullable|string|max:128',
             'locations.*.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
-            // Strict email format — username@domain.extension. Domain is
-            // letters-only (no digits) so junk like "x@gmail12.com" is
-            // rejected. Frontend uses the same regex for inline feedback.
-            'locations.*.cp_email'       => ['nullable', 'email', 'max:255', 'regex:/^[A-Za-z0-9._%+-]+@(?:[A-Za-z]+\.)+[A-Za-z]{2,}$/'],
+            // Standard email format — username@domain.extension. Allows
+            // digit-containing domains (office365.com, 7eleven.com) but
+            // still rejects malformed inputs like "x@.com", "x@gmail",
+            // or "x@gmail.c". Frontend uses the same regex inline.
+            'locations.*.cp_email'       => ['nullable', 'email', 'max:255', 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/'],
             'locations.*.cp_whatsapp'    => 'nullable|in:yes,no',
         ];
 
@@ -579,7 +580,7 @@ class ConsigneeController extends Controller
         if (!$sameAsCustomer) {
             $rules['primary_address.cp_email'] = [
                 'required', 'email', 'max:255',
-                'regex:/^[A-Za-z0-9._%+-]+@(?:[A-Za-z]+\.)+[A-Za-z]{2,}$/',
+                'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/',
                 Rule::unique('consignees', 'primary_email')
                     ->where(function ($q) use ($clientId) {
                         $q->whereNull('deleted_at');
@@ -608,7 +609,7 @@ class ConsigneeController extends Controller
         } else {
             // Mirror flow — keep the format / required rules but skip
             // the cross-consignee uniqueness check.
-            $rules['primary_address.cp_email']   = ['required', 'email', 'max:255', 'regex:/^[A-Za-z0-9._%+-]+@(?:[A-Za-z]+\.)+[A-Za-z]{2,}$/'];
+            $rules['primary_address.cp_email']   = ['required', 'email', 'max:255', 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/'];
             $rules['primary_address.cp_contact'] = ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'];
         }
 

@@ -1151,7 +1151,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         return null;
       case 'cpEmail':
         if (!f.cpEmail.trim()) return 'Email is required';
-        if (!/^[A-Za-z0-9._%+-]+@(?:[A-Za-z]+\.)+[A-Za-z]{2,}$/.test(f.cpEmail)) return 'Enter a valid email address';
+        if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/.test(f.cpEmail)) return 'Enter a valid email address';
         if (locations.some(l => (l.cpEmail || '').trim().toLowerCase() === f.cpEmail.trim().toLowerCase()))
           return 'This email is already used by another address on this customer';
         return null;
@@ -3871,7 +3871,7 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
     if (!d.ownerName.trim())                            next.ownerName    = 'Owner name is required';
     if (!d.designation)                                 next.designation  = 'Select a designation';
     if (!d.officialEmail.trim())                        next.officialEmail = 'Official email is required';
-    else if (!/^[A-Za-z0-9._%+-]+@(?:[A-Za-z]+\.)+[A-Za-z]{2,}$/.test(d.officialEmail))   next.officialEmail = 'Enter a valid email';
+    else if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/.test(d.officialEmail))   next.officialEmail = 'Enter a valid email';
     if (!d.phoneNumber.trim())                          next.phoneNumber  = 'Phone number is required';
     else if (!/^\+?[0-9\s-]{7,15}$/.test(d.phoneNumber)) next.phoneNumber = 'Phone must be 7–15 digits';
     // Files are required only when creating a new owner. On edit the
@@ -4121,7 +4121,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'cpEmail':
         if (!dd.cpEmail.trim()) return 'Email required';
-        if (!/^[A-Za-z0-9._%+-]+@(?:[A-Za-z]+\.)+[A-Za-z]{2,}$/.test(dd.cpEmail)) return 'Enter a valid email';
+        if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/.test(dd.cpEmail)) return 'Enter a valid email';
         if (existingEmails.includes(dd.cpEmail.trim().toLowerCase()))
           return 'This email is already used by another address on this customer';
         return null;
