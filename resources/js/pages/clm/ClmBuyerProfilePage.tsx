@@ -1,8 +1,9 @@
 import { useState, useEffect, CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../api';
-import CustomerEvidenceVaultModal, { type CustomerVaultTarget } from '../sales/CustomerEvidenceVaultModal';
+import CustomerEvidenceVaultModal, { type CustomerVaultTarget, type TabKey as VaultTab } from '../sales/CustomerEvidenceVaultModal';
 import ConsigneeEvidenceVaultModal, { type ConsigneeVaultTarget } from '../sales/ConsigneeEvidenceVaultModal';
+import ClmDocsPopup, { type DocCategory } from './ClmDocsPopup';
 
 /*
  * CLM → Buyer Profile page.
@@ -289,8 +290,10 @@ function cardHoverOut(e: React.MouseEvent<HTMLDivElement>) {
   e.currentTarget.style.boxShadow = '0 1px 3px rgba(6,182,212,.07)';
 }
 
-/* Progress cell used in the buyer / consignee list tables. */
-function ProgCell({ obj, big = true }: { obj: Prog; big?: boolean }) {
+/* Progress cell used in the buyer / consignee list tables. When `onClick`
+ * is supplied the cell becomes a button that deep-links into the Evidence
+ * Vault on the matching document bucket. */
+function ProgCell({ obj, big = true, onClick }: { obj: Prog; big?: boolean; onClick?: () => void }) {
   const { d, t } = obj;
   const pct = t > 0 ? Math.round((d / t) * 100) : 0;
   const isComplete = pct === 100;
@@ -304,7 +307,11 @@ function ProgCell({ obj, big = true }: { obj: Prog; big?: boolean }) {
   const minW = big ? '62px' : '52px';
   const pad = big ? '2px 8px' : '2px 7px';
   return (
-    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+    <td
+      style={{ padding: '8px 10px', textAlign: 'center', cursor: onClick ? 'pointer' : undefined }}
+      title={onClick ? 'View these documents in the Evidence Vault' : undefined}
+      onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
+    >
       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: big ? '5px' : '4px', minWidth: minW }}>
         <span style={{ fontSize: '11px', fontWeight: 900, color: numC, background: numBg, border: `1px solid ${numBd}`, padding: pad, borderRadius: '20px', letterSpacing: '-.2px', lineHeight: 1.4 }}>
           {d}<span style={{ fontSize: '9px', fontWeight: 500, color: '#94a3b8' }}>/{t}</span>
@@ -482,11 +489,41 @@ export default function ClmBuyerProfilePage() {
   const [wosEqPage, setWosEqPage] = useState(1);
   const [wosNeqPage, setWosNeqPage] = useState(1);
 
-  // Evidence Vault popups (same modals the Customer / Consignee tables use).
+  // Evidence Vault popups — opened only from the explicit Evidence Vault
+  // button at the end of each row.
   const [buyerVault, setBuyerVault] = useState<CustomerVaultTarget | null>(null);
   const [consVault, setConsVault]   = useState<ConsigneeVaultTarget | null>(null);
+  const [buyerVaultTab, setBuyerVaultTab] = useState<VaultTab>('company-dd');
+  const [consVaultTab, setConsVaultTab]   = useState<VaultTab>('company-dd');
+  // Single-bucket documents popup — opened when a KYC / DD / TL / TD /
+  // Agreements progress cell is clicked. Shows just that category as a card.
+  const [docsPopup, setDocsPopup] = useState<{ ownerType: 'customer' | 'consignee'; ownerId: number; company: string; category: DocCategory } | null>(null);
   // "Consignees for this buyer" popup — opened from the CONSIGNEES count cell.
   const [consListBuyer, setConsListBuyer] = useState<BuyerRow | null>(null);
+
+  // Open the Evidence Vault for a buyer / consignee row, focused on a tab.
+  // No-ops without a db_id (mirrors the disabled Evidence Vault button).
+  const openBuyerVault = (r: BuyerRow, tab: VaultTab) => {
+    if (!r.db_id) return;
+    setBuyerVaultTab(tab);
+    setBuyerVault({ id: r.id, db_id: r.db_id, company: r.name, segment: r.seg.join(', '), country: r.country });
+  };
+  const openConsVault = (r: ConsRow, tab: VaultTab) => {
+    if (!r.db_id) return;
+    setConsVaultTab(tab);
+    setConsVault({ id: r.id, db_id: r.db_id, company: r.name, segment: r.seg, country: r.country, customerId: r.cid });
+  };
+
+  // Open the single-bucket documents popup for a row's progress cell.
+  // No-ops without a db_id (the row has no backing record to fetch).
+  const openBuyerDocs = (r: BuyerRow, category: DocCategory) => {
+    if (!r.db_id) return;
+    setDocsPopup({ ownerType: 'customer', ownerId: r.db_id, company: r.name, category });
+  };
+  const openConsDocs = (r: ConsRow, category: DocCategory) => {
+    if (!r.db_id) return;
+    setDocsPopup({ ownerType: 'consignee', ownerId: r.db_id, company: r.name, category });
+  };
 
   // ── Live data from GET /clm/buyer-profile ──
   const [bp, setBp] = useState<BpData>(EMPTY_BP);
@@ -1002,12 +1039,15 @@ export default function ClmBuyerProfilePage() {
                                 <span style={{ fontSize: '9px', fontWeight: 800, color: '#fff' }}>{r.cn}</span>
                               </div>
                             </td>
-                            <ProgCell obj={r.kyc} /><ProgCell obj={r.dd} /><ProgCell obj={r.tl} /><ProgCell obj={r.td} />
+                            <ProgCell obj={r.kyc} onClick={() => openBuyerDocs(r, 'kyc')} />
+                            <ProgCell obj={r.dd} onClick={() => openBuyerDocs(r, 'dd')} />
+                            <ProgCell obj={r.tl} onClick={() => openBuyerDocs(r, 'tl')} />
+                            <ProgCell obj={r.td} onClick={() => openBuyerDocs(r, 'td')} />
                             <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={r.ship} /></td>
-                            <ProgCell obj={r.agr} />
+                            <ProgCell obj={r.agr} onClick={() => openBuyerDocs(r, 'agr')} />
                             <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                                <button title="Evidence Vault" style={vaultBtnStyle} disabled={!r.db_id} onClick={() => r.db_id && setBuyerVault({ id: r.id, db_id: r.db_id, company: r.name, segment: r.seg.join(', '), country: r.country })}><VaultIcon /></button>
+                                <button title="Evidence Vault" style={vaultBtnStyle} disabled={!r.db_id} onClick={() => openBuyerVault(r, 'company-dd')}><VaultIcon /></button>
                               </div>
                             </td>
                           </tr>
@@ -1074,12 +1114,15 @@ export default function ClmBuyerProfilePage() {
                               </div>
                             </td>
                             <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
-                            <ProgCell obj={r.kyc} /><ProgCell obj={r.dd} /><ProgCell obj={r.tl} /><ProgCell obj={r.td} />
+                            <ProgCell obj={r.kyc} onClick={() => openConsDocs(r, 'kyc')} />
+                            <ProgCell obj={r.dd} onClick={() => openConsDocs(r, 'dd')} />
+                            <ProgCell obj={r.tl} onClick={() => openConsDocs(r, 'tl')} />
+                            <ProgCell obj={r.td} onClick={() => openConsDocs(r, 'td')} />
                             <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={r.ship} /></td>
-                            <ProgCell obj={r.agr} />
+                            <ProgCell obj={r.agr} onClick={() => openConsDocs(r, 'agr')} />
                             <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                                <button title="Evidence Vault" style={vaultBtnStyle} disabled={!r.db_id} onClick={() => r.db_id && setConsVault({ id: r.id, db_id: r.db_id, company: r.name, segment: r.seg, country: r.country, customerId: r.cid })}><VaultIcon /></button>
+                                <button title="Evidence Vault" style={vaultBtnStyle} disabled={!r.db_id} onClick={() => openConsVault(r, 'company-dd')}><VaultIcon /></button>
                               </div>
                             </td>
                           </tr>
@@ -1097,8 +1140,19 @@ export default function ClmBuyerProfilePage() {
 
       {/* Evidence Vault popups — same modals used by the Customer / Consignee
           Sales-Matrix tables. */}
-      <CustomerEvidenceVaultModal open={!!buyerVault} customer={buyerVault} onClose={() => setBuyerVault(null)} />
-      <ConsigneeEvidenceVaultModal open={!!consVault} consignee={consVault} onClose={() => setConsVault(null)} />
+      <CustomerEvidenceVaultModal open={!!buyerVault} customer={buyerVault} initialTab={buyerVaultTab} onClose={() => setBuyerVault(null)} />
+      <ConsigneeEvidenceVaultModal open={!!consVault} consignee={consVault} initialTab={consVaultTab} onClose={() => setConsVault(null)} />
+
+      {/* Single-bucket documents popup — opened from a KYC / DD / TL / TD /
+          Agreements progress cell instead of the full Evidence Vault. */}
+      <ClmDocsPopup
+        open={!!docsPopup}
+        onClose={() => setDocsPopup(null)}
+        category={docsPopup?.category ?? 'kyc'}
+        ownerType={docsPopup?.ownerType ?? 'customer'}
+        ownerId={docsPopup?.ownerId ?? null}
+        company={docsPopup?.company ?? ''}
+      />
 
       {/* Consignees-for-buyer popup. */}
       {consListBuyer && (

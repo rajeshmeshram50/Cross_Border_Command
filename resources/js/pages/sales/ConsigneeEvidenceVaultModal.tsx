@@ -114,17 +114,33 @@ interface Props {
   consignee: ConsigneeVaultTarget | null;
   onClose: () => void;
   data?: VaultData | null;
+  /** Tab to open on — lets the Buyer Profile page deep-link straight to
+   *  a bucket (e.g. 'owner-kyc') when a progress cell is clicked.
+   *  Defaults to 'company-dd'. */
+  initialTab?: TabKey;
 }
 
-type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses' | 'trade-documents' | 'shipment-agreements';
+export type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses' | 'trade-documents' | 'shipment-agreements';
 
-const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultData }[] = [
-  { key: 'company-dd',          label: 'Company Due Diligence', icon: 'ri-shield-check-line',   countKey: 'company_dd_count' },
-  { key: 'owner-kyc',           label: 'Owner KYC Details',     icon: 'ri-user-3-line',         countKey: 'owner_kyc_count' },
-  { key: 'trade-licenses',      label: 'Trade Licenses',        icon: 'ri-file-list-3-line',    countKey: 'trade_license_count' },
-  { key: 'trade-documents',     label: 'Trade Documents',       icon: 'ri-article-line',        countKey: 'trade_documents_count' },
-  { key: 'shipment-agreements', label: 'Shipment Agreements',   icon: 'ri-truck-line',          countKey: 'total_shipments' },
+/* Top-level grouping — see CustomerEvidenceVaultModal for the rationale.
+ *   • standard      — KYC, DD, Trade Licenses (one-time party docs)
+ *   • case-to-case  — Trade Documents, Agreements (per-deal records) */
+type GroupKey = 'standard' | 'case-to-case';
+
+const GROUPS: { key: GroupKey; title: string; sub: string; icon: string }[] = [
+  { key: 'standard',     title: 'Standard Documents',      sub: 'ONE TIME · KYC, DD & LICENSES',     icon: 'ri-shield-check-line' },
+  { key: 'case-to-case', title: 'Case to Case Agreements', sub: 'PER DEAL · TRADE DOCS & AGREEMENTS', icon: 'ri-todo-line' },
 ];
+
+const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultData; group: GroupKey }[] = [
+  { key: 'company-dd',          label: 'Company Due Diligence', icon: 'ri-shield-check-line',   countKey: 'company_dd_count',       group: 'standard' },
+  { key: 'owner-kyc',           label: 'Owner KYC Details',     icon: 'ri-user-3-line',         countKey: 'owner_kyc_count',        group: 'standard' },
+  { key: 'trade-licenses',      label: 'Trade Licenses',        icon: 'ri-file-list-3-line',    countKey: 'trade_license_count',    group: 'standard' },
+  { key: 'trade-documents',     label: 'Trade Documents',       icon: 'ri-article-line',        countKey: 'trade_documents_count',  group: 'case-to-case' },
+  { key: 'shipment-agreements', label: 'Agreements',            icon: 'ri-truck-line',          countKey: 'total_shipments',        group: 'case-to-case' },
+];
+
+const groupOfTab = (t: TabKey): GroupKey => TABS.find(x => x.key === t)?.group ?? 'standard';
 
 function buildDemoVault(consignee: ConsigneeVaultTarget): VaultData {
   return {
@@ -178,10 +194,18 @@ function buildDemoVault(consignee: ConsigneeVaultTarget): VaultData {
   };
 }
 
-export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, data }: Props) {
+export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, data, initialTab }: Props) {
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
+  const [group, setGroup] = useState<GroupKey>('standard');
   const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');
+
+  /* Switch the active group and jump to its first sub-tab. */
+  const selectGroup = (g: GroupKey) => {
+    setGroup(g);
+    const first = TABS.find(t => t.group === g);
+    if (first) setTab(first.key);
+  };
   const [exporting, setExporting] = useState(false);
   const kpiStripRef = useRef<HTMLDivElement | null>(null);
   const [kpiPaused, setKpiPaused] = useState(false);
@@ -204,10 +228,12 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
-    setTab('company-dd');
+    const startTab = initialTab ?? 'company-dd';
+    setTab(startTab);
+    setGroup(groupOfTab(startTab));
     setShipmentFilter('all');
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, consignee?.db_id, onClose]);
+  }, [open, consignee?.db_id, onClose, initialTab]);
 
   /* Re-fetch helper — invoked after the Actions column re-uploads a
    * file so the row picks up the fresh attachment_url. */
@@ -555,10 +581,30 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </div>
         </div>
 
-        {/* ─── TABS ─── */}
+        {/* ─── GROUP CARDS — Standard Documents vs Case to Case. */}
+        <div className="cnev-groups-wrap">
+          <div className="cnev-groups">
+            {GROUPS.map(g => (
+              <button
+                key={g.key}
+                type="button"
+                className={`cnev-group ${group === g.key ? 'is-active' : ''}`}
+                onClick={() => selectGroup(g.key)}
+              >
+                <span className="cnev-group-icon"><i className={g.icon} aria-hidden /></span>
+                <span className="cnev-group-text">
+                  <span className="cnev-group-title">{g.title}</span>
+                  <span className="cnev-group-sub">{g.sub}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ─── SUB-TABS — for the active group. */}
         <div className="cnev-tabs-wrap">
           <div className="cnev-tabs">
-            {TABS.map(t => (
+            {TABS.filter(t => t.group === group).map(t => (
               <button
                 key={t.key}
                 type="button"
@@ -1257,6 +1303,43 @@ const CNEV_CSS = `
 }
 
 /* ─── TABS ─── */
+/* ─── GROUP CARDS — Standard Documents vs Case to Case (green variant). */
+.cnev-groups-wrap {
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%);
+  padding: 14px 18px 0;
+}
+.cnev-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cnev-group {
+  display: flex; align-items: center; gap: 14px;
+  padding: 13px 18px;
+  background: #ffffff;
+  border: 1.5px solid #d6f5e3;
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: all .2s ease;
+}
+.cnev-group:hover { border-color: #6ee7b7; background: #f0fdf4; }
+.cnev-group.is-active {
+  background: linear-gradient(120deg, #064e3b 0%, #047857 55%, #10b981 100%);
+  border-color: #047857;
+  box-shadow: 0 6px 18px rgba(16,185,129,.35);
+}
+.cnev-group-icon {
+  width: 42px; height: 42px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px;
+  background: #e7f9ef; color: #047857; border: 1px solid #c7f0d8;
+  font-size: 20px;
+}
+.cnev-group.is-active .cnev-group-icon { background: rgba(255,255,255,.18); color: #fff; border-color: rgba(255,255,255,.25); }
+.cnev-group-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cnev-group-title { font-size: 15px; font-weight: 800; color: #064e3b; letter-spacing: -.01em; }
+.cnev-group.is-active .cnev-group-title { color: #ffffff; }
+.cnev-group-sub { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: #6b9e85; }
+.cnev-group.is-active .cnev-group-sub { color: rgba(255,255,255,.8); }
+
 .cnev-tabs-wrap {
   flex-shrink: 0;
   background: linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%);
@@ -1581,6 +1664,14 @@ const CNEV_CSS = `
 
 /* ─── DARK MODE ─── */
 [data-bs-theme="dark"] .cnev-card { background: #0c2218; }
+[data-bs-theme="dark"] .cnev-groups-wrap { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); }
+[data-bs-theme="dark"] .cnev-group { background: #102b21; border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .cnev-group:hover { background: #14352a; border-color: rgba(16,185,129,.5); }
+[data-bs-theme="dark"] .cnev-group.is-active { background: linear-gradient(120deg,#064e3b,#047857); border-color: #10b981; }
+[data-bs-theme="dark"] .cnev-group-icon { background: rgba(16,185,129,.20); color: #6ee7b7; border-color: rgba(16,185,129,.3); }
+[data-bs-theme="dark"] .cnev-group.is-active .cnev-group-icon { background: rgba(255,255,255,.18); color: #fff; }
+[data-bs-theme="dark"] .cnev-group-title { color: #d1fae5; }
+[data-bs-theme="dark"] .cnev-group-sub { color: #8fbfa6; }
 [data-bs-theme="dark"] .cnev-tabs-wrap { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); border-bottom-color: rgba(16,185,129,.22); }
 [data-bs-theme="dark"] .cnev-tab { background: transparent; color: #6ee7b7; border: 1.5px solid rgba(16,185,129,0.40); box-shadow: none; }
 [data-bs-theme="dark"] .cnev-tab-icon { background: transparent; color: #6ee7b7; }
@@ -1660,6 +1751,8 @@ const CNEV_CSS = `
   .cnev-kpi-nav { width: 30px; height: 30px; font-size: 16px; }
   .cnev-kpi-nav-prev { left: 10px; }
   .cnev-kpi-nav-next { right: 10px; }
+  .cnev-groups-wrap { padding: 12px 14px 0; }
+  .cnev-groups { grid-template-columns: 1fr; gap: 10px; }
   .cnev-tabs-wrap { padding: 10px 14px; }
   .cnev-tab { padding: 7px 14px; font-size: 12px; gap: 7px; }
   .cnev-tab-icon { width: 16px; height: 16px; font-size: 13px; }

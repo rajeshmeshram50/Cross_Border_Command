@@ -116,12 +116,22 @@ interface Props {
 
 type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses' | 'trade-documents' | 'shipment-agreements';
 
-const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultData }[] = [
-  { key: 'company-dd',          label: 'Company Due Diligence', icon: 'ri-shield-check-line',   countKey: 'company_dd_count' },
-  { key: 'owner-kyc',           label: 'Owner KYC Details',     icon: 'ri-user-3-line',         countKey: 'owner_kyc_count' },
-  { key: 'trade-licenses',      label: 'Trade Licenses',        icon: 'ri-file-list-3-line',    countKey: 'trade_license_count' },
-  { key: 'trade-documents',     label: 'Trade Documents',       icon: 'ri-article-line',        countKey: 'trade_documents_count' },
-  { key: 'shipment-agreements', label: 'Shipment Agreements',   icon: 'ri-truck-line',          countKey: 'total_shipments' },
+/* Top-level grouping — see CustomerEvidenceVaultModal for the rationale.
+ *   • standard      — KYC, DD, Trade Licenses (one-time party docs)
+ *   • case-to-case  — Trade Documents, Agreements (per-deal records) */
+type GroupKey = 'standard' | 'case-to-case';
+
+const GROUPS: { key: GroupKey; title: string; sub: string; icon: string }[] = [
+  { key: 'standard',     title: 'Standard Documents',      sub: 'ONE TIME · KYC, DD & LICENSES',     icon: 'ri-shield-check-line' },
+  { key: 'case-to-case', title: 'Case to Case Agreements', sub: 'PER DEAL · TRADE DOCS & AGREEMENTS', icon: 'ri-todo-line' },
+];
+
+const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultData; group: GroupKey }[] = [
+  { key: 'company-dd',          label: 'Company Due Diligence', icon: 'ri-shield-check-line',   countKey: 'company_dd_count',       group: 'standard' },
+  { key: 'owner-kyc',           label: 'Owner KYC Details',     icon: 'ri-user-3-line',         countKey: 'owner_kyc_count',        group: 'standard' },
+  { key: 'trade-licenses',      label: 'Trade Licenses',        icon: 'ri-file-list-3-line',    countKey: 'trade_license_count',    group: 'standard' },
+  { key: 'trade-documents',     label: 'Trade Documents',       icon: 'ri-article-line',        countKey: 'trade_documents_count',  group: 'case-to-case' },
+  { key: 'shipment-agreements', label: 'Agreements',            icon: 'ri-truck-line',          countKey: 'total_shipments',        group: 'case-to-case' },
 ];
 
 function buildDemoVault(supplier: SupplierVaultTarget): VaultData {
@@ -179,7 +189,15 @@ function buildDemoVault(supplier: SupplierVaultTarget): VaultData {
 export default function SupplierEvidenceVaultModal({ open, supplier, onClose, data }: Props) {
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
+  const [group, setGroup] = useState<GroupKey>('standard');
   const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-supplier' | 'buyer-neq-supplier'>('all');
+
+  /* Switch the active group and jump to its first sub-tab. */
+  const selectGroup = (g: GroupKey) => {
+    setGroup(g);
+    const first = TABS.find(t => t.group === g);
+    if (first) setTab(first.key);
+  };
   const kpiStripRef = useRef<HTMLDivElement | null>(null);
   const [kpiPaused, setKpiPaused] = useState(false);
   /* Live API payload — populated by the fetch effect below. Falls back
@@ -202,6 +220,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     setTab('company-dd');
+    setGroup('standard');
     setShipmentFilter('all');
     return () => window.removeEventListener('keydown', onKey);
   }, [open, supplier?.db_id, onClose]);
@@ -454,10 +473,30 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           </div>
         </div>
 
-        {/* ─── TABS ─── */}
+        {/* ─── GROUP CARDS — Standard Documents vs Case to Case. */}
+        <div className="svev-groups-wrap">
+          <div className="svev-groups">
+            {GROUPS.map(g => (
+              <button
+                key={g.key}
+                type="button"
+                className={`svev-group ${group === g.key ? 'is-active' : ''}`}
+                onClick={() => selectGroup(g.key)}
+              >
+                <span className="svev-group-icon"><i className={g.icon} aria-hidden /></span>
+                <span className="svev-group-text">
+                  <span className="svev-group-title">{g.title}</span>
+                  <span className="svev-group-sub">{g.sub}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ─── SUB-TABS — for the active group. */}
         <div className="svev-tabs-wrap">
           <div className="svev-tabs">
-            {TABS.map(t => (
+            {TABS.filter(t => t.group === group).map(t => (
               <button
                 key={t.key}
                 type="button"
@@ -1149,6 +1188,43 @@ const SVEV_CSS = `
 }
 
 /* ─── TABS ─── */
+/* ─── GROUP CARDS — Standard Documents vs Case to Case (emerald variant). */
+.svev-groups-wrap {
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%);
+  padding: 14px 18px 0;
+}
+.svev-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.svev-group {
+  display: flex; align-items: center; gap: 14px;
+  padding: 13px 18px;
+  background: #ffffff;
+  border: 1.5px solid #d6f5e3;
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: all .2s ease;
+}
+.svev-group:hover { border-color: #6ee7b7; background: #f0fdf4; }
+.svev-group.is-active {
+  background: linear-gradient(120deg, #064e3b 0%, #047857 55%, #10b981 100%);
+  border-color: #047857;
+  box-shadow: 0 6px 18px rgba(16,185,129,.35);
+}
+.svev-group-icon {
+  width: 42px; height: 42px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px;
+  background: #e7f9ef; color: #047857; border: 1px solid #c7f0d8;
+  font-size: 20px;
+}
+.svev-group.is-active .svev-group-icon { background: rgba(255,255,255,.18); color: #fff; border-color: rgba(255,255,255,.25); }
+.svev-group-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.svev-group-title { font-size: 15px; font-weight: 800; color: #064e3b; letter-spacing: -.01em; }
+.svev-group.is-active .svev-group-title { color: #ffffff; }
+.svev-group-sub { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: #6b9e85; }
+.svev-group.is-active .svev-group-sub { color: rgba(255,255,255,.8); }
+
 .svev-tabs-wrap {
   flex-shrink: 0;
   background: linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 100%);
@@ -1470,6 +1546,14 @@ const SVEV_CSS = `
 
 /* ─── DARK MODE ─── */
 [data-bs-theme="dark"] .svev-card { background: #0c2218; }
+[data-bs-theme="dark"] .svev-groups-wrap { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); }
+[data-bs-theme="dark"] .svev-group { background: #102b21; border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .svev-group:hover { background: #14352a; border-color: rgba(16,185,129,.5); }
+[data-bs-theme="dark"] .svev-group.is-active { background: linear-gradient(120deg,#064e3b,#047857); border-color: #10b981; }
+[data-bs-theme="dark"] .svev-group-icon { background: rgba(16,185,129,.20); color: #6ee7b7; border-color: rgba(16,185,129,.3); }
+[data-bs-theme="dark"] .svev-group.is-active .svev-group-icon { background: rgba(255,255,255,.18); color: #fff; }
+[data-bs-theme="dark"] .svev-group-title { color: #d1fae5; }
+[data-bs-theme="dark"] .svev-group-sub { color: #8fbfa6; }
 [data-bs-theme="dark"] .svev-tabs-wrap { background: linear-gradient(180deg, #0c2218 0%, #102b21 100%); border-bottom-color: rgba(16,185,129,.22); }
 [data-bs-theme="dark"] .svev-tab { background: #102b21; border-color: rgba(16,185,129,.28); color: #6ee7b7; box-shadow: 0 1px 2px rgba(0,0,0,0.30); }
 [data-bs-theme="dark"] .svev-tab-icon { background: rgba(16,185,129,.18); color: #6ee7b7; }
@@ -1549,6 +1633,8 @@ const SVEV_CSS = `
   .svev-kpi-nav { width: 30px; height: 30px; font-size: 16px; }
   .svev-kpi-nav-prev { left: 10px; }
   .svev-kpi-nav-next { right: 10px; }
+  .svev-groups-wrap { padding: 12px 14px 0; }
+  .svev-groups { grid-template-columns: 1fr; gap: 10px; }
   .svev-tabs-wrap { padding: 10px 14px; }
   .svev-tab { padding: 7px 14px 7px 7px; font-size: 12.5px; gap: 7px; }
   .svev-tab-icon { width: 24px; height: 24px; font-size: 13px; }
