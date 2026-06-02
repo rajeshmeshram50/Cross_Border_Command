@@ -1322,6 +1322,27 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     return e;
   };
 
+  /* Guarded tab switcher handed to the Stage 1 tab buttons. The user can't
+     jump straight to "Address & Contact" until the Identification fields are
+     valid — clicking it validates first and only switches when clean (else it
+     surfaces the inline errors + scrolls to the first one). Going back to
+     "identification" is always allowed. Internal flows (goNext / goPrev /
+     reset) keep calling setIdTab directly, so they're unaffected. */
+  const requestIdTab = (t: IdentityTab) => {
+    if (t === 'address-contact' && idTab !== 'address-contact') {
+      const e = validateStage1();
+      setErrors1(e);
+      if (Object.keys(e).length > 0) {
+        const firstKey = Object.keys(e)[0];
+        setTimeout(() => {
+          document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 0);
+        return;
+      }
+    }
+    setIdTab(t);
+  };
+
   /* Per-keystroke validator passed down to Stage1. Runs the single-field
    * rule against the post-change form and updates errors1 with just that
    * field's error — so the inline red shows up as the user types instead
@@ -1994,7 +2015,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           {stage === 1 && !showShimmer && (
             <Stage1
               tab={idTab}
-              setTab={setIdTab}
+              setTab={requestIdTab}
               form={form1}
               setForm={setForm1}
               errors={errors1}
@@ -2697,8 +2718,8 @@ const Stage1 = ({
             <Field label="Company Legal Name" required error={errors.legalName} fieldKey="legalName">
               <input className={`acm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} disabled={lock} />
             </Field>
-            <Field label="Company Website">
-              <input className="acm-input" placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
+            <Field label="Company Website" error={errors.website} fieldKey="website">
+              <input className={`acm-input ${errors.website ? 'acm-input-error' : ''}`} placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
             </Field>
             <Field label="Consignee Segment" required error={errors.segment} fieldKey="segment">
               {/* masterFormKit's MasterMultiSelect renders visible violet
@@ -2712,6 +2733,7 @@ const Stage1 = ({
                 invalid={!!errors.segment}
                 disabled={lock}
                 onChange={vs => set('segment', vs)}
+                maxChips={2}
               />
             </Field>
             <Field label="Classification &amp; Flags">

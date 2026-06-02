@@ -2279,7 +2279,11 @@ export default function AddVendorModal(props: {
             <>
               <div className="avm-tabs">
                 <button className={`avm-tab ${idTab === 'identification' ? 'on' : ''}`} onClick={() => setIdTab('identification')}>Supplier Identification</button>
-                <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`}        onClick={() => setIdTab('address')}>Address &amp; Contact Persons</button>
+                {/* Can't jump to Address & Contact Persons until Supplier
+                    Identification is valid. Mirrors Save & Next: validates +
+                    persists (so the address step has a vendorId to attach to)
+                    and only switches when clean — else inline errors show. */}
+                <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`} disabled={saving} onClick={async () => { if (saving || idTab === 'address') return; const ok = await saveIdentity(); if (ok) setIdTab('address'); }}>Address &amp; Contact Persons</button>
               </div>
 
               {idTab === 'identification' && (

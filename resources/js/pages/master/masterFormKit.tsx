@@ -18,6 +18,30 @@ export { MasterDatePicker } from '../../components/ui/MasterDatePicker';
  * array. Items toggle on click; the toggle pill shows a chip strip
  * with the selected labels (truncates with `+N more` when crowded).
  */
+/* The expanded chip strip scrolls horizontally but the scrollbar itself is
+   HIDDEN — the visible bar looked clunky inside the short field. Scrolling
+   still works via wheel / trackpad / drag, and the strip stays as clean as
+   the collapsed state. Self-contained so it applies without <MasterFormStyles/>. */
+const CHIPSTRIP_CSS = `
+.master-multi-chipstrip { scrollbar-width: none; -ms-overflow-style: none; }
+.master-multi-chipstrip::-webkit-scrollbar { width: 0; height: 0; display: none; }
+/* Dark mode — the chips' inline colours (#eef2ff bg / #4338ca text) read as
+   white stickers on the dark form. Override to a violet-tinted token with a
+   light label + subtle violet border (matches the rest of the dark UI). */
+[data-bs-theme="dark"] .master-multi-chip {
+  background: rgba(124,58,237,0.22) !important;
+  color: #ddd6fe !important;
+  border: 1px solid rgba(167,139,250,0.40);
+}
+[data-bs-theme="dark"] .master-multi-chip [role="button"] { color: #ede9fe !important; opacity: .85; }
+[data-bs-theme="dark"] .master-multi-chip [role="button"]:hover { opacity: 1; }
+[data-bs-theme="dark"] .master-multi-more {
+  background: rgba(124,58,237,0.26) !important;
+  color: #ddd6fe !important;
+  border-color: rgba(167,139,250,0.50) !important;
+}
+`;
+
 export function MasterMultiSelect({
   name,
   value,
@@ -39,10 +63,8 @@ export function MasterMultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  /* Expand the chip strip when the user clicks "+N more" — without this
-   * the hidden chips were unreachable: clicking the pill just opened the
-   * dropdown, and removing them required either typing into the search
-   * or scrolling through the options. */
+  /* Clicking "+N more" flips this — the chip strip then shows every selected
+     chip in a single horizontal-scrolling row; "Show less" collapses it. */
   const [expanded, setExpanded] = useState(false);
   useEffect(() => { if (!open) setSearch(''); }, [open]);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -83,6 +105,7 @@ export function MasterMultiSelect({
 
   return (
     <div ref={wrapRef}>
+      <style>{CHIPSTRIP_CSS}</style>
       <Dropdown
         isOpen={open && !disabled}
         toggle={() => { if (!disabled) setOpen(v => !v); }}
@@ -94,40 +117,63 @@ export function MasterMultiSelect({
           type="button"
           disabled={disabled}
           className="master-select-toggle"
-          style={{ minHeight: 38, padding: '4px 30px 4px 12px' }}
+          /* 12px right padding (was 30px) so the chevron sits flush near the
+             right edge like a normal select, instead of floating ~20px in. */
+          style={{ minHeight: 38, padding: '4px 12px' }}
         >
           {selectedOptions.length === 0 ? (
             <span className="master-select-placeholder">{placeholder}</span>
           ) : (
-            <span className="d-inline-flex align-items-center flex-wrap gap-1" style={{ overflow: 'hidden' }}>
-              {(expanded ? selectedOptions : selectedOptions.slice(0, maxChips)).map(o => (
-                <span
-                  key={o.value}
-                  className="d-inline-flex align-items-center"
-                  style={{
-                    background: '#eef2ff',
-                    color: '#4338ca',
-                    padding: '2px 6px 2px 8px',
-                    borderRadius: 12,
-                    fontSize: 12,
-                    fontWeight: 500,
-                    maxWidth: 180,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {o.label}
+            // Collapsed: up to `maxChips` chips (truncated) + a "+N more" pill.
+            // Clicking "+N more" expands the strip to show EVERY selected chip
+            // in a single horizontal-scrolling row (thin scrollbar); "Show less"
+            // collapses it. The field stays one fixed-height row either way.
+            <span
+              className="d-inline-flex align-items-center gap-1"
+              style={{ flexWrap: 'nowrap', overflow: 'hidden', maxWidth: '100%', minWidth: 0, flex: '1 1 auto' }}
+            >
+              <span
+                className={`d-inline-flex align-items-center gap-1${expanded ? ' master-multi-chipstrip' : ''}`}
+                style={{
+                  /* flex:1 so the chip strip fills the space and the "+N more" /
+                     "Show less" pill (flex-shrink:0) is pushed to the right,
+                     next to the dropdown chevron. */
+                  flex: '1 1 auto',
+                  flexWrap: 'nowrap', minWidth: 0,
+                  overflowX: expanded ? 'auto' : 'hidden',
+                  overflowY: 'hidden',
+                }}
+              >
+                {(expanded ? selectedOptions : selectedOptions.slice(0, maxChips)).map(o => (
                   <span
-                    role="button"
-                    onClick={(e) => removeVal(o.value, e)}
-                    style={{ marginLeft: 4, cursor: 'pointer', lineHeight: 1, fontSize: 14 }}
-                    aria-label={`Remove ${o.label}`}
+                    key={o.value}
+                    className="d-inline-flex align-items-center master-multi-chip"
+                    style={{
+                      background: '#eef2ff',
+                      color: '#4338ca',
+                      padding: '2px 6px 2px 8px',
+                      borderRadius: 12,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      maxWidth: expanded ? 200 : 130,
+                      minWidth: 0,
+                      // Expanded chips keep full width and scroll; collapsed
+                      // chips shrink + ellipsis so the row never overflows.
+                      flexShrink: expanded ? 0 : 1,
+                    }}
                   >
-                    ×
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+                    <span
+                      role="button"
+                      onClick={(e) => removeVal(o.value, e)}
+                      style={{ marginLeft: 4, cursor: 'pointer', lineHeight: 1, fontSize: 14, flexShrink: 0 }}
+                      aria-label={`Remove ${o.label}`}
+                    >
+                      ×
+                    </span>
                   </span>
-                </span>
-              ))}
+                ))}
+              </span>
               {selectedOptions.length > maxChips && (
                 <span
                   role="button"
@@ -139,14 +185,15 @@ export function MasterMultiSelect({
                       setExpanded(v => !v);
                     }
                   }}
-                  title={expanded ? 'Show less' : selectedOptions.slice(maxChips).map(o => o.label).join(', ')}
+                  title={expanded ? 'Show less' : `Show all ${selectedOptions.length} — ${selectedOptions.slice(maxChips).map(o => o.label).join(', ')}`}
                   className="master-multi-more"
                   style={{
-                    fontSize: 11.5, fontWeight: 600,
-                    padding: '2px 8px', borderRadius: 12,
+                    fontSize: 10, fontWeight: 600, lineHeight: 1.2,
+                    padding: '1px 6px', borderRadius: 10,
                     background: '#eef2ff', color: '#4338ca',
                     cursor: 'pointer', userSelect: 'none',
                     border: '1px solid #c7d2fe',
+                    flexShrink: 0, whiteSpace: 'nowrap',
                   }}
                 >
                   {expanded ? 'Show less' : `+${selectedOptions.length - maxChips} more`}
