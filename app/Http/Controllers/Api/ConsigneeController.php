@@ -512,7 +512,7 @@ class ConsigneeController extends Controller
             'customer_id'      => 'required|integer|exists:customers,id',
             'company_name'     => 'required|string|max:255',
             'legal_name'       => 'nullable|string|max:255',
-            'segment'          => 'nullable|string|max:64',
+            'segment'          => 'nullable|string|max:1024',
             'classification'   => 'nullable|string|max:64',
             'risk_level'       => 'nullable|string|max:32',
             'website'          => 'nullable|string|max:500',

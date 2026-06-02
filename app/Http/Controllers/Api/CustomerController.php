@@ -80,7 +80,21 @@ class CustomerController extends Controller
                   ->orWhere('primary_email', 'ilike', $search . '%')
                   ->orWhere('company_name',  'ilike', "%{$search}%")
                   ->orWhere('legal_name',    'ilike', "%{$search}%")
-                  ->orWhere('segment',       'ilike', "%{$search}%");
+                  ->orWhere('segment',       'ilike', "%{$search}%")
+                  // Customer Type (shown in the list) — e.g. "Retailer".
+                  ->orWhere('type',          'ilike', "%{$search}%")
+                  /* Country / Contact Person / Contact No live on the primary
+                   * address row (mirrored into the list's Country / Contact /
+                   * Phone columns), so search them via the addresses relation
+                   * to match what the user actually sees in the table. */
+                  ->orWhereHas('addresses', function ($a) use ($search) {
+                      $a->where('is_primary', true)
+                        ->where(function ($x) use ($search) {
+                            $x->where('country',    'ilike', "%{$search}%")
+                              ->orWhere('cp_name',  'ilike', "%{$search}%")
+                              ->orWhere('cp_contact', 'ilike', "%{$search}%");
+                        });
+                  });
             });
         }
 
@@ -425,9 +439,29 @@ class CustomerController extends Controller
     {
         $data = $request->validate([
             'company_name'   => 'required|string|max:255',
-            'legal_name'     => 'nullable|string|max:255',
+            /* Legal (registered entity) name must be unique per tenant — two
+             * customers can't share the same legal name. Case-insensitive,
+             * client-scoped, ignores the row being edited, and skips the check
+             * when blank (legal_name stays optional). */
+            'legal_name'     => [
+                'nullable', 'string', 'max:255',
+                function ($attribute, $value, $fail) use ($clientId, $customerId) {
+                    if (!trim((string) $value)) return;
+                    $exists = \App\Models\Customer::query()
+                        ->whereNull('deleted_at')
+                        ->where(function ($q) use ($clientId) {
+                            $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                        })
+                        ->whereRaw('LOWER(legal_name) = ?', [mb_strtolower(trim((string) $value))])
+                        ->when($customerId, fn ($q) => $q->where('id', '!=', $customerId))
+                        ->exists();
+                    if ($exists) {
+                        $fail('This legal name is already used by another customer.');
+                    }
+                },
+            ],
             'type'           => 'nullable|string|max:64',
-            'segment'        => 'nullable|string|max:64',
+            'segment'        => 'nullable|string|max:1024',
             'classification' => 'nullable|string|max:64',
             'risk_level'     => 'nullable|string|max:32',
             'website'        => 'nullable|string|max:500',

@@ -186,17 +186,24 @@ export default function SalesConsignee() {
   }, []);
 
   const filtered = useMemo(() => {
-    if (!q) return rows;
-    const lo = q.toLowerCase();
+    const lo = q.trim().toLowerCase();
+    if (!lo) return rows;
+    // Defensive lowercase — any undefined/null field used to throw and
+    // silently kill the whole filter (the .filter callback would crash
+    // mid-row), making search look broken. Coerce-then-lowercase keeps
+    // partial + full matching working even if the API omits a field.
+    const m = (v: unknown) => String(v ?? '').toLowerCase();
     return rows.filter(c =>
-      c.company.toLowerCase().includes(lo) ||
-      c.id.toLowerCase().includes(lo) ||
-      c.customerId.toLowerCase().includes(lo) ||
-      c.contact.toLowerCase().includes(lo) ||
-      c.email.toLowerCase().includes(lo) ||
-      c.segment.toLowerCase().includes(lo) ||
-      c.country.toLowerCase().includes(lo) ||
-      String(c.risk).toLowerCase().includes(lo),
+      m(c.company).includes(lo)        ||
+      m(c.id).includes(lo)             ||
+      m(c.customerId).includes(lo)     ||
+      m(c.contact).includes(lo)        ||
+      m(c.email).includes(lo)          ||
+      m(c.phone).includes(lo)          ||
+      m(c.segment).includes(lo)        ||
+      m(c.country).includes(lo)        ||
+      m(c.countryDetail).includes(lo)  ||
+      m(c.risk).includes(lo),
     );
   }, [q, rows]);
 
@@ -476,6 +483,12 @@ export default function SalesConsignee() {
             <ShimmerTable rows={ROWS_PER_PAGE} cols={12} />
           ) : (
             <TableContainer
+              /* `key` flips when search state toggles, forcing the table
+                 to remount on page 1. Without this, an active pageIndex
+                 (page 2/3/...) stays put after the filter narrows the
+                 result set, so the table renders empty even though
+                 matching rows exist — looks like search is broken. */
+              key={q.trim() ? 'search-mode' : 'all-mode'}
               columns={columns}
               data={filtered}
               isGlobalFilter={false}

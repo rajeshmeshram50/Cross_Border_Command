@@ -327,7 +327,9 @@ export default function AddVendorModal(props: {
    * cap matches the backend column. Inline error surfaces when a paste
    * lands disallowed input so the user knows what was stripped. */
   const COMPANY_NAME_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
-  const COMPANY_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+  // \p{L}/\p{N} (u flag) keep non-Latin / Unicode names (e.g. 中文, العربية,
+  // देवनागरी) — only strip markup / symbol-soup, not legitimate scripts.
+  const COMPANY_NAME_INVALID_RE = /[^\p{L}\p{N}\s\-.,()&/'%]/gu;
   const COMPANY_NAME_MAX = 100;
   const handleCompanyNameChange = (
     raw: string,

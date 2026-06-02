@@ -1072,17 +1072,21 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     switch (k) {
       case 'coName':
         if (!f.coName.trim()) return 'Company name is required';
+        if (f.coName.trim().length < 2) return 'Company name must be at least 2 characters';
         if (f.coName.trim().length > 30) return 'Company name must be 30 characters or fewer';
-        if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.coName.trim()))
+        // \p{L}/\p{N} (u flag) allow non-Latin / Unicode names (e.g. 中文, العربية,
+        // देवनागरी) — only block markup / symbol-soup, not legitimate scripts.
+        if (!/^[\p{L}\p{N} .,'&()\-\/]+$/u.test(f.coName.trim()))
           return 'Company name has invalid characters — letters, numbers and . , & \' - ( ) / only';
-        if (!/[A-Za-z]/.test(f.coName)) return 'Company name must contain at least one letter';
+        if (!/\p{L}/u.test(f.coName)) return 'Company name must contain at least one letter';
         return null;
       case 'coLegal':
         if (!f.coLegal.trim()) return 'Legal name is required';
+        if (f.coLegal.trim().length < 2) return 'Legal name must be at least 2 characters';
         if (f.coLegal.trim().length > 100) return 'Legal name must be 100 characters or fewer';
-        if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.coLegal.trim()))
+        if (!/^[\p{L}\p{N} .,'&()\-\/]+$/u.test(f.coLegal.trim()))
           return 'Legal name has invalid characters — letters, numbers and . , & \' - ( ) / only';
-        if (!/[A-Za-z]/.test(f.coLegal)) return 'Legal name must contain at least one letter';
+        if (!/\p{L}/u.test(f.coLegal)) return 'Legal name must contain at least one letter';
         return null;
       case 'coType':
         if (!f.coType) return 'Select a customer type';
@@ -4186,7 +4190,19 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Country" required error={errs.country}>
-              <MasterSelect value={d.country} options={optsWith(masters.countries, d.country)} placeholder="Select country" invalid={!!errs.country} onChange={v => { set('country', v); set('state', '' as any); }} />
+              {/* Single setD for country+state — the old `set('country'); set('state','')`
+                  pair each rebuilt from a stale `d`, so the 2nd call reverted the
+                  country and the State stayed locked (QA: country/state not working). */}
+              <MasterSelect value={d.country} options={optsWith(masters.countries, d.country)} placeholder="Select country" invalid={!!errs.country} onChange={v => {
+                const nd = { ...d, country: v, state: '' } as typeof d;
+                setD(nd);
+                setErrs(prev => {
+                  const next = { ...prev };
+                  const c = locFieldRule('country', nd); if (c) next.country = c; else delete next.country;
+                  const s = locFieldRule('state', nd);   if (s) next.state = s; else delete next.state;
+                  return next;
+                });
+              }} />
             </Field>
             <Field label="State" required error={errs.state}>
               <MasterSelect
