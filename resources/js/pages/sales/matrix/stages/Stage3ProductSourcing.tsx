@@ -39,7 +39,7 @@ const SOURCING_OPTIONS = [
   { value: 'not_required', label: 'Not Required' },
 ];
 
-export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLead }: StageProps) {
+export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLead, embedded }: StageProps) {
   const toast = useToast();
 
   const [tab, setTab]                       = useState<Tab>('details');
@@ -764,7 +764,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
         )}
       </div>
 
-      {/* Footer */}
+      {/* Footer — pipeline navigation; hidden when opened as a toolbar popup. */}
+      {!embedded && (
       <div className="smd-stg-foot">
         <div className={`smd-stg-foot-note ${isReady ? 's3-foot-note-ok' : ''}`}>
           {isReady ? (
@@ -786,6 +787,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
           </button>
         </div>
       </div>
+      )}
 
       <CreateProcurementModal
         open={procModalOpen}

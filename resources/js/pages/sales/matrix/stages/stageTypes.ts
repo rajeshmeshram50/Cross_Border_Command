@@ -21,6 +21,11 @@ export type StageProps = {
    * (the only other path that re-rendered the parent with new
    * server state). */
   onPiChange?: () => void;
+  /* When the stage is rendered inside a toolbar popup (not the pipeline),
+   * the "Save & Next / Previous" footer is suppressed — the popup is a
+   * quick-action view, not a pipeline step. All in-table actions still
+   * persist immediately, so nothing is lost by hiding the footer. */
+  embedded?: boolean;
 };
 
 /* Shared stage shell styles — each stage imports SHARED_STAGE_CSS once. */
