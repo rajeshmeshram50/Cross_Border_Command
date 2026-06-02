@@ -1612,7 +1612,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         {stage === 1 && !showShimmer && (
           <div className="acm-tabs">
             <button type="button" className={`acm-tab ${tab === 'identification' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => setTab('identification')}>Customer Identification</button>
-            <button type="button" className={`acm-tab ${tab === 'address-contact' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => setTab('address-contact')}>Address &amp; Contact Details</button>
+            {/* Can't jump to Address & Contact until the Customer Identification
+                fields are valid — clicking validates first and only switches if
+                clean (else it surfaces the inline errors). Already on that tab
+                or going back to identification stays free. */}
+            <button type="button" className={`acm-tab ${tab === 'address-contact' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => { if (tab === 'address-contact' || validateStage1()) setTab('address-contact'); }}>Address &amp; Contact Details</button>
           </div>
         )}
 
@@ -2233,6 +2237,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 placeholder="Select segment"
                 invalid={!!errors.coSeg}
                 onChange={vs => set('coSeg', vs)}
+                maxChips={2}
               />
             </Field>
             <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">

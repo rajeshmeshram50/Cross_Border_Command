@@ -1259,8 +1259,8 @@ const SCOPED_CSS = `
    subtle borders. Same density and weight across all three so the
    row reads as a tidy strip. */
 .smc-type-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 12px 4px 11px;
+  display: inline-flex; align-items: center;
+  padding: 4px 12px;
   border-radius: 999px;
   font-size: 10.5px; font-weight: 700;
   letter-spacing: .02em;
@@ -1268,19 +1268,9 @@ const SCOPED_CSS = `
   box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 1px 2px rgba(15,23,42,.06);
   transition: filter .15s ease, transform .15s ease;
 }
-.smc-type-pill::before {
-  content: '';
-  width: 6px; height: 6px; border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 0 2px rgba(255,255,255,.35);
-  flex-shrink: 0;
-}
 .smc-type-pill:hover { filter: brightness(1.05); transform: translateY(-1px); }
 [data-bs-theme="dark"] .smc-type-pill {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.25);
-}
-[data-bs-theme="dark"] .smc-type-pill::before {
-  box-shadow: 0 0 6px currentColor;
 }
 .smc-seg {
   display: inline-flex; align-items: center;
