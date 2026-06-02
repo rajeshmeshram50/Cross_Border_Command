@@ -104,10 +104,13 @@ class QuotationController extends Controller
         if (!$user) abort(401);
 
         $row = Quotation::query()
-            ->with(['items', 'customer:id,customer_code,company_name',
-                    'consignee:id,consignee_code,company_name',
-                    'lead:id,opp_code',
-                    'salesManager:id,name'])
+            ->with([
+                'items',
+                'customer:id,customer_code,company_name',
+                'consignee:id,consignee_code,company_name',
+                'lead:id,opp_code',
+                'salesManager:id,name'
+            ])
             ->findOrFail($id);
         $this->assertScope($row, $user);
 
@@ -162,12 +165,12 @@ class QuotationController extends Controller
                 'exchange_rate'     => $data['exchange_rate']    ?? null,
                 'inco_term'         => $data['inco_term']        ?? null,
                 'port_of_loading'   => $data['port_of_loading']  ?? null,
-                'port_of_discharge' => $data['port_of_discharge']?? null,
-                'final_destination' => $data['final_destination']?? null,
+                'port_of_discharge' => $data['port_of_discharge'] ?? null,
+                'final_destination' => $data['final_destination'] ?? null,
                 'origin_country'    => $data['origin_country']   ?? null,
                 'state_code'        => $data['state_code']       ?? null,
                 'sales_manager_id'  => $data['sales_manager_id'] ?? $user->id,
-                'sales_manager_name'=> $smName,
+                'sales_manager_name' => $smName,
                 'sub_total'         => $totals['sub_total'],
                 'shipping'          => $totals['shipping'],
                 'grand_total'       => $totals['grand_total'],
@@ -250,12 +253,12 @@ class QuotationController extends Controller
                 'exchange_rate'     => $data['exchange_rate']    ?? null,
                 'inco_term'         => $data['inco_term']        ?? null,
                 'port_of_loading'   => $data['port_of_loading']  ?? null,
-                'port_of_discharge' => $data['port_of_discharge']?? null,
-                'final_destination' => $data['final_destination']?? null,
+                'port_of_discharge' => $data['port_of_discharge'] ?? null,
+                'final_destination' => $data['final_destination'] ?? null,
                 'origin_country'    => $data['origin_country']   ?? null,
                 'state_code'        => $data['state_code']       ?? null,
                 'sales_manager_id'  => $data['sales_manager_id'] ?? $row->sales_manager_id,
-                'sales_manager_name'=> $smName ?: $row->sales_manager_name,
+                'sales_manager_name' => $smName ?: $row->sales_manager_name,
                 'sub_total'         => $totals['sub_total'],
                 'shipping'          => $totals['shipping'],
                 'grand_total'       => $totals['grand_total'],
@@ -404,11 +407,14 @@ class QuotationController extends Controller
             // to the customer. gt:0 mirrors the shared-price fix.
             'items.*.rate'         => 'required|numeric|gt:0',
             // No upper cap on tax_pct — see ProformaInvoiceController.
+
             'items.*.tax_pct'      => 'nullable|numeric|min:0',
         ];
 
         if ($docType === Quotation::DOC_INTERNATIONAL) {
-            $rules['inco_term']         = 'required|string|max:16';
+            // INCO Term stores the full master label (e.g. "CIP – Carriage
+            // and Insurance Paid"), so it isn't a short 16-char code.
+            $rules['inco_term']         = 'required|string|max:100';
             $rules['port_of_loading']   = 'required|string|max:128';
             $rules['port_of_discharge'] = 'required|string|max:128';
             $rules['final_destination'] = 'required|string|max:128';
@@ -416,7 +422,7 @@ class QuotationController extends Controller
             $rules['state_code']        = 'nullable|string|max:64';
         } else {
             $rules['state_code']        = 'required|string|max:64';
-            $rules['inco_term']         = 'nullable|string|max:16';
+            $rules['inco_term']         = 'nullable|string|max:100';
             $rules['port_of_loading']   = 'nullable|string|max:128';
             $rules['port_of_discharge'] = 'nullable|string|max:128';
             $rules['final_destination'] = 'nullable|string|max:128';
@@ -545,6 +551,33 @@ class QuotationController extends Controller
      * so a future caller (console command, queued job, etc.) that
      * forgets the outer lock can't allocate a duplicate code.
      */
+    /**
+     * Read-only preview of the next quotation code for the Create form's
+     * "Quotation ID" pill. Same QT/{FY}/{SEQ} format as nextCode() but
+     * WITHOUT the advisory lock — it never consumes a sequence number, so
+     * it's purely indicative (the authoritative code is allocated on save).
+     */
+    public function previewCode(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $code = null;
+        if ($user && $user->client_id) {
+            $fy = $this->currentFinancialYear();
+            $codes = Quotation::where('client_id', $user->client_id)
+                ->where('code', 'like', "QT/{$fy}/%")
+                ->pluck('code')->all();
+            $max = 0;
+            foreach ($codes as $c) {
+                if (preg_match('#^QT/' . preg_quote($fy, '#') . '/(\d+)$#', $c, $m)) {
+                    $n = (int) $m[1];
+                    if ($n > $max) $max = $n;
+                }
+            }
+            $code = "QT/{$fy}/" . ($max + 1);
+        }
+        return response()->json(['status' => true, 'data' => ['code' => $code]]);
+    }
+
     private function nextCode(int $clientId): string
     {
         $fy = $this->currentFinancialYear();
@@ -721,9 +754,9 @@ class QuotationController extends Controller
             $like = "%{$search}%";
             $q->where(function ($w) use ($like) {
                 $w->where('code',          'ilike', $like)
-                  ->orWhere('opp_code',     'ilike', $like)
-                  ->orWhere('customer_name','ilike', $like)
-                  ->orWhere('consignee_name','ilike', $like);
+                    ->orWhere('opp_code',     'ilike', $like)
+                    ->orWhere('customer_name', 'ilike', $like)
+                    ->orWhere('consignee_name', 'ilike', $like);
             });
         }
     }

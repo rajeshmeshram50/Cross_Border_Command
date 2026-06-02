@@ -408,6 +408,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // backed by the `quotations` / `quotation_items` tables. Code sequence
     // QT/YYYY-NN/SEQ allocated atomically per client per financial year.
     Route::get   ('/sales/quotations',                          [QuotationController::class, 'index']);
+    Route::get   ('/sales/quotations/preview-code',             [QuotationController::class, 'previewCode']);
     Route::post  ('/sales/quotations',                          [QuotationController::class, 'store']);
     Route::get   ('/sales/quotations/{id}',                     [QuotationController::class, 'show'])->whereNumber('id');
     Route::put   ('/sales/quotations/{id}',                     [QuotationController::class, 'update'])->whereNumber('id');
@@ -418,6 +419,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // Sales Matrix → Proforma Invoices. Mirror of Quotations + BT
     // reference + signature mode + source_quotation_id traceback.
     Route::get   ('/sales/proforma-invoices',                                   [ProformaInvoiceController::class, 'index']);
+    Route::get   ('/sales/proforma-invoices/preview-code',                      [ProformaInvoiceController::class, 'previewCode']);
     Route::post  ('/sales/proforma-invoices',                                   [ProformaInvoiceController::class, 'store']);
     // Literal segment before {id} so Laravel doesn't try to capture
     // 'from-quotation' as the numeric id.

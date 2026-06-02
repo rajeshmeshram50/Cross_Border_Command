@@ -78,6 +78,10 @@ export type ApplicablePayload = {
     consignee: { id: number; name: string; email: string | null } | null;
   };
   pi: { id: number; code: string | null; status: string | null } | null;
+  /* Latest non-cancelled quotation on the lead. Segment Details unlock as
+   * soon as EITHER a quotation or a PI exists (segments derive from the
+   * mapped products of whichever is present, PI preferred). */
+  quotation: { id: number; code: string | null; status: string | null } | null;
   totals: {
     highly: { matched: number; total: number };
     less:   { matched: number; total: number };

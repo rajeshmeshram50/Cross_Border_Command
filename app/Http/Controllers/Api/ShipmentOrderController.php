@@ -46,7 +46,7 @@ class ShipmentOrderController extends Controller
             // for early drafts that haven't priced freight yet.
             'freight_cost'        => 'nullable|numeric|gt:0',
             'shipping_mode'       => 'nullable|string|max:64',
-            'inco_term'           => 'nullable|string|max:32',
+            'inco_term'           => 'nullable|string|max:100',
             // B17: port_of_loading is required — a shipment without an
             // origin port is operationally meaningless and breaks the
             // logistics handoff (carriers ask for it first).
@@ -186,7 +186,7 @@ class ShipmentOrderController extends Controller
             'zip_code'            => 'nullable|string|max:12|regex:/^[A-Za-z0-9\s\-]+$/',
             'freight_cost'        => 'nullable|numeric|gt:0',
             'shipping_mode'       => 'nullable|string|max:64',
-            'inco_term'           => 'nullable|string|max:32',
+            'inco_term'           => 'nullable|string|max:100',
             'port_of_loading'     => 'sometimes|required|string|max:128',
             'port_of_unloading'   => 'nullable|string|max:128',
             'final_destination'   => 'nullable|string|max:128',

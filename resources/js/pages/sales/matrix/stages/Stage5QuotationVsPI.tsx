@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import {
   CreateQuotationModal,
@@ -13,17 +17,15 @@ import {
 /* ─────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Stage 5: Quotation vs PI
  *
- *  Lists every Quotation and Proforma Invoice attached to the current
- *  lead (filtered server-side via ?opp_id={leadId}). Per-row inline
- *  actions: View PDF · Download PDF · Convert to PI · Email.
+ *  Ported to the IDIMS reference design: teal/cyan header with a
+ *  "View Latest Quoted Price Summary" button, a segmented Quotation /
+ *  Proforma Invoice toggle, and a navy document table. Per-row actions:
+ *  Convert to PI · Email · Edit · More (Download / View · With / Without
+ *  Signature) · Delete.
  *
  *  The full 2-step Create Quotation / Create PI wizard from the SalesQPI
- *  workspace is lifted into Stage 5 via the exported modal components —
- *  the lead context (opp, customer, consignee) is pre-fed so users don't
- *  have to re-pick the opportunity. Clicking a row code re-opens the
- *  same modal in edit mode.
- *
- *  Save & Next persists lead_stage_id=6 (advances to Victory Stage).
+ *  workspace is lifted in via the exported modal components so the lead
+ *  context is pre-fed. Save & Next persists lead_stage_id=6.
  * ───────────────────────────────────────────────────────────────────── */
 
 type DocType = 'quotation' | 'pi';
@@ -35,14 +37,11 @@ type QuotationRow = {
   opp_code:       string | null;
   customer:       { id: number; customer_code: string | null; company_name: string | null } | null;
   consignee:      { id: number; consignee_code: string | null; company_name: string | null } | null;
-  /* G1: backend column is `doc_type` not `document_type` — earlier
-   *  shape always rendered "—" in the Doc Type column. */
   doc_type:       string | null;
   currency:       string | null;
   grand_total:    number | string | null;
   status:         string | null;
   created_at:     string;
-  /* G8: included so "Latest" reflects edits, not just inserts. */
   updated_at?:    string;
 };
 
@@ -68,25 +67,31 @@ const fmtDate = (s: string | null): string => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB');
 };
 
-const fmtMoney = (v: number | string | null, ccy: string | null): string => {
+const fmtNum = (v: number | string | null): string => {
   if (v == null) return '—';
   const num = Number(v);
   if (!Number.isFinite(num)) return '—';
-  return `${ccy ?? ''} ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim();
+  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
-const statusClass = (s: string | null): string => {
+const titleCase = (s: string | null): string =>
+  !s ? '—' : s.replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+const isTerminalQuote = (s: string | null): boolean => {
   const lc = (s ?? '').toLowerCase();
-  if (lc === 'draft')     return 's5-status-draft';
-  if (lc === 'sent')      return 's5-status-sent';
-  if (lc === 'approved')  return 's5-status-approved';
-  if (lc === 'cancelled') return 's5-status-cancelled';
-  if (lc === 'converted') return 's5-status-converted';
-  return 's5-status-default';
+  return lc === 'converted_to_pi' || lc === 'converted' || lc === 'cancelled';
+};
+
+/* Currency may be stored as the full master label ("CAD – Canadian
+ * Dollar") — the list column only wants the 3-letter code ("CAD"). */
+const ccyCode = (c: string | null): string => {
+  const code = (c ?? '').split(/[\s–-]/)[0]?.trim().toUpperCase();
+  return code || '—';
 };
 
 export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead, onPiChange }: StageProps) {
   const toast = useToast();
+  const confirm = useConfirm();
   const leadId = header.leadId ?? null;
 
   const [docType, setDocType]   = useState<DocType>('quotation');
@@ -95,29 +100,38 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   const [pis, setPis]           = useState<PIRow[]>([]);
   const [actingId, setActingId] = useState<number | null>(null);
   const [advancing, setAdvancing] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
 
-  /* Inline create / edit modal state. The modals themselves live in the
-   * SalesQPI workspace — we lift them here so the user gets the same
-   * 2-step wizard inside the matrix detail without leaving the lead. */
+  /* The open More-Actions menu — tracks the row + a screen anchor rect so
+   * the menu can be portalled to <body> (escaping the table's overflow). */
+  const [moreMenu, setMoreMenu] = useState<{ kind: DocType; id: number; anchor: DOMRect } | null>(null);
+
   const [createQtOpen, setCreateQtOpen]     = useState(false);
   const [createPiOpen, setCreatePiOpen]     = useState(false);
   const [editQtId, setEditQtId]             = useState<number | null>(null);
   const [editPiId, setEditPiId]             = useState<number | null>(null);
   const [piSource, setPiSource]             = useState<QpiQuotation | null>(null);
 
-  /* Lead context fed into both modals so the Opportunity dropdown is
-   * pre-filled (customer + consignee labels too). The modals still
-   * cascade-fetch the remaining masters. */
+  /* Lead context handed to the Create modals so the lead's ALREADY-MAPPED
+   * customer & consignee carry through as real selections (code + name +
+   * FK id) — the user never re-picks them, and they can't drift to a
+   * different customer/consignee than the lead was set up with. */
   const initialOpp: QpiInitialOpp | undefined = useMemo(() => {
     if (!leadId) return undefined;
+    const custRow = (header.customerRow ?? null) as Record<string, unknown> | null;
+    const consRow = (header.consigneeRow ?? null) as Record<string, unknown> | null;
     return {
       oppId:           leadId,
       oppCode:         header.oppId,
       oppDate:         header.oppDate,
-      customerLabel:   header.customer,
-      consigneeLabel:  (header.consigneeRow as Record<string, unknown> | null | undefined)?.company_name as string | undefined,
+      customerLabel:   (custRow?.company_name as string | undefined) ?? header.customer,
+      customerCode:    (custRow?.customer_code as string | undefined) ?? header.customerCode,
+      customerId:      header.customerId ?? null,
+      consigneeLabel:  (consRow?.company_name as string | undefined) ?? undefined,
+      consigneeCode:   (consRow?.consignee_code as string | undefined) ?? undefined,
+      consigneeId:     header.consigneeId ?? null,
     };
-  }, [leadId, header.oppId, header.oppDate, header.customer, header.consigneeRow]);
+  }, [leadId, header.oppId, header.oppDate, header.customer, header.customerCode, header.customerRow, header.customerId, header.consigneeRow, header.consigneeId]);
 
   const fetchAll = useCallback(async (silent = false) => {
     if (!leadId) return;
@@ -134,22 +148,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   }, [leadId, toast]);
 
   useEffect(() => { void fetchAll(false); }, [fetchAll]);
-
-  /* Prewarm the Create Quotation / Create PI masters as soon as Stage 5
-   * mounts. The modal needs 11 master fetches to populate its dropdowns;
-   * firing them in the background now means the cache is already hot by
-   * the time the user clicks "+ Create Quotation", so the modal opens
-   * with all dropdowns populated instantly instead of staring at empty
-   * shimmer placeholders. The helper is a no-op if the cache is still
-   * fresh or another caller already started a load. */
   useEffect(() => { prewarmQpiMasters(); }, []);
 
   /* ── Per-row actions ─────────────────────────────────────────────── */
-  const onViewPdf = async (kind: DocType, id: number) => {
+  const onViewPdf = async (kind: DocType, id: number, signature: boolean) => {
     setActingId(id);
     try {
       const url = kind === 'quotation' ? `/sales/quotations/${id}/preview-pdf` : `/sales/proforma-invoices/${id}/preview-pdf`;
-      const res = await api.post(url, { signature: false }, { responseType: 'blob' });
+      const res = await api.post(url, { signature }, { responseType: 'blob' });
       const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
       const blobUrl = URL.createObjectURL(blob);
       window.open(blobUrl, '_blank', 'noopener,noreferrer');
@@ -161,16 +167,17 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     }
   };
 
-  const onDownloadPdf = async (kind: DocType, id: number, code: string | null) => {
+  const onDownloadPdf = async (kind: DocType, id: number, code: string | null, signature: boolean) => {
     setActingId(id);
     try {
       const url = kind === 'quotation' ? `/sales/quotations/${id}/preview-pdf` : `/sales/proforma-invoices/${id}/preview-pdf`;
-      const res = await api.post(url, { signature: false }, { responseType: 'blob' });
+      const res = await api.post(url, { signature }, { responseType: 'blob' });
       const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = `${(code ?? `${kind}-${id}`).replace(/[^a-z0-9\-_.]/gi, '_')}.pdf`;
+      const suffix = signature ? '_signed' : '';
+      a.download = `${(code ?? `${kind}-${id}`).replace(/[^a-z0-9\-_.]/gi, '_')}${suffix}.pdf`;
       a.click();
       URL.revokeObjectURL(blobUrl);
     } catch {
@@ -188,18 +195,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         `/sales/proforma-invoices/from-quotation/${q.id}`,
       );
       const code = data?.data?.code ?? 'PI';
-      /* G4: refetch FIRST, then flip the tab. If we flip first the
-       *  user sees the PI tab momentarily empty before the new row
-       *  paints; refetch-then-switch lands them on the populated PI
-       *  list immediately. */
       await fetchAll(true);
       setDocType('pi');
       toast.success('Converted to PI', `New proforma invoice ${code} created from ${q.code ?? 'this quotation'}.`);
+      onPiChange?.();
     } catch (e: any) {
-      const msg = e?.response?.data?.message;
-      // The PI controller blocks duplicate PIs per opportunity — surface
-      // that clearly so users know to edit the existing PI instead.
-      toast.error('Conversion blocked', msg ?? 'Could not convert this quotation to a PI.');
+      toast.error('Conversion blocked', e?.response?.data?.message ?? 'Could not convert this quotation to a PI.');
     } finally {
       setActingId(null);
     }
@@ -218,9 +219,28 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     }
   };
 
-  /* ── Create — opens the SalesQPI workspace modals INLINE with the
-   * current lead context pre-filled. No page navigation, no re-pick of
-   * the opportunity dropdown. */
+  const onDelete = async (kind: DocType, id: number, code: string | null) => {
+    const ok = await confirm({
+      title: kind === 'quotation' ? 'Delete quotation?' : 'Delete proforma invoice?',
+      message: `This permanently removes ${code ?? `#${id}`} from this opportunity. This can't be undone.`,
+      tone: 'danger',
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
+    setActingId(id);
+    try {
+      const url = kind === 'quotation' ? `/sales/quotations/${id}` : `/sales/proforma-invoices/${id}`;
+      await api.delete(url);
+      toast.success('Deleted', `${code ?? 'Document'} was removed from this opportunity.`);
+      await fetchAll(true);
+      if (kind === 'pi') onPiChange?.();
+    } catch (e: any) {
+      toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete this document.');
+    } finally {
+      setActingId(null);
+    }
+  };
+
   const onCreate = (kind: DocType) => {
     if (!leadId) {
       toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to attach a quotation.');
@@ -235,15 +255,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     else                      { setEditPiId(id); setPiSource(null); setCreatePiOpen(true); }
   };
 
-  /* ── Save & Next → advance to Stage 6 ────────────────────────────── */
   const onSaveAndNext = async () => {
     if (!leadId) {
       toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
       return;
     }
-    /* G7: live = not-cancelled. A lead whose only quotations/PIs are
-     *  cancelled has nothing to advance with — the cancelled rows
-     *  represent rejected deals, not progress. */
     if (liveQuotationsCount === 0 && livePisCount === 0) {
       toast.warning('Create a quotation or PI first', 'Stage 5 needs at least one active quotation or proforma invoice before advancing.');
       return;
@@ -263,48 +279,16 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
   /* ── Derived ───────────────────────────────────────────────────── */
   const rows = docType === 'quotation' ? quotations : pis;
-
-  /* G6: previously each row checked `actingId === r.id` to disable
-   *  its own buttons only — so clicking on row 1 (action in flight)
-   *  then clicking on row 2 reassigned actingId to row 2, silently
-   *  re-enabling row 1's buttons mid-flight. Now a single page-wide
-   *  flag locks every action button while ANY row is in flight,
-   *  killing the race and matching the user expectation of "I just
-   *  clicked something, the page is busy". */
   const anyActing = actingId !== null;
 
-  /* G2: group totals by currency so a mix of INR + USD doesn't get
-   *  summed under a single (and wrong) currency label. Result shape:
-   *  Map<currency, sum>. The render picks the unique currency when
-   *  exactly one is present, otherwise shows "Mixed". */
-  const totalsByCurrency = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const r of rows) {
-      const n = Number(r.grand_total);
-      if (!Number.isFinite(n)) continue;
-      const ccy = (r.currency ?? '').toUpperCase() || '—';
-      map.set(ccy, (map.get(ccy) ?? 0) + n);
-    }
-    return map;
-  }, [rows]);
+  /* PI "Converted From" → resolve the source quotation's code from the
+   * quotation list we already loaded. */
+  const quotationCodeById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const q of quotations) if (q.code) m.set(q.id, q.code);
+    return m;
+  }, [quotations]);
 
-  /* G8: "Latest" reflects the most recently TOUCHED row, not the
-   *  highest-id one. Falls back to created_at when updated_at is
-   *  missing (older rows pre-dating the API exposing updated_at). */
-  const latestTimestamp = useMemo(() => {
-    let best: string | null = null;
-    let bestMs = -Infinity;
-    for (const r of rows) {
-      const ts = r.updated_at ?? r.created_at;
-      const ms = ts ? new Date(ts).getTime() : NaN;
-      if (Number.isFinite(ms) && ms > bestMs) { bestMs = ms; best = ts; }
-    }
-    return best;
-  }, [rows]);
-
-  /* G7: Save & Next blocks when there's no LIVE (non-cancelled) doc
-   *  on the lead. Counting `length` alone let an all-cancelled lead
-   *  advance to Stage 6 with nothing of substance to show. */
   const liveQuotationsCount = useMemo(
     () => quotations.filter(q => (q.status ?? '').toLowerCase() !== 'cancelled').length,
     [quotations],
@@ -314,154 +298,107 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     [pis],
   );
 
+  const colSpan = docType === 'quotation' ? 7 : 9;
+
   return (
     <>
       <style>{SHARED_STAGE_CSS}{STAGE5_CSS}</style>
 
+      {/* ── Header (teal) with View-Summary button ── */}
       <div className="smd-stg-head smd-s5-head">
         <div className="smd-stg-head-left">
           <div className="smd-stg-head-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14 2 14 8 20 8"/>
+              <path d="M12 3v18M5 7l7-4 7 4M4 7l4 9a4 4 0 0 1-8 0zM16 7l4 9a4 4 0 0 1-8 0z"/>
             </svg>
           </div>
           <div>
             <div className="smd-stg-head-title">Stage 5: Quotation vs PI</div>
-            <div className="smd-stg-head-sub">● Quotation / Proforma Invoice comparison</div>
+            <div className="smd-stg-head-sub">● Quotation / PI comparison underway</div>
           </div>
         </div>
-        <span className="smd-stg-head-badge">● ACTIVE</span>
+        <div className="s5-head-right">
+          <span className="smd-stg-head-badge">● ACTIVE</span>
+          <span className="s5-head-divider" />
+          <button type="button" className="s5-summary-btn" onClick={() => setSummaryOpen(true)}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+            View Latest Quoted Price Summary
+          </button>
+        </div>
       </div>
 
       <div className="smd-stg-body">
-        {/* Tab + Create row */}
-        <div className="s5-tab-row">
-          <div className="s5-tabs">
+        {/* Segmented tab toggle + Create buttons (figma action row) */}
+        <div className="s5-actionrow">
+          <div className="s5-seg">
             <button
               type="button"
-              className={`s5-tab s5-tab-q ${docType === 'quotation' ? 'active' : ''}`}
+              className={`s5-seg-btn ${docType === 'quotation' ? 'active' : ''}`}
               onClick={() => setDocType('quotation')}
             >
-              <span className="s5-tab-ico">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                </svg>
-              </span>
-              Quotation
-              <span className="s5-tab-count">{quotations.length}</span>
+              <span className="s5-seg-dot" />
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+                <line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>
+              </svg>
+              <span>Quotation</span>
             </button>
             <button
               type="button"
-              className={`s5-tab s5-tab-p ${docType === 'pi' ? 'active' : ''}`}
+              className={`s5-seg-btn ${docType === 'pi' ? 'active' : ''}`}
               onClick={() => setDocType('pi')}
             >
-              <span className="s5-tab-ico">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                  <rect x="3" y="4" width="18" height="16" rx="2" />
-                </svg>
-              </span>
-              Proforma Invoice
-              <span className="s5-tab-count">{pis.length}</span>
-            </button>
-          </div>
-          <div className="s5-create-row">
-            <button type="button" className="s5-create-btn s5-create-q" onClick={() => onCreate('quotation')}>
-              + Create Quotation
-            </button>
-            <button type="button" className="s5-create-btn s5-create-p" onClick={() => onCreate('pi')}>
-              + Create PI
-            </button>
-          </div>
-        </div>
-
-        {/* Summary band */}
-        <div className="s5-summary smd-fade-in" key={`sum-${docType}`}>
-          <div className="s5-summary-cell">
-            <span className="s5-summary-label">{docType === 'quotation' ? 'Total Quotations' : 'Total Proforma Invoices'}</span>
-            <span className="s5-summary-val">{loading ? <span className="smd-skel smd-skel-num" /> : rows.length}</span>
-          </div>
-          <div className="s5-summary-cell">
-            <span className="s5-summary-label">Combined Value</span>
-            <span className="s5-summary-val">{loading ? <span className="smd-skel" style={{ maxWidth: 110 }} /> : (() => {
-              /* G2: when the rows share a single currency, render the
-               *  sum with that currency. When two or more currencies
-               *  are mixed, render each total on its own line + a
-               *  "Mixed" label so the user isn't misled by a single
-               *  number that adds INR + USD together. */
-              if (totalsByCurrency.size === 0) return '—';
-              if (totalsByCurrency.size === 1) {
-                const [ccy, sum] = totalsByCurrency.entries().next().value as [string, number];
-                return fmtMoney(sum, ccy);
-              }
-              return (
-                <span className="s5-summary-mixed" title="Multiple currencies in use — totals shown per currency">
-                  {Array.from(totalsByCurrency.entries()).map(([ccy, sum]) => (
-                    <span key={ccy} className="s5-summary-mixed-row">{fmtMoney(sum, ccy)}</span>
-                  ))}
-                </span>
-              );
-            })()}</span>
-          </div>
-          <div className="s5-summary-cell">
-            <span className="s5-summary-label">Latest</span>
-            <span className="s5-summary-val">{loading ? <span className="smd-skel" style={{ maxWidth: 110 }} /> : fmtDate(latestTimestamp)}</span>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="s5-card smd-fade-in" key={docType}>
-          <div className="s5-card-head">
-            <div className="s5-card-head-icon">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
+              <span className="s5-seg-dot" />
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/>
               </svg>
-            </div>
-            <div>
-              <div className="s5-card-title">
-                {docType === 'quotation' ? 'Quotations on this Opportunity' : 'Proforma Invoices on this Opportunity'}
-              </div>
-              <div className="s5-card-sub">
-                {docType === 'quotation'
-                  ? 'Convert a quotation into a PI when the customer confirms.'
-                  : 'One PI per opportunity. Already converted? Edit the existing PI.'}
-              </div>
-            </div>
+              <span>Proforma Invoice</span>
+            </button>
           </div>
+          <div className="s5-create-group">
+            <button type="button" className="s5-create-btn s5-create-q" onClick={() => onCreate('quotation')}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Create Quotation
+            </button>
+            <span className="s5-create-div" />
+            <button type="button" className="s5-create-btn s5-create-p" onClick={() => onCreate('pi')}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Create PI
+            </button>
+          </div>
+        </div>
 
-          <div className="s5-table-wrap">
-            <table className="s5-table">
+        {/* Document table */}
+        <div className="s5-tbl-card smd-fade-in" key={docType}>
+          <div className="s5-tbl-wrap">
+            <table className="s5-tbl">
               <thead>
                 <tr>
-                  <th style={{ width: 50 }}>Sr No</th>
+                  <th className="ta-c" style={{ width: 52 }}>Sr No</th>
                   <th style={{ width: 150 }}>{docType === 'quotation' ? 'Quotation No' : 'PI No'}</th>
-                  <th style={{ width: 110 }}>Date</th>
-                  <th>Customer</th>
-                  <th style={{ width: 110 }}>Doc Type</th>
-                  <th style={{ width: 70 }}>Currency</th>
-                  <th style={{ width: 140 }}>Value</th>
-                  <th style={{ width: 110 }}>Status</th>
-                  <th style={{ width: 170 }}>Actions</th>
+                  <th style={{ width: 120 }}>{docType === 'quotation' ? 'Quotation Date' : 'PI Date'}</th>
+                  {docType === 'pi' && <th style={{ width: 140 }}>Converted From</th>}
+                  <th style={{ width: 130 }}>Document Type</th>
+                  <th style={{ width: 90 }}>Currency</th>
+                  <th className="ta-r" style={{ width: 150 }}>{docType === 'quotation' ? 'Quotation Value' : 'PI Value'}</th>
+                  {docType === 'pi' && <th className="ta-c" style={{ width: 100 }}>Status</th>}
+                  <th className="ta-r">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && Array.from({ length: 3 }).map((_, i) => (
                   <tr key={`sk-${i}`} className="smd-fade-in">
-                    <td><span className="smd-skel smd-skel-num" /></td>
-                    <td><span className="smd-skel smd-skel-chip" /></td>
-                    <td><span className="smd-skel" style={{ maxWidth: 80 }} /></td>
-                    <td><span className="smd-skel smd-skel-name" /></td>
-                    <td><span className="smd-skel smd-skel-pill" /></td>
-                    <td><span className="smd-skel smd-skel-chip" /></td>
-                    <td><span className="smd-skel smd-skel-num" /></td>
-                    <td><span className="smd-skel smd-skel-pill" /></td>
-                    <td><span className="smd-skel smd-skel-btn" /></td>
+                    {Array.from({ length: colSpan }).map((__, j) => (
+                      <td key={j}><span className="smd-skel" style={{ maxWidth: j === colSpan - 1 ? 160 : 90 }} /></td>
+                    ))}
                   </tr>
                 ))}
 
                 {!loading && rows.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="s5-empty">
+                    <td colSpan={colSpan} className="s5-empty">
                       {docType === 'quotation'
                         ? 'No quotations on this opportunity yet — click "+ Create Quotation" to start.'
                         : 'No proforma invoices yet. Convert a quotation to PI, or click "+ Create PI".'}
@@ -469,89 +406,87 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                   </tr>
                 )}
 
-                {!loading && rows.map((r, idx) => (
-                  <tr key={r.id} className={anyActing && actingId === r.id ? 's5-row-acting' : undefined}>
-                    <td><span className="s5-sr">{idx + 1}</span></td>
-                    <td>
-                      {/* G5: if the code is missing, show the row id as
-                       *  a stable fallback so the user knows what they
-                       *  would be editing. Button stays clickable since
-                       *  edit still works by id. */}
-                      <button
-                        type="button"
-                        className="s5-code s5-code-link"
-                        onClick={() => onEdit(docType, r.id)}
-                        title={r.code ? 'Edit this document' : `Edit document #${r.id} (no code assigned)`}
-                        disabled={anyActing}
-                      >
-                        {r.code ?? `#${r.id}`}
-                      </button>
-                    </td>
-                    <td>{fmtDate(r.created_at)}</td>
-                    <td>
-                      <div className="s5-cust">
-                        <span className="s5-cust-name">{r.customer?.company_name ?? '—'}</span>
-                        {r.customer?.customer_code && <span className="s5-cust-code">{r.customer.customer_code}</span>}
-                      </div>
-                    </td>
-                    <td><span className="s5-doctype">{r.doc_type ?? '—'}</span></td>
-                    <td><span className="s5-ccy">{r.currency ?? '—'}</span></td>
-                    <td className="s5-value">{fmtMoney(r.grand_total, r.currency)}</td>
-                    <td><span className={`s5-status ${statusClass(r.status)}`}>{r.status ?? '—'}</span></td>
-                    <td>
-                      <div className="s5-actions">
+                {!loading && rows.map((r, idx) => {
+                  const terminal = docType === 'quotation' && isTerminalQuote(r.status);
+                  return (
+                    <tr key={r.id} className={anyActing && actingId === r.id ? 's5-row-acting' : undefined}>
+                      <td className="ta-c"><span className="s5-sr2">{idx + 1}</span></td>
+                      <td>
                         <button
-                          type="button" className="s5-act-btn" title="View PDF"
-                          onClick={() => void onViewPdf(docType, r.id)}
+                          type="button" className="s5-qno"
+                          onClick={() => onEdit(docType, r.id)}
+                          title={r.code ? 'Edit this document' : `Edit document #${r.id}`}
                           disabled={anyActing}
                         >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                          </svg>
+                          {r.code ?? `#${r.id}`}
                         </button>
-                        <button
-                          type="button" className="s5-act-btn" title="Download PDF"
-                          onClick={() => void onDownloadPdf(docType, r.id, r.code)}
-                          disabled={anyActing}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                          </svg>
-                        </button>
-                        <button
-                          type="button" className="s5-act-btn" title="Email to customer"
-                          onClick={() => void onEmail(docType, r.id, r.code)}
-                          disabled={anyActing}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-                            <polyline points="22,6 12,13 2,6"/>
-                          </svg>
-                        </button>
-                        {/* G3: hide Convert on terminal states. A
-                         *  `converted_to_pi` quote is already done; a
-                         *  `cancelled` quote can't be revived. Either
-                         *  click would trigger a server 409, so don't
-                         *  bait the user. */}
-                        {docType === 'quotation'
-                          && (r.status ?? '').toLowerCase() !== 'converted_to_pi'
-                          && (r.status ?? '').toLowerCase() !== 'cancelled' && (
+                      </td>
+                      <td className="s5-muted">{fmtDate(r.created_at)}</td>
+                      {docType === 'pi' && (
+                        <td>
+                          {(() => {
+                            const srcId = (r as PIRow).source_quotation_id;
+                            const srcCode = srcId != null ? quotationCodeById.get(srcId) : undefined;
+                            return srcId != null
+                              ? <span className="s5-cf">{srcCode ?? `#${srcId}`}</span>
+                              : <span className="s5-dash">—</span>;
+                          })()}
+                        </td>
+                      )}
+                      <td><span className="s5-dt2">{titleCase(r.doc_type)}</span></td>
+                      <td><span className="s5-cur2">{ccyCode(r.currency)}</span></td>
+                      <td className="ta-r"><span className="s5-val2">{fmtNum(r.grand_total)}</span></td>
+                      {docType === 'pi' && (
+                        <td className="ta-c">
+                          <span className="s5-st-live"><span className="s5-st-dot" />{titleCase(r.status) === '—' ? 'Active' : titleCase(r.status)}</span>
+                        </td>
+                      )}
+                      <td>
+                        <div className="s5-acts">
+                          {docType === 'quotation' && (
+                            terminal ? (
+                              <span className="s5-converted-chip">{titleCase(r.status)}</span>
+                            ) : (
+                              <button
+                                type="button" className="s5-convert2" title="Convert to PI"
+                                onClick={() => void onConvertToPi(r as QuotationRow)}
+                                disabled={anyActing}
+                              >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                  <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                                </svg>
+                                Convert to PI
+                              </button>
+                            )
+                          )}
+                          <span className="s5-act-sep" />
+                          <button type="button" className="s5-icn s5-icn-mail" title="Send via Email"
+                            onClick={() => void onEmail(docType, r.id, r.code)} disabled={anyActing}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                          </button>
+                          <button type="button" className="s5-icn s5-icn-edit" title="Edit"
+                            onClick={() => onEdit(docType, r.id)} disabled={anyActing}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                          </button>
                           <button
-                            type="button" className="s5-act-btn s5-act-convert" title="Convert to PI"
-                            onClick={() => void onConvertToPi(r as QuotationRow)}
+                            type="button" className="s5-icn s5-icn-more" title="More Actions"
+                            onClick={(e) => {
+                              const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                              setMoreMenu(prev => prev && prev.id === r.id && prev.kind === docType ? null : { kind: docType, id: r.id, anchor: rect });
+                            }}
                             disabled={anyActing}
                           >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                              <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-                              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                            </svg>
-                            <span>Convert</span>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          <button type="button" className="s5-icn s5-icn-del" title="Delete"
+                            onClick={() => void onDelete(docType, r.id, r.code)} disabled={anyActing}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -560,20 +495,35 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
       <div className="smd-stg-foot">
         <div className="smd-stg-foot-note">
-          ⚠ <strong>Note :</strong> Share at least one quotation or PI before advancing to Stage 6.
+          ⚠ <strong>Note :</strong> Verify the quotation matches the proforma invoice before advancing to Stage 6.
         </div>
         <div className="smd-stg-btn-row">
           <button className="smd-stg-btn" onClick={onPrev} type="button">← Previous</button>
-          <button
-            className="smd-stg-btn smd-stg-btn-primary"
-            onClick={() => void onSaveAndNext()}
-            disabled={advancing}
-            type="button"
-          >
+          <button className="smd-stg-btn smd-stg-btn-primary" onClick={() => void onSaveAndNext()} disabled={advancing} type="button">
             {advancing ? 'Advancing…' : 'Save & Next →'}
           </button>
         </div>
       </div>
+
+      {/* ── More Actions menu (portalled) ── */}
+      {moreMenu && (
+        <MoreActionsMenu
+          anchor={moreMenu.anchor}
+          onClose={() => setMoreMenu(null)}
+          onPick={(action, signature) => {
+            const id = moreMenu.id, kind = moreMenu.kind;
+            const code = (kind === 'quotation' ? quotations : pis).find(x => x.id === id)?.code ?? null;
+            setMoreMenu(null);
+            if (action === 'download') void onDownloadPdf(kind, id, code, signature);
+            else                        void onViewPdf(kind, id, signature);
+          }}
+        />
+      )}
+
+      {/* ── View Latest Quoted Price Summary popup ── */}
+      {summaryOpen && (
+        <PriceSummaryModal leadId={leadId} onClose={() => setSummaryOpen(false)} />
+      )}
 
       {/* ── Inline Create / Edit modals (lifted from SalesQPI) ── */}
       {createQtOpen && (
@@ -582,9 +532,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           initialOpp={editQtId == null ? initialOpp : undefined}
           onClose={() => { setCreateQtOpen(false); setEditQtId(null); }}
           onSubmit={() => {
-            setCreateQtOpen(false);
-            setEditQtId(null);
+            setCreateQtOpen(false); setEditQtId(null);
             void fetchAll(true);
+            // A quotation also unlocks the Segment Details card (segments
+            // derive from its mapped products), so refresh the parent's
+            // agreement-applicable fetch.
+            onPiChange?.();
           }}
         />
       )}
@@ -599,12 +552,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             setEditPiId(null);
             setPiSource(null);
             void fetchAll(true);
-            // Tell the parent the lead's PI set just changed so it
-            // refetches /clm/leads/{id}/agreement-applicable — that's
-            // what unlocks the Segment Details card on the left rail.
-            // Fires for both create AND edit because edits can also
-            // change the product list (and therefore which segments
-            // / agreements apply).
             onPiChange?.();
           }}
         />
@@ -613,210 +560,595 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   );
 }
 
+/* ─── More Actions menu — fixed-position portal anchored to the 3-dot
+ *      button. Download / View, each With / Without Signature. */
+function MoreActionsMenu({ anchor, onClose, onPick }: {
+  anchor: DOMRect;
+  onClose: () => void;
+  onPick: (action: 'download' | 'view', signature: boolean) => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: anchor.bottom + 6, left: anchor.right - 210 });
+
+  useLayoutEffect(() => {
+    const w = ref.current?.offsetWidth ?? 210;
+    const h = ref.current?.offsetHeight ?? 230;
+    let left = anchor.right - w;
+    let top = anchor.bottom + 6;
+    if (left < 8) left = 8;
+    if (top + h > window.innerHeight - 8) top = anchor.top - h - 6;   // flip above
+    setPos({ top, left });
+  }, [anchor]);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onScroll = () => onClose();
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [onClose]);
+
+  const dl = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
+  const eye = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
+
+  return createPortal(
+    <div ref={ref} className="s5-menu" style={{ top: pos.top, left: pos.left }} onClick={e => e.stopPropagation()}>
+      <div className="s5-menu-head">
+        <div className="s5-menu-head-left">
+          <span className="s5-menu-head-ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><circle cx="12" cy="5" r="1" fill="#fff"/><circle cx="12" cy="12" r="1" fill="#fff"/><circle cx="12" cy="19" r="1" fill="#fff"/></svg></span>
+          More Actions
+        </div>
+        <button type="button" className="s5-menu-x" onClick={onClose} aria-label="Close">✕</button>
+      </div>
+      <div className="s5-menu-body">
+        <div className="s5-menu-sec s5-menu-sec-dl">⬇ Download</div>
+        <button type="button" className="s5-menu-item s5-mi-dl" onClick={() => onPick('download', true)}><span className="s5-mi-ico">{dl}</span>With Signature</button>
+        <button type="button" className="s5-menu-item s5-mi-dl" onClick={() => onPick('download', false)}><span className="s5-mi-ico">{dl}</span>Without Signature</button>
+        <div className="s5-menu-div" />
+        <div className="s5-menu-sec s5-menu-sec-vw">👁 View</div>
+        <button type="button" className="s5-menu-item s5-mi-vw" onClick={() => onPick('view', true)}><span className="s5-mi-ico">{eye}</span>With Signature</button>
+        <button type="button" className="s5-menu-item s5-mi-vw" onClick={() => onPick('view', false)}><span className="s5-mi-ico">{eye}</span>Without Signature</button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/* ─── Latest Quoted Price Summary popup ──────────────────────────────
+ *  Shows the LATEST quoted price per product across all quotations on
+ *  the lead — sourced from /sales/leads/{id}/shared-prices (the same
+ *  append-only Price-Shared history Stage 4 writes). Rows are de-duped to
+ *  the most recent entry per product; per-row View / Download open the
+ *  shared-price PDF (/sales/shared-prices/{entryId}/pdf). */
+type SharedRow = {
+  id:            number;
+  product_id:    number | null;
+  product_code:  string | null;
+  product_name:  string | null;
+  currency:      string | null;
+  quantity:      number | string | null;
+  target_price:  number | string | null;
+  quoted_price:  number | string | null;
+  shared_at:     string;
+};
+
+const CCY_SYMBOL: Record<string, string> = { USD: '$', INR: '₹', EUR: '€', GBP: '£', AED: 'AED', AUD: 'A$', CAD: 'C$' };
+const sym = (ccy: string | null): string => CCY_SYMBOL[(ccy ?? '').toUpperCase()] ?? ((ccy ?? '').toUpperCase() || '$');
+const money = (n: number, ccy: string | null): string => `${sym(ccy)} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose: () => void }) {
+  const toast = useToast();
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<SharedRow[]>([]);
+  const [actingId, setActingId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!leadId) { setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
+    api.get<{ status: boolean; data: SharedRow[] }>(`/sales/leads/${leadId}/shared-prices`)
+      .then(r => { if (!cancelled) setRows(r.data.data ?? []); })
+      .catch(() => { if (!cancelled) toast.error('Load failed', 'Could not load the quoted price summary.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [leadId, toast]);
+
+  /* Latest entry per product. The list endpoint returns history newest-
+   * first; keep the first occurrence of each product. */
+  const latest = useMemo(() => {
+    const seen = new Set<number | string>();
+    const out: SharedRow[] = [];
+    const sorted = [...rows].sort((a, b) => new Date(b.shared_at).getTime() - new Date(a.shared_at).getTime());
+    for (const r of sorted) {
+      const key = r.product_id ?? r.product_code ?? r.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+    }
+    return out;
+  }, [rows]);
+
+  const ccy = latest[0]?.currency ?? 'USD';
+  const totalQty    = latest.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+  const totalTarget = latest.reduce((s, r) => s + (Number(r.target_price) || 0), 0);
+  const totalQuoted = latest.reduce((s, r) => s + (Number(r.quoted_price) || 0), 0);
+  const variance    = totalQuoted - totalTarget;
+  const variancePct = totalTarget > 0 ? ((variance / totalTarget) * 100).toFixed(1) : '0.0';
+  const over        = variance > 0;
+
+  const today = new Date();
+  const asOf = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+
+  const pdf = async (entryId: number, download: boolean) => {
+    setActingId(entryId);
+    try {
+      const res = await api.get(`/sales/shared-prices/${entryId}/pdf`, { responseType: 'blob' });
+      const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      if (download) {
+        const a = document.createElement('a');
+        a.href = url; a.download = `quoted_price_${String(entryId).padStart(5, '0')}.pdf`; a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      }
+    } catch {
+      toast.error(download ? 'Download failed' : 'Open failed', 'Could not open the quoted price PDF.');
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  const fmtRowDate = (s: string) => {
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return { date: '—', time: '' };
+    return {
+      date: d.toLocaleDateString('en-GB'),
+      time: d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase(),
+    };
+  };
+
+  /* Export Report → an Excel workbook of the latest-per-product summary
+   * (one row per product + a Totals row). Uses the same `xlsx` lib the
+   * rest of the app exports with. */
+  const onExportReport = () => {
+    if (!latest.length) { toast.warning('Nothing to export', 'No quoted prices to include in the report.'); return; }
+    try {
+      const body = latest.map((r, i) => {
+        const tp = Number(r.target_price) || 0;
+        const qp = Number(r.quoted_price) || 0;
+        const { date, time } = fmtRowDate(r.shared_at);
+        return {
+          'Sr No': i + 1,
+          'Product Code': r.product_code ?? `P-${String(r.product_id ?? 0).padStart(3, '0')}`,
+          'Product Name': r.product_name ?? '',
+          'Date': date,
+          'Time': time,
+          'Quantity': Number(r.quantity) || 0,
+          'Currency': (r.currency ?? ccy).toUpperCase(),
+          'Target Price': tp,
+          'Quoted Price': qp,
+          'Variance': qp - tp,
+        };
+      });
+      body.push({
+        'Sr No': '' as never, 'Product Code': '' as never, 'Product Name': 'TOTAL' as never,
+        'Date': '' as never, 'Time': '' as never,
+        'Quantity': totalQty, 'Currency': ccy.toUpperCase() as never,
+        'Target Price': totalTarget, 'Quoted Price': totalQuoted, 'Variance': variance,
+      });
+      const ws = XLSX.utils.json_to_sheet(body);
+      ws['!cols'] = [{ wch: 6 }, { wch: 14 }, { wch: 28 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 9 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Quoted Price Summary');
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const stamp = new Date().toISOString().slice(0, 10);
+      saveAs(
+        new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        `QuotedPriceSummary_${stamp}.xlsx`,
+      );
+      toast.success('Report exported', `${latest.length} product${latest.length === 1 ? '' : 's'} saved to an Excel workbook.`);
+    } catch (err: any) {
+      toast.error('Export failed', err?.message || 'Could not generate the report.');
+    }
+  };
+
+  return createPortal(
+    <div className="s5-ps-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="s5-ps-modal" role="dialog" aria-modal="true">
+        {/* Header */}
+        <div className="s5-ps-head">
+          <div className="s5-ps-head-left">
+            <span className="s5-ps-head-ico">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#7dd3fc" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </span>
+            <div>
+              <div className="s5-ps-title">Latest Quoted Price Summary</div>
+              <div className="s5-ps-sub">Most recent quoted price for each product across all quotations</div>
+            </div>
+          </div>
+          <div className="s5-ps-head-right">
+            <span className="s5-ps-pill"><span className="s5-ps-pill-dot" />{latest.length} Products</span>
+            <span className="s5-ps-asof"><span className="s5-ps-asof-lbl">As of Date</span><span className="s5-ps-asof-val">{asOf}</span></span>
+            <button type="button" className="s5-ps-x" onClick={onClose} aria-label="Close">×</button>
+          </div>
+        </div>
+
+        {/* Stats bar */}
+        <div className="s5-ps-stats">
+          <div className="s5-ps-stat s5-ps-stat-tint"><div className="s5-ps-stat-lbl">Total Products</div><div className="s5-ps-stat-val c-cyan">{latest.length} items</div></div>
+          <div className="s5-ps-stat"><div className="s5-ps-stat-lbl">Total Quantity</div><div className="s5-ps-stat-val c-cyan">{totalQty.toLocaleString()} units</div></div>
+          <div className="s5-ps-stat s5-ps-stat-tint"><div className="s5-ps-stat-lbl">Total Target</div><div className="s5-ps-stat-val c-blue">{money(totalTarget, ccy)}</div></div>
+          <div className="s5-ps-stat"><div className="s5-ps-stat-lbl">Total Quoted</div><div className="s5-ps-stat-val c-green">{money(totalQuoted, ccy)}</div></div>
+          <div className={`s5-ps-stat ${over ? 's5-ps-stat-red' : 's5-ps-stat-grn'}`}>
+            <div className="s5-ps-stat-lbl">Variance</div>
+            <div className={`s5-ps-stat-val ${over ? 'c-red' : 'c-green'}`}>{over ? '+' : ''}{variance.toLocaleString('en-US', { minimumFractionDigits: 2 })} ({variancePct}%)</div>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className="s5-ps-tablewrap">
+          <table className="s5-ps-table">
+            <thead>
+              <tr>
+                <th className="ta-c" style={{ width: 52 }}>Sr No</th>
+                <th style={{ width: 110 }}>Product Code</th>
+                <th>Product Name</th>
+                <th style={{ width: 120 }}>Date</th>
+                <th className="ta-r" style={{ width: 90 }}>Quantity</th>
+                <th className="ta-r" style={{ width: 120 }}>Target Price</th>
+                <th className="ta-r" style={{ width: 120 }}>Quoted Price</th>
+                <th className="ta-c" style={{ width: 90 }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr><td colSpan={8} className="s5-ps-empty">Loading latest quoted prices…</td></tr>
+              )}
+              {!loading && latest.length === 0 && (
+                <tr><td colSpan={8} className="s5-ps-empty">No quoted prices shared yet — add them in Stage 4 (Price Shared).</td></tr>
+              )}
+              {!loading && latest.map((r, i) => {
+                const { date, time } = fmtRowDate(r.shared_at);
+                const tp = Number(r.target_price) || 0;
+                const qp = Number(r.quoted_price) || 0;
+                const diff = qp - tp;
+                const rOver = diff > 0;
+                return (
+                  <tr key={r.id}>
+                    <td className="ta-c"><span className="s5-ps-sr">{i + 1}</span></td>
+                    <td><code className="s5-ps-code">{r.product_code ?? `P-${String(r.product_id ?? 0).padStart(3, '0')}`}</code></td>
+                    <td><div className="s5-ps-name" title={r.product_name ?? ''}>{r.product_name ?? '—'}</div></td>
+                    <td><div className="s5-ps-date">{date}</div>{time && <div className="s5-ps-time">{time}</div>}</td>
+                    <td className="ta-r s5-ps-qty">{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
+                    <td className="ta-r"><div className="s5-ps-target">{money(tp, r.currency)}</div></td>
+                    <td className="ta-r">
+                      <div className={`s5-ps-quoted ${rOver ? 'c-red' : 'c-green'}`}>{money(qp, r.currency)}</div>
+                      {diff !== 0 && (
+                        <span className={`s5-ps-diff ${rOver ? 'over' : 'under'}`}>{rOver ? '▲' : '▼'} {sym(r.currency)}{Math.abs(diff).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      )}
+                    </td>
+                    <td className="ta-c">
+                      <div className="s5-ps-acts">
+                        <button type="button" className="s5-ps-act" title="View" disabled={actingId !== null} onClick={() => void pdf(r.id, false)}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                        <button type="button" className="s5-ps-act s5-ps-act-dl" title="Download" disabled={actingId !== null} onClick={() => void pdf(r.id, true)}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer */}
+        <div className="s5-ps-foot">
+          <div className="s5-ps-foot-note"><span className="s5-ps-foot-dot" />Showing latest price per product · Updated today</div>
+          <div className="s5-ps-foot-btns">
+            <button type="button" className="s5-ps-export" disabled={loading || latest.length === 0} onClick={onExportReport}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export Report
+            </button>
+            <button type="button" className="s5-ps-close-btn" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 const STAGE5_CSS = `
-/* ─── Stage 5 head — teal/cyan gradient (matches the document/contract feel) ── */
+/* ─── Stage 5 head — teal/cyan gradient ── */
 .smd-s5-head {
   background: linear-gradient(110deg, #cffafe 0%, #a5f3fc 40%, #67e8f9 100%);
   border-bottom: 1px solid #67e8f9;
 }
-.smd-s5-head .smd-stg-head-icon { background: linear-gradient(135deg, #0e7490, #155e75); }
-.smd-s5-head .smd-stg-head-title { color: #155e75; }
-.smd-s5-head .smd-stg-head-sub   { color: #0e7490; }
-.smd-s5-head .smd-stg-head-badge { background: linear-gradient(135deg, #0e7490, #155e75); }
+.smd-s5-head .smd-stg-head-icon { background: linear-gradient(135deg, #0891b2, #0e7490); }
+.smd-s5-head .smd-stg-head-title { color: #0c4a6e; }
+.smd-s5-head .smd-stg-head-sub   { color: #0369a1; }
+.smd-s5-head .smd-stg-head-badge { background: linear-gradient(135deg, #0891b2, #0e7490); }
+.s5-head-right { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.s5-head-divider { width: 1px; height: 22px; background: rgba(14,116,144,.25); }
+.s5-summary-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 13px; border-radius: 9px; cursor: pointer;
+  font-family: inherit; font-size: 10.5px; font-weight: 700; white-space: nowrap;
+  background: linear-gradient(135deg, #0c4a6e, #0369a1); color: #fff; border: none;
+  box-shadow: 0 3px 10px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.16);
+  transition: all .18s;
+}
+.s5-summary-btn:hover { background: linear-gradient(135deg, #082f49, #0284c7); box-shadow: 0 5px 15px rgba(8,145,178,.55); transform: translateY(-1px); }
 
-/* ─── Tab row + create buttons ─── */
-.s5-tab-row {
-  display: flex; justify-content: space-between; align-items: center;
-  gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+/* ─── Action row — figma segmented tabs + create buttons ─── */
+.s5-actionrow {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  background: linear-gradient(110deg, #ecfeff 0%, #cffafe 35%, #e0f9ff 65%, #f0fdff 100%);
+  border: 1.5px solid rgba(103,232,249,.55); border-radius: 14px;
+  padding: 8px 10px 8px 8px; margin-bottom: 12px;
+  box-shadow: 0 2px 16px rgba(8,145,178,.10), inset 0 1px 0 rgba(255,255,255,.8);
 }
-.s5-tabs { display: flex; gap: 10px; flex-wrap: wrap; }
-.s5-tab {
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 9px 18px; border-radius: 999px;
-  border: 1.5px solid; background: #fff;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
-  cursor: pointer; transition: all .15s;
+.s5-actionrow::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.55), transparent); pointer-events: none; border-radius: 14px 14px 0 0; }
+.s5-seg {
+  position: relative; z-index: 1;
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 4px 5px; border-radius: 12px;
+  background: rgba(255,255,255,.6); border: 1.5px solid rgba(103,232,249,.4);
+  box-shadow: 0 1px 6px rgba(8,145,178,.08), inset 0 1px 0 rgba(255,255,255,.9);
 }
-.s5-tab-ico { display: inline-flex; }
-.s5-tab-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px;
-  font-size: 11px; font-weight: 800;
+.s5-seg-btn {
+  position: relative; display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 18px; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  font-family: inherit; font-size: 11px; font-weight: 600; letter-spacing: .01em;
+  background: rgba(255,255,255,.75); color: #0369a1;
+  border: 1.5px solid rgba(14,116,144,.2);
+  box-shadow: 0 1px 4px rgba(8,145,178,.08);
+  transition: all .22s cubic-bezier(.4,0,.2,1);
 }
-.s5-tab-q          { color: #0e7490; border-color: #a5f3fc; }
-.s5-tab-q:hover    { background: #ecfeff; }
-.s5-tab-q.active   { background: linear-gradient(135deg, #0e7490, #155e75); color: #fff; border-color: #155e75; box-shadow: 0 4px 12px rgba(14,116,144,.30); }
-.s5-tab-q .s5-tab-count        { background: #cffafe; color: #155e75; }
-.s5-tab-q.active .s5-tab-count { background: rgba(255,255,255,.22); color: #fff; }
-.s5-tab-p          { color: #047857; border-color: #a7f3d0; }
-.s5-tab-p:hover    { background: #ecfdf5; }
-.s5-tab-p.active   { background: linear-gradient(135deg, #047857, #065f46); color: #fff; border-color: #065f46; box-shadow: 0 4px 12px rgba(4,120,87,.30); }
-.s5-tab-p .s5-tab-count        { background: #d1fae5; color: #065f46; }
-.s5-tab-p.active .s5-tab-count { background: rgba(255,255,255,.22); color: #fff; }
+.s5-seg-btn:hover:not(.active) { background: #fff; border-color: rgba(14,116,144,.32); }
+.s5-seg-btn.active {
+  font-weight: 700; color: #fff; border: none;
+  background: linear-gradient(135deg, #0891b2 0%, #0c4a6e 100%);
+  box-shadow: 0 4px 14px rgba(8,145,178,.45), inset 0 1px 0 rgba(255,255,255,.2);
+  text-shadow: 0 1px 2px rgba(0,0,0,.2);
+}
+.s5-seg-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: #67e8f9; box-shadow: 0 0 4px rgba(103,232,249,.5); }
+.s5-seg-btn.active .s5-seg-dot { background: rgba(255,255,255,.85); box-shadow: 0 0 6px rgba(255,255,255,.6); }
+.s5-seg-btn svg { flex-shrink: 0; }
 
-.s5-create-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.s5-create-group { position: relative; z-index: 1; display: flex; align-items: center; gap: 7px; }
+.s5-create-div { width: 1px; height: 26px; flex-shrink: 0; background: linear-gradient(180deg, transparent, rgba(14,116,144,.25), transparent); }
 .s5-create-btn {
-  padding: 8px 16px; border-radius: 10px; border: 1.5px dashed;
-  background: #fff;
-  font-family: inherit; font-size: 12px; font-weight: 700;
-  cursor: pointer; transition: all .15s;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 16px; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: .02em;
+  transition: all .22s cubic-bezier(.4,0,.2,1);
 }
-.s5-create-q { color: #0e7490; border-color: #67e8f9; }
-.s5-create-q:hover { background: #ecfeff; border-style: solid; border-color: #0e7490; }
-.s5-create-p { color: #047857; border-color: #6ee7b7; }
-.s5-create-p:hover { background: #ecfdf5; border-style: solid; border-color: #047857; }
+.s5-create-q { color: #0c4a6e; border: 1.5px solid rgba(8,145,178,.3); background: linear-gradient(135deg, #ffffff 0%, #ecfeff 100%); box-shadow: 0 2px 8px rgba(8,145,178,.15), inset 0 1px 0 rgba(255,255,255,.9); }
+.s5-create-q:hover { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; border-color: transparent; box-shadow: 0 6px 18px rgba(8,145,178,.45); transform: translateY(-2px); }
+.s5-create-p { color: #fff; border: none; background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%); box-shadow: 0 4px 14px rgba(8,145,178,.4), inset 0 1px 0 rgba(255,255,255,.2); }
+.s5-create-p:hover { background: linear-gradient(135deg, #0369a1, #082f49); box-shadow: 0 6px 18px rgba(8,145,178,.55); transform: translateY(-2px); }
 
-/* ─── Summary band ─── */
-.s5-summary {
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: 0; margin-bottom: 14px;
-  background: linear-gradient(180deg, #ecfeff, #cffafe);
-  border: 1.5px solid #a5f3fc; border-radius: 12px; overflow: hidden;
+/* ─── Table card ─── */
+.s5-tbl-card { border: 1.5px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.06); background: #fff; }
+.s5-tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.s5-tbl { width: 100%; min-width: 880px; border-collapse: collapse; }
+.s5-tbl thead tr { background: linear-gradient(90deg, #0f172a 0%, #1e3a5f 55%, #0f172a 100%); box-shadow: 0 2px 8px rgba(0,0,0,.22); }
+.s5-tbl thead th {
+  padding: 11px 14px; text-align: left; white-space: nowrap;
+  font-size: 9px; font-weight: 800; color: rgba(255,255,255,.93);
+  text-transform: uppercase; letter-spacing: .1em;
 }
-.s5-summary-cell { padding: 12px 16px; border-right: 1px solid #a5f3fc; display: flex; flex-direction: column; gap: 4px; }
-.s5-summary-cell:last-child { border-right: none; }
-.s5-summary-label { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; color: #0e7490; text-transform: uppercase; }
-.s5-summary-val { font-size: 16px; font-weight: 800; color: #155e75; min-height: 22px; display: inline-flex; align-items: center; }
-/* G2: stacked per-currency totals when the rows mix INR/USD/etc. */
-.s5-summary-mixed { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-.s5-summary-mixed-row { font-size: 13px; font-weight: 800; color: #155e75; line-height: 1.2; }
-/* G6: row whose action is in flight gets a subtle highlight */
-.s5-row-acting { background: #f0fdfa; }
+.s5-tbl thead th.ta-c { text-align: center; }
+.s5-tbl thead th.ta-r { text-align: right; }
+.s5-tbl tbody td { padding: 10px 13px; font-size: 11.5px; vertical-align: middle; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+.s5-tbl tbody td.ta-c { text-align: center; }
+.s5-tbl tbody td.ta-r { text-align: right; }
+.s5-tbl tbody tr:nth-child(even) { background: #f8fafc; }
+.s5-tbl tbody tr:hover { background: #f0f9ff; }
+.s5-row-acting { background: #ecfeff !important; }
+.s5-empty { text-align: center; padding: 30px 14px; color: #94a3b8; font-style: italic; }
+.s5-muted { color: #64748b; }
+.s5-dash { color: #cbd5e1; font-weight: 700; }
 
-/* ─── Card / table ─── */
-.s5-card {
-  background: #fff;
-  border: 1.5px solid #a5f3fc; border-radius: 14px; overflow: hidden;
-}
-.s5-card-head {
-  display: flex; align-items: center; gap: 10px; padding: 13px 18px;
-  background: linear-gradient(180deg, #ecfeff, #cffafe);
-  border-bottom: 1.5px solid #a5f3fc;
-}
-.s5-card-head-icon {
-  width: 30px; height: 30px; border-radius: 9px;
-  background: linear-gradient(135deg, #0e7490, #155e75);
-  display: flex; align-items: center; justify-content: center;
-}
-.s5-card-title { font-size: 13.5px; font-weight: 800; color: #155e75; }
-.s5-card-sub   { font-size: 11px; color: #0e7490; margin-top: 2px; }
-
-.s5-table-wrap { overflow-x: auto; background: #fff; }
-.s5-table { width: 100%; border-collapse: collapse; min-width: 920px; }
-.s5-table thead th {
-  padding: 11px 14px; text-align: left;
-  font-size: 11.5px; font-weight: 800; color: #fff;
-  background: #155e75; white-space: nowrap;
-}
-.s5-table tbody td {
-  padding: 12px 14px; font-size: 12px; color: #1e293b;
-  border-bottom: 1px solid #f1f5f9; vertical-align: middle;
-}
-.s5-table tbody tr:hover { background: #ecfeff; }
-.s5-empty { text-align: center; padding: 26px 14px; color: #94a3b8; font-style: italic; }
-
-.s5-sr {
+.s5-sr2 {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 8px;
-  background: #cffafe; color: #155e75;
-  font-size: 11.5px; font-weight: 800;
+  width: 24px; height: 24px; border-radius: 7px;
+  background: linear-gradient(135deg, #e0f2fe, #bae6fd); color: #0369a1;
+  font-size: 10px; font-weight: 800; border: 1.5px solid #7dd3fc;
 }
-.s5-code {
-  font-family: 'Inter',monospace; font-size: 11.5px; font-weight: 800;
-  background: #ecfeff; color: #0e7490; border: 1.5px solid #a5f3fc;
-  padding: 4px 11px; border-radius: 7px;
+.s5-qno {
+  background: none; border: none; cursor: pointer; padding: 0;
+  color: #0891b2; font-weight: 800; font-family: ui-monospace, monospace; font-size: 11.5px; letter-spacing: .02em;
 }
-.s5-code-link {
-  cursor: pointer; transition: all .12s;
-}
-.s5-code-link:hover { background: #cffafe; border-color: #0e7490; color: #155e75; }
-.s5-cust { display: flex; flex-direction: column; gap: 2px; }
-.s5-cust-name { font-weight: 700; color: #1e293b; font-size: 12.5px; }
-.s5-cust-code { font-size: 10.5px; color: #64748b; font-family: 'Inter',monospace; }
-.s5-doctype {
-  font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
-  background: #ecfeff; color: #0e7490; border: 1.5px solid #a5f3fc;
-}
-.s5-ccy {
-  font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 7px;
-  background: #155e75; color: #fff;
-}
-.s5-value { font-weight: 800; color: #155e75; font-variant-numeric: tabular-nums; }
-.s5-status {
-  display: inline-block; padding: 3px 10px; border-radius: 999px;
-  font-size: 10.5px; font-weight: 800; text-transform: capitalize;
-}
-.s5-status-draft     { background: #fef3c7; color: #b45309; }
-.s5-status-sent      { background: #dbeafe; color: #1d4ed8; }
-.s5-status-approved  { background: #d1fae5; color: #047857; }
-.s5-status-cancelled { background: #fee2e2; color: #dc2626; }
-.s5-status-converted { background: #ede9fe; color: #6d28d9; }
-.s5-status-default   { background: #f1f5f9; color: #475569; }
+.s5-qno:hover:not(:disabled) { text-decoration: underline; }
+.s5-qno:disabled { cursor: default; opacity: .8; }
+.s5-cf { background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #7dd3fc; border-radius: 6px; padding: 2px 9px; font-size: 10.5px; font-weight: 800; color: #0369a1; font-family: ui-monospace, monospace; }
+.s5-dt2 { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.s5-cur2 { display: inline-flex; padding: 3px 10px; border-radius: 6px; font-size: 10.5px; font-weight: 800; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
+.s5-val2 { font-weight: 800; color: #059669; font-size: 12px; font-family: ui-monospace, monospace; }
+.s5-st-live { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.s5-st-dot { width: 5px; height: 5px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.8); }
 
-.s5-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.s5-act-btn {
-  width: 30px; height: 30px;
-  background: #fff; border: 1.5px solid #a5f3fc; color: #0e7490;
-  border-radius: 7px; cursor: pointer;
+/* ─── Action cell ─── */
+.s5-acts { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: nowrap; }
+.s5-act-sep { width: 1px; height: 20px; background: #e2e8f0; flex-shrink: 0; }
+.s5-convert2 {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 8px; cursor: pointer; flex-shrink: 0; white-space: nowrap;
+  font-family: inherit; font-size: 10px; font-weight: 700;
+  background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; border: none;
+  box-shadow: 0 2px 8px rgba(8,145,178,.3); transition: all .15s;
+}
+.s5-convert2:hover:not(:disabled) { background: linear-gradient(135deg, #0369a1, #082f49); box-shadow: 0 4px 12px rgba(8,145,178,.45); transform: translateY(-1px); }
+.s5-convert2:disabled { opacity: .55; cursor: not-allowed; }
+.s5-converted-chip { display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 20px; font-size: 9.5px; font-weight: 800; background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; white-space: nowrap; }
+.s5-icn {
+  width: 28px; height: 28px; border-radius: 7px; cursor: pointer; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  transition: all .12s;
+  border: 1.5px solid; transition: all .15s;
 }
-.s5-act-btn:hover:not(:disabled) { background: #ecfeff; border-color: #0e7490; }
-.s5-act-btn:disabled { opacity: .55; cursor: not-allowed; }
-.s5-act-convert {
-  width: auto; padding: 0 12px; gap: 5px;
-  background: linear-gradient(135deg, #0e7490, #155e75); color: #fff;
-  border-color: transparent; font-size: 11px; font-weight: 700;
-}
-.s5-act-convert span { display: inline; }
-.s5-act-convert:hover:not(:disabled) {
-  background: linear-gradient(135deg, #155e75, #164e63);
-  transform: translateY(-1px);
-}
+.s5-icn:disabled { opacity: .5; cursor: not-allowed; }
+.s5-icn-mail { background: #eff6ff; border-color: #bfdbfe; color: #3b82f6; }
+.s5-icn-mail:hover:not(:disabled) { background: #3b82f6; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.s5-icn-edit { background: #f0fdf4; border-color: #bbf7d0; color: #16a34a; }
+.s5-icn-edit:hover:not(:disabled) { background: #16a34a; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.s5-icn-more { background: #f8fafc; border-color: #e2e8f0; color: #64748b; }
+.s5-icn-more:hover:not(:disabled) { background: #475569; color: #fff; border-color: transparent; }
+.s5-icn-del { background: #fff1f2; border-color: #fecaca; color: #ef4444; }
+.s5-icn-del:hover:not(:disabled) { background: #ef4444; color: #fff; border-color: transparent; transform: translateY(-1px); }
 
-/* Dark mode */
-[data-bs-theme="dark"] .smd-s5-head {
-  background: linear-gradient(110deg, #164e63 0%, #155e75 40%, #0e7490 100%);
-  color: #ecfeff; border-bottom-color: rgba(103, 232, 249, .30);
+/* ─── More Actions menu (portal) ─── */
+.s5-menu {
+  position: fixed; z-index: 3000; min-width: 210px;
+  background: #fff; border: 1.5px solid rgba(8,145,178,.2); border-radius: 13px; overflow: hidden;
+  box-shadow: 0 12px 32px rgba(8,145,178,.18), 0 4px 12px rgba(0,0,0,.08);
+  animation: smd-fade-in .14s ease-out both;
 }
+.s5-menu-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 13px 7px; border-bottom: 1px solid #f1f5f9; }
+.s5-menu-head-left { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 800; color: #0c4a6e; letter-spacing: .04em; }
+.s5-menu-head-ico { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, #0891b2, #0e7490); display: inline-flex; align-items: center; justify-content: center; }
+.s5-menu-x { width: 18px; height: 18px; border: none; background: #f1f5f9; border-radius: 4px; cursor: pointer; color: #94a3b8; font-size: 11px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+.s5-menu-x:hover { background: #e2e8f0; }
+.s5-menu-body { padding: 5px 0; }
+.s5-menu-sec { padding: 5px 13px 3px; font-size: 7.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .14em; }
+.s5-menu-sec-dl { color: #0891b2; }
+.s5-menu-sec-vw { color: #7c3aed; }
+.s5-menu-item {
+  display: flex; align-items: center; gap: 9px; width: calc(100% - 10px); margin: 1px 5px;
+  padding: 7px 13px; border: none; background: none; cursor: pointer; border-radius: 7px;
+  font-family: inherit; font-size: 10.5px; font-weight: 600; color: #0f172a; text-align: left; transition: all .13s;
+}
+.s5-mi-ico { width: 24px; height: 24px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.s5-mi-dl .s5-mi-ico { background: rgba(8,145,178,.1); color: #0891b2; }
+.s5-mi-vw .s5-mi-ico { background: rgba(124,58,237,.1); color: #7c3aed; }
+.s5-mi-dl:hover { background: rgba(8,145,178,.1); color: #0891b2; padding-left: 16px; }
+.s5-mi-vw:hover { background: rgba(124,58,237,.1); color: #7c3aed; padding-left: 16px; }
+.s5-menu-div { height: 1px; background: linear-gradient(90deg, rgba(8,145,178,.15), rgba(8,145,178,.05), transparent); margin: 5px 8px; }
+
+/* ─── Latest Quoted Price Summary popup (figma) ─── */
+.s5-ps-backdrop { position: fixed; inset: 0; z-index: 2900; background: rgba(8,30,60,.58); backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; padding: 14px; }
+.s5-ps-modal { width: min(1000px, 100%); max-height: 86vh; background: #fff; border-radius: 18px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 28px 70px rgba(8,30,60,.38), 0 6px 20px rgba(0,0,0,.1); animation: smd-fade-in .2s ease-out both; }
+
+/* Header */
+.s5-ps-head { position: relative; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px; background: linear-gradient(115deg, #0f172a 0%, #0c4a6e 50%, #0e7490 100%); }
+.s5-ps-head::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.07), transparent); pointer-events: none; }
+.s5-ps-head-left { position: relative; display: flex; align-items: center; gap: 12px; }
+.s5-ps-head-ico { width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0; background: rgba(255,255,255,.1); border: 1.5px solid rgba(125,211,252,.35); display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 12px rgba(0,0,0,.2); }
+.s5-ps-title { font-size: 15px; font-weight: 900; color: #fff; letter-spacing: -.4px; line-height: 1.1; }
+.s5-ps-sub { font-size: 9px; color: rgba(125,211,252,.85); font-weight: 600; margin-top: 2px; letter-spacing: .04em; }
+.s5-ps-head-right { position: relative; display: flex; align-items: center; gap: 10px; }
+.s5-ps-pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.1); border: 1px solid rgba(125,211,252,.25); border-radius: 20px; padding: 5px 13px; font-size: 10px; font-weight: 700; color: #fff; white-space: nowrap; }
+.s5-ps-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px rgba(74,222,128,.8); }
+.s5-ps-asof { display: inline-flex; flex-direction: column; background: rgba(255,255,255,.08); border: 1px solid rgba(125,211,252,.22); border-radius: 9px; padding: 6px 12px; }
+.s5-ps-asof-lbl { font-size: 7.5px; font-weight: 700; color: rgba(255,255,255,.5); text-transform: uppercase; letter-spacing: .12em; margin-bottom: 1px; }
+.s5-ps-asof-val { font-size: 11px; font-weight: 800; color: #fff; }
+.s5-ps-x { width: 32px; height: 32px; border-radius: 9px; border: 1.5px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: rgba(255,255,255,.7); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; transition: all .15s; }
+.s5-ps-x:hover { background: rgba(239,68,68,.35); border-color: rgba(239,68,68,.5); color: #fff; }
+
+/* Stats bar */
+.s5-ps-stats { display: flex; align-items: stretch; flex-shrink: 0; background: linear-gradient(90deg, #f0f9ff, #ecfeff, #f0f9ff); border-bottom: 1.5px solid #bae6fd; }
+.s5-ps-stat { flex: 1; padding: 10px 14px; border-right: 1px solid #bae6fd; }
+.s5-ps-stat:last-child { border-right: none; }
+.s5-ps-stat-tint { background: rgba(8,145,178,.07); }
+.s5-ps-stat-red { background: rgba(239,68,68,.06); }
+.s5-ps-stat-grn { background: rgba(5,150,105,.06); }
+.s5-ps-stat-lbl { font-size: 7.5px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 3px; }
+.s5-ps-stat-val { font-size: 12px; font-weight: 900; font-family: ui-monospace, monospace; letter-spacing: .01em; }
+.s5-ps-stat-val.c-cyan { color: #0891b2; }
+.s5-ps-stat-val.c-blue { color: #0369a1; }
+.s5-ps-stat-val.c-green { color: #059669; }
+.s5-ps-stat-val.c-red { color: #dc2626; }
+
+/* Table */
+.s5-ps-tablewrap { flex: 1; overflow-y: auto; }
+.s5-ps-table { width: 100%; border-collapse: collapse; }
+.s5-ps-table thead tr { background: linear-gradient(90deg, #0f172a 0%, #1e3a5f 55%, #0f172a 100%); box-shadow: 0 2px 8px rgba(0,0,0,.22); }
+.s5-ps-table thead th { padding: 11px 13px; text-align: left; white-space: nowrap; font-size: 8.5px; font-weight: 800; color: rgba(255,255,255,.93); text-transform: uppercase; letter-spacing: .1em; position: sticky; top: 0; }
+.s5-ps-table thead th.ta-c { text-align: center; }
+.s5-ps-table thead th.ta-r { text-align: right; }
+.s5-ps-table tbody td { padding: 11px 13px; font-size: 11.5px; vertical-align: middle; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+.s5-ps-table tbody td.ta-c { text-align: center; }
+.s5-ps-table tbody td.ta-r { text-align: right; }
+.s5-ps-table tbody tr:nth-child(even) { background: #f8fafc; }
+.s5-ps-table tbody tr:hover { background: #f0f9ff; }
+.s5-ps-empty { text-align: center; padding: 34px 14px; color: #94a3b8; font-style: italic; }
+.s5-ps-sr { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, #e0f2fe, #bae6fd); color: #0369a1; font-size: 10px; font-weight: 800; border: 1.5px solid #7dd3fc; }
+.s5-ps-code { background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #bae6fd; border-radius: 6px; padding: 3px 9px; font-size: 10.5px; font-weight: 800; color: #0369a1; font-family: ui-monospace, monospace; letter-spacing: .04em; }
+.s5-ps-name { font-weight: 700; color: #0f172a; font-size: 11.5px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s5-ps-date { font-size: 11px; font-weight: 700; color: #334155; }
+.s5-ps-time { font-size: 9.5px; font-weight: 600; color: #0891b2; margin-top: 1px; }
+.s5-ps-qty { font-weight: 800; color: #0f172a; font-family: ui-monospace, monospace; }
+.s5-ps-target { font-weight: 800; color: #0369a1; font-family: ui-monospace, monospace; font-size: 12px; }
+.s5-ps-quoted { font-weight: 900; font-family: ui-monospace, monospace; font-size: 12px; }
+.s5-ps-quoted.c-green { color: #059669; }
+.s5-ps-quoted.c-red { color: #dc2626; }
+.s5-ps-diff { display: inline-flex; align-items: center; gap: 2px; padding: 1px 6px; border-radius: 4px; font-size: 8.5px; font-weight: 800; margin-top: 2px; }
+.s5-ps-diff.over { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+.s5-ps-diff.under { background: #dcfce7; color: #16a34a; border: 1px solid #86efac; }
+.s5-ps-acts { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.s5-ps-act { width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid #bae6fd; background: #f0f9ff; color: #0891b2; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .15s; }
+.s5-ps-act:hover:not(:disabled) { background: #0891b2; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.s5-ps-act-dl:hover:not(:disabled) { background: #0c4a6e; }
+.s5-ps-act:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Footer */
+.s5-ps-foot { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px; border-top: 1.5px solid #e2e8f0; background: linear-gradient(90deg, #f8fafc, #f0f9ff); }
+.s5-ps-foot-note { display: inline-flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; color: #64748b; }
+.s5-ps-foot-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,.7); }
+.s5-ps-foot-btns { display: flex; align-items: center; gap: 8px; }
+.s5-ps-export { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 9px; border: 1.5px solid rgba(8,145,178,.3); background: linear-gradient(135deg, #fff, #f0f9ff); font-family: inherit; font-size: 10.5px; font-weight: 700; color: #0369a1; cursor: pointer; box-shadow: 0 1px 4px rgba(8,145,178,.1); transition: all .15s; }
+.s5-ps-export:hover:not(:disabled) { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; border-color: transparent; transform: translateY(-1px); }
+.s5-ps-export:disabled { opacity: .5; cursor: not-allowed; }
+.s5-ps-close-btn { padding: 7px 18px; border-radius: 9px; border: none; cursor: pointer; font-family: inherit; font-size: 10.5px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 3px 10px rgba(8,145,178,.32); transition: all .15s; }
+.s5-ps-close-btn:hover { background: linear-gradient(135deg, #0369a1, #0c4a6e); transform: translateY(-1px); }
+
+/* ─── Dark mode ─── */
+[data-bs-theme="dark"] .smd-s5-head { background: linear-gradient(110deg, #164e63 0%, #155e75 40%, #0e7490 100%); color: #ecfeff; border-bottom-color: rgba(103,232,249,.30); }
 [data-bs-theme="dark"] .smd-s5-head .smd-stg-head-title { color: #cffafe; }
-[data-bs-theme="dark"] .smd-s5-head .smd-stg-head-sub   { color: #a5f3fc; }
-[data-bs-theme="dark"] .s5-tab { background: #1a1538; }
-[data-bs-theme="dark"] .s5-tab-q { color: #a5f3fc; border-color: rgba(165,243,252,.30); }
-[data-bs-theme="dark"] .s5-tab-q:hover { background: rgba(165,243,252,.10); }
-[data-bs-theme="dark"] .s5-tab-p { color: #6ee7b7; border-color: rgba(110,231,183,.30); }
-[data-bs-theme="dark"] .s5-tab-p:hover { background: rgba(110,231,183,.10); }
-[data-bs-theme="dark"] .s5-create-btn { background: #1f1845; }
-[data-bs-theme="dark"] .s5-create-q { color: #a5f3fc; border-color: rgba(165,243,252,.45); }
-[data-bs-theme="dark"] .s5-create-q:hover { background: rgba(165,243,252,.12); }
-[data-bs-theme="dark"] .s5-create-p { color: #6ee7b7; border-color: rgba(110,231,183,.45); }
-[data-bs-theme="dark"] .s5-create-p:hover { background: rgba(110,231,183,.12); }
-[data-bs-theme="dark"] .s5-summary {
-  background: rgba(14,116,144,.18); border-color: rgba(165,243,252,.30);
-}
-[data-bs-theme="dark"] .s5-summary-cell { border-right-color: rgba(165,243,252,.25); }
-[data-bs-theme="dark"] .s5-summary-label { color: #a5f3fc; }
-[data-bs-theme="dark"] .s5-summary-val   { color: #cffafe; }
-[data-bs-theme="dark"] .s5-card { background: #14102a; border-color: rgba(165,243,252,.30); }
-[data-bs-theme="dark"] .s5-card-head { background: rgba(14,116,144,.18); border-bottom-color: rgba(165,243,252,.30); }
-[data-bs-theme="dark"] .s5-card-title { color: #cffafe; }
-[data-bs-theme="dark"] .s5-card-sub   { color: #a5f3fc; }
-[data-bs-theme="dark"] .s5-table-wrap { background: #14102a; }
-[data-bs-theme="dark"] .s5-table thead th { background: #155e75; }
-[data-bs-theme="dark"] .s5-table tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
-[data-bs-theme="dark"] .s5-table tbody tr:hover { background: rgba(14,116,144,.20); }
-[data-bs-theme="dark"] .s5-empty { color: rgba(196,181,253,.55); }
-[data-bs-theme="dark"] .s5-sr { background: rgba(165,243,252,.18); color: #cffafe; }
-[data-bs-theme="dark"] .s5-code { background: rgba(165,243,252,.14); color: #cffafe; border-color: rgba(165,243,252,.40); }
-[data-bs-theme="dark"] .s5-cust-name { color: #ede9fe; }
-[data-bs-theme="dark"] .s5-cust-code { color: rgba(196,181,253,.55); }
-[data-bs-theme="dark"] .s5-doctype { background: rgba(165,243,252,.14); color: #cffafe; border-color: rgba(165,243,252,.40); }
-[data-bs-theme="dark"] .s5-act-btn { background: #1f1845; border-color: rgba(165,243,252,.30); color: #cffafe; }
-[data-bs-theme="dark"] .s5-act-btn:hover:not(:disabled) { background: #2a2150; border-color: #67e8f9; }
+[data-bs-theme="dark"] .smd-s5-head .smd-stg-head-sub { color: #a5f3fc; }
+[data-bs-theme="dark"] .s5-head-divider { background: rgba(165,243,252,.25); }
+[data-bs-theme="dark"] .s5-seg { background: rgba(8,145,178,.16); border-color: rgba(165,243,252,.25); }
+[data-bs-theme="dark"] .s5-seg-btn { color: #a5f3fc; }
+[data-bs-theme="dark"] .s5-create-q { background: #1f1845; color: #a5f3fc; border-color: rgba(165,243,252,.40); }
+[data-bs-theme="dark"] .s5-tbl-card { background: #14102a; border-color: rgba(165,243,252,.25); }
+[data-bs-theme="dark"] .s5-tbl tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
+[data-bs-theme="dark"] .s5-tbl tbody tr:nth-child(even) { background: rgba(14,116,144,.10); }
+[data-bs-theme="dark"] .s5-tbl tbody tr:hover { background: rgba(14,116,144,.20); }
+[data-bs-theme="dark"] .s5-muted { color: #94a3b8; }
+[data-bs-theme="dark"] .s5-cur2 { background: rgba(148,163,184,.18); color: #cbd5e1; border-color: rgba(148,163,184,.30); }
+[data-bs-theme="dark"] .s5-menu { background: #14102a; border-color: rgba(8,145,178,.35); }
+[data-bs-theme="dark"] .s5-menu-head { border-bottom-color: rgba(167,139,250,.18); }
+[data-bs-theme="dark"] .s5-menu-head-left { color: #a5f3fc; }
+[data-bs-theme="dark"] .s5-menu-item { color: #ede9fe; }
+[data-bs-theme="dark"] .s5-menu-x { background: rgba(148,163,184,.18); color: #cbd5e1; }
+[data-bs-theme="dark"] .s5-sum-modal { background: #14102a; }
+[data-bs-theme="dark"] .s5-sum-body { background: #1a1538; }
+[data-bs-theme="dark"] .s5-sum-stat { background: #14102a; border-color: rgba(165,243,252,.30); }
+[data-bs-theme="dark"] .s5-sum-stat-val { color: #cffafe; }
+[data-bs-theme="dark"] .s5-sum-money-row { color: #cffafe; }
+[data-bs-theme="dark"] .s5-sum-foot { background: #14102a; border-top-color: rgba(165,243,252,.18); }
 
-@media (max-width: 900px) {
-  .s5-summary { grid-template-columns: 1fr; }
-  .s5-summary-cell { border-right: none; border-bottom: 1px solid #a5f3fc; }
-  .s5-summary-cell:last-child { border-bottom: none; }
+@media (max-width: 820px) {
+  .s5-tab-row { flex-direction: column; align-items: stretch; }
+  .s5-head-right { flex-wrap: wrap; }
 }
 `;
