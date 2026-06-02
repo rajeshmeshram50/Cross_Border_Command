@@ -250,17 +250,6 @@ const SEED_DD: DueDiligenceRow[] = [];
 
 const SEED_TRADE_LICENSE: TradeLicenseRow[] = [];
 
-/* Step 3 — Trade Documents preset list. These are common B2B agreements
- * an onboarder typically sends for e-signature. Status flips to 'Sent'
- * when the user clicks the row's Send button. */
-const SEED_TRADE_DOCS: TradeDocRow[] = [
-  { code: 'TD-001', name: 'Vendor / Supplier Agreement',            db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-002', name: 'Non-Disclosure Agreement (NDA)',         db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-003', name: 'Declaration of Compliance / Conformity', db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-004', name: 'Quality Assurance Agreement',            db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-  { code: 'TD-005', name: 'Service Level Agreement (SLA)',          db_id: null, sendForSignature: false, status: 'N/A', attachment: null, attachmentName: '' },
-];
-
 /* ──────────────────────────────────────────────────────────────────────────
  * Component
  * ────────────────────────────────────────────────────────────────────── */
@@ -594,7 +583,11 @@ export default function AddVendorModal(props: {
    * on modal open. Same pattern shipped for Customer + Consignee. */
 
   /* ─── Step 3: Trade Documents (preset signature workflow) ─── */
-  const [tradeDocRows, setTradeDocRows] = useState<TradeDocRow[]>(SEED_TRADE_DOCS);
+  // Starts EMPTY — Trade Documents are populated only from the segment
+  // rule's `td` set intersected with the party=Supplier trade-doc library
+  // (see the segment-rules effect). No hardcoded seed rows, so only real
+  // clm_trade_doc_library entries appear.
+  const [tradeDocRows, setTradeDocRows] = useState<TradeDocRow[]>([]);
   /* Send for Signature — when non-null the Zoho Sign wizard pops with
    * the listed clm_trade_doc_library ids pre-checked. modelName='Vendor'
    * makes the backend resolve {{supplier.*}} tokens with this vendor. */
@@ -837,7 +830,7 @@ export default function AddVendorModal(props: {
     const ids = (segment ?? [])
       .map(s => Number(s))
       .filter(n => Number.isFinite(n) && n > 0);
-    if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    if (ids.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTradeDocRows([]); return; }
 
     let cancelled = false;
     Promise.all([
@@ -884,20 +877,17 @@ export default function AddVendorModal(props: {
       });
       /* Drive the Step 3 Trade Documents signature workflow from the
        * segment × party intersection. Mandatory rows arrive pre-checked.
-       * Falls back to the legacy seed list when the intersection is
-       * empty so the table is never blank — those rows have db_id=null
-       * and can't be sent (Send is gated on db_id). */
-      if (mergedTd.length > 0) {
-        setTradeDocRows(mergedTd.map(d => ({
-          code: d.code,
-          name: d.name,
-          db_id: partyById.get(d.code) ?? null,
-          sendForSignature: d.requirement === 'M',
-          status: 'N/A' as const,
-          attachment: null,
-          attachmentName: '',
-        })));
-      }
+       * No seed fallback — when the intersection is empty the table is
+       * empty, so only real clm_trade_doc_library rows ever appear. */
+      setTradeDocRows(mergedTd.map(d => ({
+        code: d.code,
+        name: d.name,
+        db_id: partyById.get(d.code) ?? null,
+        sendForSignature: d.requirement === 'M',
+        status: 'N/A' as const,
+        attachment: null,
+        attachmentName: '',
+      })));
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1707,9 +1697,12 @@ export default function AddVendorModal(props: {
     setTradeDocRows(prev => prev.map(r => r.code === code ? { ...r, sendForSignature: !r.sendForSignature } : r));
   };
   const toggleAllTradeDocSign = () => {
+    // Signed docs are locked — they never join select-all or a bulk send.
+    const isSignedRow = (s: string) => s === 'completed' || s === 'Signed';
     setTradeDocRows(prev => {
-      const allOn = prev.every(r => r.sendForSignature);
-      return prev.map(r => ({ ...r, sendForSignature: !allOn }));
+      const selectable = prev.filter(r => !isSignedRow(r.status));
+      const allOn = selectable.length > 0 && selectable.every(r => r.sendForSignature);
+      return prev.map(r => isSignedRow(r.status) ? r : { ...r, sendForSignature: !allOn });
     });
   };
   const sendTradeDoc = (code: string) => {
@@ -1771,9 +1764,12 @@ export default function AddVendorModal(props: {
     setSendForSignature([row.db_id]);
   };
   const sendSelectedTradeDocs = () => {
-    const ids = tradeDocRows.filter(r => r.sendForSignature && r.db_id).map(r => r.db_id!);
+    // Signed (completed) docs are locked — never include them in a bulk send.
+    const ids = tradeDocRows
+      .filter(r => r.sendForSignature && r.db_id && r.status !== 'completed' && r.status !== 'Signed')
+      .map(r => r.db_id!);
     if (ids.length === 0) {
-      toast.info('Nothing selected', 'Tick one or more documents under "Send for Signature" first.');
+      toast.info('Nothing selected', 'Tick one or more unsigned documents under "Send for Signature" first.');
       return;
     }
     if (!vendorId) {
@@ -4056,7 +4052,9 @@ function TradeDocsTable(props: {
   onSend: (code: string) => void;
   onSendSelected: () => void;
 }) {
-  const allChecked = props.rows.length > 0 && props.rows.every(r => r.sendForSignature);
+  // Signed docs are locked — select-all reflects only the unsigned rows.
+  const selectable = props.rows.filter(r => r.status !== 'completed' && r.status !== 'Signed');
+  const allChecked = selectable.length > 0 && selectable.every(r => r.sendForSignature);
   // Map raw signature status → display label + pill colour. Legacy
   // 'Sent'/'Signed'/'N/A' values still come back from local-only state
   // (rows that haven't been hit by the poller yet); the live values
@@ -4081,7 +4079,7 @@ function TradeDocsTable(props: {
               <th>DOCUMENT NAME</th>
               <th style={{ minWidth: 260 }}>
                 <label className="d-inline-flex align-items-center gap-2 mb-0">
-                  <input type="checkbox" checked={allChecked} onChange={props.onToggleAll} />
+                  <input type="checkbox" checked={allChecked} disabled={selectable.length === 0} onChange={props.onToggleAll} />
                   SEND DOCUMENT FOR SIGNATURE
                 </label>
               </th>
@@ -4110,7 +4108,7 @@ function TradeDocsTable(props: {
                         <div className="d-inline-flex align-items-center gap-2">
                           <input
                             type="checkbox"
-                            checked={r.sendForSignature}
+                            checked={!isSigned && r.sendForSignature}
                             onChange={() => props.onToggleSign(r.code)}
                             disabled={isSigned}
                           />

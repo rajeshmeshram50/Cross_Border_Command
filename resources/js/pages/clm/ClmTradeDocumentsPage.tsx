@@ -4,13 +4,13 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
-import { DeleteConf, SimpleNameModal } from './clmCommon';
+import { DeleteConf, LockedConf, SimpleNameModal } from './clmCommon';
 import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 
 /* Central CLM → Trade Documents Master (two tabs: List + Library). */
 
 type TdName = { id: number; code: string; name: string };
-type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; file_path: string | null; content: string | null };
+type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; file_path: string | null; content: string | null; is_signed?: boolean };
 
 export default function ClmTradeDocumentsPage() {
   const toast = useToast();
@@ -180,6 +180,9 @@ function LibraryPane({ rows, names, loading, reload }: { rows: TdLib[]; names: T
   const [editing, setEditing] = useState<TdLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TdLib | null>(null);
+  // Blocked-action popup state — set when the user clicks Edit/Delete on a
+  // draft that has already been signed.
+  const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: TdLib } | null>(null);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
@@ -252,8 +255,8 @@ function LibraryPane({ rows, names, loading, reload }: { rows: TdLib[]; names: T
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
-                        <button className="clm-act clm-act-edit" title="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                        <button className="clm-act clm-act-del" title="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                        <button className="clm-act clm-act-edit" title={r.is_signed ? 'Signed — cannot edit' : 'Edit'} onClick={() => { if (r.is_signed) { setLocked({ mode: 'edit', row: r }); return; } setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                        <button className="clm-act clm-act-del" title={r.is_signed ? 'Signed — cannot delete' : 'Delete'} onClick={() => { if (r.is_signed) { setLocked({ mode: 'delete', row: r }); return; } setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                       </div>
                     </td>
                   </tr>
@@ -275,6 +278,14 @@ function LibraryPane({ rows, names, loading, reload }: { rows: TdLib[]; names: T
       </div>
 
       {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+
+      {locked && (
+        <LockedConf
+          title={locked.mode === 'edit' ? 'Cannot edit this draft' : 'Cannot delete this draft'}
+          sub={`${locked.row.title} (${locked.row.code}) has already been signed by the customer / consignee / supplier, so it can no longer be ${locked.mode === 'edit' ? 'edited' : 'deleted'}.`}
+          onClose={() => setLocked(null)}
+        />
+      )}
 
       <ClmTradeDocumentDraftModal
         open={modalOpen}

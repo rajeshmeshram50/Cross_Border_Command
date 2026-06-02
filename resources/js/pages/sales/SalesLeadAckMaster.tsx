@@ -360,11 +360,14 @@ export default function SalesLeadAckMaster() {
           <table className="lam-table" style={{ tableLayout: 'fixed', minWidth: 560 }}>
             <thead>
               <tr>
-                <th style={{ width: 56 }}>Sr No</th>
-                <th>{COLUMN_HEADERS[tab]}</th>
-                {tab === 'disqualified' && <th style={{ width: 130 }}>DQ Status</th>}
-                <th style={{ width: 130 }}>Status</th>
-                <th style={{ width: 100, textAlign: 'center' }}>Actions</th>
+                {/* Column widths mirror the IDIMS figma: a narrow Sr No, a
+                    wide Reason, and balanced Status / Action columns whose
+                    header + content are centre-aligned. */}
+                <th style={{ width: tab === 'disqualified' ? '10%' : '12%' }}>Sr No</th>
+                <th style={{ width: tab === 'disqualified' ? '34%' : '44%' }}>{COLUMN_HEADERS[tab]}</th>
+                {tab === 'disqualified' && <th style={{ width: '18%', textAlign: 'center' }}>DQ Status</th>}
+                <th style={{ width: tab === 'disqualified' ? '19%' : '22%', textAlign: 'center' }}>Status</th>
+                <th style={{ width: tab === 'disqualified' ? '19%' : '22%', textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -385,18 +388,18 @@ export default function SalesLeadAckMaster() {
                   <td className="lam-td-sr"><span className="lam-sr-badge">{startIdx + i + 1}</span></td>
                   <td className="lam-td-reason"><ReasonCell text={r.reason} /></td>
                   {tab === 'disqualified' && (
-                    <td>
+                    <td style={{ textAlign: 'center' }}>
                       {r.dq_status === 'positive'
                         ? <span className="lam-badge lam-positive">Positive</span>
                         : <span className="lam-badge lam-negative">Negative</span>}
                     </td>
                   )}
-                  <td>
+                  <td style={{ textAlign: 'center' }}>
                     {r.status === 'active'
                       ? <span className="lam-badge lam-active">Active</span>
                       : <span className="lam-badge lam-inactive">Inactive</span>}
                   </td>
-                  <td>
+                  <td style={{ textAlign: 'center' }}>
                     <div className="lam-actions">
                       {canEdit && (
                         <Tooltip label="Edit reason">
@@ -802,13 +805,15 @@ const SCOPED_CSS = `
    tabs inside. Active tab paints as a violet gradient pill within
    the white shell; inactive tabs stay flat with a soft count chip. */
 .lam-tabs-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+/* Figma tabs: standalone pills (no shared shell) — inactive read as light
+   outlined pills, the active tab is a solid violet gradient pill. */
 .lam-tabs {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: #ffffff;
-  border: 1px solid rgba(124,58,237,0.18);
-  border-radius: 999px;
-  padding: 4px;
-  box-shadow: 0 1px 3px rgba(40,18,80,0.05);
+  display: inline-flex; align-items: center; gap: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -816,21 +821,25 @@ const SCOPED_CSS = `
 .lam-tab {
   flex: 0 0 auto;
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 7px 14px;
-  background: transparent;
-  border: none;
+  padding: 8px 18px;
+  background: #ffffff;
+  /* Figma inactive: white pill, muted slate text, near-invisible border
+     with a soft shadow for lift (not a visible coloured outline). */
+  border: 1px solid #eef0f4;
   border-radius: 999px;
-  color: #6b7280;
+  color: #64748b;
+  box-shadow: 0 1px 2px rgba(16,24,40,0.06);
   font-family: inherit; font-size: 12.5px; font-weight: 700;
   cursor: pointer; white-space: nowrap;
-  transition: color .18s ease, background .18s ease, box-shadow .22s ease;
+  transition: color .18s ease, background .18s ease, border-color .18s ease, box-shadow .22s ease;
 }
 .lam-tab-icon { font-size: 15px; opacity: 0.85; }
-.lam-tab:hover { color: #4c1d95; background: rgba(124,58,237,0.06); }
+.lam-tab:hover { color: #4c1d95; background: #faf9ff; border-color: #e7e0fb; }
 .lam-tab.is-active {
-  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+  background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%);
+  border-color: transparent;
   color: #fff;
-  box-shadow: 0 4px 12px rgba(79,70,229,0.40);
+  box-shadow: 0 4px 12px rgba(124,58,237,0.40);
 }
 .lam-tab.is-active .lam-tab-icon { opacity: 1; }
 .lam-tab-count {
@@ -891,8 +900,10 @@ const SCOPED_CSS = `
 .lam-table thead th {
   position: sticky; top: 0; z-index: 3;
   padding: 13px 14px; text-align: left; white-space: nowrap;
-  /* Solid violet header bar with white uppercase titles — matches Figma. */
-  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 55%, #8b5cf6 100%);
+  /* Flat, uniform violet header bar (figma). A flat fill — not a diagonal
+     gradient — so the per-cell backgrounds line up into one continuous bar
+     instead of segmenting at each column boundary. */
+  background: #7c3aed;
   border-bottom: none;
   font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -937,10 +948,10 @@ const SCOPED_CSS = `
 }
 
 .lam-td-sr { font-weight: 700; color: #1e293b; }
-/* Circular Sr-No badge — outlined violet chip matching the Figma. */
+/* Rounded-square Sr-No badge — outlined violet chip matching the Figma. */
 .lam-sr-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 50%;
+  min-width: 28px; height: 24px; padding: 0 7px; border-radius: 7px;
   background: #f5f3ff; color: #6d28d9;
   border: 1.5px solid #ddd6fe;
   font-size: 11.5px; font-weight: 800;
@@ -1366,16 +1377,18 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lam-kpi-value { color: #ede9fe; }
 
 [data-bs-theme="dark"] .lam-tabs {
-  background: #1a1530;
-  border-color: rgba(167,139,250,.22);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.30);
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 [data-bs-theme="dark"] .lam-tab {
-  background: transparent;
-  color: #c4b5fd;
+  background: rgba(255,255,255,.03);
+  border-color: rgba(255,255,255,.08);
+  color: #9aa0b4;
+  box-shadow: none;
 }
-[data-bs-theme="dark"] .lam-tab:hover { color: #ede9fe; background: rgba(167,139,250,.10); }
-[data-bs-theme="dark"] .lam-tab.is-active { background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); color: #fff; }
+[data-bs-theme="dark"] .lam-tab:hover { color: #ede9fe; background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .lam-tab.is-active { background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%); border-color: transparent; color: #fff; }
 [data-bs-theme="dark"] .lam-tab-count { background: rgba(255,255,255,.06); color: #c4b5fd; }
 [data-bs-theme="dark"] .lam-tab.is-active .lam-tab-count { background: rgba(0,0,0,.32); color: #fff; }
 
@@ -1395,7 +1408,7 @@ const SCOPED_CSS = `
   box-shadow: 0 8px 32px rgba(0,0,0,.45);
 }
 [data-bs-theme="dark"] .lam-table thead th {
-  background: linear-gradient(135deg, #5b21b6 0%, #6d28d9 55%, #7c3aed 100%);
+  background: #6d28d9;
   color: #f5f3ff;
   border-bottom-color: transparent;
 }

@@ -385,18 +385,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   // Cleared after onSaved fires so re-opens start clean.
   const dirtySavedRef = useRef(false);
 
-  // Trade docs selection — initial rows are populated from the segment
-  // rule when the user picks a segment in Stage 1 (see segment-template
-  // effect below). Falls back to the original two-row placeholder when
-  // the segment has no rule (or no `td` selections).
+  // Trade docs selection — populated solely from the segment rule's `td`
+  // selections intersected with the party=Buyer trade-doc library (see the
+  // segment-template effect below). Starts EMPTY: no hardcoded placeholder
+  // rows, so only real clm_trade_doc_library entries ever appear here.
   /* `db_id` is the numeric clm_trade_doc_library.id — required by the
-   * Zoho Sign send modal. It's null on the legacy placeholder rows and
-   * populated when the segment-rule merge below joins against the
-   * /clm/trade-doc-library/for-party/buyer endpoint. */
-  const [tdDocs, setTdDocs] = useState<TdDocRow[]>([
-    { id:'td1', db_id:null, name:'Bill of Lading',           selected:true, sent:false, status: 'idle' },
-    { id:'td2', db_id:null, name:'Phytosanitary Certificate', selected:true, sent:false, status: 'idle' },
-  ]);
+   * Zoho Sign send modal — and is always populated from the
+   * /clm/trade-doc-library/for-party/buyer join below. */
+  const [tdDocs, setTdDocs] = useState<TdDocRow[]>([]);
 
   /* "Send for Signature" launch state — when non-null, the Zoho Sign
    * wizard pops with the listed clm_trade_doc_library ids pre-checked.
@@ -763,10 +759,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     // Stage 1 → 2 auto-save POST so KYC uploads gain a target in the
     // same modal session.
     setSavedDbId(customer?.db_id ?? null);
-    setTdDocs([
-      { id:'td1', db_id:null, name:'Bill of Lading',           selected:true, sent:false, status: 'idle' },
-      { id:'td2', db_id:null, name:'Phytosanitary Certificate', selected:true, sent:false, status: 'idle' },
-    ]);
+    setTdDocs([]);
     setSegmentDocs(EMPTY_SEG_DOCS);
     /* Revoke any previously-issued blob URLs so the browser releases
      * them back to the GC. Failing to do this leaks each picked file
@@ -945,11 +938,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     if (stage < 2) return;
 
     const names = (form.coSeg ?? []).filter(Boolean);
-    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); return; }
     const segRows = names
       .map(n => masters.segments.find(s => s.name === n))
       .filter((r): r is { id:number; name:string } => !!r);
-    if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
+    if (segRows.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); return; }
 
     let cancelled = false;
     Promise.all([
@@ -995,24 +988,22 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         qc:  mergeCat('qc'),
       };
       setSegmentDocs(merged);
-      /* Pre-populate Stage 3 Trade Documents from the merged td
-       * intersected with the party=Buyer library. Mandatory rows arrive
-       * pre-checked. The legacy two-row placeholder only kicks in when
-       * the merged set is empty (preserved for backward compatibility). */
+      /* Stage 3 Trade Documents = the merged segment-rule `td` set
+       * intersected with the party=Buyer trade-doc library. No hardcoded
+       * fallback — when the intersection is empty the table is empty, so
+       * only real clm_trade_doc_library rows ever show. */
       const partyById = new Map<string, number>(
         (partyDocs as Array<{ code: string; id: number }>).map(p => [p.code, p.id]),
       );
       const buyerTd = merged.td.filter(d => partyById.has(d.code));
-      if (buyerTd.length > 0) {
-        setTdDocs(buyerTd.map(d => ({
-          id: `td_${d.code}`,
-          db_id: partyById.get(d.code) ?? null,
-          name: d.name,
-          selected: d.requirement === 'M',
-          sent: false,
-          status: 'idle' as TdSigStatus,
-        })));
-      }
+      setTdDocs(buyerTd.map(d => ({
+        id: `td_${d.code}`,
+        db_id: partyById.get(d.code) ?? null,
+        name: d.name,
+        selected: d.requirement === 'M',
+        sent: false,
+        status: 'idle' as TdSigStatus,
+      })));
     });
 
     return () => { cancelled = true; };
@@ -1716,7 +1707,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             <Stage3TradeDocs
               docs={tdDocs.map(d => ({ ...d, cooldownActive: isReminderCooldown(d.signature_request_id) }))}
               onToggle={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, selected: !d.selected } : d))}
-              onToggleAll={(checked) => setTdDocs(prev => prev.map(d => ({ ...d, selected: checked })))}
+              // Select-all skips already-signed docs — they're locked and
+              // must never join a bulk send.
+              onToggleAll={(checked) => setTdDocs(prev => prev.map(d => d.status === 'completed' ? d : { ...d, selected: checked }))}
               onSend={(id) => {
                 const row = tdDocs.find(d => d.id === id);
                 if (!row?.db_id) {
@@ -1778,9 +1771,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                 setSendForSignature([row.db_id]);
               }}
               onSendSelected={() => {
-                const ids = tdDocs.filter(d => d.selected && d.db_id).map(d => d.db_id!);
+                // Already-signed (completed) docs are excluded — they're
+                // locked and can't be re-sent in a bulk action.
+                const ids = tdDocs.filter(d => d.selected && d.db_id && d.status !== 'completed').map(d => d.db_id!);
                 if (ids.length === 0) {
-                  toast.info('Nothing selected', 'Tick one or more documents under "Send for Signature" first.');
+                  toast.info('Nothing selected', 'Tick one or more unsigned documents under "Send for Signature" first.');
                   return;
                 }
                 if (!(customer?.db_id || savedDbId)) {
@@ -3000,8 +2995,11 @@ const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: stri
 
 function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }:
   { docs: TdDocRow[]; onToggle:(id:string)=>void; onToggleAll:(c:boolean)=>void; onSend:(id:string)=>void; onSendSelected:()=>void }) {
-  const selCount = docs.filter(d => d.selected).length;
-  const allChecked = selCount === docs.length;
+  // Signed (completed) docs are locked: they don't count toward the
+  // "Send for Signature" select-all and can never be ticked by it.
+  const selectable = docs.filter(d => d.status !== 'completed');
+  const selCount = selectable.filter(d => d.selected).length;
+  const allChecked = selectable.length > 0 && selCount === selectable.length;
   return (
     <div className="acm-section acm-section-purple">
       <div className="acm-section-head">
@@ -3021,7 +3019,7 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                 <th>Document Name</th>
                 <th>
                   <label className="acm-td-check-label">
-                    <input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = selCount > 0 && selCount < docs.length; }} onChange={e => onToggleAll(e.target.checked)} />
+                    <input type="checkbox" checked={allChecked} disabled={selectable.length === 0} ref={el => { if (el) el.indeterminate = selCount > 0 && selCount < selectable.length; }} onChange={e => onToggleAll(e.target.checked)} />
                     Send for Signature
                   </label>
                 </th>
@@ -3047,7 +3045,7 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                       const resendLocked = isSigned || onCooldown;
                       return (
                         <div className="acm-td-cell-check">
-                          <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} disabled={isSigned} />
+                          <input type="checkbox" checked={!isSigned && d.selected} onChange={() => onToggle(d.id)} disabled={isSigned} />
                           {d.sent ? (
                             (() => {
                               const remCount = d.reminder_count ?? 0;

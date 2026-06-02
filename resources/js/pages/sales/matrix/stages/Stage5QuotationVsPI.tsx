@@ -150,6 +150,18 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   useEffect(() => { void fetchAll(false); }, [fetchAll]);
   useEffect(() => { prewarmQpiMasters(); }, []);
 
+  /* Auto-unlock the left CLM "Segment Details" card whenever this lead
+   * ALREADY has at least one quotation or PI in the list — the user
+   * shouldn't have to open (or submit) the Create/Edit form to trigger
+   * it. Bumping the parent's /agreement-applicable refetch is idempotent.
+   * onPiChange is intentionally left out of the deps (it's a fresh
+   * closure each parent render) so this fires only when the row COUNT
+   * changes (0 → 1), never on every re-render. */
+  useEffect(() => {
+    if (quotations.length > 0 || pis.length > 0) onPiChange?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotations.length, pis.length]);
+
   /* ── Per-row actions ─────────────────────────────────────────────── */
   const onViewPdf = async (kind: DocType, id: number, signature: boolean) => {
     setActingId(id);
@@ -1126,9 +1138,20 @@ const STAGE5_CSS = `
 [data-bs-theme="dark"] .smd-s5-head .smd-stg-head-title { color: #cffafe; }
 [data-bs-theme="dark"] .smd-s5-head .smd-stg-head-sub { color: #a5f3fc; }
 [data-bs-theme="dark"] .s5-head-divider { background: rgba(165,243,252,.25); }
-[data-bs-theme="dark"] .s5-seg { background: rgba(8,145,178,.16); border-color: rgba(165,243,252,.25); }
-[data-bs-theme="dark"] .s5-seg-btn { color: #a5f3fc; }
-[data-bs-theme="dark"] .s5-create-q { background: #1f1845; color: #a5f3fc; border-color: rgba(165,243,252,.40); }
+/* Action row (tabs + create buttons) — dark surface instead of the light
+   cyan gradient so it reads as part of the dark panel. */
+[data-bs-theme="dark"] .s5-actionrow {
+  background: linear-gradient(110deg, #14102a 0%, #1a1538 45%, #14102a 100%);
+  border-color: rgba(8,145,178,.30);
+  box-shadow: 0 2px 16px rgba(0,0,0,.30);
+}
+[data-bs-theme="dark"] .s5-actionrow::before { display: none; }
+[data-bs-theme="dark"] .s5-seg { background: rgba(8,145,178,.16); border-color: rgba(165,243,252,.25); box-shadow: none; }
+[data-bs-theme="dark"] .s5-seg-btn { color: #a5f3fc; background: rgba(165,243,252,.08); border-color: rgba(165,243,252,.20); box-shadow: none; }
+[data-bs-theme="dark"] .s5-seg-btn:hover:not(.active) { background: rgba(165,243,252,.16); border-color: rgba(165,243,252,.35); }
+[data-bs-theme="dark"] .s5-seg-btn.active { color: #fff; background: linear-gradient(135deg, #0891b2 0%, #0c4a6e 100%); border: none; }
+[data-bs-theme="dark"] .s5-create-div { background: linear-gradient(180deg, transparent, rgba(165,243,252,.30), transparent); }
+[data-bs-theme="dark"] .s5-create-q { background: #1f1845; color: #a5f3fc; border-color: rgba(165,243,252,.40); box-shadow: none; }
 [data-bs-theme="dark"] .s5-tbl-card { background: #14102a; border-color: rgba(165,243,252,.25); }
 [data-bs-theme="dark"] .s5-tbl tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
 [data-bs-theme="dark"] .s5-tbl tbody tr:nth-child(even) { background: rgba(14,116,144,.10); }
