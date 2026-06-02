@@ -417,26 +417,28 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
                   <span className="s4-tab-count">{sharedCount}</span>
                 </button>
               </div>
+              {/* Search sits to the RIGHT of the tabs row (space-between).
+                  Shown on the Shared Price tab, which it filters. */}
+              {tab === 'shared' && (
+                <div className="s4-search">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search code, name or date…"
+                    value={sharedQuery}
+                    onChange={(e) => setSharedQuery(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
 
             {/* ── PRICE TO BE SHARE TAB ── */}
             {tab === 'to_share' && (
               <div className="s4-card s4-card-navy smd-fade-in" key="t-share">
-                <div className="s4-card-head s4-card-head-navy">
-                  <div className="s4-card-head-titlewrap">
-                    <div className="s4-card-icon s4-card-icon-navy">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4">
-                        <line x1="12" y1="1" x2="12" y2="23" />
-                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="s4-card-title">Products awaiting quoted price <span className="s4-card-count s4-card-count-navy">{toShareCount}</span></div>
-                      <div className="s4-card-sub">Type the quoted price and submit. Drafts / inactive products are blocked.</div>
-                    </div>
-                  </div>
-                </div>
-
+                {/* No banner header here — the figma goes straight from the
+                    tabs into the table. (History view keeps its own header.) */}
                 <div className="s4-table-wrap">
                   <table className="s4-table">
                     <thead className="s4-thead-navy">
@@ -546,31 +548,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
             {/* ── SHARED PRICE TAB ── */}
             {tab === 'shared' && (
               <div className="s4-card s4-card-navy smd-fade-in" key="t-shared">
-                <div className="s4-card-head s4-card-head-navy">
-                  <div className="s4-card-head-titlewrap">
-                    <div className="s4-card-icon s4-card-icon-navy">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="s4-card-title">Shared Price History <span className="s4-card-count s4-card-count-navy">{sharedCount}</span></div>
-                      <div className="s4-card-sub">Every quotation shared with the customer — newest first.</div>
-                    </div>
-                  </div>
-                  <div className="s4-search">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
-                    <input
-                      type="text"
-                      placeholder="Search code, name or date…"
-                      value={sharedQuery}
-                      onChange={(e) => setSharedQuery(e.target.value)}
-                    />
-                  </div>
-                </div>
-
+                {/* No banner header — search moved up beside the tabs row. */}
                 <div className="s4-table-wrap">
                   <table className="s4-table">
                     <thead className="s4-thead-navy">
