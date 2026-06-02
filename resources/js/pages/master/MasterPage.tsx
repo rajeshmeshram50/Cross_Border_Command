@@ -87,12 +87,16 @@ function MasterPageInner({
   const modulePerm = user?.permissions?.[fullSlug];
   const caps = useMemo(() => ({
     view:   isSuperAdmin || !!modulePerm?.can_view,
-    add:    isSuperAdmin || !!modulePerm?.can_add,
+    // `lockedFixed` masters (e.g. address_types) override permissions —
+    // not even super_admin can add rows. Backend rejects POST anyway;
+    // hiding the button keeps the UI honest. Edit/delete still gated
+    // by the per-row is_system flag (handled in row actions).
+    add:    !cfg.lockedFixed && (isSuperAdmin || !!modulePerm?.can_add),
     edit:   isSuperAdmin || !!modulePerm?.can_edit,
     delete: isSuperAdmin || !!modulePerm?.can_delete,
     export: isSuperAdmin || !!modulePerm?.can_export,
     import: isSuperAdmin || !!modulePerm?.can_import,
-  }), [isSuperAdmin, modulePerm?.can_view, modulePerm?.can_add, modulePerm?.can_edit, modulePerm?.can_delete, modulePerm?.can_export, modulePerm?.can_import]);
+  }), [isSuperAdmin, modulePerm?.can_view, modulePerm?.can_add, modulePerm?.can_edit, modulePerm?.can_delete, modulePerm?.can_export, modulePerm?.can_import, cfg.lockedFixed]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
