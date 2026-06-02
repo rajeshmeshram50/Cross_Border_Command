@@ -1303,7 +1303,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         return null;
       case 'email':
         if (!f.email.trim()) return 'Email is required';
-        if (!/^\S+@\S+\.\S+$/.test(f.email)) return 'Enter a valid email';
+        if (!/^[A-Za-z0-9._%+-]+@(?:[A-Za-z]+\.)+[A-Za-z]{2,}$/.test(f.email)) return 'Enter a valid email';
         if (locations.some(l => (l.cpEmail || '').trim().toLowerCase() === f.email.trim().toLowerCase()))
           return 'This email is already used by another address on this consignee';
         return null;
@@ -4758,7 +4758,7 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
     if (saving) return;
     const next: Record<string, string> = {};
     if (!d.owner_name.trim())                                          next.owner_name     = 'Owner name is required';
-    if (d.official_email && !/^\S+@\S+\.\S+$/.test(d.official_email))  next.official_email = 'Enter a valid email';
+    if (d.official_email && !/^[A-Za-z0-9._%+-]+@(?:[A-Za-z]+\.)+[A-Za-z]{2,}$/.test(d.official_email))  next.official_email = 'Enter a valid email';
     if (d.phone_number && !/^\+?[0-9\s-]{7,15}$/.test(d.phone_number)) next.phone_number   = 'Phone must be 7-15 digits';
     setErrs(next);
     if (Object.keys(next).length > 0) return;
@@ -5005,7 +5005,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'cpEmail':
         if (!dd.cpEmail.trim()) return 'Email required';
-        if (!/^\S+@\S+\.\S+$/.test(dd.cpEmail)) return 'Enter a valid email';
+        if (!/^[A-Za-z0-9._%+-]+@(?:[A-Za-z]+\.)+[A-Za-z]{2,}$/.test(dd.cpEmail)) return 'Enter a valid email';
         if (existingEmails.includes(dd.cpEmail.trim().toLowerCase()))
           return 'This email is already used by another address on this consignee';
         return null;
