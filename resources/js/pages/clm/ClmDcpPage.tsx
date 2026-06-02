@@ -649,7 +649,7 @@ function SegmentRuleModal(props: {
                               </label>
                             </td>
                             <td style={{ width: 100 }}><span className="clm-code-pill">{d.code}</span></td>
-                            <td className="clm-td-name">{d.name || d.title}</td>
+                            <td className="clm-td-name">{d.title || d.name}</td>
                             <td className="clm-td-desc">{d.authority || d.issued_by || '—'}</td>
                             <td style={{ width: 200, textAlign: 'right' }}>
                               <div className={`dcp-req-group ${isM ? 'dcp-req-group-mand' : isO ? 'dcp-req-group-opt' : ''}`} style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: `1.5px solid ${isM ? 'rgba(6,182,212,.35)' : isO ? 'rgba(245,158,11,.35)' : 'rgba(203,213,225,.4)'}` }}>
@@ -835,7 +835,7 @@ function DocListPopup(props: {
         </span>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="dcp-doc-name">{d.name || d.title}</div>
+        <div className="dcp-doc-name">{d.title || d.name}</div>
         <div className="dcp-doc-auth">{d.authority || d.issued_by || '—'}</div>
       </div>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 14px', borderRadius: 20, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
