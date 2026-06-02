@@ -5350,7 +5350,11 @@ const SCOPED_CSS = `
 /* MasterSelect inside this modal — match Velzon form-select chrome */
 .avm-master-select .master-select-wrap .master-select-toggle {
   min-height: 38px !important; height: 38px;
-  padding: 0 32px 0 12px !important;
+  /* Right padding trimmed 32px -> 12px: the chevron is a flex item pushed to
+     the right by the toggle's space-between, so the extra 32px right padding
+     was holding it ~20px in from the edge, making it look centred. 12px sits
+     it flush near the right edge like a normal select. */
+  padding: 0 12px !important;
   font-size: 13px !important;
   background: var(--vz-card-bg, #fff) !important;
   border: 1px solid var(--vz-border-color, #e9ebec) !important;

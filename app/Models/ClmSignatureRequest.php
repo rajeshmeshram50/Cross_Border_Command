@@ -113,4 +113,27 @@ class ClmSignatureRequest extends Model
     {
         return $q->where('status', 'completed');
     }
+
+    /**
+     * Has a draft of the given doc type ever come back signed?
+     *
+     * A "signed" draft is one whose Zoho request reached `completed`. The
+     * doc id can live either in the legacy single `trade_doc_id` column or
+     * inside the `trade_doc_ids` JSON array (multi-doc sends), so we check
+     * both. Used by the Trade Document + Agreement library controllers to
+     * lock a draft against edit/delete once its signed copy exists.
+     */
+    public static function hasSignedDraft(?int $clientId, int $docId, string $docType): bool
+    {
+        if (!$clientId) return false;
+
+        return static::where('client_id', $clientId)
+            ->where('document_type', $docType)
+            ->where('status', 'completed')
+            ->where(function (Builder $q) use ($docId) {
+                $q->where('trade_doc_id', $docId)
+                  ->orWhereJsonContains('trade_doc_ids', $docId);
+            })
+            ->exists();
+    }
 }

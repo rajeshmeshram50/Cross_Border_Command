@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesDocxHtmlRoundtrip;
+use App\Models\ClmSignatureRequest;
 use App\Models\ClmTradeDocLibrary;
 use App\Models\ClmTradeDocName;
 use Illuminate\Http\Request;
@@ -124,6 +125,17 @@ class ClmTradeDocumentController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         $row  = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($id);
 
+        // Lock once the draft has been sent and signed. A trade document that
+        // has come back signed via Zoho (a `completed` signature request) is
+        // a legal record — editing it would silently diverge the master from
+        // the copy the customer/consignee actually signed.
+        if (ClmSignatureRequest::hasSignedDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_TRADE)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This trade document has already been signed by the customer/consignee and can no longer be edited.',
+            ], 422);
+        }
+
         $data = $request->validate([
             'name'      => 'sometimes|required|string|max:255',
             'title'     => 'sometimes|required|string|max:255',
@@ -147,6 +159,17 @@ class ClmTradeDocumentController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($id);
+
+        // Same lock as libraryUpdate — a signed trade document must stay on
+        // record, so block the delete once a `completed` signature request
+        // references this draft.
+        if (ClmSignatureRequest::hasSignedDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_TRADE)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This trade document has already been signed by the customer/consignee and can no longer be deleted.',
+            ], 422);
+        }
+
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }

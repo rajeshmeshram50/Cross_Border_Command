@@ -1109,14 +1109,60 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
 ];
 
 function PlaceholderPicker({ onClose, onPick }: { onClose: () => void; onPick: (token: string) => void }) {
+  const toast = useToast();
   const [activeId, setActiveId] = useState<string>('buyer');
+  // Multi-select set — tokens ticked across ALL groups so one "Copy
+  // selected" can grab a mix of buyer + consignee + supplier placeholders.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
+  const writeClipboard = async (text: string) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+  };
+
+  const copyToken = async (token: string) => {
+    try { await writeClipboard(token); toast.success('Copied', `${token} copied to clipboard.`); }
+    catch { toast.error('Could not copy', 'Clipboard access was blocked — copy manually.'); }
+  };
+
+  const copySelected = async () => {
+    if (selected.size === 0) return;
+    const ordered = PLACEHOLDER_GROUPS.flatMap(g => g.fields).map(f => f.token).filter(tok => selected.has(tok));
+    try {
+      await writeClipboard(ordered.join(' '));
+      toast.success('Copied', `${ordered.length} placeholder${ordered.length === 1 ? '' : 's'} copied to clipboard.`);
+    } catch { toast.error('Could not copy', 'Clipboard access was blocked — copy manually.'); }
+  };
+
+  const toggleSelect = (token: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(token)) next.delete(token); else next.add(token);
+      return next;
+    });
+  };
+
   const active = PLACEHOLDER_GROUPS.find(g => g.id === activeId) ?? PLACEHOLDER_GROUPS[0];
+  const allInGroupSelected = active.fields.length > 0 && active.fields.every(f => selected.has(f.token));
+  const toggleSelectAllInGroup = () => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (allInGroupSelected) active.fields.forEach(f => next.delete(f.token));
+      else active.fields.forEach(f => next.add(f.token));
+      return next;
+    });
+  };
 
   return createPortal(
     <div className="agw-ph-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true">
@@ -1138,7 +1184,7 @@ function PlaceholderPicker({ onClose, onPick }: { onClose: () => void; onPick: (
             </button>
           </div>
         </div>
-        <div className="agw-ph-hint">ⓘ Click any field to insert it into the editor. Placeholders auto-fill on agreement generation.</div>
+        <div className="agw-ph-hint">ⓘ Click a field to insert it, or tick the checkboxes and use “Copy selected” to copy several placeholders at once.</div>
         <div className="agw-ph-body">
           <div className="agw-ph-sidebar" role="tablist">
             {PLACEHOLDER_GROUPS.map(g => (
@@ -1167,20 +1213,54 @@ function PlaceholderPicker({ onClose, onPick }: { onClose: () => void; onPick: (
                 <div className="agw-ph-fields-sub">Select a field to insert its placeholder into the agreement</div>
               </div>
             </div>
+            <div className="agw-ph-selbar">
+              <label className="agw-ph-selall">
+                <input type="checkbox" checked={allInGroupSelected} onChange={toggleSelectAllInGroup} />
+                Select all in {active.label} ({active.fields.length})
+              </label>
+              <div className="agw-ph-selbar-actions">
+                <span className="agw-ph-selcount">{selected.size} selected</span>
+                <button type="button" className="agw-ph-selbtn agw-ph-selbtn-copy" disabled={selected.size === 0}
+                        onClick={() => void copySelected()}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  Copy selected
+                </button>
+                <button type="button" className="agw-ph-selbtn" disabled={selected.size === 0}
+                        onClick={() => setSelected(new Set())}>
+                  Clear
+                </button>
+              </div>
+            </div>
+
             <div className="agw-ph-grid">
-              {active.fields.map(f => (
-                <button
+              {active.fields.map(f => {
+                const isChecked = selected.has(f.token);
+                return (
+                <div
                   key={f.token}
-                  type="button"
-                  className="agw-ph-card"
+                  className={`agw-ph-card ${isChecked ? 'is-checked' : ''}`}
                   style={{ ['--ph-card-color' as any]: active.iconColor }}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onPick(f.token)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(f.token); } }}
                   title={`Click to insert ${f.token}`}
                 >
-                  <span className="agw-ph-card-label">{f.label}</span>
+                  <span className="agw-ph-card-top">
+                    <input type="checkbox" className="agw-ph-card-check" checked={isChecked}
+                           title="Select for bulk copy" aria-label={`Select ${f.token} for bulk copy`}
+                           onClick={e => e.stopPropagation()}
+                           onChange={() => toggleSelect(f.token)} />
+                    <span className="agw-ph-card-label">{f.label}</span>
+                    <button type="button" className="agw-ph-card-copy" title={`Copy ${f.token}`} aria-label={`Copy ${f.token}`}
+                            onClick={e => { e.stopPropagation(); void copyToken(f.token); }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                  </span>
                   <span className="agw-ph-card-token">{f.token}</span>
-                </button>
-              ))}
+                </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1474,10 +1554,27 @@ const AGW_CSS = `
 .agw-ph-fields-ico { width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; }
 .agw-ph-fields-title { font-size: 15.5px; font-weight: 800; }
 .agw-ph-fields-sub { font-size: 11.5px; color: #64748b; }
+.agw-ph-selbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 11px; margin-bottom: 12px; border-radius: 10px; background: #fff; border: 1.5px solid #e2e8f0; }
+.agw-ph-selall { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: #0c4a6e; cursor: pointer; margin: 0; }
+.agw-ph-selall input { width: 15px; height: 15px; accent-color: #0891b2; cursor: pointer; }
+.agw-ph-selbar-actions { display: inline-flex; align-items: center; gap: 8px; }
+.agw-ph-selcount { font-size: 12px; font-weight: 700; color: #64748b; }
+.agw-ph-selbtn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; border: 1.5px solid rgba(6,182,212,.25); background: #fff; color: #0e7490; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .15s ease, border-color .15s ease, opacity .15s ease, transform .15s ease; }
+.agw-ph-selbtn:hover:not(:disabled) { background: #ecfeff; border-color: #0891b2; transform: translateY(-1px); }
+.agw-ph-selbtn:disabled { opacity: .45; cursor: not-allowed; }
+.agw-ph-selbtn-copy { background: #0891b2; border-color: #0891b2; color: #fff; }
+.agw-ph-selbtn-copy:hover:not(:disabled) { background: #0e7490; border-color: #0e7490; color: #fff; }
+
 .agw-ph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
 .agw-ph-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; border: 1.5px solid #e2e8f0; background: #fff; cursor: pointer; text-align: left; transition: border-color .15s ease, transform .15s ease, box-shadow .22s ease, background .15s ease; }
 .agw-ph-card:hover { border-color: var(--ph-card-color); transform: translateY(-1px); box-shadow: 0 6px 14px rgba(15,23,42,.08); background: #fafffd; }
-.agw-ph-card-label { font-size: 12.5px; font-weight: 800; color: #0c4a6e; }
+.agw-ph-card.is-checked { border-color: var(--ph-card-color); background: #ecfeff; box-shadow: 0 0 0 1px var(--ph-card-color) inset; }
+.agw-ph-card-top { display: flex; align-items: center; gap: 8px; }
+.agw-ph-card-check { width: 15px; height: 15px; flex-shrink: 0; accent-color: var(--ph-card-color); cursor: pointer; }
+.agw-ph-card-label { font-size: 12.5px; font-weight: 800; color: #0c4a6e; flex: 1; min-width: 0; }
+.agw-ph-card-copy { width: 22px; height: 22px; flex-shrink: 0; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid transparent; color: #94a3b8; cursor: pointer; opacity: 0; transition: opacity .15s ease, background .15s ease, color .15s ease, border-color .15s ease; }
+.agw-ph-card:hover .agw-ph-card-copy, .agw-ph-card:focus-within .agw-ph-card-copy { opacity: 1; }
+.agw-ph-card-copy:hover { background: #ecfeff; border-color: rgba(6,182,212,.30); color: #0891b2; }
 .agw-ph-card-token { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; font-weight: 600; color: var(--ph-card-color); }
 
 /* MasterSelect dropdown above the modal */
@@ -1563,7 +1660,17 @@ const AGW_CSS = `
 [data-bs-theme="dark"] .agw-ph-tab:hover { background: rgba(8,145,178,.20); }
 [data-bs-theme="dark"] .agw-ph-card { background: #1e293b; border-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .agw-ph-card:hover { background: rgba(8,145,178,.14); }
+[data-bs-theme="dark"] .agw-ph-card.is-checked { background: rgba(8,145,178,.20); }
 [data-bs-theme="dark"] .agw-ph-card-label { color: #cffafe; }
+[data-bs-theme="dark"] .agw-ph-card-copy { color: #94a3b8; }
+[data-bs-theme="dark"] .agw-ph-card-copy:hover { background: rgba(8,145,178,.20); border-color: rgba(103,232,249,.30); color: #67e8f9; }
+[data-bs-theme="dark"] .agw-ph-selbar { background: #1e293b; border-color: rgba(6,182,212,.25); }
+[data-bs-theme="dark"] .agw-ph-selall { color: #cffafe; }
+[data-bs-theme="dark"] .agw-ph-selcount { color: #94a3b8; }
+[data-bs-theme="dark"] .agw-ph-selbtn { background: #1e293b; border-color: rgba(6,182,212,.30); color: #67e8f9; }
+[data-bs-theme="dark"] .agw-ph-selbtn:hover:not(:disabled) { background: rgba(8,145,178,.20); border-color: #67e8f9; }
+[data-bs-theme="dark"] .agw-ph-selbtn-copy { background: #0891b2; border-color: #0891b2; color: #fff; }
+[data-bs-theme="dark"] .agw-ph-selbtn-copy:hover:not(:disabled) { background: #0e7490; border-color: #0e7490; }
 [data-bs-theme="dark"] .agw-ph-fields-sub { color: #94a3b8; }
 
 /* MasterMultiSelect chips — the segment picker inline-styles each chip
