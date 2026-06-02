@@ -18,12 +18,11 @@ export const SALES_MATRIX_DETAIL_CSS = `
   background: linear-gradient(160deg,#faf5ff 0%,#f5f3ff 35%,#fafafa 100%);
   padding: 10px 14px 18px;
   margin: -1rem -0.75rem;
-  /* Fixed viewport height + flex column so the three-column body fills
-     the remaining space and each column scrolls INTERNALLY (instead of
-     the whole page growing with the tallest column). */
-  height: calc(100vh - 70px);
-  display: flex; flex-direction: column;
-  overflow: hidden;
+  /* At least the viewport height — the columns fill it (see the card
+     min-height below) and the whole page scrolls when content overflows
+     (matches the figma; internal column scroll was over-constraining the
+     layout at 100% zoom). */
+  min-height: calc(100vh - 70px);
   color: #1e293b;
   font-size: 12px;
 }
@@ -548,9 +547,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-body {
   display: flex; gap: 10px;
   align-items: stretch;
-  /* Fill the remaining viewport height; min-height:0 lets the flex
-     children (the columns) shrink so their inner scroll areas engage. */
-  flex: 1 1 auto; min-height: 0;
 }
 
 /* ── Collapsed side rail ── */
@@ -598,6 +594,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border-radius: 14px;
   overflow: hidden; display: flex; flex-direction: column;
   min-width: 0;
+  /* Fill at least the viewport (minus nav + banner + stepper + toolbar
+     ~300px) so a short stage isn't stranded at the top — but the columns
+     GROW with content and align-items:stretch on the body makes the
+     shorter ones match the tallest (so the centre always equals the left
+     panel's natural height). Tall content scrolls the page. */
+  min-height: calc(100vh - 300px);
   box-shadow: 0 2px 16px rgba(124,58,237,.10);
 }
 /* Per-card flex sizing (CLM 20% · Stage fills · Deal 30%). transition
@@ -607,9 +609,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border: 1px solid #ede9fe;
   box-shadow: 0 2px 12px rgba(124,58,237,.07);
   transition: flex .3s ease;
-  /* Scroll the panel's own content when it's taller than the column;
-     the header stays pinned (see .smd-clm-header sticky below). */
-  overflow-y: auto;
 }
 .smd-stage-card {
   flex: 1 1 0%;
@@ -620,11 +619,7 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border: 1px solid #ede9fe;
   box-shadow: 0 2px 12px rgba(124,58,237,.07);
   transition: flex .3s ease;
-  overflow-y: auto;
 }
-/* Pin the side-panel headers while their bodies scroll. */
-.smd-clm-card  .smd-clm-header,
-.smd-deal-card .smd-deal-header { position: sticky; top: 0; z-index: 3; }
 
 /* ── CLM panel ── */
 .smd-clm-header {
@@ -956,11 +951,10 @@ export const SALES_MATRIX_DETAIL_CSS = `
   .smd-toolbar { padding: 8px 10px; }
 }
 @media (max-width: 1100px) {
-  /* Stacked layout → revert to natural page scroll (the fixed-height
-     column scrolling only makes sense for the side-by-side desktop view). */
-  .smd-root { height: auto; overflow: visible; min-height: calc(100vh - 70px); }
-  .smd-body { flex-direction: column; flex: 0 1 auto; min-height: 0; }
-  .smd-clm-card, .smd-stage-card, .smd-deal-card { flex: 1 1 auto; overflow-y: visible; }
+  /* Stack the three panels; each takes its content height (the fixed
+     viewport height only applies to the side-by-side desktop view). */
+  .smd-body { flex-direction: column; }
+  .smd-clm-card, .smd-stage-card, .smd-deal-card { flex: 1 1 auto; min-height: auto; }
   .smd-stepper { grid-template-columns: repeat(3,1fr); gap: 4px; }
   .smd-step { margin-right: 0; }
   .smd-step, .smd-step:first-child, .smd-step:last-child {
@@ -1274,11 +1268,17 @@ export const SALES_MATRIX_DETAIL_CSS = `
 [data-bs-theme="dark"] .smd-root .smd-deal-input,
 [data-bs-theme="dark"] .smd-root .smd-deal-card input,
 [data-bs-theme="dark"] .smd-root .smd-deal-card select,
-[data-bs-theme="dark"] .smd-root .smd-deal-card textarea {
+[data-bs-theme="dark"] .smd-root .smd-deal-card textarea,
+/* The Buying Plan date picker's toggle is a <div>, not an <input>, so it
+   was missed by the rule above and rendered white. Match it to the other
+   deal-panel inputs. */
+[data-bs-theme="dark"] .smd-root .smd-deal-card .master-datepicker-toggle {
   background: #2a2150 !important;
   border-color: rgba(167, 139, 250, .30) !important;
   color: #ede9fe !important;
 }
+[data-bs-theme="dark"] .smd-root .smd-deal-card .master-datepicker-value { color: #ede9fe !important; }
+[data-bs-theme="dark"] .smd-root .smd-deal-card .master-datepicker-placeholder { color: rgba(196,181,253,.55) !important; }
 [data-bs-theme="dark"] .smd-root .smd-deal-input::placeholder,
 [data-bs-theme="dark"] .smd-root .smd-deal-card input::placeholder,
 [data-bs-theme="dark"] .smd-root .smd-deal-card textarea::placeholder {

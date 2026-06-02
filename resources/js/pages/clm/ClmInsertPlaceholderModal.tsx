@@ -72,6 +72,10 @@ interface Props {
 export default function ClmInsertPlaceholderModal({ open, onClose, onInsert }: Props) {
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('customer');
+  // Multi-select: tokens the user has ticked across ALL tabs. Persists
+  // while the modal is open so a single "Copy selected" can grab a mix of
+  // customer + consignee + supplier placeholders in one go.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!open) return;
@@ -80,33 +84,74 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert }: P
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  /* Copy raw {{Token}} to clipboard — mirrors the HRMS Template Editor's
-   * helper. Falls back to a hidden textarea on browsers without
-   * navigator.clipboard (older Safari, non-secure contexts). */
+  // Clear the ticked set every time the picker re-opens so a fresh session
+  // never inherits a stale selection.
+  useEffect(() => { if (!open) setSelected(new Set()); }, [open]);
+
+  /* Low-level clipboard write — uses navigator.clipboard when available and
+   * falls back to a hidden textarea on browsers without it (older Safari,
+   * non-secure contexts). Shared by single + multi copy. */
+  const writeClipboard = async (text: string) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+  };
+
+  /* Copy a single raw {{Token}} to clipboard. */
   const copyToken = async (token: string) => {
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(token);
-      } else {
-        const ta = document.createElement('textarea');
-        ta.value = token;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      }
+      await writeClipboard(token);
       toast.success('Copied', `${token} copied to clipboard.`);
     } catch {
       toast.error('Could not copy', 'Clipboard access was blocked — copy manually.');
     }
   };
 
+  /* Copy every ticked placeholder at once, space-separated, in the same
+   * group order they appear in the picker. */
+  const copySelected = async () => {
+    if (selected.size === 0) return;
+    const ordered = Object.values(FIELDS).flat()
+      .map(f => f.token)
+      .filter(tok => selected.has(tok));
+    try {
+      await writeClipboard(ordered.join(' '));
+      toast.success('Copied', `${ordered.length} placeholder${ordered.length === 1 ? '' : 's'} copied to clipboard.`);
+    } catch {
+      toast.error('Could not copy', 'Clipboard access was blocked — copy manually.');
+    }
+  };
+
+  const toggleSelect = (token: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(token)) next.delete(token); else next.add(token);
+      return next;
+    });
+  };
+
   if (!open) return null;
 
   const fields    = FIELDS[tab];
   const tabHeader = TABS.find(t => t.key === tab)!;
+  const allInTabSelected = fields.length > 0 && fields.every(f => selected.has(f.token));
+  const toggleSelectAllInTab = () => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (allInTabSelected) fields.forEach(f => next.delete(f.token));
+      else fields.forEach(f => next.add(f.token));
+      return next;
+    });
+  };
 
   return createPortal(
     <div className="ipm-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true">
@@ -132,7 +177,7 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert }: P
 
         <div className="ipm-info">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-          Click any field to insert it into the editor. Placeholders auto-fill on document generation.
+          Click a field to insert it, or tick the checkboxes and use “Copy selected” to copy several placeholders at once.
         </div>
 
         <div className="ipm-body">
@@ -161,12 +206,37 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert }: P
               </div>
             </header>
 
+            <div className="ipm-selbar">
+              <label className="ipm-selall">
+                <input type="checkbox" checked={allInTabSelected} onChange={toggleSelectAllInTab} />
+                Select all in {tabHeader.label} ({fields.length})
+              </label>
+              <div className="ipm-selbar-actions">
+                <span className="ipm-selcount">{selected.size} selected</span>
+                <button type="button" className="ipm-selbtn ipm-selbtn-copy" disabled={selected.size === 0}
+                        onClick={() => void copySelected()}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  Copy selected
+                </button>
+                <button type="button" className="ipm-selbtn" disabled={selected.size === 0}
+                        onClick={() => setSelected(new Set())}>
+                  Clear
+                </button>
+              </div>
+            </div>
+
             <div className="ipm-grid">
-              {fields.map(f => (
-                <div key={f.token} className={`ipm-card ${f.isSignature ? 'is-sig' : ''}`} role="button" tabIndex={0}
+              {fields.map(f => {
+                const isChecked = selected.has(f.token);
+                return (
+                <div key={f.token} className={`ipm-card ${f.isSignature ? 'is-sig' : ''} ${isChecked ? 'is-checked' : ''}`} role="button" tabIndex={0}
                      onClick={() => onInsert(f.token)}
                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInsert(f.token); } }}>
                   <span className="ipm-card-label">
+                    <input type="checkbox" className="ipm-card-check" checked={isChecked}
+                           title="Select for bulk copy" aria-label={`Select ${f.token} for bulk copy`}
+                           onClick={e => e.stopPropagation()}
+                           onChange={() => toggleSelect(f.token)} />
                     {f.isSignature && (
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M20 19c-2-1-3-2-5-2-3 0-5 2-7 2s-3-1-3-3 1-3 3-3 4 2 7 2 3-1 5-2"/></svg>
                     )}
@@ -180,7 +250,8 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert }: P
                     </button>
                   </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         </div>
@@ -297,6 +368,31 @@ const IPM_CSS = `
 .ipm-pane-title { font-size: 16px; font-weight: 800; color: #0c4a6e; letter-spacing: -.01em; }
 .ipm-pane-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
 
+.ipm-selbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap;
+  padding: 9px 12px; border-radius: 10px;
+  background: #fff; border: 1.5px solid rgba(6,182,212,.20);
+}
+.ipm-selall {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px; font-weight: 700; color: #0c4a6e; cursor: pointer; margin: 0;
+}
+.ipm-selall input { width: 15px; height: 15px; accent-color: #0891b2; cursor: pointer; }
+.ipm-selbar-actions { display: inline-flex; align-items: center; gap: 8px; }
+.ipm-selcount { font-size: 12px; font-weight: 700; color: #64748b; }
+.ipm-selbtn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 8px;
+  border: 1.5px solid rgba(6,182,212,.25); background: #fff;
+  color: #0e7490; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, opacity .15s ease, transform .15s ease;
+}
+.ipm-selbtn:hover:not(:disabled) { background: #ecfeff; border-color: #0891b2; transform: translateY(-1px); }
+.ipm-selbtn:disabled { opacity: .45; cursor: not-allowed; }
+.ipm-selbtn-copy { background: #0891b2; border-color: #0891b2; color: #fff; }
+.ipm-selbtn-copy:hover:not(:disabled) { background: #0e7490; border-color: #0e7490; color: #fff; }
+
 .ipm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .ipm-card {
   display: flex; flex-direction: column; gap: 8px;
@@ -309,6 +405,10 @@ const IPM_CSS = `
 .ipm-card:hover { border-color: #0891b2; transform: translateY(-1px); box-shadow: 0 8px 20px rgba(8,145,178,.18); background: #f0fdff; }
 .ipm-card.is-sig { border-color: rgba(99,102,241,.35); background: linear-gradient(180deg, #fff 0%, #eef2ff 100%); }
 .ipm-card.is-sig:hover { border-color: #6366f1; box-shadow: 0 8px 20px rgba(99,102,241,.25); }
+.ipm-card.is-checked { border-color: #0891b2; background: #ecfeff; box-shadow: 0 0 0 1px rgba(8,145,178,.30) inset; }
+.ipm-card.is-sig.is-checked { border-color: #6366f1; background: #eef2ff; box-shadow: 0 0 0 1px rgba(99,102,241,.30) inset; }
+.ipm-card-check { width: 15px; height: 15px; flex-shrink: 0; margin-right: 8px; accent-color: #0891b2; cursor: pointer; }
+.ipm-card.is-sig .ipm-card-check { accent-color: #6366f1; }
 .ipm-card-label {
   display: inline-flex; align-items: center;
   font-size: 13px; font-weight: 700; color: #0c4a6e;
@@ -366,6 +466,15 @@ const IPM_CSS = `
 [data-bs-theme="dark"] .ipm-card.is-sig { background: linear-gradient(180deg, #1e293b 0%, rgba(99,102,241,.16) 100%); }
 [data-bs-theme="dark"] .ipm-card.is-sig .ipm-card-label,
 [data-bs-theme="dark"] .ipm-card.is-sig .ipm-card-token { color: #a5b4fc; border-color: rgba(165,180,252,.30); background: rgba(99,102,241,.20); }
+[data-bs-theme="dark"] .ipm-selbar { background: #1e293b; border-color: rgba(6,182,212,.25); }
+[data-bs-theme="dark"] .ipm-selall { color: #cffafe; }
+[data-bs-theme="dark"] .ipm-selcount { color: #94a3b8; }
+[data-bs-theme="dark"] .ipm-selbtn { background: #1e293b; border-color: rgba(6,182,212,.30); color: #67e8f9; }
+[data-bs-theme="dark"] .ipm-selbtn:hover:not(:disabled) { background: rgba(8,145,178,.20); border-color: #67e8f9; }
+[data-bs-theme="dark"] .ipm-selbtn-copy { background: #0891b2; border-color: #0891b2; color: #fff; }
+[data-bs-theme="dark"] .ipm-selbtn-copy:hover:not(:disabled) { background: #0e7490; border-color: #0e7490; }
+[data-bs-theme="dark"] .ipm-card.is-checked { background: rgba(8,145,178,.20); border-color: #67e8f9; }
+[data-bs-theme="dark"] .ipm-card.is-sig.is-checked { background: rgba(99,102,241,.22); border-color: #a5b4fc; }
 [data-bs-theme="dark"] .ipm-card-copy { color: #94a3b8; }
 [data-bs-theme="dark"] .ipm-card-copy:hover { background: rgba(8,145,178,.20); border-color: rgba(103,232,249,.30); color: #67e8f9; }
 [data-bs-theme="dark"] .ipm-card.is-sig .ipm-card-copy:hover { background: rgba(99,102,241,.25); border-color: rgba(165,180,252,.35); color: #a5b4fc; }

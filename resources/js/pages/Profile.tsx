@@ -1363,7 +1363,8 @@ export default function Profile() {
                             return (
                               <span
                                 key={key}
-                                title={`${meta.label} ${val ? 'enabled' : 'disabled'}`}
+                                data-tooltip={`${meta.label} ${val ? 'enabled' : 'disabled'}`}
+                                aria-label={`${meta.label} ${val ? 'enabled' : 'disabled'}`}
                                 className="d-inline-flex align-items-center justify-content-center position-relative"
                                 style={val ? enabledStyle : disabledStyle}
                               >
