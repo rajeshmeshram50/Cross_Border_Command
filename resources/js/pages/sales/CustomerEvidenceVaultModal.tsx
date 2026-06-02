@@ -5,7 +5,8 @@ import { saveAs } from 'file-saver';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
-import { signatureRequestsToVaultDocs, type SigReqRow } from '../../utils/vaultSignatureRows';
+import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../utils/vaultSignatureRows';
+import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Customer Evidence Vault — read-only compliance archive
@@ -39,6 +40,17 @@ export type VaultStatus = 'Verified' | 'Pending' | 'Expiring' | 'Signed';
 
 export interface VaultDoc {
   id: number;
+  /** clm_trade_doc_library.id — set on Trade Document rows so the vault
+   *  can launch Send-for-Signature and merge live signing status. */
+  db_id?: number | null;
+  /** Applicable-party CSV (Trade Document rows only) used to party-filter
+   *  the tab to match the edit form. */
+  party?: string | null;
+  /** Zoho Sign request id + raw status backing this Trade Document row.
+   *  Drive the Send / Reminder / View-only gating: once sent the row
+   *  shows Reminder (not Send); once signed it shows View only. */
+  signature_request_id?: number | null;
+  sig_state?: string | null;
   name: string;
   reference?: string | null;       // license number / reference no
   authority?: string | null;       // issuing authority / counter party
@@ -198,6 +210,10 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
    * "Signed" / "Pending" rows. Completion certificates surface as their
    * own rows (one per completed request), matching New_IDIMS_6.0. */
   const [signatureRows, setSignatureRows] = useState<SigReqRow[]>([]);
+  /* Send-for-Signature launch state — when non-null, the Zoho Sign
+   * wizard opens with these clm_trade_doc_library ids pre-checked. Driven
+   * by the Trade Documents tab's per-row Send button. */
+  const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
 
   /* Close on Escape — destructive shortcut is fine for a read-only
    * panel since there's no in-flight edit to lose. */
@@ -246,6 +262,31 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
    * vault. sync=true triggers a Zoho round-trip for any still-inprogress
    * rows so the vault reflects "Signed" the moment the recipient
    * finishes signing, not just on the next vault open. */
+  /* Re-fetch signature requests — used by the open-effect and after a
+   * Send so the Trade Documents tab flips to "Pending"/"Signed" without
+   * re-opening the vault. */
+  const reloadSignatures = useCallback(() => {
+    if (!customer?.db_id) return Promise.resolve();
+    return api.get('/clm/signature-requests', {
+      params: { party_id: customer.db_id, model_name: 'Customer', sync: 1 },
+    })
+      .then(r => { setSignatureRows(Array.isArray(r.data?.data) ? (r.data.data as SigReqRow[]) : []); })
+      .catch(() => { /* keep previous rows on transient failure */ });
+  }, [customer?.db_id]);
+
+  /* Send a Zoho reminder for an already-sent (in-progress) trade doc.
+   * Returns a promise so the row button can show a busy state. */
+  const handleRemind = useCallback(async (doc: VaultDoc) => {
+    if (!doc.signature_request_id) return;
+    try {
+      await api.post(`/clm/signature-requests/${doc.signature_request_id}/remind`);
+      toast.success('Reminder sent', 'The signer has been reminded to sign this document.');
+      await reloadSignatures();
+    } catch (e: any) {
+      toast.error('Could not send reminder', e?.response?.data?.message || 'The reminder could not be sent.');
+    }
+  }, [reloadSignatures, toast]);
+
   useEffect(() => {
     if (!open || !customer?.db_id) { setSignatureRows([]); return; }
     let cancelled = false;
@@ -292,30 +333,26 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
      * yet, errors out, or the customer has no db_id. */
     const base = data ?? vaultLive ?? buildDemoVault(customer);
     if (!base) return null;
-    // Trade Documents tab is SIGNATURE-ONLY — segment-rule "expected TD"
-    // rows (rendered with manual Upload buttons by the /segment-uploads
-    // vault endpoint) are explicitly dropped, since a trade document
-    // only enters this tab via the Zoho Sign send flow. Each signed
-    // row carries its own `certificate_url` (one cert per request,
-    // attached to every doc-row in that request) so the Actions
-    // column renders a Certificate-of-Completion button alongside
-    // View/Download — mirrors New_IDIMS_6.0's faCertificate action.
+    // Trade Documents tab = the party's expected trade docs (segment-rule
+    // td, party-filtered to mirror the edit form) merged with their live
+    // Zoho Sign status. Each row exposes Send-for-Signature; signed rows
+    // also carry the signed PDF + certificate links.
     const sigRows            = signatureRequestsToVaultDocs(signatureRows);
     const baseSegmentTd      = (base.trade_documents ?? []) as VaultDoc[];
+    const mergedTd           = mergeTradeDocuments(baseSegmentTd as any, sigRows, 'buyer') as unknown as VaultDoc[];
     const baseSegmentSigned  = baseSegmentTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
     const baseSegmentPending = baseSegmentTd.filter(r => r.status === 'Pending').length;
-    const sigSignedDelta     = sigRows.filter(r => r.status === 'Signed').length;
-    const sigPendingDelta    = sigRows.filter(r => r.status === 'Pending').length;
+    const mergedSigned       = mergedTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
+    const mergedPending      = mergedTd.filter(r => r.status === 'Pending').length;
     return {
       ...base,
-      trade_documents: sigRows as typeof base.trade_documents,
-      trade_documents_count: sigRows.length,
-      // KPI roll-ups: subtract whatever the segment-rule TD bucket
-      // contributed (we no longer show those rows), then add in the
-      // signature-flow numbers.
-      verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + sigSignedDelta,
-      pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + sigPendingDelta,
-      total_documents: Math.max(0, (base.total_documents ?? 0) - baseSegmentTd.length) + sigRows.length,
+      trade_documents: mergedTd as typeof base.trade_documents,
+      trade_documents_count: mergedTd.length,
+      // KPI roll-ups: swap the raw segment-rule TD contribution for the
+      // merged (party-filtered + signature-aware) numbers.
+      verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + mergedSigned,
+      pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + mergedPending,
+      total_documents: Math.max(0, (base.total_documents ?? 0) - baseSegmentTd.length) + mergedTd.length,
     };
   }, [customer, data, vaultLive, signatureRows]);
 
@@ -592,7 +629,9 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           {/* Tables */}
           {tab === 'shipment-agreements'
             ? <ShipmentTable rows={vault.shipment_agreements} filter={shipmentFilter} setFilter={setShipmentFilter} />
-            : <DocsTable rows={docsForTab} tab={tab} ownerType="customer" ownerId={customer?.db_id ?? null} onReload={reloadVault} />}
+            : <DocsTable rows={docsForTab} tab={tab} ownerType="customer" ownerId={customer?.db_id ?? null} onReload={reloadVault}
+                         onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
+                         onRemindTradeDoc={handleRemind} />}
         </div>
 
         {/* ─── FOOTER ─── */}
@@ -619,6 +658,22 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           </div>
         </div>
       </div>
+
+      {/* Send for Signature — launched from a Trade Documents row. The
+          modal portals to <body>, so it overlays the vault cleanly. */}
+      <SalesCustomerSendForSignatureModal
+        open={Array.isArray(sendDocIds)}
+        customer={customer?.db_id ? {
+          id:      customer.id,
+          db_id:   customer.db_id,
+          company: customer.company,
+          contact: customer.contact,
+        } : null}
+        modelName="Customer"
+        preselectedDocIds={sendDocIds ?? undefined}
+        onClose={() => setSendDocIds(null)}
+        onSent={() => { setSendDocIds(null); void reloadSignatures(); }}
+      />
     </div>,
     document.body
   );
@@ -645,12 +700,14 @@ function KpiTile({ label, value, icon, gradient }: { label: string; value: numbe
 }
 
 /* ─── Docs table — used by 4 of the 5 tabs. */
-function DocsTable({ rows, tab, ownerType, ownerId, onReload }: {
+function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc }: {
   rows: VaultDoc[];
   tab: TabKey;
   ownerType: 'customer' | 'consignee' | 'supplier';
   ownerId: number | null;
   onReload: () => Promise<void> | void;
+  onSendTradeDoc?: (doc: VaultDoc) => void;
+  onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
 }) {
   const numberHeader = tab === 'company-dd' ? 'License / Number' : tab === 'owner-kyc' ? 'Document Number' : tab === 'trade-licenses' ? 'License Number' : 'Reference No';
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
@@ -699,7 +756,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload }: {
                 ) : <span className="cev-muted">Not uploaded</span>}
               </td>
               <td>
-                <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} />
+                <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} />
               </td>
             </tr>
           ))}
@@ -714,17 +771,36 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload }: {
  * tab; Download triggers a save via the `download` attribute on a hidden
  * link; Re-upload posts to /segment-uploads/{type}/{id} with the same
  * (category, doc_code) tuple so the existing row is replaced server-side. */
-function VaultRowActions({ doc, ownerType, ownerId, category, onReload }: {
+function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTradeDoc, onRemindTradeDoc }: {
   doc: VaultDoc;
   ownerType: 'customer' | 'consignee' | 'supplier';
   ownerId: number | null;
   category: 'kyc' | 'dd' | 'tl' | 'td';
   onReload: () => Promise<void> | void;
+  onSendTradeDoc?: (doc: VaultDoc) => void;
+  onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reminding, setReminding] = useState(false);
   const canViewOrDownload = !!doc.attachment_url;
   const canReupload = !!ownerId && !!doc.doc_code;
+  // Signing lifecycle for Trade Document rows:
+  //   • signed (completed)   → no Send / no Reminder, View signed + cert only
+  //   • sent (inprogress)    → no Send, Reminder only
+  //   • never sent / dead    → Send available (declined / recalled / expired
+  //                            count as "dead" so a fresh round can start)
+  const isSigned     = doc.sig_state === 'completed' || doc.status === 'Signed';
+  const isInProgress = doc.sig_state === 'inprogress';
+  const isTradeDoc   = category === 'td' && !!ownerId && !!doc.db_id;
+  const canSend   = isTradeDoc && !!onSendTradeDoc && !isSigned && !isInProgress;
+  const canRemind = isTradeDoc && !!onRemindTradeDoc && isInProgress && !!doc.signature_request_id;
+
+  const remind = async () => {
+    if (!onRemindTradeDoc) return;
+    setReminding(true);
+    try { await onRemindTradeDoc(doc); } finally { setReminding(false); }
+  };
 
   const download = () => {
     if (!doc.attachment_url) return;
@@ -767,6 +843,43 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload }: {
         accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
         onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }}
       />
+      {canSend && (
+        <Tooltip label="Send for signature">
+          <button
+            type="button"
+            onClick={() => onSendTradeDoc!(doc)}
+            className="cev-row-act cev-row-act-send"
+            aria-label="Send for signature"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, borderRadius: 6,
+              background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd',
+              cursor: 'pointer',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </Tooltip>
+      )}
+      {canRemind && (
+        <Tooltip label={reminding ? 'Sending reminder…' : 'Send signing reminder'}>
+          <button
+            type="button"
+            onClick={remind}
+            disabled={reminding}
+            className="cev-row-act cev-row-act-remind"
+            aria-label="Send reminder"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, borderRadius: 6,
+              background: '#fef3c7', color: '#b45309', border: '1px solid #fcd34d',
+              cursor: reminding ? 'wait' : 'pointer', opacity: reminding ? 0.7 : 1,
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </button>
+        </Tooltip>
+      )}
       <Tooltip label={canViewOrDownload ? `View ${doc.attachment}` : 'No attachment yet'}>
         <a
           href={canViewOrDownload ? doc.attachment_url! : undefined}

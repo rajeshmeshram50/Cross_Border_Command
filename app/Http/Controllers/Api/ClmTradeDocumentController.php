@@ -84,6 +84,13 @@ class ClmTradeDocumentController extends Controller
         $rows = $user->client_id
             ? ClmTradeDocLibrary::where('client_id', $user->client_id)->orderBy('id')->get()
             : collect();
+
+        // Flag rows that have a signed (completed) signature request so the
+        // frontend can lock Edit / Delete on them. Batch lookup avoids an
+        // N+1 of per-row existence checks.
+        $signedIds = ClmSignatureRequest::signedDraftIds($user->client_id, ClmSignatureRequest::DOC_TRADE);
+        $rows->each(fn ($r) => $r->setAttribute('is_signed', in_array((int) $r->id, $signedIds, true)));
+
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 
