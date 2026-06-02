@@ -81,6 +81,25 @@ const STATUS_TONE: Record<ExpenseClaimRow['status'], { bg: string; fg: string; d
   rejected: { bg: '#fdd9ea', fg: '#a02960', dot: '#ef4444', label: 'Rejected' },
 };
 
+/* Dark-mode badge tints. The EXP ID / Category / Status pills set light pastel
+   backgrounds via inline styles (fine in light mode), which washed out to
+   bright chips on the dark table. These rules override only in dark mode
+   (!important beats the inline light colours); light mode is untouched. */
+const BADGE_DARK_CSS = `
+/* Column alignment — header + data line up per column. Text columns stay
+   left; Amount is right-aligned (currency convention); Status & Action are
+   centred. The th.<class> selectors out-rank the blanket "thead th left"
+   rule so the header follows its column's data. */
+.exp-claims-table thead th { text-align: left; }
+.exp-claims-table thead th.exp-col-amount, .exp-claims-table td.exp-col-amount { text-align: right; }
+.exp-claims-table thead th.exp-col-status, .exp-claims-table td.exp-col-status { text-align: center; }
+[data-bs-theme="dark"] .exp-id-badge  { background: #2a1d5c !important; color: #c4b5fd !important; }
+[data-bs-theme="dark"] .exp-cat-badge { background: rgba(255,255,255,0.08) !important; color: #cbd5e1 !important; }
+[data-bs-theme="dark"] .exp-status-badge--pending  { background: #3a2a08 !important; color: #fbbf24 !important; }
+[data-bs-theme="dark"] .exp-status-badge--approved { background: #0c2e1d !important; color: #4ade80 !important; }
+[data-bs-theme="dark"] .exp-status-badge--rejected { background: #3a0e1e !important; color: #f9a8d4 !important; }
+`;
+
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -121,8 +140,9 @@ export default function ExpenseClaimsTable({
 }: Props) {
   return (
     <>
+      <style>{BADGE_DARK_CSS}</style>
       <div className="table-responsive border rounded ep-att-scroll-wrap">
-        <table className="table align-middle table-nowrap ep-att-table mb-0">
+        <table className="table align-middle table-nowrap ep-att-table exp-claims-table mb-0">
           <thead className="table-light">
             <tr>
               <th>Exp ID</th>
@@ -130,9 +150,9 @@ export default function ExpenseClaimsTable({
               <th>Category</th>
               <th>Description</th>
               <th>Expense Date</th>
-              <th>Amount</th>
+              <th className="exp-col-amount">Amount</th>
               <th>Proof of Payment</th>
-              <th>Status</th>
+              <th className="exp-col-status">Status</th>
               <th className="text-center">Action</th>
             </tr>
           </thead>
@@ -210,7 +230,7 @@ function ExpenseClaimRowView({
     <tr>
       <td>
         <span
-          className="font-monospace fw-semibold"
+          className="font-monospace fw-semibold exp-id-badge"
           style={{
             fontSize: 11, padding: '2px 9px', borderRadius: 999,
             background: '#ece6ff', color: '#5a3fd1', letterSpacing: '0.02em',
@@ -241,7 +261,7 @@ function ExpenseClaimRowView({
       </td>
       <td>
         <span
-          className="d-inline-flex align-items-center gap-1 fw-semibold"
+          className="d-inline-flex align-items-center gap-1 fw-semibold exp-cat-badge"
           style={{
             fontSize: 11, padding: '3px 9px', borderRadius: 999,
             background: '#eef2f6', color: '#5b6478',
@@ -253,7 +273,7 @@ function ExpenseClaimRowView({
       </td>
       <td>{c.title}</td>
       <td className="text-muted">{fmtDate(c.expense_date)}</td>
-      <td className="fw-bold">₹{Number(c.amount || 0).toLocaleString('en-IN')}</td>
+      <td className="fw-bold exp-col-amount">₹{Number(c.amount || 0).toLocaleString('en-IN')}</td>
       <td>
         {(c.attachments?.length ?? 0) > 0 ? (
           /* Previously the cell rendered just the FIRST attachment as a
@@ -289,15 +309,14 @@ function ExpenseClaimRowView({
           <span className="text-muted" style={{ fontSize: 11 }}>—</span>
         )}
       </td>
-      <td>
+      <td className="exp-col-status">
         <span
-          className="d-inline-flex align-items-center gap-1 fw-semibold"
+          className={`d-inline-flex align-items-center gap-1 fw-semibold exp-status-badge exp-status-badge--${c.status}`}
           style={{
             fontSize: 11, padding: '3px 10px', borderRadius: 999,
             background: tone.bg, color: tone.fg,
           }}
         >
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: tone.dot }} />
           {tone.label}
         </span>
       </td>
@@ -307,7 +326,8 @@ function ExpenseClaimRowView({
             <>
               <button
                 type="button"
-                title="Approve"
+                data-tooltip="Approve"
+                aria-label="Approve"
                 onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'approve' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                 style={{
@@ -320,7 +340,8 @@ function ExpenseClaimRowView({
               </button>
               <button
                 type="button"
-                title="Reject"
+                data-tooltip="Reject"
+                aria-label="Reject"
                 onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'reject' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                 style={{
@@ -337,7 +358,8 @@ function ExpenseClaimRowView({
             <>
               <button
                 type="button"
-                title="Approve"
+                data-tooltip="Approve"
+                aria-label="Approve"
                 onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'approve' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                 style={{
@@ -350,7 +372,8 @@ function ExpenseClaimRowView({
               </button>
               <button
                 type="button"
-                title="Reject"
+                data-tooltip="Reject"
+                aria-label="Reject"
                 onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'reject' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                 style={{
@@ -457,7 +480,9 @@ function AuditLogTrigger({
       <button
         ref={btnRef}
         type="button"
-        title="View audit log"
+        data-tooltip="View audit log"
+        data-tooltip-pos="left"
+        aria-label="View audit log"
         onClick={() => setOpen(!open)}
         className="btn btn-sm d-inline-flex align-items-center justify-content-center"
         style={{
