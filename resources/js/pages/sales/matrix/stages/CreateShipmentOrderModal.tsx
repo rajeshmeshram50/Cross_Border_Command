@@ -3,6 +3,13 @@ import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import { useQpiMasters } from '../../SalesQPI';
+
+/* Ensure a pre-filled value (carried over from the PI/quotation) still
+ * renders in a MasterSelect even if it isn't an exact option in the
+ * loaded master list. */
+const withCurrent = (opts: { value: string; label: string }[], value: string) =>
+  value && !opts.some(o => o.value === value) ? [...opts, { value, label: value }] : opts;
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Stage 6 → Create Shipment Order modal.
@@ -171,6 +178,11 @@ export default function CreateShipmentOrderModal({
    * Hooks" warning. */
   const previewShpCode = useMemo(() => 'SHP-' + String(Math.floor(Date.now() / 1000) % 1000).padStart(3, '0'), []);
 
+  /* Master-backed dropdown options (INCO Term / Ports / Origin Country).
+   * Reuses the cached QPI masters loader, so this is a no-op fetch when
+   * the user already opened a Create Quotation/PI in the session. */
+  const masters = useQpiMasters(open);
+
   if (!open) return null;
 
   return createPortal((
@@ -226,6 +238,7 @@ export default function CreateShipmentOrderModal({
             <span className="cso-section-title">SHIPPING &amp; LOGISTICS DETAILS</span>
           </div>
 
+          {masters.loading ? <ShipmentFormSkeleton /> : (<>
           <div className="cso-grid">
             <Field label="Shipping Liability" required error={errors.shippingLiability}>
               <MasterSelect
@@ -265,17 +278,35 @@ export default function CreateShipmentOrderModal({
               />
             </Field>
             <Field label="INCO Term" required error={errors.incoTerm}>
-              <input className={`cso-input ${errors.incoTerm ? 'cso-input-err' : ''}`}
-                value={incoTerm} onChange={(e) => setIncoTerm(e.target.value)} placeholder="e.g. FOB" />
+              <MasterSelect
+                key={`inco-${masters.incoterms.length}`}
+                value={incoTerm}
+                loading={masters.loading}
+                placeholder="— Select INCO Term —"
+                options={withCurrent(masters.incoterms, incoTerm)}
+                onChange={(v) => { setIncoTerm(String(v)); if (errors.incoTerm) setErrors(p => ({ ...p, incoTerm: '' })); }}
+              />
             </Field>
 
             <Field label="Port of Loading">
-              <input className="cso-input"
-                value={portOfLoading} onChange={(e) => setPOL(e.target.value)} placeholder="e.g. Chennai Port" />
+              <MasterSelect
+                key={`pol-${masters.ports.length}`}
+                value={portOfLoading}
+                loading={masters.loading}
+                placeholder="— Select Port —"
+                options={withCurrent(masters.ports, portOfLoading)}
+                onChange={(v) => setPOL(String(v))}
+              />
             </Field>
             <Field label="Port of Unloading" required error={errors.portOfUnloading}>
-              <input className={`cso-input ${errors.portOfUnloading ? 'cso-input-err' : ''}`}
-                value={portOfUnloading} onChange={(e) => setPOU(e.target.value)} placeholder="e.g. Jebel Ali Port" />
+              <MasterSelect
+                key={`pou-${masters.ports.length}`}
+                value={portOfUnloading}
+                loading={masters.loading}
+                placeholder="— Select Port —"
+                options={withCurrent(masters.ports, portOfUnloading)}
+                onChange={(v) => { setPOU(String(v)); if (errors.portOfUnloading) setErrors(p => ({ ...p, portOfUnloading: '' })); }}
+              />
             </Field>
             <Field label="Final Destination" required error={errors.finalDestination}>
               <input className={`cso-input ${errors.finalDestination ? 'cso-input-err' : ''}`}
@@ -283,8 +314,14 @@ export default function CreateShipmentOrderModal({
             </Field>
 
             <Field label="Origin Country">
-              <input className="cso-input"
-                value={originCountry} onChange={(e) => setOrigin(e.target.value)} placeholder="e.g. India" />
+              <MasterSelect
+                key={`oc-${masters.countries.length}`}
+                value={originCountry}
+                loading={masters.loading}
+                placeholder="— Select Country —"
+                options={withCurrent(masters.countries, originCountry)}
+                onChange={(v) => setOrigin(String(v))}
+              />
             </Field>
             <Field label="Attachment">
               <div className="cso-att-row">
@@ -326,6 +363,7 @@ export default function CreateShipmentOrderModal({
                 placeholder="Any additional notes or remarks for this Shipment ID…" />
             </Field>
           </div>
+          </>)}
         </div>
 
         <div className="cso-foot">
@@ -356,6 +394,27 @@ function Field({ label, required, error, children }: {
       {children}
       {error && <div className="cso-err">{error}</div>}
     </div>
+  );
+}
+
+/* Shimmer skeleton for the shipping/logistics field grid — shown while
+ * the master dropdown options (INCO Term / Ports / Country) load. */
+function ShipmentFormSkeleton() {
+  return (
+    <>
+      <div className="cso-grid">
+        {Array.from({ length: 11 }).map((_, i) => (
+          <div className="cso-field" key={i}>
+            <span className="cso-skel cso-skel-label" />
+            <span className="cso-skel cso-skel-input" />
+          </div>
+        ))}
+      </div>
+      <div className="cso-remarks">
+        <span className="cso-skel cso-skel-label" style={{ width: 80 }} />
+        <span className="cso-skel cso-skel-area" />
+      </div>
+    </>
   );
 }
 
@@ -468,6 +527,22 @@ const SCOPED_CSS = `
 .cso-input:focus { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.16); }
 .cso-input-err   { border-color: #ef4444 !important; }
 .cso-err { font-size: 10.5px; color: #dc2626; font-weight: 600; }
+
+/* Master-load shimmer */
+@keyframes cso-shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.cso-skel {
+  display: block; border-radius: 8px;
+  background: linear-gradient(90deg, #fef3c7 0%, #fffbeb 50%, #fef3c7 100%);
+  background-size: 800px 100%; animation: cso-shimmer 1.3s ease-in-out infinite;
+}
+.cso-skel-label { width: 42%; height: 9px; border-radius: 4px; margin-bottom: 6px; }
+.cso-skel-input { width: 100%; height: 36px; }
+.cso-skel-area  { width: 100%; height: 60px; margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) { .cso-skel { animation: none; } }
+[data-bs-theme="dark"] .cso-skel {
+  background: linear-gradient(90deg, rgba(252,191,36,.10) 0%, rgba(252,191,36,.22) 50%, rgba(252,191,36,.10) 100%);
+  background-size: 800px 100%;
+}
 
 .cso-input-prefix { display: flex; align-items: center; gap: 0; position: relative; }
 .cso-input-prefix > span {

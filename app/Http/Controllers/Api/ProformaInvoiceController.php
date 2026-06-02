@@ -512,7 +512,9 @@ class ProformaInvoiceController extends Controller
         ];
 
         if ($docType === ProformaInvoice::DOC_INTERNATIONAL) {
-            $rules['inco_term']         = 'required|string|max:16';
+            // INCO Term stores the full master label (e.g. "CIP – Carriage
+            // and Insurance Paid"), so it isn't a short 16-char code.
+            $rules['inco_term']         = 'required|string|max:100';
             $rules['port_of_loading']   = 'required|string|max:128';
             $rules['port_of_discharge'] = 'required|string|max:128';
             $rules['final_destination'] = 'required|string|max:128';
@@ -520,7 +522,7 @@ class ProformaInvoiceController extends Controller
             $rules['state_code']        = 'nullable|string|max:64';
         } else {
             $rules['state_code']        = 'required|string|max:64';
-            $rules['inco_term']         = 'nullable|string|max:16';
+            $rules['inco_term']         = 'nullable|string|max:100';
             $rules['port_of_loading']   = 'nullable|string|max:128';
             $rules['port_of_discharge'] = 'nullable|string|max:128';
             $rules['final_destination'] = 'nullable|string|max:128';
@@ -615,6 +617,31 @@ class ProformaInvoiceController extends Controller
     }
 
   
+    /**
+     * Read-only preview of the next PI code for the Create form's "PI ID"
+     * pill — INV/{FY}/{SEQ}, no advisory lock, never consumes a number.
+     */
+    public function previewCode(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $code = null;
+        if ($user && $user->client_id) {
+            $fy = $this->currentFinancialYear();
+            $codes = ProformaInvoice::where('client_id', $user->client_id)
+                ->where('code', 'like', "INV/{$fy}/%")
+                ->pluck('code')->all();
+            $max = 0;
+            foreach ($codes as $c) {
+                if (preg_match('#^INV/' . preg_quote($fy, '#') . '/(\d+)$#', $c, $m)) {
+                    $n = (int) $m[1];
+                    if ($n > $max) $max = $n;
+                }
+            }
+            $code = "INV/{$fy}/" . ($max + 1);
+        }
+        return response()->json(['status' => true, 'data' => ['code' => $code]]);
+    }
+
     private function nextCode(int $clientId): string
     {
         $fy = $this->currentFinancialYear();

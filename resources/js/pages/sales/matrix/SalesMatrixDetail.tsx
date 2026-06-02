@@ -889,7 +889,7 @@ export default function SalesMatrixDetail() {
                 pattern the KYC/DD group uses above; once a PI exists
                 the two regulatory rows render with live counts and the
                 row click opens the agreement send modal. */}
-            {agreementApplicable?.pi ? (
+            {(agreementApplicable?.pi || agreementApplicable?.quotation) ? (
               <>
                 <ClmRow
                   icon={<IconShieldSm />}
@@ -914,7 +914,7 @@ export default function SalesMatrixDetail() {
               </>
             ) : (
               <div className="smd-clm-empty">
-                Map a Proforma Invoice to this lead to fetch segment-applicable agreements here.
+                Create a quotation or proforma invoice on this lead to fetch segment-applicable agreements here.
               </div>
             )}
           </div>

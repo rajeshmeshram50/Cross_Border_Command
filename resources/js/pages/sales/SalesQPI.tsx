@@ -1391,6 +1391,31 @@ const EMPTY_BASIC: BasicFormState = {
   bankAccountId:   null,
 };
 
+/* Seed the Basic form from a lead's opportunity context (Sales Matrix
+ * Stage 5). Pre-fills Opportunity / Date / Customer / Consignee AS REAL
+ * SELECTIONS — i.e. the "CODE – NAME" dropdown labels AND the FK ids —
+ * so the lead's mapped customer & consignee carry through to validation
+ * and the POST payload without the user re-picking them. Falls back to
+ * name-only labels when a code/id wasn't supplied. */
+function seedBasicFromOpp(o: QpiInitialOpp): BasicFormState {
+  const custLabel = o.customerCode && o.customerLabel
+    ? `${o.customerCode} – ${o.customerLabel}`
+    : (o.customerLabel ?? '');
+  const consLabel = o.consigneeCode && o.consigneeLabel
+    ? `${o.consigneeCode} – ${o.consigneeLabel}`
+    : (o.consigneeLabel ?? '');
+  return {
+    ...EMPTY_BASIC,
+    opportunity:     o.customerLabel ? `${o.oppCode} – ${o.customerLabel}` : o.oppCode,
+    opportunityDate: o.oppDate ?? '',
+    customer:        custLabel,
+    customerId:      o.customerId ?? null,
+    consignee:       consLabel,
+    consigneeId:     o.consigneeId ?? null,
+    oppId:           o.oppId,
+  };
+}
+
 type ProductRow = {
   id: number;          // local UI key
   productId: number | null;  // FK to products.id — null for free-text rows
@@ -1709,7 +1734,7 @@ function currentBranchKey(): string {
   } catch { return 'anon'; }
 }
 
-function useQpiMasters(open: boolean): LoadedMasters {
+export function useQpiMasters(open: boolean): LoadedMasters {
   const [state, setState] = useState<LoadedMasters>(() => {
     // Hydrate from cache synchronously so the first render of a re-opened
     // modal already has the dropdown options — no flash of "Loading…".
@@ -1770,8 +1795,20 @@ export type QpiInitialOpp = {
   oppId:            number;
   oppCode:          string;
   oppDate?:         string;
+  /** Customer company NAME — used to build the Opportunity label
+   *  ("OPP-005 – Acme"). */
   customerLabel?:   string;
+  /** Customer master code (e.g. C-012). Combined with the name to seed
+   *  the Customer dropdown's "CODE – NAME" value. */
+  customerCode?:    string;
+  /** Customer FK — seeded so the lead's mapped customer is a real
+   *  selection (validation + submit need the id, not just the label). */
+  customerId?:      number | null;
+  /** Consignee company name + code + FK — same idea for the consignee
+   *  the lead was mapped to (so the user never re-picks it). */
   consigneeLabel?:  string;
+  consigneeCode?:   string;
+  consigneeId?:     number | null;
 };
 
 export function CreateQuotationModal(props: {
@@ -1788,14 +1825,7 @@ export function CreateQuotationModal(props: {
    * passes the opportunity context so the user doesn't have to re-pick it
    * from the Opportunity dropdown. The form is still freely editable —
    * only the visible labels are pre-filled. */
-  const seededFromOpp: BasicFormState = initialOpp ? {
-    ...EMPTY_BASIC,
-    opportunity:     initialOpp.customerLabel ? `${initialOpp.oppCode} – ${initialOpp.customerLabel}` : initialOpp.oppCode,
-    opportunityDate: initialOpp.oppDate ?? '',
-    customer:        initialOpp.customerLabel ?? '',
-    consignee:       initialOpp.consigneeLabel ?? '',
-    oppId:           initialOpp.oppId,
-  } : EMPTY_BASIC;
+  const seededFromOpp: BasicFormState = initialOpp ? seedBasicFromOpp(initialOpp) : EMPTY_BASIC;
   const [form, setForm] = useState<BasicFormState>(seededFromOpp);
   /* Step-1 validation gate for the "Save & Next" button.
    * Server-required fields per QuotationController::validatePayload:
@@ -1842,6 +1872,17 @@ export function CreateQuotationModal(props: {
   const [existingCode, setExistingCode] = useState<string | null>(null);
   const [existingDate, setExistingDate] = useState<string | null>(null);
   const [hydrating, setHydrating] = useState(false);
+  /* Indicative next code (QT/<FY>/<n>) shown in the header pill while
+   * creating — the real code is allocated atomically on save. */
+  const [previewCode, setPreviewCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (isEdit) return;
+    let cancelled = false;
+    api.get('/sales/quotations/preview-code')
+      .then(({ data }) => { if (!cancelled) setPreviewCode(data?.data?.code ?? null); })
+      .catch(() => { /* fall back to "Auto-assigned" */ });
+    return () => { cancelled = true; };
+  }, [isEdit]);
 
   // Edit-mode hydration. When editId is provided, fetch the full row
   // (with items + eager-loaded customer/consignee/lead/salesManager) and
@@ -2030,7 +2071,7 @@ export function CreateQuotationModal(props: {
           <div className="qpi-modal-head-right">
             <div className="qpi-modal-pill">
               <span className="qpi-modal-pill-label">Quotation ID</span>
-              <span className="qpi-modal-pill-value">{existingCode ?? 'Auto-assigned'}</span>
+              <span className="qpi-modal-pill-value">{existingCode ?? previewCode ?? 'Auto-assigned'}</span>
             </div>
             <div className="qpi-modal-pill">
               <span className="qpi-modal-pill-label">Quotation Date</span>
@@ -2050,16 +2091,19 @@ export function CreateQuotationModal(props: {
         {/* Body */}
         <div className="qpi-modal-body">
           {step === 1 && (
+            hydrating ? <BasicFormSkeleton theme="teal" /> : (
             <BasicForm
               form={form} setForm={setForm}
               masters={masters} theme="teal"
               titleLabel="Basic Quotation Details" partyKind="Quotation"
+              lockParty={!!initialOpp}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
                 if (!prev.has(k)) return prev;
                 const next = new Set(prev); next.delete(k); return next;
               })}
             />
+            )
           )}
 
           {step === 2 && (
@@ -2132,20 +2176,23 @@ export function CreatePIModal(props: {
   const [existingCode, setExistingCode] = useState<string | null>(null);
   const [existingDate, setExistingDate] = useState<string | null>(null);
   const [hydrating, setHydrating] = useState(false);
+  /* Indicative next PI code (INV/<FY>/<n>) for the header pill. */
+  const [previewCode, setPreviewCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (isEdit) return;
+    let cancelled = false;
+    api.get('/sales/proforma-invoices/preview-code')
+      .then(({ data }) => { if (!cancelled) setPreviewCode(data?.data?.code ?? null); })
+      .catch(() => { /* fall back to "Auto-assigned" */ });
+    return () => { cancelled = true; };
+  }, [isEdit]);
 
   // When PI is created from an existing Quotation row, prefill the
   // visible labels from that row so the user sees what they're carrying
   // over. When opened standalone, start blank — the same opportunity /
   // customer cascade fills the rest. When the matrix Stage 5 opens this
   // modal, `initialOpp` takes precedence over `source` to lock the lead.
-  const seeded: BasicFormState = initialOpp ? {
-    ...EMPTY_BASIC,
-    opportunity:     initialOpp.customerLabel ? `${initialOpp.oppCode} – ${initialOpp.customerLabel}` : initialOpp.oppCode,
-    opportunityDate: initialOpp.oppDate ?? '',
-    customer:        initialOpp.customerLabel ?? '',
-    consignee:       initialOpp.consigneeLabel ?? '',
-    oppId:           initialOpp.oppId,
-  } : source ? {
+  const seeded: BasicFormState = initialOpp ? seedBasicFromOpp(initialOpp) : source ? {
     ...EMPTY_BASIC,
     opportunity:     source.oppId ? `${source.oppId} – ${source.customer}` : '',
     opportunityDate: source.oppDate ?? '',
@@ -2374,7 +2421,7 @@ export function CreatePIModal(props: {
           <div className="qpi-modal-head-right">
             <div className="qpi-modal-pill qpi-modal-pill-purple">
               <span className="qpi-modal-pill-label">PI No</span>
-              <span className="qpi-modal-pill-value">{existingCode ?? 'Auto-assigned'}</span>
+              <span className="qpi-modal-pill-value">{existingCode ?? previewCode ?? 'Auto-assigned'}</span>
             </div>
             <div className="qpi-modal-pill qpi-modal-pill-purple">
               <span className="qpi-modal-pill-label">PI Date</span>
@@ -2394,16 +2441,19 @@ export function CreatePIModal(props: {
         {/* Body */}
         <div className="qpi-modal-body">
           {step === 1 && (
+            hydrating ? <BasicFormSkeleton theme="purple" /> : (
             <BasicForm
               form={form} setForm={setForm}
               masters={masters} theme="purple"
               titleLabel="Basic PI Details" partyKind="PI"
+              lockParty={!!initialOpp}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
                 if (!prev.has(k)) return prev;
                 const next = new Set(prev); next.delete(k); return next;
               })}
             />
+            )
           )}
 
           {step === 2 && (
@@ -2470,6 +2520,27 @@ function StepBadge(props: { n: number; title: string; subtitle: string; state: '
   );
 }
 
+/* ─── Basic form skeleton — shown while an Edit modal hydrates the
+ *      record from the server, so the user sees a shimmer instead of a
+ *      momentarily-empty form (which read as "the saved values are
+ *      missing"). Mirrors the 3-column field grid + note. */
+function BasicFormSkeleton({ theme }: { theme: 'teal' | 'purple' }) {
+  return (
+    <>
+      <div className={`qpi-form-heading qpi-form-heading-${theme}`}>BASIC DETAILS</div>
+      <div className="qpi-form-grid">
+        {Array.from({ length: 13 }).map((_, i) => (
+          <div className="qpi-field" key={i}>
+            <span className="qpi-skel qpi-skel-label" />
+            <span className="qpi-skel qpi-skel-input" />
+          </div>
+        ))}
+      </div>
+      <div className="qpi-skel qpi-skel-note" />
+    </>
+  );
+}
+
 /* ─── Basic form (Step 1) ─── */
 function BasicForm(props: {
   form: BasicFormState; setForm: (f: BasicFormState) => void;
@@ -2481,8 +2552,12 @@ function BasicForm(props: {
    * (without waiting for the next Save & Next click). */
   errors?: Set<string>;
   clearError?: (k: string) => void;
+  /* When the modal was opened from a Sales Matrix lead, the lead already
+   * fixes the Opportunity + its mapped Customer & Consignee — those four
+   * fields render read-only so they can't drift away from the lead. */
+  lockParty?: boolean;
 }) {
-  const { form, setForm, masters, theme, partyKind, errors, clearError } = props;
+  const { form, setForm, masters, theme, partyKind, errors, clearError, lockParty } = props;
   const hasError = (k: string) => errors?.has(k) ?? false;
   const set = <K extends keyof BasicFormState>(k: K, v: BasicFormState[K]) => {
     setForm({ ...form, [k]: v });
@@ -2686,42 +2761,54 @@ function BasicForm(props: {
           />
         </Field>
         <Field label="Opportunity" required>
-          <MasterSelect
-            key={`opp-${filteredOpportunities.length}`}
-            value={form.opportunity}
-            loading={masters.loading}
-            placeholder="— Select Opportunity —"
-            options={withCurrent(filteredOpportunities, form.opportunity)}
-            onChange={onOpportunityChange}
-          />
+          {lockParty ? (
+            <input className="qpi-input qpi-input-readonly" value={form.opportunity} readOnly title="Fixed by the lead this was opened from" />
+          ) : (
+            <MasterSelect
+              key={`opp-${filteredOpportunities.length}`}
+              value={form.opportunity}
+              loading={masters.loading}
+              placeholder="— Select Opportunity —"
+              options={withCurrent(filteredOpportunities, form.opportunity)}
+              onChange={onOpportunityChange}
+            />
+          )}
         </Field>
         <Field label="Opportunity Date">
           <input className="qpi-input qpi-input-readonly" value={form.opportunityDate} readOnly />
         </Field>
 
         <Field label="Customer" required error={hasError('customer')}>
-          <MasterSelect
-            key={`cust-${masters.customers.length}`}
-            value={form.customer}
-            loading={masters.loading}
-            placeholder="— Select Customer —"
-            options={withCurrent(masters.customers, form.customer)}
-            onChange={(v) => { onCustomerChange(v); if (v) clearError?.('customer'); }}
-          />
+          {lockParty ? (
+            <input className="qpi-input qpi-input-readonly" value={form.customer} readOnly title="Fixed by the lead this was opened from" />
+          ) : (
+            <MasterSelect
+              key={`cust-${masters.customers.length}`}
+              value={form.customer}
+              loading={masters.loading}
+              placeholder="— Select Customer —"
+              options={withCurrent(masters.customers, form.customer)}
+              onChange={(v) => { onCustomerChange(v); if (v) clearError?.('customer'); }}
+            />
+          )}
         </Field>
         <Field label="Consignee" required>
-          <MasterSelect
-            key={`cons-${filteredConsignees.length}-${form.customer}`}
-            value={form.consignee}
-            loading={masters.loading}
-            placeholder={form.customer
-              ? (filteredConsignees.length === 0
-                  ? 'No consignees for this customer'
-                  : '— Select Consignee —')
-              : '— Select Consignee —'}
-            options={withCurrent(filteredConsignees, form.consignee)}
-            onChange={onConsigneeChange}
-          />
+          {lockParty ? (
+            <input className="qpi-input qpi-input-readonly" value={form.consignee} readOnly title="Fixed by the lead this was opened from" />
+          ) : (
+            <MasterSelect
+              key={`cons-${filteredConsignees.length}-${form.customer}`}
+              value={form.consignee}
+              loading={masters.loading}
+              placeholder={form.customer
+                ? (filteredConsignees.length === 0
+                    ? 'No consignees for this customer'
+                    : '— Select Consignee —')
+                : '— Select Consignee —'}
+              options={withCurrent(filteredConsignees, form.consignee)}
+              onChange={onConsigneeChange}
+            />
+          )}
         </Field>
         <Field label="Bank Name" required>
           <MasterSelect
@@ -2928,7 +3015,13 @@ function ProductsStep(props: {
   const visibleProductOptions = useMemo(() => {
     let opts = productOptions;
 
-    if (allowedProductIds && allowedProductIds.size > 0) {
+    /* When an opportunity is selected, restrict to its Product Directory
+     * mapping — even when that mapping is empty (show nothing, prompting
+     * the user to add products to the directory first) rather than
+     * leaking the full master. `allowedProductIds === null` means "no
+     * opportunity / fetch failed" → keep the full master as a safe
+     * fallback so general quotations aren't blocked. */
+    if (allowedProductIds) {
       const allowedLabels = new Set(
         productsRaw.filter(p => allowedProductIds.has(p.dbId))
                    .map(p => `${p.code} – ${p.name}`)
@@ -3000,10 +3093,13 @@ function ProductsStep(props: {
         <SummaryItem label="Consignee Name"    value={form.consignee.split(' – ')[1] || form.consignee} />
         <SummaryItem label="Document Type"     value={form.docType} />
         <SummaryItem label="Bank Name"         value={form.bankName} />
-        <SummaryItem label="Currency"          value={form.currency} />
-        <SummaryItem label="Exchange Rate"     value={form.exchangeRate} />
+        {/* International-only commercial + shipping fields. Domestic
+            collects none of these (only a State Code), so the readonly
+            summary mirrors exactly what Step 1 captured. */}
         {form.docType === 'International' ? (
           <>
+            <SummaryItem label="Currency"          value={form.currency} />
+            <SummaryItem label="Exchange Rate"     value={form.exchangeRate} />
             <SummaryItem label="INCO Term"         value={form.incoTerm} />
             <SummaryItem label="Port of Loading"   value={form.portOfLoading} />
             <SummaryItem label="Port of Discharge" value={form.portOfDischarge} />
@@ -3023,7 +3119,19 @@ function ProductsStep(props: {
       )}
 
       <div className="qpi-products-wrap">
-        <table className="qpi-products-table">
+        <table className={`qpi-products-table qpi-pt-${theme}`}>
+          {/* Product Name is the dominant column (matches the figma); the
+              numeric columns are sized just wide enough for their inputs. */}
+          <colgroup>
+            <col style={{ width: '36%' }} />
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '9%' }} />
+            <col style={{ width: '8%' }} />
+          </colgroup>
           <thead>
             <tr>
               <th>Product Name</th>
@@ -3127,10 +3235,13 @@ function ProductsStep(props: {
 }
 
 function SummaryItem(props: { label: string; value: string }) {
+  const val = props.value || '—';
   return (
     <div className="qpi-summary-item">
       <div className="qpi-summary-item-label">{props.label}</div>
-      <div className="qpi-summary-item-value">{props.value || '—'}</div>
+      {/* Single line — long values (e.g. a bank's full legal name) truncate
+          with an ellipsis and expose the full text on hover. */}
+      <div className="qpi-summary-item-value" title={val}>{val}</div>
     </div>
   );
 }
@@ -4029,17 +4140,20 @@ const SCOPED_CSS = `
   border-bottom: 1px solid #e2e8f0;
 }
 .qpi-modal-step-divider {
-  flex: 0 0 40px;
+  flex: 0 0 56px;
   height: 2px;
   background: #e2e8f0;
   margin: 0 0;
 }
+/* Steps are sized to their content and left-aligned (matching the figma)
+ * rather than stretched to fill the row — the connector + trailing space
+ * read as a proper 2-step progress indicator. */
 .qpi-step-badge {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 14px; border-radius: 10px;
+  padding: 8px 16px; border-radius: 10px;
   border: 1.5px solid transparent;
   background: #fff;
-  flex: 1;
+  flex: 0 1 auto; min-width: 210px;
   transition: all .15s;
 }
 .qpi-step-badge-num {
@@ -4110,6 +4224,22 @@ const SCOPED_CSS = `
 .qpi-input:focus  { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.14); }
 .qpi-input-readonly { background: #f8fafc; color: #64748b; cursor: not-allowed; }
 .qpi-input-num { text-align: right; }
+
+/* Edit-mode hydration shimmer */
+@keyframes qpi-shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.qpi-skel {
+  display: block; border-radius: 7px;
+  background: linear-gradient(90deg, #eef2f7 0%, #f7fafc 50%, #eef2f7 100%);
+  background-size: 800px 100%; animation: qpi-shimmer 1.3s ease-in-out infinite;
+}
+.qpi-skel-label { width: 38%; height: 9px; border-radius: 4px; margin-bottom: 7px; }
+.qpi-skel-input { width: 100%; height: 38px; }
+.qpi-skel-note  { width: 100%; height: 64px; margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) { .qpi-skel { animation: none; } }
+[data-bs-theme="dark"] .qpi-skel {
+  background: linear-gradient(90deg, rgba(148,163,184,.12) 0%, rgba(148,163,184,.24) 50%, rgba(148,163,184,.12) 100%);
+  background-size: 800px 100%;
+}
 
 /* ── Required-field error state (gated by Save and Next validation) ──
  * .qpi-field.has-error is set by the parent form when the user tries
@@ -4183,6 +4313,16 @@ const SCOPED_CSS = `
 .qpi-note-line { font-size: 11px; color: #78350f; line-height: 1.45; }
 .qpi-note-line + .qpi-note-line { margin-top: 2px; }
 .qpi-note-line strong { color: #92400e; font-weight: 800; }
+/* Note tinted to match the modal's theme (teal for Quotation, purple
+   for PI) so it reads as part of the same surface, not an amber alert. */
+.qpi-note-teal { background: linear-gradient(110deg, #ecfeff 0%, #cffafe 100%); border-color: #a5f3fc; }
+.qpi-note-teal .qpi-note-icon { color: #0e7490; }
+.qpi-note-teal .qpi-note-line { color: #155e75; }
+.qpi-note-teal .qpi-note-line strong { color: #0c4a6e; }
+.qpi-note-purple { background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 100%); border-color: #ddd6fe; }
+.qpi-note-purple .qpi-note-icon { color: #7c3aed; }
+.qpi-note-purple .qpi-note-line { color: #5b21b6; }
+.qpi-note-purple .qpi-note-line strong { color: #4c1d95; }
 
 /* Order summary card (step 2) — compact density so 12+ fields fit
    without the panel dominating the modal body. */
@@ -4199,7 +4339,7 @@ const SCOPED_CSS = `
 .qpi-summary-item {}
 .qpi-summary-item-label { font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #6d28d9; line-height: 1.2; }
 .qpi-order-summary-teal .qpi-summary-item-label { color: #0e7490; }
-.qpi-summary-item-value { font-size: 12px; font-weight: 700; color: #1e1b4b; margin-top: 1px; line-height: 1.3; }
+.qpi-summary-item-value { font-size: 12px; font-weight: 700; color: #1e1b4b; margin-top: 1px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Product warning */
 .qpi-product-warn {
@@ -4233,18 +4373,23 @@ const SCOPED_CSS = `
   background: rgba(124,58,237,.35); border-radius: 999px;
 }
 .qpi-products-wrap::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.55); }
-.qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 800px; }
-.qpi-products-table thead tr { background: linear-gradient(90deg, #312e81, #4c1d95); }
+.qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 800px; table-layout: fixed; }
+/* Header matches the modal's popup chrome — teal gradient for the
+   Quotation modal, purple for PI — using the same gradient as the modal
+   header. The gradient lives on the ROW (with transparent cells) so it
+   flows as ONE continuous sweep across the whole header instead of
+   restarting in every cell. */
+.qpi-products-table.qpi-pt-teal   thead tr { background: linear-gradient(90deg, #0f4c5c 0%, #0d3b48 60%, #042f36 100%); }
+.qpi-products-table.qpi-pt-purple thead tr { background: linear-gradient(90deg, #6d28d9 0%, #5b21b6 60%, #4c1d95 100%); }
 /* Sticky header — keep column labels visible while rows scroll.
    position:sticky needs an OWN background on the <th> (the <tr>'s
    gradient doesn't follow a positioned cell), so we paint the
    gradient directly here. z-index 5 keeps it above the input row's
    sticky background below. */
 .qpi-products-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  background: linear-gradient(90deg, #312e81, #4c1d95);
+  /* Transparent so the single row-level gradient shows through as one
+     continuous sweep (no per-cell seams). */
+  background: transparent;
   color: #fff; font-size: 9.5px; font-weight: 800;
   padding: 11px 12px;
   text-transform: uppercase; letter-spacing: .06em; text-align: left;
@@ -4689,9 +4834,9 @@ const SCOPED_CSS = `
    scrolling rows don't show through. Slightly deeper purple
    gradient so the strip still feels like a header band against
    the modal's dark canvas. */
-[data-bs-theme="dark"] .qpi-products-table thead th {
-  background: linear-gradient(90deg, #1e1b4b, #312e81);
-}
+/* Header keeps its popup-matching teal/purple gradient in dark mode too
+   (both are already dark enough), so it stays consistent with the modal
+   chrome — no separate dark override needed. */
 [data-bs-theme="dark"] .qpi-products-input-row td {
   background: #1c1538;
   box-shadow: inset 0 1px 0 0 rgba(167,139,250,.25);

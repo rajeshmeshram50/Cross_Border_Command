@@ -12,6 +12,7 @@ use App\Models\Consignee;
 use App\Models\Customer;
 use App\Models\Lead;
 use App\Models\ProformaInvoice;
+use App\Models\Quotation;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -261,10 +262,22 @@ class ClmAgreementController extends Controller
             ->orderByDesc('id')
             ->first();
 
-        $piItems = $pi
-            ? $pi->items()->whereNotNull('product_id')->get(['product_id'])
+        // Latest non-cancelled Quotation — Segment Details should populate
+        // as soon as products are quoted, not only after PI conversion. The
+        // PI is preferred when both exist; otherwise the quotation drives
+        // the segment list.
+        $quotation = Quotation::where('client_id', $user->client_id)
+            ->where('opp_id', $lead->id)
+            ->where('status', '!=', 'cancelled')
+            ->orderByDesc('id')
+            ->first();
+
+        $source = $pi ?: $quotation;
+
+        $sourceItems = $source
+            ? $source->items()->whereNotNull('product_id')->get(['product_id'])
             : collect();
-        $productIds = $piItems->pluck('product_id')->filter()->unique()->values();
+        $productIds = $sourceItems->pluck('product_id')->filter()->unique()->values();
 
         // Map products → segment_id. soft FK (no DB constraint per the
         // products migration comment), so we tolerate missing references.
@@ -285,7 +298,7 @@ class ClmAgreementController extends Controller
         // status badges instead of always "Draft". Gated on `$pi` — when
         // no PI is mapped there are no segments to render either, so the
         // signature lookup would be wasted work.
-        $sigRows = $pi
+        $sigRows = $source
             ? ClmSignatureRequest::where('client_id', $user->client_id)
                 ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
                 ->where('lead_id', $lead->id)
@@ -422,6 +435,11 @@ class ClmAgreementController extends Controller
                     'id'     => $pi->id,
                     'code'   => $pi->code ?? null,
                     'status' => $pi->status ?? null,
+                ] : null,
+                'quotation' => $quotation ? [
+                    'id'     => $quotation->id,
+                    'code'   => $quotation->code ?? null,
+                    'status' => $quotation->status ?? null,
                 ] : null,
                 'totals' => [
                     'highly' => [

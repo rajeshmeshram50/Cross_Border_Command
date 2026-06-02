@@ -173,6 +173,10 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
 
   const onShipmentCreated = () => {
     void fetchAll(true);
+    /* Burst confetti again to celebrate the Shipment ID being created
+     * (reuses the same one-shot effect as the initial victory landing). */
+    setConfetti(true);
+    setTimeout(() => setConfetti(false), 5_000);
   };
 
   return (
@@ -437,18 +441,20 @@ function Cell({ label, value, amber, blue, emerald }: {
 }
 
 const STAGE6_CSS = `
-.s6-head { background: linear-gradient(110deg, #d1fae5 0%, #a7f3d0 40%, #6ee7b7 100%); border-bottom: 1px solid #6ee7b7; }
-.s6-head .smd-stg-head-icon  { background: linear-gradient(135deg, #047857, #065f46); }
-.s6-head .smd-stg-head-title { color: #064e3b; }
-.s6-head .smd-stg-head-sub   { color: #047857; }
+/* Lavender header — matches the figma + the rest of the stage chrome /
+   side panels (was a one-off green). */
+.s6-head { background: linear-gradient(110deg, #ede9fe 0%, #ddd6fe 40%, #c4b5fd 100%); border-bottom: 1px solid #c4b5fd; }
+.s6-head .smd-stg-head-icon  { background: linear-gradient(135deg, #7c3aed, #5b21b6); }
+.s6-head .smd-stg-head-title { color: #3b0764; }
+.s6-head .smd-stg-head-sub   { color: #6d28d9; }
 .s6-badge {
-  background: linear-gradient(135deg, #f59e0b, #d97706) !important;
-  box-shadow: 0 2px 10px rgba(245, 158, 11, .35) !important;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6) !important;
+  box-shadow: 0 2px 10px rgba(124, 58, 237, .35) !important;
 }
 
 .s6-body {
   display: flex; flex-direction: column; align-items: center;
-  padding: 24px 22px 18px;
+  padding: 12px 18px 12px;
   position: relative;
 }
 
@@ -469,44 +475,45 @@ const STAGE6_CSS = `
   position: relative; z-index: 1;
   width: 100%; max-width: 560px;
   display: flex; flex-direction: column; align-items: center;
-  padding: 16px 16px 22px;
+  padding: 4px 16px 8px;
 }
 @keyframes s6-bob {
   0%, 100% { transform: translateY(0) rotate(-2deg); }
   50%      { transform: translateY(-4px) rotate(2deg); }
 }
 .s6-trophy {
-  width: 88px; height: 88px; border-radius: 24px;
+  width: 60px; height: 60px; border-radius: 18px;
   background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 60%, #d97706 100%);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 14px 36px rgba(245, 158, 11, .45),
-              inset 0 -4px 0 rgba(0,0,0,.12),
+  box-shadow: 0 10px 26px rgba(245, 158, 11, .42),
+              inset 0 -3px 0 rgba(0,0,0,.12),
               inset 0 2px 0 rgba(255,255,255,.30);
   animation: s6-bob 3.2s ease-in-out infinite;
 }
+.s6-trophy svg { width: 28px; height: 28px; }
 .s6-title {
-  margin-top: 16px;
-  font-size: 28px; font-weight: 800; letter-spacing: -.5px;
-  background: linear-gradient(135deg, #047857, #065f46);
+  margin-top: 9px;
+  font-size: 21px; font-weight: 800; letter-spacing: -.5px;
+  background: linear-gradient(135deg, #6d28d9, #4c1d95);
   -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent;
 }
-.s6-quote { margin-top: 4px; font-size: 13px; font-style: italic; color: #64748b; text-align: center; }
+.s6-quote { margin-top: 3px; font-size: 12px; font-style: italic; color: #64748b; text-align: center; }
 .s6-won-stamp {
-  margin-top: 12px;
+  margin-top: 9px;
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px; border-radius: 999px;
+  padding: 5px 13px; border-radius: 999px;
   background: #d1fae5; color: #047857;
   border: 1.5px solid #6ee7b7;
-  font-size: 11.5px; font-weight: 800; letter-spacing: .02em;
+  font-size: 11px; font-weight: 800; letter-spacing: .02em;
 }
 .s6-cta {
-  margin-top: 14px;
+  margin-top: 10px;
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 11px 24px; border-radius: 12px;
+  padding: 9px 20px; border-radius: 11px;
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   color: #fff; font-family: inherit;
-  font-size: 13px; font-weight: 800;
+  font-size: 12.5px; font-weight: 800;
   border: none; cursor: pointer;
   box-shadow: 0 6px 18px rgba(245, 158, 11, .40);
   transition: all .15s;
@@ -515,18 +522,18 @@ const STAGE6_CSS = `
 .s6-cta:disabled { opacity: .5; cursor: not-allowed; }
 
 .s6-summary {
-  width: 100%; max-width: 760px; margin-top: 12px;
+  width: 100%; max-width: 760px; margin-top: 10px;
   background: linear-gradient(180deg, #fffbeb, #ffffff);
-  border: 1.5px solid #fde68a; border-radius: 14px; padding: 14px 16px;
+  border: 1.5px solid #fde68a; border-radius: 12px; padding: 11px 14px;
 }
-.s6-summary-head { display: inline-flex; align-items: center; gap: 7px; font-size: 10.5px; font-weight: 800; letter-spacing: .12em; color: #92400e; margin-bottom: 11px; }
-.s6-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.s6-summary-head { display: inline-flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 800; letter-spacing: .12em; color: #92400e; margin-bottom: 9px; }
+.s6-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .s6-cell {
-  padding: 9px 11px; border-radius: 10px;
+  padding: 7px 10px; border-radius: 9px;
   background: #fff;
   border: 1.5px solid;
-  display: flex; flex-direction: column; gap: 4px;
-  min-height: 56px;
+  display: flex; flex-direction: column; gap: 3px;
+  min-height: 48px;
 }
 .s6-cell-violet  { border-color: #ddd6fe; }
 .s6-cell-blue    { border-color: #bfdbfe; }
@@ -593,9 +600,10 @@ const STAGE6_CSS = `
   background: linear-gradient(180deg, #dbeafe, #eff6ff);
   color: #1e40af; border-bottom-color: #bfdbfe;
 }
+/* Logistics card → lavender/purple to match the figma (was emerald). */
 .s6-shp-head-emerald {
-  background: linear-gradient(180deg, #d1fae5, #ecfdf5);
-  color: #047857; border-bottom-color: #a7f3d0;
+  background: linear-gradient(180deg, #ede9fe, #f5f3ff);
+  color: #6d28d9; border-bottom-color: #ddd6fe;
 }
 .s6-shp-ico { font-size: 14px; }
 
@@ -608,13 +616,13 @@ const STAGE6_CSS = `
 .s6-shp-val   { font-size: 12.5px; font-weight: 700; color: #1e293b; }
 .s6-shp-val.s6-shp-amber   { color: #b45309; }
 .s6-shp-val.s6-shp-blue    { color: #1e40af; }
-.s6-shp-val.s6-shp-emerald { color: #047857; }
+.s6-shp-val.s6-shp-emerald { color: #6d28d9; }
 
 /* Dark mode */
-[data-bs-theme="dark"] .s6-head { background: linear-gradient(110deg, #064e3b 0%, #065f46 40%, #047857 100%); border-bottom-color: rgba(110, 231, 183, .30); }
-[data-bs-theme="dark"] .s6-head .smd-stg-head-title { color: #d1fae5; }
-[data-bs-theme="dark"] .s6-head .smd-stg-head-sub   { color: #6ee7b7; }
-[data-bs-theme="dark"] .s6-title { background: linear-gradient(135deg, #6ee7b7, #34d399); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+[data-bs-theme="dark"] .s6-head { background: linear-gradient(110deg, #1f1845 0%, #2a2150 40%, #3b2f6e 100%); border-bottom-color: rgba(167, 139, 250, .30); }
+[data-bs-theme="dark"] .s6-head .smd-stg-head-title { color: #ede9fe; }
+[data-bs-theme="dark"] .s6-head .smd-stg-head-sub   { color: #c4b5fd; }
+[data-bs-theme="dark"] .s6-title { background: linear-gradient(135deg, #c4b5fd, #a78bfa); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 [data-bs-theme="dark"] .s6-quote { color: rgba(196, 181, 253, .60); }
 [data-bs-theme="dark"] .s6-won-stamp { background: rgba(16, 185, 129, .18); color: #6ee7b7; border-color: rgba(110, 231, 183, .40); }
 [data-bs-theme="dark"] .s6-summary { background: #1a1538; border-color: rgba(252, 191, 36, .30); }
@@ -633,12 +641,12 @@ const STAGE6_CSS = `
 [data-bs-theme="dark"] .s6-shp-card { background: #14102a; border-color: rgba(167, 139, 250, .25); }
 [data-bs-theme="dark"] .s6-shp-head-amber  { background: rgba(252,191,36,.14); color: #fde68a; border-bottom-color: rgba(252,191,36,.30); }
 [data-bs-theme="dark"] .s6-shp-head-blue   { background: rgba(96,165,250,.14); color: #93c5fd; border-bottom-color: rgba(96,165,250,.30); }
-[data-bs-theme="dark"] .s6-shp-head-emerald { background: rgba(16,185,129,.14); color: #6ee7b7; border-bottom-color: rgba(110,231,183,.30); }
+[data-bs-theme="dark"] .s6-shp-head-emerald { background: rgba(124,58,237,.16); color: #c4b5fd; border-bottom-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .s6-shp-label { color: rgba(196,181,253,.55); }
 [data-bs-theme="dark"] .s6-shp-val { color: #ede9fe; }
 [data-bs-theme="dark"] .s6-shp-val.s6-shp-amber   { color: #fde68a; }
 [data-bs-theme="dark"] .s6-shp-val.s6-shp-blue    { color: #93c5fd; }
-[data-bs-theme="dark"] .s6-shp-val.s6-shp-emerald { color: #6ee7b7; }
+[data-bs-theme="dark"] .s6-shp-val.s6-shp-emerald { color: #c4b5fd; }
 
 @media (max-width: 900px) {
   .s6-summary-grid { grid-template-columns: 1fr 1fr; }
