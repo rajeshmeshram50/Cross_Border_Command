@@ -1,10 +1,14 @@
-import { useState, CSSProperties } from 'react';
+import { useState, useEffect, CSSProperties } from 'react';
+import api from '../../api';
 
 /*
  * CLM → Buyer Profile page.
- * Faithful port of the prototype rBp() markup (CLM_Main_File lines 6674-7226) plus
- * its buyer/consignee/transaction data + render helpers (lines 8227-8758).
- * This is a dashboard/view page with NO backend API — all data is inlined mock data.
+ * Live data comes from GET /clm/buyer-profile (ClmBuyerProfileController):
+ *   - buyers      : every customer + KYC/DD/TL/TD + agreement progress
+ *   - consignees  : every consignee, grouped by parent customer
+ *   - ws_eq/ws_neq/wos_eq/wos_neq : the opportunity transaction matrix
+ * Compliance progress mirrors the Evidence Vault (segment-rule required
+ * docs vs uploaded). The types below are the response row shapes.
  */
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -13,12 +17,12 @@ import { useState, CSSProperties } from 'react';
 type Prog = { d: number; t: number };
 
 type BuyerRow = {
-  sr: number; id: string; name: string; seg: string[]; sc: string; sb: string;
+  sr: number; id: string; db_id?: number; name: string; seg: string[]; sc: string; sb: string;
   country: string; cn: number; kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog; ship: number;
 };
 
 type ConsRow = {
-  sr: number; id: string; cid: string; name: string; seg: string; sc: string; sb: string;
+  sr: number; id: string; cid: string; db_id?: number; name: string; seg: string; sc: string; sb: string;
   country: string; kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog; ship: number;
 };
 
@@ -34,6 +38,13 @@ type WosEqRow = {
   kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog;
 };
 type WosNeqRow = WosEqRow & { consignee: string };
+
+/* Shape of GET /clm/buyer-profile → data. */
+type BpData = {
+  buyers: BuyerRow[]; consignees: ConsRow[];
+  ws_eq: WsEqRow[]; ws_neq: WsNeqRow[]; wos_eq: WosEqRow[]; wos_neq: WosNeqRow[];
+};
+const EMPTY_BP: BpData = { buyers: [], consignees: [], ws_eq: [], ws_neq: [], wos_eq: [], wos_neq: [] };
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Mock data (verbatim from the prototype)
@@ -129,7 +140,7 @@ const WOS_PER_PAGE = 10;
  * Scoped CSS (extracted from the prototype)
  * ────────────────────────────────────────────────────────────────────────── */
 const BP_CSS = `
-.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 12px 14px; display:flex; flex-direction:column; gap:8px; }
+.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 0; display:flex; flex-direction:column; gap:8px; }
 .seg-page-card {
   background: #fff;
   border: 1px solid rgba(6,182,212,.2);
@@ -177,6 +188,45 @@ const BP_CSS = `
 .bpa-tab-inactive:hover{background:rgba(6,182,212,.1);color:#0891b2;}
 .bpa-cards-wrap{overflow:hidden;transition:max-height .32s cubic-bezier(.22,1,.36,1),opacity .22s,padding .22s;}
 .bp-buyer-row:hover{background:rgba(6,182,212,.05)!important;box-shadow:inset 3px 0 0 #0891b2;}
+
+/* ── Dark mode ──
+ * The page is built with light inline styles, so dark mode is done with a
+ * targeted override sweep: darken every card surface, swap the distinctive
+ * light cyan gradient strips/headers for dark equivalents, and lighten the
+ * dark inline text colours. Bright-cyan accents (#0891b2/#06b6d4/#22d3ee)
+ * and the colour-coded status badges (which set their own bg + text) are
+ * left as-is — they already read fine on dark. */
+[data-bs-theme="dark"] .seg-page { background: transparent; }
+[data-bs-theme="dark"] .seg-page-card { background: #1e293b !important; border-color: rgba(6,182,212,.18) !important; box-shadow: 0 2px 12px rgba(0,0,0,.45) !important; }
+[data-bs-theme="dark"] .bref-box { background: #1e293b !important; }
+[data-bs-theme="dark"] .bref-box__header { background: linear-gradient(110deg,#103a48,#0c2e3a) !important; border-bottom-color: rgba(6,182,212,.25) !important; }
+[data-bs-theme="dark"] .bref-box__body { background: linear-gradient(180deg,#172033,#0f172a) !important; }
+[data-bs-theme="dark"] .bref-item { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .bref-item__title { color: #e2e8f0 !important; }
+[data-bs-theme="dark"] .bref-item__desc { color: #94a3b8 !important; }
+[data-bs-theme="dark"] .bpa-seg { background: rgba(255,255,255,.05) !important; }
+[data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; }
+/* light cyan gradient strips / surfaces (matched by their distinctive stop
+ * colours) → dark */
+[data-bs-theme="dark"] .seg-page [style*="#e0f9fd"],
+[data-bs-theme="dark"] .seg-page [style*="#cef8ff"],
+[data-bs-theme="dark"] .seg-page [style*="#f4feff"],
+[data-bs-theme="dark"] .seg-page [style*="#f0fdff"],
+[data-bs-theme="dark"] .seg-page [style*="#e8fafb"],
+[data-bs-theme="dark"] .seg-page [style*="#e8fbfd"] { background: #16263a !important; }
+/* white inline cards (KPI tiles) → dark */
+[data-bs-theme="dark"] .seg-page [style*="background:#fff;"],
+[data-bs-theme="dark"] .seg-page [style*="background: #fff;"] { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+/* dark inline text → light */
+[data-bs-theme="dark"] .seg-page [style*="#0c4a6e"],
+[data-bs-theme="dark"] .seg-page [style*="#0f172a"],
+[data-bs-theme="dark"] .seg-page [style*="#1f2937"],
+[data-bs-theme="dark"] .seg-page [style*="#475569"],
+[data-bs-theme="dark"] .seg-page [style*="#0e7490"] { color: #cfe8f3 !important; }
+/* table data */
+[data-bs-theme="dark"] .seg-page-card tbody tr { background: transparent !important; }
+[data-bs-theme="dark"] .seg-page-card tbody td { color: #cbd5e1 !important; }
+[data-bs-theme="dark"] .bp-buyer-row:hover { background: rgba(8,145,178,.14)!important; box-shadow: inset 3px 0 0 #22d3ee; }
 `;
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -403,15 +453,53 @@ export default function ClmBuyerProfilePage() {
   const [wosEqPage, setWosEqPage] = useState(1);
   const [wosNeqPage, setWosNeqPage] = useState(1);
 
+  // ── Live data from GET /clm/buyer-profile ──
+  const [bp, setBp] = useState<BpData>(EMPTY_BP);
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/clm/buyer-profile')
+      .then((r) => { if (!cancelled) setBp((r.data?.data ?? EMPTY_BP) as BpData); })
+      .catch(() => { if (!cancelled) setBp(EMPTY_BP); });
+    return () => { cancelled = true; };
+  }, []);
+  // Fetched views — shadow the legacy demo arrays of the same name so the
+  // existing render + pagination code below consumes live data unchanged.
+  const bpBuyerData = bp.buyers;
+  const bpConsData  = bp.consignees;
+  const wsEqData    = bp.ws_eq;
+  const wsNeqData   = bp.ws_neq;
+  const wosEqData   = bp.wos_eq;
+  const wosNeqData  = bp.wos_neq;
+
   // ── derived buyer analytics (syncBpaCards) ──
   const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
   const buyerTotal = bpBuyerData.length;
-  const buyerCompliant = bpBuyerData.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t && r.td.d === r.td.t).length;
+  // Compliant buyer = KYC + DD + Trade License all fully completed.
+  const buyerCompliant = bpBuyerData.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
   const buyerKyc = bpBuyerData.filter((r) => r.kyc.d < r.kyc.t).length;
   const buyerDd = bpBuyerData.filter((r) => r.dd.d < r.dd.t).length;
   const buyerTl = bpBuyerData.filter((r) => r.tl.d < r.tl.t).length;
   const buyerTd = bpBuyerData.filter((r) => r.td.d < r.td.t).length;
   const buyerAgr = bpBuyerData.filter((r) => r.agr.d < r.agr.t).length;
+
+  // ── derived consignee analytics ──
+  const consTotal = bpConsData.length;
+  const consCompliant = bpConsData.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
+  const consKyc = bpConsData.filter((r) => r.kyc.d < r.kyc.t).length;
+  const consDd = bpConsData.filter((r) => r.dd.d < r.dd.t).length;
+  const consTl = bpConsData.filter((r) => r.tl.d < r.tl.t).length;
+  const consTd = bpConsData.filter((r) => r.td.d < r.td.t).length;
+  const consAgr = bpConsData.filter((r) => r.agr.d < r.agr.t).length;
+
+  // ── derived transaction (opportunity) analytics ──
+  const allTxn: (WsEqRow | WsNeqRow | WosEqRow | WosNeqRow)[] = [...wsEqData, ...wsNeqData, ...wosEqData, ...wosNeqData];
+  const txnTotal = allTxn.length;
+  const txnCompliant = allTxn.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
+  const txnKyc = allTxn.filter((r) => r.kyc.d < r.kyc.t).length;
+  const txnDd = allTxn.filter((r) => r.dd.d < r.dd.t).length;
+  const txnTl = allTxn.filter((r) => r.tl.d < r.tl.t).length;
+  const txnTd = allTxn.filter((r) => r.td.d < r.td.t).length;
+  const txnAgr = allTxn.filter((r) => r.agr.d < r.agr.t).length;
 
   const buyerSlice = bpBuyerData.slice((buyerPage - 1) * BP_PER_PAGE, (buyerPage - 1) * BP_PER_PAGE + BP_PER_PAGE);
   const consSlice = bpConsData.slice((consPage - 1) * BP_PER_PAGE, (consPage - 1) * BP_PER_PAGE + BP_PER_PAGE);
@@ -528,13 +616,13 @@ export default function ClmBuyerProfilePage() {
             <div style={{ maxHeight: txnAnalyticsOpen ? '200px' : '0px', opacity: txnAnalyticsOpen ? 1 : 0, padding: txnAnalyticsOpen ? '6px 8px 8px' : '0 8px', background: 'linear-gradient(180deg,#f0fdff,#f4feff)', overflow: 'hidden', transition: 'max-height .32s cubic-bezier(.22,1,.36,1),opacity .22s,padding .22s' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: '6px' }}>
                 {[
-                  { num: '42', label: 'Total Transactions', tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg> },
-                  { num: '18', label: 'Fully Compliant', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
-                  { num: '09', label: 'KYC Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> },
-                  { num: '07', label: 'Due Diligence Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> },
-                  { num: '11', label: 'Trade Licenses Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /><line x1="12" y1="12" x2="12" y2="16" /><line x1="10" y1="14" x2="14" y2="14" /></svg> },
-                  { num: '06', label: 'Trade Documents Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg> },
-                  { num: '08', label: 'Agreements Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><polyline points="9 15 12 18 15 15" /></svg> },
+                  { num: pad(txnTotal), label: 'Total Transactions', tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg> },
+                  { num: pad(txnCompliant), label: 'Fully Compliant', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
+                  { num: pad(txnKyc), label: 'KYC Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> },
+                  { num: pad(txnDd), label: 'Due Diligence Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> },
+                  { num: pad(txnTl), label: 'Trade Licenses Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /><line x1="12" y1="12" x2="12" y2="16" /><line x1="10" y1="14" x2="14" y2="14" /></svg> },
+                  { num: pad(txnTd), label: 'Trade Documents Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg> },
+                  { num: pad(txnAgr), label: 'Agreements Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><polyline points="9 15 12 18 15 15" /></svg> },
                 ].map((c, idx) => (
                   <div key={idx} style={cardStyle} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                     <div style={cardTopBar} />
@@ -795,13 +883,13 @@ export default function ClmBuyerProfilePage() {
                 {bpaTab === 'consignee' && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: '6px' }}>
                     {[
-                      { num: '34', label: 'Total Consignees', tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
-                      { num: '17', label: 'Compliant Consignees', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
-                      { num: '04', label: 'KYC Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> },
-                      { num: '03', label: 'Due Diligence Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> },
-                      { num: '06', label: 'Trade Licenses Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /><line x1="12" y1="12" x2="12" y2="16" /><line x1="10" y1="14" x2="14" y2="14" /></svg> },
-                      { num: '05', label: 'Trade Documents Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg> },
-                      { num: '07', label: 'Agreements Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><polyline points="9 15 12 18 15 15" /></svg> },
+                      { num: pad(consTotal), label: 'Total Consignees', tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
+                      { num: pad(consCompliant), label: 'Compliant Consignees', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
+                      { num: pad(consKyc), label: 'KYC Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg> },
+                      { num: pad(consDd), label: 'Due Diligence Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> },
+                      { num: pad(consTl), label: 'Trade Licenses Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /><line x1="12" y1="12" x2="12" y2="16" /><line x1="10" y1="14" x2="14" y2="14" /></svg> },
+                      { num: pad(consTd), label: 'Trade Documents Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg> },
+                      { num: pad(consAgr), label: 'Agreements Pending', tag: 'PENDING', tagC: '#0e7490', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><polyline points="9 15 12 18 15 15" /></svg> },
                     ].map((c, idx) => (
                       <div key={idx} style={cardStyle} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                         <div style={cardTopBar} />

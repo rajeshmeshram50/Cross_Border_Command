@@ -75,7 +75,7 @@ const PER_PAGE = 10;
 
 /* ───────────────────────── Extracted CSS ───────────────────────── */
 const CSS = `
-.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 12px 14px; display:flex; flex-direction:column; gap:8px; }
+.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 0; display:flex; flex-direction:column; gap:8px; }
 .seg-page-card {
   background: #fff;
   border: 1px solid rgba(6,182,212,.2);
@@ -123,6 +123,45 @@ const CSS = `
 .bpa-tab-active{background:linear-gradient(135deg,#06b6d4 0%,#0891b2 55%,#0e7490 100%);color:#fff;box-shadow:0 3px 12px rgba(6,182,212,.4),0 1px 4px rgba(8,145,178,.3);}
 .bpa-tab-inactive{background:transparent;color:#0e7490;box-shadow:none;}
 .bpa-tab-inactive:hover{background:rgba(6,182,212,.1);color:#0891b2;}
+
+/* ── Dark mode ──
+ * The page is built with light inline styles, so dark mode is done with a
+ * targeted override sweep: darken every card surface, swap the distinctive
+ * light cyan gradient strips/headers for dark equivalents, and lighten the
+ * dark inline text colours. Bright-cyan accents (#0891b2/#06b6d4/#22d3ee)
+ * and the colour-coded status badges (which set their own bg + text) are
+ * left as-is — they already read fine on dark. */
+[data-bs-theme="dark"] .seg-page { background: transparent; }
+[data-bs-theme="dark"] .seg-page-card { background: #1e293b !important; border-color: rgba(6,182,212,.18) !important; box-shadow: 0 2px 12px rgba(0,0,0,.45) !important; }
+[data-bs-theme="dark"] .bref-box { background: #1e293b !important; }
+[data-bs-theme="dark"] .bref-box__header { background: linear-gradient(110deg,#103a48,#0c2e3a) !important; border-bottom-color: rgba(6,182,212,.25) !important; }
+[data-bs-theme="dark"] .bref-box__body { background: linear-gradient(180deg,#172033,#0f172a) !important; }
+[data-bs-theme="dark"] .bref-item { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .bref-item__title { color: #e2e8f0 !important; }
+[data-bs-theme="dark"] .bref-item__desc { color: #94a3b8 !important; }
+[data-bs-theme="dark"] .bpa-seg { background: rgba(255,255,255,.05) !important; }
+[data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; }
+/* light cyan gradient strips / surfaces (matched by their distinctive stop
+ * colours) → dark */
+[data-bs-theme="dark"] .seg-page [style*="#e0f9fd"],
+[data-bs-theme="dark"] .seg-page [style*="#cef8ff"],
+[data-bs-theme="dark"] .seg-page [style*="#f4feff"],
+[data-bs-theme="dark"] .seg-page [style*="#f0fdff"],
+[data-bs-theme="dark"] .seg-page [style*="#e8fafb"],
+[data-bs-theme="dark"] .seg-page [style*="#e8fbfd"] { background: #16263a !important; }
+/* white inline cards (KPI tiles) → dark */
+[data-bs-theme="dark"] .seg-page [style*="background:#fff;"],
+[data-bs-theme="dark"] .seg-page [style*="background: #fff;"] { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+/* dark inline text → light */
+[data-bs-theme="dark"] .seg-page [style*="#0c4a6e"],
+[data-bs-theme="dark"] .seg-page [style*="#0f172a"],
+[data-bs-theme="dark"] .seg-page [style*="#1f2937"],
+[data-bs-theme="dark"] .seg-page [style*="#475569"],
+[data-bs-theme="dark"] .seg-page [style*="#0e7490"] { color: #cfe8f3 !important; }
+/* table data */
+[data-bs-theme="dark"] .seg-page-card tbody tr { background: transparent !important; }
+[data-bs-theme="dark"] .seg-page-card tbody td { color: #cbd5e1 !important; }
+[data-bs-theme="dark"] .bp-buyer-row:hover { background: rgba(8,145,178,.14)!important; box-shadow: inset 3px 0 0 #22d3ee; }
 `;
 
 /* ───────────────────────── Mock data ───────────────────────── */
