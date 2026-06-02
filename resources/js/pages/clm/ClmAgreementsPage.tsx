@@ -4,7 +4,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
-import { DeleteConf, SimpleDescModal } from './clmCommon';
+import { DeleteConf, LockedConf, SimpleDescModal } from './clmCommon';
 import Tooltip from '../../components/ui/Tooltip';
 import ClmAgreementWizardModal from './ClmAgreementWizardModal';
 
@@ -14,7 +14,7 @@ type AgrType = { id: number; code: string; name: string; description: string };
 type AgrLib = {
   id: number; code: string; agreement_type: string; title: string; party: string;
   regulatory: 'highly'|'less'; signing: boolean; segment: string | null;
-  agr_status: string; content: string | null;
+  agr_status: string; content: string | null; is_signed?: boolean;
 };
 type Seg = { id: number; code: string; name: string; regulatory_status: 'highly' | 'less' };
 
@@ -192,6 +192,9 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   const [editing, setEditing] = useState<AgrLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<AgrLib | null>(null);
+  // Blocked-action popup state — set when the user clicks Edit/Delete on an
+  // agreement that has already been signed.
+  const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: AgrLib } | null>(null);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
@@ -329,14 +332,14 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
-                          <Tooltip label={`Edit — ${r.title}`}>
-                            <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                          <Tooltip label={r.is_signed ? 'Signed — cannot edit' : `Edit — ${r.title}`}>
+                            <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { if (r.is_signed) { setLocked({ mode: 'edit', row: r }); return; } setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                           </Tooltip>
                           <Tooltip label={`Download ${r.code} as .html`}>
                             <button className="clm-act clm-act-dl" aria-label="Download" onClick={() => onDownload(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
                           </Tooltip>
-                          <Tooltip label={`Delete — ${r.title}`}>
-                            <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                          <Tooltip label={r.is_signed ? 'Signed — cannot delete' : `Delete — ${r.title}`}>
+                            <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => { if (r.is_signed) { setLocked({ mode: 'delete', row: r }); return; } setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                           </Tooltip>
                         </div>
                       </td>
@@ -360,6 +363,14 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       </div>
 
       {pendingDelete && createPortal(<DeleteConf title="Delete agreement?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
+
+      {locked && (
+        <LockedConf
+          title={locked.mode === 'edit' ? 'Cannot edit this agreement' : 'Cannot delete this agreement'}
+          sub={`${locked.row.title} (${locked.row.code}) has already been signed by the customer / consignee / supplier, so it can no longer be ${locked.mode === 'edit' ? 'edited' : 'deleted'}.`}
+          onClose={() => setLocked(null)}
+        />
+      )}
 
       <ClmAgreementWizardModal
         open={modalOpen}

@@ -2128,7 +2128,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               segmentRefUploads={segmentRefUploads}
               tdDocs={tdDocs.map(d => ({ ...d, cooldownActive: isReminderCooldown(d.signature_request_id) }))}
               onToggleTd={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, selected: !d.selected } : d))}
-              onToggleAllTd={(checked) => setTdDocs(prev => prev.map(d => ({ ...d, selected: checked })))}
+              onToggleAllTd={(checked) => setTdDocs(prev => prev.map(d => d.status === 'completed' ? d : { ...d, selected: checked }))}
               onSendTd={(id) => {
                 const row = tdDocs.find(d => d.id === id);
                 if (!row?.db_id) { toast.info('Not a library document', 'Pick a segment with mapped trade documents to enable signature sending.'); return; }
@@ -2174,8 +2174,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 setSendForSignature([row.db_id]);
               }}
               onSendSelectedTd={() => {
-                const ids = tdDocs.filter(d => d.selected && d.db_id).map(d => d.db_id!);
-                if (ids.length === 0) { toast.info('Nothing selected', 'Tick one or more documents under "Send for Signature" first.'); return; }
+                // Signed (completed) docs are locked — never include them.
+                const ids = tdDocs.filter(d => d.selected && d.db_id && d.status !== 'completed').map(d => d.db_id!);
+                if (ids.length === 0) { toast.info('Nothing selected', 'Tick one or more unsigned documents under "Send for Signature" first.'); return; }
                 if (!(consignee?.db_id || savedDbId)) { toast.info('Save consignee first', 'Save the consignee before sending documents for signature.'); return; }
                 setSendForSignature(ids.slice(0, 10));
               }}
@@ -3507,7 +3508,10 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
    * controls are locked here too. */
   sameAsCustomer: boolean;
 }) {
-  const selCount = docs.filter(d => d.selected).length;
+  // Signed (completed) docs are locked — they're excluded from select-all
+  // and the bulk send, so the counts work off the selectable subset only.
+  const selectable = docs.filter(d => d.status !== 'completed');
+  const selCount = selectable.filter(d => d.selected).length;
   // Roll-up "all signed" — every TD row has hit Zoho's completed state.
   // When that's true, no further send is meaningful (Resend on a signed
   // doc creates a fresh request against the archived PDF, which the
@@ -3515,10 +3519,8 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
   // too — header select-all checkbox and footer "Send Selected" button.
   const allSigned = docs.length > 0 && docs.every(d => d.status === 'completed');
   const bulkLocked = sameAsCustomer || allSigned;
-  // Suppress the "all checked" visual once everything's signed so the
-  // header checkbox doesn't render ticked-but-disabled (confusing UX —
-  // looks like there's still work queued).
-  const allChecked = !allSigned && docs.length > 0 && selCount === docs.length;
+  // "All checked" reflects only the selectable (unsigned) rows.
+  const allChecked = !allSigned && selectable.length > 0 && selCount === selectable.length;
   return (
     <div className="acm-kyc-card" style={{ marginTop: 12 }}>
       {sameAsCustomer && (
@@ -3538,7 +3540,7 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                     type="checkbox"
                     checked={allChecked}
                     disabled={bulkLocked}
-                    ref={el => { if (el) el.indeterminate = !allSigned && selCount > 0 && selCount < docs.length; }}
+                    ref={el => { if (el) el.indeterminate = !allSigned && selCount > 0 && selCount < selectable.length; }}
                     onChange={e => onToggleAll(e.target.checked)}
                   />
                   SEND FOR SIGNATURE
@@ -3574,7 +3576,7 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                       const locked     = isSigned || sameAsCustomer || onCooldown;
                       return (
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                          <input type="checkbox" checked={d.selected} onChange={() => onToggle(d.id)} disabled={locked} />
+                          <input type="checkbox" checked={!isSigned && d.selected} onChange={() => onToggle(d.id)} disabled={locked} />
                           {(() => {
                             const remCount = d.reminder_count ?? 0;
                             const lastAt   = d.last_reminder_sent_at;

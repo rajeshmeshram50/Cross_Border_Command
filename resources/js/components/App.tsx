@@ -74,6 +74,8 @@ import ClmTncPage from '../pages/clm/ClmTncPage';
 import ClmAgreementsPage from '../pages/clm/ClmAgreementsPage';
 import ClmClauseLibraryPage from '../pages/clm/ClmClauseLibraryPage';
 import ClmDcpPage from '../pages/clm/ClmDcpPage';
+import ClmBuyerProfilePage from '../pages/clm/ClmBuyerProfilePage';
+import ClmSupplierProfilePage from '../pages/clm/ClmSupplierProfilePage';
 import HrDashboard from '../pages/hrms/HrDashboard';
 import HrOverview from '../pages/hrms/HrOverview';
 import HrEmployees from '../pages/hrms/HrEmployees';
@@ -700,8 +702,10 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/clm/agreements"       element={<ClmAgreementsPage />} />
               <Route path="/clm/clause-library"   element={<ClmClauseLibraryPage />} />
               <Route path="/clm/document-panel"   element={<ClmDcpPage />} />
-              {/* Operations leaves (analytics / diagnosis / resolution / buyer /
-                  supplier / case-to-case / agreements-sent / agreements-to-approve)
+              <Route path="/clm/buyer-profile"    element={<ClmBuyerProfilePage />} />
+              <Route path="/clm/supplier-profile" element={<ClmSupplierProfilePage />} />
+              {/* Operations leaves (analytics / diagnosis / resolution /
+                  case-to-case / agreements-sent / agreements-to-approve)
                   still fall through to the stub until those pages ship. */}
               <Route path="/clm/:slug" element={<ClmStubPage />} />
               <Route path="/hr" element={<HrDashboard />} />

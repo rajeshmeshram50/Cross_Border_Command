@@ -284,6 +284,9 @@ class SegmentDocUploadController extends Controller
                 $upload = $uploads->get($cat . '::' . $code);
                 $rows[] = [
                     'id'              => $upload?->id ?? $i,
+                    // Master library id — drives the vault's Send-for-Signature
+                    // launch for the Trade Documents bucket (null elsewhere).
+                    'db_id'           => $master['id'] ?? null,
                     'name'            => $master['name'] ?? $code,
                     'reference'       => $master['code'] ?? $code,
                     'authority'       => $master['authority'] ?? null,
@@ -294,6 +297,9 @@ class SegmentDocUploadController extends Controller
                     'status'          => $upload ? 'Verified' : 'Pending',
                     'requirement'     => $req,
                     'doc_code'        => $code,
+                    // Applicable-party CSV so the vault can party-filter the
+                    // Trade Documents tab to match the edit form.
+                    'party'           => $master['party'] ?? null,
                 ];
             }
             return $rows;
@@ -451,10 +457,18 @@ class SegmentDocUploadController extends Controller
         foreach ($rows as $r) {
             $attrs = $r->getAttributes();
             $byCode[$r->code] = [
+                // Master row primary key. For the Trade Documents bucket this
+                // is the clm_trade_doc_library.id the Send-for-Signature flow
+                // needs; harmless metadata for the other categories.
+                'id'        => $r->id,
                 'code'      => $r->code,
                 'name'      => $r->name ?? ($attrs['title'] ?? $r->code),
                 'authority' => $attrs['authority'] ?? null,
                 'expiry'    => $attrs['expiry'] ?? ($attrs['validity'] ?? null),
+                // Applicable-party CSV (e.g. "Buyer, Consignee"). Only the
+                // Trade Document master carries it; lets the Evidence Vault
+                // mirror the edit form's party filter.
+                'party'     => $attrs['party'] ?? null,
             ];
         }
         return $byCode;

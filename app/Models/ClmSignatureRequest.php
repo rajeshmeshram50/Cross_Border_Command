@@ -136,4 +136,32 @@ class ClmSignatureRequest extends Model
             })
             ->exists();
     }
+
+    /**
+     * All draft ids (of the given doc type) that have a signed/completed
+     * signature request, for one tenant. Batch version of hasSignedDraft —
+     * lets a list endpoint flag every locked row without an N+1 of
+     * existence checks. Pulls ids from both the legacy single `trade_doc_id`
+     * column and the `trade_doc_ids` JSON array.
+     *
+     * @return int[]
+     */
+    public static function signedDraftIds(?int $clientId, string $docType): array
+    {
+        if (!$clientId) return [];
+
+        $rows = static::where('client_id', $clientId)
+            ->where('document_type', $docType)
+            ->where('status', 'completed')
+            ->get(['trade_doc_id', 'trade_doc_ids']);
+
+        $ids = [];
+        foreach ($rows as $r) {
+            if ($r->trade_doc_id) $ids[] = (int) $r->trade_doc_id;
+            foreach ((array) ($r->trade_doc_ids ?? []) as $id) {
+                if ($id) $ids[] = (int) $id;
+            }
+        }
+        return array_values(array_unique($ids));
+    }
 }

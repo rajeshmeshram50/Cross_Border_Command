@@ -353,6 +353,32 @@ export function ShortCodeNameModal(props: {
   ), document.body);
 }
 
+/**
+ * Blocked-action popup. Shown when the user tries to Edit or Delete a draft
+ * that has already been signed by the customer / consignee / supplier — the
+ * action is disallowed server-side (the controller returns 422), so this
+ * surfaces the reason up-front with a single Cancel button (no confirm).
+ */
+export function LockedConf(props: { title: string; sub: string; onClose: () => void }) {
+  const { title, sub, onClose } = props;
+  return createPortal((
+    <div className="clm-conf-bd" onClick={onClose}>
+      <div className="clm-conf" onClick={e => e.stopPropagation()}>
+        <div className="clm-conf-ico" style={{ background: '#fef3c7', borderColor: '#fcd34d' }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        </div>
+        <div className="clm-conf-title">{title}</div>
+        <div className="clm-conf-sub">{sub}</div>
+        <div className="clm-conf-btns" style={{ justifyContent: 'center' }}>
+          <button className="clm-btn-cancel" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
+}
+
 export function DeleteConf(props: { title: string; sub: string; onCancel: () => void; onConfirm: () => void | Promise<void> }) {
   const { title, sub, onCancel, onConfirm } = props;
   /* Local in-flight guard — prevents duplicate API calls when the
