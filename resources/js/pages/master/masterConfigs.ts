@@ -87,6 +87,11 @@ export type MasterConfig = {
   cols: string[];
   colL: string[];
   uFields?: string[];
+  // When true, this is a fixed-vocabulary master — no rows can be added.
+  // Backend also rejects POST. Used for things like address_types where
+  // the product defines the closed set (Warehouse / Registered Address /
+  // Billing Address) and tenants cannot extend it.
+  lockedFixed?: boolean;
   data: any[];
   wtd: WtdStep[];
   kpis?: KpiDef[];
@@ -546,10 +551,14 @@ const C: Record<string, MasterConfig> = {
   address_types: {
     key: 'address_types', slug: 'address_types', title: 'Address Types', titleSingular: 'Address Type',
     icon: 'ri-home-line', iconColor: 'warning', iconBg: 'warning',
-    desc: 'Tag addresses: Billing, Shipping, Registered, etc.',
+    desc: 'Fixed vocabulary: Warehouse, Registered Address, Billing Address. No additions allowed.',
     cat: 'Geography & Location',
+    // Locked-fixed master — backend rejects POST and the three rows are
+    // is_system protected from edit/delete. UI hides the Add button via
+    // this flag so users aren't tempted to try.
+    lockedFixed: true,
     fields: [
-      { n: 'name', l: 'Address Type', t: 'text', r: true, p: 'e.g. Registered Office, Warehouse' },
+      { n: 'name', l: 'Address Type', t: 'text', r: true, p: 'e.g. Registered Address, Warehouse' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
     cols: ['name', 'status'],
