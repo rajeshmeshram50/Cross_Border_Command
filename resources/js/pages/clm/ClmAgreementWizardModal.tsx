@@ -9,6 +9,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import { SimpleDescModal } from './clmCommon';
 import ClmInsertTableModal from './ClmInsertTableModal';
 import ClmInsertHrModal from './ClmInsertHrModal';
+import ClmClauseInsertPanel from './ClmClauseInsertPanel';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
@@ -553,7 +554,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
         </div>
 
         {/* Body */}
-        <div className="agw-body">
+        <div className={`agw-body ${step === 2 ? 'agw-body-editor' : ''}`}>
           {step === 1 ? (
             <div className="agw-step-body">
               <div className="agw-grid-2">
@@ -980,8 +981,6 @@ function AgrEditor({
         <button type="button" className="agw-toolbar-btn" onClick={() => exec('outdent')} title="Outdent">⇤</button>
         <button type="button" className="agw-toolbar-btn" onClick={() => exec('indent')}  title="Indent">⇥</button>
         <span className="agw-toolbar-sep" />
-        <button type="button" className="agw-toolbar-btn" onClick={insertLink} title="Insert link">🔗</button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('unlink')} title="Remove link">🔗⃠</button>
         {/* Insert HR opens the styled-line picker (colour / height /
             style) instead of dropping a plain <hr> — same UX as the
             Trade Doc modal. The previous selection is stashed before
@@ -997,56 +996,37 @@ function AgrEditor({
         <button type="button" className="agw-toolbar-btn" onClick={() => exec('removeFormat')} title="Clear formatting">🅣</button>
       </div>
 
-      {/* Page-shell preview — wraps the editor in a fixed header (logo +
-          title + subtitle) and footer (text + page #). Same component
-          the HR Document Templates Step 3 and Trade Document modal use,
-          so look-and-feel stays uniform across CLM. Logo upload posts to
-          the agreement_library tenant folder. */}
-      <HeaderFooterPanel
-        header={headerConfig} setHeader={setHeaderConfig}
-        footer={footerConfig} setFooter={setFooterConfig}
-        uploadLogoEndpoint="/clm/agreement-library/upload-header-logo"
-      >
-        <div
-          ref={editorRef}
-          className="agw-editor"
-          contentEditable
-          suppressContentEditableWarning
-          onInput={syncContent}
-          role="textbox"
-          aria-multiline="true"
-          aria-label="Agreement content"
-        />
-      </HeaderFooterPanel>
+      {/* Scrollable region — the editor head + toolbar above stay pinned;
+          only this page-shell preview scrolls when the content grows. */}
+      <div className="agw-editor-scroll">
+        {/* Page-shell preview — wraps the editor in a fixed header (logo +
+            title + subtitle) and footer (text + page #). Same component
+            the HR Document Templates Step 3 and Trade Document modal use,
+            so look-and-feel stays uniform across CLM. Logo upload posts to
+            the agreement_library tenant folder. */}
+        <HeaderFooterPanel
+          header={headerConfig} setHeader={setHeaderConfig}
+          footer={footerConfig} setFooter={setFooterConfig}
+          uploadLogoEndpoint="/clm/agreement-library/upload-header-logo"
+        >
+          <div
+            ref={editorRef}
+            className="agw-editor"
+            contentEditable
+            suppressContentEditableWarning
+            onInput={syncContent}
+            role="textbox"
+            aria-multiline="true"
+            aria-label="Agreement content"
+          />
+        </HeaderFooterPanel>
 
-      {/* The clause-library inline drawer used to live in the editor
-          area; keep it just below the page-shell so it overlays the
-          same column when toggled. */}
-      <div className="agw-editor-area">
-        {clauseOpen && (
-          <div className="agw-clause-panel">
-            <div className="agw-clause-panel-head">
-              <span>Insert a clause</span>
-              <button type="button" className="agw-clause-close" onClick={onCloseClauseLibrary} aria-label="Close clause library">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-            <div className="agw-clause-panel-body">
-              {CLAUSE_PRESETS.map((c, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className="agw-clause-item"
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => onInsertClause(c.html)}
-                >
-                  <span className="agw-clause-item-title">{c.title}</span>
-                  <span className="agw-clause-item-sub">{c.sub}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Clause-library host (the picker itself portals to <body>). */}
+        <div className="agw-editor-area">
+          {clauseOpen && (
+            <ClmClauseInsertPanel onClose={onCloseClauseLibrary} onInsert={onInsertClause} />
+          )}
+        </div>
       </div>
 
       <div className="agw-editor-foot">
@@ -1300,16 +1280,6 @@ function hexA(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-/* ── Clause presets (same as T&C wizard) ──────────────────────────────── */
-const CLAUSE_PRESETS = [
-  { title: 'Force Majeure',   sub: 'Standard force-majeure clause',     html: '<h3>Force Majeure</h3><p>Neither Party shall be liable for any failure or delay in performance under this Agreement caused by acts of God, war, terrorism, riots, fire, flood, epidemic, or any other event beyond the reasonable control of such Party.</p>' },
-  { title: 'Confidentiality', sub: 'Mutual NDA clause',                 html: '<h3>Confidentiality</h3><p>Each Party agrees to hold the other Party\'s Confidential Information in strict confidence and not to disclose such information to any third party without prior written consent.</p>' },
-  { title: 'Governing Law',   sub: 'Jurisdiction & dispute resolution', html: '<h3>Governing Law</h3><p>This Agreement shall be governed by and construed in accordance with the laws of [Jurisdiction]. Any disputes arising hereunder shall be subject to the exclusive jurisdiction of the courts of [Jurisdiction].</p>' },
-  { title: 'Payment Terms',   sub: '30-day net payment terms',          html: '<h3>Payment Terms</h3><p>All invoices shall be payable within thirty (30) days from the invoice date. Late payments shall accrue interest at the rate of 1.5% per month or the maximum rate permitted by law, whichever is lower.</p>' },
-  { title: 'Termination',     sub: 'Termination-for-convenience clause',html: '<h3>Termination</h3><p>Either Party may terminate this Agreement at any time upon thirty (30) days\' prior written notice to the other Party. All accrued obligations shall survive such termination.</p>' },
-  { title: 'Indemnification', sub: 'Mutual indemnity provisions',       html: '<h3>Indemnification</h3><p>Each Party shall indemnify, defend, and hold harmless the other Party from and against any claims, damages, losses, and expenses arising out of or relating to the indemnifying Party\'s breach of this Agreement.</p>' },
-];
-
 /* ── Scoped CSS ───────────────────────────────────────────────────────── */
 
 const AGW_CSS = `
@@ -1336,7 +1306,7 @@ const AGW_CSS = `
 
 .agw-head {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 18px 22px;
+  padding: 11px 22px;
   background: linear-gradient(110deg, #0c6680 0%, #0e7490 35%, #0891b2 75%, #06b6d4 100%);
   color: #fff; position: relative; overflow: hidden; flex-shrink: 0;
 }
@@ -1344,31 +1314,31 @@ const AGW_CSS = `
 .agw-head > * { position: relative; z-index: 1; }
 .agw-head-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .agw-head-ico {
-  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
   background: rgba(255,255,255,.18); border: 1.5px solid rgba(255,255,255,.28);
   display: inline-flex; align-items: center; justify-content: center; color: #fff;
   box-shadow: 0 4px 12px rgba(0,0,0,.15);
 }
 .agw-head-text { min-width: 0; }
-.agw-head-eyebrow { font-size: 10px; font-weight: 800; letter-spacing: .14em; color: rgba(255,255,255,.78); text-transform: uppercase; }
-.agw-head-title { font-size: 19px; font-weight: 800; line-height: 1.2; letter-spacing: -.01em; margin-top: 2px; }
-.agw-head-sub { font-size: 12.5px; color: rgba(255,255,255,.86); margin-top: 4px; }
+.agw-head-eyebrow { font-size: 9.5px; font-weight: 800; letter-spacing: .14em; color: rgba(255,255,255,.78); text-transform: uppercase; }
+.agw-head-title { font-size: 16px; font-weight: 800; line-height: 1.2; letter-spacing: -.01em; margin-top: 1px; }
+.agw-head-sub { font-size: 11.5px; color: rgba(255,255,255,.86); margin-top: 2px; }
 .agw-head-right { display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.agw-id-chip { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.24); border-radius: 10px; padding: 8px 16px; text-align: right; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-.agw-id-chip-label { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: rgba(255,255,255,.74); text-transform: uppercase; }
-.agw-id-chip-val { font-size: 18px; font-weight: 800; color: #fff; margin-top: 2px; font-family: 'Geist Mono', ui-monospace, monospace; }
+.agw-id-chip { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.24); border-radius: 9px; padding: 5px 14px; text-align: right; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.agw-id-chip-label { font-size: 9px; font-weight: 700; letter-spacing: .12em; color: rgba(255,255,255,.74); text-transform: uppercase; }
+.agw-id-chip-val { font-size: 15px; font-weight: 800; color: #fff; margin-top: 1px; font-family: 'Geist Mono', ui-monospace, monospace; }
 .agw-close { width: 36px; height: 36px; border-radius: 10px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22); color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease, transform .15s ease; }
 .agw-close:hover { background: rgba(255,255,255,.26); transform: rotate(90deg); }
 .agw-close:disabled { opacity: .5; cursor: not-allowed; }
 
-.agw-stepper { display: flex; align-items: center; justify-content: space-between; background: #f8feff; border-bottom: 1px solid rgba(6,182,212,.18); padding: 16px 22px; gap: 22px; flex-wrap: wrap; flex-shrink: 0; }
+.agw-stepper { display: flex; align-items: center; justify-content: space-between; background: #f8feff; border-bottom: 1px solid rgba(6,182,212,.18); padding: 8px 22px; gap: 22px; flex-wrap: wrap; flex-shrink: 0; }
 .agw-stepper-row { display: inline-flex; align-items: center; gap: 0; flex: 1; min-width: 0; flex-wrap: wrap; }
-.agw-step { display: inline-flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px; position: relative; transition: background .18s ease, box-shadow .22s ease; }
+.agw-step { display: inline-flex; align-items: center; gap: 10px; padding: 6px 12px; border-radius: 11px; position: relative; transition: background .18s ease, box-shadow .22s ease; }
 .agw-step.is-active { background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 4px 14px rgba(8,145,178,.40); }
 .agw-step.is-active .agw-step-label, .agw-step.is-active .agw-step-sub { color: #fff; }
 .agw-step.is-active .agw-step-num { background: rgba(255,255,255,.20); border-color: rgba(255,255,255,.45); color: #fff; }
 .agw-step.is-complete .agw-step-num { background: #22c55e; border-color: #16a34a; color: #fff; }
-.agw-step-num { width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0; border: 1.5px solid rgba(6,182,212,.32); background: #f0fdff; color: #0e7490; font-size: 14px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.agw-step-num { width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; border: 1.5px solid rgba(6,182,212,.32); background: #f0fdff; color: #0e7490; font-size: 13px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
 .agw-step-text { min-width: 0; }
 .agw-step-label { font-size: 13px; font-weight: 800; color: #0c4a6e; letter-spacing: -.01em; line-height: 1.2; }
 .agw-step-sub { font-size: 11px; color: #0e7490; opacity: .8; margin-top: 2px; }
@@ -1379,6 +1349,11 @@ const AGW_CSS = `
 
 .agw-body { flex: 1; min-height: 0; overflow-y: auto; background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%); padding: 22px; }
 .agw-step-body { display: flex; flex-direction: column; gap: 16px; }
+/* Step 2 (editor) — the body itself does NOT scroll; the editor card fills
+ * the available height and only its page-shell region scrolls internally. */
+.agw-body-editor { overflow: hidden; display: flex; flex-direction: column; }
+.agw-body-editor .agw-step-body { flex: 1; min-height: 0; }
+.agw-body-editor .agw-editor-shell { flex: 1; min-height: 0; }
 .agw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
 .agw-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .agw-label { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #0e7490; }
@@ -1457,18 +1432,26 @@ const AGW_CSS = `
 }
 
 /* Editor */
-.agw-editor-shell { border: 1px solid rgba(6,182,212,.20); border-radius: 14px; overflow: hidden; background: #fff; }
-.agw-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; background: linear-gradient(110deg, #0891b2, #0e7490); padding: 12px 18px; color: #fff; }
-.agw-editor-title { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.agw-editor-actions { display: inline-flex; gap: 8px; flex-wrap: wrap; }
-.agw-editor-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 8px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.24); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
+.agw-editor-shell { border: 1px solid rgba(6,182,212,.20); border-radius: 14px; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
+.agw-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: linear-gradient(110deg, #0891b2, #0e7490); padding: 7px 14px; color: #fff; flex-shrink: 0; }
+/* Scrollable page-shell region — sits between the pinned toolbar and the
+ * pinned footer; grows/scrolls as the agreement content does. */
+.agw-editor-scroll { flex: 1; min-height: 0; overflow-y: auto; background: #fff; }
+.agw-editor-title { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.agw-editor-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.agw-editor-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 7px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.24); color: #fff; font-size: 11px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
+.agw-editor-btn svg { width: 12px; height: 12px; }
 .agw-editor-btn:hover { background: rgba(255,255,255,.26); }
-.agw-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-.agw-toolbar-sel, .agw-toolbar-btn { height: 30px; min-width: 30px; padding: 0 8px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #475569; font-size: 12px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease, border-color .15s ease, color .15s ease; }
+/* Single-row toolbar — never wraps; scrolls horizontally if it overflows. */
+.agw-toolbar { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow-x: auto; padding: 6px 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
+.agw-toolbar::-webkit-scrollbar { height: 6px; }
+.agw-toolbar::-webkit-scrollbar-thumb { background: rgba(6,182,212,.30); border-radius: 999px; }
+.agw-toolbar-sel, .agw-toolbar-btn { height: 26px; min-width: 26px; padding: 0 6px; flex-shrink: 0; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #475569; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease, border-color .15s ease, color .15s ease; }
+.agw-toolbar-sel { min-width: auto; }
 .agw-toolbar-btn:hover { background: #f0fdff; border-color: #67e8f9; color: #0891b2; }
 .agw-toolbar-btn.is-on { background: #cffafe; border-color: #0891b2; color: #0c4a6e; box-shadow: inset 0 1px 2px rgba(8,145,178,.18); }
 .agw-toolbar-btn:disabled { opacity: .4; cursor: not-allowed; }
-.agw-toolbar-sep { width: 1px; height: 20px; background: #cbd5e1; }
+.agw-toolbar-sep { width: 1px; height: 18px; flex-shrink: 0; background: #cbd5e1; }
 
 .agw-editor-area { position: relative; }
 .agw-editor { min-height: 280px; padding: 18px 22px; background: #fff; outline: none; font-size: 13.5px; line-height: 1.6; color: #0c4a6e; }
@@ -1493,12 +1476,25 @@ const AGW_CSS = `
 .agw-clause-close { width: 24px; height: 24px; border-radius: 6px; cursor: pointer; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.24); color: #fff; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease; }
 .agw-clause-close:hover { background: rgba(255,255,255,.30); }
 .agw-clause-panel-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
-.agw-clause-item { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(6,182,212,.18); background: #f8feff; cursor: pointer; transition: border-color .15s ease, background .15s ease, transform .15s ease; }
+.agw-clause-controls { padding: 10px 12px; border-bottom: 1px solid rgba(6,182,212,.16); display: flex; flex-direction: column; gap: 5px; background: #f8feff; }
+.agw-clause-ctl-label { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #0e7490; }
+.agw-clause-select { width: 100%; padding: 8px 10px; border-radius: 9px; border: 1.5px solid rgba(6,182,212,.30); background: #fff; color: #0c4a6e; font-size: 13px; font-weight: 600; cursor: pointer; outline: none; }
+.agw-clause-select:focus { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.14); }
+.agw-clause-empty { padding: 24px 12px; text-align: center; font-size: 12px; color: #64748b; }
+.agw-clause-item { display: flex; flex-direction: row; align-items: flex-start; gap: 9px; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(6,182,212,.18); background: #f8feff; cursor: pointer; transition: border-color .15s ease, background .15s ease, transform .15s ease; }
 .agw-clause-item:hover { border-color: #0891b2; background: #ecfeff; transform: translateY(-1px); }
+.agw-clause-item.is-on { border-color: #0891b2; background: #ecfeff; box-shadow: 0 0 0 1px rgba(8,145,178,.25) inset; }
+.agw-clause-check { width: 15px; height: 15px; flex-shrink: 0; margin-top: 2px; accent-color: #0891b2; cursor: pointer; }
+.agw-clause-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .agw-clause-item-title { font-size: 13px; font-weight: 800; color: #0c4a6e; }
-.agw-clause-item-sub { font-size: 11px; color: #0e7490; opacity: .85; }
+.agw-clause-item-sub { font-size: 11px; color: #0e7490; opacity: .85; overflow: hidden; text-overflow: ellipsis; }
+.agw-clause-panel-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-top: 1px solid rgba(6,182,212,.16); background: #f8feff; }
+.agw-clause-selcount { font-size: 11.5px; font-weight: 700; color: #64748b; }
+.agw-clause-insert { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 9px; border: none; background: #0891b2; color: #fff; font-size: 12.5px; font-weight: 800; cursor: pointer; transition: background .15s ease, opacity .15s ease; }
+.agw-clause-insert:hover:not(:disabled) { background: #0e7490; }
+.agw-clause-insert:disabled { opacity: .45; cursor: not-allowed; }
 
-.agw-editor-foot { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; background: #f0fdff; border-top: 1px solid #e2e8f0; font-size: 11.5px; gap: 12px; flex-wrap: wrap; }
+.agw-editor-foot { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; background: #f0fdff; border-top: 1px solid #e2e8f0; font-size: 11.5px; gap: 12px; flex-wrap: wrap; flex-shrink: 0; }
 .agw-editor-foot-hint { color: #0e7490; opacity: .85; }
 .agw-editor-foot-tag { background: #fff; border: 1px solid #67e8f9; padding: 3px 9px; border-radius: 6px; color: #0891b2; font-weight: 700; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 11px; cursor: pointer; transition: background .15s ease, color .15s ease, transform .15s ease; }
 .agw-editor-foot-tag:hover { background: #cffafe; color: #0c4a6e; transform: translateY(-1px); }
@@ -1649,8 +1645,15 @@ const AGW_CSS = `
 [data-bs-theme="dark"] .agw-btn-back, [data-bs-theme="dark"] .agw-btn-cancel { background: rgba(255,255,255,.04); color: #cbd5e1; border-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .agw-btn-back:hover, [data-bs-theme="dark"] .agw-btn-cancel:hover { background: rgba(8,145,178,.14); color: #67e8f9; border-color: rgba(103,232,249,.45); }
 [data-bs-theme="dark"] .agw-clause-panel { background: #0f172a; border-left-color: rgba(6,182,212,.30); }
+[data-bs-theme="dark"] .agw-clause-controls,
+[data-bs-theme="dark"] .agw-clause-panel-foot { background: rgba(8,145,178,.08); border-color: rgba(6,182,212,.25); }
+[data-bs-theme="dark"] .agw-clause-select { background: #1e293b; border-color: rgba(6,182,212,.30); color: #e2e8f0; }
+[data-bs-theme="dark"] .agw-clause-ctl-label { color: #67e8f9; }
+[data-bs-theme="dark"] .agw-clause-empty { color: #94a3b8; }
+[data-bs-theme="dark"] .agw-clause-selcount { color: #94a3b8; }
 [data-bs-theme="dark"] .agw-clause-item { background: rgba(8,145,178,.08); border-color: rgba(6,182,212,.22); }
-[data-bs-theme="dark"] .agw-clause-item:hover { background: rgba(8,145,178,.18); border-color: #67e8f9; }
+[data-bs-theme="dark"] .agw-clause-item:hover,
+[data-bs-theme="dark"] .agw-clause-item.is-on { background: rgba(8,145,178,.18); border-color: #67e8f9; }
 [data-bs-theme="dark"] .agw-clause-item-title { color: #cffafe; }
 [data-bs-theme="dark"] .agw-clause-item-sub { color: #67e8f9; }
 [data-bs-theme="dark"] .agw-ph-shell { background: #0f172a; border-color: rgba(6,182,212,.30); }

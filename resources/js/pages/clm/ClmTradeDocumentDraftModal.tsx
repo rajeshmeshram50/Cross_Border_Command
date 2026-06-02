@@ -499,7 +499,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
         </div>
 
         {/* ── Body ── */}
-        <div className="tdw-body">
+        <div className={`tdw-body ${step === 2 ? 'tdw-body-editor' : ''}`}>
           {step === 1 ? (
             <div className="tdw-step-body">
               <div className="tdw-grid-2">
@@ -686,8 +686,6 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('outdent')} title="Outdent">⇤</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('indent')}  title="Indent">⇥</button>
                   <span className="tdw-toolbar-sep" />
-                  <button type="button" className="tdw-toolbar-btn" onClick={insertLink}        title="Insert link">🔗</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('unlink')} title="Remove link">🔗⃠</button>
                   <button
                     type="button" className="tdw-toolbar-btn"
                     title="Insert horizontal line"
@@ -698,27 +696,32 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('redo')} title="Redo">↷</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('removeFormat')} title="Clear formatting">🅣</button>
                 </div>
-                {/* Page-shell preview wraps the editor in a fixed header
-                   (logo + title + subtitle) and footer (text + page #).
-                   Same component the HR Document Templates Step 3 uses,
-                   so the look-and-feel stays uniform across modules.
-                   Logo upload posts to the trade-doc tenant folder. */}
-                <HeaderFooterPanel
-                  header={headerConfig} setHeader={setHeaderConfig}
-                  footer={footerConfig} setFooter={setFooterConfig}
-                  uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo"
-                >
-                  <div
-                    ref={editorRef}
-                    className="tdw-editor"
-                    contentEditable
-                    suppressContentEditableWarning
-                    onInput={(e) => setContent((e.target as HTMLElement).innerHTML)}
-                    role="textbox"
-                    aria-multiline="true"
-                    aria-label="Document content"
-                  />
-                </HeaderFooterPanel>
+                {/* Scrollable region — the editor head + toolbar above stay
+                   pinned; only this page-shell preview scrolls when the
+                   content grows. */}
+                <div className="tdw-editor-scroll">
+                  {/* Page-shell preview wraps the editor in a fixed header
+                     (logo + title + subtitle) and footer (text + page #).
+                     Same component the HR Document Templates Step 3 uses,
+                     so the look-and-feel stays uniform across modules.
+                     Logo upload posts to the trade-doc tenant folder. */}
+                  <HeaderFooterPanel
+                    header={headerConfig} setHeader={setHeaderConfig}
+                    footer={footerConfig} setFooter={setFooterConfig}
+                    uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo"
+                  >
+                    <div
+                      ref={editorRef}
+                      className="tdw-editor"
+                      contentEditable
+                      suppressContentEditableWarning
+                      onInput={(e) => setContent((e.target as HTMLElement).innerHTML)}
+                      role="textbox"
+                      aria-multiline="true"
+                      aria-label="Document content"
+                    />
+                  </HeaderFooterPanel>
+                </div>
                 <div className="tdw-editor-foot">
                   <span className="tdw-editor-foot-hint">ℹ Placeholders auto-fill on document generation</span>
                   <span className="tdw-editor-foot-tag">{'{{PLACEHOLDER}}'}</span>
@@ -825,7 +828,7 @@ const TDW_CSS = `
 .tdw-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px;
-  padding: 18px 22px;
+  padding: 11px 22px;
   background: linear-gradient(110deg, #0c6680 0%, #0e7490 35%, #0891b2 75%, #06b6d4 100%);
   color: #fff;
   position: relative; overflow: hidden;
@@ -839,7 +842,7 @@ const TDW_CSS = `
 .tdw-head > * { position: relative; z-index: 1; }
 .tdw-head-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .tdw-head-ico {
-  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
   background: rgba(255,255,255,.18);
   border: 1.5px solid rgba(255,255,255,.28);
   display: inline-flex; align-items: center; justify-content: center;
@@ -847,19 +850,19 @@ const TDW_CSS = `
   box-shadow: 0 4px 12px rgba(0,0,0,.15);
 }
 .tdw-head-text { min-width: 0; }
-.tdw-head-title { font-size: 19px; font-weight: 800; line-height: 1.2; letter-spacing: -.01em; }
-.tdw-head-sub { font-size: 12.5px; color: rgba(255,255,255,.86); margin-top: 4px; }
+.tdw-head-title { font-size: 16px; font-weight: 800; line-height: 1.2; letter-spacing: -.01em; }
+.tdw-head-sub { font-size: 11.5px; color: rgba(255,255,255,.86); margin-top: 2px; }
 .tdw-head-right { display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .tdw-id-chip {
   background: rgba(255,255,255,.12);
   border: 1px solid rgba(255,255,255,.24);
-  border-radius: 10px;
-  padding: 8px 16px;
+  border-radius: 9px;
+  padding: 5px 14px;
   text-align: right;
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
 }
-.tdw-id-chip-label { font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: rgba(255,255,255,.74); text-transform: uppercase; }
-.tdw-id-chip-val { font-size: 18px; font-weight: 800; color: #fff; margin-top: 2px;
+.tdw-id-chip-label { font-size: 9px; font-weight: 700; letter-spacing: .12em; color: rgba(255,255,255,.74); text-transform: uppercase; }
+.tdw-id-chip-val { font-size: 15px; font-weight: 800; color: #fff; margin-top: 1px;
   font-family: 'Geist Mono', ui-monospace, monospace; }
 .tdw-close {
   width: 36px; height: 36px; border-radius: 10px;
@@ -877,14 +880,14 @@ const TDW_CSS = `
   display: flex; align-items: center; justify-content: space-between;
   background: #f8feff;
   border-bottom: 1px solid rgba(6,182,212,.18);
-  padding: 16px 22px;
+  padding: 8px 22px;
   gap: 22px; flex-wrap: wrap;
   flex-shrink: 0;
 }
 .tdw-stepper-row { display: inline-flex; align-items: center; gap: 0; flex: 1; min-width: 0; flex-wrap: wrap; }
 .tdw-step {
-  display: inline-flex; align-items: center; gap: 12px;
-  padding: 10px 14px; border-radius: 12px;
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 6px 12px; border-radius: 11px;
   position: relative;
   transition: background .18s ease, box-shadow .22s ease;
 }
@@ -897,11 +900,11 @@ const TDW_CSS = `
 .tdw-step.is-active .tdw-step-num { background: rgba(255,255,255,.20); border-color: rgba(255,255,255,.45); color: #fff; }
 .tdw-step.is-complete .tdw-step-num { background: #22c55e; border-color: #16a34a; color: #fff; }
 .tdw-step-num {
-  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
   border: 1.5px solid rgba(6,182,212,.32);
   background: #f0fdff;
   color: #0e7490;
-  font-size: 14px; font-weight: 800;
+  font-size: 13px; font-weight: 800;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .tdw-step-text { min-width: 0; }
@@ -932,6 +935,11 @@ const TDW_CSS = `
   padding: 22px;
 }
 .tdw-step-body { display: flex; flex-direction: column; gap: 18px; }
+/* Step 2 (editor) — the body itself does NOT scroll; the editor card fills
+ * the available height and only its page-shell region scrolls internally. */
+.tdw-body-editor { overflow: hidden; display: flex; flex-direction: column; }
+.tdw-body-editor .tdw-step-body { flex: 1; min-height: 0; }
+.tdw-body-editor .tdw-editor-shell { flex: 1; min-height: 0; }
 .tdw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
 .tdw-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .tdw-label {
@@ -1021,45 +1029,55 @@ const TDW_CSS = `
   border-radius: 14px;
   overflow: hidden;
   background: #fff;
+  display: flex; flex-direction: column;
 }
 .tdw-editor-head {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap;
+  gap: 10px; flex-wrap: wrap;
   background: linear-gradient(110deg, #0891b2, #0e7490);
-  padding: 12px 18px;
+  padding: 7px 14px;
   color: #fff;
+  flex-shrink: 0;
 }
+/* Scrollable page-shell region between the pinned toolbar and footer. */
+.tdw-editor-scroll { flex: 1; min-height: 0; overflow-y: auto; background: #fff; }
 .tdw-editor-title {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
 }
-.tdw-editor-actions { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+.tdw-editor-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .tdw-editor-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px; border-radius: 8px;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 9px; border-radius: 7px;
   background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.24);
   color: #fff;
-  font-size: 12px; font-weight: 700;
+  font-size: 11px; font-weight: 700;
   cursor: pointer;
   transition: background .15s ease;
 }
+.tdw-editor-btn svg { width: 12px; height: 12px; }
 .tdw-editor-btn:hover { background: rgba(255,255,255,.26); }
+/* Single-row toolbar — never wraps; scrolls horizontally if it overflows. */
 .tdw-toolbar {
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  padding: 8px 14px;
+  display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow-x: auto;
+  padding: 6px 10px;
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
 }
+.tdw-toolbar::-webkit-scrollbar { height: 6px; }
+.tdw-toolbar::-webkit-scrollbar-thumb { background: rgba(6,182,212,.30); border-radius: 999px; }
 .tdw-toolbar-sel, .tdw-toolbar-btn {
-  height: 30px; min-width: 30px; padding: 0 8px;
+  height: 26px; min-width: 26px; padding: 0 6px; flex-shrink: 0;
   border: 1px solid #e2e8f0; border-radius: 6px;
   background: #fff; color: #475569;
-  font-size: 12px; font-weight: 600; cursor: pointer;
+  font-size: 11px; font-weight: 600; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
   transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
+.tdw-toolbar-sel { min-width: auto; }
 .tdw-toolbar-btn:hover { background: #f0fdff; border-color: #67e8f9; color: #0891b2; }
-.tdw-toolbar-sep { width: 1px; height: 20px; background: #cbd5e1; }
+.tdw-toolbar-sep { width: 1px; height: 18px; flex-shrink: 0; background: #cbd5e1; }
 .tdw-editor {
   min-height: 240px;
   padding: 18px 22px;
@@ -1072,6 +1090,7 @@ const TDW_CSS = `
   padding: 10px 18px;
   background: #f0fdff; border-top: 1px solid #e2e8f0;
   font-size: 11.5px;
+  flex-shrink: 0;
 }
 .tdw-editor-foot-hint { color: #0e7490; opacity: .85; }
 .tdw-editor-foot-tag {
