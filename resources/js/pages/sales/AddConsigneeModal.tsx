@@ -1231,17 +1231,20 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     switch (k) {
       case 'companyName':
         if (!f.companyName.trim()) return 'Company name is required';
+        if (f.companyName.trim().length < 2) return 'Company name must be at least 2 characters';
         if (f.companyName.trim().length > 30) return 'Company name must be 30 characters or fewer';
-        if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.companyName.trim()))
+        // \p{L}/\p{N} (u flag) allow non-Latin / Unicode names (e.g. 中文, العربية).
+        if (!/^[\p{L}\p{N} .,'&()\-\/]+$/u.test(f.companyName.trim()))
           return 'Company name has invalid characters — letters, numbers and . , & \' - ( ) / only';
-        if (!/[A-Za-z]/.test(f.companyName)) return 'Company name must contain at least one letter';
+        if (!/\p{L}/u.test(f.companyName)) return 'Company name must contain at least one letter';
         return null;
       case 'legalName':
         if (!f.legalName.trim()) return 'Company legal name is required';
+        if (f.legalName.trim().length < 2) return 'Legal name must be at least 2 characters';
         if (f.legalName.trim().length > 100) return 'Legal name must be 100 characters or fewer';
-        if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.legalName.trim()))
+        if (!/^[\p{L}\p{N} .,'&()\-\/]+$/u.test(f.legalName.trim()))
           return 'Legal name has invalid characters — letters, numbers and . , & \' - ( ) / only';
-        if (!/[A-Za-z]/.test(f.legalName)) return 'Legal name must contain at least one letter';
+        if (!/\p{L}/u.test(f.legalName)) return 'Legal name must contain at least one letter';
         return null;
       case 'website':
         if (!f.website || !f.website.trim()) return null;
@@ -1260,6 +1263,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         return null;
       case 'address':
         if (!f.address.trim()) return 'Address is required';
+        if (f.address.trim().length < 4) return 'Address must be at least 4 characters';
+        if (f.address.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        // Must contain at least one letter — blocks gibberish like "1234"
+        // or "...." while still allowing genuine addresses that mix
+        // letters, numbers, commas, hyphens, etc.
+        if (!/[A-Za-z]/.test(f.address)) return 'Address must contain at least one letter';
         return null;
       case 'country':
         if (!f.country) return 'Select country';
@@ -1294,7 +1303,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         return null;
       case 'email':
         if (!f.email.trim()) return 'Email is required';
-        if (!/^\S+@\S+\.\S+$/.test(f.email)) return 'Enter a valid email';
+        if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/.test(f.email)) return 'Enter a valid email';
         if (locations.some(l => (l.cpEmail || '').trim().toLowerCase() === f.email.trim().toLowerCase()))
           return 'This email is already used by another address on this consignee';
         return null;
@@ -3846,7 +3855,13 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                     <thead>
                       <tr>
                         <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-                        <th>ISSUING AUTHORITY</th><th>STATUS</th><th>ATTACHMENT</th>
+                        <th>ISSUING AUTHORITY</th>
+                        {/* STATUS th gets extra left inset (8px) so the header
+                            text lines up with the pill's TEXT below — the
+                            pill has its own 8px internal padding, otherwise
+                            the header and pill content look offset. */}
+                        <th style={{ paddingLeft: 20 }}>STATUS</th>
+                        <th>ATTACHMENT</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3863,9 +3878,11 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                             <td>{d.authority || '—'}</td>
                             <td>
                               <span style={{
+                                display: 'inline-flex', alignItems: 'center',
                                 padding:'2px 8px', borderRadius:999, fontSize:10.5, fontWeight:600,
                                 background: d.requirement === 'M' ? '#0d9488' : '#e5e7eb',
                                 color:      d.requirement === 'M' ? '#ffffff' : '#374151',
+                                whiteSpace: 'nowrap',
                               }}>
                                 {d.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
                               </span>
@@ -4542,7 +4559,7 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
             disabled={saving}
             style={saving ? { opacity: 0.7, cursor: 'wait' } : undefined}
           >
-            {saving ? 'Saving…' : (editing ? 'Update' : 'Save')}
+            {saving ? <><IconSpinner size={14} /> Saving…</> : (editing ? 'Update' : 'Save')}
           </button>
         </div>
       </div>
@@ -4686,7 +4703,7 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
             disabled={saving}
             style={saving ? { opacity: 0.7, cursor: 'wait' } : undefined}
           >
-            {saving ? 'Saving…' : 'Save Document Type'}
+            {saving ? <><IconSpinner size={14} /> Saving…</> : 'Save Document Type'}
           </button>
         </div>
       </div>
@@ -4741,7 +4758,7 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
     if (saving) return;
     const next: Record<string, string> = {};
     if (!d.owner_name.trim())                                          next.owner_name     = 'Owner name is required';
-    if (d.official_email && !/^\S+@\S+\.\S+$/.test(d.official_email))  next.official_email = 'Enter a valid email';
+    if (d.official_email && !/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/.test(d.official_email))  next.official_email = 'Enter a valid email';
     if (d.phone_number && !/^\+?[0-9\s-]{7,15}$/.test(d.phone_number)) next.phone_number   = 'Phone must be 7-15 digits';
     setErrs(next);
     if (Object.keys(next).length > 0) return;
@@ -4895,7 +4912,7 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
             disabled={saving}
             style={saving ? { opacity: 0.7, cursor: 'wait' } : undefined}
           >
-            {saving ? 'Saving…' : (editing ? 'Update' : 'Save')}
+            {saving ? <><IconSpinner size={14} /> Saving…</> : (editing ? 'Update' : 'Save')}
           </button>
         </div>
       </div>
@@ -4951,6 +4968,9 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'line':
         if (!dd.line.trim()) return 'Address is required';
+        if (dd.line.trim().length < 4) return 'Address must be at least 4 characters';
+        if (dd.line.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        if (!/[A-Za-z]/.test(dd.line)) return 'Address must contain at least one letter';
         return null;
       case 'country':
         if (!dd.country) return 'Select country';
@@ -4985,7 +5005,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'cpEmail':
         if (!dd.cpEmail.trim()) return 'Email required';
-        if (!/^\S+@\S+\.\S+$/.test(dd.cpEmail)) return 'Enter a valid email';
+        if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/.test(dd.cpEmail)) return 'Enter a valid email';
         if (existingEmails.includes(dd.cpEmail.trim().toLowerCase()))
           return 'This email is already used by another address on this consignee';
         return null;
@@ -6885,6 +6905,25 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-loc-table tbody td {
   padding: 12px; border-bottom: 1px solid #f3f4f6;
   vertical-align: middle;
+}
+/* KYC / DD / Owner KYC / Trade Licence tables — long Document Names and
+   Issuing Authority values were overflowing (no wrapping), stretching the
+   column and clipping text. Let text cells wrap + break long unbroken
+   strings, with a sane per-cell cap, while badges / buttons / links stay on
+   one line. (QA: DD document names not wrapping.) */
+.acm-kyc-body .acm-loc-table tbody td {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-width: 260px;
+}
+.acm-kyc-body .acm-loc-table tbody td .badge,
+.acm-kyc-body .acm-loc-table tbody td .btn,
+.acm-kyc-body .acm-loc-table tbody td button,
+.acm-kyc-body .acm-loc-table tbody td a,
+.acm-kyc-body .acm-loc-table tbody td .acm-auto-code,
+.acm-kyc-body .acm-loc-table tbody td .hstack {
+  white-space: nowrap;
 }
 .acm-loc-table tbody tr:hover { background: #f0fdf4; }
 .acm-loc-empty td {

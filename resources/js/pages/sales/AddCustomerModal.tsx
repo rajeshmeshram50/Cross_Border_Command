@@ -1072,17 +1072,21 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     switch (k) {
       case 'coName':
         if (!f.coName.trim()) return 'Company name is required';
+        if (f.coName.trim().length < 2) return 'Company name must be at least 2 characters';
         if (f.coName.trim().length > 30) return 'Company name must be 30 characters or fewer';
-        if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.coName.trim()))
+        // \p{L}/\p{N} (u flag) allow non-Latin / Unicode names (e.g. 中文, العربية,
+        // देवनागरी) — only block markup / symbol-soup, not legitimate scripts.
+        if (!/^[\p{L}\p{N} .,'&()\-\/]+$/u.test(f.coName.trim()))
           return 'Company name has invalid characters — letters, numbers and . , & \' - ( ) / only';
-        if (!/[A-Za-z]/.test(f.coName)) return 'Company name must contain at least one letter';
+        if (!/\p{L}/u.test(f.coName)) return 'Company name must contain at least one letter';
         return null;
       case 'coLegal':
         if (!f.coLegal.trim()) return 'Legal name is required';
+        if (f.coLegal.trim().length < 2) return 'Legal name must be at least 2 characters';
         if (f.coLegal.trim().length > 100) return 'Legal name must be 100 characters or fewer';
-        if (!/^[A-Za-z0-9 .,'&()\-\/]+$/.test(f.coLegal.trim()))
+        if (!/^[\p{L}\p{N} .,'&()\-\/]+$/u.test(f.coLegal.trim()))
           return 'Legal name has invalid characters — letters, numbers and . , & \' - ( ) / only';
-        if (!/[A-Za-z]/.test(f.coLegal)) return 'Legal name must contain at least one letter';
+        if (!/\p{L}/u.test(f.coLegal)) return 'Legal name must contain at least one letter';
         return null;
       case 'coType':
         if (!f.coType) return 'Select a customer type';
@@ -1107,6 +1111,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         return null;
       case 'addr':
         if (!f.addr.trim()) return 'Address is required';
+        if (f.addr.trim().length < 4) return 'Address must be at least 4 characters';
+        if (f.addr.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        // Must contain at least one letter — blocks gibberish like "1234"
+        // or "...." while still allowing addresses that mix letters,
+        // numbers, commas, hyphens, etc.
+        if (!/[A-Za-z]/.test(f.addr)) return 'Address must contain at least one letter';
         return null;
       case 'country':
         if (!f.country) return 'Select a country';
@@ -1141,7 +1151,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         return null;
       case 'cpEmail':
         if (!f.cpEmail.trim()) return 'Email is required';
-        if (!/^\S+@\S+\.\S+$/.test(f.cpEmail)) return 'Enter a valid email address';
+        if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/.test(f.cpEmail)) return 'Enter a valid email address';
         if (locations.some(l => (l.cpEmail || '').trim().toLowerCase() === f.cpEmail.trim().toLowerCase()))
           return 'This email is already used by another address on this customer';
         return null;
@@ -3861,7 +3871,7 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
     if (!d.ownerName.trim())                            next.ownerName    = 'Owner name is required';
     if (!d.designation)                                 next.designation  = 'Select a designation';
     if (!d.officialEmail.trim())                        next.officialEmail = 'Official email is required';
-    else if (!/^\S+@\S+\.\S+$/.test(d.officialEmail))   next.officialEmail = 'Enter a valid email';
+    else if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/.test(d.officialEmail))   next.officialEmail = 'Enter a valid email';
     if (!d.phoneNumber.trim())                          next.phoneNumber  = 'Phone number is required';
     else if (!/^\+?[0-9\s-]{7,15}$/.test(d.phoneNumber)) next.phoneNumber = 'Phone must be 7–15 digits';
     // Files are required only when creating a new owner. On edit the
@@ -4077,6 +4087,9 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'line':
         if (!dd.line.trim()) return 'Address is required';
+        if (dd.line.trim().length < 4) return 'Address must be at least 4 characters';
+        if (dd.line.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        if (!/[A-Za-z]/.test(dd.line)) return 'Address must contain at least one letter';
         return null;
       case 'country':
         if (!dd.country) return 'Select country';
@@ -4108,7 +4121,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'cpEmail':
         if (!dd.cpEmail.trim()) return 'Email required';
-        if (!/^\S+@\S+\.\S+$/.test(dd.cpEmail)) return 'Enter a valid email';
+        if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/.test(dd.cpEmail)) return 'Enter a valid email';
         if (existingEmails.includes(dd.cpEmail.trim().toLowerCase()))
           return 'This email is already used by another address on this customer';
         return null;
@@ -4186,7 +4199,19 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Country" required error={errs.country}>
-              <MasterSelect value={d.country} options={optsWith(masters.countries, d.country)} placeholder="Select country" invalid={!!errs.country} onChange={v => { set('country', v); set('state', '' as any); }} />
+              {/* Single setD for country+state — the old `set('country'); set('state','')`
+                  pair each rebuilt from a stale `d`, so the 2nd call reverted the
+                  country and the State stayed locked (QA: country/state not working). */}
+              <MasterSelect value={d.country} options={optsWith(masters.countries, d.country)} placeholder="Select country" invalid={!!errs.country} onChange={v => {
+                const nd = { ...d, country: v, state: '' } as typeof d;
+                setD(nd);
+                setErrs(prev => {
+                  const next = { ...prev };
+                  const c = locFieldRule('country', nd); if (c) next.country = c; else delete next.country;
+                  const s = locFieldRule('state', nd);   if (s) next.state = s; else delete next.state;
+                  return next;
+                });
+              }} />
             </Field>
             <Field label="State" required error={errs.state}>
               <MasterSelect

@@ -250,6 +250,17 @@ const SEED_DD: DueDiligenceRow[] = [];
 
 const SEED_TRADE_LICENSE: TradeLicenseRow[] = [];
 
+/* Supplier Type is a FIXED vocabulary (not the shared customer/consignee
+ * types). The form sends the chosen name; the backend resolves it to a
+ * master_vendor_types row so the vendor_type_id FK stays valid. */
+const SUPPLIER_TYPE_OPTS: { value: string; label: string }[] = [
+  { value: 'Logistic',          label: 'Logistic' },
+  { value: 'Material',          label: 'Material' },
+  { value: 'Tech Services',     label: 'Tech Services' },
+  { value: 'Advisory Services', label: 'Advisory Services' },
+  { value: 'Risk Services',     label: 'Risk Services' },
+];
+
 /* ──────────────────────────────────────────────────────────────────────────
  * Component
  * ────────────────────────────────────────────────────────────────────── */
@@ -327,7 +338,9 @@ export default function AddVendorModal(props: {
    * cap matches the backend column. Inline error surfaces when a paste
    * lands disallowed input so the user knows what was stripped. */
   const COMPANY_NAME_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
-  const COMPANY_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+  // \p{L}/\p{N} (u flag) keep non-Latin / Unicode names (e.g. 中文, العربية,
+  // देवनागरी) — only strip markup / symbol-soup, not legitimate scripts.
+  const COMPANY_NAME_INVALID_RE = /[^\p{L}\p{N}\s\-.,()&/'%]/gu;
   const COMPANY_NAME_MAX = 100;
   const handleCompanyNameChange = (
     raw: string,
@@ -1056,7 +1069,7 @@ export default function AddVendorModal(props: {
       id: number;
       vendor_code?: string | null;
       company_name?: string | null; legal_name?: string | null; website?: string | null;
-      vendor_type_id?: number | null; risk_level_id?: number | null;
+      vendor_type_id?: number | null; vendor_type_name?: string | null; risk_level_id?: number | null;
       vendor_behaviour_id?: number | null; segment_id?: number | null;
       compliance_behaviour_id?: number | null;
       primary_address?: ApiAddress | null;
@@ -1124,7 +1137,8 @@ export default function AddVendorModal(props: {
         setCompanyName(v.company_name ?? '');
         setLegalName(v.legal_name ?? '');
         setWebsite(v.website ?? '');
-        setVendorType(numStr(v.vendor_type_id));
+        // Supplier Type now binds to the fixed-vocabulary NAME.
+        setVendorType(v.vendor_type_name ?? '');
         setRiskLevel(numStr(v.risk_level_id));
         setVendorBehaviour(numStr(v.vendor_behaviour_id));
         /* Multi-segment hydration. The legacy `segment_id` column is
@@ -1311,7 +1325,9 @@ export default function AddVendorModal(props: {
         company_name: companyName,
         legal_name: legalName || null,
         website: website || null,
-        vendor_type_id: vendorType ? Number(vendorType) : null,
+        // Supplier Type is sent as the fixed-vocabulary NAME; the backend
+        // resolves it to the master_vendor_types FK.
+        vendor_type: vendorType || null,
         risk_level_id: riskLevel ? Number(riskLevel) : null,
         vendor_behaviour_id: vendorBehaviour ? Number(vendorBehaviour) : null,
         /* Multi-segment: the legacy `segment_id` column is scalar so
@@ -2140,7 +2156,7 @@ export default function AddVendorModal(props: {
                     { label: 'Supplier Code',       value: vendorCode || '—' },
                     { label: 'Company Name',        value: companyName || '—' },
                     { label: 'Company Legal Name',  value: legalName || '—' },
-                    { label: 'Supplier Type',       value: labelFor(vendorType, vendorTypeOpts) || '—' },
+                    { label: 'Supplier Type',       value: labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—' },
                   ],
                   [
                     { label: 'Company Website',     value: website || 'NA' },
@@ -2305,8 +2321,8 @@ export default function AddVendorModal(props: {
                     </Field>
                   </div>
                   <div className="avm-grid-3">
-                    <Field label="Supplier Type" required addNew onAdd={() => setQuickAdd('vendor_types')} error={fieldErrors.vendorType}>
-                      <SelectInput value={vendorType} onChange={(v) => { setVendorType(v); clearFieldError('vendorType'); }} placeholder="Select" options={vendorTypeOpts} />
+                    <Field label="Supplier Type" required error={fieldErrors.vendorType}>
+                      <SelectInput value={vendorType} onChange={(v) => { setVendorType(v); clearFieldError('vendorType'); }} placeholder="Select" options={SUPPLIER_TYPE_OPTS} />
                     </Field>
                     <Field label="Company Website">
                       <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => setWebsite(e.target.value)} />
@@ -2465,7 +2481,7 @@ export default function AddVendorModal(props: {
                       <span className="avm-id-pair"><span className="avm-id-k">VENDOR CODE :</span> <span className="avm-id-v">{vendorCode || '—'}</span></span>
                       <span className="avm-id-pair"><span className="avm-id-k">COMPANY NAME :</span> <span className="avm-id-v">{companyName || '—'}</span></span>
                       <span className="avm-id-pair"><span className="avm-id-k">COMPANY LEGAL NAME :</span> <span className="avm-id-v">{legalName || '—'}</span></span>
-                      <span className="avm-id-pair"><span className="avm-id-k">VENDOR TYPE :</span> <span className="avm-id-v">{labelFor(vendorType, vendorTypeOpts) || '—'}</span></span>
+                      <span className="avm-id-pair"><span className="avm-id-k">VENDOR TYPE :</span> <span className="avm-id-v">{labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—'}</span></span>
                     </div>
                     <div className="avm-id-summary-row">
                       <span className="avm-id-pair"><span className="avm-id-k">RISK LEVEL :</span> <span className="avm-id-v">{labelFor(riskLevel, riskLevelOpts) || '—'}</span></span>
