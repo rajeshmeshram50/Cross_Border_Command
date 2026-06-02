@@ -1,5 +1,7 @@
 import { useState, useEffect, CSSProperties } from 'react';
 import api from '../../api';
+import CustomerEvidenceVaultModal, { type CustomerVaultTarget } from '../sales/CustomerEvidenceVaultModal';
+import ConsigneeEvidenceVaultModal, { type ConsigneeVaultTarget } from '../sales/ConsigneeEvidenceVaultModal';
 
 /*
  * CLM → Buyer Profile page.
@@ -204,27 +206,53 @@ const BP_CSS = `
 [data-bs-theme="dark"] .bref-item { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .bref-item__title { color: #e2e8f0 !important; }
 [data-bs-theme="dark"] .bref-item__desc { color: #94a3b8 !important; }
+/* "What We Are Doing Here" header bar text (class-styled). */
+[data-bs-theme="dark"] .bref-box__header-label { color: #67e8f9 !important; }
+[data-bs-theme="dark"] .bref-box__header-title { color: #e2e8f0 !important; }
+[data-bs-theme="dark"] .bref-box__header-sub   { color: #7dd3fc !important; }
+[data-bs-theme="dark"] .bref-box__header-sep   { background: rgba(6,182,212,.35) !important; }
 [data-bs-theme="dark"] .bpa-seg { background: rgba(255,255,255,.05) !important; }
 [data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; }
-/* light cyan gradient strips / surfaces (matched by their distinctive stop
- * colours) → dark */
-[data-bs-theme="dark"] .seg-page [style*="#e0f9fd"],
-[data-bs-theme="dark"] .seg-page [style*="#cef8ff"],
-[data-bs-theme="dark"] .seg-page [style*="#f4feff"],
-[data-bs-theme="dark"] .seg-page [style*="#f0fdff"],
-[data-bs-theme="dark"] .seg-page [style*="#e8fafb"],
-[data-bs-theme="dark"] .seg-page [style*="#e8fbfd"] { background: #16263a !important; }
+/* light cyan gradient strips / surfaces → dark.
+ * NOTE: the browser serialises inline hex colours as rgb() in the style
+ * attribute, so these matchers MUST use the rgb() form, not #hex. */
+[data-bs-theme="dark"] .seg-page [style*="rgb(224, 249, 253)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(206, 248, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(244, 254, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(248, 254, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(240, 253, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(232, 250, 251)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(236, 254, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(232, 251, 253)"] { background: #16263a !important; }
+/* light indigo/violet ID & PI chips (#eef0ff/#f5f6ff/#eef2ff/#f5f3ff) → dark */
+[data-bs-theme="dark"] .seg-page [style*="rgb(238, 240, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(245, 246, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(238, 242, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(245, 243, 255)"] { background: rgba(99, 102, 241, .18) !important; border-color: rgba(129, 140, 248, .35) !important; }
+/* indigo/violet chip text (#4f46e5/#4338ca/#7c3aed) → light */
+[data-bs-theme="dark"] .seg-page [style*="rgb(79, 70, 229)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(67, 57, 202)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(124, 58, 237)"] { color: #c7d2fe !important; }
+/* status-pill light bg (#f8fafc "not started") + progress-bar track
+ * (rgba(6,182,212,.1)) → visible on dark. */
+[data-bs-theme="dark"] .seg-page [style*="rgb(248, 250, 252)"] { background: rgba(148, 163, 184, .18) !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgba(6, 182, 212, 0.1)"] { background: rgba(148, 163, 184, .30) !important; }
 /* white inline cards (KPI tiles) → dark */
-[data-bs-theme="dark"] .seg-page [style*="background:#fff;"],
-[data-bs-theme="dark"] .seg-page [style*="background: #fff;"] { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
-/* dark inline text → light */
-[data-bs-theme="dark"] .seg-page [style*="#0c4a6e"],
-[data-bs-theme="dark"] .seg-page [style*="#0f172a"],
-[data-bs-theme="dark"] .seg-page [style*="#1f2937"],
-[data-bs-theme="dark"] .seg-page [style*="#475569"],
-[data-bs-theme="dark"] .seg-page [style*="#0e7490"] { color: #cfe8f3 !important; }
-/* table data */
-[data-bs-theme="dark"] .seg-page-card tbody tr { background: transparent !important; }
+[data-bs-theme="dark"] .seg-page [style*="background: rgb(255, 255, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="background:rgb(255, 255, 255)"] { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+/* dark inline text → light (rgb() forms of #0c4a6e/#0f172a/#1f2937/#475569/#0e7490) */
+[data-bs-theme="dark"] .seg-page [style*="rgb(12, 74, 110)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(15, 23, 42)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(31, 41, 55)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(71, 85, 105)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(14, 116, 144)"] { color: #cfe8f3 !important; }
+/* muted grey (#94a3b8 — "0/x" badge numbers, "No PI", denominators) → lighter */
+[data-bs-theme="dark"] .seg-page [style*="rgb(148, 163, 184)"] { color: #94c9dd !important; }
+/* data tables — header strip + rows */
+[data-bs-theme="dark"] .seg-page-card table { background: transparent !important; }
+[data-bs-theme="dark"] .seg-page-card thead tr { background: #16263a !important; }
+[data-bs-theme="dark"] .seg-page-card thead th { color: #67e8f9 !important; border-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .seg-page-card tbody tr { background: transparent !important; border-bottom-color: rgba(6,182,212,.10) !important; }
 [data-bs-theme="dark"] .seg-page-card tbody td { color: #cbd5e1 !important; }
 [data-bs-theme="dark"] .bp-buyer-row:hover { background: rgba(8,145,178,.14)!important; box-shadow: inset 3px 0 0 #22d3ee; }
 `;
@@ -452,6 +480,10 @@ export default function ClmBuyerProfilePage() {
   const [wsNeqPage, setWsNeqPage] = useState(1);
   const [wosEqPage, setWosEqPage] = useState(1);
   const [wosNeqPage, setWosNeqPage] = useState(1);
+
+  // Evidence Vault popups (same modals the Customer / Consignee tables use).
+  const [buyerVault, setBuyerVault] = useState<CustomerVaultTarget | null>(null);
+  const [consVault, setConsVault]   = useState<ConsigneeVaultTarget | null>(null);
 
   // ── Live data from GET /clm/buyer-profile ──
   const [bp, setBp] = useState<BpData>(EMPTY_BP);
@@ -971,7 +1003,7 @@ export default function ClmBuyerProfilePage() {
                             <ProgCell obj={r.agr} />
                             <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                                <button title="Evidence Vault" style={vaultBtnStyle}><VaultIcon /></button>
+                                <button title="Evidence Vault" style={vaultBtnStyle} disabled={!r.db_id} onClick={() => r.db_id && setBuyerVault({ id: r.id, db_id: r.db_id, company: r.name, segment: r.seg.join(', '), country: r.country })}><VaultIcon /></button>
                               </div>
                             </td>
                           </tr>
@@ -1043,7 +1075,7 @@ export default function ClmBuyerProfilePage() {
                             <ProgCell obj={r.agr} />
                             <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                                <button title="Evidence Vault" style={vaultBtnStyle}><VaultIcon /></button>
+                                <button title="Evidence Vault" style={vaultBtnStyle} disabled={!r.db_id} onClick={() => r.db_id && setConsVault({ id: r.id, db_id: r.db_id, company: r.name, segment: r.seg, country: r.country, customerId: r.cid })}><VaultIcon /></button>
                               </div>
                             </td>
                           </tr>
@@ -1058,6 +1090,11 @@ export default function ClmBuyerProfilePage() {
           )}
         </div>
       )}
+
+      {/* Evidence Vault popups — same modals used by the Customer / Consignee
+          Sales-Matrix tables. */}
+      <CustomerEvidenceVaultModal open={!!buyerVault} customer={buyerVault} onClose={() => setBuyerVault(null)} />
+      <ConsigneeEvidenceVaultModal open={!!consVault} consignee={consVault} onClose={() => setConsVault(null)} />
     </div>
   );
 }
