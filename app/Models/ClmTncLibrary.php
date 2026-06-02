@@ -10,7 +10,7 @@ class ClmTncLibrary extends Model
     protected $table = 'clm_tnc_library';
 
     protected $fillable = [
-        'client_id', 'code', 'segment', 'category', 'party', 'content', 'status',
+        'client_id', 'code', 'segment', 'regulatory', 'category', 'party', 'content', 'status',
         'created_by', 'updated_by',
     ];
 

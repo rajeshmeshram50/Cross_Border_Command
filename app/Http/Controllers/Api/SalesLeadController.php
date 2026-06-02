@@ -751,6 +751,14 @@ class SalesLeadController extends Controller
             ->groupBy('lead_product_id')
             ->map(fn ($g) => $g->first()->procurement_id);
 
+        // Vendor count per product (product_vendor_maps) — Stage 3's
+        // "Vendor Count" column shows this; clicking it opens the mappings.
+        $vendorCountByProduct = \App\Models\ProductVendorMap::query()
+            ->whereIn('product_id', $rows->pluck('product_id')->filter()->unique()->values())
+            ->selectRaw('product_id, COUNT(*) as c')
+            ->groupBy('product_id')
+            ->pluck('c', 'product_id');
+
         $mapped = $rows->map(fn ($r) => [
             'id'               => $r->id,
             'product_id'       => $r->product_id,
@@ -768,6 +776,7 @@ class SalesLeadController extends Controller
             'sourcing_status'  => $r->sourcing_status,
             'procurement_done' => (bool) $r->procurement_done,
             'procurement_id'   => $procByLeadProduct[$r->id] ?? null,
+            'vendor_count'     => (int) ($vendorCountByProduct[$r->product_id] ?? 0),
             'created_at'       => $r->created_at,
         ]);
 

@@ -190,7 +190,17 @@ class ProcurementController extends Controller
             ->where('client_id', $user->client_id)
             ->findOrFail($id);
 
-        return response()->json(['status' => true, 'data' => $proc]);
+        // Vendor count across the procurement's products (product_vendor_maps)
+        // — shown in the Procurement Details modal's "Vendor Count" row.
+        $vendorCount = \App\Models\ProductVendorMap::whereIn(
+            'product_id',
+            $proc->products->pluck('product_id')->filter()->unique()->values()
+        )->count();
+
+        $data = $proc->toArray();
+        $data['vendor_count'] = (int) $vendorCount;
+
+        return response()->json(['status' => true, 'data' => $data]);
     }
 
     /* ─────────────────────────────────────────────────────────────────

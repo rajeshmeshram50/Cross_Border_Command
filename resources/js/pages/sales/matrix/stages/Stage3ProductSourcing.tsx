@@ -5,6 +5,7 @@ import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import CreateProcurementModal, { type SelectedProduct } from './CreateProcurementModal';
 import ProcurementDetailsModal from './ProcurementDetailsModal';
+import VendorMappingsModal from './VendorMappingsModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Stage 3: Product Sourcing
@@ -30,6 +31,7 @@ type Row = {
   sourcing_status:   'required' | 'not_required' | null;
   procurement_done:  boolean;
   procurement_id:    number | null;
+  vendor_count:      number;
 };
 
 const SOURCING_OPTIONS = [
@@ -50,6 +52,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   const [procModalOpen, setProcModalOpen]   = useState(false);
   const [procModalRows, setProcModalRows]   = useState<SelectedProduct[]>([]);
   const [procViewId, setProcViewId]         = useState<number | null>(null);
+  // Row whose vendor mappings to show (Vendor Count column click → popup).
+  const [vendorMapRow, setVendorMapRow]     = useState<Row | null>(null);
 
   const leadId = header.leadId;
 
@@ -607,7 +611,23 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                               <span className="s3-done">✓ Done</span>
                             )}
                           </td>
-                          <td><span className="s3-dash">—</span></td>
+                          <td>
+                            {r.vendor_count > 0 ? (
+                              <button
+                                type="button"
+                                className="s3-vendor-count"
+                                title="View vendor mappings"
+                                onClick={() => setVendorMapRow(r)}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                                </svg>
+                                {r.vendor_count}
+                              </button>
+                            ) : (
+                              <span className="s3-dash">—</span>
+                            )}
+                          </td>
                           <td>
                             {!hasProc && (
                               <button type="button" className="s3-create-btn" onClick={() => onCreateOne(r)}>
@@ -680,6 +700,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                     <th style={{ width: 80 }}>QTY</th>
                     <th style={{ width: 130 }}>TARGET PRICE</th>
                     <th style={{ width: 80 }}>CURRENCY</th>
+                    <th style={{ width: 100 }}>VENDOR COUNT</th>
                     <th style={{ width: 120 }}>STATUS</th>
                   </tr>
                 </thead>
@@ -693,11 +714,12 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                       <td><span className="smd-skel smd-skel-num" /></td>
                       <td><span className="smd-skel smd-skel-num" /></td>
                       <td><span className="smd-skel smd-skel-chip" /></td>
+                      <td><span className="smd-skel smd-skel-num" /></td>
                       <td><span className="smd-skel smd-skel-pill" /></td>
                     </tr>
                   ))}
                   {!loading && notRequiredRows.length === 0 && (
-                    <tr><td colSpan={8} className="s3-empty">No products marked Not Required.</td></tr>
+                    <tr><td colSpan={9} className="s3-empty">No products marked Not Required.</td></tr>
                   )}
                   {!loading && notRequiredRows.map((r, idx) => {
                     const statusLc = (r.product_status ?? '').toLowerCase();
@@ -714,6 +736,23 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
                         <td className="s3-price">$ {r.target_price != null ? Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
                         <td><span className="s3-curr">{r.currency}</span></td>
+                        <td>
+                          {r.vendor_count > 0 ? (
+                            <button
+                              type="button"
+                              className="s3-vendor-count"
+                              title="View vendor mappings"
+                              onClick={() => setVendorMapRow(r)}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                              </svg>
+                              {r.vendor_count}
+                            </button>
+                          ) : (
+                            <span className="s3-dash">—</span>
+                          )}
+                        </td>
                         <td><span className="s3-skip">Skipped</span></td>
                       </tr>
                     );
@@ -769,6 +808,15 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
         open={procViewId != null}
         procurementId={procViewId}
         onClose={() => setProcViewId(null)}
+      />
+      <VendorMappingsModal
+        open={vendorMapRow != null}
+        productId={vendorMapRow?.product_id ?? null}
+        productCode={vendorMapRow?.product_code ?? null}
+        productName={vendorMapRow?.product_name ?? null}
+        targetPrice={vendorMapRow?.target_price ?? null}
+        currency={vendorMapRow?.currency ?? null}
+        onClose={() => setVendorMapRow(null)}
       />
     </>
   );
@@ -1102,6 +1150,15 @@ const STAGE3_CSS = `
   text-decoration: underline; text-decoration-color: #d97706;
 }
 .s3-proc-pill:hover { background: #fde68a; }
+/* Vendor Count chip — clickable, opens the vendor-mappings popup. */
+.s3-vendor-count {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 800;
+  padding: 4px 12px; border-radius: 999px;
+  background: #ecfdf5; color: #047857; border: 1.5px solid #6ee7b7;
+  transition: background .15s, transform .12s;
+}
+.s3-vendor-count:hover { background: #d1fae5; transform: translateY(-1px); }
 .s3-pending { color: #d97706; font-style: italic; font-size: 11.5px; font-weight: 600; }
 .s3-mark-btn {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1216,7 +1273,10 @@ const STAGE3_CSS = `
 [data-bs-theme="dark"] .s3-card-head-mint .s3-card-title { color: #6ee7b7; }
 [data-bs-theme="dark"] .s3-card-sub { color: rgba(196,181,253,.55); }
 [data-bs-theme="dark"] .s3-table-wrap { background: #14102a; }
-[data-bs-theme="dark"] .s3-table-amber thead th { background: rgba(252,191,36,.15); color: #fde68a; border-bottom-color: rgba(252,191,36,.30); }
+/* The light thead-tr gradient bleeds through the translucent th in dark
+   mode — neutralise it so the header reads as a dark amber bar. */
+[data-bs-theme="dark"] .s3-table thead tr { background: transparent; }
+[data-bs-theme="dark"] .s3-table-amber thead th { background: linear-gradient(180deg, rgba(120,53,15,.55), rgba(120,53,15,.40)); color: #fde68a; border-bottom-color: rgba(252,191,36,.35); }
 [data-bs-theme="dark"] .s3-table tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
 [data-bs-theme="dark"] .s3-table tbody tr:hover { background: rgba(124,58,237,.12); }
 [data-bs-theme="dark"] .s3-table-amber tbody tr:hover { background: rgba(252,191,36,.10); }
@@ -1253,6 +1313,8 @@ const STAGE3_CSS = `
 [data-bs-theme="dark"] .s3-dash    { color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s3-proc-pill { background: rgba(252,191,36,.18); color: #fde68a; border-color: rgba(252,191,36,.45); }
 [data-bs-theme="dark"] .s3-proc-pill:hover { background: rgba(252,191,36,.28); }
+[data-bs-theme="dark"] .s3-vendor-count { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(110,231,183,.45); }
+[data-bs-theme="dark"] .s3-vendor-count:hover { background: rgba(16,185,129,.28); }
 
 /* Readiness panel — dark mode. Warn variant uses translucent amber on
  * the deep-slate body; ok variant uses translucent mint. Items + CTAs

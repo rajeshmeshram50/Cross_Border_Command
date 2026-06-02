@@ -7,6 +7,8 @@ import TextAlign from '@tiptap/extension-text-align';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
+import { SegmentModal, nextSegmentCode, type SegmentForm, type SaveResult } from './ClmSegmentPage';
 import Tooltip from '../../components/ui/Tooltip';
 import { SimpleNameModal } from './clmCommon';
 import { deriveShortCode } from './ClmTncPage';
@@ -30,10 +32,13 @@ export type Lib = {
   id: number;
   code: string;
   segment: string;
+  regulatory?: 'highly' | 'less' | null;
   category: string;
   party: string;
   content: string | null;
 };
+export type SegOpt = { name: string; regulatory_status: 'highly' | 'less'; code?: string };
+type Reg = 'highly' | 'less';
 
 const PARTY_BUYER_CONSIGNEE = [
   { value: 'Buyer',     label: 'Buyer',     icon: '👤' },
@@ -52,13 +57,14 @@ interface Props {
   open: boolean;
   existing: Lib | null;
   cats: Cat[];
-  knownSegments: string[];
+  /** All segments with their regulatory tier — drives the tier-filtered picker. */
+  segments: SegOpt[];
   nextCode: string;
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function ClmTncWizardModal({ open, existing, cats: initialCats, knownSegments, nextCode, onClose, onSaved }: Props) {
+export default function ClmTncWizardModal({ open, existing, cats: initialCats, segments, nextCode, onClose, onSaved }: Props) {
   const toast = useToast();
   const editingId = existing?.id ?? null;
 
@@ -68,7 +74,14 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, k
 
   const [cats, setCats] = useState<Cat[]>(initialCats);
 
-  const [segment, setSegment]   = useState('');
+  // Regulatory tier drives the segment picker: 'highly' → ONE segment
+  // (single-select), 'less' → MANY segments (multi-select).
+  const [regulatory, setRegulatory] = useState<Reg>('highly');
+  const [segment, setSegment]       = useState('');            // highly: single value
+  const [segmentsMulti, setSegmentsMulti] = useState<Set<string>>(new Set()); // less: many
+  // Segments quick-added in this modal (not yet in clm_segments), tagged
+  // with the tier they were added under so they show in the right picker.
+  const [localSegs, setLocalSegs] = useState<{ name: string; tier: Reg }[]>([]);
   const [category, setCategory] = useState('');
   const [parties, setParties]   = useState<Set<string>>(new Set());
 
@@ -96,13 +109,20 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, k
     setStep(1);
     setErrors({});
     setSaving(false);
+    setLocalSegs([]);
     if (existing) {
-      setSegment(existing.segment ?? '');
+      const reg: Reg = existing.regulatory === 'less' ? 'less' : 'highly';
+      const segList = (existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
+      setRegulatory(reg);
+      setSegment(reg === 'highly' ? (segList[0] ?? '') : '');
+      setSegmentsMulti(reg === 'less' ? new Set(segList) : new Set());
       setCategory(existing.category ?? '');
       setParties(new Set((existing.party ?? '').split(',').map(s => s.trim()).filter(Boolean)));
       setContent(existing.content ?? '');
     } else {
+      setRegulatory('highly');
       setSegment('');
+      setSegmentsMulti(new Set());
       setCategory('');
       setParties(new Set());
       setContent('');
@@ -128,11 +148,33 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, k
     return nextCode;
   }, [editingId, existing, nextCode]);
 
-  const segmentOptions = useMemo(() => {
-    const set = new Set<string>(knownSegments);
-    if (segment) set.add(segment);
-    return Array.from(set).filter(Boolean).map(s => ({ value: s, label: s }));
-  }, [knownSegments, segment]);
+  // Segment names available for the CURRENT tier: the matching
+  // clm_segments rows + any quick-added-in-this-modal names tagged to the
+  // tier + the currently-selected value(s) so an edited row always shows.
+  const tierSegmentNames = useMemo(() => {
+    const set = new Set<string>();
+    segments.forEach(s => { if (s.regulatory_status === regulatory) set.add(s.name); });
+    localSegs.forEach(s => { if (s.tier === regulatory) set.add(s.name); });
+    if (regulatory === 'highly') { if (segment) set.add(segment); }
+    else segmentsMulti.forEach(s => set.add(s));
+    return Array.from(set).filter(Boolean);
+  }, [segments, localSegs, regulatory, segment, segmentsMulti]);
+
+  // Options for the single-select (highly tier).
+  const segmentOptions = useMemo(
+    () => tierSegmentNames.map(s => ({ value: s, label: s })),
+    [tierSegmentNames],
+  );
+
+  // Switch tier → clear the other tier's selection so we never persist a
+  // segment that doesn't belong to the chosen regulatory tier.
+  const changeRegulatory = (next: Reg) => {
+    setRegulatory(next);
+    setSegment('');
+    setSegmentsMulti(new Set());
+    setErrors(p => ({ ...p, segment: '' }));
+  };
+
 
   const toggleParty = (v: string) => {
     setParties(prev => {
@@ -158,7 +200,11 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, k
 
   const validateStep1 = () => {
     const next: Record<string, string> = {};
-    if (!segment.trim())  next.segment  = 'Segment is required';
+    if (regulatory === 'highly') {
+      if (!segment.trim()) next.segment = 'Select a segment';
+    } else {
+      if (segmentsMulti.size === 0) next.segment = 'Select at least one segment';
+    }
     if (!category.trim()) next.category = 'T&C document name is required';
     if (parties.size === 0) next.party  = 'Select at least one applicable party';
     setErrors(next);
@@ -174,8 +220,13 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, k
       return;
     }
     setSaving(true);
+    // highly → one segment; less → CSV of the chosen segments.
+    const segmentCsv = regulatory === 'highly'
+      ? segment.trim()
+      : Array.from(segmentsMulti).join(',');
     const payload: Omit<Lib, 'id' | 'code'> = {
-      segment: segment.trim(),
+      segment: segmentCsv,
+      regulatory,
       category: category.trim(),
       party: Array.from(parties).join(','),
       content: content?.trim() ? content : null,
@@ -212,12 +263,36 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, k
     }
   };
 
-  const onAddNewSegment = (newSegment: string) => {
-    const trimmed = newSegment.trim();
-    if (!trimmed) return;
-    setSegment(trimmed);
-    setQuickAddSegmentOpen(false);
-    setErrors(p => ({ ...p, segment: '' }));
+  // "+" beside the segment opens the REAL Add-Segment form (same modal as
+  // the Segment master) and persists via POST /clm/segments. The created
+  // segment carries its own regulatory tier; we file it into the matching
+  // picker and auto-select it when that tier matches the T&C's tier.
+  const onCreateSegment = async (form: SegmentForm): Promise<SaveResult> => {
+    try {
+      const r = await api.post<{ status: boolean; data: { name: string; regulatory_status: Reg } }>('/clm/segments', form);
+      const created = r.data.data;
+      const tier: Reg = created.regulatory_status === 'less' ? 'less' : 'highly';
+      setLocalSegs(prev => prev.some(s => s.name === created.name && s.tier === tier) ? prev : [...prev, { name: created.name, tier }]);
+      if (tier === regulatory) {
+        if (regulatory === 'highly') setSegment(created.name);
+        else setSegmentsMulti(prev => new Set(prev).add(created.name));
+        setErrors(p => ({ ...p, segment: '' }));
+        toast.success('Segment added', `"${created.name}" added & selected`);
+      } else {
+        toast.info('Segment added', `"${created.name}" is ${tier === 'highly' ? 'highly' : 'less'}-regulated — switch Regulatory Type to use it`);
+      }
+      setQuickAddSegmentOpen(false);
+      return { ok: true };
+    } catch (e: any) {
+      const status = e?.response?.status as number | undefined;
+      const err = e?.response?.data?.errors as Record<string, string[]> | undefined;
+      const first = err ? Object.values(err)[0]?.[0] : undefined;
+      const message = first ?? e?.response?.data?.message ?? 'Could not save';
+      toast.error('Save failed', message);
+      if (status === 409 && /already exists/i.test(message)) return { ok: false, fieldErrors: { name: message } };
+      if (err?.name?.[0]) return { ok: false, fieldErrors: { name: err.name[0] } };
+      return { ok: false };
+    }
   };
 
   if (!open) return null;
@@ -292,30 +367,90 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, k
         <div className="tnw-body">
           {step === 1 ? (
             <div className="tnw-step-body">
+              {/* Regulatory tier — drives whether the segment picker is
+                  single (highly) or multi (less). */}
+              <div className="tnw-field">
+                <label className="tnw-label">Regulatory Type <span className="tnw-req">*</span></label>
+                <div className="tnw-reg-grid">
+                  <button
+                    type="button"
+                    className={`tnw-reg-card tnw-reg-high ${regulatory === 'highly' ? 'is-on' : ''}`}
+                    onClick={() => changeRegulatory('highly')}
+                  >
+                    <span className="tnw-reg-radio" />
+                    <span className="tnw-reg-text">
+                      <span className="tnw-reg-title">High Regulatory</span>
+                      <span className="tnw-reg-sub">Requires specific segment &amp; compliance review</span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`tnw-reg-card tnw-reg-less ${regulatory === 'less' ? 'is-on' : ''}`}
+                    onClick={() => changeRegulatory('less')}
+                  >
+                    <span className="tnw-reg-radio" />
+                    <span className="tnw-reg-text">
+                      <span className="tnw-reg-title">Less Regulatory</span>
+                      <span className="tnw-reg-sub">Applicable to all standard segments by default</span>
+                    </span>
+                  </button>
+                </div>
+              </div>
+
               <div className="tnw-grid-2">
                 <div className="tnw-field">
-                  <label className="tnw-label">Segment <span className="tnw-req">*</span></label>
-                  <div className="tnw-inline-add">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <MasterSelect
-                        key={`tnw-seg-${segmentOptions.length}`}
-                        value={segment}
-                        invalid={!!errors.segment}
-                        placeholder="— Select Segment —"
-                        options={segmentOptions}
-                        onChange={(v) => { setSegment(v); setErrors(p => ({ ...p, segment: '' })); }}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      className="tnw-add-mini"
-                      title="Add new segment"
-                      onClick={() => setQuickAddSegmentOpen(true)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                    </button>
-                  </div>
-                  <div className="tnw-hint">T&amp;Cs are scoped per segment · pick General for catch-all</div>
+                  <label className="tnw-label">
+                    Segment <span className="tnw-req">*</span>
+                    <span className="tnw-label-tag">{regulatory === 'highly' ? 'pick one' : 'pick one or more'}</span>
+                  </label>
+                  {regulatory === 'highly' ? (
+                    <>
+                      <div className="tnw-inline-add">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <MasterSelect
+                            key={`tnw-seg-${segmentOptions.length}`}
+                            value={segment}
+                            invalid={!!errors.segment}
+                            placeholder="— Select Segment —"
+                            options={segmentOptions}
+                            onChange={(v) => { setSegment(v); setErrors(p => ({ ...p, segment: '' })); }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="tnw-add-mini"
+                          title="Add new segment"
+                          onClick={() => setQuickAddSegmentOpen(true)}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        </button>
+                      </div>
+                      <div className="tnw-hint">One segment for highly-regulated T&amp;Cs</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="tnw-inline-add">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <MasterMultiSelect
+                            values={Array.from(segmentsMulti)}
+                            invalid={!!errors.segment}
+                            placeholder="— Select Segments —"
+                            options={segmentOptions}
+                            onChange={(next) => { setSegmentsMulti(new Set(next)); setErrors(p => ({ ...p, segment: '' })); }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="tnw-add-mini"
+                          title="Add new segment"
+                          onClick={() => setQuickAddSegmentOpen(true)}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        </button>
+                      </div>
+                      <div className="tnw-hint">Pick one or more segments this T&amp;C applies to</div>
+                    </>
+                  )}
                   {errors.segment && <div className="tnw-err">{errors.segment}</div>}
                 </div>
 
@@ -492,14 +627,12 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, k
           />
         )}
         {quickAddSegmentOpen && (
-          <SimpleNameModal
-            title="Add New Segment"
-            placeholder="e.g. Tobacco, Pharma, Chemical…"
-            code="SEG"
-            isEdit={false}
-            initial=""
+          <SegmentModal
+            existing={null}
+            nextCode={nextSegmentCode(segments.map(s => ({ code: s.code ?? '' })))}
+            existingNames={[...segments.map(s => s.name), ...localSegs.map(s => s.name)]}
             onClose={() => setQuickAddSegmentOpen(false)}
-            onSave={onAddNewSegment}
+            onSave={onCreateSegment}
           />
         )}
       </div>
@@ -1245,6 +1378,61 @@ const TNW_CSS = `
 .tnw-input::placeholder { color: #94a3b8; }
 .tnw-hint { font-size: 11px; color: #0891b2; opacity: .8; }
 .tnw-err { font-size: 11px; color: #ef4444; font-weight: 600; }
+.tnw-label-tag {
+  margin-left: 8px; text-transform: none; letter-spacing: 0;
+  font-size: 9.5px; font-weight: 700; color: #64748b;
+  background: #f1f5f9; border: 1px solid #e2e8f0;
+  padding: 1px 7px; border-radius: 999px;
+}
+
+/* ── Regulatory tier selector (figma: two radio cards) ── */
+.tnw-reg-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
+.tnw-reg-card {
+  display: flex; align-items: center; gap: 11px;
+  text-align: left; cursor: pointer; font-family: inherit;
+  padding: 12px 14px; border-radius: 11px;
+  border: 1.5px solid #e2e8f0; background: #fff;
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.tnw-reg-radio {
+  width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid #cbd5e1; position: relative;
+  transition: border-color .15s ease;
+}
+.tnw-reg-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tnw-reg-title { font-size: 13px; font-weight: 800; color: #334155; }
+.tnw-reg-sub   { font-size: 11px; color: #64748b; line-height: 1.35; }
+/* High Regulatory → red accent when selected */
+.tnw-reg-high.is-on  { border-color: #f87171; background: #fef2f2; }
+.tnw-reg-high.is-on .tnw-reg-radio { border-color: #ef4444; }
+.tnw-reg-high.is-on .tnw-reg-radio::after {
+  content: ''; position: absolute; inset: 2px; border-radius: 50%; background: #ef4444;
+}
+.tnw-reg-high.is-on .tnw-reg-title { color: #b91c1c; }
+/* Less Regulatory → green accent when selected */
+.tnw-reg-less.is-on  { border-color: #6ee7b7; background: #ecfdf5; }
+.tnw-reg-less.is-on .tnw-reg-radio { border-color: #10b981; }
+.tnw-reg-less.is-on .tnw-reg-radio::after {
+  content: ''; position: absolute; inset: 2px; border-radius: 50%; background: #10b981;
+}
+.tnw-reg-less.is-on .tnw-reg-title { color: #047857; }
+
+/* ── Multi-segment chip picker (Less Regulatory) ── */
+.tnw-seg-multi {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  min-height: 40px; padding: 7px;
+  border: 1.5px solid rgba(6,182,212,.25); border-radius: 9px; background: #fff;
+}
+.tnw-seg-multi.is-invalid { border-color: #ef4444; }
+.tnw-seg-multi-empty { font-size: 11.5px; color: #94a3b8; padding: 2px 4px; }
+.tnw-seg-add-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 11px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  font-size: 12px; font-weight: 700; color: #0891b2;
+  background: #ecfeff; border: 1.5px dashed rgba(6,182,212,.45);
+  transition: background .15s ease, border-color .15s ease;
+}
+.tnw-seg-add-chip:hover { background: #cffafe; border-color: #0891b2; }
 
 .tnw-inline-add { display: flex; gap: 8px; align-items: stretch; }
 .tnw-add-mini {
@@ -1638,6 +1826,17 @@ const TNW_CSS = `
 [data-bs-theme="dark"] .tnw-checkbox:hover { background: rgba(8,145,178,.10); border-color: rgba(103,232,249,.45); }
 [data-bs-theme="dark"] .tnw-checkbox.is-on { background: rgba(8,145,178,.22); border-color: #67e8f9; color: #cffafe; }
 [data-bs-theme="dark"] .tnw-party-hint { color: #94a3b8; }
+[data-bs-theme="dark"] .tnw-label-tag { background: #1e293b; border-color: rgba(148,163,184,.25); color: #94a3b8; }
+[data-bs-theme="dark"] .tnw-reg-card { background: #1e293b; border-color: rgba(148,163,184,.22); }
+[data-bs-theme="dark"] .tnw-reg-title { color: #e2e8f0; }
+[data-bs-theme="dark"] .tnw-reg-sub { color: #94a3b8; }
+[data-bs-theme="dark"] .tnw-reg-high.is-on { background: rgba(239,68,68,.14); border-color: rgba(248,113,113,.55); }
+[data-bs-theme="dark"] .tnw-reg-high.is-on .tnw-reg-title { color: #fca5a5; }
+[data-bs-theme="dark"] .tnw-reg-less.is-on { background: rgba(16,185,129,.14); border-color: rgba(110,231,183,.55); }
+[data-bs-theme="dark"] .tnw-reg-less.is-on .tnw-reg-title { color: #6ee7b7; }
+[data-bs-theme="dark"] .tnw-seg-multi { background: #1e293b; border-color: rgba(6,182,212,.30); }
+[data-bs-theme="dark"] .tnw-seg-multi-empty { color: #94a3b8; }
+[data-bs-theme="dark"] .tnw-seg-add-chip { background: rgba(8,145,178,.18); border-color: rgba(103,232,249,.45); color: #67e8f9; }
 [data-bs-theme="dark"] .tnw-editor-shell { background: #0f172a; border-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .tnw-toolbar { background: rgba(8,145,178,.06); border-bottom-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .tnw-toolbar-sel, [data-bs-theme="dark"] .tnw-toolbar-btn { background: #1e293b; border-color: rgba(6,182,212,.22); color: #cbd5e1; }

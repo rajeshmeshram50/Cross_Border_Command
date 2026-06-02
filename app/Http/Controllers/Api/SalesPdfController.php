@@ -74,6 +74,11 @@ class SalesPdfController extends Controller
 
         $viewData = $this->buildViewData($payload, $currencyCode, $docType, $withSignature);
 
+        // DomPDF's pure-PHP renderer is slow on this heavy template (large
+        // nested tables + multiple embedded images); on slower local boxes a
+        // single render can approach the default 60s cap. Give it headroom so
+        // the PDF always completes instead of 500-ing with a FatalError.
+        @set_time_limit(180);
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             // Required for the <script type="text/php"> page-number block
@@ -279,6 +284,11 @@ class SalesPdfController extends Controller
 
         $viewData = $this->buildQuotationViewData($quot, $withSignature);
 
+        // DomPDF's pure-PHP renderer is slow on this heavy template (large
+        // nested tables + multiple embedded images); on slower local boxes a
+        // single render can approach the default 60s cap. Give it headroom so
+        // the PDF always completes instead of 500-ing with a FatalError.
+        @set_time_limit(180);
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             // Required for the <script type="text/php"> page-number block
@@ -335,6 +345,11 @@ class SalesPdfController extends Controller
         // + label are different.
         $viewData = $this->buildQuotationViewData($pi, $withSignature, 'PROFORMA INVOICE', 'PI');
 
+        // DomPDF's pure-PHP renderer is slow on this heavy template (large
+        // nested tables + multiple embedded images); on slower local boxes a
+        // single render can approach the default 60s cap. Give it headroom so
+        // the PDF always completes instead of 500-ing with a FatalError.
+        @set_time_limit(180);
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             // Required for the <script type="text/php"> page-number block
@@ -382,6 +397,11 @@ class SalesPdfController extends Controller
         ])->findOrFail($id);
 
         $viewData = $this->buildQuotationViewData($quot, true);
+        // DomPDF's pure-PHP renderer is slow on this heavy template (large
+        // nested tables + multiple embedded images); on slower local boxes a
+        // single render can approach the default 60s cap. Give it headroom so
+        // the PDF always completes instead of 500-ing with a FatalError.
+        @set_time_limit(180);
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             ->setOption('isPhpEnabled', true);
@@ -406,6 +426,11 @@ class SalesPdfController extends Controller
         ])->findOrFail($id);
 
         $viewData = $this->buildQuotationViewData($pi, true, 'PROFORMA INVOICE', 'PI');
+        // DomPDF's pure-PHP renderer is slow on this heavy template (large
+        // nested tables + multiple embedded images); on slower local boxes a
+        // single render can approach the default 60s cap. Give it headroom so
+        // the PDF always completes instead of 500-ing with a FatalError.
+        @set_time_limit(180);
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             ->setOption('isPhpEnabled', true);
@@ -510,6 +535,11 @@ class SalesPdfController extends Controller
         // 2) Render the PDF to a temp file (we use the existing view-data
         //    builder so the email attachment matches the preview PDF byte-for-byte).
         $viewData = $this->buildQuotationViewData($record, $withSignature, $pdfTitle, $docLabel);
+        // DomPDF's pure-PHP renderer is slow on this heavy template (large
+        // nested tables + multiple embedded images); on slower local boxes a
+        // single render can approach the default 60s cap. Give it headroom so
+        // the PDF always completes instead of 500-ing with a FatalError.
+        @set_time_limit(180);
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             ->setOption('isPhpEnabled', true);
@@ -730,6 +760,11 @@ class SalesPdfController extends Controller
         // Re-render the PDF so the reminder always carries the latest
         // version of the document (price/terms may have been edited).
         $viewData = $this->buildQuotationViewData($record, $withSignature, $pdfTitle, $docLabel);
+        // DomPDF's pure-PHP renderer is slow on this heavy template (large
+        // nested tables + multiple embedded images); on slower local boxes a
+        // single render can approach the default 60s cap. Give it headroom so
+        // the PDF always completes instead of 500-ing with a FatalError.
+        @set_time_limit(180);
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             ->setOption('isPhpEnabled', true);
@@ -1056,7 +1091,12 @@ class SalesPdfController extends Controller
             'shipping_cost'         => $shippingCost,
             'packaging_cost'        => $packagingCost,
             'grand_total'           => $grandTotal,
-            'terms_and_conditions'  => $q->terms ?: $this->defaultTerms(),
+            // No static fallback: the T&C section is now driven by the
+            // auto-fetched, segment-matched master T&Cs (segmentTermsConditions).
+            // Only a user-typed `terms` value renders the manual block above
+            // them; an empty terms field shows nothing here (no hardcoded
+            // defaultTerms() boilerplate).
+            'terms_and_conditions'  => $q->terms ?: null,
         ];
 
         // ── Real scannable barcode ─────────────────────────────────────
@@ -1106,10 +1146,101 @@ class SalesPdfController extends Controller
                 ? \DateTime::createFromFormat('Y-m-d', $q->opportunity_date->format('Y-m-d'))
                 : null,
             'termsAndConditions'     => null,
-            'segmentTermsConditions' => [],
+            // Auto-fetched from the T&C Library: matched by the document's
+            // type (International/Domestic) + kind (Quotation/PI) + each
+            // product's segment & regulatory tier. Rendered on the PDF only.
+            'segmentTermsConditions' => $this->fetchSegmentTncs($q, $docLabelShort),
             'base_currency_total'    => $grandTotal,
             'exchange_rate'          => $q->exchange_rate ? (float) $q->exchange_rate : null,
         ];
+    }
+
+    /**
+     * Auto-fetch the Terms & Conditions blocks that apply to this document
+     * from the T&C Library (clm_tnc_library), for rendering on the PDF.
+     *
+     * Matching keys (all live, nothing hard-coded except the doc-kind word):
+     *   1. Document KIND  — 'Quotation' for QT, 'Proforma Invoice' for PI
+     *      (derived from $docLabelShort).
+     *   2. Document TYPE  — $q->doc_type ('International' | 'Domestic').
+     *      → A T&C's Document Category must contain BOTH the type word and
+     *        the kind words (case-insensitive), so "International Proforma
+     *        Invoice", "International - Proforma Invoice", etc. all match.
+     *   3. SEGMENT + regulatory tier — each line-item product resolves to a
+     *      clm_segments row (products.segment_id → name + regulatory_status,
+     *      same unified table). A T&C applies when its `regulatory` equals
+     *      that segment's tier AND its segment list contains the segment
+     *      name (single for 'highly', any-of-CSV for 'less').
+     *
+     * Returns a de-duplicated list of ['code','category','segment','content'].
+     */
+    private function fetchSegmentTncs($q, string $docLabelShort): array
+    {
+        $clientId = $q->client_id ?? null;
+        if (!$clientId) return [];
+
+        $docKind = $docLabelShort === 'PI' ? 'proforma invoice' : 'quotation';
+        $docType = mb_strtolower(trim((string) ($q->doc_type ?? 'International'))); // international|domestic
+        if ($docType === '') return [];
+
+        // Items in their on-document SEQUENCE (line_no, then id) — the T&Cs
+        // are emitted product-by-product in this same order.
+        $items = collect($q->items ?? [])
+            ->sortBy(fn ($it) => [(int) ($it->line_no ?? 0), (int) ($it->id ?? 0)])
+            ->values();
+        $productIds = $items->pluck('product_id')->filter()->unique()->values();
+        if ($productIds->isEmpty()) return [];
+
+        // product_id → segment_id, and segment_id → ClmSegment (name + tier).
+        $prodToSeg = \App\Models\Product::whereIn('id', $productIds)
+            ->pluck('segment_id', 'id');
+        $segById = \App\Models\ClmSegment::where('client_id', $clientId)
+            ->whereIn('id', $prodToSeg->filter()->unique()->values())
+            ->get(['id', 'name', 'regulatory_status'])
+            ->keyBy('id');
+        if ($segById->isEmpty()) return [];
+
+        // Candidate T&Cs — pre-filtered to the doc type + kind (tolerant).
+        $candidates = \App\Models\ClmTncLibrary::where('client_id', $clientId)
+            ->where(function ($w) { $w->whereNull('status')->orWhere('status', 'active'); })
+            ->orderBy('id')
+            ->get()
+            ->filter(function ($row) use ($docType, $docKind) {
+                $cat = mb_strtolower((string) $row->category);
+                return str_contains($cat, $docType) && str_contains($cat, $docKind);
+            });
+
+        // Walk products in sequence; for each product's segment, append every
+        // matching T&C (deduped by id, so a segment shared by two products
+        // doesn't repeat). Order therefore follows the product sequence.
+        $matched = [];
+        foreach ($items as $it) {
+            $segId = $it->product_id ? ($prodToSeg[$it->product_id] ?? null) : null;
+            if (!$segId) continue;
+            $seg = $segById->get($segId);
+            if (!$seg) continue;
+
+            $segNameLc = mb_strtolower((string) $seg->name);
+            $segReg    = (string) $seg->regulatory_status;
+
+            foreach ($candidates as $row) {
+                if (isset($matched[$row->id])) continue;             // already emitted
+                if ((string) $row->regulatory !== $segReg) continue; // tier must agree
+                $tncSegs = array_filter(array_map(
+                    fn ($s) => mb_strtolower(trim($s)),
+                    explode(',', (string) $row->segment)
+                ));
+                if (!in_array($segNameLc, $tncSegs, true)) continue; // segment must match
+                $matched[$row->id] = [
+                    'code'     => $row->code,
+                    'category' => $row->category,
+                    'segment'  => $seg->name,   // the product segment that pulled it in
+                    'content'  => $row->content,
+                ];
+            }
+        }
+
+        return array_values($matched);
     }
 
     /**
@@ -1268,6 +1399,19 @@ class SalesPdfController extends Controller
         $mime = function_exists('mime_content_type')
             ? (mime_content_type($path) ?: 'image/png')
             : 'image/png';
+
+        // Flatten alpha onto white before embedding. The bundled
+        // test-signature.png is a 1016×639 transparent PNG; left as-is,
+        // DomPDF's pure-PHP alpha splitter walks ~650k pixels and trips
+        // PHP's 60s max_execution_time (Cpdf.php). A flattened opaque PNG
+        // skips that path. Signatures sit on the white signature block so
+        // compositing onto white is visually identical.
+        $flat = $this->flattenImageForPdf($bytes);
+        if ($flat !== null) {
+            $bytes = $flat;
+            $mime  = 'image/png';
+        }
+
         return 'data:' . $mime . ';base64,' . base64_encode($bytes);
     }
 
@@ -1299,9 +1443,71 @@ class SalesPdfController extends Controller
             if (!Storage::disk('public')->exists($norm)) return null;
             $bytes = Storage::disk('public')->get($norm);
             $mime  = Storage::disk('public')->mimeType($norm) ?: 'image/png';
+
+            // Flatten any alpha channel onto white (and downscale) before
+            // embedding. DomPDF renders transparent PNGs by splitting an
+            // alpha mask pixel-by-pixel in pure PHP (Cpdf.php) — on a large
+            // logo that loop runs width×height times and exceeds PHP's
+            // 60s max_execution_time. A flattened, non-alpha PNG skips that
+            // path entirely, so the render finishes in well under a second.
+            $flat = $this->flattenImageForPdf($bytes);
+            if ($flat !== null) {
+                $bytes = $flat;
+                $mime  = 'image/png';
+            }
+
             return 'data:' . $mime . ';base64,' . base64_encode($bytes);
         } catch (\Throwable $e) {
             return null;
+        }
+    }
+
+    /**
+     * Composite an image onto a solid white background (dropping any alpha
+     * channel) and downscale it to a sane max width, returning PNG bytes —
+     * or null if GD isn't available or the bytes aren't a decodable image.
+     *
+     * This is the antidote to the DomPDF "Maximum execution time exceeded"
+     * in Cpdf.php: that timeout comes from DomPDF's pure-PHP transparent-PNG
+     * handler walking every pixel to build an alpha mask. By handing DomPDF
+     * an opaque (no-alpha) PNG we avoid that code path completely; the
+     * downscale further bounds the embed cost (logos render at ~200px).
+     */
+    private function flattenImageForPdf(string $bytes, int $maxWidth = 800): ?string
+    {
+        if (!function_exists('imagecreatefromstring')) return null;
+
+        $src = @imagecreatefromstring($bytes);
+        if ($src === false) return null;
+
+        try {
+            $sw = max(1, imagesx($src));
+            $sh = max(1, imagesy($src));
+            $scale = $sw > $maxWidth ? $maxWidth / $sw : 1.0;
+            $dw = max(1, (int) round($sw * $scale));
+            $dh = max(1, (int) round($sh * $scale));
+
+            $canvas = imagecreatetruecolor($dw, $dh);
+            // Paint white, then alpha-blend the source on top so semi-
+            // transparent pixels resolve against white instead of black.
+            imagefilledrectangle($canvas, 0, 0, $dw, $dh, imagecolorallocate($canvas, 255, 255, 255));
+            imagealphablending($canvas, true);
+            if ($scale < 1.0) {
+                imagecopyresampled($canvas, $src, 0, 0, 0, 0, $dw, $dh, $sw, $sh);
+            } else {
+                imagecopy($canvas, $src, 0, 0, 0, 0, $sw, $sh);
+            }
+            // Write WITHOUT an alpha channel so DomPDF takes the fast path.
+            imagesavealpha($canvas, false);
+
+            ob_start();
+            imagepng($canvas, null, 6);
+            $out = ob_get_clean();
+            imagedestroy($canvas);
+
+            return ($out !== false && $out !== '') ? $out : null;
+        } finally {
+            imagedestroy($src);
         }
     }
 

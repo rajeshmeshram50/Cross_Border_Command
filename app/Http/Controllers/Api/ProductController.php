@@ -474,6 +474,24 @@ class ProductController extends Controller
     }
 
     /* ──────────────────────────────────────────────────────────────────
+     * GET /products/{id}/vendor-maps
+     * Vendor mappings for a product — powers the Sales Matrix Stage 3
+     * "Vendor Count" popup. Returns the inline product_vendor_maps rows
+     * (vendor identity + purchase / gst / total amounts); the UI flags the
+     * lowest-total row as L1 (best price).
+     * ────────────────────────────────────────────────────────────── */
+    public function vendorMaps(Request $request, int $id)
+    {
+        $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
+        $maps = ProductVendorMap::where('product_id', $product->id)->orderBy('id')->get();
+        return response()->json([
+            'status' => true,
+            'data'   => $maps,
+            'count'  => $maps->count(),
+        ]);
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
      * PUT /products/{id}/step/vendors
      * Final step. Saves vendor mappings and activates the product.
      * ────────────────────────────────────────────────────────────── */

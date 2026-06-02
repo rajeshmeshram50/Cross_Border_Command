@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
+import VendorMappingsModal from './stages/VendorMappingsModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Product Sourcing — Stage 3 quick-action modal.
@@ -38,6 +39,7 @@ type SourcingRow = {
   quantity:         string | number | null;
   target_price:     string | number | null;
   sourcing_status:  SourcingStatus | null;
+  vendor_count:     number;
 };
 
 type Props = {
@@ -81,6 +83,7 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
   const [loading, setLoading]   = useState(false);
   const [tab, setTab]           = useState<TabKey>('all');
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [vendorMapRow, setVendorMapRow] = useState<SourcingRow | null>(null);
 
   /* Reload the mapped products every time the modal opens for a lead.
    * Same endpoint as Product Directory; we just pivot on
@@ -245,17 +248,18 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
                     <th style={{ width: 80 }}>QTY</th>
                     <th style={{ width: 140 }}>TARGET PRICE</th>
                     <th style={{ width: 90 }}>CURRENCY</th>
+                    <th style={{ width: 100 }}>VENDOR COUNT</th>
                     <th style={{ width: 170 }}>SOURCING STATUS</th>
                     <th style={{ width: 110 }}>SET</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading && (
-                    <tr><td colSpan={9} className="psm-status-row">Loading mapped products…</td></tr>
+                    <tr><td colSpan={10} className="psm-status-row">Loading mapped products…</td></tr>
                   )}
                   {!loading && visibleRows.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="psm-status-row">
+                      <td colSpan={10} className="psm-status-row">
                         {tab === 'all'
                           ? 'All mapped products have a sourcing status — check the Sourcing Required / Not Required tabs.'
                           : tab === 'required'
@@ -294,6 +298,23 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
                             : '—'}
                         </td>
                         <td><span className="psm-curr-pill">{r.currency}</span></td>
+                        <td>
+                          {r.vendor_count > 0 ? (
+                            <button
+                              type="button"
+                              className="psm-vendor-count"
+                              title="View vendor mappings"
+                              onClick={() => setVendorMapRow(r)}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                              </svg>
+                              {r.vendor_count}
+                            </button>
+                          ) : (
+                            <span className="psm-dash">—</span>
+                          )}
+                        </td>
                         <td>
                           <MasterSelect
                             value={r.sourcing_status ?? ''}
@@ -355,6 +376,16 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
           </div>
         </div>
       </div>
+
+      <VendorMappingsModal
+        open={vendorMapRow != null}
+        productId={vendorMapRow?.product_id ?? null}
+        productCode={vendorMapRow?.product_code ?? null}
+        productName={vendorMapRow?.product_name ?? null}
+        targetPrice={vendorMapRow?.target_price ?? null}
+        currency={vendorMapRow?.currency ?? null}
+        onClose={() => setVendorMapRow(null)}
+      />
     </div>
   ), document.body);
 }
@@ -616,6 +647,19 @@ const SCOPED_CSS = `
   font-size: 11px; font-weight: 800; letter-spacing: .02em;
   border: 1px solid #bfdbfe;
 }
+/* Vendor Count chip — clickable, opens the vendor-mappings popup. */
+.psm-vendor-count {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 800;
+  padding: 4px 12px; border-radius: 999px;
+  background: #ecfdf5; color: #047857; border: 1.5px solid #6ee7b7;
+  transition: background .15s, transform .12s;
+}
+.psm-vendor-count:hover { background: #d1fae5; transform: translateY(-1px); }
+.psm-dash { color: #cbd5e1; font-weight: 700; }
+[data-bs-theme="dark"] .psm-vendor-count { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(110,231,183,.45); }
+[data-bs-theme="dark"] .psm-vendor-count:hover { background: rgba(16,185,129,.28); }
+[data-bs-theme="dark"] .psm-dash { color: rgba(167,139,250,.45); }
 
 /* ── Sourcing dropdown ── */
 .psm-select {

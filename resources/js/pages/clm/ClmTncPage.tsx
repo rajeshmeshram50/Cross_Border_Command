@@ -26,8 +26,8 @@ export function deriveShortCode(name: string): string {
 }
 
 type Cat = { id: number; code: string; name: string };
-type Lib = { id: number; code: string; segment: string; category: string; party: string; content: string | null };
-type Seg = { id: number; code: string; name: string };
+type Lib = { id: number; code: string; segment: string; regulatory?: 'highly' | 'less' | null; category: string; party: string; content: string | null };
+type Seg = { id: number; code: string; name: string; regulatory_status: 'highly' | 'less' };
 
 export default function ClmTncPage() {
   const toast = useToast();
@@ -220,14 +220,12 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
   };
 
-  // Real segments from /clm/segments — fall back to anything already
-  // present in the library rows so older data still surfaces.
-  const knownSegments = useMemo(() => {
-    const set = new Set<string>();
-    segs.forEach(s => { if (s.name) set.add(s.name); });
-    rows.forEach(r => { if (r.segment) set.add(r.segment); });
-    return Array.from(set);
-  }, [rows, segs]);
+  // Segments with their regulatory tier — drives the wizard's tier-filtered
+  // picker (highly → single, less → multi).
+  const segOpts = useMemo(
+    () => segs.filter(s => s.name).map(s => ({ name: s.name, regulatory_status: s.regulatory_status, code: s.code })),
+    [segs],
+  );
 
   return (
     <div className="clm-page-card">
@@ -257,7 +255,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 110, textAlign: 'center' }}>T&amp;C ID</th>
-                <th style={{ width: 110, textAlign: 'center' }}>SEGMENT</th>
+                <th style={{ width: 170, textAlign: 'center' }}>SEGMENT</th>
                 <th>DOCUMENT CATEGORY</th>
                 <th>APPLIES TO</th>
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
@@ -273,9 +271,21 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                       </Tooltip>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <Tooltip label={`Segment scope · ${r.segment}`}>
-                        <span className="clm-badge clm-badge-teal">{r.segment}</span>
-                      </Tooltip>
+                      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                        <span
+                          className={`clm-badge ${r.regulatory === 'less' ? 'clm-badge-green' : 'clm-badge-red'}`}
+                          style={{ fontSize: 9.5, fontWeight: 800 }}
+                        >
+                          {r.regulatory === 'less' ? 'Less Reg.' : 'High Reg.'}
+                        </span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, justifyContent: 'center' }}>
+                          {(r.segment ?? '').split(',').map(s => s.trim()).filter(Boolean).map(seg => (
+                            <Tooltip key={seg} label={`Segment scope · ${seg}`}>
+                              <span className="clm-badge clm-badge-teal">{seg}</span>
+                            </Tooltip>
+                          ))}
+                        </div>
+                      </div>
                     </td>
                     <td className="clm-td-name">{r.category}</td>
                     <td className="clm-td-desc">
@@ -317,7 +327,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
         open={modalOpen}
         existing={editing}
         cats={cats}
-        knownSegments={knownSegments}
+        segments={segOpts}
         nextCode={editing?.code ?? `TNC-${String(rows.length + 1).padStart(3, '0')}`}
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}

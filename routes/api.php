@@ -132,6 +132,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/products/master-bundle',        [ProductController::class, 'masterBundle']);
     Route::get('/products',                      [ProductController::class, 'index']);
     Route::get('/products/{id}',                 [ProductController::class, 'show'])->whereNumber('id');
+    Route::get('/products/{id}/vendor-maps',     [ProductController::class, 'vendorMaps'])->whereNumber('id');
     Route::post('/products/step/core',           [ProductController::class, 'storeCore']);
     Route::put('/products/{id}/step/sales',      [ProductController::class, 'storeSales'])->whereNumber('id');
     Route::put('/products/{id}/step/quality',    [ProductController::class, 'storeQuality'])->whereNumber('id');
