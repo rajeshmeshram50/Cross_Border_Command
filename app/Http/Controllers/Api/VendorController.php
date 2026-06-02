@@ -200,11 +200,27 @@ class VendorController extends Controller
             'legal_name'               => 'nullable|string|max:255',
             'website'                  => 'nullable|string|max:500',
             'vendor_type_id'           => 'nullable|integer|exists:master_vendor_types,id',
+            // Supplier Type is now a fixed frontend vocabulary (Logistic /
+            // Material / Tech Services / Advisory Services / Risk Services).
+            // The form sends the NAME; we resolve it to a master_vendor_types
+            // row (find-or-create per tenant) so the vendor_type_id FK stays
+            // valid without the user having to manage the master by hand.
+            'vendor_type'              => 'nullable|string|max:255',
             'risk_level_id'            => 'nullable|integer|exists:master_risk_levels,id',
             'vendor_behaviour_id'      => 'nullable|integer|exists:master_vendor_behaviour,id',
             'segment_id'               => 'nullable|integer|exists:clm_segments,id',
             'compliance_behaviour_id'  => 'nullable|integer|exists:master_compliance_behaviours,id',
         ]);
+
+        // Resolve the supplier-type NAME → master_vendor_types id.
+        if (!empty($data['vendor_type'])) {
+            $vt = VendorTypes::firstOrCreate(
+                ['client_id' => $user->client_id, 'name' => trim($data['vendor_type'])],
+                ['status' => 'Active', 'created_by' => $user->id],
+            );
+            $data['vendor_type_id'] = $vt->id;
+        }
+        unset($data['vendor_type']);   // not a column on vendors
 
         if (isset($data['id'])) {
             $vendor = Vendor::query()->forUser($user)->findOrFail($data['id']);

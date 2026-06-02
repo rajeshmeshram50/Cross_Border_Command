@@ -8,6 +8,8 @@ use App\Http\Controllers\Api\FaceBiometricController;
 use App\Http\Controllers\Api\CandidateController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\ClmAgreementController;
+use App\Http\Controllers\Api\ClmBuyerProfileController;
+use App\Http\Controllers\Api\ClmSupplierProfileController;
 use App\Http\Controllers\Api\ClmAuthorityController;
 use App\Http\Controllers\Api\ClmClauseController;
 use App\Http\Controllers\Api\ClmDdController;
@@ -261,6 +263,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // and reject the request with 405 against the PUT/DELETE handlers.
     Route::post  ('/clm/trade-doc-library/upload-header-logo',[ClmTradeDocumentController::class, 'uploadHeaderLogo']);
     Route::get   ('/clm/trade-doc-library/for-party/{party}', [ClmTradeDocumentController::class, 'libraryForParty']);
+    
     Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx'])->whereNumber('id');
     Route::post  ('/clm/trade-doc-library/{id}/upload-docx',  [ClmTradeDocumentController::class, 'uploadDocx'])->whereNumber('id');
     Route::put   ('/clm/trade-doc-library/{id}',              [ClmTradeDocumentController::class, 'libraryUpdate'])->whereNumber('id');
@@ -304,6 +307,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/clm/agreement-library/{id}/upload-docx', [ClmAgreementController::class, 'uploadDocx'])->whereNumber('id');
     Route::post  ('/clm/agreement-library/upload-header-logo', [ClmAgreementController::class, 'uploadHeaderLogo']);
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
+    Route::get   ('/clm/buyer-profile',                          [ClmBuyerProfileController::class, 'index']);
+    Route::get   ('/clm/supplier-profile',                       [ClmSupplierProfileController::class, 'index']);
     Route::post  ('/clm/signature-requests/agreement-preview',   [ClmSignatureController::class, 'agreementPreview']);
     Route::post  ('/clm/signature-requests/agreement-send',      [ClmSignatureController::class, 'agreementSend']);
 

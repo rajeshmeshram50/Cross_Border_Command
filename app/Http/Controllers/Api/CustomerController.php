@@ -80,7 +80,21 @@ class CustomerController extends Controller
                   ->orWhere('primary_email', 'ilike', $search . '%')
                   ->orWhere('company_name',  'ilike', "%{$search}%")
                   ->orWhere('legal_name',    'ilike', "%{$search}%")
-                  ->orWhere('segment',       'ilike', "%{$search}%");
+                  ->orWhere('segment',       'ilike', "%{$search}%")
+                  // Customer Type (shown in the list) — e.g. "Retailer".
+                  ->orWhere('type',          'ilike', "%{$search}%")
+                  /* Country / Contact Person / Contact No live on the primary
+                   * address row (mirrored into the list's Country / Contact /
+                   * Phone columns), so search them via the addresses relation
+                   * to match what the user actually sees in the table. */
+                  ->orWhereHas('addresses', function ($a) use ($search) {
+                      $a->where('is_primary', true)
+                        ->where(function ($x) use ($search) {
+                            $x->where('country',    'ilike', "%{$search}%")
+                              ->orWhere('cp_name',  'ilike', "%{$search}%")
+                              ->orWhere('cp_contact', 'ilike', "%{$search}%");
+                        });
+                  });
             });
         }
 
@@ -425,9 +439,29 @@ class CustomerController extends Controller
     {
         $data = $request->validate([
             'company_name'   => 'required|string|max:255',
-            'legal_name'     => 'nullable|string|max:255',
+            /* Legal (registered entity) name must be unique per tenant — two
+             * customers can't share the same legal name. Case-insensitive,
+             * client-scoped, ignores the row being edited, and skips the check
+             * when blank (legal_name stays optional). */
+            'legal_name'     => [
+                'nullable', 'string', 'max:255',
+                function ($attribute, $value, $fail) use ($clientId, $customerId) {
+                    if (!trim((string) $value)) return;
+                    $exists = \App\Models\Customer::query()
+                        ->whereNull('deleted_at')
+                        ->where(function ($q) use ($clientId) {
+                            $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                        })
+                        ->whereRaw('LOWER(legal_name) = ?', [mb_strtolower(trim((string) $value))])
+                        ->when($customerId, fn ($q) => $q->where('id', '!=', $customerId))
+                        ->exists();
+                    if ($exists) {
+                        $fail('This legal name is already used by another customer.');
+                    }
+                },
+            ],
             'type'           => 'nullable|string|max:64',
-            'segment'        => 'nullable|string|max:64',
+            'segment'        => 'nullable|string|max:1024',
             'classification' => 'nullable|string|max:64',
             'risk_level'     => 'nullable|string|max:32',
             'website'        => 'nullable|string|max:500',
@@ -435,7 +469,7 @@ class CustomerController extends Controller
 
             'primary_address'                => 'required|array',
             'primary_address.type'           => 'required|string|max:64',
-            'primary_address.address_line'   => 'required|string|max:1000',
+            'primary_address.address_line'   => 'required|string|min:4|max:1000',
             'primary_address.country'        => 'nullable|string|max:64',
             'primary_address.state'          => 'nullable|string|max:64',
             'primary_address.city'           => 'nullable|string|max:64',
@@ -467,8 +501,13 @@ class CustomerController extends Controller
                     }
                 },
             ],
+            // Standard email format — username@domain.extension. Allows
+            // digit-containing domains (office365.com, 7eleven.com) but
+            // still rejects malformed inputs like "x@.com", "x@gmail",
+            // or "x@gmail.c". Frontend uses the same regex inline.
             'primary_address.cp_email'       => [
                 'required', 'email', 'max:255',
+                'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/',
                 Rule::unique('customers', 'primary_email')
                     ->where(function ($q) use ($clientId) {
                         $q->whereNull('deleted_at');
@@ -480,7 +519,7 @@ class CustomerController extends Controller
 
             'locations'                  => 'sometimes|array',
             'locations.*.type'           => 'required_with:locations|string|max:64',
-            'locations.*.address_line'   => 'required_with:locations|string|max:1000',
+            'locations.*.address_line'   => 'required_with:locations|string|min:4|max:1000',
             'locations.*.country'        => 'nullable|string|max:64',
             'locations.*.state'          => 'nullable|string|max:64',
             'locations.*.city'           => 'nullable|string|max:64',
@@ -488,7 +527,7 @@ class CustomerController extends Controller
             'locations.*.cp_name'        => 'required_with:locations|string|max:255',
             'locations.*.cp_designation' => 'nullable|string|max:128',
             'locations.*.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
-            'locations.*.cp_email'       => 'nullable|email|max:255',
+            'locations.*.cp_email'       => ['nullable', 'email', 'max:255', 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/'],
             'locations.*.cp_whatsapp'    => 'nullable|in:yes,no',
         ]);
 

@@ -1,9 +1,14 @@
-import { useState, type CSSProperties } from 'react';
+import { useState, useEffect, type CSSProperties } from 'react';
+import api from '../../api';
+import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from '../vendors/SupplierEvidenceVaultModal';
 
 /*
- * CLM → Supplier Profile (faithful port of rSp() from the SalesMatrix/CLM HTML prototype).
- * Dashboard/view page — no backend API. All data is inlined mock data.
- * Green-accented (#16A34A / #059669) progress bars where the prototype uses them; cyan chrome elsewhere.
+ * CLM → Supplier Profile.
+ * Party-wise supplier lists come from GET /clm/supplier-profile
+ * (ClmSupplierProfileController): suppliers grouped by type (Material /
+ * Logistics / Services) and by with/without shipment, each with real
+ * KYC/DD/TL/TD + agreement progress (Evidence-Vault logic).
+ * The Transaction-wise tables remain on demo data for now.
  */
 
 /* ───────────────────────── Types ───────────────────────── */
@@ -12,6 +17,7 @@ type Prog = { d: number; t: number };
 type PartyRow = {
   sr: number;
   id: string;
+  db_id?: number;
   name: string;
   seg: string;
   sc: string;
@@ -73,9 +79,16 @@ type TxnProcRow = {
 
 const PER_PAGE = 10;
 
+/* Shape of GET /clm/supplier-profile → data (Party-wise lists). */
+type SpData = {
+  ws_mat: PartyRow[]; ws_logi: PartyRow[];
+  wos_svc: PartyRow[]; wos_mat: PartyRow[]; wos_logi: PartyRow[];
+};
+const EMPTY_SP: SpData = { ws_mat: [], ws_logi: [], wos_svc: [], wos_mat: [], wos_logi: [] };
+
 /* ───────────────────────── Extracted CSS ───────────────────────── */
 const CSS = `
-.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 12px 14px; display:flex; flex-direction:column; gap:8px; }
+.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 0; display:flex; flex-direction:column; gap:8px; }
 .seg-page-card {
   background: #fff;
   border: 1px solid rgba(6,182,212,.2);
@@ -123,6 +136,78 @@ const CSS = `
 .bpa-tab-active{background:linear-gradient(135deg,#06b6d4 0%,#0891b2 55%,#0e7490 100%);color:#fff;box-shadow:0 3px 12px rgba(6,182,212,.4),0 1px 4px rgba(8,145,178,.3);}
 .bpa-tab-inactive{background:transparent;color:#0e7490;box-shadow:none;}
 .bpa-tab-inactive:hover{background:rgba(6,182,212,.1);color:#0891b2;}
+
+/* ── Dark mode ──
+ * The page is built with light inline styles, so dark mode is done with a
+ * targeted override sweep: darken every card surface, swap the distinctive
+ * light cyan gradient strips/headers for dark equivalents, and lighten the
+ * dark inline text colours. Bright-cyan accents (#0891b2/#06b6d4/#22d3ee)
+ * and the colour-coded status badges (which set their own bg + text) are
+ * left as-is — they already read fine on dark. */
+[data-bs-theme="dark"] .seg-page { background: transparent; }
+[data-bs-theme="dark"] .seg-page-card { background: #1e293b !important; border-color: rgba(6,182,212,.18) !important; box-shadow: 0 2px 12px rgba(0,0,0,.45) !important; }
+[data-bs-theme="dark"] .bref-box { background: #1e293b !important; }
+[data-bs-theme="dark"] .bref-box__header { background: linear-gradient(110deg,#103a48,#0c2e3a) !important; border-bottom-color: rgba(6,182,212,.25) !important; }
+[data-bs-theme="dark"] .bref-box__body { background: linear-gradient(180deg,#172033,#0f172a) !important; }
+[data-bs-theme="dark"] .bref-item { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .bref-item__title { color: #e2e8f0 !important; }
+[data-bs-theme="dark"] .bref-item__desc { color: #94a3b8 !important; }
+/* "What We Are Doing Here" header bar text (class-styled). */
+[data-bs-theme="dark"] .bref-box__header-label { color: #67e8f9 !important; }
+[data-bs-theme="dark"] .bref-box__header-title { color: #e2e8f0 !important; }
+[data-bs-theme="dark"] .bref-box__header-sub   { color: #7dd3fc !important; }
+[data-bs-theme="dark"] .bref-box__header-sep   { background: rgba(6,182,212,.35) !important; }
+[data-bs-theme="dark"] .bpa-seg { background: rgba(255,255,255,.05) !important; }
+[data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; }
+/* light cyan gradient strips / surfaces (matched by their distinctive stop
+ * colours) → dark */
+/* NOTE: browsers serialise inline hex colours as rgb() in the style
+ * attribute, so these matchers use the rgb() form, not #hex. */
+[data-bs-theme="dark"] .seg-page [style*="rgb(224, 249, 253)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(206, 248, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(244, 254, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(248, 254, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(240, 253, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(232, 250, 251)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(236, 254, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(232, 251, 253)"] { background: #16263a !important; }
+/* light indigo/violet ID & PI chips (#eef0ff/#f5f6ff/#eef2ff/#f5f3ff) → dark */
+[data-bs-theme="dark"] .seg-page [style*="rgb(238, 240, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(245, 246, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(238, 242, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(245, 243, 255)"] { background: rgba(99, 102, 241, .18) !important; border-color: rgba(129, 140, 248, .35) !important; }
+/* indigo/violet chip text (#4f46e5/#4338ca/#7c3aed) → light */
+[data-bs-theme="dark"] .seg-page [style*="rgb(79, 70, 229)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(67, 57, 202)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(124, 58, 237)"] { color: #c7d2fe !important; }
+/* status-pill light bg (#f8fafc "not started") + progress-bar track
+ * (rgba(6,182,212,.1)) → visible on dark. */
+[data-bs-theme="dark"] .seg-page [style*="rgb(248, 250, 252)"] { background: rgba(148, 163, 184, .18) !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgba(6, 182, 212, 0.1)"] { background: rgba(148, 163, 184, .30) !important; }
+/* white inline cards (KPI tiles) → dark */
+[data-bs-theme="dark"] .seg-page [style*="background: rgb(255, 255, 255)"],
+[data-bs-theme="dark"] .seg-page [style*="background:rgb(255, 255, 255)"] { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+/* dark inline text → light (rgb() forms) */
+[data-bs-theme="dark"] .seg-page [style*="rgb(12, 74, 110)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(15, 23, 42)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(31, 41, 55)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(71, 85, 105)"],
+[data-bs-theme="dark"] .seg-page [style*="rgb(14, 116, 144)"] { color: #cfe8f3 !important; }
+/* muted grey (#94a3b8 — "0/x" badge numbers, denominators) → lighter */
+[data-bs-theme="dark"] .seg-page [style*="rgb(148, 163, 184)"] { color: #94c9dd !important; }
+/* data tables — header strip + rows */
+[data-bs-theme="dark"] .seg-page-card table { background: transparent !important; }
+[data-bs-theme="dark"] .seg-page-card thead tr { background: #16263a !important; }
+[data-bs-theme="dark"] .seg-page-card thead th { color: #67e8f9 !important; border-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .seg-page-card tbody tr { background: transparent !important; border-bottom-color: rgba(6,182,212,.10) !important; }
+[data-bs-theme="dark"] .seg-page-card tbody td { color: #cbd5e1 !important; }
+[data-bs-theme="dark"] .bp-buyer-row:hover { background: rgba(8,145,178,.14)!important; box-shadow: inset 3px 0 0 #22d3ee; }
+/* Class-based fallbacks for the tab/sub-tab/pager strips (inline-styled, so
+ * attribute selectors are unreliable — these win reliably). */
+[data-bs-theme="dark"] .seg-page .sp-bar { background: #16263a !important; border-bottom-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .seg-page .sp-pg  { background: #16263a !important; border-top-color: rgba(6,182,212,.14) !important; }
+[data-bs-theme="dark"] .seg-page .sp-search { background: #0f172a !important; border-color: rgba(6,182,212,.25) !important; }
+[data-bs-theme="dark"] .seg-page .sp-search input { color: #e2e8f0 !important; }
 `;
 
 /* ───────────────────────── Mock data ───────────────────────── */
@@ -324,9 +409,10 @@ function ShipBadge({ n }: { n: number }) {
   );
 }
 
-function EvidenceVaultBtn() {
+function EvidenceVaultBtn({ onClick }: { onClick?: () => void }) {
   return (
     <button
+      onClick={onClick}
       style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 13px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg,#22d3ee 0%,#06b6d4 50%,#0891b2 100%)', color: '#fff', fontSize: '10.5px', fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 3px 10px rgba(6,182,212,.42),inset 0 1px 0 rgba(255,255,255,.22)' }}
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="rgba(255,255,255,.18)" /><polyline points="9 12 11 14 15 10" strokeWidth="2.5" /></svg>
@@ -449,7 +535,7 @@ function slicePage<T>(data: T[], page: number): T[] {
 }
 
 /* ───────────────────────── Party-wise table ───────────────────────── */
-function PartyTable({ data, label }: { data: PartyRow[]; label: string }) {
+function PartyTable({ data, label, onVault }: { data: PartyRow[]; label: string; onVault?: (row: PartyRow) => void }) {
   const [page, setPage] = usePage();
   const rows = slicePage(data, page);
   return (
@@ -494,13 +580,13 @@ function PartyTable({ data, label }: { data: PartyRow[]; label: string }) {
                 <PartyProgCell obj={r.td} />
                 <td style={{ padding: '9px 11px', textAlign: 'center' }}><ShipBadge n={r.ship} /></td>
                 <PartyProgCell obj={r.agr} />
-                <td style={{ padding: '9px 12px', textAlign: 'center' }}><EvidenceVaultBtn /></td>
+                <td style={{ padding: '9px 12px', textAlign: 'center' }}><EvidenceVaultBtn onClick={() => onVault?.(r)} /></td>
               </tr>
             );
           })}
         </tbody>
       </table>
-      <div style={PG_WRAP}>
+      <div className="sp-pg" style={PG_WRAP}>
         <Pagination total={data.length} page={page} onPage={setPage} label={label} />
       </div>
     </div>
@@ -554,7 +640,7 @@ function TxnWithTable({ data }: { data: TxnRow[] }) {
           })}
         </tbody>
       </table>
-      <div style={PG_WRAP}>
+      <div className="sp-pg" style={PG_WRAP}>
         <Pagination total={data.length} page={page} onPage={setPage} label="records" />
       </div>
     </div>
@@ -604,7 +690,7 @@ function TxnWosSvcTable({ data }: { data: TxnSvcRow[] }) {
           })}
         </tbody>
       </table>
-      <div style={PG_WRAP}>
+      <div className="sp-pg" style={PG_WRAP}>
         <Pagination total={data.length} page={page} onPage={setPage} label="records" />
       </div>
     </div>
@@ -656,7 +742,7 @@ function TxnWosProcTable({ data }: { data: TxnProcRow[] }) {
           })}
         </tbody>
       </table>
-      <div style={PG_WRAP}>
+      <div className="sp-pg" style={PG_WRAP}>
         <Pagination total={data.length} page={page} onPage={setPage} label="records" />
       </div>
     </div>
@@ -688,7 +774,7 @@ const SUB_BAR: CSSProperties = { display: 'flex', alignItems: 'center', padding:
 /* Top-bar search box (visual only, faithful to prototype) */
 function SearchBox() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '36px', padding: '0 14px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)', flex: 1, maxWidth: '680px' }}>
+    <div className="sp-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '36px', padding: '0 14px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)', flex: 1, maxWidth: '680px' }}>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round" style={{ flexShrink: 0, opacity: 0.7 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
       <input type="text" placeholder="Search by Supplier ID, Name, Segment or Status..." style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
       <span style={{ fontSize: '9px', fontWeight: 600, color: '#94a3b8', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '5px', padding: '2px 6px', whiteSpace: 'nowrap', flexShrink: 0 }}>⌘ K</span>
@@ -712,6 +798,31 @@ export default function ClmSupplierProfilePage() {
   const [txnShip, setTxnShip] = useState<'with' | 'without'>('with');
   const [txnWsSub, setTxnWsSub] = useState<'mat' | 'logi'>('mat');
   const [txnWosSub, setTxnWosSub] = useState<'svc' | 'mat' | 'logi'>('svc');
+
+  // Evidence Vault popup (same modal the Suppliers table uses).
+  const [supVault, setSupVault] = useState<SupplierVaultTarget | null>(null);
+  const openVault = (row: PartyRow) => {
+    if (!row.db_id) return;
+    setSupVault({ id: row.id, db_id: row.db_id, company: row.name, segment: row.seg, contactCity: row.state });
+  };
+
+  // ── Live Party-wise data from GET /clm/supplier-profile ──
+  const [sp, setSp] = useState<SpData>(EMPTY_SP);
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/clm/supplier-profile')
+      .then((r) => { if (!cancelled) setSp((r.data?.data ?? EMPTY_SP) as SpData); })
+      .catch(() => { if (!cancelled) setSp(EMPTY_SP); });
+    return () => { cancelled = true; };
+  }, []);
+  // Fetched views — shadow the legacy demo arrays of the same name so the
+  // Party-wise tables below render live data unchanged. (Transaction-wise
+  // tables still use their demo arrays.)
+  const spMatData     = sp.ws_mat;
+  const spLogiData    = sp.ws_logi;
+  const spWosSvcData  = sp.wos_svc;
+  const spWosMatData  = sp.wos_mat;
+  const spWosLogiData = sp.wos_logi;
 
   return (
     <div className="seg-page">
@@ -820,7 +931,7 @@ export default function ClmSupplierProfilePage() {
       {clmTab === 'party' && (
         <div>
           <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden', marginTop: '8px' }}>
-            <div style={TOP_BAR}>
+            <div className="sp-bar" style={TOP_BAR}>
               <div className="bpa-seg">
                 <button className={`bpa-tab ${partyShip === 'with' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => setPartyShip('with')}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
@@ -837,26 +948,26 @@ export default function ClmSupplierProfilePage() {
             {/* With Shipment ID */}
             {partyShip === 'with' && (
               <div style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
-                <div style={SUB_BAR}>
+                <div className="sp-bar" style={SUB_BAR}>
                   <SubTab active={wsSub === 'mat'} onClick={() => setWsSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={wsSub === 'mat'} icon="mat" />
                   <SubTab active={wsSub === 'logi'} onClick={() => setWsSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={wsSub === 'logi'} icon="logi" />
                 </div>
-                {wsSub === 'mat' && <PartyTable data={spMatData} label="suppliers" />}
-                {wsSub === 'logi' && <PartyTable data={spLogiData} label="suppliers" />}
+                {wsSub === 'mat' && <PartyTable data={spMatData} label="suppliers" onVault={openVault} />}
+                {wsSub === 'logi' && <PartyTable data={spLogiData} label="suppliers" onVault={openVault} />}
               </div>
             )}
 
             {/* Without Shipment ID */}
             {partyShip === 'without' && (
               <div style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
-                <div style={SUB_BAR}>
+                <div className="sp-bar" style={SUB_BAR}>
                   <SubTab active={wosSub === 'svc'} onClick={() => setWosSub('svc')} label="Services Suppliers" badge="SVC" badgeActive={wosSub === 'svc'} icon="svc" />
                   <SubTab active={wosSub === 'mat'} onClick={() => setWosSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={wosSub === 'mat'} icon="mat" />
                   <SubTab active={wosSub === 'logi'} onClick={() => setWosSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={wosSub === 'logi'} icon="logi" />
                 </div>
-                {wosSub === 'svc' && <PartyTable data={spWosSvcData} label="suppliers" />}
-                {wosSub === 'mat' && <PartyTable data={spWosMatData} label="suppliers" />}
-                {wosSub === 'logi' && <PartyTable data={spWosLogiData} label="suppliers" />}
+                {wosSub === 'svc' && <PartyTable data={spWosSvcData} label="suppliers" onVault={openVault} />}
+                {wosSub === 'mat' && <PartyTable data={spWosMatData} label="suppliers" onVault={openVault} />}
+                {wosSub === 'logi' && <PartyTable data={spWosLogiData} label="suppliers" onVault={openVault} />}
               </div>
             )}
           </div>
@@ -867,7 +978,7 @@ export default function ClmSupplierProfilePage() {
       {clmTab === 'txn' && (
         <div>
           <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden', marginTop: '8px' }}>
-            <div style={TOP_BAR}>
+            <div className="sp-bar" style={TOP_BAR}>
               <div className="bpa-seg">
                 <button className={`bpa-tab ${txnShip === 'with' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => setTxnShip('with')}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
@@ -884,7 +995,7 @@ export default function ClmSupplierProfilePage() {
             {/* With Shipment ID */}
             {txnShip === 'with' && (
               <div style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
-                <div style={SUB_BAR}>
+                <div className="sp-bar" style={SUB_BAR}>
                   <SubTab active={txnWsSub === 'mat'} onClick={() => setTxnWsSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={txnWsSub === 'mat'} icon="mat" />
                   <SubTab active={txnWsSub === 'logi'} onClick={() => setTxnWsSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={txnWsSub === 'logi'} icon="logi" />
                 </div>
@@ -896,7 +1007,7 @@ export default function ClmSupplierProfilePage() {
             {/* Without Shipment ID */}
             {txnShip === 'without' && (
               <div style={{ background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
-                <div style={SUB_BAR}>
+                <div className="sp-bar" style={SUB_BAR}>
                   <SubTab active={txnWosSub === 'svc'} onClick={() => setTxnWosSub('svc')} label="Services Suppliers" badge="SVC" badgeActive={txnWosSub === 'svc'} icon="svc" />
                   <SubTab active={txnWosSub === 'mat'} onClick={() => setTxnWosSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={txnWosSub === 'mat'} icon="mat" />
                   <SubTab active={txnWosSub === 'logi'} onClick={() => setTxnWosSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={txnWosSub === 'logi'} icon="logi" />
@@ -909,6 +1020,9 @@ export default function ClmSupplierProfilePage() {
           </div>
         </div>
       )}
+
+      {/* Evidence Vault popup — same modal used by the Suppliers (Vendors) table. */}
+      <SupplierEvidenceVaultModal open={!!supVault} supplier={supVault} onClose={() => setSupVault(null)} />
     </div>
   );
 }
