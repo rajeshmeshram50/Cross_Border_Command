@@ -258,6 +258,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::delete('/clm/trade-doc-names/{id}', [ClmTradeDocumentController::class, 'namesDestroy']);
     Route::get   ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryIndex']);
     Route::post  ('/clm/trade-doc-library',                   [ClmTradeDocumentController::class, 'libraryStore']);
+    // Standalone DOCX → HTML (no library row) for editors like the CTC draft.
+    Route::post  ('/clm/docx-to-html',                        [ClmTradeDocumentController::class, 'docxToHtmlPreview']);
     // Static-path endpoints declared BEFORE `{id}` so Laravel's router
     // doesn't treat `upload-header-logo` / `for-party` as numeric ids
     // and reject the request with 405 against the PUT/DELETE handlers.
@@ -306,11 +308,29 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/clm/agreement-library/{id}/download',    [ClmAgreementController::class, 'downloadDocx'])->whereNumber('id');
     Route::post  ('/clm/agreement-library/{id}/upload-docx', [ClmAgreementController::class, 'uploadDocx'])->whereNumber('id');
     Route::post  ('/clm/agreement-library/upload-header-logo', [ClmAgreementController::class, 'uploadHeaderLogo']);
+
+    /* Case-to-Case (CTC) Contracts — add/drafting form + the three views
+     * (list · Agreements We Sent · Agreements To Approve). Static paths are
+     * declared before `{id}` (also number-constrained) so /sent and
+     * /to-approve aren't swallowed as ids. */
+    Route::get   ('/clm/ctc-contracts',              [\App\Http\Controllers\Api\CtcContractController::class, 'index']);
+    Route::post  ('/clm/ctc-contracts',              [\App\Http\Controllers\Api\CtcContractController::class, 'store']);
+    Route::get   ('/clm/ctc-contracts/sent',         [\App\Http\Controllers\Api\CtcContractController::class, 'sentIndex']);
+    Route::get   ('/clm/ctc-contracts/to-approve',   [\App\Http\Controllers\Api\CtcContractController::class, 'toApproveIndex']);
+    Route::get   ('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'show'])->whereNumber('id');
+    Route::put   ('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'update'])->whereNumber('id');
+    Route::delete('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'destroy'])->whereNumber('id');
+    Route::post  ('/clm/ctc-contracts/{id}/approve', [\App\Http\Controllers\Api\CtcContractController::class, 'approve'])->whereNumber('id');
+    Route::post  ('/clm/ctc-contracts/{id}/reject',  [\App\Http\Controllers\Api\CtcContractController::class, 'reject'])->whereNumber('id');
+    Route::post  ('/clm/ctc-contracts/{id}/clarify', [\App\Http\Controllers\Api\CtcContractController::class, 'clarify'])->whereNumber('id');
+    Route::post  ('/clm/ctc-contracts/{id}/respond', [\App\Http\Controllers\Api\CtcContractController::class, 'respond'])->whereNumber('id');
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
     Route::get   ('/clm/buyer-profile',                          [ClmBuyerProfileController::class, 'index']);
     Route::get   ('/clm/supplier-profile',                       [ClmSupplierProfileController::class, 'index']);
     Route::post  ('/clm/signature-requests/agreement-preview',   [ClmSignatureController::class, 'agreementPreview']);
     Route::post  ('/clm/signature-requests/agreement-send',      [ClmSignatureController::class, 'agreementSend']);
+    // Sales Matrix Stage 5 — send a Quotation / Proforma Invoice for e-signature.
+    Route::post  ('/clm/signature-requests/sales-doc-send',      [ClmSignatureController::class, 'salesDocSend']);
 
     // Central CLM → Clause Library (two tabs: types + library).
     Route::get   ('/clm/clause-types',      [ClmClauseController::class, 'typesIndex']);

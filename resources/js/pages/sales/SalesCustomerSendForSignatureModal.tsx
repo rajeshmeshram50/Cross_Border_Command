@@ -66,7 +66,7 @@ type Signer = {
   order?: number;
 };
 
-type DocSettings = {
+export type DocSettings = {
   x: number;
   y: number;
   page: number;
@@ -74,7 +74,7 @@ type DocSettings = {
   height: number;
 };
 
-const DEFAULTS: DocSettings = { x: 380, y: 720, page: 0, width: 150, height: 45 };
+export const DEFAULTS: DocSettings = { x: 380, y: 720, page: 0, width: 150, height: 45 };
 
 /* Per-signer default coords for multi-party agreements. Buyer parks on
  * the page-bottom left, Consignee on the right — so a Buyer+Consignee
@@ -82,8 +82,8 @@ const DEFAULTS: DocSettings = { x: 380, y: 720, page: 0, width: 150, height: 45 
  * by dragging each independently. Single-signer agreements just pick
  * their role's slot. Supplier is reserved for future vendor-side flows
  * (today's lead-side workplace doesn't surface supplier signers). */
-type SignerRoleKey = 'buyer' | 'consignee' | 'supplier';
-const SIGNER_DEFAULTS: Record<SignerRoleKey, DocSettings> = {
+export type SignerRoleKey = 'buyer' | 'consignee' | 'supplier';
+export const SIGNER_DEFAULTS: Record<SignerRoleKey, DocSettings> = {
   buyer:     { x:  60, y: 720, page: 0, width: 150, height: 45 },
   consignee: { x: 380, y: 720, page: 0, width: 150, height: 45 },
   supplier:  { x: 220, y: 720, page: 0, width: 150, height: 45 },
@@ -102,8 +102,8 @@ const ROLE_TO_MARKER_TOKEN: Record<SignerRoleKey, 'customer' | 'consignee' | 'su
 };
 
 // A4 in PDF points (1pt = 1/72in)
-const A4_W = 595;
-const A4_H = 842;
+export const A4_W = 595;
+export const A4_H = 842;
 
 /* When the modal is reused from the workplace's Segment Details card,
  * the data shape flips from "trade documents bound to a single party"
@@ -1707,7 +1707,7 @@ async function detectSignatureMarkers(
   return result;
 }
 
-const SSF_CSS = `
+export const SSF_CSS = `
 .ssf-overlay {
   position: fixed; inset: 0; z-index: 260000;
   background: rgba(7, 30, 50, .55);

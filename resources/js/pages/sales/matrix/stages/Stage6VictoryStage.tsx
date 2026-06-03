@@ -219,7 +219,7 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
             <div className="smd-stg-head-sub">● Deal closed successfully</div>
           </div>
         </div>
-        <span className="smd-stg-head-badge s6-badge">● DEAL WON</span>
+        <span className="smd-stg-head-badge s6-badge">DEAL WON</span>
       </div>
 
       <div className="smd-stg-body s6-body">

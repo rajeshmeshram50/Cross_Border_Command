@@ -739,30 +739,33 @@
 
                     <!-- TERMS & CONDITIONS — sourced from the form's
                          "Terms & Conditions" textarea (saved on the
-                         quotation/PI row as `terms`). Rendered AFTER
-                         the signature block per requirement. Only
-                         renders when non-empty. nl2br preserves line
-                         breaks the user typed (DomPDF collapses raw
-                         \n otherwise). -->
+                         quotation/PI row as `terms`). Starts on its OWN
+                         page AFTER the signature, with a header (logo +
+                         title + No/Date + barcode). Only renders when
+                         non-empty. nl2br preserves the line breaks the
+                         user typed (DomPDF collapses raw \n otherwise). -->
                     @php($segTncs = $segmentTermsConditions ?? [])
                     @if(!empty(trim($quotation->terms_and_conditions ?? '')) || !empty($segTncs))
-                        <section style="margin-top: 14px; margin-bottom: 8px; page-break-inside: avoid;">
-                            <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
-                                Terms &amp; Conditions
-                            </div>
-                            @if(!empty(trim($quotation->terms_and_conditions ?? '')))
-                                <div style="font-size: 9px; color: #555; line-height: 14px;">
-                                    {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
+                        <div style="page-break-before: always;">
+                            @include('pdf.partials.sales-doc-tnc-header')
+                            <section style="margin-bottom: 8px;">
+                                <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
+                                    Terms &amp; Conditions
                                 </div>
-                            @endif
-                            @foreach($segTncs as $tnc)
-                                @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))
-                                    <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
-                                        {!! $tnc['content'] !!}
+                                @if(!empty(trim($quotation->terms_and_conditions ?? '')))
+                                    <div style="font-size: 9px; color: #555; line-height: 14px;">
+                                        {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
                                     </div>
                                 @endif
-                            @endforeach
-                        </section>
+                                @foreach($segTncs as $tnc)
+                                    @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))
+                                        <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
+                                            {!! $tnc['content'] !!}
+                                        </div>
+                                    @endif
+                                @endforeach
+                            </section>
+                        </div>
                     @endif
                 </div>
             @endif
@@ -922,29 +925,32 @@
                     </section>
                 @endif
 
-                {{-- TERMS & CONDITIONS — mirrors the inline render on the
-                     last-product-page footer above. Rendered AFTER the
-                     signature block per requirement. Same data source
+                {{-- TERMS & CONDITIONS — starts on its OWN page after the
+                     signature, with the same logo + title + No/Date +
+                     barcode header. Same data source
                      ($quotation->terms_and_conditions ← form's `terms`). --}}
                 @php($segTncs = $segmentTermsConditions ?? [])
                 @if(!empty(trim($quotation->terms_and_conditions ?? '')) || !empty($segTncs))
-                    <section style="margin-top: 14px; margin-bottom: 8px; page-break-inside: avoid;">
-                        <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
-                            Terms &amp; Conditions
-                        </div>
-                        @if(!empty(trim($quotation->terms_and_conditions ?? '')))
-                            <div style="font-size: 9px; color: #555; line-height: 14px;">
-                                {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
+                    <div style="page-break-before: always;">
+                        @include('pdf.partials.sales-doc-tnc-header')
+                        <section style="margin-bottom: 8px;">
+                            <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
+                                Terms &amp; Conditions
                             </div>
-                        @endif
-                        @foreach($segTncs as $tnc)
-                            @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))
-                                <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
-                                    {!! $tnc['content'] !!}
+                            @if(!empty(trim($quotation->terms_and_conditions ?? '')))
+                                <div style="font-size: 9px; color: #555; line-height: 14px;">
+                                    {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
                                 </div>
                             @endif
-                        @endforeach
-                    </section>
+                            @foreach($segTncs as $tnc)
+                                @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))
+                                    <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
+                                        {!! $tnc['content'] !!}
+                                    </div>
+                                @endif
+                            @endforeach
+                        </section>
+                    </div>
                 @endif
             </div>
         </div>

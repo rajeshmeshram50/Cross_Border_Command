@@ -120,7 +120,6 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
   const [draft, setDraft]             = useState<DraftRow>(EMPTY_DRAFT);
   const [saving, setSaving]           = useState(false);
   const [editingId, setEditingId]     = useState<number | null>(null);
-  const [editDraft, setEditDraft]     = useState<DraftRow>(EMPTY_DRAFT);
   const [pendingDelete, setPendingDelete] = useState<DirectoryRow | null>(null);
   const [deleting, setDeleting]       = useState(false);
 
@@ -187,8 +186,8 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
   /* Hide products that are already mapped — prevents 422 on save. */
   const mappedIds = useMemo(() => new Set(rows.map(r => r.product_id)), [rows]);
   const availableProducts = useMemo(
-    () => products.filter(p => !mappedIds.has(p.id) || p.id === editDraft.product_id),
-    [products, mappedIds, editDraft.product_id],
+    () => products.filter(p => !mappedIds.has(p.id) || p.id === draft.product_id),
+    [products, mappedIds, draft.product_id],
   );
 
   /* Single-currency-per-lead. The first product mapped sets the
@@ -214,7 +213,10 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
 
   if (!open) return null;
 
-  /* ── Save (map new) ─────────────────────────────────────────── */
+  /* ── Save — shared by the popup form for BOTH mapping a new product
+   * (POST) and editing an existing mapping (PUT). `editingId` decides
+   * which; the product itself is fixed when editing (the PUT endpoint
+   * only updates pricing). ─────────────────────────────────────────── */
   const saveDraft = async () => {
     if (!leadId) return;
     if (!draft.product_id) {
@@ -223,74 +225,70 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
     }
     setSaving(true);
     try {
-      const { data } = await api.post<{ status: boolean; data: { id: number; product: { product_code: string; name: string; status: string; segment?: { name: string | null } | null } } }>(
-        `/sales/leads/${leadId}/products`,
-        {
-          product_id:   draft.product_id,
+      if (editingId) {
+        await api.put(`/sales/leads/${leadId}/products/${editingId}`, {
           currency:     draft.currency,
           quantity:     draft.quantity     ? Number(draft.quantity)     : null,
           target_price: draft.target_price ? Number(draft.target_price) : null,
           notes:        draft.notes || null,
-        },
-      );
-      const created = data.data;
-      const pmaster = productsById.get(draft.product_id);
-      setRows(prev => [{
-        id:               created.id,
-        product_id:       draft.product_id!,
-        product_code:     created.product?.product_code ?? pmaster?.product_code ?? null,
-        product_name:     created.product?.name         ?? pmaster?.name         ?? null,
-        product_status:   created.product?.status       ?? null,
-        product_category: created.product?.segment?.name ?? null,
-        currency:         draft.currency,
-        quantity:         draft.quantity     ? Number(draft.quantity)     : null,
-        target_price:     draft.target_price ? Number(draft.target_price) : null,
-        notes:            draft.notes || null,
-      }, ...prev]);
-      setDraft(EMPTY_DRAFT); setDraftOpen(false);
-      toast.success('Product mapped', 'Added to the directory');
+        });
+        setRows(prev => prev.map(r => r.id === editingId ? {
+          ...r,
+          currency:     draft.currency,
+          quantity:     draft.quantity     ? Number(draft.quantity)     : null,
+          target_price: draft.target_price ? Number(draft.target_price) : null,
+          notes:        draft.notes || null,
+        } : r));
+        toast.success('Updated', 'Mapping updated');
+      } else {
+        const { data } = await api.post<{ status: boolean; data: { id: number; product: { product_code: string; name: string; status: string; segment?: { name: string | null } | null } } }>(
+          `/sales/leads/${leadId}/products`,
+          {
+            product_id:   draft.product_id,
+            currency:     draft.currency,
+            quantity:     draft.quantity     ? Number(draft.quantity)     : null,
+            target_price: draft.target_price ? Number(draft.target_price) : null,
+            notes:        draft.notes || null,
+          },
+        );
+        const created = data.data;
+        const pmaster = productsById.get(draft.product_id);
+        setRows(prev => [{
+          id:               created.id,
+          product_id:       draft.product_id!,
+          product_code:     created.product?.product_code ?? pmaster?.product_code ?? null,
+          product_name:     created.product?.name         ?? pmaster?.name         ?? null,
+          product_status:   created.product?.status       ?? null,
+          product_category: created.product?.segment?.name ?? null,
+          currency:         draft.currency,
+          quantity:         draft.quantity     ? Number(draft.quantity)     : null,
+          target_price:     draft.target_price ? Number(draft.target_price) : null,
+          notes:            draft.notes || null,
+        }, ...prev]);
+        toast.success('Product mapped', 'Added to the directory');
+      }
+      setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false);
     } catch (e: any) {
-      toast.error('Save failed', e?.response?.data?.message ?? 'Could not map this product');
+      toast.error(editingId ? 'Update failed' : 'Save failed', e?.response?.data?.message ?? 'Could not save this product');
     } finally {
       setSaving(false);
     }
   };
 
-  /* ── Save (edit row) ────────────────────────────────────────── */
+  /* Edit a row → open the SAME popup form the "Map Product" button uses,
+   * pre-filled with the row's values (no more inline-cell editing). The
+   * product picker is locked since the PUT endpoint can't re-point a
+   * mapping to a different product. */
   const startEdit = (row: DirectoryRow) => {
     setEditingId(row.id);
-    setEditDraft({
+    setDraft({
       product_id:   row.product_id,
       currency:     row.currency,
       quantity:     row.quantity     != null ? String(row.quantity)     : '',
       target_price: row.target_price != null ? String(row.target_price) : '',
       notes:        row.notes ?? '',
     });
-  };
-  const saveEdit = async () => {
-    if (!leadId || !editingId) return;
-    setSaving(true);
-    try {
-      await api.put(`/sales/leads/${leadId}/products/${editingId}`, {
-        currency:     editDraft.currency,
-        quantity:     editDraft.quantity     ? Number(editDraft.quantity)     : null,
-        target_price: editDraft.target_price ? Number(editDraft.target_price) : null,
-        notes:        editDraft.notes || null,
-      });
-      setRows(prev => prev.map(r => r.id === editingId ? {
-        ...r,
-        currency:     editDraft.currency,
-        quantity:     editDraft.quantity     ? Number(editDraft.quantity)     : null,
-        target_price: editDraft.target_price ? Number(editDraft.target_price) : null,
-        notes:        editDraft.notes || null,
-      } : r));
-      setEditingId(null);
-      toast.success('Updated', 'Mapping updated');
-    } catch (e: any) {
-      toast.error('Update failed', e?.response?.data?.message ?? 'Could not update this mapping');
-    } finally {
-      setSaving(false);
-    }
+    setDraftOpen(true);
   };
 
   const confirmDelete = async () => {
@@ -331,7 +329,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
           <div className="pdm-head-actions">
             <button
               className="pdm-map-btn"
-              onClick={() => { setDraft(EMPTY_DRAFT); setDraftOpen(o => !o); }}
+              onClick={() => { setEditingId(null); setDraft(EMPTY_DRAFT); setDraftOpen(o => !o); }}
               disabled={!leadId}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
@@ -398,82 +396,6 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                 )}
 
                 {rows.map((r, i) => {
-                  const isEditing = editingId === r.id;
-                  if (isEditing) {
-                    return (
-                      <tr key={r.id} className="pdm-draft-row">
-                        <td><span className="pdm-sr-pill">{i + 1}</span></td>
-                        <td>
-                          <span className="pdm-code-chip" title={r.product_code ?? ''}>
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                              <rect x="4" y="4" width="16" height="16" rx="2.5" />
-                            </svg>
-                            {r.product_code ?? '—'}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="pdm-name-cell">
-                            <span className="pdm-prod-name">{r.product_name ?? '—'}</span>
-                            {r.product_category && (
-                              <span className="pdm-cat-badge">{r.product_category.toUpperCase()}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <StatusPill status={r.product_status} />
-                        </td>
-                        <td>
-                          <input
-                            type="number" min="0" step="any" className="pdm-input"
-                            value={editDraft.quantity}
-                            onChange={e => setEditDraft(p => ({ ...p, quantity: e.target.value }))}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number" min="0" step="any" className="pdm-input"
-                            value={editDraft.target_price}
-                            onChange={e => setEditDraft(p => ({ ...p, target_price: e.target.value }))}
-                          />
-                        </td>
-                        <td>
-                          {/* Edit-mode currency lock: if there's ONLY one
-                           *  row on the lead (this one), the user can
-                           *  switch freely. If there are OTHER rows with
-                           *  a currency set, the picker is restricted to
-                           *  that currency so the lead stays un-mixed.
-                           *  Matches the backend rule in
-                           *  SalesLeadController::updateLeadProduct. */}
-                          <MasterSelect
-                            value={editDraft.currency}
-                            onChange={(v) => setEditDraft(p => ({ ...p, currency: v }))}
-                            options={(() => {
-                              const others = rows.filter(x => x.id !== r.id && x.currency).map(x => String(x.currency).toUpperCase());
-                              const otherCurrency = others[0] ?? null;
-                              if (otherCurrency) {
-                                return [{ value: otherCurrency, label: otherCurrency }];
-                              }
-                              return currencies.map(c => ({
-                                value: c.code,
-                                label: c.name ? `${c.code} – ${c.name}` : c.code,
-                              }));
-                            })()}
-                            placeholder="Currency"
-                            disabled={rows.some(x => x.id !== r.id && !!x.currency)}
-                            loading={currenciesLoading && currencies.length === 0}
-                          />
-                        </td>
-                        <td className="pdm-act-cell">
-                          <button className="pdm-row-btn pdm-row-btn-primary" onClick={() => void saveEdit()} disabled={saving}>
-                            {saving ? 'Saving…' : 'Save'}
-                          </button>
-                          <button className="pdm-row-btn" onClick={() => setEditingId(null)} disabled={saving}>
-                            Cancel
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  }
                   return (
                     <tr key={r.id}>
                       <td><span className="pdm-sr-pill">{i + 1}</span></td>
@@ -548,7 +470,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
           Product" button. Lives over the directory backdrop with a
           higher z-index so it sits on top of the directory body. */}
       {draftOpen && (
-        <div className="pdm-form-backdrop" onClick={() => { setDraft(EMPTY_DRAFT); setDraftOpen(false); }}>
+        <div className="pdm-form-backdrop" onClick={() => { setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); }}>
           <div className="pdm-form-modal" onClick={e => e.stopPropagation()}>
             <div className="pdm-form-head">
               <div className="pdm-form-head-left">
@@ -562,13 +484,13 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   </svg>
                 </div>
                 <div>
-                  <div className="pdm-form-head-title">Map Product to Lead</div>
-                  <div className="pdm-form-head-sub">Select a product and define pricing details</div>
+                  <div className="pdm-form-head-title">{editingId ? 'Edit Product Mapping' : 'Map Product to Lead'}</div>
+                  <div className="pdm-form-head-sub">{editingId ? 'Update the pricing details for this product' : 'Select a product and define pricing details'}</div>
                 </div>
               </div>
               <button
                 className="pdm-form-close"
-                onClick={() => { setDraft(EMPTY_DRAFT); setDraftOpen(false); }}
+                onClick={() => { setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); }}
                 disabled={saving}
                 aria-label="Close"
               >
@@ -586,7 +508,9 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   onChange={(v) => setDraft(p => ({ ...p, product_id: v ? Number(v) : null }))}
                   options={availableProducts.map(p => ({ value: String(p.id), label: `${p.product_code} · ${p.name}` }))}
                   placeholder={productsLoading ? 'Loading…' : 'Select product'}
-                  disabled={productsLoading}
+                  /* Locked when editing — a mapping can't be re-pointed to a
+                     different product (only its pricing is editable). */
+                  disabled={productsLoading || !!editingId}
                 />
               </div>
 
@@ -663,7 +587,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
             <div className="pdm-form-foot">
               <button
                 className="pdm-form-btn pdm-form-btn-ghost"
-                onClick={() => { setDraft(EMPTY_DRAFT); setDraftOpen(false); }}
+                onClick={() => { setDraft(EMPTY_DRAFT); setEditingId(null); setDraftOpen(false); }}
                 disabled={saving}
               >
                 Cancel
@@ -682,7 +606,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                       <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
                       <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
                     </svg>
-                    Map Product
+                    {editingId ? 'Save Changes' : 'Map Product'}
                   </>
                 )}
               </button>

@@ -218,6 +218,19 @@ class ProformaInvoiceController extends Controller
             ], 409);
         }
 
+        // A signed PI is locked — the signed copy must keep matching the
+        // document the customer e-signed. Block edits outright.
+        if (\App\Models\ClmSignatureRequest::hasSignedForDoc(
+            $user->client_id,
+            \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE,
+            $row->id,
+        )) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This PI has already been signed and can no longer be edited. Duplicate it to make changes.',
+            ], 409);
+        }
+
         $data  = $this->validatePayload($request);
 
         /* B32: a PI created from a quotation must keep the source quote's
@@ -293,6 +306,15 @@ class ProformaInvoiceController extends Controller
                 ProformaInvoiceItem::create($it);
             }
         });
+
+        // Editing the PI invalidates any e-signature already in flight or
+        // completed — the signed copy no longer matches the document — so
+        // the row reverts to "Not Sent" and must be sent for signature again.
+        \App\Models\ClmSignatureRequest::supersedeForDoc(
+            $user->client_id,
+            \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE,
+            $row->id,
+        );
 
         return response()->json(['status' => true, 'data' => $row->fresh(['items'])]);
     }

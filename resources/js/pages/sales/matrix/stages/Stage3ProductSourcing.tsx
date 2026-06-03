@@ -309,7 +309,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
             <div className="smd-stg-head-sub"><span className="smd-stg-head-dot" />Product and vendor sourcing in progress</div>
           </div>
         </div>
-        <span className="smd-stg-head-badge">● ACTIVE</span>
+        <span className="smd-stg-head-badge">ACTIVE</span>
       </div>
 
       <div className="smd-stg-body">
@@ -833,8 +833,6 @@ const STAGE3_CSS = `
   box-shadow: 0 0 0 2px rgba(34,197,94,.22);
   margin-right: 6px; vertical-align: middle;
 }
-.smd-stg-head-badge::before { display: none; }
-
 /* ═══════════════════════════════ READINESS PANEL ═══════════════════════════════
  * Persistent, friendly version of what used to be a one-shot toast.
  * Two variants:

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
 import { useNavigateContext } from '../../../components/App';
 import api from '../../../api';
+import { decodeOppId, decodeStage } from '../../../utils/oppCrypto';
 import { useToast } from '../../../contexts/ToastContext';
 import EntityPickerModal, { type PickerOption } from '../EntityPickerModal';
 import AddCustomerModal, { type EditCustomer } from '../AddCustomerModal';
@@ -288,8 +289,10 @@ export default function SalesMatrixDetail() {
     }
   };
 
-  const oppId = params.oppId || DEFAULT_HEADER.oppId;
-  const stage = Math.min(6, Math.max(1, parseInt(params.stage || '1', 10))) as StageNum;
+  // The URL carries an encrypted token; decode back to the plain OPP code so
+  // all internal logic (lead resolution, headers, navStage) works unchanged.
+  const oppId = params.oppId ? decodeOppId(params.oppId) : DEFAULT_HEADER.oppId;
+  const stage = Math.min(6, Math.max(1, decodeStage(params.stage || '1'))) as StageNum;
 
   /* Header from router state — seed; the server fetch below hydrates the
    * lead-pipeline fields (qualified/disqualified/taskManager). */
@@ -462,7 +465,12 @@ export default function SalesMatrixDetail() {
   /* Applicable agreements for this lead → drives the Segment Details
    * card counts + powers LeadAgreementSendModal. Refetched whenever
    * EITHER party's tally tick bumps so a successful Send / Recall or a
-   * customer/consignee KYC change ripples back into the card. */
+   * customer/consignee KYC change ripples back into the card.
+   * `stage` is in the deps too: the Segment Details card gates on a PI
+   * existing, so navigating to / landing on Stage 5 must pull fresh PI
+   * state — otherwise a PI created in another tab (or before this view
+   * mounted) leaves the card showing its empty-state until a manual
+   * reload. */
   useEffect(() => {
     if (!resolvedLeadId) { setAgreementApplicable(null); return; }
     let cancelled = false;
@@ -473,7 +481,7 @@ export default function SalesMatrixDetail() {
       })
       .catch(() => { if (!cancelled) setAgreementApplicable(null); });
     return () => { cancelled = true; };
-  }, [resolvedLeadId, custRefreshTick, consRefreshTick, agreementRefreshTick]);
+  }, [resolvedLeadId, custRefreshTick, consRefreshTick, agreementRefreshTick, stage]);
 
   /* "Marked as key" is sourced live from the server (leads.key_opportunity)
    * so it survives navigation / refresh. Toggling fires a PUT and the
@@ -915,32 +923,48 @@ export default function SalesMatrixDetail() {
                 pattern the KYC/DD group uses above; once a PI exists
                 the two regulatory rows render with live counts and the
                 row click opens the agreement send modal. */}
-            {(agreementApplicable?.pi || agreementApplicable?.quotation) ? (
+            {agreementApplicable?.pi ? (
               <>
                 <ClmRow
                   icon={<IconShieldSm />}
                   tone="rose"
                   title="Highly Regulated Segments"
-                  sub={`${agreementApplicable.totals.highly.matched} of ${agreementApplicable.totals.highly.total} segments`}
+                  sub={agreementApplicable.totals.highly.matched < 1
+                    ? 'No segments'
+                    : `${agreementApplicable.totals.highly.matched} of ${agreementApplicable.totals.highly.total} segments`}
                   progress={agreementApplicable.totals.highly.total > 0
                     ? Math.round((agreementApplicable.totals.highly.matched / agreementApplicable.totals.highly.total) * 100)
                     : 0}
-                  onClick={() => { setAgreementModalTier('highly'); setAgreementModalOpen(true); }}
+                  onClick={() => {
+                    if ((agreementApplicable.totals.highly.matched ?? 0) < 1) {
+                      toast.warning('No highly regulated segment', 'No product on this PI is mapped to a highly regulated segment, so there are no agreements to send.');
+                      return;
+                    }
+                    setAgreementModalTier('highly'); setAgreementModalOpen(true);
+                  }}
                 />
                 <ClmRow
                   icon={<IconShieldSm />}
                   tone="orange"
                   title="Less Regulated Segments"
-                  sub={`${agreementApplicable.totals.less.matched} of ${agreementApplicable.totals.less.total} segments`}
+                  sub={agreementApplicable.totals.less.matched < 1
+                    ? 'No segments'
+                    : `${agreementApplicable.totals.less.matched} of ${agreementApplicable.totals.less.total} segments`}
                   progress={agreementApplicable.totals.less.total > 0
                     ? Math.round((agreementApplicable.totals.less.matched / agreementApplicable.totals.less.total) * 100)
                     : 0}
-                  onClick={() => { setAgreementModalTier('less'); setAgreementModalOpen(true); }}
+                  onClick={() => {
+                    if ((agreementApplicable.totals.less.matched ?? 0) < 1) {
+                      toast.warning('No less regulated segment', 'No product on this PI is mapped to a less regulated segment, so there are no agreements to send.');
+                      return;
+                    }
+                    setAgreementModalTier('less'); setAgreementModalOpen(true);
+                  }}
                 />
               </>
             ) : (
               <div className="smd-clm-empty">
-                Create a quotation or proforma invoice on this lead to fetch segment-applicable agreements here.
+                Create a proforma invoice on this lead to fetch segment-applicable agreements here.
               </div>
             )}
           </div>
@@ -1157,26 +1181,19 @@ export default function SalesMatrixDetail() {
       />
 
       {/* ── Add Product modal ──
-          When a brand-new product master is finalised we auto-map it
-          to this lead so the user doesn't have to repeat the pick step
-          inside the Product Directory. Errors are silent — if the auto-
-          map fails (e.g. duplicate), the user can still map manually. */}
+          Creates a brand-new product in the global Product master only.
+          It is NOT auto-mapped to this opportunity — the Product Directory
+          should list only products the user explicitly maps via
+          "Map Product". To attach this product, open the Product Directory
+          and map it there. */}
       {productAddOpen && (
         <AddProductModal
           productId={null}
           onClose={() => setProductAddOpen(false)}
-          onSaved={async (pid, finalised) => {
+          onSaved={(_pid, finalised) => {
             if (!finalised) return;
             setProductAddOpen(false);
-            if (resolvedLeadId && pid) {
-              try {
-                await api.post(`/sales/leads/${resolvedLeadId}/products`, { product_id: pid });
-                toast.success('Mapped', 'New product mapped to this opportunity');
-                setProductDirectoryOpen(true);
-              } catch {
-                /* silent — the user can map manually from the Directory */
-              }
-            }
+            toast.success('Product created', 'Map it from the Product Directory to attach it to this opportunity');
           }}
         />
       )}

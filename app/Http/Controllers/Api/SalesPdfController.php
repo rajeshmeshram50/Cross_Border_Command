@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Milon\Barcode\DNS1D;
 use stdClass;
 
@@ -350,6 +351,61 @@ class SalesPdfController extends Controller
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . $filename . '"',
         ]);
+    }
+
+    /**
+     * Render a Quotation or Proforma Invoice to a temp PDF on disk and
+     * return its path + a slugged filename + the loaded record. Used by
+     * the Zoho Sign "Send for Signature" flow (ClmSignatureController::
+     * salesDocSend) so the exact same with-signature PDF the customer
+     * sees in preview/email is what goes to Zoho. Caller owns cleanup
+     * (@unlink the returned path in a finally block).
+     *
+     * @param  string $kind  'quotation' | 'proforma_invoice'
+     * @return array{path:string, filename:string, record:\Illuminate\Database\Eloquent\Model}
+     */
+    public function renderSalesDocPdfToTemp(string $kind, int $id, $user, bool $withSignature = true): array
+    {
+        if (!$user) abort(401);
+
+        $with = [
+            'items',
+            'branch',
+            'customer:id,customer_code,company_name,primary_email,website',
+            'customer.primaryAddress:id,customer_id,address_line,country,state,city,pin,cp_name,cp_contact,cp_email',
+            'consignee:id,consignee_code,company_name,primary_email,website',
+            'consignee.primaryAddress:id,consignee_id,address_line,country,state,city,pin,cp_name,cp_contact,cp_email',
+            'lead:id,opp_code,query_time',
+            'salesManager:id,name',
+        ];
+
+        if ($kind === 'proforma_invoice') {
+            $record   = ProformaInvoice::with($with)->findOrFail($id);
+            $viewData = $this->buildQuotationViewData($record, $withSignature, 'PROFORMA INVOICE', 'PI');
+            $prefix   = 'PI';
+        } else {
+            $record   = Quotation::with($with)->findOrFail($id);
+            $viewData = $this->buildQuotationViewData($record, $withSignature);
+            $prefix   = 'Quotation';
+        }
+
+        // Same tenant + branch scope the preview routes enforce.
+        $this->assertRecordScope($record, $user, 'read');
+
+        @set_time_limit(180);
+        $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
+            ->setPaper('A4', 'portrait')
+            ->setOption('isPhpEnabled', true);
+
+        $dir = storage_path('app/temp');
+        if (!is_dir($dir)) { @mkdir($dir, 0775, true); }
+        $path = $dir . DIRECTORY_SEPARATOR . Str::uuid()->toString() . '.pdf';
+        $pdf->save($path);
+
+        $filename = Str::slug($prefix . '-' . ($record->code ?? ('id-' . $record->id)))
+            ?: ($prefix . '-' . $record->id);
+
+        return ['path' => $path, 'filename' => $filename, 'record' => $record];
     }
 
     /* ══════════════════════════════════════════════════════════════════

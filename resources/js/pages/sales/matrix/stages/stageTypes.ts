@@ -72,6 +72,10 @@ export const SHARED_STAGE_CSS = `
 @media (prefers-reduced-motion: reduce) {
   .smd-fade-in { animation: none; }
   .smd-skel    { animation: none; background: #e2e8f0; }
+  /* Keep the static fallback dark-mode aware so the loader doesn't flash
+     a bright light bar over the dark table. */
+  [data-bs-theme="dark"] .smd-skel,
+  [data-layout-mode="dark"] .smd-skel { background: rgba(167,139,250,.18); }
 }
 
 
