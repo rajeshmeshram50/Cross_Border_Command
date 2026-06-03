@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
 import { CTC_CONTRACTS, type CtcContract, inits, PER_PAGE } from './clmOpsData';
 import ClmCtcForm from './ClmCtcForm';
-import { useOpsTheme } from './useOpsTheme';
+import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Operations · Without Shipment ID → Case to Case Contracts.
@@ -233,8 +233,8 @@ export default function ClmCaseToCasePage() {
                         <td style={{ ...TD, width: 150 }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
                             <div style={{ position: 'relative' }}>
-                              <ActBtn title="Download Contract" color="#047857" bg="#D1FAE5" border="#6EE7B7" onClick={() => setDlOpen(dlOpen === c.id ? null : c.id)}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#047857" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                              <ActBtn t={t} tone="green" title="Download Contract" onClick={() => setDlOpen(dlOpen === c.id ? null : c.id)}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                               </ActBtn>
                               {dlOpen === c.id && (
                                 <div style={{ position: 'absolute', top: 30, right: 0, zIndex: 50, background: t.surface, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.15)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E8E4F9'}`, minWidth: 160, overflow: 'hidden' }}>
@@ -248,9 +248,9 @@ export default function ClmCaseToCasePage() {
                                 </div>
                               )}
                             </div>
-                            <ActBtn title="Edit CTC" color="#5B21B6" bg="#EDE9FE" border="#C4B5FD" onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B21B6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></ActBtn>
-                            <ActBtn title="Version History" color="#0369A1" bg="#DBEAFE" border="#93C5FD" onClick={() => toast.info('Version History', c.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0369A1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
-                            <ActBtn title="Agreement Timeline" color="#B45309" bg="#FEF3C7" border="#FCD34D" onClick={() => toast.info('Agreement Timeline', c.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
+                            <ActBtn t={t} tone="violet" title="Edit CTC" onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></ActBtn>
+                            <ActBtn t={t} tone="blue" title="Version History" onClick={() => toast.info('Version History', c.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
+                            <ActBtn t={t} tone="amber" title="Agreement Timeline" onClick={() => toast.info('Agreement Timeline', c.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
                           </div>
                         </td>
                       </tr>
@@ -275,9 +275,17 @@ export default function ClmCaseToCasePage() {
   );
 }
 
-function ActBtn({ title, color, bg, border, onClick, children }: { title: string; color: string; bg: string; border: string; onClick: () => void; children: React.ReactNode }) {
+const ACT_TONES = {
+  green:  { light: { bg: '#D1FAE5', border: '#6EE7B7', color: '#047857' }, dark: { bg: 'rgba(16,185,129,.16)',  border: 'rgba(16,185,129,.42)', color: '#6ee7b7' } },
+  violet: { light: { bg: '#EDE9FE', border: '#C4B5FD', color: '#5B21B6' }, dark: { bg: 'rgba(124,58,237,.18)', border: 'rgba(124,58,237,.45)', color: '#c4b5fd' } },
+  blue:   { light: { bg: '#DBEAFE', border: '#93C5FD', color: '#0369A1' }, dark: { bg: 'rgba(56,189,248,.16)',  border: 'rgba(56,189,248,.42)', color: '#7dd3fc' } },
+  amber:  { light: { bg: '#FEF3C7', border: '#FCD34D', color: '#B45309' }, dark: { bg: 'rgba(245,158,11,.16)',  border: 'rgba(245,158,11,.42)', color: '#fcd34d' } },
+} as const;
+
+function ActBtn({ t, tone, title, onClick, children }: { t: OpsTokens; tone: keyof typeof ACT_TONES; title: string; onClick: () => void; children: React.ReactNode }) {
+  const s = t.dark ? ACT_TONES[tone].dark : ACT_TONES[tone].light;
   return (
-    <button title={title} onClick={onClick} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${border}`, background: bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color, opacity: .85, flexShrink: 0, transition: 'all .15s' }}
+    <button title={title} onClick={onClick} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: s.color, opacity: .85, flexShrink: 0, transition: 'all .15s' }}
       onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.15)'; }}
       onMouseLeave={e => { e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
       {children}
