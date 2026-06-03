@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
-import { CTC_CONTRACTS, type CtcContract, inits, PER_PAGE } from './clmOpsData';
+import api from '../../api';
+import { type CtcContract, inits, PER_PAGE } from './clmOpsData';
 import ClmCtcForm from './ClmCtcForm';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 
@@ -62,23 +63,26 @@ export default function ClmCaseToCasePage() {
   const [dlOpen, setDlOpen] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CtcContract | null>(null);
+  const [rows, setRows] = useState<CtcContract[]>([]);
+  const load = () => { api.get('/clm/ctc-contracts').then(r => setRows(r.data?.data ?? [])).catch(() => setRows([])); };
+  useEffect(() => { load(); }, []);
 
   const counts = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const f = q ? CTC_CONTRACTS.filter(c => (c.title + c.cp.join(' ') + c.id + c.type).toLowerCase().includes(q)) : CTC_CONTRACTS;
+    const f = q ? rows.filter(c => (c.title + c.cp.join(' ') + c.id + c.type).toLowerCase().includes(q)) : rows;
     return {
       all: f.length,
       signed: f.filter(c => c.status === 'signed').length,
       inprogress: f.filter(c => c.status === 'inprogress').length,
       rejected: f.filter(c => c.status === 'rejected').length,
     };
-  }, [search]);
+  }, [search, rows]);
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let f = q ? CTC_CONTRACTS.filter(c => (c.title + c.cp.join(' ') + c.id + c.type).toLowerCase().includes(q)) : CTC_CONTRACTS;
+    let f = q ? rows.filter(c => (c.title + c.cp.join(' ') + c.id + c.type).toLowerCase().includes(q)) : rows;
     return tab === 'all' ? f : f.filter(c => c.status === tab);
-  }, [search, tab]);
+  }, [search, tab, rows]);
 
   const totalPages = Math.max(1, Math.ceil(list.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
@@ -86,7 +90,7 @@ export default function ClmCaseToCasePage() {
   const slice = list.slice(start, start + PER_PAGE);
 
   if (formOpen) {
-    return <ClmCtcForm editing={editing} onClose={() => { setFormOpen(false); setEditing(null); }} onSaved={() => { setFormOpen(false); setEditing(null); }} />;
+    return <ClmCtcForm editing={editing} onClose={() => { setFormOpen(false); setEditing(null); load(); }} onSaved={() => { setFormOpen(false); setEditing(null); load(); }} />;
   }
 
   return (

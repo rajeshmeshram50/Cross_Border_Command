@@ -1,5 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
+import api from '../../api';
+import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
+import ClmInsertPlaceholderModal from './ClmInsertPlaceholderModal';
+import ClmClauseInsertPanel from './ClmClauseInsertPanel';
+import HeaderFooterPanel, { DEFAULT_HEADER, DEFAULT_FOOTER, type HeaderConfig, type FooterConfig } from '../hrms/doc-templates/HeaderFooterPanel';
 import { pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 
@@ -13,25 +18,21 @@ import { useOpsTheme, type OpsTokens } from './useOpsTheme';
  * render the styled review / signing / repository panels.
  * ───────────────────────────────────────────────────────────────────────── */
 
-const ORGS = [
-  { name: 'IGC - Aurentic',   sub: 'Aurentic · Group Entity',   initials: 'AU', grad: '#7C3AED,#4C1D95', industry: 'Financial Services', entityType: 'Group Holding',   jurisdiction: 'UAE · ADGM' },
-  { name: 'IGC - Healthcare', sub: 'Healthcare · Group Entity', initials: 'HC', grad: '#0891b2,#0e7490', industry: 'Healthcare',         entityType: 'Operating Entity', jurisdiction: 'UAE · DHA' },
-  { name: 'IGC - Agrotech',   sub: 'Agrotech · Group Entity',   initials: 'AG', grad: '#16a34a,#15803d', industry: 'Agri-Technology',     entityType: 'Subsidiary',       jurisdiction: 'UAE · DMCC' },
-];
+/* Our-organisation options are sourced from the Company Details master
+ * (GET /master/company). We surface only Country, State, Company Name and
+ * Short Code. The master is India-centric (GSTIN/PAN/IEC) and has no country
+ * column, so country defaults to "India". */
+type Org = { id: number; name: string; shortCode: string; state: string; country: string; city: string; grad: string; initials: string; sub: string };
 
-const CP_DIR: Record<'buyer' | 'supplier', { id: string; name: string; initials: string; country: string; phone: string; email: string; grad: string }[]> = {
-  buyer: [
-    { id: 'C-001', name: 'GreenHarvest Global Ltd', initials: 'GG', country: 'United States', phone: '+1-415-555-0123', email: 'james@gh.com',       grad: '#4F46E5,#7C3AED' },
-    { id: 'C-002', name: 'Atlas Trading Co.',       initials: 'AT', country: 'United Kingdom', phone: '+44-20-7946-0958', email: 'info@atlas.co.uk',  grad: '#0891B2,#0E7490' },
-    { id: 'C-003', name: 'Orient Foods Pvt Ltd',    initials: 'OF', country: 'India',          phone: '+91-98200-12345', email: 'ops@orientfoods.in', grad: '#059669,#047857' },
-    { id: 'C-004', name: 'Sahara Imports DMCC',     initials: 'SI', country: 'UAE',            phone: '+971-4-321-0987', email: 'trade@sahara.ae',    grad: '#D97706,#B45309' },
-  ],
-  supplier: [
-    { id: 'S-001', name: 'AgroSource International', initials: 'AS', country: 'Brazil',      phone: '+55-11-3456-7890', email: 'export@agrosource.br', grad: '#16A34A,#15803D' },
-    { id: 'S-002', name: 'MedEquip Solutions GmbH', initials: 'MS', country: 'Germany',     phone: '+49-89-2345-6789', email: 'sales@medequip.de',    grad: '#0891B2,#0E7490' },
-    { id: 'S-003', name: 'PrimePack Industries',    initials: 'PP', country: 'South Korea', phone: '+82-2-789-0123',   email: 'b2b@primepack.kr',     grad: '#7C3AED,#4C1D95' },
-  ],
-};
+const ORG_GRADS = ['#7C3AED,#4C1D95', '#0891b2,#0e7490', '#16a34a,#15803d', '#D97706,#B45309', '#4F46E5,#7C3AED', '#DB2777,#9D174D'];
+const orgInitials = (s: string) => (s || '').trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || 'CO';
+function mapCompany(row: Record<string, unknown>, i: number): Org {
+  const name = String(row.company_name ?? row.name ?? 'Company');
+  const code = String(row.short_code ?? '');
+  const state = String(row.state ?? '') || '—';
+  const city = String(row.city ?? '');
+  return { id: Number(row.id ?? i), name, shortCode: code || '—', state, country: String(row.country ?? 'India'), city, grad: ORG_GRADS[i % ORG_GRADS.length], initials: (code || orgInitials(name)).slice(0, 2).toUpperCase(), sub: [code, state].filter(Boolean).join(' · ') };
+}
 
 const STAGES = [
   { n: 1, label: 'Agreement Drafting',                 sub: 'Create or upload agreement draft' },
@@ -46,18 +47,47 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   const toast = useToast();
   const t = useOpsTheme('violet');
   const [stage, setStage] = useState(1);
-  const [cp1, setCp1] = useState<CP | null>(null);
-  const [cp2, setCp2] = useState<CP | null>(null);
-  const [org, setOrg] = useState<typeof ORGS[number] | null>(null);
+  const [cps, setCps] = useState<CP[]>([]);
+  const cp1 = cps[0] ?? null;
+  const cp2 = cps[1] ?? null;
+  const [org, setOrg] = useState<Org | null>(null);
+  const [orgs, setOrgs] = useState<Org[]>([]);
+  const [agTypes, setAgTypes] = useState<{ value: string; label: string }[]>([]);
+  const [agTypesLoading, setAgTypesLoading] = useState(true);
   const [orgOpen, setOrgOpen] = useState(false);
-  const [picker, setPicker] = useState<1 | 2 | null>(null);
+  const [picker, setPicker] = useState(false);
   const [agTitle, setAgTitle] = useState(editing?.title ?? '');
   const [agType, setAgType] = useState(editing?.type ?? '');
   const [effDate, setEffDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [draft, setDraft] = useState('');
+  const [sentForApproval, setSentForApproval] = useState(false);   // set when the draft is submitted for approval
+  // Page-shell header/footer config — lifted to the parent so it survives the
+  // stage change and the Stage-2 preview can render the same logo/header/footer.
+  const [header, setHeader] = useState<HeaderConfig>(DEFAULT_HEADER);
+  const [footer, setFooter] = useState<FooterConfig>(DEFAULT_FOOTER);
+  useEffect(() => { if (org?.name) setHeader(h => h.title === DEFAULT_HEADER.title ? { ...h, title: org.name } : h); }, [org]);
 
   useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, []);
+
+  // Pull "Our Organisation" options from the Company Details master.
+  useEffect(() => {
+    let alive = true;
+    api.get('/master/company')
+      .then(res => { if (!alive) return; const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []); setOrgs(rows.map(mapCompany)); })
+      .catch(() => { if (alive) setOrgs([]); });
+    return () => { alive = false; };
+  }, []);
+
+  // Agreement Type options come from the CLM Agreement Type master.
+  useEffect(() => {
+    let alive = true;
+    api.get('/clm/agreement-types')
+      .then(res => { if (!alive) return; const rows = (res.data?.data ?? res.data ?? []) as Record<string, unknown>[]; setAgTypes(rows.map(r => ({ value: String(r.name ?? r.code ?? ''), label: String(r.name ?? r.code ?? '') })).filter(o => o.value)); })
+      .catch(() => { if (alive) setAgTypes([]); })
+      .finally(() => { if (alive) setAgTypesLoading(false); });
+    return () => { alive = false; };
+  }, []);
 
   const goStage = (n: number) => setStage(n);
 
@@ -67,9 +97,32 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     onSaved();
   };
 
+  // Persist the agreement + push it into the approval queue (Submit & Send for Approval).
+  const submitForApproval = async (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => {
+    if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); return; }
+    const payload = {
+      title: agTitle, agreement_type: agType || null,
+      org_name: org?.name ?? null, org_short_code: org?.shortCode ?? null, org_state: org?.state ?? null, org_country: org?.country ?? null,
+      counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred })),
+      eff_date: effDate || null, end_date: endDate || null,
+      content: draft || null, header_config: header, footer_config: footer,
+      approvers: approval.approvers, days_to_approve: approval.days, reminder_days: approval.reminder,
+    };
+    try {
+      await api.post('/clm/ctc-contracts', payload);
+      toast.success('Sent for approval', `${agTitle} is now in the approval queue.`);
+      setSentForApproval(true);
+      goStage(2);
+    } catch (e) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error('Could not submit', msg || 'Please try again.');
+    }
+  };
+
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 500000, background: t.dark ? '#0d0a1a' : '#F0F0FA', overflowY: 'auto', fontFamily: "'Rubik', system-ui, sans-serif", WebkitFontSmoothing: 'antialiased' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9000, background: t.dark ? '#0d0a1a' : '#F0F0FA', overflowY: 'auto', fontFamily: "'Rubik', system-ui, sans-serif", WebkitFontSmoothing: 'antialiased' }}>
       <style>{CTC_FORM_CSS}</style>
+      <MasterFormStyles />
       <div style={{ height: '100vh', background: t.dark ? '#0d0a1a' : '#F0F0F8', display: 'flex', flexDirection: 'column', padding: '16px 16px 0', gap: 10, overflow: 'hidden' }}>
 
         {/* HEADER */}
@@ -136,21 +189,23 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
           {stage === 1 && (
             <Stage1
               t={t}
-              cp1={cp1} cp2={cp2} org={org} orgOpen={orgOpen} setOrgOpen={setOrgOpen}
-              onAddCp={setPicker} onRemoveCp={(slot) => slot === 1 ? setCp1(null) : setCp2(null)}
+              cps={cps} orgs={orgs} agTypes={agTypes} agTypesLoading={agTypesLoading} org={org} orgOpen={orgOpen} setOrgOpen={setOrgOpen}
+              onAddCp={() => setPicker(true)} onRemoveCp={(idx) => setCps(cps.filter((_, j) => j !== idx))}
               onSelectOrg={(o) => { setOrg(o); setOrgOpen(false); }} onResetOrg={() => setOrg(null)}
               agTitle={agTitle} setAgTitle={setAgTitle} agType={agType} setAgType={setAgType}
               effDate={effDate} setEffDate={setEffDate} endDate={endDate} setEndDate={setEndDate}
               draft={draft} setDraft={setDraft}
+              header={header} setHeader={setHeader} footer={footer} setFooter={setFooter}
+              onSubmitForApproval={submitForApproval}
               onNext={() => goStage(2)}
             />
           )}
-          {stage > 1 && <StageReview t={t} stage={stage} cp1={cp1} cp2={cp2} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
+          {stage > 1 && <StageReview t={t} stage={stage} cps={cps} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} header={header} footer={footer} sentForApproval={sentForApproval} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
         </div>
       </div>
 
       {picker && (
-        <CpPicker t={t} slot={picker} onClose={() => setPicker(null)} onPick={(cp) => { if (picker === 1) setCp1(cp); else setCp2(cp); setPicker(null); }} />
+        <CpPicker t={t} slot={cps.length + 1} onClose={() => setPicker(false)} onPick={(cp) => { setCps([...cps, cp]); setPicker(false); }} />
       )}
     </div>
   );
@@ -159,23 +214,71 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
 /* ── Stage 1 three-panel workspace ── */
 function Stage1(p: {
   t: OpsTokens;
-  cp1: CP | null; cp2: CP | null; org: typeof ORGS[number] | null; orgOpen: boolean; setOrgOpen: (b: boolean) => void;
-  onAddCp: (slot: 1 | 2) => void; onRemoveCp: (slot: 1 | 2) => void; onSelectOrg: (o: typeof ORGS[number]) => void; onResetOrg: () => void;
+  cps: CP[]; orgs: Org[]; agTypes: { value: string; label: string }[]; agTypesLoading: boolean; org: Org | null; orgOpen: boolean; setOrgOpen: (b: boolean) => void;
+  onAddCp: () => void; onRemoveCp: (idx: number) => void; onSelectOrg: (o: Org) => void; onResetOrg: () => void;
   agTitle: string; setAgTitle: (s: string) => void; agType: string; setAgType: (s: string) => void;
   effDate: string; setEffDate: (s: string) => void; endDate: string; setEndDate: (s: string) => void;
-  draft: string; setDraft: (s: string) => void; onNext: () => void;
+  draft: string; setDraft: (s: string) => void;
+  header: HeaderConfig; setHeader: (h: HeaderConfig) => void; footer: FooterConfig; setFooter: (f: FooterConfig) => void;
+  onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => void;
+  onNext: () => void;
 }) {
   const t = p.t;
+  const cp1 = p.cps[0] ?? null;
+  const cp2 = p.cps[1] ?? null;
+  const [cpPage, setCpPage] = useState(0);                        // left-panel CP carousel (2 at a time)
+  const [midCpPage, setMidCpPage] = useState(0);                  // middle Step-1 CP carousel (2 at a time)
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [midStep, setMidStep] = useState<1 | 2 | 3>(1);          // inner Step 01 / 02 / 03
-  const [createdBy, setCreatedBy] = useState<'us' | 'cp'>('us');
-  const [draftMode, setDraftMode] = useState<'draft' | 'upload'>('draft');
   const [renewal, setRenewal] = useState<'yes' | 'no'>('yes');
   const [renewalType, setRenewalType] = useState<'manual' | 'auto'>('manual');
   const [termNotice, setTermNotice] = useState('30');
+  const [editorFs, setEditorFs] = useState(false);              // draft editor full-screen
+  // Page-shell header/footer config (logo, header name, footer text, pagination) —
+  // lifted to the parent so the Stage-2 preview shares the same config.
+  const header = p.header, setHeader = p.setHeader, footer = p.footer, setFooter = p.setFooter;
+  const [phOpen, setPhOpen] = useState(false);                  // placeholder picker
+  const [clauseOpen, setClauseOpen] = useState(false);          // clause library picker
+  const [approvalOpen, setApprovalOpen] = useState(false);      // Review & Approval Workflow popup
+  // contentEditable draft editor (mirrors the Agreement / Trade-Document editors:
+  // native execCommand, caret stashing, placeholder/clause/upload-docx insertion).
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const lastRange = useRef<Range | null>(null);
+  const docxRef = useRef<HTMLInputElement | null>(null);
+  // Seed the editor's HTML once it appears (Step 3) without clobbering it on every keystroke.
+  useEffect(() => {
+    if (midStep === 3 && editorRef.current && editorRef.current.innerHTML !== p.draft) editorRef.current.innerHTML = p.draft || '';
+  }, [midStep]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Stash the caret whenever the selection sits inside the editor.
+  useEffect(() => {
+    const onSel = () => {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount && editorRef.current && editorRef.current.contains(sel.anchorNode)) lastRange.current = sel.getRangeAt(0).cloneRange();
+    };
+    document.addEventListener('selectionchange', onSel);
+    return () => document.removeEventListener('selectionchange', onSel);
+  }, []);
+  const syncDraft = () => { if (editorRef.current) p.setDraft(editorRef.current.innerHTML); };
+  const restoreCaret = () => {
+    const el = editorRef.current; if (!el) return; el.focus();
+    const sel = window.getSelection(); if (!sel) return;
+    if (lastRange.current && el.contains(lastRange.current.commonAncestorContainer)) { sel.removeAllRanges(); sel.addRange(lastRange.current); }
+    else { const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); }
+  };
+  const insertText = (text: string) => { restoreCaret(); document.execCommand('insertText', false, text + ' '); syncDraft(); };
+  const insertHtml = (html: string) => { restoreCaret(); document.execCommand('insertHTML', false, html); syncDraft(); };
+  const exec = (cmd: string, val?: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); syncDraft(); };
+  const uploadDocx = async (file: File) => {
+    const fd = new FormData(); fd.append('docx', file);
+    try {
+      const res = await api.post('/clm/docx-to-html', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const html = String(res.data?.html ?? '');
+      if (editorRef.current) editorRef.current.innerHTML = html;
+      p.setDraft(html);
+    } catch { /* keep current content if parsing fails */ }
+  };
   const ipt: React.CSSProperties = { width: '100%', height: 34, padding: '0 12px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 11, fontFamily: 'inherit', color: t.text, outline: 'none', background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', boxSizing: 'border-box' };
-  const sel: React.CSSProperties = { ...ipt, cursor: 'pointer' };
   const MID_STEPS = [
     { n: 1, label: 'Counter Party Details', next: 'Next: Agreement Details' },
     { n: 2, label: 'Agreement Basic Details', next: 'Next: Draft Content' },
@@ -189,15 +292,37 @@ function Stage1(p: {
       <div style={{ flex: leftOpen ? 2 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!leftOpen ? <CollapsedBar t={t} title="Counterparty Details" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA" dir="left" onExpand={() => setLeftOpen(true)} /> :
         <Panel t={t} header="Panel 01" title="Counterparty Details" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA" onCollapse={() => setLeftOpen(false)} collapseDir="left">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12, overflowY: 'auto' }}>
-            {([1, 2] as const).map(slot => {
-              const cp = slot === 1 ? p.cp1 : p.cp2;
-              return cp ? <CpCard key={slot} t={t} slot={slot} cp={cp} onRemove={() => p.onRemoveCp(slot)} />
-                : <button key={slot} onClick={() => p.onAddCp(slot)} style={{ border: '1.5px dashed #C4B5FD', borderRadius: 10, width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
-                  <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg></div>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: '#7C3AED' }}>Add Counter Party {slot}</span>
-                </button>;
-            })}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 10, padding: 12, overflowY: 'auto' }}>
+            {(() => {
+              const total = p.cps.length;
+              const pages = Math.max(1, Math.ceil(total / 2));
+              const safe = Math.min(cpPage, pages - 1);
+              const visible = p.cps.slice(safe * 2, safe * 2 + 2);
+              const navBtn = (dir: 'l' | 'r', dis: boolean, onClick: () => void) => (
+                <button onClick={onClick} disabled={dis} title={dir === 'l' ? 'Previous' : 'Next'} style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: dis ? 'transparent' : (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF'), cursor: dis ? 'not-allowed' : 'pointer', opacity: dis ? .4 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">{dir === 'l' ? <polyline points="15 18 9 12 15 6" /> : <polyline points="9 18 15 12 9 6" />}</svg>
+                </button>
+              );
+              return (
+                <>
+                  {total > 2 && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                      {navBtn('l', safe === 0, () => setCpPage(Math.max(0, safe - 1)))}
+                      <span style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted }}>Showing {safe * 2 + 1}–{Math.min(safe * 2 + 2, total)} of {total}</span>
+                      {navBtn('r', safe >= pages - 1, () => setCpPage(Math.min(pages - 1, safe + 1)))}
+                    </div>
+                  )}
+                  {visible.map((cp, vi) => {
+                    const idx = safe * 2 + vi;
+                    return <CpCard key={idx} t={t} slot={idx + 1} cp={cp} onRemove={() => p.onRemoveCp(idx)} />;
+                  })}
+                  <button onClick={p.onAddCp} style={{ border: `1.5px dashed ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, borderRadius: 10, width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg></div>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#7C3AED' }}>{total === 0 ? 'Add Counter Party' : 'Add more Counter Party'}</span>
+                  </button>
+                </>
+              );
+            })()}
             {/* Org */}
             <div style={{ position: 'relative' }}>
               {!p.org ? (
@@ -215,17 +340,19 @@ function Stage1(p: {
                     <button onClick={p.onResetOrg} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
                   </div>
                   <div style={{ borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}`, padding: '5px 10px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <OrgDetail t={t} text={p.org.jurisdiction} /><OrgDetail t={t} text={p.org.entityType} /><OrgDetail t={t} text={p.org.industry} />
+                    <OrgDetail t={t} label="Country" text={p.org.country} /><OrgDetail t={t} label="State" text={p.org.state} /><OrgDetail t={t} label="Short Code" text={p.org.shortCode} />
                   </div>
                 </div>
               )}
               {p.orgOpen && !p.org && (
-                <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 6, background: t.surface, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, borderRadius: 14, boxShadow: '0 12px 36px rgba(109,40,217,.18)', overflow: 'hidden', zIndex: 50, padding: 7 }}>
-                  {ORGS.map(o => (
-                    <div key={o.name} onClick={() => p.onSelectOrg(o)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9, cursor: 'pointer', marginBottom: 2 }}
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, background: t.surface, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, borderRadius: 14, boxShadow: '0 12px 36px rgba(109,40,217,.18)', maxHeight: 260, overflowY: 'auto', zIndex: 50, padding: 7 }}>
+                  {p.orgs.length === 0 ? (
+                    <div style={{ padding: '14px 12px', textAlign: 'center', fontSize: 9.5, fontWeight: 600, color: t.textMuted }}>No companies in the Company Details master yet.</div>
+                  ) : p.orgs.map(o => (
+                    <div key={o.id} onClick={() => p.onSelectOrg(o)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9, cursor: 'pointer', marginBottom: 2 }}
                       onMouseEnter={e => (e.currentTarget.style.background = t.dark ? 'rgba(124,58,237,.14)' : '#F5F3FF')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                       <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${o.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: '#fff' }}>{o.initials}</span></div>
-                      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: t.textStrong }}>{o.name}</div><div style={{ fontSize: 9, color: t.dark ? '#a78bfa' : '#9D76E0', fontWeight: 500, marginTop: 1 }}>{o.sub}</div></div>
+                      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.name}</div><div style={{ fontSize: 9, color: t.dark ? '#a78bfa' : '#9D76E0', fontWeight: 500, marginTop: 1 }}>{o.shortCode} · {o.state} · {o.country}</div></div>
                     </div>
                   ))}
                 </div>
@@ -265,15 +392,39 @@ function Stage1(p: {
             {midStep === 1 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <SectionBar t={t} label="Counter Parties" readOnly />
-                {!p.cp1 && !p.cp2 ? (
+                {p.cps.length === 0 ? (
                   <ReadEmpty t={t} title="No Counterparties Added Yet" sub="Add Counter Parties from the left panel to see their details here."
-                    chips={[`CP 1 — ${p.cp1 ? 'Added' : 'Not Added'}`, `CP 2 — ${p.cp2 ? 'Added' : 'Not Added'}`, `Org — ${p.org ? 'Selected' : 'Not Selected'}`]} />
-                ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    {p.cp1 && <CpReadCard t={t} idx={1} cp={p.cp1} />}
-                    {p.cp2 && <CpReadCard t={t} idx={2} cp={p.cp2} />}
-                  </div>
-                )}
+                    chips={[`CP 1 — ${cp1 ? 'Added' : 'Not Added'}`, `CP 2 — ${cp2 ? 'Added' : 'Not Added'}`, `Org — ${p.org ? 'Selected' : 'Not Selected'}`]} />
+                ) : (() => {
+                  const total = p.cps.length;
+                  const pages = Math.max(1, Math.ceil(total / 2));
+                  const safe = Math.min(midCpPage, pages - 1);
+                  const visible = p.cps.slice(safe * 2, safe * 2 + 2);
+                  const arrow = (dir: 'l' | 'r', dis: boolean, onClick: () => void) => (
+                    <button onClick={onClick} disabled={dis} title={dir === 'l' ? 'Previous' : 'Next'} style={{ width: 30, height: 30, flexShrink: 0, alignSelf: 'center', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: dis ? 'transparent' : (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF'), cursor: dis ? 'not-allowed' : 'pointer', opacity: dis ? .35 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">{dir === 'l' ? <polyline points="15 18 9 12 15 6" /> : <polyline points="9 18 15 12 9 6" />}</svg>
+                    </button>
+                  );
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {total > 2 && arrow('l', safe === 0, () => setMidCpPage(Math.max(0, safe - 1)))}
+                        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, minWidth: 0 }}>
+                          {visible.map((cp, vi) => <CpReadCard key={safe * 2 + vi} t={t} idx={safe * 2 + vi + 1} cp={cp} />)}
+                        </div>
+                        {total > 2 && arrow('r', safe >= pages - 1, () => setMidCpPage(Math.min(pages - 1, safe + 1)))}
+                      </div>
+                      {total > 2 && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                          {Array.from({ length: pages }, (_, i) => (
+                            <button key={i} onClick={() => setMidCpPage(i)} style={{ width: i === safe ? 18 : 7, height: 7, borderRadius: 4, border: 'none', padding: 0, cursor: 'pointer', background: i === safe ? 'linear-gradient(90deg,#7C3AED,#A78BFA)' : (t.dark ? 'rgba(148,163,184,.3)' : '#DDD6FE'), transition: 'width .2s' }} />
+                          ))}
+                          <span style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginLeft: 4 }}>Showing {safe * 2 + 1}–{Math.min(safe * 2 + 2, total)} of {total}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <SectionBar t={t} label="Our Organisation" readOnly />
                 {!p.org ? (
                   <ReadEmpty t={t} title="Organisation not selected" sub="Please select your organisation from the left panel." chips={[]} />
@@ -281,11 +432,11 @@ function Stage1(p: {
                   <div style={{ borderRadius: 14, overflow: 'hidden', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.surface, boxShadow: '0 4px 16px rgba(109,40,217,.08)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', background: `linear-gradient(118deg,${p.org.grad})` }}>
                       <div style={{ width: 40, height: 40, borderRadius: 11, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{p.org.initials}</span></div>
-                      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{p.org.name}</div><div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>{p.org.sub}</div></div>
+                      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{p.org.name}</div><div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>Short Code: {p.org.shortCode}</div></div>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.3)' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399' }} /><span style={{ fontSize: 9, fontWeight: 800, color: '#fff' }}>Active</span></span>
                     </div>
                     <div style={{ padding: '10px 16px', display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-                      {[['Jurisdiction', p.org.jurisdiction], ['Entity Type', p.org.entityType], ['Industry', p.org.industry]].map(([k, v]) => (
+                      {[['Company Name', p.org.name], ['Short Code', p.org.shortCode], ['Country', p.org.country], ['State', p.org.state]].map(([k, v]) => (
                         <div key={k}><div style={{ fontSize: 7.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: t.textMuted, marginBottom: 2 }}>{k}</div><div style={{ fontSize: 11.5, fontWeight: 700, color: t.text }}>{v}</div></div>
                       ))}
                     </div>
@@ -306,48 +457,8 @@ function Stage1(p: {
                   <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 9, alignItems: 'end' }}>
                     <Field t={t} label="Agreement Title *"><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value)} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={ipt} /></Field>
                     <Field t={t} label="Agreement Type *">
-                      <select value={p.agType} onChange={e => p.setAgType(e.target.value)} style={sel}>
-                        <option value="">Select type…</option>
-                        {['NDA', 'SLA', 'MSA', 'CSA', 'VPA', 'DA', 'JVA', 'EAA', 'MOU', 'TTA', 'PFA', 'NCA'].map(o => <option key={o}>{o}</option>)}
-                      </select>
+                      <MasterSelect value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
                     </Field>
-                  </div>
-                </div>
-
-                {/* Agreement Created By */}
-                <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)' }}>
-                  <div style={{ padding: '11px 14px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE 0%,#F3F0FF 40%,#E8E2FF 100%)', borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><circle cx="9" cy="7" r="4" /><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" /><path d="M19 8v6M16 11h6" /></svg></div>
-                    <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Agreement Created By</div><div style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>Who initiates the draft</div></div>
-                  </div>
-                  <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <BigChoice t={t} sel={createdBy === 'us'} onClick={() => setCreatedBy('us')} title="Created By Us" sub="We draft & own the agreement" tag="Internal draft"
-                        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg>} />
-                      <BigChoice t={t} sel={createdBy === 'cp'} onClick={() => setCreatedBy('cp')} title="By Counterparty" sub="They send the draft to us" tag="External draft"
-                        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>} />
-                    </div>
-                    {createdBy === 'us' ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                        <MiniLabel t={t}>How would you like to proceed?</MiniLabel>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
-                          <BigChoice t={t} sel={draftMode === 'draft'} onClick={() => setDraftMode('draft')} title="Draft Manually" sub="Write in editor →"
-                            icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>} />
-                          <BigChoice t={t} sel={draftMode === 'upload'} onClick={() => setDraftMode('upload')} title="Upload File" sub="Upload internal draft"
-                            icon={<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>} />
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                        <MiniLabel t={t}>Upload Counterparty Draft</MiniLabel>
-                        <div style={{ border: `2px dashed ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, borderRadius: 12, padding: '18px 16px', textAlign: 'center', background: t.dark ? 'rgba(124,58,237,.06)' : 'linear-gradient(135deg,#FAFBFF,#F5F0FF)' }}>
-                          <div style={{ width: 38, height: 38, borderRadius: 11, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 9px' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg></div>
-                          <div style={{ fontSize: 10, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764', marginBottom: 3 }}>Drop counterparty draft here</div>
-                          <div style={{ fontSize: 8, color: t.textMuted, marginBottom: 10, fontWeight: 500 }}>PDF, DOCX supported · Max 25MB</div>
-                          <span style={{ padding: '5px 16px', borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', fontSize: 9, fontWeight: 700, color: '#fff' }}>Browse Files</span>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -359,8 +470,8 @@ function Stage1(p: {
                   </div>
                   <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, alignItems: 'end' }}>
-                      <Field t={t} label="Effective Date *" green><input type="date" value={p.effDate} onChange={e => p.setEffDate(e.target.value)} style={{ ...ipt, borderColor: t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0' }} /></Field>
-                      <Field t={t} label="End Date *" green><input type="date" value={p.endDate} onChange={e => p.setEndDate(e.target.value)} style={{ ...ipt, borderColor: t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0' }} /></Field>
+                      <Field t={t} label="Effective Date *" green><MasterDatePicker value={p.effDate} onChange={p.setEffDate} placeholder="Select date" /></Field>
+                      <Field t={t} label="End Date *" green><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={p.effDate || undefined} placeholder="Select date" /></Field>
                       <Field t={t} label="Termination Notice" green>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <input type="number" min="1" value={termNotice} onChange={e => setTermNotice(e.target.value)} style={{ ...ipt, borderColor: t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0', width: 60, textAlign: 'center', padding: '0 6px' }} />
@@ -395,18 +506,57 @@ function Stage1(p: {
 
             {/* ══ STEP 3 — Draft Agreement Content ══ */}
             {midStep === 3 && (
-              <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.08)' }}>
-                <div style={{ padding: '12px 14px', background: 'linear-gradient(118deg,#3B0764 0%,#5B21B6 35%,#7C3AED 65%,#8B5CF6 100%)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></div>
-                  <div><div style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Step 03</div><div style={{ fontSize: 12.5, fontWeight: 800, color: '#fff' }}>Draft Agreement Content</div></div>
+              <div style={editorFs
+                ? { position: 'fixed', inset: 16, zIndex: 400, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, overflow: 'hidden', boxShadow: '0 30px 80px rgba(8,3,28,.5)', display: 'flex', flexDirection: 'column' }
+                : { background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column' }}>
+                {/* header with actions */}
+                <div style={{ padding: '12px 14px', background: 'linear-gradient(118deg,#3B0764 0%,#5B21B6 35%,#7C3AED 65%,#8B5CF6 100%)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></div>
+                    <div><div style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Stage 03</div><div style={{ fontSize: 12.5, fontWeight: 800, color: '#fff' }}>Draft Agreement Content</div><div style={{ fontSize: 8, fontWeight: 500, color: 'rgba(255,255,255,.65)' }}>Write or paste your agreement text below</div></div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <input ref={docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) uploadDocx(f); e.target.value = ''; }} />
+                    <FrostBtn onClick={() => docxRef.current?.click()} icon={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></>}>Upload Doc</FrostBtn>
+                    <FrostBtn onClick={() => setPhOpen(true)} icon={<><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></>}>{'{} Placeholder'}</FrostBtn>
+                    <FrostBtn onClick={() => setClauseOpen(true)} icon={<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>}>Clause Library</FrostBtn>
+                    <FrostBtn active onClick={() => setEditorFs(v => !v)} icon={editorFs ? <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" /> : <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />}>{editorFs ? 'Exit Full Screen' : 'Full Screen'}</FrostBtn>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '6px 10px', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.18)' : '#F1EEFF'}`, background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF', flexWrap: 'wrap' }}>
-                  {['B', 'I', 'U', 'S'].map(b => <button key={b} style={{ width: 24, height: 24, borderRadius: 5, border: 'none', background: 'none', cursor: 'pointer', fontSize: 11, fontWeight: b === 'B' ? 900 : 600, fontStyle: b === 'I' ? 'italic' : 'normal', textDecoration: b === 'U' ? 'underline' : b === 'S' ? 'line-through' : 'none', color: t.dark ? '#c4b5fd' : '#4C1D95', fontFamily: 'Georgia, serif' }}>{b}</button>)}
-                  <span style={{ width: 1, height: 16, background: t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE', margin: '0 4px' }} />
-                  <span style={{ fontSize: 8.5, color: t.textMuted, fontStyle: 'italic' }}>Placeholders auto-fill on generation</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
+                {/* full toolbar */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 1, padding: '6px 10px', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.18)' : '#F1EEFF'}`, background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF', flexWrap: 'wrap' }}>
+                  <select defaultValue="12" onChange={e => exec('fontSize', ({ '10': '1', '11': '2', '12': '3', '14': '4', '16': '5', '18': '6' } as Record<string, string>)[e.target.value] || '3')} style={{ height: 24, padding: '0 4px', borderRadius: 5, border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E4DEFF'}`, fontSize: 9, fontFamily: 'inherit', color: t.dark ? '#c4b5fd' : '#4C1D95', background: t.dark ? 'rgba(255,255,255,.04)' : '#F8F6FF', cursor: 'pointer', marginRight: 3 }}>{['10', '11', '12', '14', '16', '18'].map(s => <option key={s}>{s}</option>)}</select>
+                  <select defaultValue="Paragraph" onChange={e => exec('formatBlock', ({ 'Paragraph': 'p', 'Heading 1': 'h1', 'Heading 2': 'h2', 'Heading 3': 'h3' } as Record<string, string>)[e.target.value] || 'p')} style={{ height: 24, padding: '0 5px', borderRadius: 5, border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E4DEFF'}`, fontSize: 9, fontFamily: 'inherit', color: t.dark ? '#c4b5fd' : '#4C1D95', background: t.dark ? 'rgba(255,255,255,.04)' : '#F8F6FF', cursor: 'pointer', marginRight: 5, minWidth: 72 }}>{['Paragraph', 'Heading 1', 'Heading 2', 'Heading 3'].map(s => <option key={s}>{s}</option>)}</select>
+                  <ToolDiv t={t} />
+                  {([['B', 'bold'], ['I', 'italic'], ['U', 'underline'], ['S', 'strikeThrough']] as const).map(([b, cmd]) => <button key={b} type="button" title={b} onMouseDown={e => e.preventDefault()} onClick={() => exec(cmd)} style={{ width: 24, height: 24, borderRadius: 5, border: 'none', background: 'none', cursor: 'pointer', fontSize: 11, fontWeight: b === 'B' ? 900 : 600, fontStyle: b === 'I' ? 'italic' : 'normal', textDecoration: b === 'U' ? 'underline' : b === 'S' ? 'line-through' : 'none', color: t.dark ? '#c4b5fd' : '#4C1D95', fontFamily: 'Georgia, serif' }} onMouseEnter={e => (e.currentTarget.style.background = t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE')} onMouseLeave={e => (e.currentTarget.style.background = 'none')}>{b}</button>)}
+                  <ToolDiv t={t} />
+                  <ToolBtn t={t} title="Align left" onClick={() => exec('justifyLeft')}><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="15" y2="12" /><line x1="3" y1="18" x2="18" y2="18" /></ToolBtn>
+                  <ToolBtn t={t} title="Align center" onClick={() => exec('justifyCenter')}><line x1="3" y1="6" x2="21" y2="6" /><line x1="6" y1="12" x2="18" y2="12" /><line x1="4" y1="18" x2="20" y2="18" /></ToolBtn>
+                  <ToolBtn t={t} title="Align right" onClick={() => exec('justifyRight')}><line x1="3" y1="6" x2="21" y2="6" /><line x1="9" y1="12" x2="21" y2="12" /><line x1="6" y1="18" x2="21" y2="18" /></ToolBtn>
+                  <ToolBtn t={t} title="Justify" onClick={() => exec('justifyFull')}><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></ToolBtn>
+                  <ToolDiv t={t} />
+                  <ToolBtn t={t} title="Bullet list" onClick={() => exec('insertUnorderedList')}><line x1="9" y1="6" x2="20" y2="6" /><line x1="9" y1="12" x2="20" y2="12" /><line x1="9" y1="18" x2="20" y2="18" /><circle cx="4" cy="6" r="1.5" fill="currentColor" /><circle cx="4" cy="12" r="1.5" fill="currentColor" /><circle cx="4" cy="18" r="1.5" fill="currentColor" /></ToolBtn>
+                  <ToolBtn t={t} title="Numbered list" onClick={() => exec('insertOrderedList')}><line x1="10" y1="6" x2="21" y2="6" /><line x1="10" y1="12" x2="21" y2="12" /><line x1="10" y1="18" x2="21" y2="18" /><path d="M4 6h1v4" /><path d="M4 10h2" /></ToolBtn>
+                  <ToolBtn t={t} title="Indent" onClick={() => exec('indent')}><line x1="3" y1="6" x2="21" y2="6" /><polyline points="3 12 8 16 3 20" /><line x1="10" y1="12" x2="21" y2="12" /><line x1="10" y1="18" x2="21" y2="18" /></ToolBtn>
+                  <ToolBtn t={t} title="Outdent" onClick={() => exec('outdent')}><line x1="3" y1="6" x2="21" y2="6" /><polyline points="11 12 6 16 11 20" /><line x1="13" y1="12" x2="21" y2="12" /><line x1="13" y1="18" x2="21" y2="18" /></ToolBtn>
+                  <ToolDiv t={t} />
+                  <ToolBtn t={t} title="Insert link" onClick={() => { const u = window.prompt('Link URL'); if (u) exec('createLink', u); }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></ToolBtn>
+                  <ToolBtn t={t} title="Undo" onClick={() => exec('undo')}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.95" /></ToolBtn>
+                  <ToolBtn t={t} title="Redo" onClick={() => exec('redo')}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-.49-4.95" /></ToolBtn>
+                  <button type="button" onClick={() => insertHtml('<p>This Agreement is made and entered into as of the Effective Date by and between the parties identified herein…</p>')} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 7, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 3px 8px rgba(109,40,217,.3)' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" /></svg><span style={{ fontSize: 8.5, fontWeight: 700, color: '#fff' }}>AI Draft</span></button>
                 </div>
-                <textarea value={p.draft} onChange={e => p.setDraft(e.target.value)} placeholder="Start drafting your agreement content here…&#10;&#10;This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" style={{ width: '100%', minHeight: 200, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 11, fontFamily: 'inherit', color: t.text, lineHeight: 1.8, resize: 'vertical', background: t.surface, boxSizing: 'border-box' }} />
+                <div style={{ flex: editorFs ? 1 : undefined, minHeight: editorFs ? 0 : 280, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
+                  <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
+                    <div ref={editorRef} className="ctc-editor" contentEditable suppressContentEditableWarning data-ph="Start drafting your agreement content here…  This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" onInput={syncDraft} onBlur={syncDraft} style={{ minHeight: 220, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', color: '#1f2937', lineHeight: 1.8, background: '#fff', boxSizing: 'border-box' }} />
+                  </HeaderFooterPanel>
+                </div>
+                {/* footer hint */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF', borderTop: `1px solid ${t.dark ? 'rgba(124,58,237,.18)' : '#F1EEFF'}`, flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg><span style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 500, fontStyle: 'italic' }}>Placeholders auto-fill on agreement generation</span></div>
+                  <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
+                </div>
+                {phOpen && <ClmInsertPlaceholderModal open={phOpen} onClose={() => setPhOpen(false)} onInsert={tok => insertText(tok)} />}
+                {clauseOpen && <ClmClauseInsertPanel onClose={() => setClauseOpen(false)} onInsert={html => insertHtml(html)} />}
               </div>
             )}
           </div>
@@ -419,19 +569,27 @@ function Stage1(p: {
                 <span style={{ fontSize: 9, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#7C3AED' }}>Back</span>
               </button>
             ) : <span />}
-            <button onClick={midNext} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(79,70,229,.35)' }}>
-              <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>{MID_STEPS[midStep - 1].next}</span>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
-            </button>
+            {midStep < 3 ? (
+              <button onClick={midNext} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(79,70,229,.35)' }}>
+                <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>{MID_STEPS[midStep - 1].next}</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+              </button>
+            ) : (
+              <button onClick={() => setApprovalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}>
+                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Submit &amp; Send for Approval</span>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+              </button>
+            )}
           </div>
         </Panel>
       </div>
+      {approvalOpen && <ApprovalWorkflowModal t={t} orgName={p.org?.name ?? 'Our Organisation'} onClose={() => setApprovalOpen(false)} onSubmit={(data) => { setApprovalOpen(false); p.onSubmitForApproval(data); }} />}
 
       {/* RIGHT — Summary */}
       <div style={{ flex: rightOpen ? 2.5 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!rightOpen ? <CollapsedBar t={t} title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" dir="right" onExpand={() => setRightOpen(true)} /> :
         <Panel t={t} header="Panel 03" title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" onCollapse={() => setRightOpen(false)} collapseDir="right">
-          <RightTools t={t} draft={p.draft} onInsert={(tok) => p.setDraft((p.draft ? p.draft + ' ' : '') + tok)} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['CP 1', p.cp1?.name || '—'], ['CP 2', p.cp2?.name || '—'], ['Organisation', p.org?.name || '—']]} />
+          <RightTools t={t} draft={p.draft} onInsert={(tok) => { if (editorRef.current) insertText(tok); else p.setDraft((p.draft ? p.draft + ' ' : '') + tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
         </Panel>}
       </div>
     </div>
@@ -439,15 +597,18 @@ function Stage1(p: {
 }
 
 /* ── Stages 2–4: shared LEFT (read-only counterparty) + RIGHT (review) panels, changing MIDDLE ── */
-function StageReview({ t, stage, cp1, cp2, org, agTitle, agType, effDate, endDate, draft, onBack, onNext, onSave }: {
-  t: OpsTokens; stage: number; cp1: CP | null; cp2: CP | null; org: typeof ORGS[number] | null; agTitle: string; agType: string; effDate: string; endDate: string; draft: string;
+function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, draft, header, footer, sentForApproval, onBack, onNext, onSave }: {
+  t: OpsTokens; stage: number; cps: CP[]; org: Org | null; agTitle: string; agType: string; effDate: string; endDate: string; draft: string; header: HeaderConfig; footer: FooterConfig; sentForApproval: boolean;
   onBack: () => void; onNext: () => void; onSave: () => void;
 }) {
+  const [reminded, setReminded] = useState(false);
   const MID = {
     2: { head: '#3B0764,#5B21B6,#7C3AED,#8B5CF6', sup: 'Panel 02 · Agreement Preview', title: 'Agreement Preview' },
     3: { head: '#0e7490,#0891b2,#06b6d4', sup: 'Panel 02 · Negotiation & Signing', title: 'Counterparty Negotiation & Signing' },
     4: { head: '#064E3B,#059669,#10B981', sup: 'Panel 02 · Signed Agreement', title: 'Final Contract Repository' },
   }[stage]!;
+  const cp1 = cps[0] ?? null;
+  const cp2 = cps[1] ?? null;
   const summary: [string, string][] = [['Agreement', agTitle || 'Agreement Draft'], ['Type', agType || '—'], ['Eff. Date', effDate || '—'], ['End Date', endDate || '—'], ['Renewable', 'No'], ['Term', '30 days']];
 
   return (
@@ -464,8 +625,7 @@ function StageReview({ t, stage, cp1, cp2, org, agTitle, agType, effDate, endDat
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 20, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)' }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg><span style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.85)' }}>Read Only</span></span>
           </div>
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {cp1 && <CpReadCard t={t} idx={1} cp={cp1} />}
-            {cp2 && <CpReadCard t={t} idx={2} cp={cp2} />}
+            {cps.map((cp, i) => <CpReadCard key={i} t={t} idx={i + 1} cp={cp} />)}
             {org && (
               <div style={{ borderRadius: 12, overflow: 'hidden', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.surface }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', background: `linear-gradient(118deg,${org.grad})` }}>
@@ -473,11 +633,13 @@ function StageReview({ t, stage, cp1, cp2, org, agTitle, agType, effDate, endDat
                   <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 8, fontWeight: 800, color: 'rgba(255,255,255,.7)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Our Organisation</div><div style={{ fontSize: 12, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{org.name}</div></div>
                 </div>
                 <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {[org.jurisdiction, org.entityType, org.industry].map((v, i) => <div key={i} style={{ fontSize: 9.5, color: t.textSub, fontWeight: 500 }}>{v}</div>)}
+                  {[['Short Code', org.shortCode], ['Country', org.country], ['State', org.state]].map(([k, v]) => (
+                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><span style={{ fontSize: 8, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.04em' }}>{k}</span><span style={{ fontSize: 9.5, color: t.textSub, fontWeight: 600 }}>{v}</span></div>
+                  ))}
                 </div>
               </div>
             )}
-            {!cp1 && !cp2 && !org && <div style={{ fontSize: 10, color: t.textMuted, textAlign: 'center', padding: 20 }}>No counterparty details captured.</div>}
+            {cps.length === 0 && !org && <div style={{ fontSize: 10, color: t.textMuted, textAlign: 'center', padding: 20 }}>No counterparty details captured.</div>}
           </div>
         </div>
       </div>
@@ -495,6 +657,13 @@ function StageReview({ t, stage, cp1, cp2, org, agTitle, agType, effDate, endDat
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#F0EFF8', padding: '18px 24px' }}>
             <div style={{ maxWidth: 600, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 40px', position: 'relative' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: stage === 4 ? 'linear-gradient(90deg,#047857,#059669,#10B981)' : 'linear-gradient(90deg,#4C1D95,#7C3AED,#A78BFA)', borderRadius: '6px 6px 0 0' }} />
+              {/* Configured document header (logo + name) from Stage 1 */}
+              {(header.show_logo || header.show_title) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: header.align === 'center' ? 'center' : header.align === 'right' ? 'flex-end' : 'flex-start', padding: '6px 12px', marginBottom: 14, borderRadius: 6, borderBottom: '2px solid rgba(124,58,237,.18)', background: header.background, color: header.text_color }}>
+                  {header.show_logo && header.logo_url && <img src={header.logo_url} alt="logo" style={{ maxHeight: Math.max(24, Math.min(200, header.logo_height ?? 62)), objectFit: 'contain' }} />}
+                  {header.show_title && <div style={{ textAlign: header.align, minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.2 }}>{header.title}</div>{header.subtitle && <div style={{ fontSize: 9, opacity: .7, marginTop: 1 }}>{header.subtitle}</div>}</div>}
+                </div>
+              )}
               <div style={{ textAlign: 'center', marginBottom: 22 }}>
                 <span style={{ display: 'inline-block', padding: '3px 12px', borderRadius: 20, background: t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', border: `1px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, marginBottom: 8 }}><span style={{ fontSize: 8, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#6D28D9', letterSpacing: '.15em' }}>CTC-001</span></span>
                 <div style={{ fontSize: 18, fontWeight: 900, color: t.textStrong, letterSpacing: '-.4px', marginBottom: 4, textTransform: 'uppercase' }}>{agTitle || 'Agreement Draft'}</div>
@@ -513,7 +682,21 @@ function StageReview({ t, stage, cp1, cp2, org, agTitle, agType, effDate, endDat
                   </div>
                 </div>
               ))}
-              <div style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7, marginTop: 10, whiteSpace: 'pre-wrap' }}>{draft || 'Each party may be referred to individually as a "Party" and collectively as the "Parties". The Parties wish to explore a potential business relationship relating to {{business_purpose}} (the "Purpose").'}</div>
+              {draft
+                ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7, marginTop: 10 }} dangerouslySetInnerHTML={{ __html: draft }} />
+                : <div style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7, marginTop: 10 }}>Each party may be referred to individually as a "Party" and collectively as the "Parties". The Parties wish to explore a potential business relationship relating to {'{{business_purpose}}'} (the "Purpose").</div>}
+              {/* Configured document footer (text + pagination) from Stage 1 */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: 6, marginTop: 26, paddingTop: 10, borderTop: '1.5px solid rgba(124,58,237,.18)', background: footer.background, color: footer.text_color, fontSize: 9, fontWeight: 500 }}>
+                {(['left', 'center', 'right'] as const).map(cell => {
+                  const pn = footer.page_number_format === 'N' ? '1' : footer.page_number_format === 'Page N' ? 'Page 1' : footer.page_number_format === 'N / M' ? '1 / 1' : 'Page 1 of 1';
+                  return (
+                    <div key={cell} style={{ textAlign: cell, display: 'flex', alignItems: 'center', gap: 6, justifyContent: cell === 'center' ? 'center' : cell === 'right' ? 'flex-end' : 'flex-start' }}>
+                      {footer.align === cell && <span>{footer.text}</span>}
+                      {footer.show_page_number && footer.page_number_align === cell && <span style={{ fontWeight: 600 }}>{pn}</span>}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
           {/* footer nav */}
@@ -563,6 +746,11 @@ function StageReview({ t, stage, cp1, cp2, org, agTitle, agType, effDate, endDat
                   <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 9.5, fontWeight: 800, color: t.textStrong }}>Rajesh Kumar</div><div style={{ display: 'flex', gap: 3, marginTop: 3 }}><span style={{ fontSize: 6.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7', color: t.dark ? '#fcd34d' : '#D97706' }}>C-SUITE</span><span style={{ fontSize: 6.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2', color: t.dark ? '#fca5a5' : '#DC2626' }}>Mandatory</span></div></div>
                   <span style={{ padding: '3px 8px', borderRadius: 8, background: stage >= 3 ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7'), fontSize: 7, fontWeight: 700, color: stage >= 3 ? (t.dark ? '#6ee7b7' : '#059669') : (t.dark ? '#fcd34d' : '#D97706') }}>{stage >= 3 ? 'Approved' : 'Pending'}</span>
                 </div>
+                {/* Send Reminder — enabled only once the draft has been sent for approval */}
+                <button onClick={() => sentForApproval && setReminded(true)} disabled={!sentForApproval || reminded} title={sentForApproval ? '' : 'Send the draft for approval first'} style={{ width: '100%', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', borderRadius: 9, border: `1.5px solid ${reminded ? (t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0') : sentForApproval ? (t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD') : (t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0')}`, background: reminded ? (t.dark ? 'rgba(16,185,129,.12)' : '#ECFDF5') : sentForApproval ? (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF') : (t.dark ? 'rgba(255,255,255,.02)' : '#F8FAFC'), cursor: sentForApproval && !reminded ? 'pointer' : 'not-allowed', opacity: sentForApproval ? 1 : .55, fontFamily: 'inherit' }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={reminded ? (t.dark ? '#6ee7b7' : '#059669') : sentForApproval ? (t.dark ? '#c4b5fd' : '#7C3AED') : (t.dark ? '#94a3b8' : '#94A3B8')} strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: reminded ? (t.dark ? '#6ee7b7' : '#059669') : sentForApproval ? (t.dark ? '#c4b5fd' : '#6D28D9') : (t.dark ? '#94a3b8' : '#94A3B8') }}>{reminded ? 'Reminder Sent' : 'Send Reminder'}</span>
+                </button>
                 <div style={{ fontSize: 7, fontWeight: 800, color: t.textMuted, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ height: 1, background: t.dark ? 'rgba(148,163,184,.15)' : '#EDE9FE', flex: 1 }} />Review Timeline<div style={{ height: 1, background: t.dark ? 'rgba(148,163,184,.15)' : '#EDE9FE', flex: 1 }} /></div>
                 <TimelineItem t={t} tone="done" title="Draft Submitted" badge="Done" sub="Agreement drafted & submitted for internal review" />
                 <TimelineItem t={t} tone={stage >= 3 ? 'done' : 'active'} title="Internal Review" badge={stage >= 3 ? 'Done' : 'Active'} sub="Rajesh Kumar reviewing the agreement" last={stage < 3} />
@@ -665,17 +853,33 @@ function CpReadCard({ t, idx, cp }: { t: OpsTokens; idx: number; cp: CP }) {
   );
 }
 
-function MiniLabel({ t, green, children }: { t: OpsTokens; green?: boolean; children: React.ReactNode }) {
-  return <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: green ? (t.dark ? '#34d399' : '#059669') : (t.dark ? '#a78bfa' : '#7C3AED') }}><span style={{ width: 3, height: 10, borderRadius: 2, background: green ? 'linear-gradient(180deg,#059669,#047857)' : 'linear-gradient(180deg,#7C3AED,#5B21B6)', flexShrink: 0 }} />{children}</label>;
-}
-
-function BigChoice({ t, sel, onClick, title, sub, tag, icon }: { t: OpsTokens; sel: boolean; onClick: () => void; title: string; sub: string; tag?: string; icon: React.ReactNode }) {
+/* Draft-editor header action button (frosted on the dark gradient) */
+function FrostBtn({ onClick, icon, active, children }: { onClick: () => void; icon: React.ReactNode; active?: boolean; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} style={{ padding: '9px 12px', borderRadius: 11, border: `2px solid ${sel ? '#7C3AED' : (t.dark ? 'rgba(124,58,237,.22)' : '#DDD6FE')}`, background: sel ? (t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)') : (t.dark ? 'rgba(255,255,255,.03)' : 'linear-gradient(135deg,#F8F6FF,#F0EBFF)'), cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left', boxShadow: sel ? '0 2px 10px rgba(109,40,217,.18)' : 'none' }}>
-      <div style={{ width: 32, height: 32, borderRadius: 9, background: sel ? 'linear-gradient(135deg,#7C3AED,#5B21B6)' : (t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)'), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{sel ? icon : <span style={{ color: t.dark ? '#c4b5fd' : '#7C3AED', display: 'flex' }}>{icon}</span>}</div>
-      <div><div style={{ fontSize: 10.5, fontWeight: 800, color: sel ? (t.dark ? '#ddd6fe' : '#3B0764') : (t.dark ? '#c4b5fd' : '#4C1D95'), lineHeight: 1.2 }}>{title}</div><div style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500, marginTop: 2 }}>{sub}</div>{tag && <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 4 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: '#7C3AED', opacity: .5 }} /><span style={{ fontSize: 7.5, color: t.dark ? '#a78bfa' : '#6D28D9', fontWeight: 600 }}>{tag}</span></div>}</div>
+    <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 8, border: `1.5px solid rgba(255,255,255,${active ? '.45' : '.3'})`, background: `rgba(255,255,255,${active ? '.22' : '.15'})`, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,.3)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,.55)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = `rgba(255,255,255,${active ? '.22' : '.15'})`; e.currentTarget.style.borderColor = `rgba(255,255,255,${active ? '.45' : '.3'})`; }}>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">{icon}</svg>
+      <span style={{ fontSize: 8.5, fontWeight: 700, color: '#fff' }}>{children}</span>
     </button>
   );
+}
+
+/* Draft-editor toolbar icon button + divider */
+function ToolBtn({ t, active, title, onClick, children }: { t: OpsTokens; active?: boolean; title?: string; onClick?: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" title={title} onMouseDown={e => e.preventDefault()} onClick={onClick} style={{ width: 24, height: 24, borderRadius: 5, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: active ? (t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE') : 'none', color: t.dark ? '#c4b5fd' : '#6D28D9' }}
+      onMouseEnter={e => (e.currentTarget.style.background = t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE')} onMouseLeave={e => (e.currentTarget.style.background = active ? (t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE') : 'none')}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">{children}</svg>
+    </button>
+  );
+}
+function ToolDiv({ t }: { t: OpsTokens }) {
+  return <span style={{ width: 1, height: 16, background: t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE', margin: '0 4px', flexShrink: 0 }} />;
+}
+
+function MiniLabel({ t, green, children }: { t: OpsTokens; green?: boolean; children: React.ReactNode }) {
+  return <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: green ? (t.dark ? '#34d399' : '#059669') : (t.dark ? '#a78bfa' : '#7C3AED') }}><span style={{ width: 3, height: 10, borderRadius: 2, background: green ? 'linear-gradient(180deg,#059669,#047857)' : 'linear-gradient(180deg,#7C3AED,#5B21B6)', flexShrink: 0 }} />{children}</label>;
 }
 
 function GreenChoice({ t, sel, onClick, title, sub, icon }: { t: OpsTokens; sel: boolean; onClick: () => void; title: string; sub: string; icon: React.ReactNode }) {
@@ -689,19 +893,20 @@ function GreenChoice({ t, sel, onClick, title, sub, icon }: { t: OpsTokens; sel:
 
 /* ── Stage-1 right panel: placeholder fields + AI writing assistant + summary ── */
 function RightTools({ t, draft, onInsert, summary }: { t: OpsTokens; draft: string; onInsert: (tok: string) => void; summary: string[][] }) {
-  const words = draft.trim() ? draft.trim().split(/\s+/).length : 0;
+  const plain = draft.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  const words = plain ? plain.split(/\s+/).length : 0;
   const score = Math.min(100, Math.round(words * 1.5));
   const FIELDS = [['SIGNATURE', 'signature'], ['PERSON NAME', 'person_name'], ['COMPANY NAME', 'company_name'], ['EMAIL', 'email'], ['CONTACT NO', 'contact_no'], ['ADDRESS', 'address']];
   const cardBd = `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`;
   return (
-    <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* Placeholder fields */}
       <div style={{ background: t.surface, borderRadius: 12, border: cardBd, overflow: 'hidden', boxShadow: '0 2px 10px rgba(109,40,217,.07)' }}>
         <div style={{ padding: '9px 12px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE 0%,#F3F0FF 40%,#E8E2FF 100%)', borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 22, height: 22, borderRadius: 7, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg></div>
           <div><div style={{ fontSize: 10, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Standard Placeholder Fields</div><div style={{ fontSize: 7.5, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>Click a field to insert into the editor</div></div>
         </div>
-        <div style={{ padding: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+        <div className="ctc-mid-scroll" style={{ padding: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, maxHeight: 118, overflowY: 'auto' }}>
           {FIELDS.map(([lbl, tok]) => (
             <button key={tok} onClick={() => onInsert(`{{${tok}}}`)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF', cursor: 'pointer', fontFamily: 'inherit' }}>
               <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.04em', color: t.dark ? '#cbd5e1' : '#475569' }}>{lbl}</span>
@@ -807,8 +1012,8 @@ function CpCard({ t, slot, cp, onRemove }: { t: OpsTokens; slot: number; cp: CP;
   );
 }
 
-function OrgDetail({ t, text }: { t: OpsTokens; text: string }) {
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /></svg><span style={{ fontSize: 9, color: t.textSub, fontWeight: 500 }}>{text}</span></div>;
+function OrgDetail({ t, label, text }: { t: OpsTokens; label?: string; text: string }) {
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /></svg>{label && <span style={{ fontSize: 8, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</span>}<span style={{ fontSize: 9, color: t.textSub, fontWeight: 600 }}>{text}</span></div>;
 }
 
 function Field({ t, label, green, children }: { t: OpsTokens; label: string; green?: boolean; children: React.ReactNode }) {
@@ -816,12 +1021,211 @@ function Field({ t, label, green, children }: { t: OpsTokens; label: string; gre
 }
 
 /* ── Counterparty picker modal ── */
-function CpPicker({ t, slot, onClose, onPick }: { t: OpsTokens; slot: number; onClose: () => void; onPick: (cp: CP) => void }) {
-  const [tab, setTab] = useState<'buyer' | 'supplier'>('buyer');
+/* ── Stage-1 Step-3 "Submit & Send for Approval" → Review & Approval Workflow popup ── */
+type Approver = { name: string; email: string; initials: string; grad: string; tags: [string, string][]; locked: boolean };
+function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens; orgName: string; onClose: () => void; onSubmit: (data: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => void }) {
+  const [approvers, setApprovers] = useState<Approver[]>([
+    { name: 'Rajesh Kumar', email: 'ceo@organisation.com', initials: 'RK', grad: '#F97316,#EA580C', tags: [['C-SUITE', '#D97706'], ['Mandatory', '#DC2626']], locked: true },
+  ]);
+  const [days, setDays] = useState(7);
+  const [reminder, setReminder] = useState(5);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const addApprover = () => setPickerOpen(true);
+  const mergeApprovers = (picked: Approver[]) => {
+    setApprovers(list => { const have = new Set(list.map(a => a.email || a.name)); return [...list, ...picked.filter(p => !have.has(p.email || p.name))]; });
+    setPickerOpen(false);
+  };
+  const tagBg = (c: string) => c === '#D97706' ? (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7') : c === '#DC2626' ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : (t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE');
+  const stepper = (label: string, val: number, set: (n: number) => void, unit?: string, icon?: React.ReactNode) => (
+    <div style={{ padding: '9px 11px', borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>{icon}<div style={{ fontSize: 7.5, fontWeight: 700, color: t.dark ? '#a78bfa' : '#7C3AED', letterSpacing: '.08em', textTransform: 'uppercase' }}>{label}</div></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button onClick={() => set(Math.max(1, val - 1))} style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F8F6FF', cursor: 'pointer', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 12, flexShrink: 0 }}>−</button>
+        <div style={{ flex: 1, textAlign: 'center', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 2 }}><span style={{ fontSize: 15, fontWeight: 800, color: t.textStrong }}>{val}</span>{unit && <span style={{ fontSize: 9, fontWeight: 600, color: t.textMuted }}>{unit}</span>}</div>
+        <button onClick={() => set(val + 1)} style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F8F6FF', cursor: 'pointer', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 12, flexShrink: 0 }}>+</button>
+      </div>
+    </div>
+  );
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: "'Rubik', system-ui, sans-serif" }}>
+      <div style={{ width: '100%', maxWidth: 420, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(109,40,217,.3)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}` }}>
+        {/* header */}
+        <div style={{ background: 'linear-gradient(118deg,#3B0764,#5B21B6,#7C3AED,#8B5CF6)', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></div>
+            <div><div style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Stage 02</div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Review &amp; Approval Workflow</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.65)', fontWeight: 500 }}>Select approvers for this agreement draft</div></div>
+          </div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.12)', border: '1.5px solid rgba(255,255,255,.22)', color: '#fff', cursor: 'pointer', fontSize: 13, flexShrink: 0 }}>✕</button>
+        </div>
+        {/* body */}
+        <div style={{ background: t.surface, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* initiator */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderRadius: 11, background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#C4B5FD'}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{orgInitials(orgName)}</span></div>
+              <div><div style={{ fontSize: 7, fontWeight: 700, color: t.dark ? '#a78bfa' : '#7C3AED', letterSpacing: '.1em', textTransform: 'uppercase' }}>Created By</div><div style={{ fontSize: 11, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>{orgName}</div></div>
+            </div>
+            <span style={{ padding: '3px 9px', borderRadius: 20, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', fontSize: 8, fontWeight: 800, color: '#fff' }}>Initiator</span>
+          </div>
+          {/* approvers */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 3, height: 10, borderRadius: 2, background: 'linear-gradient(180deg,#7C3AED,#5B21B6)' }} /><span style={{ fontSize: 8, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#4C1D95', letterSpacing: '.08em', textTransform: 'uppercase' }}>Approvers</span></div>
+              <button onClick={addApprover} style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF', cursor: 'pointer', fontFamily: 'inherit' }}><svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.5" strokeLinecap="round"><line x1="8" y1="2" x2="8" y2="14" /><line x1="2" y1="8" x2="14" y2="8" /></svg><span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#6D28D9' }}>Add Approver</span></button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {approvers.map((a, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF' }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 9, background: `linear-gradient(135deg,${a.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{a.initials}</span></div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 1, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: t.textStrong }}>{a.name}</span>
+                      {a.tags.map(([label, clr]) => <span key={label} style={{ padding: '1px 6px', borderRadius: 4, background: tagBg(clr), border: `1px solid ${clr}55`, fontSize: 7, fontWeight: 700, color: clr }}>{label}</span>)}
+                    </div>
+                    <div style={{ fontSize: 8, color: t.textMuted, fontWeight: 500 }}>{a.email}</div>
+                  </div>
+                  {a.locked
+                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#C4B5FD'} strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                    : <button onClick={() => setApprovers(list => list.filter((_, j) => j !== i))} title="Remove" style={{ width: 20, height: 20, borderRadius: 6, border: 'none', background: 'rgba(239,68,68,.1)', cursor: 'pointer', color: '#EF4444', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
+                </div>
+              ))}
+              <div onClick={addApprover} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 10, border: `1.5px dashed ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF', cursor: 'pointer' }}>
+                <div style={{ width: 30, height: 30, borderRadius: 9, background: t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.5" strokeLinecap="round"><line x1="8" y1="2" x2="8" y2="14" /><line x1="2" y1="8" x2="14" y2="8" /></svg></div>
+                <span style={{ fontSize: 9, fontWeight: 600, color: t.dark ? '#c4b5fd' : '#7C3AED' }}>+ Add Member</span>
+              </div>
+            </div>
+          </div>
+          {/* days + reminder */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {stepper('Days to Approve', days, setDays)}
+            {stepper('Reminder', reminder, setReminder, 'd', <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>)}
+          </div>
+          {/* submit */}
+          <button onClick={() => onSubmit({ approvers: approvers.map(a => ({ name: a.name, email: a.email, role: a.tags[0]?.[0] ?? '', mandatory: a.locked || a.tags.some(tg => tg[0] === 'Mandatory') })), days, reminder })} style={{ width: '100%', padding: 11, borderRadius: 11, border: 'none', background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+            Submit for Approval
+          </button>
+        </div>
+      </div>
+      {pickerOpen && <ApproverPickerModal t={t} existing={approvers.map(a => a.email || a.name)} onClose={() => setPickerOpen(false)} onAdd={mergeApprovers} />}
+    </div>
+  );
+}
+
+/* Multi-select "Select Approvers" picker — internal employees from GET /employees. */
+const ROLE_FG = ['#D97706', '#059669', '#DC2626', '#7C3AED', '#0891b2', '#DB2777'];
+function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; existing: string[]; onClose: () => void; onAdd: (a: Approver[]) => void }) {
+  type Emp = { name: string; email: string; title: string; role: string; roleFg: string; initials: string; grad: string };
+  const [emps, setEmps] = useState<Emp[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [pending, setPending] = useState<typeof CP_DIR['buyer'][number] | null>(null);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let alive = true;
+    api.get('/employees', { params: { per_page: 200 } })
+      .then(res => {
+        if (!alive) return;
+        const rows = (Array.isArray(res.data) ? res.data : (res.data?.data ?? [])) as Record<string, unknown>[];
+        setEmps(rows.map((e, i) => {
+          const dept = (e.department as { name?: string } | undefined)?.name;
+          const desig = (e.designation as { name?: string } | undefined)?.name;
+          const name = String(e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim() || e.emp_code || 'Employee');
+          const role = String(dept ?? desig ?? '').toUpperCase();
+          return { name, email: String(e.email ?? ''), title: String(desig ?? dept ?? ''), role, roleFg: ROLE_FG[role.split('').reduce((s, c) => s + c.charCodeAt(0), 0) % ROLE_FG.length], initials: orgInitials(name), grad: ORG_GRADS[i % ORG_GRADS.length] };
+        }));
+        setLoading(false);
+      })
+      .catch(() => { if (alive) { setEmps([]); setLoading(false); } });
+    return () => { alive = false; };
+  }, []);
+  const q = search.trim().toLowerCase();
+  const list = q ? emps.filter(e => (e.name + e.role + e.title + e.email).toLowerCase().includes(q)) : emps;
+  const keyOf = (e: Emp) => e.email || e.name;
+  const toggle = (k: string) => setSel(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const confirm = () => {
+    const picked: Approver[] = emps.filter(e => sel.has(keyOf(e))).map(e => ({ name: e.name, email: e.email, initials: e.initials, grad: e.grad, tags: e.role ? [[e.role, e.roleFg]] as [string, string][] : [], locked: false }));
+    onAdd(picked);
+  };
+  const roleBg = (fg: string) => t.dark ? fg + '28' : fg + '1f';
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 99999999, background: 'rgba(15,7,50,.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: "'Rubik', system-ui, sans-serif" }}>
+      <div style={{ width: '100%', maxWidth: 520, maxHeight: '86vh', borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 40px 80px rgba(109,40,217,.3)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}` }}>
+        <div style={{ background: 'linear-gradient(118deg,#5B21B6,#6D28D9,#7C3AED,#8B5CF6)', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg></div>
+            <div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Select Approvers</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>Choose from internal employees — select multiple</div></div>
+          </div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.12)', border: '1.5px solid rgba(255,255,255,.22)', color: '#fff', cursor: 'pointer', fontSize: 13, flexShrink: 0 }}>✕</button>
+        </div>
+        <div style={{ background: t.surface, padding: 14, flexShrink: 0 }}>
+          <div style={{ position: 'relative' }}>
+            <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or role…" autoFocus style={{ width: '100%', padding: '10px 12px 10px 34px', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, borderRadius: 10, fontSize: 12, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box' }} />
+          </div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.surface, padding: '0 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {list.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '32px 0', fontSize: 11, fontWeight: 600, color: t.textMuted }}>{loading ? 'Loading employees…' : 'No employees found'}</div>
+          ) : list.map(e => {
+            const k = keyOf(e); const on = sel.has(k); const already = existing.includes(k);
+            return (
+              <div key={k} onClick={() => !already && toggle(k)} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 12px', borderRadius: 12, border: `1.5px solid ${on ? '#7C3AED' : (t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE')}`, background: already ? (t.dark ? 'rgba(255,255,255,.02)' : '#F8FAFC') : on ? (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF') : t.surface, cursor: already ? 'not-allowed' : 'pointer', opacity: already ? .55 : 1 }}>
+              <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, border: `2px solid ${on || already ? '#7C3AED' : (t.dark ? 'rgba(148,163,184,.4)' : '#C4B5FD')}`, background: on || already ? '#7C3AED' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{(on || already) && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}</div>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${e.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{e.initials}</span></div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}><span style={{ fontSize: 12.5, fontWeight: 800, color: t.textStrong }}>{e.name}</span>{e.role && <span style={{ padding: '1px 7px', borderRadius: 5, background: roleBg(e.roleFg), border: `1px solid ${e.roleFg}55`, fontSize: 7.5, fontWeight: 800, color: e.roleFg, letterSpacing: '.04em' }}>{e.role}</span>}{already && <span style={{ fontSize: 8, fontWeight: 700, color: t.textMuted }}>· added</span>}</div>
+                  {e.title && <div style={{ fontSize: 10, color: t.textMuted, fontWeight: 500, marginTop: 1 }}>{e.title}</div>}
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ height: 4 }} />
+        </div>
+        <div style={{ background: t.surface, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexShrink: 0 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: t.dark ? '#a78bfa' : '#7C3AED' }}>{sel.size > 0 ? `${sel.size} selected` : 'Select approvers from the list'}</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.05)' : '#fff', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, color: t.textSub }}>Cancel</button>
+            <button onClick={confirm} disabled={sel.size === 0} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', border: 'none', cursor: sel.size === 0 ? 'not-allowed' : 'pointer', opacity: sel.size === 0 ? .55 : 1, fontFamily: 'inherit', fontSize: 11, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(109,40,217,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>Add Selected</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type PickEntry = { id: string; name: string; initials: string; country: string; phone: string; email: string; grad: string };
+const toEntry = (name: unknown, country: unknown, phone: unknown, email: unknown, id: unknown, i: number): PickEntry => ({
+  id: String(id ?? i), name: String(name || '—'), initials: orgInitials(String(name || '')), country: String(country || '—'), phone: String(phone || '—'), email: String(email || '—'), grad: ORG_GRADS[i % ORG_GRADS.length],
+});
+
+function CpPicker({ t, slot, onClose, onPick }: { t: OpsTokens; slot: number; onClose: () => void; onPick: (cp: CP) => void }) {
+  const [tab, setTab] = useState<'buyer' | 'consignee' | 'supplier'>('buyer');
+  const [search, setSearch] = useState('');
+  const [pending, setPending] = useState<PickEntry | null>(null);
   const [referred, setReferred] = useState('');
-  const list = CP_DIR[tab].filter(p => (p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase()));
+  const [dir, setDir] = useState<Record<'buyer' | 'consignee' | 'supplier', PickEntry[]>>({ buyer: [], consignee: [], supplier: [] });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    const rowsOf = (d: unknown): Record<string, unknown>[] => Array.isArray(d) ? d as Record<string, unknown>[] : ((d as { data?: unknown })?.data as Record<string, unknown>[] ?? []);
+    Promise.allSettled([api.get('/customers', { params: { tab: 'all' } }), api.get('/consignees'), api.get('/vendors', { params: { per_page: 200 } })]).then(([cu, co, ve]) => {
+      if (!alive) return;
+      const buyer = cu.status === 'fulfilled' ? rowsOf(cu.value.data).map((r, i) => toEntry(r.company ?? r.company_name, r.country, r.phone, r.email, r.id, i)) : [];
+      const consignee = co.status === 'fulfilled' ? rowsOf(co.value.data).map((r, i) => toEntry(r.company ?? r.company_name, r.country, r.phone, r.email, r.id, i)) : [];
+      const supplier = ve.status === 'fulfilled' ? rowsOf(ve.value.data).map((r, i) => { const a = (r.primaryAddress ?? r.primary_address) as Record<string, unknown> | undefined; return toEntry(r.company_name ?? r.vendor_name, a?.city ?? r.country, a?.contact_no ?? r.mobile, r.primary_email ?? a?.email, r.vendor_code ?? r.id, i); }) : [];
+      setDir({ buyer, consignee, supplier });
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, []);
+
+  const list = dir[tab].filter(p => (p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase()));
+  const tabBadge = tab === 'buyer'
+    ? { label: 'Buyer', bg: t.dark ? 'rgba(8,145,178,.18)' : '#E0F7FA', bd: t.dark ? 'rgba(6,182,212,.4)' : '#A5F3FC', fg: t.dark ? '#67e8f9' : '#0891b2' }
+    : tab === 'supplier'
+      ? { label: 'Supplier', bg: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', bd: t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0', fg: t.dark ? '#6ee7b7' : '#059669' }
+      : { label: 'Consignee', bg: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', bd: t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD', fg: t.dark ? '#c4b5fd' : '#7C3AED' };
 
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -834,8 +1238,8 @@ function CpPicker({ t, slot, onClose, onPick }: { t: OpsTokens; slot: number; on
         {!pending ? (
           <div style={{ padding: '10px 12px 12px' }}>
             <div style={{ display: 'flex', gap: 3, background: t.dark ? 'rgba(255,255,255,.05)' : '#F3F0FD', borderRadius: 9, padding: 3, marginBottom: 9 }}>
-              {(['buyer', 'supplier'] as const).map(tb => (
-                <button key={tb} onClick={() => setTab(tb)} style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, textTransform: 'capitalize', background: tab === tb ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : 'transparent', color: tab === tb ? '#fff' : t.textMuted, boxShadow: tab === tb ? '0 2px 6px rgba(109,40,217,.3)' : 'none' }}>{tb}</button>
+              {(['buyer', 'consignee', 'supplier'] as const).map(tb => (
+                <button key={tb} onClick={() => { setTab(tb); setSearch(''); }} style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10, fontWeight: 700, textTransform: 'capitalize', background: tab === tb ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : 'transparent', color: tab === tb ? '#fff' : t.textMuted, boxShadow: tab === tb ? '0 2px 6px rgba(109,40,217,.3)' : 'none' }}>{tb}</button>
               ))}
             </div>
             <div style={{ position: 'relative', marginBottom: 8 }}>
@@ -847,17 +1251,26 @@ function CpPicker({ t, slot, onClose, onPick }: { t: OpsTokens; slot: number; on
                 <div key={p.id} onClick={() => { setPending(p); setReferred(p.name); }} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 9, cursor: 'pointer' }}
                   onMouseEnter={e => (e.currentTarget.style.background = t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                   <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg,${p.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 800, color: '#fff' }}>{p.initials}</span></div>
-                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 9, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div><div style={{ fontSize: 7, color: t.textMuted }}>{p.country}</div></div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                      <span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 7, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '1px 5px', borderRadius: 5, letterSpacing: '.02em' }}>{p.id}</span>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                      <span style={{ flexShrink: 0, fontSize: 6.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '1px 5px', borderRadius: 20 }}>{tabBadge.label}</span>
+                      <span style={{ fontSize: 7, color: t.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.country}</span>
+                    </div>
+                  </div>
                 </div>
               ))}
-              {!list.length && <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 8, color: t.textMuted }}>No results</div>}
+              {!list.length && <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 8.5, color: t.textMuted }}>{loading ? 'Loading…' : `No ${tab}s found`}</div>}
             </div>
           </div>
         ) : (
           <div style={{ padding: '12px 14px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
               <div style={{ width: 34, height: 34, borderRadius: 9, background: `linear-gradient(135deg,${pending.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{pending.initials}</span></div>
-              <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: t.textStrong }}>{pending.name}</div><div style={{ fontSize: 8, color: t.textMuted }}>{pending.email}</div></div>
+              <div style={{ minWidth: 0 }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 7, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '1px 5px', borderRadius: 5 }}>{pending.id}</span><span style={{ fontSize: 11, fontWeight: 800, color: t.textStrong }}>{pending.name}</span></div><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1 }}>{pending.email}</div></div>
             </div>
             <label style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#A78BFA' }}>Referred As In Agreement</label>
             <input value={referred} onChange={e => setReferred(e.target.value)} style={{ width: '100%', padding: '7px 10px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 8, fontSize: 10.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box', marginTop: 4 }} />
@@ -878,4 +1291,7 @@ const CTC_FORM_CSS = `
 .ctc-mid-scroll::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }
 .ctc-mid-scroll::-webkit-scrollbar-thumb { background: linear-gradient(180deg,#8B5CF6,#7C3AED,#6D28D9); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
 .ctc-mid-scroll::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg,#7C3AED,#6D28D9,#5B21B6); background-clip: padding-box; }
+.ctc-editor:empty:before { content: attr(data-ph); color: #94a3b8; pointer-events: none; white-space: pre-wrap; }
+.ctc-editor h1, .ctc-editor h2, .ctc-editor h3 { font-weight: 800; margin: 8px 0 4px; }
+.ctc-editor ul, .ctc-editor ol { padding-left: 22px; margin: 6px 0; }
 `;

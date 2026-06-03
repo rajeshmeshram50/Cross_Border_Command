@@ -1,7 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
-import { ATA_CONTRACTS, type AtaContract, inits, pad2, PER_PAGE } from './clmOpsData';
+import api from '../../api';
+import { type AtaContract, inits, pad2, PER_PAGE } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+
+/** To-approve rows from GET /clm/ctc-contracts/to-approve (AtaContract + db id). */
+type AtaRow = AtaContract & { dbId: number };
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Operations · Without Shipment ID → Agreements To Approve.
@@ -44,7 +48,9 @@ export default function ClmAgreementsToApprovePage() {
   const [tab, setTab]   = useState<AtaTab>('pending');
   const [page, setPage] = useState(1);
   const [actionId, setActionId] = useState<string | null>(null);
-  const [ata, setAta]   = useState<AtaContract[]>(() => ATA_CONTRACTS.map(c => ({ ...c, clarifications: c.clarifications.map(x => ({ ...x })) })));
+  const [ata, setAta]   = useState<AtaRow[]>([]);
+  const load = () => { api.get('/clm/ctc-contracts/to-approve').then(r => setAta(r.data?.data ?? [])).catch(() => setAta([])); };
+  useEffect(() => { load(); }, []);
 
   const counts = useMemo(() => ({
     all:           ata.length,
@@ -57,18 +63,18 @@ export default function ClmAgreementsToApprovePage() {
   const list = useMemo(() => tab === 'all' ? ata : ata.filter(c => c.status === tab), [ata, tab]);
   const actionContract = ata.find(c => c.id === actionId) || null;
 
-  const doApprove = (id: string) => {
-    setAta(prev => prev.map(c => c.id === id ? { ...c, status: 'approved' } : c));
-    toast.success('Agreement approved', 'Approved successfully');
+  const doApprove = async (id: string) => {
+    const row = ata.find(c => c.id === id); if (!row?.dbId) return;
+    try { await api.post(`/clm/ctc-contracts/${row.dbId}/approve`); toast.success('Agreement approved', 'Approved successfully'); load(); }
+    catch { toast.error('Could not approve', 'Please try again.'); }
   };
-  const doAction = (id: string, mode: 'clarification' | 'rejected', comment: string) => {
-    setAta(prev => prev.map(c => {
-      if (c.id !== id) return c;
-      if (mode === 'rejected') return { ...c, status: 'rejected', rejReason: comment };
-      return { ...c, status: 'clarification', clarifications: [...c.clarifications, { query: comment, date: '04 Jun 2026', response: '', resolved: false }] };
-    }));
-    setActionId(null);
-    toast[mode === 'rejected' ? 'error' : 'info'](mode === 'rejected' ? 'Agreement rejected' : 'Clarification raised', mode === 'rejected' ? 'Sent back to initiator' : 'Sent to initiator');
+  const doAction = async (id: string, mode: 'clarification' | 'rejected', comment: string) => {
+    const row = ata.find(c => c.id === id); setActionId(null); if (!row?.dbId) return;
+    try {
+      if (mode === 'rejected') { await api.post(`/clm/ctc-contracts/${row.dbId}/reject`, { reason: comment }); toast.error('Agreement rejected', 'Sent back to initiator'); }
+      else { await api.post(`/clm/ctc-contracts/${row.dbId}/clarify`, { query: comment }); toast.info('Clarification raised', 'Sent to initiator'); }
+      load();
+    } catch { toast.error('Action failed', 'Please try again.'); }
   };
 
   return (

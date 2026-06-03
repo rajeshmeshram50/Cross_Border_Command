@@ -282,6 +282,27 @@ class ClmTradeDocumentController extends Controller
     }
 
     /**
+     * Standalone DOCX → HTML conversion (no library row / no persistence).
+     * Used by editors that aren't backed by a saved library record — e.g.
+     * the CTC (Case-to-Case) agreement draft editor — so "Upload Doc" can
+     * load a .docx straight into the contentEditable. The uploaded file is
+     * read from its temp path and converted via the shared roundtrip trait.
+     */
+    public function docxToHtmlPreview(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $request->validate(['docx' => 'required|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB]);
+
+        try {
+            $html = $this->docxToHtml($request->file('docx')->getRealPath());
+        } catch (\Throwable $e) {
+            return response()->json(['status' => false, 'message' => 'Could not read this document.'], 422);
+        }
+
+        return response()->json(['status' => true, 'html' => $html ?: '']);
+    }
+
+    /**
      * Stage 2 page-shell logo upload. Stores the file under the tenant's
      * own folder and returns { path, url } in the exact shape
      * [[HeaderFooterPanel.tsx]] expects, so the same component works for

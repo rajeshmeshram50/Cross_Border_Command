@@ -1,10 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
+import api from '../../api';
 import {
-  AWS_CONTRACTS, ATA_CONTRACTS, type AwsContract,
+  type AwsContract, type Clarification,
   inits, pad2, PER_PAGE,
 } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+
+/* Sent rows from GET /clm/ctc-contracts/sent — the AwsContract list shape
+ * enriched with the clarification thread + approver so the Clarifications
+ * tab and the Respond modal work off the same fetched data. */
+type SentRow = AwsContract & { dbId: number; approver: string; clarifications: Clarification[]; rejReason?: string; expDate: string };
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Operations · Without Shipment ID → Agreements We Sent.
@@ -39,44 +45,44 @@ export default function ClmAgreementsSentPage() {
   const [dlOpen, setDlOpen] = useState<string | null>(null);
   const [respondId, setRespondId] = useState<string | null>(null);
 
-  // Mutable copy so "Respond" can update clarification state in-session.
-  const [ata, setAta] = useState(() => ATA_CONTRACTS.map(c => ({ ...c, clarifications: c.clarifications.map(x => ({ ...x })) })));
+  const [sent, setSent] = useState<SentRow[]>([]);
+  const load = () => { api.get('/clm/ctc-contracts/sent').then(r => setSent(r.data?.data ?? [])).catch(() => setSent([])); };
+  useEffect(() => { load(); }, []);
 
   const counts = useMemo(() => ({
-    all:      AWS_CONTRACTS.length,
-    approved: AWS_CONTRACTS.filter(c => c.status === 'approved').length,
-    pending:  AWS_CONTRACTS.filter(c => c.status === 'pending').length,
-    rejected: AWS_CONTRACTS.filter(c => c.status === 'rejected').length,
-    clarify:  ata.filter(c => c.status === 'clarification' && c.clarifications.some(cl => !cl.response)).length,
-  }), [ata]);
+    all:      sent.length,
+    approved: sent.filter(c => c.status === 'approved').length,
+    pending:  sent.filter(c => c.status === 'pending').length,
+    rejected: sent.filter(c => c.status === 'rejected').length,
+    clarify:  sent.filter(c => c.status === 'clarify' && c.clarifications.some(cl => !cl.response)).length,
+  }), [sent]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let list = AWS_CONTRACTS;
+    let list = sent;
     if (q) list = list.filter(c => (c.title + c.cp.join(' ') + c.id).toLowerCase().includes(q));
     if (tab === 'approved') return list.filter(c => c.status === 'approved');
     if (tab === 'pending')  return list.filter(c => c.status === 'pending');
     if (tab === 'rejected') return list.filter(c => c.status === 'rejected' || c.approval === 'rejected');
     return list;
-  }, [search, tab]);
+  }, [search, tab, sent]);
 
   const clarifyList = useMemo(
-    () => ata.filter(c => c.status === 'clarification' && c.clarifications.some(cl => !cl.response)),
-    [ata],
+    () => sent.filter(c => c.status === 'clarify' && c.clarifications.some(cl => !cl.response)),
+    [sent],
   );
 
-  const respondContract = ata.find(c => c.id === respondId) || null;
+  const respondContract = sent.find(c => c.id === respondId) || null;
 
-  const submitResponse = (id: string, text: string) => {
-    setAta(prev => prev.map(c => {
-      if (c.id !== id) return c;
-      const pending = c.clarifications.filter(cl => !cl.resolved);
-      if (pending.length) pending[pending.length - 1].response = text;
-      return { ...c, clarifications: [...c.clarifications] };
-    }));
+  const submitResponse = async (id: string, text: string) => {
+    const row = sent.find(x => x.id === id);
     setRespondId(null);
-    const c = ata.find(x => x.id === id);
-    toast.success('Clarification submitted', `Response sent to ${c?.approver ?? 'approver'}`);
+    if (!row?.dbId) return;
+    try {
+      await api.post(`/clm/ctc-contracts/${row.dbId}/respond`, { response: text });
+      toast.success('Clarification submitted', `Response sent to ${row.approver ?? 'approver'}`);
+      load();
+    } catch { toast.error('Could not submit', 'Please try again.'); }
   };
 
   return (
@@ -158,7 +164,7 @@ export default function ClmAgreementsSentPage() {
         {tab === 'clarify'
           ? <ClarifyTable rows={clarifyList} onRespond={setRespondId} t={t} />
           : tab === 'rejected'
-            ? <RejectedTable rows={filtered} ata={ata} page={page} setPage={setPage} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />
+            ? <RejectedTable rows={filtered} ata={sent} page={page} setPage={setPage} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />
             : <StandardTable rows={filtered} page={page} setPage={setPage} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />}
       </div>
 
@@ -352,7 +358,7 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, toast, t }
 }
 
 /* ── Rejected contracts table ── */
-function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, toast, t }: { rows: AwsContract[]; ata: typeof ATA_CONTRACTS; page: number; setPage: (n: number) => void; dlOpen: string | null; setDlOpen: (s: string | null) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, toast, t }: { rows: AwsContract[]; ata: SentRow[]; page: number; setPage: (n: number) => void; dlOpen: string | null; setDlOpen: (s: string | null) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
   const getRej = (id: string) => { const a = ata.find(x => x.id === id); return { by: a?.approver ?? '—', reason: a?.rejReason ?? '—' }; };
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
@@ -411,7 +417,7 @@ function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, toast, t }
 }
 
 /* ── Clarifications table (sender responds) ── */
-function ClarifyTable({ rows, onRespond, t }: { rows: typeof ATA_CONTRACTS; onRespond: (id: string) => void; t: OpsTokens }) {
+function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id: string) => void; t: OpsTokens }) {
   if (!rows.length) {
     return (
       <div style={{ background: t.dark ? t.tableBg : '#F0FDFF', minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 20px' }}>
@@ -481,7 +487,7 @@ function ClarifyTable({ rows, onRespond, t }: { rows: typeof ATA_CONTRACTS; onRe
 }
 
 /* ── Respond to clarification modal ── */
-function RespondModal({ contract, onClose, onSubmit, t }: { contract: typeof ATA_CONTRACTS[number]; onClose: () => void; onSubmit: (id: string, text: string) => void; t: OpsTokens }) {
+function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; onClose: () => void; onSubmit: (id: string, text: string) => void; t: OpsTokens }) {
   const [text, setText] = useState('');
   const [err, setErr] = useState(false);
   const pending = contract.clarifications.filter(cl => !cl.response);
