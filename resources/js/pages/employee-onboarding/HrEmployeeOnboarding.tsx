@@ -1617,8 +1617,27 @@ export function VaultModal({
 
   const openAudit = (run: SignatureRun) => { setAuditRun(run); setOpenMenuId(null); };
   const cancelRun = async (run: SignatureRun) => {
-    if (!confirm(`Cancel signing workflow for ${run.code || `run #${run.id}`}? This cannot be undone.`)) return;
+    // Close the row's "•••" menu BEFORE the confirm dialog opens, otherwise
+    // the menu sits there in the background while the modal is up.
     setOpenMenuId(null);
+    const code = run.code || `run #${run.id}`;
+    const ok = await confirmDialog({
+      title: 'Cancel signing workflow?',
+      message: (
+        <>
+          Cancel the signing workflow for <strong>{code}</strong>?
+          <br />
+          <span style={{ opacity: 0.75 }}>
+            This will halt all pending signatures and cannot be undone.
+          </span>
+        </>
+      ),
+      confirmLabel: 'Yes, cancel workflow',
+      cancelLabel:  'Keep workflow',
+      tone:         'danger',
+      icon:         'close-circle-line',
+    });
+    if (!ok) return;
     try {
       await api.post(`/hr-document-signatures/${run.id}/cancel`);
       toast.success('Cancelled', 'Workflow halted.');
@@ -2328,58 +2347,289 @@ export function VaultModal({
       {/* Audit trail modal */}
       <Modal isOpen={!!auditRun} toggle={() => setAuditRun(null)} size="lg" centered contentClassName="border-0" backdrop="static">
         <ModalBody className="p-0">
-          <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', borderRadius: '6px 6px 0 0' }}>
-            <div className="d-flex align-items-center justify-content-between">
-              <div>
-                <strong style={{ fontSize: 15 }}><i className="ri-history-line me-2" />Audit Trail</strong>
-                <div style={{ fontSize: 11.5, opacity: 0.85 }}>{auditRun?.template?.name} · {auditRun?.code} · Status {auditRun?.status}</div>
-              </div>
-              <button type="button" onClick={() => setAuditRun(null)} aria-label="Close"
-                style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 28, height: 28 }}>
-                <i className="ri-close-line" />
-              </button>
-            </div>
-          </div>
-          <div style={{ padding: 16, maxHeight: '60vh', overflowY: 'auto' }}>
-            {/* Signing flow snapshot */}
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 }}>Signing Flow</div>
-            <div className="d-flex flex-wrap" style={{ gap: 6, marginBottom: 16 }}>
-              {(auditRun?.signers || []).map((s, i) => {
-                const done = s.status === 'Done';
-                const rejected = s.status === 'Rejected';
-                const isCurrent = i === auditRun?.current_index && (auditRun?.status === 'Pending' || auditRun?.status === 'In Progress');
-                const bg = rejected ? '#fee2e2' : done ? '#dcfce7' : isCurrent ? '#dbeafe' : '#f3f4f6';
-                const fg = rejected ? '#b91c1c' : done ? '#15803d' : isCurrent ? '#1d4ed8' : '#374151';
-                return (
-                  <div key={i} className="d-flex align-items-center" style={{ gap: 6 }}>
-                    <div style={{ padding: '6px 12px', background: bg, border: `1px solid ${fg}33`, borderRadius: 8, fontSize: 12, fontWeight: 700, color: fg }}>
-                      <span style={{ display: 'inline-flex', width: 18, height: 18, borderRadius: '50%', background: fg, color: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 6, fontSize: 10 }}>{i + 1}</span>
-                      {s.name}
-                      <div style={{ fontSize: 10.5, fontWeight: 500 }}>{s.action} {done ? '· Done' : rejected ? '· Rejected' : isCurrent ? '· Pending you' : '· Waiting'}</div>
-                    </div>
-                    {i < (auditRun?.signers?.length || 0) - 1 && <i className="ri-arrow-right-line" style={{ color: '#9ca3af' }} />}
-                  </div>
-                );
-              })}
-            </div>
+          {auditRun && (() => {
+            const signers = auditRun.signers || [];
+            const totalSteps = signers.length;
+            const doneSteps  = signers.filter(s => s.status === 'Done').length;
+            const progressPct = totalSteps > 0 ? (doneSteps / totalSteps) * 100 : 0;
+            return (
+              <>
+                {/* ── Header — violet gradient with icon + workflow code +
+                      title on the LEFT, circular percentage progress on the
+                      RIGHT (matches the "VAULT STATUS" doughnut pattern used
+                      on the Evidence Vault header). ── */}
+                <div style={{
+                  position: 'relative',
+                  padding: '20px 22px',
+                  background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%)',
+                  color: '#fff',
+                  borderRadius: '8px 8px 0 0',
+                }}>
+                  {/* Close button — absolute top right so it's always reachable */}
+                  <button
+                    type="button"
+                    onClick={() => setAuditRun(null)}
+                    aria-label="Close"
+                    style={{
+                      position: 'absolute',
+                      top: 12, right: 12,
+                      background: 'rgba(255,255,255,0.18)',
+                      border: 0, color: '#fff',
+                      borderRadius: 10,
+                      width: 32, height: 32,
+                      cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <i className="ri-close-line" style={{ fontSize: 16 }} />
+                  </button>
 
-            {/* Audit events */}
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 }}>Events</div>
-            <div style={{ borderLeft: '2px solid #e5e7eb', paddingLeft: 14 }}>
-              {(auditRun?.audit_log || []).slice().reverse().map((ev, i) => (
-                <div key={i} style={{ position: 'relative', marginBottom: 12 }}>
-                  <span style={{ position: 'absolute', left: -22, top: 6, width: 10, height: 10, borderRadius: '50%', background: '#3b82f6', border: '2px solid #fff' }} />
-                  <div style={{ fontSize: 12.5, color: '#1f2937', fontWeight: 600 }}>{ev.message}</div>
-                  <div style={{ fontSize: 11, color: '#6b7280' }}>
-                    {new Date(ev.at).toLocaleString()} · {ev.actor_name} · <code style={{ fontSize: 10.5, background: '#f3f4f6', padding: '1px 5px', borderRadius: 3 }}>{ev.action}</code>
+                  <div className="d-flex align-items-center" style={{ gap: 16, paddingRight: 48 }}>
+                    {/* Glass icon */}
+                    <div style={{
+                      width: 48, height: 48,
+                      background: 'rgba(255,255,255,0.18)',
+                      borderRadius: 12,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                      backdropFilter: 'blur(8px)',
+                    }}>
+                      <i className="ri-history-line" style={{ fontSize: 22 }} />
+                    </div>
+
+                    {/* Title block */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 11, fontWeight: 700,
+                        letterSpacing: '0.08em', textTransform: 'uppercase',
+                        opacity: 0.78,
+                        marginBottom: 2,
+                      }}>
+                        {auditRun.code || `Run #${auditRun.id}`} · Signature Workflow
+                      </div>
+                      <div style={{
+                        fontSize: 18, fontWeight: 800,
+                        letterSpacing: '-0.01em',
+                        lineHeight: 1.2,
+                      }}>
+                        {auditRun.template?.name || 'Document Timeline'}
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.85, marginTop: 3 }}>
+                        Status · <strong>{auditRun.status}</strong> · {doneSteps} / {totalSteps} signed
+                      </div>
+                    </div>
+
+                    {/* Circular percentage progress — SVG donut chart.
+                        circumference = 2π × r (r=26) ≈ 163.36. dashoffset is
+                        the *unfilled* length, so (1 - pct/100) * circumference
+                        leaves the filled arc visible. */}
+                    {(() => {
+                      const r = 26;
+                      const C = 2 * Math.PI * r;
+                      const offset = C - (progressPct / 100) * C;
+                      return (
+                        <div style={{
+                          position: 'relative',
+                          width: 64, height: 64,
+                          flexShrink: 0,
+                        }}>
+                          <svg width="64" height="64" viewBox="0 0 64 64" style={{ transform: 'rotate(-90deg)' }}>
+                            {/* Track */}
+                            <circle
+                              cx="32" cy="32" r={r}
+                              fill="none"
+                              stroke="rgba(255,255,255,0.20)"
+                              strokeWidth="6"
+                            />
+                            {/* Progress arc */}
+                            <circle
+                              cx="32" cy="32" r={r}
+                              fill="none"
+                              stroke="#ffffff"
+                              strokeWidth="6"
+                              strokeLinecap="round"
+                              strokeDasharray={C}
+                              strokeDashoffset={offset}
+                              style={{ transition: 'stroke-dashoffset .6s ease-out' }}
+                            />
+                          </svg>
+                          {/* Centered percentage label */}
+                          <div style={{
+                            position: 'absolute',
+                            inset: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 14,
+                            fontWeight: 800,
+                            color: '#fff',
+                            letterSpacing: '-0.02em',
+                          }}>
+                            {Math.round(progressPct)}%
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
-              ))}
-              {(!auditRun?.audit_log || auditRun.audit_log.length === 0) && (
-                <div style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>No events yet.</div>
-              )}
-            </div>
-          </div>
+
+                {/* ── Vertical timeline ── */}
+                <div style={{ padding: '16px 22px 18px', maxHeight: '55vh', overflowY: 'auto', background: '#fff' }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 800,
+                    color: '#6b7280', letterSpacing: '0.08em',
+                    textTransform: 'uppercase', marginBottom: 14,
+                  }}>
+                    Signature Timeline
+                  </div>
+
+                  {signers.length === 0 && (
+                    <div style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>
+                      No signers configured for this workflow.
+                    </div>
+                  )}
+
+                  {signers.map((s, i) => {
+                    const done = s.status === 'Done';
+                    const rejected = s.status === 'Rejected';
+                    const isCurrent = i === auditRun.current_index
+                      && (auditRun.status === 'Pending' || auditRun.status === 'In Progress');
+                    const isLast = i === signers.length - 1;
+
+                    // Color tokens per state
+                    const tone = rejected
+                      ? { bg: '#fee2e2', border: '#fca5a5', icon: '#dc2626', pill: '#dc2626', pillBg: '#fee2e2', pillBorder: '#fca5a5', label: 'Rejected', iconClass: 'ri-close-line' }
+                      : done
+                      ? { bg: '#10b981', border: '#10b981', icon: '#fff',    pill: '#10b981', pillBg: '#d1fae5', pillBorder: '#a7f3d0', label: 'Done',     iconClass: 'ri-check-line' }
+                      : isCurrent
+                      ? { bg: '#7c3aed', border: '#7c3aed', icon: '#fff',    pill: '#7c3aed', pillBg: '#ede9fe', pillBorder: '#c4b5fd', label: 'Pending you', iconClass: 'ri-time-line' }
+                      : { bg: '#f3f4f6', border: '#d1d5db', icon: '#9ca3af', pill: '#6b7280', pillBg: '#f3f4f6', pillBorder: '#e5e7eb', label: 'Waiting',  iconClass: 'ri-time-line' };
+
+                    return (
+                      <div key={i} style={{ position: 'relative', display: 'flex', gap: 16, paddingBottom: isLast ? 0 : 20 }}>
+                        {/* Vertical connector line behind the dot */}
+                        {!isLast && (
+                          <span style={{
+                            position: 'absolute',
+                            left: 17,
+                            top: 36,
+                            bottom: 0,
+                            width: 2,
+                            background: done ? '#10b981' : '#e5e7eb',
+                            borderRadius: 1,
+                          }} />
+                        )}
+
+                        {/* Circular state icon */}
+                        <div style={{
+                          width: 36, height: 36,
+                          borderRadius: '50%',
+                          background: tone.bg,
+                          border: `2px solid ${tone.border}`,
+                          color: tone.icon,
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 16,
+                          flexShrink: 0,
+                          position: 'relative',
+                          zIndex: 1,
+                          boxShadow: done || isCurrent ? `0 4px 12px ${tone.bg}40` : 'none',
+                        }}>
+                          <i className={tone.iconClass} />
+                        </div>
+
+                        {/* Row content */}
+                        <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+                          <div className="d-flex justify-content-between align-items-start" style={{ gap: 12 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', lineHeight: 1.3 }}>
+                                {s.name}
+                              </div>
+                              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                                {s.action} · Step {i + 1} of {signers.length}
+                              </div>
+                              {s.acted_at && (
+                                <div style={{ fontSize: 11.5, color: '#9ca3af', marginTop: 4 }}>
+                                  <i className="ri-calendar-line" style={{ marginRight: 4 }} />
+                                  {new Date(s.acted_at).toLocaleString()}
+                                </div>
+                              )}
+                              {s.note && (
+                                <div style={{
+                                  fontSize: 11.5, color: '#7f1d1d',
+                                  background: '#fef2f2',
+                                  border: '1px solid #fecaca',
+                                  borderRadius: 6,
+                                  padding: '6px 10px',
+                                  marginTop: 6,
+                                }}>
+                                  <strong>Note:</strong> {s.note}
+                                </div>
+                              )}
+                            </div>
+                            {/* Status pill */}
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center',
+                              gap: 4,
+                              padding: '4px 10px',
+                              fontSize: 11, fontWeight: 700,
+                              color: tone.pill,
+                              background: tone.pillBg,
+                              border: `1px solid ${tone.pillBorder}`,
+                              borderRadius: 999,
+                              flexShrink: 0,
+                              whiteSpace: 'nowrap',
+                            }}>
+                              <i className={tone.iconClass} style={{ fontSize: 12 }} />
+                              {tone.label}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* ── Event log (collapsible-feel section) ── */}
+                  {(auditRun.audit_log && auditRun.audit_log.length > 0) && (
+                    <>
+                      <div style={{
+                        marginTop: 24, paddingTop: 16,
+                        borderTop: '1px solid #f3f4f6',
+                        fontSize: 11, fontWeight: 800,
+                        color: '#6b7280', letterSpacing: '0.08em',
+                        textTransform: 'uppercase', marginBottom: 12,
+                      }}>
+                        Activity Log
+                      </div>
+                      <div style={{ borderLeft: '2px solid #ede9fe', paddingLeft: 14, marginLeft: 8 }}>
+                        {auditRun.audit_log.slice().reverse().map((ev, i) => (
+                          <div key={i} style={{ position: 'relative', marginBottom: 10 }}>
+                            <span style={{
+                              position: 'absolute',
+                              left: -22, top: 5,
+                              width: 10, height: 10,
+                              borderRadius: '50%',
+                              background: '#7c3aed',
+                              border: '2px solid #fff',
+                              boxShadow: '0 0 0 2px #ede9fe',
+                            }} />
+                            <div style={{ fontSize: 12.5, color: '#1f2937', fontWeight: 600 }}>
+                              {ev.message}
+                            </div>
+                            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 1 }}>
+                              {new Date(ev.at).toLocaleString()} · {ev.actor_name}
+                              <code style={{ fontSize: 10, background: '#f3f4f6', padding: '1px 5px', borderRadius: 3, marginLeft: 6 }}>
+                                {ev.action}
+                              </code>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </ModalBody>
       </Modal>
 
