@@ -76,6 +76,9 @@ import ClmClauseLibraryPage from '../pages/clm/ClmClauseLibraryPage';
 import ClmDcpPage from '../pages/clm/ClmDcpPage';
 import ClmBuyerProfilePage from '../pages/clm/ClmBuyerProfilePage';
 import ClmSupplierProfilePage from '../pages/clm/ClmSupplierProfilePage';
+import ClmCaseToCasePage from '../pages/clm/ClmCaseToCasePage';
+import ClmAgreementsSentPage from '../pages/clm/ClmAgreementsSentPage';
+import ClmAgreementsToApprovePage from '../pages/clm/ClmAgreementsToApprovePage';
 import HrDashboard from '../pages/hrms/HrDashboard';
 import HrOverview from '../pages/hrms/HrOverview';
 import HrEmployees from '../pages/hrms/HrEmployees';
@@ -704,9 +707,13 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/clm/document-panel"   element={<ClmDcpPage />} />
               <Route path="/clm/buyer-profile"    element={<ClmBuyerProfilePage />} />
               <Route path="/clm/supplier-profile" element={<ClmSupplierProfilePage />} />
-              {/* Operations leaves (analytics / diagnosis / resolution /
-                  case-to-case / agreements-sent / agreements-to-approve)
-                  still fall through to the stub until those pages ship. */}
+              {/* Operations · Without Shipment ID — Case to Case Contracts,
+                  Agreements We Sent, Agreements To Approve. */}
+              <Route path="/clm/case-to-case"          element={<ClmCaseToCasePage />} />
+              <Route path="/clm/agreements-sent"       element={<ClmAgreementsSentPage />} />
+              <Route path="/clm/agreements-to-approve" element={<ClmAgreementsToApprovePage />} />
+              {/* Remaining operations leaves (analytics / diagnosis /
+                  resolution) still fall through to the stub. */}
               <Route path="/clm/:slug" element={<ClmStubPage />} />
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/overview" element={<HrOverview />} />
