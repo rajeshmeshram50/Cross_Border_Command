@@ -21,7 +21,7 @@ class HrDocumentSignatureController extends Controller
 {
     private const WITH = [
         'template:id,code,name,doc_type',
-        'employee:id,first_name,last_name,display_name,emp_code,department_id,designation_id,reporting_manager_id,user_id',
+        'employee:id,first_name,last_name,display_name,emp_code,department_id,designation_id,reporting_manager_id,reporting_manager_user_id,user_id',
         'employee.department:id,name',
         'employee.designation:id,name,level',
         'creator:id,name',
@@ -456,10 +456,27 @@ class HrDocumentSignatureController extends Controller
     {
         $r = strtolower(trim($roleName));
         if (str_contains($r, 'reporting')) {
-            $mgr = $emp->reporting_manager_id
-                ? Employee::with('user')->find($emp->reporting_manager_id)
-                : null;
-            return [$mgr?->user_id ?? null, $mgr?->display_name ?? 'Reporting Manager (unassigned)'];
+            // Two paths — employees.reporting_manager_id points to an
+            // Employee row (the common case), but employees.reporting_
+            // manager_user_id points to a User row when the manager is a
+            // Branch User / Client admin who doesn't have an Employee
+            // record. Try the Employee path first (most specific), then
+            // fall back to the direct User lookup. Without this fallback,
+            // a Branch-User reporting manager surfaced as "(unassigned)"
+            // on every signature workflow.
+            if ($emp->reporting_manager_id) {
+                $mgr = Employee::with('user')->find($emp->reporting_manager_id);
+                if ($mgr) {
+                    return [$mgr->user_id ?? null, $mgr->display_name ?? 'Reporting Manager'];
+                }
+            }
+            if ($emp->reporting_manager_user_id) {
+                $u = User::find($emp->reporting_manager_user_id);
+                if ($u) {
+                    return [$u->id, $u->name ?: ('Reporting Manager (' . $u->email . ')')];
+                }
+            }
+            return [null, 'Reporting Manager (unassigned)'];
         }
         if (str_contains($r, 'employee')) {
             return [$emp->user_id ?? null, $emp->display_name ?? 'Employee'];
