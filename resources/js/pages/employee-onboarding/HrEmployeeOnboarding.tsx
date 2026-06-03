@@ -1355,6 +1355,30 @@ export function VaultModal({
     if (!emp?.dbId) return;
     setPreviewTpl(tpl);
     setPreviewOpen(true);
+
+    // If a signing run already exists for this template, prefer its frozen
+    // content_html. For a Completed / In Progress run the signers' actual
+    // signatures have been merged into that HTML (each {{SignerNSign}} token
+    // is replaced as the signer acts), so View shows the signed copy instead
+    // of the raw template with un-substituted {{SignerNSign}} placeholders.
+    const run = runByTemplateId.get(tpl.id) || null;
+    if (run && run.content_html && (run.status === 'Completed' || run.status === 'In Progress')) {
+      setPreviewHtml(run.content_html);
+      setPreviewHeader({ ...DEFAULT_HEADER, ...(run.header_config || {}) } as HeaderConfig);
+      setPreviewFooter({ ...DEFAULT_FOOTER, ...(run.footer_config || {}) } as FooterConfig);
+      // Only flag genuinely unresolved tokens. While a run is In Progress the
+      // remaining {{SignerNSign}}/{{SignerNDate}} slots are expected (later
+      // signers fill them), so we don't surface those as "unfilled".
+      const remaining = Array.from(new Set((run.content_html.match(/\{\{\s*([^}]+?)\s*\}\}/g) || [])
+        .map(t => t.replace(/^\{\{\s*|\s*\}\}$/g, ''))));
+      const stillMissing = run.status === 'Completed'
+        ? remaining
+        : remaining.filter(t => !/^Signer\d+(Sign|Date)$/.test(t));
+      setPreviewMissing(stillMissing);
+      setPreviewLoading(false);
+      return;
+    }
+
     setPreviewLoading(true);
     try {
       const { data } = await api.get(`/hr-document-templates/${tpl.id}/preview`, {

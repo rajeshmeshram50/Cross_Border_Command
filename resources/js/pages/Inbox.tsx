@@ -38,7 +38,31 @@ interface SignatureRun {
   footer_config: FooterConfig | null;
   signers: SignerState[];
   current_index: number;
+  audit_log?: AuditEvent[];
   created_at: string;
+}
+
+// One entry in a run's audit trail. A 'reminded' event carries signer_index
+// so we can tell whether the nudge was aimed at the slot the current viewer
+// is sitting on.
+type AuditEvent = {
+  at: string;
+  actor_id: number | null;
+  actor_name: string;
+  action: string;
+  message: string;
+  signer_index?: number;
+};
+
+// Most-recent 'reminded' event aimed at this run's CURRENT signer (the person
+// whose turn it is, i.e. whoever is looking at this inbox row). Returns null
+// when nobody has nudged them yet.
+function latestReminder(run: SignatureRun): AuditEvent | null {
+  const hits = (run.audit_log || []).filter(
+    e => e.action === 'reminded' && (e.signer_index ?? -1) === run.current_index,
+  );
+  if (hits.length === 0) return null;
+  return hits.reduce((a, b) => (a.at >= b.at ? a : b));
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -394,6 +418,11 @@ export default function Inbox() {
     } finally { setSubmitting(false); }
   };
 
+  // How many pending documents carry a reminder aimed at the current viewer —
+  // drives the header strip badge so "someone nudged you" is visible without
+  // opening the bell.
+  const reminderCount = rows.filter(r => latestReminder(r) !== null).length;
+
   return (
     <Row>
       <Col xs={12}>
@@ -449,12 +478,21 @@ export default function Inbox() {
                   </div>
                 </div>
               </div>
-              <span style={{ padding: '6px 14px', borderRadius: 999, background: 'linear-gradient(135deg,#f7b84b,#fbc763)', color: '#fff', fontWeight: 700, fontSize: 13 }}>
-                <i className="ri-mail-unread-line me-1" />
-                {loading || leaveLoading || expenseLoading || myUpdatesLoading
-                  ? '…'
-                  : `${rows.length + leaveRows.length + expenseRows.length} pending${myUpdates.length ? ` · ${myUpdates.length} update${myUpdates.length === 1 ? '' : 's'}` : ''}`}
-              </span>
+              <div className="d-flex align-items-center gap-2">
+                {!loading && reminderCount > 0 && (
+                  <span className="inbox-reminder-pill inbox-reminder-pill--header"
+                    title="Someone has reminded you to act on these documents">
+                    <i className="ri-notification-badge-line" />
+                    {reminderCount} reminder{reminderCount === 1 ? '' : 's'}
+                  </span>
+                )}
+                <span style={{ padding: '6px 14px', borderRadius: 999, background: 'linear-gradient(135deg,#f7b84b,#fbc763)', color: '#fff', fontWeight: 700, fontSize: 13 }}>
+                  <i className="ri-mail-unread-line me-1" />
+                  {loading || leaveLoading || expenseLoading || myUpdatesLoading
+                    ? '…'
+                    : `${rows.length + leaveRows.length + expenseRows.length} pending${myUpdates.length ? ` · ${myUpdates.length} update${myUpdates.length === 1 ? '' : 's'}` : ''}`}
+                </span>
+              </div>
             </CardBody>
           </Card>
 
@@ -911,12 +949,20 @@ export default function Inbox() {
                           current?.action === 'Sign'    ? { bg: '#fef3c7', fg: '#92400e' }
                           : current?.action === 'Approve'? { bg: '#dcfce7', fg: '#15803d' }
                           :                                { bg: '#e0e7ff', fg: '#4338ca' };
+                        const reminder = latestReminder(r);
                         return (
-                          <tr key={r.id}>
+                          <tr key={r.id} className={reminder ? 'inbox-row--reminded' : undefined}>
                             <td>{i + 1}</td>
                             <td>
                               <div className="inbox-doc-name" style={{ fontWeight: 700 }}>{r.template?.name || '(template removed)'}</div>
                               {r.code && <code className="inbox-code-pill" style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}
+                              {reminder && (
+                                <div className="inbox-reminder-pill" style={{ marginTop: 5 }}
+                                  title={`${reminder.actor_name || 'Someone'} reminded you on ${new Date(reminder.at).toLocaleString()}`}>
+                                  <i className="ri-notification-badge-line" />
+                                  Reminder{reminder.actor_name ? ` from ${reminder.actor_name}` : ''}
+                                </div>
+                              )}
                             </td>
                             <td>
                               <div>{empName}</div>
@@ -980,7 +1026,7 @@ export default function Inbox() {
               />
             </HeaderFooterPanel>
           </div>
-          <div className="inbox-modal-footer" style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <div className="inbox-modal-footer" style={{ padding: '12px 16px', borderTop: '1px solid #e5e7eb', background: '#fff', boxShadow: '0 -3px 10px rgba(15,23,42,0.05)', display: 'flex', justifyContent: 'flex-end', gap: 8, flexShrink: 0 }}>
             <button type="button" onClick={() => setViewRun(null)}
               className="inbox-btn-ghost"
               style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
@@ -1046,7 +1092,7 @@ export default function Inbox() {
                 </div>
               </div>
             </div>
-            <div className="inbox-modal-footer" style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div className="inbox-modal-footer" style={{ padding: '12px 16px', borderTop: '1px solid #e5e7eb', background: '#fff', boxShadow: '0 -3px 10px rgba(15,23,42,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
               <button type="button" onClick={() => submitDecision('reject')}
                 disabled={submitting || !actionNote.trim()}
                 title={actionNote.trim() ? 'Reject with this remark' : 'Add a remark first'}
@@ -1127,6 +1173,30 @@ const inputLabelStyle: React.CSSProperties = {
 function InboxDarkStyles() {
   return (
     <style>{`
+      /* Reminder highlight — drawn in both themes (not dark-only). A pending
+         row that has been nudged gets an amber left-rail + tinted cells, and
+         a pulsing pill so the signer reads "you've been reminded" at a glance. */
+      @keyframes inboxReminderPulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.45); }
+        50%      { box-shadow: 0 0 0 4px rgba(245,158,11,0); }
+      }
+      .inbox-reminder-pill {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 2px 9px; border-radius: 999px;
+        background: #fef3c7; color: #b45309;
+        font-size: 10.5px; font-weight: 800; letter-spacing: 0.2px;
+        animation: inboxReminderPulse 1.8s ease-in-out infinite;
+      }
+      .inbox-reminder-pill--header {
+        padding: 6px 12px; font-size: 12px; color: #92400e;
+        background: #fde68a;
+      }
+      .inbox-page .inbox-row--reminded > td { background: #fff8eb; }
+      .inbox-page .inbox-row--reminded > td:first-child { box-shadow: inset 3px 0 0 0 #f59e0b; }
+      [data-bs-theme="dark"] .inbox-page .inbox-row--reminded > td { background: rgba(245,158,11,0.09) !important; }
+      [data-bs-theme="dark"] .inbox-reminder-pill { background: rgba(245,158,11,0.20); color: #fbbf24; }
+      [data-bs-theme="dark"] .inbox-reminder-pill--header { background: rgba(245,158,11,0.22); color: #fcd34d; }
+
       [data-bs-theme="dark"] .inbox-page .inbox-header-icon {
         /* Stay on the same saturated amber gradient as light mode so the
          * icon chip matches the Master-tile treatment in both themes,
@@ -1170,7 +1240,9 @@ function InboxDarkStyles() {
         background: var(--vz-secondary-bg) !important;
       }
       [data-bs-theme="dark"] .inbox-modal-footer {
+        background: var(--vz-card-bg) !important;
         border-top-color: var(--vz-border-color) !important;
+        box-shadow: 0 -3px 10px rgba(0,0,0,0.25) !important;
       }
       [data-bs-theme="dark"] .inbox-form-card {
         background: var(--vz-card-bg) !important;
