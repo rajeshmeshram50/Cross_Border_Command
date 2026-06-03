@@ -7,18 +7,7 @@ use App\Models\LeadAckReason;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
-/**
- * Sales Matrix → Lead Acknowledgement Master CRUD.
- *
- * Tenant-scoped via $user->client_id. Users without a client (super_admin)
- * get an empty payload — the page is hidden from them in the sidebar anyway,
- * but the API stays consistent rather than 403'ing.
- *
- * Permission gating is delegated to the frontend via user.permissions
- * ['sales.lead_ack_master'] flags; the route is behind auth:sanctum so
- * unauthenticated requests cannot reach it. Backend re-checks scope by
- * client_id on every read/write — defense in depth against tampered ids.
- */
+
 class LeadAckReasonController extends Controller
 {
     /**

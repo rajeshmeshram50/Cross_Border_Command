@@ -13,13 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/**
- * Dedicated controller for the Keka-style Leave Plan flow. The generic
- * MasterController already handles the simple Leave Type / Leave Plan
- * lookup CRUD via /api/master/{slug}; this one exists for the relations
- * that don't fit that shape — assigning types to a plan, persisting the
- * 6-tab Setup popup, and moving employees between plans.
- */
+
 class LeavePlanController extends Controller
 {
     private const VALID_TYPE_CATEGORIES = ['Regular', 'Incident Based Leave', 'Unpaid Leave', 'Compoff'];

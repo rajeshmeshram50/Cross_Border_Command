@@ -9,21 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Consignee Stage 2 — Owner KYC API.
- *
- * Mirrors CustomerOwnerController. Nested under the consignee:
- *   GET    /api/consignees/{consignee}/owners
- *   POST   /api/consignees/{consignee}/owners
- *   GET    /api/consignees/{consignee}/owners/{owner}
- *   POST   /api/consignees/{consignee}/owners/{owner}   (file replace)
- *   PUT    /api/consignees/{consignee}/owners/{owner}   (json-only)
- *   DELETE /api/consignees/{consignee}/owners/{owner}
- *
- * Each owner row carries three identity-proof file paths (ID,
- * address, photograph). Uploads land on the public disk under
- *   consignee_documents/{consignee_id}/owner-{slug}-{rand}.{ext}
- */
+
 class ConsigneeOwnerController extends Controller
 {
     private const FILE_FIELDS = [

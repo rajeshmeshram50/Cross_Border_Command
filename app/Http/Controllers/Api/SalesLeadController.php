@@ -22,19 +22,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
-/**
- * Sales Matrix → Leads (My Workplace) backend.
- *
- * Powers the /sales/lead-worksheet SPA page. Three feeders write here:
- *
- *   - index()       — list with tenant scope + tab + search + paginate
- *   - store()       — manual lead capture (Add New Lead modal)
- *   - syncFromCrm() — pull leads from IndiaMart CRM keys configured per tenant
- *
- * Tenant model mirrors SalesTodoController: rows are pinned to the user's
- * client_id. Sub-branch users (non-main branch_user) see their branch only;
- * client_admin / main_branch_user see the whole client; super_admin sees all.
- */
+
 class SalesLeadController extends Controller
 {
     /* ISO 3166-1 alpha-2 → human-readable name. Used as a fallback in

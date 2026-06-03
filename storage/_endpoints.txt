@@ -1,0 +1,571 @@
+## AdvanceRequestController (8)
+GET    /api/advance-requests  @index
+POST   /api/advance-requests  @store
+GET    /api/advance-requests/{id}  @show
+GET    /api/advance-requests/{id}/attachments/{index}  @downloadAttachment
+POST   /api/advance-requests/{id}/hr-approve  @hrApprove
+POST   /api/advance-requests/{id}/hr-reject  @hrReject
+POST   /api/advance-requests/{id}/manager-approve  @managerApprove
+POST   /api/advance-requests/{id}/manager-reject  @managerReject
+
+## AnnouncementController (7)
+GET    /api/announcements  @index
+POST   /api/announcements  @store
+GET    /api/announcements/next-code  @nextCode
+GET    /api/announcements/stats  @stats
+GET    /api/announcements/{announcement}  @show
+PUT    /api/announcements/{announcement}  @update
+DELETE /api/announcements/{announcement}  @destroy
+
+## AttendanceController (7)
+GET    /api/attendance  @index
+GET    /api/attendance/daily-view  @dailyView
+GET    /api/attendance/employee/{employeeId}/summary  @employeeSummary
+POST   /api/attendance/face/clock-in  @faceClockIn
+POST   /api/attendance/face/clock-out  @faceClockOut
+GET    /api/attendance/my  @my
+GET    /api/attendance/today  @today
+
+## AuthController (8)
+POST   /api/change-password  @changePassword
+POST   /api/google-login  @googleLogin
+POST   /api/login  @login
+POST   /api/login/face  @faceLogin
+POST   /api/logout  @logout
+GET    /api/me  @me
+POST   /api/me/branding  @updateBranding
+POST   /api/me/profile  @updateProfile
+
+## BranchController (7)
+GET    /api/branches  @index
+POST   /api/branches  @store
+GET    /api/branches/form-bundle  @formBundle
+GET    /api/branches/next-code  @nextCode
+GET    /api/branches/{branch}  @show
+PUT    /api/branches/{branch}  @update
+DELETE /api/branches/{branch}  @destroy
+
+## CandidateController (12)
+GET    /api/candidates  @index
+POST   /api/candidates  @store
+GET    /api/candidates/export  @export
+POST   /api/candidates/import  @import
+GET    /api/candidates/sample  @sample
+GET    /api/candidates/stats  @stats
+GET    /api/candidates/{candidate}  @show
+PUT    /api/candidates/{candidate}  @update
+DELETE /api/candidates/{candidate}  @destroy
+GET    /api/candidates/{candidate}/cv  @downloadCv
+PATCH  /api/candidates/{candidate}/status  @updateStatus
+GET    /api/recruitments/{recruitment}/candidates/summary  @recruitmentSummary
+
+## ClientController (7)
+GET    /api/clients  @index
+POST   /api/clients  @store
+GET    /api/clients/form-bundle  @formBundle
+GET    /api/clients/stats  @stats
+GET    /api/clients/{client}  @show
+PUT    /api/clients/{client}  @update
+DELETE /api/clients/{client}  @destroy
+
+## ClmAgreementController (12)
+GET    /api/clm/agreement-library  @libraryIndex
+POST   /api/clm/agreement-library  @libraryStore
+POST   /api/clm/agreement-library/upload-header-logo  @uploadHeaderLogo
+PUT    /api/clm/agreement-library/{id}  @libraryUpdate
+DELETE /api/clm/agreement-library/{id}  @libraryDestroy
+GET    /api/clm/agreement-library/{id}/download  @downloadDocx
+POST   /api/clm/agreement-library/{id}/upload-docx  @uploadDocx
+GET    /api/clm/agreement-types  @typesIndex
+POST   /api/clm/agreement-types  @typesStore
+PUT    /api/clm/agreement-types/{id}  @typesUpdate
+DELETE /api/clm/agreement-types/{id}  @typesDestroy
+GET    /api/clm/leads/{leadId}/agreement-applicable  @applicableForLead
+
+## ClmAuthorityController (4)
+GET    /api/clm/authorities  @index
+POST   /api/clm/authorities  @store
+PUT    /api/clm/authorities/{id}  @update
+DELETE /api/clm/authorities/{id}  @destroy
+
+## ClmBuyerProfileController (1)
+GET    /api/clm/buyer-profile  @index
+
+## ClmClauseController (8)
+GET    /api/clm/clause-library  @libraryIndex
+POST   /api/clm/clause-library  @libraryStore
+PUT    /api/clm/clause-library/{id}  @libraryUpdate
+DELETE /api/clm/clause-library/{id}  @libraryDestroy
+GET    /api/clm/clause-types  @typesIndex
+POST   /api/clm/clause-types  @typesStore
+PUT    /api/clm/clause-types/{id}  @typesUpdate
+DELETE /api/clm/clause-types/{id}  @typesDestroy
+
+## ClmDdController (4)
+GET    /api/clm/dd-documents  @index
+POST   /api/clm/dd-documents  @store
+PUT    /api/clm/dd-documents/{id}  @update
+DELETE /api/clm/dd-documents/{id}  @destroy
+
+## ClmKycController (4)
+GET    /api/clm/kyc-documents  @index
+POST   /api/clm/kyc-documents  @store
+PUT    /api/clm/kyc-documents/{id}  @update
+DELETE /api/clm/kyc-documents/{id}  @destroy
+
+## ClmQcController (4)
+GET    /api/clm/qc-documents  @index
+POST   /api/clm/qc-documents  @store
+PUT    /api/clm/qc-documents/{id}  @update
+DELETE /api/clm/qc-documents/{id}  @destroy
+
+## ClmSegmentController (4)
+GET    /api/clm/segments  @index
+POST   /api/clm/segments  @store
+PUT    /api/clm/segments/{id}  @update
+DELETE /api/clm/segments/{id}  @destroy
+
+## ClmSegmentRuleController (6)
+GET    /api/clm/segment-rules  @index
+POST   /api/clm/segment-rules  @store
+GET    /api/clm/segment-rules/bootstrap  @bootstrap
+GET    /api/clm/segment-rules/for-segment/{segmentId}  @forSegment
+PUT    /api/clm/segment-rules/{id}  @update
+DELETE /api/clm/segment-rules/{id}  @destroy
+
+## ClmSignatureController (11)
+POST   /api/clm/signature-requests  @send
+GET    /api/clm/signature-requests  @index
+POST   /api/clm/signature-requests/agreement-preview  @agreementPreview
+POST   /api/clm/signature-requests/agreement-send  @agreementSend
+POST   /api/clm/signature-requests/preview  @preview
+GET    /api/clm/signature-requests/{id}  @show
+GET    /api/clm/signature-requests/{id}/certificate  @viewCertificate
+GET    /api/clm/signature-requests/{id}/download-file/{index}  @downloadFile
+POST   /api/clm/signature-requests/{id}/recall  @recall
+POST   /api/clm/signature-requests/{id}/remind  @remind
+GET    /api/clm/signature-requests/{id}/view-file/{index}  @viewFile
+
+## ClmSupplierProfileController (1)
+GET    /api/clm/supplier-profile  @index
+
+## ClmTncController (8)
+GET    /api/clm/tnc-categories  @categoriesIndex
+POST   /api/clm/tnc-categories  @categoriesStore
+PUT    /api/clm/tnc-categories/{id}  @categoriesUpdate
+DELETE /api/clm/tnc-categories/{id}  @categoriesDestroy
+GET    /api/clm/tnc-library  @libraryIndex
+POST   /api/clm/tnc-library  @libraryStore
+PUT    /api/clm/tnc-library/{id}  @libraryUpdate
+DELETE /api/clm/tnc-library/{id}  @libraryDestroy
+
+## ClmTradeDocumentController (12)
+GET    /api/clm/trade-doc-library  @libraryIndex
+POST   /api/clm/trade-doc-library  @libraryStore
+GET    /api/clm/trade-doc-library/for-party/{party}  @libraryForParty
+POST   /api/clm/trade-doc-library/upload-header-logo  @uploadHeaderLogo
+PUT    /api/clm/trade-doc-library/{id}  @libraryUpdate
+DELETE /api/clm/trade-doc-library/{id}  @libraryDestroy
+GET    /api/clm/trade-doc-library/{id}/download  @downloadDocx
+POST   /api/clm/trade-doc-library/{id}/upload-docx  @uploadDocx
+GET    /api/clm/trade-doc-names  @namesIndex
+POST   /api/clm/trade-doc-names  @namesStore
+PUT    /api/clm/trade-doc-names/{id}  @namesUpdate
+DELETE /api/clm/trade-doc-names/{id}  @namesDestroy
+
+## ClmTradeLicenseController (4)
+GET    /api/clm/trade-licenses  @index
+POST   /api/clm/trade-licenses  @store
+PUT    /api/clm/trade-licenses/{id}  @update
+DELETE /api/clm/trade-licenses/{id}  @destroy
+
+## ConsigneeController (6)
+GET    /api/consignees  @index
+POST   /api/consignees  @store
+GET    /api/consignees/{consignee}  @show
+PUT    /api/consignees/{consignee}  @update
+DELETE /api/consignees/{consignee}  @destroy
+POST   /api/consignees/{consignee}/clone-from-customer  @cloneFromCustomer
+
+## ConsigneeDocumentController (6)
+GET    /api/consignees/{consignee}/documents  @index
+POST   /api/consignees/{consignee}/documents  @store
+GET    /api/consignees/{consignee}/documents/{document}  @show
+POST   /api/consignees/{consignee}/documents/{document}  @update
+PUT    /api/consignees/{consignee}/documents/{document}  @update
+DELETE /api/consignees/{consignee}/documents/{document}  @destroy
+
+## ConsigneeOwnerController (6)
+GET    /api/consignees/{consignee}/owners  @index
+POST   /api/consignees/{consignee}/owners  @store
+GET    /api/consignees/{consignee}/owners/{owner}  @show
+POST   /api/consignees/{consignee}/owners/{owner}  @update
+PUT    /api/consignees/{consignee}/owners/{owner}  @update
+DELETE /api/consignees/{consignee}/owners/{owner}  @destroy
+
+## CustomerController (6)
+GET    /api/customers  @index
+POST   /api/customers  @store
+GET    /api/customers/master-bundle  @masterBundle
+GET    /api/customers/{customer}  @show
+PUT    /api/customers/{customer}  @update
+DELETE /api/customers/{customer}  @destroy
+
+## CustomerDocumentController (6)
+GET    /api/customers/{customer}/documents  @index
+POST   /api/customers/{customer}/documents  @store
+GET    /api/customers/{customer}/documents/{document}  @show
+POST   /api/customers/{customer}/documents/{document}  @update
+PUT    /api/customers/{customer}/documents/{document}  @update
+DELETE /api/customers/{customer}/documents/{document}  @destroy
+
+## CustomerOwnerController (6)
+GET    /api/customers/{customer}/owners  @index
+POST   /api/customers/{customer}/owners  @store
+GET    /api/customers/{customer}/owners/{owner}  @show
+POST   /api/customers/{customer}/owners/{owner}  @update
+PUT    /api/customers/{customer}/owners/{owner}  @update
+DELETE /api/customers/{customer}/owners/{owner}  @destroy
+
+## DashboardController (3)
+GET    /api/dashboard/admin-stats  @adminStats
+GET    /api/dashboard/client-stats  @clientStats
+GET    /api/dashboard/employee-stats  @employeeStats
+
+## DummyItemController (5)
+GET    /api/dummy-items  @index
+POST   /api/dummy-items  @store
+GET    /api/dummy-items/{dummy_item}  @show
+PUT    /api/dummy-items/{dummy_item}  @update
+DELETE /api/dummy-items/{dummy_item}  @destroy
+
+## EmployeeController (11)
+GET    /api/employees  @index
+POST   /api/employees  @store
+GET    /api/employees/available-assets  @availableAssets
+GET    /api/employees/check-mobile  @checkMobile
+GET    /api/employees/managers  @managers
+GET    /api/employees/next-code  @nextCode
+GET    /api/employees/{employee}  @show
+PUT    /api/employees/{employee}  @update
+DELETE /api/employees/{employee}  @destroy
+DELETE /api/employees/{id}/force  @forceDestroy
+PATCH  /api/employees/{id}/restore  @restore
+
+## EmployeeDocumentController (5)
+DELETE /api/documents/{document}  @destroy
+PATCH  /api/documents/{document}/reject  @reject
+PATCH  /api/documents/{document}/verify  @verify
+GET    /api/employees/{employee}/documents  @index
+POST   /api/employees/{employee}/documents  @store
+
+## ExitController (2)
+GET    /api/employees/{employee}/exit  @show
+PUT    /api/employees/{employee}/exit  @upsert
+
+## ExpenseClaimController (8)
+GET    /api/expense-claims  @index
+POST   /api/expense-claims  @store
+GET    /api/expense-claims/{id}  @show
+GET    /api/expense-claims/{id}/attachments/{index}  @downloadAttachment
+POST   /api/expense-claims/{id}/hr-approve  @hrApprove
+POST   /api/expense-claims/{id}/hr-reject  @hrReject
+POST   /api/expense-claims/{id}/manager-approve  @managerApprove
+POST   /api/expense-claims/{id}/manager-reject  @managerReject
+
+## FaceBiometricController (3)
+DELETE /api/face/data  @revoke
+POST   /api/face/register  @register
+GET    /api/face/status  @status
+
+## ForgotPasswordController (3)
+POST   /api/forgot-password/reset  @resetPassword
+POST   /api/forgot-password/send-otp  @sendOtp
+POST   /api/forgot-password/verify-otp  @verifyOtp
+
+## HiringRequestController (6)
+GET    /api/hiring-requests  @index
+POST   /api/hiring-requests  @store
+GET    /api/hiring-requests/next-code  @nextCode
+GET    /api/hiring-requests/{hiring_request}  @show
+PUT    /api/hiring-requests/{hiring_request}  @update
+DELETE /api/hiring-requests/{hiring_request}  @destroy
+
+## HrCustomFieldController (8)
+GET    /api/hr-custom-fields  @index
+POST   /api/hr-custom-fields  @store
+GET    /api/hr-custom-fields/known-tokens  @knownTokens
+GET    /api/hr-custom-fields/stats  @stats
+POST   /api/hr-custom-fields/validate-tokens  @validateTokens
+GET    /api/hr-custom-fields/{id}  @show
+PUT    /api/hr-custom-fields/{id}  @update
+DELETE /api/hr-custom-fields/{id}  @destroy
+
+## HrDocumentSignatureController (11)
+GET    /api/employees/{slug}/signed-documents  @forEmployee
+GET    /api/hr-document-signatures  @index
+POST   /api/hr-document-signatures  @store
+GET    /api/hr-document-signatures/inbox  @inbox
+GET    /api/hr-document-signatures/{id}  @show
+POST   /api/hr-document-signatures/{id}/action  @action
+POST   /api/hr-document-signatures/{id}/cancel  @cancel
+GET    /api/hr-document-signatures/{id}/download  @downloadSigned
+GET    /api/hr-document-signatures/{id}/download-pdf  @downloadSignedPdf
+POST   /api/hr-document-signatures/{id}/email-employee  @emailToEmployee
+POST   /api/hr-document-signatures/{id}/reject  @reject
+
+## HrDocumentTemplateController (13)
+GET    /api/hr-document-templates  @index
+POST   /api/hr-document-templates  @store
+GET    /api/hr-document-templates/match  @matchForEmployee
+GET    /api/hr-document-templates/next-code  @nextCode
+GET    /api/hr-document-templates/stats  @stats
+POST   /api/hr-document-templates/upload-header-logo  @uploadHeaderLogo
+GET    /api/hr-document-templates/{id}  @show
+PUT    /api/hr-document-templates/{id}  @update
+DELETE /api/hr-document-templates/{id}  @destroy
+GET    /api/hr-document-templates/{id}/download  @downloadDocx
+GET    /api/hr-document-templates/{id}/generate  @generateForEmployee
+GET    /api/hr-document-templates/{id}/preview  @previewForEmployee
+POST   /api/hr-document-templates/{id}/upload-docx  @uploadDocx
+
+## HrGeneratedDocumentController (4)
+POST   /api/hr-generated-documents  @store
+POST   /api/hr-generated-documents/preview  @preview
+GET    /api/hr-generated-documents/{id}  @show
+GET    /api/hr-generated-documents/{id}/download  @downloadDocx
+
+## HrOverviewController (1)
+GET    /api/hrms/overview  @index
+
+## LeadAckReasonController (4)
+GET    /api/sales/lead-ack-reasons  @index
+POST   /api/sales/lead-ack-reasons  @store
+PUT    /api/sales/lead-ack-reasons/{id}  @update
+DELETE /api/sales/lead-ack-reasons/{id}  @destroy
+
+## LeavePlanController (14)
+GET    /api/employees/{employeeId}/leave-balances  @employeeBalances
+GET    /api/leave-balances  @leaveBalances
+GET    /api/leave-plans  @index
+POST   /api/leave-plans  @store
+GET    /api/leave-plans/{id}  @show
+PUT    /api/leave-plans/{id}  @update
+DELETE /api/leave-plans/{id}  @destroy
+POST   /api/leave-plans/{id}/clone  @clone
+POST   /api/leave-plans/{id}/employees  @assignEmployees
+DELETE /api/leave-plans/{id}/employees/{employeeId}  @removeEmployee
+POST   /api/leave-plans/{id}/make-default  @makeDefault
+POST   /api/leave-plans/{id}/types  @assignTypes
+DELETE /api/leave-plans/{id}/types/{typeId}  @removeType
+PUT    /api/leave-plans/{id}/types/{typeId}/config  @saveTypeConfig
+
+## LeaveRequestController (9)
+GET    /api/leave-requests  @index
+POST   /api/leave-requests  @store
+GET    /api/leave-requests/approvals  @approvals
+GET    /api/leave-requests/colleagues  @colleagues
+GET    /api/leave-requests/{id}  @show
+POST   /api/leave-requests/{id}/approve  @approve
+GET    /api/leave-requests/{id}/approvers  @approvers
+POST   /api/leave-requests/{id}/cancel  @cancel
+POST   /api/leave-requests/{id}/reject  @reject
+
+## MasterController (7)
+GET    /api/master-counts  @counts
+GET    /api/master/{slug}  @list
+POST   /api/master/{slug}  @store
+GET    /api/master/{slug}/next-code  @nextCode
+GET    /api/master/{slug}/{id}  @show
+PUT    /api/master/{slug}/{id}  @update
+DELETE /api/master/{slug}/{id}  @destroy
+
+## MyTeamController (3)
+GET    /api/my-team/approvals  @approvals
+GET    /api/my-team/employees  @employees
+GET    /api/my-team/my-updates  @myUpdates
+
+## NotificationController (4)
+GET    /api/notifications  @index
+POST   /api/notifications/read-all  @markAllRead
+GET    /api/notifications/unread-count  @unreadCount
+POST   /api/notifications/{id}/read  @markRead
+
+## OnboardingController (3)
+POST   /api/employees/onboarding-invite  @createInvite
+GET    /api/onboarding/{token}  @show
+POST   /api/onboarding/{token}/complete  @complete
+
+## OrganizationTypeController (5)
+GET    /api/organization-types  @index
+POST   /api/organization-types  @store
+GET    /api/organization-types/{organizationType}  @show
+PUT    /api/organization-types/{organizationType}  @update
+DELETE /api/organization-types/{organizationType}  @destroy
+
+## PaymentController (9)
+GET    /api/payments  @index
+POST   /api/payments  @store
+GET    /api/payments/stats  @stats
+GET    /api/payments/{payment}  @show
+PUT    /api/payments/{payment}  @update
+DELETE /api/payments/{payment}  @destroy
+GET    /api/payments/{payment}/invoice/download  @downloadInvoice
+GET    /api/payments/{payment}/invoice/view  @viewInvoice
+POST   /api/payments/{payment}/send-reminder  @sendReminder
+
+## PermissionController (4)
+GET    /api/modules  @modules
+GET    /api/permissions/user/{userId}  @getUserPermissions
+POST   /api/permissions/user/{userId}  @savePermissions
+GET    /api/permissions/users  @manageableUsers
+
+## PlanController (5)
+GET    /api/plans  @index
+POST   /api/plans  @store
+GET    /api/plans/{plan}  @show
+PUT    /api/plans/{plan}  @update
+DELETE /api/plans/{plan}  @destroy
+
+## PreviousEmploymentController (4)
+GET    /api/employees/{employee}/previous-employments  @index
+POST   /api/employees/{employee}/previous-employments  @store
+PATCH  /api/previous-employments/{prev}  @update
+DELETE /api/previous-employments/{prev}  @destroy
+
+## ProcurementController (4)
+GET    /api/procurements  @index
+POST   /api/procurements  @store
+GET    /api/procurements/next-number  @nextNumber
+GET    /api/procurements/{id}  @show
+
+## ProductController (10)
+GET    /api/products  @index
+GET    /api/products/master-bundle  @masterBundle
+GET    /api/products/owners  @owners
+GET    /api/products/stats  @stats
+POST   /api/products/step/core  @storeCore
+GET    /api/products/{id}  @show
+DELETE /api/products/{id}  @destroy
+PUT    /api/products/{id}/step/quality  @storeQuality
+PUT    /api/products/{id}/step/sales  @storeSales
+PUT    /api/products/{id}/step/vendors  @storeVendors
+
+## ProformaInvoiceController (8)
+GET    /api/sales/proforma-invoices  @index
+POST   /api/sales/proforma-invoices  @store
+POST   /api/sales/proforma-invoices/from-quotation/{quotationId}  @fromQuotation
+GET    /api/sales/proforma-invoices/preview-code  @previewCode
+GET    /api/sales/proforma-invoices/{id}  @show
+PUT    /api/sales/proforma-invoices/{id}  @update
+DELETE /api/sales/proforma-invoices/{id}  @destroy
+POST   /api/sales/proforma-invoices/{id}/duplicate  @duplicate
+
+## QuotationController (8)
+GET    /api/sales/quotations  @index
+POST   /api/sales/quotations  @store
+GET    /api/sales/quotations/preview-code  @previewCode
+GET    /api/sales/quotations/{id}  @show
+PUT    /api/sales/quotations/{id}  @update
+DELETE /api/sales/quotations/{id}  @destroy
+POST   /api/sales/quotations/{id}/convert-to-pi  @convertToPi
+POST   /api/sales/quotations/{id}/duplicate  @duplicate
+
+## RazorpayWebhookController (1)
+POST   /api/razorpay/webhook  @handle
+
+## RecruitmentController (6)
+GET    /api/recruitments  @index
+POST   /api/recruitments  @store
+GET    /api/recruitments/next-code  @nextCode
+GET    /api/recruitments/{recruitment}  @show
+PUT    /api/recruitments/{recruitment}  @update
+DELETE /api/recruitments/{recruitment}  @destroy
+
+## SalesLeadController (26)
+GET    /api/sales/leads  @index
+POST   /api/sales/leads  @store
+POST   /api/sales/leads/assign  @assign
+POST   /api/sales/leads/convert-to-qualified  @convertToQualified
+GET    /api/sales/leads/filter-options  @filterOptions
+GET    /api/sales/leads/salespeople  @salespeople
+GET    /api/sales/leads/salesperson-summary  @salespersonSummary
+POST   /api/sales/leads/sync  @syncFromCrm
+GET    /api/sales/leads/sync/config  @syncConfig
+GET    /api/sales/leads/{id}  @show
+PUT    /api/sales/leads/{id}  @update
+DELETE /api/sales/leads/{id}  @destroy
+GET    /api/sales/leads/{id}/acknowledgements  @listAcknowledgements
+POST   /api/sales/leads/{id}/acknowledgements  @storeAcknowledgements
+GET    /api/sales/leads/{id}/products  @listLeadProducts
+POST   /api/sales/leads/{id}/products  @storeLeadProduct
+PUT    /api/sales/leads/{id}/products/{mapping}  @updateLeadProduct
+DELETE /api/sales/leads/{id}/products/{mapping}  @destroyLeadProduct
+PATCH  /api/sales/leads/{id}/products/{mapping}/mark-sourced  @markLeadProductSourced
+POST   /api/sales/leads/{id}/products/{mapping}/shared-prices  @storeSharedPrice
+GET    /api/sales/leads/{id}/products/{mapping}/shared-prices  @listSharedPricesByProduct
+PATCH  /api/sales/leads/{id}/products/{mapping}/sourcing-status  @updateLeadProductSourcingStatus
+GET    /api/sales/leads/{id}/shared-prices  @listSharedPrices
+POST   /api/sales/leads/{id}/task-manager  @storeTaskManager
+POST   /api/sales/leads/{id}/whatsapp  @updateWhatsApp
+GET    /api/sales/shared-prices/{id}/pdf  @sharedPricePdf
+
+## SalesPdfController (9)
+POST   /api/sales/pi/preview-pdf  @previewPi
+POST   /api/sales/proforma-invoices/{id}/email  @emailProformaInvoice
+POST   /api/sales/proforma-invoices/{id}/preview-pdf  @previewProformaInvoice
+POST   /api/sales/proforma-invoices/{id}/remind  @remindProformaInvoice
+GET    /api/sales/proforma-invoices/{id}/view  @publicViewProformaInvoice
+POST   /api/sales/quotations/{id}/email  @emailQuotation
+POST   /api/sales/quotations/{id}/preview-pdf  @previewQuotation
+POST   /api/sales/quotations/{id}/remind  @remindQuotation
+GET    /api/sales/quotations/{id}/view  @publicViewQuotation
+
+## SalesTodoController (11)
+GET    /api/sales/meetings  @listMeetings
+POST   /api/sales/meetings  @storeMeeting
+GET    /api/sales/meetings/next-code  @nextMeetingCode
+PUT    /api/sales/meetings/{id}  @updateMeeting
+DELETE /api/sales/meetings/{id}  @destroyMeeting
+PATCH  /api/sales/meetings/{id}/status  @setMeetingStatus
+GET    /api/sales/reminders  @listReminders
+POST   /api/sales/reminders  @storeReminder
+PUT    /api/sales/reminders/{id}  @updateReminder
+DELETE /api/sales/reminders/{id}  @destroyReminder
+PATCH  /api/sales/reminders/{id}/status  @setReminderStatus
+
+## SegmentDocUploadController (5)
+GET    /api/segment-uploads/{type}/{id}  @index
+POST   /api/segment-uploads/{type}/{id}  @store
+GET    /api/segment-uploads/{type}/{id}/summary  @summary
+GET    /api/segment-uploads/{type}/{id}/vault  @vault
+DELETE /api/segment-uploads/{type}/{id}/{uploadId}  @destroy
+
+## SettingsController (3)
+GET    /api/settings  @index
+POST   /api/settings/appearance/asset  @uploadAsset
+PUT    /api/settings/{section}  @update
+
+## ShipmentOrderController (4)
+GET    /api/sales/leads/{leadId}/shipment-order  @getByLead
+POST   /api/sales/shipment-orders  @store
+GET    /api/sales/shipment-orders/{id}  @show
+POST   /api/sales/shipment-orders/{id}  @update
+
+## SubscriptionController (5)
+POST   /api/subscription/cancel-order  @cancelOrder
+POST   /api/subscription/create-order  @createOrder
+GET    /api/subscription/plans  @plans
+GET    /api/subscription/status  @status
+POST   /api/subscription/verify-payment  @verifyPayment
+
+## VendorController (8)
+GET    /api/vendors  @index
+GET    /api/vendors/master-bundle  @masterBundle
+POST   /api/vendors/step/identity  @storeIdentity
+GET    /api/vendors/{id}  @show
+DELETE /api/vendors/{id}  @destroy
+PUT    /api/vendors/{id}/step/contacts  @storeContacts
+POST   /api/vendors/{id}/step/kyc  @storeKyc
+POST   /api/vendors/{id}/step/products  @storeProducts
+

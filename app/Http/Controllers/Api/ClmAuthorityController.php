@@ -9,12 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
-/**
- * Central CLM → Authority master CRUD.
- *
- * Mirrors ClmSegmentController: tenant-scoped via $user->client_id, per-tenant
- * AUTH-### sequence allocated under a parent-row lock at insert time.
- */
+
 class ClmAuthorityController extends Controller
 {
     public function index(Request $request)

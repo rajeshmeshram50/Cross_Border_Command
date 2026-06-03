@@ -8,12 +8,7 @@ use App\Models\ClmClauseType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Clause Library master — covers both tabs:
- *
- *   - /clm/clauses/types     (CLT-NNN: Core Legal, Commercial, …)
- *   - /clm/clauses/library   (CL-NNN: Force Majeure, Governing Law, …)
- */
+
 class ClmClauseController extends Controller
 {
     /* ── TYPES ── */

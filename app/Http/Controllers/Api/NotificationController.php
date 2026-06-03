@@ -5,18 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 
-/**
- * Generic in-app notifications endpoint backed by the Laravel
- * notifications table. Drives the bell-icon dropdown in the topbar:
- *   GET    /api/notifications                  — recent rows for the user
- *   GET    /api/notifications/unread-count     — small int for the badge
- *   POST   /api/notifications/{id}/read        — flip one to read
- *   POST   /api/notifications/read-all         — flip every unread to read
- *
- * Notifications are scoped to the signed-in user automatically because
- * each row stores `notifiable_id` + `notifiable_type` and we filter by
- * the auth()->user() relationship.
- */
+
 class NotificationController extends Controller
 {
     public function index(Request $request)

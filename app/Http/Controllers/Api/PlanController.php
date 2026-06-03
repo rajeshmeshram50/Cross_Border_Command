@@ -12,11 +12,7 @@ use Illuminate\Validation\ValidationException;
 
 class PlanController extends Controller
 {
-    /**
-     * Convert a plan name into the URL-safe slug we store on the row.
-     * "TEST", "test", "Test  Plan!" all collapse to the same value, which
-     * is why we need a uniqueness check on top of the unique DB index.
-     */
+  
     private function makeSlug(string $name): string
     {
         return trim(strtolower(preg_replace('/[^a-z0-9]+/i', '-', $name)), '-');

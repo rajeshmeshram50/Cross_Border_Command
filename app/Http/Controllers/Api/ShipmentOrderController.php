@@ -9,17 +9,7 @@ use App\Models\ShipmentOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Sales Matrix → Stage 6 (Victory) → Shipment Order.
- *
- *  Ported from IDIMS's Business Task (BT) controller. Captures the
- *  shipping + logistics block that operations needs once a deal is won.
- *
- *  POST  /sales/shipment-orders                   create (multipart)
- *  GET   /sales/shipment-orders/{id}              show
- *  GET   /sales/leads/{leadId}/shipment-order     by lead (Stage 6 feed)
- *  POST  /sales/shipment-orders/{id}              update (multipart)
- */
+
 class ShipmentOrderController extends Controller
 {
     public function store(Request $request)

@@ -10,28 +10,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/**
- * Sales Matrix → Quotations API.
- *
- * Endpoints
- * ─────────
- *  GET    /sales/quotations              paginated list + filters
- *  GET    /sales/quotations/{id}         single + items + relations
- *  POST   /sales/quotations              create (header + items in one request)
- *  PUT    /sales/quotations/{id}         update (replaces items wholesale)
- *  DELETE /sales/quotations/{id}         soft-delete (status = cancelled)
- *  POST   /sales/quotations/{id}/duplicate          clone as a new draft
- *  POST   /sales/quotations/{id}/convert-to-pi      mark as converted_to_pi
- *
- * Code sequence: `QT/YYYY-NN/SEQ` where YYYY-NN is the Indian financial
- * year (Apr → Mar). SEQ is per-(client, financial-year) and allocated
- * inside a row-lock on the parent client row to defeat the race where
- * two concurrent POSTs could pick the same SEQ.
- *
- * Server is the single source of truth for line `amount` and the
- * `sub_total` / `grand_total` aggregates — the client's submitted
- * values for those are ignored entirely (we recompute).
- */
 class QuotationController extends Controller
 {
     /* ── LIST ───────────────────────────────────────────────── */
