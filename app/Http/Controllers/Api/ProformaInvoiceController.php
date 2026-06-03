@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Consignee;
+use App\Models\Customer;
 use App\Models\ProformaInvoice;
 use App\Models\ProformaInvoiceItem;
 use App\Models\Quotation;
@@ -107,6 +109,12 @@ class ProformaInvoiceController extends Controller
 
         $data = $this->validatePayload($request);
 
+        // DCP gate: the customer (and consignee, if mapped) must have uploaded
+        // every mandatory document for their segment before a PI can be made.
+        if ($block = $this->partyDocsBlockResponse($user, $data['customer_id'] ?? null, $data['consignee_id'] ?? null)) {
+            return $block;
+        }
+
         // One-PI-per-opportunity rule. Skip when no opp_id is supplied
         // (general PIs without an upstream opportunity stay unlimited).
         if (!empty($data['opp_id'])) {
@@ -201,6 +209,53 @@ class ProformaInvoiceController extends Controller
         });
 
         return response()->json(['status' => true, 'data' => $row], 201);
+    }
+
+    /**
+     * Block PI creation until the customer — and the consignee, when one is
+     * mapped and not flagged Same-as-Customer — have uploaded every
+     * DCP-mandatory document for their segment. Returns a 422 JsonResponse
+     * to short-circuit the caller, or null when both parties are complete.
+     * Reuses SegmentDocUploadController::missingMandatoryDocs so it stays in
+     * lock-step with the Evidence Vault the user uploads from.
+     */
+    private function partyDocsBlockResponse($user, ?int $customerId, ?int $consigneeId): ?JsonResponse
+    {
+        $checker = app(SegmentDocUploadController::class);
+        $blocks  = [];
+
+        if ($customerId) {
+            $customer = Customer::where('client_id', $user->client_id)->find($customerId);
+            if ($customer) {
+                $miss = $checker->missingMandatoryDocs($customer, 'customer');
+                if (!empty($miss)) $blocks['Customer'] = $miss;
+            }
+        }
+        if ($consigneeId) {
+            $consignee = Consignee::where('client_id', $user->client_id)->find($consigneeId);
+            // Same-as-Customer consignees mirror the customer's docs (already
+            // checked above), so don't double-block on them.
+            if ($consignee && !$consignee->same_as_customer) {
+                $miss = $checker->missingMandatoryDocs($consignee, 'consignee');
+                if (!empty($miss)) $blocks['Consignee'] = $miss;
+            }
+        }
+
+        if (empty($blocks)) return null;
+
+        $parts = [];
+        foreach ($blocks as $party => $miss) {
+            $names = array_slice(array_map(fn ($d) => $d['name'], $miss), 0, 4);
+            $extra = count($miss) > 4 ? ' +' . (count($miss) - 4) . ' more' : '';
+            $parts[] = "{$party} → " . implode(', ', $names) . $extra;
+        }
+
+        return response()->json([
+            'status'  => false,
+            'message' => 'This Proforma Invoice can’t be created yet — some required documents are still pending. '
+                . 'Please upload them from the Customer / Consignee documents panel first. Pending: '
+                . implode('  |  ', $parts),
+        ], 422);
     }
 
     /* ── UPDATE ─────────────────────────────────────────────── */
@@ -409,6 +464,13 @@ class ProformaInvoiceController extends Controller
                     ],
                 ], 409);
             }
+        }
+
+        // DCP gate: same mandatory-document check as direct PI creation —
+        // converting a quotation to a PI must also wait for the customer /
+        // consignee to upload their required documents.
+        if ($block = $this->partyDocsBlockResponse($user, $qt->customer_id, $qt->consignee_id)) {
+            return $block;
         }
 
         $pi = DB::transaction(function () use ($user, $qt) {

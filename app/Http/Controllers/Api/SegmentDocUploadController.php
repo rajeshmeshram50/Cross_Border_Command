@@ -320,6 +320,82 @@ class SegmentDocUploadController extends Controller
         ]);
     }
 
+    /**
+     * Returns the MANDATORY documents (per the owner's DCP segment rules)
+     * that have NOT yet been uploaded. Reuses the same segment-rule → upload
+     * matching the Vault uses, so it stays in lock-step with what the user
+     * sees in the Evidence Vault. Each entry: ['category','doc_code','name'].
+     * Empty array ⇒ the party is complete (or has no segment / no mandatory
+     * rules). Powers the "can't create a PI until the customer & consignee
+     * have submitted their required documents" guard in
+     * ProformaInvoiceController.
+     *
+     * @param  Model  $owner  a Customer or Consignee model
+     * @param  string $type   'customer' | 'consignee'
+     */
+    public function missingMandatoryDocs(Model $owner, string $type): array
+    {
+        $cid = (int) ($owner->client_id ?? 0);
+        $segmentIds = $this->resolveSegmentIds($owner, $type, $cid);
+        if (empty($segmentIds)) return [];
+
+        $rules = ClmSegmentRule::query()
+            ->where('client_id', $cid)
+            ->whereIn('segment_id', $segmentIds)
+            ->get();
+
+        // Per-category union of (code => requirement), Mandatory wins.
+        $unionByCat = ['kyc' => [], 'dd' => [], 'tl' => [], 'td' => [], 'qc' => []];
+        foreach ($rules as $rule) {
+            $sel = $rule->doc_selections ?? [];
+            foreach (array_keys($unionByCat) as $cat) {
+                $entries = $sel[$cat] ?? [];
+                if (!is_array($entries)) continue;
+                foreach ($entries as $code => $req) {
+                    if (($unionByCat[$cat][$code] ?? null) === 'M') continue;
+                    $unionByCat[$cat][$code] = ($req === 'M') ? 'M' : ($unionByCat[$cat][$code] ?? 'O');
+                }
+            }
+        }
+
+        // Which mandatory (cat, code) pairs are NOT uploaded?
+        $uploads = SegmentDocUpload::query()
+            ->where('uploadable_type', get_class($owner))
+            ->where('uploadable_id', $owner->id)
+            ->get()
+            ->keyBy(fn ($u) => $u->category . '::' . $u->doc_code);
+
+        $missingCodesByCat = [];
+        foreach ($unionByCat as $cat => $codes) {
+            foreach ($codes as $code => $req) {
+                if ($req !== 'M') continue;
+                if (!$uploads->get($cat . '::' . $code)) {
+                    $missingCodesByCat[$cat][] = $code;
+                }
+            }
+        }
+        if (empty($missingCodesByCat)) return [];
+
+        // Resolve human names for the missing docs (best-effort).
+        $masterClass = [
+            'kyc' => ClmKycDocument::class,    'dd' => ClmDdDocument::class,
+            'tl'  => ClmTradeLicense::class,   'td' => ClmTradeDocLibrary::class,
+            'qc'  => ClmQcDocument::class,
+        ];
+        $missing = [];
+        foreach ($missingCodesByCat as $cat => $codes) {
+            $masters = $this->fetchMasters($masterClass[$cat], $codes, $cid);
+            foreach ($codes as $code) {
+                $missing[] = [
+                    'category' => $cat,
+                    'doc_code' => $code,
+                    'name'     => $masters[$code]['name'] ?? $code,
+                ];
+            }
+        }
+        return $missing;
+    }
+
     public function destroy(Request $request, string $type, int $id, int $uploadId): JsonResponse
     {
         $owner = $this->resolveOwner($request, $type, $id, 'edit');

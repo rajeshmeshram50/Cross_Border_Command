@@ -456,29 +456,19 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
 
                 <div className="tnw-field">
                   <label className="tnw-label">T&amp;C Document Name <span className="tnw-req">*</span></label>
-                  <div className="tnw-inline-add">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <MasterSelect
-                        key={`tnw-cat-${cats.length}`}
-                        value={category}
-                        invalid={!!errors.category}
-                        placeholder="— Select Category —"
-                        options={[
-                          ...cats.map(c => ({ value: c.name, label: c.name })),
-                          ...(category && !cats.find(c => c.name === category) ? [{ value: category, label: category }] : []),
-                        ]}
-                        onChange={(v) => { setCategory(v); setErrors(p => ({ ...p, category: '' })); }}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      className="tnw-add-mini"
-                      title="Add new document category"
-                      onClick={() => setQuickAddCatOpen(true)}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                    </button>
-                  </div>
+                  {/* Document categories are read-only (managed for the
+                      Quotation/PI documents) — no inline "+" quick-add here. */}
+                  <MasterSelect
+                    key={`tnw-cat-${cats.length}`}
+                    value={category}
+                    invalid={!!errors.category}
+                    placeholder="— Select Category —"
+                    options={[
+                      ...cats.map(c => ({ value: c.name, label: c.name })),
+                      ...(category && !cats.find(c => c.name === category) ? [{ value: category, label: category }] : []),
+                    ]}
+                    onChange={(v) => { setCategory(v); setErrors(p => ({ ...p, category: '' })); }}
+                  />
                   <div className="tnw-hint">One T&amp;C per document · title auto-derived from name</div>
                   {errors.category && <div className="tnw-err">{errors.category}</div>}
                 </div>
