@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
 import { CTC_CONTRACTS, type CtcContract, inits, PER_PAGE } from './clmOpsData';
 import ClmCtcForm from './ClmCtcForm';
+import { useOpsTheme } from './useOpsTheme';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Operations · Without Shipment ID → Case to Case Contracts.
@@ -42,6 +43,18 @@ const STAGE_CARDS = [
 
 export default function ClmCaseToCasePage() {
   const toast = useToast();
+  const t = useOpsTheme('violet');
+  const TH = { padding: '7px 10px', fontSize: 7.5, fontWeight: 800, letterSpacing: '.11em', textTransform: 'uppercase', color: '#fff', whiteSpace: 'nowrap', background: t.dark ? '#5B21B6' : '#6D28D9', borderBottom: 'none', textAlign: 'center' } as React.CSSProperties;
+  const TD = { padding: '7px 10px', verticalAlign: 'middle', borderBottom: `1px solid ${t.cellBorder}`, textAlign: 'center' } as React.CSSProperties;
+  const TDL = { ...TD, textAlign: 'left' } as React.CSSProperties;
+  // Status/approval pills read as glaring light chips on the dark table — swap to
+  // translucent dark fills + lighter text in dark mode, keyed off the semantic colour.
+  const badgeTok = (cfg: { bg: string; border: string; color: string }) => {
+    if (!t.dark) return { bg: cfg.bg, border: cfg.border, text: cfg.color };
+    if (cfg.color === '#059669') return { bg: 'rgba(16,185,129,.16)', border: 'rgba(16,185,129,.42)', text: '#6ee7b7' };
+    if (cfg.color === '#D97706') return { bg: 'rgba(245,158,11,.16)', border: 'rgba(245,158,11,.42)', text: '#fcd34d' };
+    return { bg: 'rgba(239,68,68,.16)', border: 'rgba(239,68,68,.42)', text: '#fca5a5' };
+  };
   const [tab, setTab]   = useState<CtcTab>('all');
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -77,11 +90,11 @@ export default function ClmCaseToCasePage() {
   }
 
   return (
-    <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 14, fontFamily: "'Rubik', system-ui, sans-serif" }}>
       <style>{CTC_CSS}</style>
 
       {/* CARD 1 — HEADER STRIP */}
-      <div style={{ background: 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 22%,#DDD6FE 50%,#C4B5FD 78%,#A78BFA 100%)', borderRadius: 14, border: '1px solid rgba(124,58,237,.2)', boxShadow: '0 2px 12px rgba(109,40,217,.1)', overflow: 'hidden' }}>
+      <div style={{ background: t.dark ? '#1c1438' : 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 22%,#DDD6FE 50%,#C4B5FD 78%,#A78BFA 100%)', borderRadius: 14, border: `1px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.2)'}`, boxShadow: '0 2px 12px rgba(109,40,217,.1)', overflow: 'hidden' }}>
         <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64 }}>
           <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: 'linear-gradient(180deg,#A78BFA,#7C3AED,#5B21B6)' }} />
           <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.55),transparent)', pointerEvents: 'none' }} />
@@ -93,8 +106,8 @@ export default function ClmCaseToCasePage() {
               <span style={{ position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: '50%', background: 'linear-gradient(135deg,#4ade80,#22c55e)', border: '2px solid #EDE9FE', boxShadow: '0 0 5px rgba(34,197,94,.45)' }} />
             </div>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#2e1065', letterSpacing: '-.4px', lineHeight: 1.15 }}>Case to Case Contracts Management</div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: '#5B21B6', opacity: .9, marginTop: 3 }}>Manage one-time operational agreements and contract approval workflows.</div>
+              <div style={{ fontSize: 16, fontWeight: 500, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.4px', lineHeight: 1.15 }}>Case to Case Contracts Management</div>
+              <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', opacity: .9, marginTop: 3 }}>Manage one-time operational agreements and contract approval workflows.</div>
             </div>
           </div>
           <button onClick={() => { setEditing(null); setFormOpen(true); }} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', border: 'none', borderRadius: 10, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', zIndex: 1, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 4px 14px rgba(91,33,182,.44),inset 0 1px 0 rgba(255,255,255,.18)' }}>
@@ -106,38 +119,38 @@ export default function ClmCaseToCasePage() {
       </div>
 
       {/* CARD 2 — WHAT WE ARE DOING HERE */}
-      <div style={{ background: '#fff', borderRadius: 14, border: '1px solid rgba(124,58,237,.18)', overflow: 'hidden', boxShadow: '0 2px 10px rgba(6,182,212,.04)' }}>
+      <div style={{ background: t.surface, borderRadius: 14, border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : 'rgba(124,58,237,.18)'}`, overflow: 'hidden', boxShadow: '0 2px 10px rgba(6,182,212,.04)' }}>
         <div style={{ position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#C4B5FD,#7C3AED,#5B21B6)', zIndex: 10 }} />
-          <div onClick={() => setInfoOpen(!infoOpen)} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 12, padding: '7px 12px 7px 16px', background: 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 35%,#DDD6FE 70%,#C4B5FD 100%)', borderBottom: infoOpen ? '1px solid #DDD6FE' : '1px solid transparent', cursor: 'pointer', userSelect: 'none', minHeight: 48 }}>
+          <div onClick={() => setInfoOpen(!infoOpen)} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 12, padding: '7px 12px 7px 16px', background: t.dark ? '#241a44' : 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 35%,#DDD6FE 70%,#C4B5FD 100%)', borderBottom: infoOpen ? `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}` : '1px solid transparent', cursor: 'pointer', userSelect: 'none', minHeight: 48 }}>
             <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', pointerEvents: 'none', background: 'linear-gradient(180deg,rgba(255,255,255,.65),transparent)' }} />
             <div style={{ width: 36, height: 36, borderRadius: 11, flexShrink: 0, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', position: 'relative', zIndex: 1, boxShadow: '0 0 0 3px rgba(124,58,237,.2),0 4px 12px rgba(91,33,182,.36)' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, position: 'relative', zIndex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '-.2px', color: '#7C3AED', lineHeight: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>Case to Case Contracts</span>
-                <span style={{ width: 1, height: 13, background: '#C4B5FD', flexShrink: 0 }} />
-                <span style={{ fontSize: 11, fontWeight: 800, color: '#2e1065', letterSpacing: '-.2px', lineHeight: 1, whiteSpace: 'nowrap' }}>What We Are Doing Here</span>
+                <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '-.2px', color: t.dark ? '#c4b5fd' : '#7C3AED', lineHeight: 1, whiteSpace: 'nowrap', flexShrink: 0 }}>Case to Case Contracts</span>
+                <span style={{ width: 1, height: 13, background: t.dark ? 'rgba(196,181,253,.4)' : '#C4B5FD', flexShrink: 0 }} />
+                <span style={{ fontSize: 11, fontWeight: 800, color: t.dark ? '#ede9fe' : '#2e1065', letterSpacing: '-.2px', lineHeight: 1, whiteSpace: 'nowrap' }}>What We Are Doing Here</span>
               </div>
-              <div style={{ fontSize: 9.5, fontWeight: 500, color: '#5B21B6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Manage case-to-case agreements from drafting, approval, negotiation, signing, and final contract storage.</div>
+              <div style={{ fontSize: 9.5, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Manage case-to-case agreements from drafting, approval, negotiation, signing, and final contract storage.</div>
             </div>
-            <div style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.78)', border: '1.5px solid rgba(124,58,237,.25)', color: '#7C3AED', transition: 'transform .24s', boxShadow: '0 1px 4px rgba(124,58,237,.12)', transform: infoOpen ? 'none' : 'rotate(-90deg)', position: 'relative', zIndex: 1 }}>
+            <div style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: t.dark ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.78)', border: '1.5px solid rgba(124,58,237,.25)', color: t.dark ? '#c4b5fd' : '#7C3AED', transition: 'transform .24s', boxShadow: '0 1px 4px rgba(124,58,237,.12)', transform: infoOpen ? 'none' : 'rotate(-90deg)', position: 'relative', zIndex: 1 }}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', background: 'linear-gradient(180deg,#FAF8FF 0%,#F8FAFC 100%)', overflow: 'hidden', maxHeight: infoOpen ? 320 : 0, opacity: infoOpen ? 1 : 0, transition: 'max-height .3s cubic-bezier(.22,1,.36,1),opacity .22s' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', background: t.dark ? '#161226' : 'linear-gradient(180deg,#FAF8FF 0%,#F8FAFC 100%)', overflow: 'hidden', maxHeight: infoOpen ? 320 : 0, opacity: infoOpen ? 1 : 0, transition: 'max-height .3s cubic-bezier(.22,1,.36,1),opacity .22s' }}>
             {STAGE_CARDS.map(c => (
-              <div key={c.n} style={{ position: 'relative', padding: '10px 11px 11px', background: '#fff', margin: '7px 5px', borderRadius: 11, border: '1.5px solid #EDE9FE', transition: 'all .18s', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,.04)' }}
+              <div key={c.n} style={{ position: 'relative', padding: '10px 11px 11px', background: t.dark ? 'rgba(255,255,255,.03)' : '#fff', margin: '7px 5px', borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.22)' : '#EDE9FE'}`, transition: 'all .18s', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,.04)' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#C4B5FD'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(124,58,237,.13)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = '#EDE9FE'; e.currentTarget.style.boxShadow = '0 1px 4px rgba(15,23,42,.04)'; e.currentTarget.style.transform = ''; }}>
+                onMouseLeave={e => { e.currentTarget.style.borderColor = t.dark ? 'rgba(124,58,237,.22)' : '#EDE9FE'; e.currentTarget.style.boxShadow = '0 1px 4px rgba(15,23,42,.04)'; e.currentTarget.style.transform = ''; }}>
                 <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, borderRadius: '11px 11px 0 0', background: 'linear-gradient(90deg,#A78BFA,#7C3AED)' }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{ width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7C3AED' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">{c.icon}</svg></div>
-                  <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#94A3B8', lineHeight: 1 }}>Stage {c.n}</span>
+                  <div style={{ width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.dark ? '#a78bfa' : '#7C3AED' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">{c.icon}</svg></div>
+                  <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: t.textMuted, lineHeight: 1 }}>Stage {c.n}</span>
                 </div>
-                <div style={{ fontSize: 11, fontWeight: 800, color: '#0F172A', letterSpacing: '-.2px', lineHeight: 1.25, marginBottom: 3, marginTop: 5 }}>{c.title}</div>
-                <div style={{ fontSize: 9.5, fontWeight: 500, color: '#94A3B8', lineHeight: 1.4 }}>{c.desc}</div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: t.text, letterSpacing: '-.2px', lineHeight: 1.25, marginBottom: 3, marginTop: 5 }}>{c.title}</div>
+                <div style={{ fontSize: 9.5, fontWeight: 500, color: t.textMuted, lineHeight: 1.4 }}>{c.desc}</div>
               </div>
             ))}
           </div>
@@ -145,9 +158,9 @@ export default function ClmCaseToCasePage() {
       </div>
 
       {/* CARD 3 — CONTRACTS LIST */}
-      <div style={{ background: '#fff', borderRadius: 14, padding: 0, overflow: 'hidden', border: '1px solid rgba(109,40,217,.15)', boxShadow: '0 2px 14px rgba(109,40,217,.08)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: '#fff', borderBottom: '1.5px solid #EDE9FE', flexWrap: 'wrap' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', background: '#EDE9FE', borderRadius: 30, padding: 4 }}>
+      <div style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', background: t.tabCapsule, borderRadius: 30, padding: 4 }}>
             {([
               ['all', 'All Contracts', null, true],
               ['signed', 'Signed Contracts', '#10B981', false],
@@ -158,32 +171,32 @@ export default function ClmCaseToCasePage() {
               return (
                 <button key={key} onClick={() => { setTab(key); setPage(1); }}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 20px', borderRadius: 25, border: 'none', fontFamily: 'inherit', fontSize: 12.5, fontWeight: active ? 800 : 700, cursor: 'pointer', letterSpacing: '-.1px', transition: 'all .18s', position: 'relative', overflow: 'hidden',
-                    background: active ? 'linear-gradient(135deg,#6D28D9,#7C3AED)' : 'transparent', color: active ? '#fff' : '#5B21B6', boxShadow: active ? '0 3px 10px rgba(109,40,217,.38)' : 'none' }}>
+                    background: active ? 'linear-gradient(135deg,#6D28D9,#7C3AED)' : 'transparent', color: active ? '#fff' : t.tabInactive, boxShadow: active ? '0 3px 10px rgba(109,40,217,.38)' : 'none' }}>
                   {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', borderRadius: '25px 25px 0 0', pointerEvents: 'none' }} />}
                   {hasIcon
-                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : '#5B21B6'} strokeWidth="2.5" strokeLinecap="round" style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : t.tabInactive} strokeWidth="2.5" strokeLinecap="round" style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                     : <span style={{ width: 8, height: 8, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : (dot || '#10B981'), flexShrink: 0 }} />}
                   <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
-                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: active ? 'rgba(255,255,255,.28)' : 'rgba(109,40,217,.13)', fontSize: 10, fontWeight: 900, color: active ? '#fff' : '#6D28D9' }}>{counts[key]}</span>
+                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: active ? 'rgba(255,255,255,.28)' : (t.dark ? 'rgba(124,58,237,.25)' : 'rgba(109,40,217,.13)'), fontSize: 10, fontWeight: 900, color: active ? '#fff' : t.tabInactive }}>{counts[key]}</span>
                 </button>
               );
             })}
           </div>
           <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 30, background: '#F8F6FF', border: '1.5px solid #EDE9FE' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 30, background: t.searchBg, border: `1.5px solid ${t.searchBorder}` }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, ID, company, type…"
-              style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: '#1E1050', background: 'transparent', width: 230 }} />
+              style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: t.searchText, background: 'transparent', width: 230 }} />
           </div>
         </div>
 
         {/* TABLE */}
-        <div style={{ background: '#fff' }}>
+        <div style={{ background: t.tableBg }}>
           {slice.length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '56px 20px', textAlign: 'center', background: '#FAFBFF' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '56px 20px', textAlign: 'center', background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF' }}>
               <div style={{ width: 52, height: 52, borderRadius: 14, background: 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 4px 12px rgba(109,40,217,.12)' }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#2E1065', marginBottom: 6 }}>No Contracts Found</div>
-              <div style={{ fontSize: 11, color: '#94A3B8', maxWidth: 300, lineHeight: 1.6 }}>Click <b>+ Create CTC Agreement</b> to add one.</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: t.textStrong, marginBottom: 6 }}>No Contracts Found</div>
+              <div style={{ fontSize: 11, color: t.textMuted, maxWidth: 300, lineHeight: 1.6 }}>Click <b>+ Create CTC Agreement</b> to add one.</div>
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
@@ -198,23 +211,24 @@ export default function ClmCaseToCasePage() {
                     const n = start + i + 1;
                     const s = S_CFG[c.status];
                     const ap = AP_CFG[c.approval];
-                    const rowBg = n % 2 === 0 ? 'rgba(245,243,255,.35)' : '#fff';
+                    const apb = badgeTok(ap);
+                    const rowBg = n % 2 === 0 ? t.rowAlt : t.tableBg;
                     const extra = c.cp.length - 1;
                     const cpS = c.cpSignedDate !== '—' ? c.cpSignedDate : (c.status === 'signed' ? c.date : '—');
                     return (
                       <tr key={c.id} style={{ background: rowBg, transition: 'all .12s' }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(109,40,217,.05)'; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #7C3AED'; }}
+                        onMouseEnter={e => { e.currentTarget.style.background = t.rowHover; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #7C3AED'; }}
                         onMouseLeave={e => { e.currentTarget.style.background = rowBg; e.currentTarget.style.boxShadow = 'none'; }}>
                         <td style={{ ...TD, width: 52 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#6D28D9,#5B21B6)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(109,40,217,.3)' }}><span style={{ fontSize: 9, fontWeight: 900, color: '#fff' }}>{String(n).padStart(2, '0')}</span></div></td>
-                        <td style={{ ...TD, width: 124 }}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 10, fontWeight: 800, color: '#4C1D95', background: 'linear-gradient(135deg,rgba(109,40,217,.1),rgba(124,58,237,.06))', padding: '3px 7px', borderRadius: 6, border: '1px solid rgba(124,58,237,.28)', whiteSpace: 'nowrap', letterSpacing: '.02em' }}>{c.id}</span></td>
-                        <td style={{ ...TD, width: 110 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: '#374151', whiteSpace: 'nowrap' }}>{c.date}</span></td>
-                        <td style={TDL}><div style={{ fontSize: 11.5, fontWeight: 700, color: '#1E1050', letterSpacing: '-.2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }} title={c.title}>{c.title}</div></td>
-                        <td style={{ ...TDL, width: 155 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 24, height: 24, borderRadius: 7, background: `linear-gradient(135deg,${orgGrad(c.org)})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(109,40,217,.2)' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff', letterSpacing: '-.3px' }}>{inits(c.org)}</span></div><span style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 105 }}>{c.org}</span></div></td>
-                        <td style={{ ...TDL, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 24, height: 24, borderRadius: 7, background: 'linear-gradient(135deg,#6D28D9,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(109,40,217,.18)' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff', letterSpacing: '-.3px' }}>{inits(c.cp[0])}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }} title={c.cp.join(', ')}>{c.cp[0]}</span>{extra > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 4px', borderRadius: 20, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontSize: 8.5, fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 4px rgba(109,40,217,.28)' }} title={c.cp.slice(1).join(', ')}>+{extra}</span>}</div></td>
-                        <td style={{ ...TDL, width: 136 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#C4B5FD,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #DDD6FE' }}><span style={{ fontSize: 8, fontWeight: 900, color: '#4C1D95' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 10.5, fontWeight: 600, color: '#0F172A', whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
-                        <td style={{ ...TD, width: 122 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 20, background: ap.bg, border: `1px solid ${ap.border}`, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: ap.dot, flexShrink: 0, boxShadow: `0 0 5px ${ap.dot}60` }} /><span style={{ fontSize: 9.5, fontWeight: 700, color: ap.color }}>{ap.label}</span></span></td>
-                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: c.effDate === '—' ? '#C4B5FD' : '#374151', whiteSpace: 'nowrap' }}>{c.effDate}</span></td>
-                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: c.endDate === '—' ? '#C4B5FD' : '#374151', whiteSpace: 'nowrap' }}>{c.endDate}</span></td>
+                        <td style={{ ...TD, width: 124 }}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 10, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#4C1D95', background: t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,rgba(109,40,217,.1),rgba(124,58,237,.06))', padding: '3px 7px', borderRadius: 6, border: '1px solid rgba(124,58,237,.28)', whiteSpace: 'nowrap', letterSpacing: '.02em' }}>{c.id}</span></td>
+                        <td style={{ ...TD, width: 110 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.date}</span></td>
+                        <td style={TDL}><div style={{ fontSize: 11.5, fontWeight: 700, color: t.textStrong, letterSpacing: '-.2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }} title={c.title}>{c.title}</div></td>
+                        <td style={{ ...TDL, width: 155 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 24, height: 24, borderRadius: 7, background: `linear-gradient(135deg,${orgGrad(c.org)})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(109,40,217,.2)' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff', letterSpacing: '-.3px' }}>{inits(c.org)}</span></div><span style={{ fontSize: 12, fontWeight: 600, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 105 }}>{c.org}</span></div></td>
+                        <td style={{ ...TDL, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 24, height: 24, borderRadius: 7, background: 'linear-gradient(135deg,#6D28D9,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(109,40,217,.18)' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff', letterSpacing: '-.3px' }}>{inits(c.cp[0])}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }} title={c.cp.join(', ')}>{c.cp[0]}</span>{extra > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 4px', borderRadius: 20, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontSize: 8.5, fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 4px rgba(109,40,217,.28)' }} title={c.cp.slice(1).join(', ')}>+{extra}</span>}</div></td>
+                        <td style={{ ...TDL, width: 136 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#C4B5FD,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #DDD6FE' }}><span style={{ fontSize: 8, fontWeight: 900, color: '#4C1D95' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 10.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                        <td style={{ ...TD, width: 122 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 20, background: apb.bg, border: `1px solid ${apb.border}`, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: ap.dot, flexShrink: 0, boxShadow: `0 0 5px ${ap.dot}60` }} /><span style={{ fontSize: 9.5, fontWeight: 700, color: apb.text }}>{ap.label}</span></span></td>
+                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: c.effDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{c.effDate}</span></td>
+                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: c.endDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{c.endDate}</span></td>
                         <td style={{ ...TD, width: 122 }}>{cpS === '—' ? <span style={{ fontSize: 11.5, fontWeight: 600, color: '#C4B5FD' }}>—</span> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5, fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>{cpS}</span>}</td>
                         <td style={{ ...TD, width: 150 }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
@@ -223,10 +237,10 @@ export default function ClmCaseToCasePage() {
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#047857" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                               </ActBtn>
                               {dlOpen === c.id && (
-                                <div style={{ position: 'absolute', top: 30, right: 0, zIndex: 50, background: '#fff', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.15)', border: '1.5px solid #E8E4F9', minWidth: 160, overflow: 'hidden' }}>
-                                  {[['PDF', '#047857', '#D1FAE5', '#A7F3D0', '#ECFDF5'], ['DOCX', '#0369A1', '#DBEAFE', '#93C5FD', '#EFF6FF']].map(([fmt, col, sbg, sbd, hov]) => (
-                                    <button key={fmt} onClick={() => { setDlOpen(null); toast.info('Download started', `${c.id} · ${fmt}`); }} style={{ width: '100%', padding: '10px 14px', border: 'none', background: '#fff', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, color: col, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left' }}
-                                      onMouseEnter={e => (e.currentTarget.style.background = hov)} onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                                <div style={{ position: 'absolute', top: 30, right: 0, zIndex: 50, background: t.surface, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.15)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E8E4F9'}`, minWidth: 160, overflow: 'hidden' }}>
+                                  {[['PDF', '#047857', '#D1FAE5', '#A7F3D0', t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5'], ['DOCX', '#0369A1', '#DBEAFE', '#93C5FD', t.dark ? 'rgba(56,189,248,.16)' : '#EFF6FF']].map(([fmt, col, sbg, sbd, hov]) => (
+                                    <button key={fmt} onClick={() => { setDlOpen(null); toast.info('Download started', `${c.id} · ${fmt}`); }} style={{ width: '100%', padding: '10px 14px', border: 'none', background: t.surface, fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, color: t.dark ? (fmt === 'PDF' ? '#6ee7b7' : '#7dd3fc') : col, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left' }}
+                                      onMouseEnter={e => (e.currentTarget.style.background = hov)} onMouseLeave={e => (e.currentTarget.style.background = t.surface)}>
                                       <span style={{ width: 26, height: 26, borderRadius: 7, background: sbg, border: `1px solid ${sbd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: col }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg></span>
                                       Download as {fmt}
                                     </button>
@@ -244,12 +258,12 @@ export default function ClmCaseToCasePage() {
                   })}
                 </tbody>
               </table>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: 'linear-gradient(110deg,#F5F3FF,#EDE9FE)', borderTop: '1.5px solid #DDD6FE' }}>
-                <span style={{ fontSize: 12, color: '#6D28D9', fontWeight: 500 }}>Showing <b style={{ color: '#2E1065', fontWeight: 800 }}>{start + 1}–{Math.min(start + PER_PAGE, list.length)}</b> of <b style={{ color: '#2E1065', fontWeight: 800 }}>{list.length}</b> contract{list.length !== 1 ? 's' : ''}</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 18px', background: t.pagerBg, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#DDD6FE'}` }}>
+                <span style={{ fontSize: 12, color: t.tabInactive, fontWeight: 500 }}>Showing <b style={{ color: t.textStrong, fontWeight: 800 }}>{start + 1}–{Math.min(start + PER_PAGE, list.length)}</b> of <b style={{ color: t.textStrong, fontWeight: 800 }}>{list.length}</b> contract{list.length !== 1 ? 's' : ''}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
                     const a = p === safe;
-                    return <button key={p} onClick={() => setPage(p)} disabled={a} style={{ minWidth: 26, height: 26, padding: '0 6px', borderRadius: 7, border: `1.5px solid ${a ? '#6D28D9' : 'rgba(109,40,217,.18)'}`, background: a ? 'linear-gradient(135deg,#6D28D9,#7C3AED)' : 'rgba(245,243,255,.7)', color: a ? '#fff' : '#6D28D9', fontFamily: 'inherit', fontSize: 12, fontWeight: a ? 900 : 600, cursor: a ? 'default' : 'pointer' }}>{p}</button>;
+                    return <button key={p} onClick={() => setPage(p)} disabled={a} style={{ minWidth: 26, height: 26, padding: '0 6px', borderRadius: 7, border: `1.5px solid ${a ? '#6D28D9' : (t.dark ? 'rgba(124,58,237,.3)' : 'rgba(109,40,217,.18)')}`, background: a ? 'linear-gradient(135deg,#6D28D9,#7C3AED)' : t.pagerBtn, color: a ? '#fff' : t.tabInactive, fontFamily: 'inherit', fontSize: 12, fontWeight: a ? 900 : 600, cursor: a ? 'default' : 'pointer' }}>{p}</button>;
                   })}
                 </div>
               </div>
@@ -270,10 +284,6 @@ function ActBtn({ title, color, bg, border, onClick, children }: { title: string
     </button>
   );
 }
-
-const TH = { padding: '7px 10px', fontSize: 7.5, fontWeight: 800, letterSpacing: '.11em', textTransform: 'uppercase', color: '#fff', whiteSpace: 'nowrap', background: '#6D28D9', borderBottom: 'none', textAlign: 'center' } as React.CSSProperties;
-const TD = { padding: '7px 10px', verticalAlign: 'middle', borderBottom: '1px solid rgba(109,40,217,.06)', textAlign: 'center' } as React.CSSProperties;
-const TDL = { ...TD, textAlign: 'left' } as React.CSSProperties;
 
 const CTC_CSS = `
 @keyframes ctcFade { from { opacity:0 } to { opacity:1 } }
