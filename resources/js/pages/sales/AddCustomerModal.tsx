@@ -595,6 +595,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     'trade-licence': 'tl',
   };
   const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
+    // File-type / size guard at the single upload chokepoint — the `accept=`
+    // hint on the picker is bypassable (users can switch to "All files"), so a
+    // .txt / .php / .exe could otherwise reach the server. Reject it instantly
+    // with a clear message. The backend enforces the same mimes rule too.
+    const fileErr = validateUpload(file, 'doc');
+    if (fileErr) {
+      toast.error('Unsupported file', fileErr);
+      return;
+    }
     const ownerId = savedDbId || customer?.db_id || null;
     if (!ownerId) {
       toast.error('Save first', 'Save the customer before attaching reference documents.');
