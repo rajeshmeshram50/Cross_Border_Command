@@ -23,8 +23,14 @@ class ClmSignatureRequest extends Model
 
     protected $table = 'clm_signature_requests';
 
-    public const DOC_TRADE     = 'trade_doc';
-    public const DOC_AGREEMENT = 'agreement';
+    public const DOC_TRADE             = 'trade_doc';
+    public const DOC_AGREEMENT         = 'agreement';
+    // Sales-matrix documents (Stage 5). These don't live in a CLM library
+    // table — the signed source is the rendered Quotation / PI PDF — so
+    // `documents()` short-circuits for them (see below). `trade_doc_id`
+    // holds the quotation / proforma_invoice id.
+    public const DOC_QUOTATION         = 'quotation';
+    public const DOC_PROFORMA_INVOICE  = 'proforma_invoice';
 
     protected $fillable = [
         'client_id', 'branch_id',
@@ -87,10 +93,53 @@ class ClmSignatureRequest extends Model
             ? $this->trade_doc_ids
             : [$this->trade_doc_id];
 
+        // Sales-matrix docs (Quotation / PI) have no CLM library row — the
+        // signed source is a rendered PDF — so there's nothing to resolve
+        // here. Return empty so the trade-doc/agreement lock-check helpers
+        // never mis-query the wrong library table for these types.
+        if (in_array($this->document_type, [self::DOC_QUOTATION, self::DOC_PROFORMA_INVOICE], true)) {
+            return new Collection();
+        }
         if ($this->document_type === self::DOC_AGREEMENT) {
             return ClmAgreementLibrary::whereIn('id', $ids)->get();
         }
         return ClmTradeDocLibrary::whereIn('id', $ids)->get();
+    }
+
+    public const STATUS_SUPERSEDED = 'superseded';
+
+    /**
+     * True when the sales document (Quotation / Proforma Invoice) already has
+     * a COMPLETED e-signature — used to lock the document against edits.
+     */
+    public static function hasSignedForDoc(int $clientId, string $documentType, int $docId): bool
+    {
+        return static::where('client_id', $clientId)
+            ->where('document_type', $documentType)
+            ->where('trade_doc_id', $docId)
+            ->where('status', 'completed')
+            ->exists();
+    }
+
+    /**
+     * Mark any still-pending (draft / inprogress) signature request for a
+     * sales document as superseded — called when that document is EDITED
+     * while a signature is in flight, so the stale request no longer counts
+     * and the updated document must be re-sent. COMPLETED (signed) requests
+     * are NOT touched: a signed document is locked against editing instead
+     * (see hasSignedForDoc). Returns the number of rows affected.
+     */
+    public static function supersedeForDoc(int $clientId, string $documentType, int $docId): int
+    {
+        return static::where('client_id', $clientId)
+            ->where('document_type', $documentType)
+            ->where('trade_doc_id', $docId)
+            ->whereIn('status', ['draft', 'inprogress'])
+            ->update([
+                'status'        => self::STATUS_SUPERSEDED,
+                'recalled_at'   => now(),
+                'recall_reason' => 'Document edited while signature was pending — superseded; re-send required.',
+            ]);
     }
 
     /**

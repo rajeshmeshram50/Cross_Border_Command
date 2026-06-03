@@ -655,7 +655,7 @@ const MFL_CSS = `
 [data-bs-theme="dark"] .mfl-modal {
   background: linear-gradient(180deg, #0c2620 0%, #0a1a17 100%);
 }
-[data-bs-theme="dark"] .mfl-body { color: #d1fae5; }
+[data-bs-theme="dark"] .mfl-body { background: #0a1f1b; color: #d1fae5; }
 [data-bs-theme="dark"] .mfl-lbl  { color: #5eead4; }
 [data-bs-theme="dark"] .mfl-input {
   background: #0f1f1c;

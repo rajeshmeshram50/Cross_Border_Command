@@ -4,6 +4,7 @@ import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Create Product Sourcing modal — Sales Matrix → Stage 3 (Required tab).
@@ -302,11 +303,10 @@ export default function CreateProcurementModal({
             <div className="cps-basic-grid">
               <div className="cps-field">
                 <label className="cps-flabel">PROCUREMENT TAT <span className="cps-req">*</span></label>
-                <input
-                  type="date"
-                  className={`cps-input ${errors.procDate ? 'cps-input-err' : ''}`}
+                <MasterDatePicker
                   value={procDate}
-                  onChange={e => setProcDate(e.target.value)}
+                  onChange={setProcDate}
+                  invalid={!!errors.procDate}
                   placeholder="dd-mm-yyyy"
                 />
               </div>

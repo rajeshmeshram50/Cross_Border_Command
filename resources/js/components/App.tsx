@@ -7,6 +7,7 @@ import { ThemeProvider } from '../contexts/ThemeContext';
 import { VariantProvider } from '../contexts/VariantContext';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { resolveFileUrl } from '../utils/resolveFileUrl';
+import { encodeOppId, encodeStage } from '../utils/oppCrypto';
 import SplashLoader from './ui/SplashLoader';
 import { ToastProvider } from '../contexts/ToastContext';
 import { ConfirmProvider } from '../contexts/ConfirmContext';
@@ -175,7 +176,7 @@ const getPagePath = (page: string, data?: any): string => {
          the May-26 cleanup. */
       if (page === 'sales.workplace')       return '/sales/lead-worksheet';
       if (page === 'sales.todo')            return '/sales/todo';
-      if (page === 'sales.matrix_detail')   return data?.oppId ? `/sales/matrix/${data.oppId}/stage/${data?.stage || 1}` : '/sales/matrix';
+      if (page === 'sales.matrix_detail')   return data?.oppId ? `/sales/matrix/${encodeOppId(data.oppId)}/stage/${encodeStage(data?.stage || 1)}` : '/sales/matrix';
       if (page === 'sales.qpi')             return '/sales/qpi';
       /* Sales Matrix Operations menu was trimmed to "My Workplace" and
          "Quotation Vs PI History"; the QPI page already exists and the

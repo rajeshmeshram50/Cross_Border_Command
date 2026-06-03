@@ -707,6 +707,245 @@ class ClmSignatureController extends Controller
     }
 
     /**
+     * Stage 5 (Quotation vs PI) → Send for Signature.
+     *
+     * Renders the Quotation / Proforma Invoice PDF (the same with-signature
+     * artifact used by preview + email, via SalesPdfController) and ships it
+     * to Zoho Sign for the buyer (customer) plus, when present/selected, the
+     * consignee. Mirrors agreementSend() — only the document source differs
+     * (a rendered sales PDF instead of a CLM library row). The persisted row
+     * uses document_type = quotation|proforma_invoice; status / remind /
+     * recall / signed-file streaming all reuse the generic methods below.
+     */
+    public function salesDocSend(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
+
+        if (!$this->zoho->isConfigured()) {
+            return response()->json(['status' => false, 'message' => 'Zoho Sign is not configured. Contact your administrator.'], 503);
+        }
+
+        $data = $request->validate([
+            'doc_kind'          => 'required|string|in:quotation,proforma_invoice',
+            'doc_id'            => 'required|integer',
+            'lead_id'           => 'required|integer|exists:leads,id',
+            'signers'           => 'nullable|array|max:5',
+            'signers.*.role'    => 'nullable|string|max:32',
+            'signers.*.email'   => 'required_with:signers|email',
+            'signers.*.name'    => 'nullable|string|max:255',
+            'signers.*.order'   => 'nullable|integer|min:1',
+            // Per-signature placement keyed by doc_id → { role → {x,y,page,width,height} }.
+            'document_settings' => 'nullable|array',
+            'expiry_days'       => 'nullable|integer|min:1|max:180',
+            'is_sequential'     => 'nullable|boolean',
+            'notes'             => 'nullable|string|max:1000',
+        ]);
+
+        $docKind = $data['doc_kind'];
+        $docId   = (int) $data['doc_id'];
+        $lead    = Lead::where('client_id', $user->client_id)->findOrFail($data['lead_id']);
+
+        // 1. Render the sales PDF to a temp file (reuses SalesPdfController so
+        //    the signed source byte-matches what preview/email produce).
+        try {
+            $rendered = app(SalesPdfController::class)->renderSalesDocPdfToTemp($docKind, $docId, $user, true);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['status' => false, 'message' => 'Document not found.'], 404);
+        }
+        $tempPath = $rendered['path'];
+        $record   = $rendered['record'];
+
+        // Defence-in-depth: the doc must belong to the lead in context.
+        if ((int) ($record->opp_id ?? 0) !== (int) $lead->id) {
+            @unlink($tempPath);
+            return response()->json(['status' => false, 'message' => 'This document does not belong to the supplied opportunity.'], 422);
+        }
+
+        try {
+            // 2. Resolve signers — buyer (customer) + optional consignee.
+            $signers = $this->resolveSalesDocSigners($record, $data['signers'] ?? null);
+            if (empty($signers)) {
+                @unlink($tempPath);
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'No signer could be resolved — the customer (or a selected signer) has no email on this document.',
+                ], 422);
+            }
+
+            // Primary party owns the signature_requests row (scoping). Prefer
+            // the customer; fall back to consignee if there's no customer.
+            $primaryIsCustomer = (int) ($record->customer_id ?? 0) > 0;
+            $primaryId         = $primaryIsCustomer ? (int) $record->customer_id : (int) ($record->consignee_id ?? 0);
+
+            $expiryDays  = (int) ($data['expiry_days'] ?? 30);
+            $shortLabel  = $docKind === 'quotation' ? 'QT' : 'PI';
+            $docName     = $record->code ? "{$shortLabel} {$record->code}" : $rendered['filename'];
+            $requestName = $record->code ?: $rendered['filename'];
+
+            // 3. Build Zoho actions.
+            $actions = [];
+            foreach ($signers as $i => $signer) {
+                $actions[] = [
+                    'recipient_email'  => $signer['email'],
+                    'recipient_name'   => $signer['name'],
+                    'action_type'      => 'SIGN',
+                    'signing_order'    => $signer['order'] ?? ($i + 1),
+                    'verify_recipient' => false,
+                ];
+            }
+
+            $requestBody = [
+                'requests' => [
+                    'request_name'    => $requestName,
+                    'is_sequential'   => (bool) ($data['is_sequential'] ?? false),
+                    'expiration_days' => $expiryDays,
+                    'notes'           => (string) ($data['notes'] ?? 'Please review and sign this document.'),
+                    'actions'         => $actions,
+                ],
+            ];
+
+            // 4. Create Zoho request (multipart — JSON + the single PDF).
+            $createResp    = $this->zoho->createRequestMultipart([$tempPath], [$rendered['filename']], $requestBody);
+            $zohoRequestId = data_get($createResp, 'requests.request_id');
+            if (!$zohoRequestId) {
+                throw new RuntimeException('Zoho create-request did not return a request_id: ' . json_encode($createResp));
+            }
+
+            // 5. Fetch the created request, tag actions with cbc_role, submit
+            //    with the per-signer signature-field coordinates.
+            $details         = $this->zoho->getRequest($zohoRequestId);
+            $zohoActions     = data_get($details, 'requests.actions',      []);
+            $zohoDocumentIds = data_get($details, 'requests.document_ids', []);
+
+            $signersByEmail = collect($signers)->keyBy(fn ($s) => strtolower((string) ($s['email'] ?? '')));
+            foreach ($zohoActions as &$zohoAction) {
+                $email = strtolower((string) ($zohoAction['recipient_email'] ?? ''));
+                $match = $signersByEmail->get($email);
+                if (is_array($match) && !empty($match['role'])) {
+                    $zohoAction['cbc_role'] = (string) $match['role'];
+                }
+            }
+            unset($zohoAction);
+
+            // document_settings arrives keyed by doc_id → { role → coords };
+            // mapClientCoordsToZohoDocIds re-keys it onto the Zoho doc id.
+            $perDocCoords = $this->mapClientCoordsToZohoDocIds(
+                (array) ($data['document_settings'] ?? []),
+                [$docId],
+                $zohoDocumentIds
+            );
+
+            $submitResp = $this->zoho->submitWithFields($zohoRequestId, $zohoActions, $zohoDocumentIds, $perDocCoords);
+            $submitted  = isset($submitResp['requests']);
+
+            // 6. Read back final status.
+            $finalStatus = 'draft';
+            if ($submitted) {
+                try {
+                    sleep(1);
+                    $after = $this->zoho->getRequest($zohoRequestId);
+                    $finalStatus = strtolower((string) data_get($after, 'requests.request_status', 'inprogress'));
+                } catch (\Throwable $e) {
+                    Log::warning('Zoho post-submit status fetch failed: ' . $e->getMessage());
+                    $finalStatus = 'inprogress';
+                }
+            }
+
+            // 7. Persist. trade_doc_id/_ids reuse for the quotation/PI id —
+            //    the polymorphic discriminator is document_type.
+            $sigReq = new ClmSignatureRequest();
+            $sigReq->client_id         = $user->client_id;
+            $sigReq->branch_id         = $user->branch_id ?? null;
+            $sigReq->document_type     = $docKind === 'quotation'
+                ? ClmSignatureRequest::DOC_QUOTATION
+                : ClmSignatureRequest::DOC_PROFORMA_INVOICE;
+            $sigReq->lead_id           = $lead->id;
+            $sigReq->trade_doc_id      = $docId;
+            $sigReq->trade_doc_ids     = [$docId];
+            $sigReq->document_names    = [$docName];
+            $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn ($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
+            $sigReq->model_name        = $primaryIsCustomer ? 'Customer' : 'Consignee';
+            $sigReq->party_id          = $primaryId;
+            $sigReq->zoho_request_id   = $zohoRequestId;
+            $sigReq->request_name      = $requestName;
+            $sigReq->status            = $finalStatus;
+            $sigReq->signers           = $signers;
+            $sigReq->expiry_date       = now()->addDays($expiryDays);
+            $sigReq->metadata          = [
+                'sent_at'           => now()->toIso8601String(),
+                'document_type'     => $docKind,
+                'doc_id'            => $docId,
+                'doc_code'          => $record->code,
+                'lead_id'           => $lead->id,
+                'document_settings' => $data['document_settings'] ?? null,
+            ];
+            $sigReq->created_by = Auth::id();
+            $sigReq->save();
+
+            $label   = $docKind === 'quotation' ? 'Quotation' : 'Proforma Invoice';
+            $message = $finalStatus === 'inprogress'
+                ? "{$label} sent for signature successfully."
+                : "{$label} created in Zoho but submission did not flip to inprogress.";
+            if ($this->zoho->isTestingMode()) {
+                $message .= ' (Sandbox mode — signer emails are only delivered if the recipient is a Zoho Sign user on this org.)';
+            }
+
+            return response()->json([
+                'status'  => true,
+                'message' => $message,
+                'data'    => [
+                    'signature_request_id' => $sigReq->id,
+                    'zoho_request_id'      => $zohoRequestId,
+                    'status'               => $finalStatus,
+                    'document_names'       => $sigReq->document_names,
+                    'signers'              => $sigReq->signers,
+                    'expiry_date'          => $sigReq->expiry_date,
+                    'auto_submitted'       => $submitted,
+                    'testing_mode'         => $this->zoho->isTestingMode(),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('CLM sales-doc send failed', [
+                'error'   => $e->getMessage(),
+                'trace'   => $e->getTraceAsString(),
+                'request' => $request->all(),
+            ]);
+            return response()->json(['status' => false, 'message' => 'Failed to send document for signature: ' . $e->getMessage()], 500);
+        } finally {
+            @unlink($tempPath);
+        }
+    }
+
+    /**
+     * Build the signer list for a Quotation / PI send. Business rule:
+     * ONLY the customer's primary contact person signs (no consignee).
+     * The contact-person email/name come from the customer's primary
+     * address (cp_email / cp_name); `customers.primary_email` mirrors the
+     * primary contact's email, so it's the fallback. The $override is
+     * intentionally ignored — the authoritative signer is always the
+     * customer's primary contact.
+     */
+    private function resolveSalesDocSigners($record, ?array $override): array
+    {
+        $customer = $record->customer;
+        if (!$customer) return [];
+
+        $addr  = $customer->primaryAddress;
+        $email = trim((string) ($addr->cp_email ?? '')) ?: trim((string) ($customer->primary_email ?? ''));
+        if ($email === '') return [];
+
+        $name = trim((string) ($addr->cp_name ?? '')) ?: ($customer->company_name ?: 'Customer');
+
+        return [[
+            'email' => $email,
+            'name'  => $name,
+            'order' => 1,
+            'role'  => 'buyer',
+        ]];
+    }
+
+    /**
      * Decode the agreement's `party` CSV against the lead's customer +
      * consignee and produce a signer list ready for Zoho. Returns
      *   [primaryPartyModel, 'Customer'|'Consignee', signersArray]

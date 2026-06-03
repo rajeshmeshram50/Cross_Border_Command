@@ -6,6 +6,7 @@ import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
+import SalesDocSendForSignatureModal from './SalesDocSendForSignatureModal';
 import {
   CreateQuotationModal,
   CreatePIModal,
@@ -82,6 +83,11 @@ const isTerminalQuote = (s: string | null): boolean => {
   return lc === 'converted_to_pi' || lc === 'converted' || lc === 'cancelled';
 };
 
+/* Latest e-signature request per document row, surfaced in the action cell. */
+type SigStatusRow = { id: number; status: string; docId: number };
+const docTypeParam = (dt: DocType): 'quotation' | 'proforma_invoice' =>
+  dt === 'pi' ? 'proforma_invoice' : 'quotation';
+
 /* Currency may be stored as the full master label ("CAD – Canadian
  * Dollar") — the list column only wants the 3-letter code ("CAD"). */
 const ccyCode = (c: string | null): string => {
@@ -105,6 +111,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   /* The open More-Actions menu — tracks the row + a screen anchor rect so
    * the menu can be portalled to <body> (escaping the table's overflow). */
   const [moreMenu, setMoreMenu] = useState<{ kind: DocType; id: number; anchor: DOMRect } | null>(null);
+
+  /* Send-for-Signature modal target + live signature status per row, keyed
+   * by `${docType}:${docId}`. The status drives the action-cell control
+   * (Send → Awaiting Sign + Remind → Signed + View). */
+  const [sigSendFor, setSigSendFor] = useState<
+    { kind: DocType; id: number; code: string | null; customerName: string | null } | null
+  >(null);
+  const [sigByRow, setSigByRow] = useState<Record<string, SigStatusRow>>({});
 
   const [createQtOpen, setCreateQtOpen]     = useState(false);
   const [createPiOpen, setCreatePiOpen]     = useState(false);
@@ -149,6 +163,54 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
   useEffect(() => { void fetchAll(false); }, [fetchAll]);
   useEffect(() => { prewarmQpiMasters(); }, []);
+
+  /* ── E-signature status for the current doc-type tab. `sync` round-trips
+   * Zoho server-side for any in-progress request so the chip flips to
+   * Signed without a manual refresh. Keyed by `${docType}:${trade_doc_id}`. */
+  const fetchSignatures = useCallback(async (sync = false) => {
+    if (!leadId) return;
+    try {
+      const r = await api.get<{ status: boolean; data: any[] }>('/clm/signature-requests', {
+        params: { lead_id: leadId, document_type: docTypeParam(docType), sync: sync ? 1 : 0 },
+      });
+      const rows = Array.isArray(r.data?.data) ? r.data.data : [];
+      const map: Record<string, SigStatusRow> = {};
+      rows.forEach((row: any) => {
+        const did = row.trade_doc_id ?? (Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids[0] : null);
+        if (did == null) return;
+        const key = `${docType}:${did}`;
+        if (!map[key] || row.id > map[key].id) {
+          map[key] = { id: row.id, status: String(row.status ?? '').toLowerCase(), docId: Number(did) };
+        }
+      });
+      setSigByRow(map);
+    } catch { /* signature status is best-effort — never blocks the table */ }
+  }, [leadId, docType]);
+
+  useEffect(() => {
+    if (!leadId) return;
+    void fetchSignatures(true);
+    const t = setInterval(() => void fetchSignatures(true), 20000);
+    return () => clearInterval(t);
+  }, [leadId, docType, fetchSignatures]);
+
+  const onRemindSig = async (sigId: number) => {
+    try {
+      await api.post(`/clm/signature-requests/${sigId}/remind`);
+      toast.success('Reminder sent', 'The signer has been reminded.');
+    } catch (e: any) {
+      toast.error('Reminder failed', e?.response?.data?.message ?? 'Could not send the reminder.');
+    }
+  };
+
+  const onViewSignedSig = async (sigId: number) => {
+    try {
+      const r = await api.get(`/clm/signature-requests/${sigId}/view-file/0`, { responseType: 'blob' });
+      window.open(URL.createObjectURL(r.data as Blob), '_blank');
+    } catch (e: any) {
+      toast.error('Open failed', e?.response?.data?.message ?? 'Could not open the signed document.');
+    }
+  };
 
   /* Auto-unlock the left CLM "Segment Details" card whenever this lead
    * ALREADY has at least one quotation or PI in the list — the user
@@ -263,6 +325,15 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   };
 
   const onEdit = (kind: DocType, id: number) => {
+    // A signed document is locked — the signed copy must keep matching what
+    // the customer e-signed. Block the edit and tell the user why.
+    if (sigByRow[`${kind}:${id}`]?.status === 'completed') {
+      toast.warning(
+        kind === 'pi' ? 'PI already signed' : 'Quotation already signed',
+        `This ${kind === 'pi' ? 'PI' : 'quotation'} has already been signed and can no longer be edited. Duplicate it to make changes.`,
+      );
+      return;
+    }
     if (kind === 'quotation') { setEditQtId(id); setCreateQtOpen(true); }
     else                      { setEditPiId(id); setPiSource(null); setCreatePiOpen(true); }
   };
@@ -317,7 +388,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       <style>{SHARED_STAGE_CSS}{STAGE5_CSS}</style>
 
       {/* ── Header (teal) with View-Summary button ── */}
-      <div className="smd-stg-head smd-s5-head">
+      <div className="smd-stg-head">
         <div className="smd-stg-head-left">
           <div className="smd-stg-head-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
@@ -330,7 +401,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           </div>
         </div>
         <div className="s5-head-right">
-          <span className="smd-stg-head-badge">● ACTIVE</span>
+          <span className="smd-stg-head-badge">ACTIVE</span>
           <span className="s5-head-divider" />
           <button type="button" className="s5-summary-btn" onClick={() => setSummaryOpen(true)}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -450,7 +521,18 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                       <td className="ta-r"><span className="s5-val2">{fmtNum(r.grand_total)}</span></td>
                       {docType === 'pi' && (
                         <td className="ta-c">
-                          <span className="s5-st-live"><span className="s5-st-dot" />{titleCase(r.status) === '—' ? 'Active' : titleCase(r.status)}</span>
+                          {/* STATUS = e-signature lifecycle:
+                              Not Sent (draft) → Sent (awaiting) → Signed. */}
+                          {(() => {
+                            const st = sigByRow[`${docType}:${r.id}`]?.status;
+                            if (st === 'completed') {
+                              return <span className="s5-st-live"><span className="s5-st-dot" />Signed</span>;
+                            }
+                            if (st === 'inprogress') {
+                              return <span className="s5-st-live" style={{ background: '#fef9c3', color: '#854d0e', borderColor: '#fde68a' }}><span className="s5-st-dot" style={{ background: '#d97706' }} />Sent</span>;
+                            }
+                            return <span className="s5-st-live" style={{ background: '#f1f5f9', color: '#64748b', borderColor: '#e2e8f0' }}><span className="s5-st-dot" style={{ background: '#94a3b8' }} />Not Sent</span>;
+                          })()}
                         </td>
                       )}
                       <td>
@@ -471,15 +553,64 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               </button>
                             )
                           )}
+                          {/* Send for Signature (Zoho Sign) — status-aware:
+                              Send → Awaiting Sign (+Remind) → Signed (+View). */}
+                          {(() => {
+                            const sig = sigByRow[`${docType}:${r.id}`];
+                            const st  = sig?.status;
+                            if (st === 'inprogress') {
+                              return (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  {/* Sent → View the document that was sent + Remind the signer. */}
+                                  <button type="button" className="s5-icn" title="View sent document" onClick={() => void onViewPdf(docType, r.id, true)} disabled={anyActing}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                  </button>
+                                  <button type="button" className="s5-icn" title="Send signing reminder" onClick={() => void onRemindSig(sig!.id)} disabled={anyActing}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                                  </button>
+                                </span>
+                              );
+                            }
+                            if (st === 'completed') {
+                              return (
+                                <button type="button" className="s5-convert2" title="View the signed PDF" onClick={() => void onViewSignedSig(sig!.id)} disabled={anyActing} style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)' }}>
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12"/></svg>
+                                  Signed PDF
+                                </button>
+                              );
+                            }
+                            return (
+                              <button
+                                type="button" className="s5-convert2" title="Send for Signature"
+                                onClick={() => setSigSendFor({ kind: docType, id: r.id, code: r.code, customerName: r.customer?.company_name ?? null })}
+                                disabled={anyActing}
+                                style={{ background: 'linear-gradient(135deg,#0ea5e9,#0284c7)' }}
+                              >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+                                Send for Sign
+                              </button>
+                            );
+                          })()}
                           <span className="s5-act-sep" />
                           <button type="button" className="s5-icn s5-icn-mail" title="Send via Email"
                             onClick={() => void onEmail(docType, r.id, r.code)} disabled={anyActing}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                           </button>
-                          <button type="button" className="s5-icn s5-icn-edit" title="Edit"
-                            onClick={() => onEdit(docType, r.id)} disabled={anyActing}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                          </button>
+                          {(() => {
+                            // A signed doc is locked — show the pencil greyed
+                            // out; clicking still explains why (handled in onEdit).
+                            const locked = sigByRow[`${docType}:${r.id}`]?.status === 'completed';
+                            return (
+                              <button
+                                type="button" className="s5-icn s5-icn-edit"
+                                title={locked ? `${docType === 'pi' ? 'PI' : 'Quotation'} signed — editing locked` : 'Edit'}
+                                onClick={() => onEdit(docType, r.id)} disabled={anyActing}
+                                style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              </button>
+                            );
+                          })()}
                           <button
                             type="button" className="s5-icn s5-icn-more" title="More Actions"
                             onClick={(e) => {
@@ -566,6 +697,20 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             void fetchAll(true);
             onPiChange?.();
           }}
+        />
+      )}
+
+      {/* Send for Signature (Zoho Sign) — Quotation / PI */}
+      {sigSendFor && leadId && (
+        <SalesDocSendForSignatureModal
+          open={!!sigSendFor}
+          kind={sigSendFor.kind}
+          docId={sigSendFor.id}
+          docCode={sigSendFor.code}
+          leadId={leadId}
+          customerName={sigSendFor.customerName}
+          onClose={() => setSigSendFor(null)}
+          onSent={() => { void fetchSignatures(true); }}
         />
       )}
     </>
@@ -888,82 +1033,74 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
 }
 
 const STAGE5_CSS = `
-/* ─── Stage 5 head — teal/cyan gradient ── */
-.smd-s5-head {
-  background: linear-gradient(110deg, #cffafe 0%, #a5f3fc 40%, #67e8f9 100%);
-  border-bottom: 1px solid #67e8f9;
-}
-.smd-s5-head .smd-stg-head-icon { background: linear-gradient(135deg, #0891b2, #0e7490); }
-.smd-s5-head .smd-stg-head-title { color: #0c4a6e; }
-.smd-s5-head .smd-stg-head-sub   { color: #0369a1; }
-.smd-s5-head .smd-stg-head-badge { background: linear-gradient(135deg, #0891b2, #0e7490); }
+/* ─── Stage 5 head uses the default purple .smd-stg-head (matches Stage 4). ── */
 .s5-head-right { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.s5-head-divider { width: 1px; height: 22px; background: rgba(14,116,144,.25); }
+.s5-head-divider { width: 1px; height: 22px; background: rgba(124,58,237,.25); }
 .s5-summary-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 6px 13px; border-radius: 9px; cursor: pointer;
   font-family: inherit; font-size: 10.5px; font-weight: 700; white-space: nowrap;
-  background: linear-gradient(135deg, #0c4a6e, #0369a1); color: #fff; border: none;
-  box-shadow: 0 3px 10px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.16);
+  background: linear-gradient(135deg, #4c1d95, #6d28d9); color: #fff; border: none;
+  box-shadow: 0 3px 10px rgba(124,58,237,.40), inset 0 1px 0 rgba(255,255,255,.16);
   transition: all .18s;
 }
-.s5-summary-btn:hover { background: linear-gradient(135deg, #082f49, #0284c7); box-shadow: 0 5px 15px rgba(8,145,178,.55); transform: translateY(-1px); }
+.s5-summary-btn:hover { background: linear-gradient(135deg, #3b0764, #7c3aed); box-shadow: 0 5px 15px rgba(124,58,237,.55); transform: translateY(-1px); }
 
 /* ─── Action row — figma segmented tabs + create buttons ─── */
 .s5-actionrow {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  background: linear-gradient(110deg, #ecfeff 0%, #cffafe 35%, #e0f9ff 65%, #f0fdff 100%);
-  border: 1.5px solid rgba(103,232,249,.55); border-radius: 14px;
+  background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 35%, #f3f0ff 65%, #faf5ff 100%);
+  border: 1.5px solid rgba(167,139,250,.55); border-radius: 14px;
   padding: 8px 10px 8px 8px; margin-bottom: 12px;
-  box-shadow: 0 2px 16px rgba(8,145,178,.10), inset 0 1px 0 rgba(255,255,255,.8);
+  box-shadow: 0 2px 16px rgba(124,58,237,.10), inset 0 1px 0 rgba(255,255,255,.8);
 }
 .s5-actionrow::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.55), transparent); pointer-events: none; border-radius: 14px 14px 0 0; }
 .s5-seg {
   position: relative; z-index: 1;
   display: inline-flex; align-items: center; gap: 3px;
   padding: 4px 5px; border-radius: 12px;
-  background: rgba(255,255,255,.6); border: 1.5px solid rgba(103,232,249,.4);
-  box-shadow: 0 1px 6px rgba(8,145,178,.08), inset 0 1px 0 rgba(255,255,255,.9);
+  background: rgba(255,255,255,.6); border: 1.5px solid rgba(167,139,250,.4);
+  box-shadow: 0 1px 6px rgba(124,58,237,.08), inset 0 1px 0 rgba(255,255,255,.9);
 }
 .s5-seg-btn {
   position: relative; display: inline-flex; align-items: center; gap: 7px;
   padding: 7px 18px; border-radius: 9px; cursor: pointer; white-space: nowrap;
   font-family: inherit; font-size: 11px; font-weight: 600; letter-spacing: .01em;
-  background: rgba(255,255,255,.75); color: #0369a1;
-  border: 1.5px solid rgba(14,116,144,.2);
-  box-shadow: 0 1px 4px rgba(8,145,178,.08);
+  background: rgba(255,255,255,.75); color: #6d28d9;
+  border: 1.5px solid rgba(124,58,237,.2);
+  box-shadow: 0 1px 4px rgba(124,58,237,.08);
   transition: all .22s cubic-bezier(.4,0,.2,1);
 }
-.s5-seg-btn:hover:not(.active) { background: #fff; border-color: rgba(14,116,144,.32); }
+.s5-seg-btn:hover:not(.active) { background: #fff; border-color: rgba(124,58,237,.32); }
 .s5-seg-btn.active {
   font-weight: 700; color: #fff; border: none;
-  background: linear-gradient(135deg, #0891b2 0%, #0c4a6e 100%);
-  box-shadow: 0 4px 14px rgba(8,145,178,.45), inset 0 1px 0 rgba(255,255,255,.2);
+  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%);
+  box-shadow: 0 4px 14px rgba(124,58,237,.45), inset 0 1px 0 rgba(255,255,255,.2);
   text-shadow: 0 1px 2px rgba(0,0,0,.2);
 }
-.s5-seg-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: #67e8f9; box-shadow: 0 0 4px rgba(103,232,249,.5); }
+.s5-seg-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: #a78bfa; box-shadow: 0 0 4px rgba(167,139,250,.5); }
 .s5-seg-btn.active .s5-seg-dot { background: rgba(255,255,255,.85); box-shadow: 0 0 6px rgba(255,255,255,.6); }
 .s5-seg-btn svg { flex-shrink: 0; }
 
 .s5-create-group { position: relative; z-index: 1; display: flex; align-items: center; gap: 7px; }
-.s5-create-div { width: 1px; height: 26px; flex-shrink: 0; background: linear-gradient(180deg, transparent, rgba(14,116,144,.25), transparent); }
+.s5-create-div { width: 1px; height: 26px; flex-shrink: 0; background: linear-gradient(180deg, transparent, rgba(124,58,237,.25), transparent); }
 .s5-create-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 16px; border-radius: 9px; cursor: pointer; white-space: nowrap;
   font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: .02em;
   transition: all .22s cubic-bezier(.4,0,.2,1);
 }
-.s5-create-q { color: #0c4a6e; border: 1.5px solid rgba(8,145,178,.3); background: linear-gradient(135deg, #ffffff 0%, #ecfeff 100%); box-shadow: 0 2px 8px rgba(8,145,178,.15), inset 0 1px 0 rgba(255,255,255,.9); }
-.s5-create-q:hover { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; border-color: transparent; box-shadow: 0 6px 18px rgba(8,145,178,.45); transform: translateY(-2px); }
-.s5-create-p { color: #fff; border: none; background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%); box-shadow: 0 4px 14px rgba(8,145,178,.4), inset 0 1px 0 rgba(255,255,255,.2); }
-.s5-create-p:hover { background: linear-gradient(135deg, #0369a1, #082f49); box-shadow: 0 6px 18px rgba(8,145,178,.55); transform: translateY(-2px); }
+.s5-create-q { color: #5b21b6; border: 1.5px solid rgba(124,58,237,.3); background: linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%); box-shadow: 0 2px 8px rgba(124,58,237,.15), inset 0 1px 0 rgba(255,255,255,.9); }
+.s5-create-q:hover { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; border-color: transparent; box-shadow: 0 6px 18px rgba(124,58,237,.45); transform: translateY(-2px); }
+.s5-create-p { color: #fff; border: none; background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); box-shadow: 0 4px 14px rgba(124,58,237,.4), inset 0 1px 0 rgba(255,255,255,.2); }
+.s5-create-p:hover { background: linear-gradient(135deg, #6d28d9, #4c1d95); box-shadow: 0 6px 18px rgba(124,58,237,.55); transform: translateY(-2px); }
 
 /* ─── Table card ─── */
 .s5-tbl-card { border: 1.5px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.06); background: #fff; }
 .s5-tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .s5-tbl { width: 100%; min-width: 880px; border-collapse: collapse; }
-.s5-tbl thead tr { background: linear-gradient(90deg, #0f172a 0%, #1e3a5f 55%, #0f172a 100%); box-shadow: 0 2px 8px rgba(0,0,0,.22); }
+.s5-tbl thead tr { background: linear-gradient(90deg, #5b21b6 0%, #7c3aed 55%, #5b21b6 100%); box-shadow: 0 2px 8px rgba(124,58,237,.28); }
 .s5-tbl thead th {
   padding: 11px 14px; text-align: left; white-space: nowrap;
   font-size: 9px; font-weight: 800; color: rgba(255,255,255,.93);
@@ -975,8 +1112,8 @@ const STAGE5_CSS = `
 .s5-tbl tbody td.ta-c { text-align: center; }
 .s5-tbl tbody td.ta-r { text-align: right; }
 .s5-tbl tbody tr:nth-child(even) { background: #f8fafc; }
-.s5-tbl tbody tr:hover { background: #f0f9ff; }
-.s5-row-acting { background: #ecfeff !important; }
+.s5-tbl tbody tr:hover { background: #f5f3ff; }
+.s5-row-acting { background: #ede9fe !important; }
 .s5-empty { text-align: center; padding: 30px 14px; color: #94a3b8; font-style: italic; }
 .s5-muted { color: #64748b; }
 .s5-dash { color: #cbd5e1; font-weight: 700; }
@@ -984,16 +1121,16 @@ const STAGE5_CSS = `
 .s5-sr2 {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border-radius: 7px;
-  background: linear-gradient(135deg, #e0f2fe, #bae6fd); color: #0369a1;
-  font-size: 10px; font-weight: 800; border: 1.5px solid #7dd3fc;
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #6d28d9;
+  font-size: 10px; font-weight: 800; border: 1.5px solid #c4b5fd;
 }
 .s5-qno {
   background: none; border: none; cursor: pointer; padding: 0;
-  color: #0891b2; font-weight: 800; font-family: ui-monospace, monospace; font-size: 11.5px; letter-spacing: .02em;
+  color: #7c3aed; font-weight: 800; font-family: ui-monospace, monospace; font-size: 11.5px; letter-spacing: .02em;
 }
 .s5-qno:hover:not(:disabled) { text-decoration: underline; }
 .s5-qno:disabled { cursor: default; opacity: .8; }
-.s5-cf { background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 1px solid #7dd3fc; border-radius: 6px; padding: 2px 9px; font-size: 10.5px; font-weight: 800; color: #0369a1; font-family: ui-monospace, monospace; }
+.s5-cf { background: linear-gradient(135deg, #f5f3ff, #ede9fe); border: 1px solid #c4b5fd; border-radius: 6px; padding: 2px 9px; font-size: 10.5px; font-weight: 800; color: #6d28d9; font-family: ui-monospace, monospace; }
 .s5-dt2 { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .s5-cur2 { display: inline-flex; padding: 3px 10px; border-radius: 6px; font-size: 10.5px; font-weight: 800; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
 .s5-val2 { font-weight: 800; color: #059669; font-size: 12px; font-family: ui-monospace, monospace; }
@@ -1007,10 +1144,10 @@ const STAGE5_CSS = `
   display: inline-flex; align-items: center; gap: 5px;
   padding: 5px 12px; border-radius: 8px; cursor: pointer; flex-shrink: 0; white-space: nowrap;
   font-family: inherit; font-size: 10px; font-weight: 700;
-  background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; border: none;
-  box-shadow: 0 2px 8px rgba(8,145,178,.3); transition: all .15s;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; border: none;
+  box-shadow: 0 2px 8px rgba(124,58,237,.3); transition: all .15s;
 }
-.s5-convert2:hover:not(:disabled) { background: linear-gradient(135deg, #0369a1, #082f49); box-shadow: 0 4px 12px rgba(8,145,178,.45); transform: translateY(-1px); }
+.s5-convert2:hover:not(:disabled) { background: linear-gradient(135deg, #6d28d9, #4c1d95); box-shadow: 0 4px 12px rgba(124,58,237,.45); transform: translateY(-1px); }
 .s5-convert2:disabled { opacity: .55; cursor: not-allowed; }
 .s5-converted-chip { display: inline-flex; align-items: center; padding: 4px 11px; border-radius: 20px; font-size: 9.5px; font-weight: 800; background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; white-space: nowrap; }
 .s5-icn {
@@ -1031,18 +1168,18 @@ const STAGE5_CSS = `
 /* ─── More Actions menu (portal) ─── */
 .s5-menu {
   position: fixed; z-index: 3000; min-width: 210px;
-  background: #fff; border: 1.5px solid rgba(8,145,178,.2); border-radius: 13px; overflow: hidden;
-  box-shadow: 0 12px 32px rgba(8,145,178,.18), 0 4px 12px rgba(0,0,0,.08);
+  background: #fff; border: 1.5px solid rgba(124,58,237,.2); border-radius: 13px; overflow: hidden;
+  box-shadow: 0 12px 32px rgba(124,58,237,.18), 0 4px 12px rgba(0,0,0,.08);
   animation: smd-fade-in .14s ease-out both;
 }
 .s5-menu-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 13px 7px; border-bottom: 1px solid #f1f5f9; }
-.s5-menu-head-left { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 800; color: #0c4a6e; letter-spacing: .04em; }
-.s5-menu-head-ico { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, #0891b2, #0e7490); display: inline-flex; align-items: center; justify-content: center; }
+.s5-menu-head-left { display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 800; color: #4c1d95; letter-spacing: .04em; }
+.s5-menu-head-ico { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, #7c3aed, #5b21b6); display: inline-flex; align-items: center; justify-content: center; }
 .s5-menu-x { width: 18px; height: 18px; border: none; background: #f1f5f9; border-radius: 4px; cursor: pointer; color: #94a3b8; font-size: 11px; line-height: 1; display: flex; align-items: center; justify-content: center; }
 .s5-menu-x:hover { background: #e2e8f0; }
 .s5-menu-body { padding: 5px 0; }
 .s5-menu-sec { padding: 5px 13px 3px; font-size: 7.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .14em; }
-.s5-menu-sec-dl { color: #0891b2; }
+.s5-menu-sec-dl { color: #6d28d9; }
 .s5-menu-sec-vw { color: #7c3aed; }
 .s5-menu-item {
   display: flex; align-items: center; gap: 9px; width: calc(100% - 10px); margin: 1px 5px;
@@ -1050,11 +1187,11 @@ const STAGE5_CSS = `
   font-family: inherit; font-size: 10.5px; font-weight: 600; color: #0f172a; text-align: left; transition: all .13s;
 }
 .s5-mi-ico { width: 24px; height: 24px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.s5-mi-dl .s5-mi-ico { background: rgba(8,145,178,.1); color: #0891b2; }
+.s5-mi-dl .s5-mi-ico { background: rgba(109,40,217,.1); color: #6d28d9; }
 .s5-mi-vw .s5-mi-ico { background: rgba(124,58,237,.1); color: #7c3aed; }
-.s5-mi-dl:hover { background: rgba(8,145,178,.1); color: #0891b2; padding-left: 16px; }
+.s5-mi-dl:hover { background: rgba(109,40,217,.1); color: #6d28d9; padding-left: 16px; }
 .s5-mi-vw:hover { background: rgba(124,58,237,.1); color: #7c3aed; padding-left: 16px; }
-.s5-menu-div { height: 1px; background: linear-gradient(90deg, rgba(8,145,178,.15), rgba(8,145,178,.05), transparent); margin: 5px 8px; }
+.s5-menu-div { height: 1px; background: linear-gradient(90deg, rgba(124,58,237,.15), rgba(124,58,237,.05), transparent); margin: 5px 8px; }
 
 /* ─── Latest Quoted Price Summary popup (figma) ─── */
 .s5-ps-backdrop { position: fixed; inset: 0; z-index: 2900; background: rgba(8,30,60,.58); backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; padding: 14px; }
@@ -1142,23 +1279,27 @@ const STAGE5_CSS = `
    cyan gradient so it reads as part of the dark panel. */
 [data-bs-theme="dark"] .s5-actionrow {
   background: linear-gradient(110deg, #14102a 0%, #1a1538 45%, #14102a 100%);
-  border-color: rgba(8,145,178,.30);
+  border-color: rgba(124,58,237,.30);
   box-shadow: 0 2px 16px rgba(0,0,0,.30);
 }
 [data-bs-theme="dark"] .s5-actionrow::before { display: none; }
-[data-bs-theme="dark"] .s5-seg { background: rgba(8,145,178,.16); border-color: rgba(165,243,252,.25); box-shadow: none; }
-[data-bs-theme="dark"] .s5-seg-btn { color: #a5f3fc; background: rgba(165,243,252,.08); border-color: rgba(165,243,252,.20); box-shadow: none; }
-[data-bs-theme="dark"] .s5-seg-btn:hover:not(.active) { background: rgba(165,243,252,.16); border-color: rgba(165,243,252,.35); }
-[data-bs-theme="dark"] .s5-seg-btn.active { color: #fff; background: linear-gradient(135deg, #0891b2 0%, #0c4a6e 100%); border: none; }
-[data-bs-theme="dark"] .s5-create-div { background: linear-gradient(180deg, transparent, rgba(165,243,252,.30), transparent); }
-[data-bs-theme="dark"] .s5-create-q { background: #1f1845; color: #a5f3fc; border-color: rgba(165,243,252,.40); box-shadow: none; }
-[data-bs-theme="dark"] .s5-tbl-card { background: #14102a; border-color: rgba(165,243,252,.25); }
+[data-bs-theme="dark"] .s5-seg { background: rgba(124,58,237,.16); border-color: rgba(167,139,250,.25); box-shadow: none; }
+[data-bs-theme="dark"] .s5-seg-btn { color: #c4b5fd; background: rgba(167,139,250,.08); border-color: rgba(167,139,250,.20); box-shadow: none; }
+[data-bs-theme="dark"] .s5-seg-btn:hover:not(.active) { background: rgba(167,139,250,.16); border-color: rgba(167,139,250,.35); }
+[data-bs-theme="dark"] .s5-seg-btn.active { color: #fff; background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); border: none; }
+[data-bs-theme="dark"] .s5-create-div { background: linear-gradient(180deg, transparent, rgba(167,139,250,.30), transparent); }
+[data-bs-theme="dark"] .s5-create-q { background: #1f1845; color: #c4b5fd; border-color: rgba(167,139,250,.40); box-shadow: none; }
+[data-bs-theme="dark"] .s5-tbl-card { background: #14102a; border-color: rgba(167,139,250,.25); }
 [data-bs-theme="dark"] .s5-tbl tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
-[data-bs-theme="dark"] .s5-tbl tbody tr:nth-child(even) { background: rgba(14,116,144,.10); }
-[data-bs-theme="dark"] .s5-tbl tbody tr:hover { background: rgba(14,116,144,.20); }
+[data-bs-theme="dark"] .s5-tbl tbody tr:nth-child(even) { background: rgba(124,58,237,.10); }
+[data-bs-theme="dark"] .s5-tbl tbody tr:hover { background: rgba(124,58,237,.20); }
 [data-bs-theme="dark"] .s5-muted { color: #94a3b8; }
 [data-bs-theme="dark"] .s5-cur2 { background: rgba(148,163,184,.18); color: #cbd5e1; border-color: rgba(148,163,184,.30); }
-[data-bs-theme="dark"] .s5-menu { background: #14102a; border-color: rgba(8,145,178,.35); }
+[data-bs-theme="dark"] .s5-dt2 { background: rgba(59,130,246,.18); color: #93c5fd; border-color: rgba(59,130,246,.35); }
+[data-bs-theme="dark"] .s5-cf { background: rgba(56,189,248,.15); color: #7dd3fc; border-color: rgba(56,189,248,.35); }
+[data-bs-theme="dark"] .s5-st-live { background: rgba(34,197,94,.18); color: #86efac; border-color: rgba(34,197,94,.35); }
+[data-bs-theme="dark"] .s5-converted-chip { background: rgba(139,92,246,.20); color: #c4b5fd; border-color: rgba(139,92,246,.35); }
+[data-bs-theme="dark"] .s5-menu { background: #14102a; border-color: rgba(124,58,237,.35); }
 [data-bs-theme="dark"] .s5-menu-head { border-bottom-color: rgba(167,139,250,.18); }
 [data-bs-theme="dark"] .s5-menu-head-left { color: #a5f3fc; }
 [data-bs-theme="dark"] .s5-menu-item { color: #ede9fe; }

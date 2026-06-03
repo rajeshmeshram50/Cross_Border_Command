@@ -285,7 +285,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
             <div className="smd-stg-head-sub">● Price shared with customer</div>
           </div>
         </div>
-        <span className="smd-stg-head-badge">● ACTIVE</span>
+        <span className="smd-stg-head-badge">ACTIVE</span>
       </div>
 
       <div className="smd-stg-body">

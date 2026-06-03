@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../../api';
+import { encodeOppId, encodeStage } from '../../utils/oppCrypto';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
@@ -500,7 +501,7 @@ export default function SalesLeadWorksheet() {
   // The clicked row travels in router state so the detail page can render
   // the customer header without a second fetch.
   const openMatrixDetail = (l: Lead) => {
-    navigate(`/sales/matrix/${l.oppId}/stage/${l.leadStageId}`, {
+    navigate(`/sales/matrix/${encodeOppId(l.oppId)}/stage/${encodeStage(l.leadStageId)}`, {
       state: {
         row: {
           // Pass the DB id so Stage 1 / Task Manager can hit the API
@@ -537,7 +538,7 @@ export default function SalesLeadWorksheet() {
     if (lead) openMatrixDetail(lead);
     // Outside the current page — fall back to stage 1; the matrix detail
     // page's own fetch will redirect to the saved stage on load.
-    else navigate(`/sales/matrix/${oppId}/stage/1`);
+    else navigate(`/sales/matrix/${encodeOppId(oppId)}/stage/${encodeStage(1)}`);
   };
   const onBulkAssign    = () => {
     // Translate the selection (Set of OPP-#### display codes) into the

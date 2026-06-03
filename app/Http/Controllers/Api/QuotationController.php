@@ -208,6 +208,19 @@ class QuotationController extends Controller
             ], 409);
         }
 
+        // A signed quotation is locked so the signed copy keeps matching what
+        // the customer e-signed.
+        if (\App\Models\ClmSignatureRequest::hasSignedForDoc(
+            $user->client_id,
+            \App\Models\ClmSignatureRequest::DOC_QUOTATION,
+            $row->id,
+        )) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This quotation has already been signed and can no longer be edited. Duplicate it to make changes.',
+            ], 409);
+        }
+
         $data = $this->validatePayload($request);
 
         /* B31: enforce status transition order. Without this any payload
@@ -278,6 +291,15 @@ class QuotationController extends Controller
                 QuotationItem::create($it);
             }
         });
+
+        // Editing the quotation invalidates any e-signature already in flight
+        // or completed, so the row reverts to "Not Sent" and must be sent for
+        // signature again.
+        \App\Models\ClmSignatureRequest::supersedeForDoc(
+            $user->client_id,
+            \App\Models\ClmSignatureRequest::DOC_QUOTATION,
+            $row->id,
+        );
 
         return response()->json(['status' => true, 'data' => $row->fresh(['items'])]);
     }

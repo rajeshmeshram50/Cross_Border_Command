@@ -311,6 +311,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/clm/supplier-profile',                       [ClmSupplierProfileController::class, 'index']);
     Route::post  ('/clm/signature-requests/agreement-preview',   [ClmSignatureController::class, 'agreementPreview']);
     Route::post  ('/clm/signature-requests/agreement-send',      [ClmSignatureController::class, 'agreementSend']);
+    // Sales Matrix Stage 5 — send a Quotation / Proforma Invoice for e-signature.
+    Route::post  ('/clm/signature-requests/sales-doc-send',      [ClmSignatureController::class, 'salesDocSend']);
 
     // Central CLM → Clause Library (two tabs: types + library).
     Route::get   ('/clm/clause-types',      [ClmClauseController::class, 'typesIndex']);
