@@ -34,6 +34,7 @@ interface Props {
   onInsertTable?: () => void;
   onInsertHr?: () => void;
   onInsertPlaceholder?: () => void;
+  onInsertClause?: () => void;
 }
 
 const FONT_SIZES = ['11', '12', '13', '14', '16', '18', '20', '24', '28'];
@@ -42,7 +43,7 @@ const HIGHLIGHT_PRESETS = ['#fde68a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#e9d5ff'
 
 export default function ClmRichTextToolbar({
   editorRef, onChange, onStashSelection,
-  onInsertTable, onInsertHr, onInsertPlaceholder,
+  onInsertTable, onInsertHr, onInsertPlaceholder, onInsertClause,
 }: Props) {
   const [fontSize, setFontSize] = useState('14');
   const [block, setBlock]       = useState('p');
@@ -195,6 +196,16 @@ export default function ClmRichTextToolbar({
           onMouseDown={() => { onStashSelection?.(); }}
           onClick={onInsertPlaceholder}
         >{'{}'}</button>
+      )}
+      {onInsertClause && (
+        <button
+          type="button" className="rtb-btn"
+          title="Clause Library"
+          onMouseDown={() => { onStashSelection?.(); }}
+          onClick={onInsertClause}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
+        </button>
       )}
 
       <span className="rtb-sep" />

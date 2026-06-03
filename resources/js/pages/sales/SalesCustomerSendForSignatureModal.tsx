@@ -15,6 +15,7 @@ import HeaderFooterPanel, {
 import ClmInsertTableModal from '../clm/ClmInsertTableModal';
 import ClmInsertHrModal from '../clm/ClmInsertHrModal';
 import ClmInsertPlaceholderModal from '../clm/ClmInsertPlaceholderModal';
+import ClmClauseInsertPanel from '../clm/ClmClauseInsertPanel';
 import ClmRichTextToolbar from '../clm/ClmRichTextToolbar';
 
 // One-time pdfjs setup — the worker URL is the same for every modal
@@ -248,6 +249,7 @@ export default function SalesCustomerSendForSignatureModal({
   const [tablePickerOpen, setTablePickerOpen]       = useState(false);
   const [hrPickerOpen, setHrPickerOpen]             = useState(false);
   const [placeholderPickerOpen, setPlaceholderPickerOpen] = useState(false);
+  const [clausePickerOpen, setClausePickerOpen] = useState(false);
   const contentEditorRef = useRef<HTMLDivElement | null>(null);
   const contentLastRangeRef = useRef<Range | null>(null);
   const stashContentSelection = () => {
@@ -1438,6 +1440,13 @@ export default function SalesCustomerSendForSignatureModal({
           onClose={() => setPlaceholderPickerOpen(false)}
           onInsert={(token) => { insertIntoBody(token, 'text'); setPlaceholderPickerOpen(false); }}
         />
+
+        {clausePickerOpen && (
+          <ClmClauseInsertPanel
+            onClose={() => setClausePickerOpen(false)}
+            onInsert={(html) => { insertIntoBody(html); setClausePickerOpen(false); }}
+          />
+        )}
       </div>
 
       {/* ── Edit Layout popup — full-screen overlay so the HeaderFooterPanel
@@ -1498,6 +1507,7 @@ export default function SalesCustomerSendForSignatureModal({
                   onInsertTable={() => setTablePickerOpen(true)}
                   onInsertHr={() => setHrPickerOpen(true)}
                   onInsertPlaceholder={() => setPlaceholderPickerOpen(true)}
+                  onInsertClause={() => setClausePickerOpen(true)}
                 />
               </div>
 

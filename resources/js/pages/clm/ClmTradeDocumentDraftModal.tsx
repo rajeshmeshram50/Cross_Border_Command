@@ -8,6 +8,7 @@ import { SimpleNameModal } from './clmCommon';
 import ClmInsertPlaceholderModal from './ClmInsertPlaceholderModal';
 import ClmInsertTableModal from './ClmInsertTableModal';
 import ClmInsertHrModal from './ClmInsertHrModal';
+import ClmClauseInsertPanel from './ClmClauseInsertPanel';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
@@ -108,6 +109,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
    * inserts an unstyled <hr> the dompdf renderer drops to a 1px grey
    * line) with a styled <hr> the user picks colour + height + style for. */
   const [hrPickerOpen, setHrPickerOpen] = useState(false);
+  // Clause Library picker — drops reusable clauses (GET /clm/clause-library) at the caret.
+  const [clausePickerOpen, setClausePickerOpen] = useState(false);
   const lastRangeRef                 = useRef<Range | null>(null);
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
@@ -624,7 +627,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
                       Insert Table
                     </button>
-                    <button type="button" className="tdw-editor-btn">
+                    <button type="button" className="tdw-editor-btn" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={() => setClausePickerOpen(true)}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
                       Clause Library
                     </button>
@@ -789,6 +792,13 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
           onClose={() => setHrPickerOpen(false)}
           onInsert={(html) => { insertHtmlAtCaret(html); setHrPickerOpen(false); }}
         />
+
+        {clausePickerOpen && (
+          <ClmClauseInsertPanel
+            onClose={() => setClausePickerOpen(false)}
+            onInsert={(html) => { insertHtmlAtCaret(html); setClausePickerOpen(false); }}
+          />
+        )}
       </div>
     </div>,
     document.body,
