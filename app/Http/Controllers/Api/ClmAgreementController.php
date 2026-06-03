@@ -533,6 +533,53 @@ class ClmAgreementController extends Controller
         ])->deleteFileAfterSend(true);
     }
 
+    /**
+     * GET /clm/agreement-library/{id}/download-pdf
+     *
+     * Render the sample agreement to a PDF — the row's HTML body wrapped in
+     * the saved page-shell header/footer (logo, name, footer text, page
+     * numbers). Reuses the shared signature-document blade + dompdf so the
+     * output matches the draft preview / what gets sent for signature.
+     */
+    public function downloadPdf(Request $request, $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($id);
+
+        $html = trim((string) $row->content);
+        if ($html === '') $html = '<p><em>No content saved for this agreement yet.</em></p>';
+        $processedHtml = $this->normaliseEditorHtml($html);
+
+        $headerConfig = is_array($row->header_config) ? $row->header_config : [];
+        $footerConfig = is_array($row->footer_config) ? $row->footer_config : [];
+        $client = \App\Models\Client::find($row->client_id);
+
+        // dompdf can't fetch /storage URLs — resolve the header logo to base64.
+        $urlPath = (isset($headerConfig['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerConfig['logo_url'], $m)) ? $m[1] : null;
+        $headerLogoBase64 = '';
+        foreach (array_filter([$headerConfig['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
+            try {
+                if (Storage::disk('public')->exists($path)) { $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path)); break; }
+            } catch (\Throwable $e) { /* try next candidate */ }
+        }
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
+            'document'         => $row,
+            'party'            => null,
+            'modelName'        => '',
+            'processedHtml'    => $processedHtml,
+            'generatedDate'    => now()->format('d/m/Y'),
+            'requestId'        => $row->code ?: 'SAMPLE',
+            'signers'          => [],
+            'client'           => $client,
+            'headerConfig'     => $headerConfig,
+            'footerConfig'     => $footerConfig,
+            'headerLogoBase64' => $headerLogoBase64,
+        ])->setPaper('a4')->setOption('isPhpEnabled', true);
+
+        return $pdf->download(($row->code ?: 'agreement') . '.pdf');
+    }
+
     public function uploadDocx(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
