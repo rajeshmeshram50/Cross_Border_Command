@@ -70,7 +70,6 @@ let totalChanges = 0;
 for (const rel of TARGETS) {
   const p = path.join(ROOT, rel);
   if (!fs.existsSync(p)) {
-    console.log(`skip (missing): ${rel}`);
     continue;
   }
   let src = fs.readFileSync(p, 'utf8');
@@ -85,11 +84,9 @@ for (const rel of TARGETS) {
   if (src !== orig) {
     fs.writeFileSync(p, src);
     totalChanges += counts.length;
-    console.log(`updated: ${rel}`);
     counts.forEach(c => console.log(`         - ${c}`));
   } else {
     console.log(`clean:   ${rel}`);
   }
 }
 
-console.log(`\nDone. ${totalChanges} substitution groups applied across ${TARGETS.length} files.`);

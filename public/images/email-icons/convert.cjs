@@ -23,7 +23,5 @@ const svgs = fs.readdirSync(dir).filter(f => f.endsWith('.svg'));
       .resize(200, 200, { fit: 'inside', withoutEnlargement: false })
       .png()
       .toFile(outPath);
-    console.log('  ✓', file, '→', name + '.png');
   }
-  console.log('Done — converted', svgs.length, 'icons.');
 })();
