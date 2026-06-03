@@ -91,10 +91,52 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
 
   const goStage = (n: number) => setStage(n);
 
+  // Edit mode — hydrate the form from the saved record.
+  useEffect(() => {
+    const dbId = editing?.dbId;
+    if (!dbId) return;
+    let alive = true;
+    api.get(`/clm/ctc-contracts/${dbId}`).then(res => {
+      if (!alive) return;
+      const r = (res.data?.data ?? res.data ?? {}) as Record<string, unknown>;
+      const d = (v: unknown) => (v ? String(v).slice(0, 10) : '');
+      setAgTitle(String(r.title ?? ''));
+      setAgType(String(r.agreement_type ?? ''));
+      setEffDate(d(r.eff_date));
+      setEndDate(d(r.end_date));
+      setDraft(String(r.content ?? ''));
+      if (r.org_name) setOrg({ id: 0, name: String(r.org_name), shortCode: String(r.org_short_code ?? '—'), state: String(r.org_state ?? '—'), country: String(r.org_country ?? 'India'), city: '', grad: ORG_GRADS[0], initials: orgInitials(String(r.org_name)), sub: [r.org_short_code, r.org_state].filter(Boolean).join(' · ') });
+      const cpArr = (Array.isArray(r.counterparties) ? r.counterparties : []) as Record<string, unknown>[];
+      setCps(cpArr.map((c, i) => ({ name: String(c.name ?? ''), initials: orgInitials(String(c.name ?? '')), country: String(c.country ?? ''), phone: String(c.phone ?? ''), email: String(c.email ?? ''), grad: ORG_GRADS[i % ORG_GRADS.length], badge: String(c.badge ?? ''), referred: String(c.referred ?? c.name ?? '') })));
+      if (r.header_config) setHeader({ ...DEFAULT_HEADER, ...(r.header_config as object) } as HeaderConfig);
+      if (r.footer_config) setFooter({ ...DEFAULT_FOOTER, ...(r.footer_config as object) } as FooterConfig);
+    }).catch(() => { if (alive) toast.error('Could not load', 'Failed to open this agreement for editing.'); });
+    return () => { alive = false; };
+  }, [editing?.dbId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const save = () => {
     if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title'); setStage(1); return; }
     toast.success(editing ? 'CTC updated' : 'CTC created', agTitle);
     onSaved();
+  };
+
+  // Persist edits to an existing agreement.
+  const saveEdit = async () => {
+    if (!editing?.dbId) return;
+    if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); return; }
+    try {
+      await api.put(`/clm/ctc-contracts/${editing.dbId}`, {
+        title: agTitle, agreement_type: agType || null,
+        content: draft || null, header_config: header, footer_config: footer,
+        counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred })),
+        eff_date: effDate || null, end_date: endDate || null,
+      });
+      toast.success('Changes saved', agTitle);
+      onSaved();
+    } catch (e) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error('Could not save', msg || 'Please try again.');
+    }
   };
 
   // Persist the agreement + push it into the approval queue (Submit & Send for Approval).
@@ -196,6 +238,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               effDate={effDate} setEffDate={setEffDate} endDate={endDate} setEndDate={setEndDate}
               draft={draft} setDraft={setDraft}
               header={header} setHeader={setHeader} footer={footer} setFooter={setFooter}
+              isEditing={!!editing?.dbId} onUpdate={saveEdit}
               onSubmitForApproval={submitForApproval}
               onNext={() => goStage(2)}
             />
@@ -220,6 +263,7 @@ function Stage1(p: {
   effDate: string; setEffDate: (s: string) => void; endDate: string; setEndDate: (s: string) => void;
   draft: string; setDraft: (s: string) => void;
   header: HeaderConfig; setHeader: (h: HeaderConfig) => void; footer: FooterConfig; setFooter: (f: FooterConfig) => void;
+  isEditing: boolean; onUpdate: () => void;
   onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => void;
   onNext: () => void;
 }) {
@@ -573,6 +617,11 @@ function Stage1(p: {
               <button onClick={midNext} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(79,70,229,.35)' }}>
                 <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>{MID_STEPS[midStep - 1].next}</span>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+              </button>
+            ) : p.isEditing ? (
+              <button onClick={p.onUpdate} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(5,150,105,.4)' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Save Changes</span>
               </button>
             ) : (
               <button onClick={() => setApprovalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}>

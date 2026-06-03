@@ -16,7 +16,7 @@ export type CtcStatus = 'signed' | 'inprogress' | 'rejected';
 export type Approval  = 'approved' | 'pending' | 'rejected';
 
 export type CtcContract = {
-  id: string; title: string; cp: string[]; org: string; stage: number;
+  id: string; dbId?: number; title: string; cp: string[]; org: string; stage: number;
   status: CtcStatus; date: string; type: string; effDate: string; endDate: string;
   createdBy: string; approval: Approval; cpSignedDate: string;
 };
