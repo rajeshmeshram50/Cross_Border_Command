@@ -17,34 +17,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * CLM → Supplier Profile dashboard data.
- *
- *   GET /api/clm/supplier-profile
- *
- * Party-wise supplier lists, grouped by supplier TYPE and by whether the
- * supplier has actually procured into a shipment:
- *   - ws_mat   : Material  suppliers WITH a shipment
- *   - ws_logi  : Logistic  suppliers WITH a shipment
- *   - wos_svc  : Services  suppliers (Tech / Advisory / Risk) — never in the
- *                with-shipment tab
- *   - wos_mat  : Material  suppliers WITHOUT a shipment
- *   - wos_logi : Logistic  suppliers WITHOUT a shipment
- *
- * "With shipment" = the supplier maps to a product that was procured on a
- * lead which has a ShipmentOrder (vendor → VendorProductMapping → product →
- * ProcurementProduct → Procurement.lead → ShipmentOrder).
- *
- * Compliance progress (KYC/DD/TL/TD) is computed from the same source as the
- * Evidence Vault: the segment-rule required-doc union vs what's uploaded in
- * segment_doc_uploads for the vendor. Agreement progress = agreements
- * applicable to the vendor's segment vs completed Zoho Sign requests.
- *
- * Transaction-wise lists (txn_*) enumerate one row per (procurement,
- * supplier) where the supplier's product was procured, split with/without a
- * shipment per the procurement's lead. PO / Supplier Tax Invoice have no
- * source column yet, so they render as '—'.
- */
+
 class ClmSupplierProfileController extends Controller
 {
     private const CATS = ['kyc', 'dd', 'tl', 'td'];

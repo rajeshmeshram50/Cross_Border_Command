@@ -11,18 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Sales Matrix → Stage 3 → Create Procurement.
- *
- * Ported from New_IDIMS_6.0's ProcurementController (only the Stage-3 entry
- * points). Scoped to the user's client_id; assignment to a non-tenant user
- * is rejected up front.
- *
- *  POST   /procurements              create (multipart, with attachments)
- *  GET    /procurements              list (filter by lead_id, status)
- *  GET    /procurements/{id}         show one
- *  GET    /procurements/next-number  preview the next PROC-### code
- */
+
 class ProcurementController extends Controller
 {
     /* ─────────────────────────────────────────────────────────────────

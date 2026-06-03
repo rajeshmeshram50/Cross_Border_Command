@@ -22,24 +22,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
-/**
- * Polymorphic uploads for the segment-rule reference rows.
- *
- * Backs the Stage 2 per-row uploader + the Stage 3 Evidence Vault for
- * Customers / Consignees / Suppliers. The (entity, category, doc_code)
- * tuple is unique — re-uploading replaces the previous file (server
- * cleans the old disk path before swapping).
- *
- *   GET    /api/segment-uploads/{type}/{id}                → list
- *   GET    /api/segment-uploads/{type}/{id}/summary        → KPI counts
- *   POST   /api/segment-uploads/{type}/{id}                → upload/replace
- *   DELETE /api/segment-uploads/{type}/{id}/{uploadId}     → remove
- *
- *   {type} ∈ customer | consignee | supplier
- *
- * Tenant scope: we resolve the parent entity through its own client_id
- * filter so a user can only attach files to records their tenant owns.
- */
+
 class SegmentDocUploadController extends Controller
 {
     /**

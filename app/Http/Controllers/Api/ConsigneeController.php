@@ -15,28 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
-/**
- * Sales Matrix → Consignees.
- *
- * Mirrors CustomerController. The one structural addition is
- * customer_id — every consignee belongs to a customer account
- * (phase A of the Add Consignee modal picks the customer first).
- *
- * Payload contract (POST / PUT):
- *  {
- *    customer_id,
- *    company_name, legal_name, segment, classification, risk_level,
- *    website, status,
- *    primary_address: {
- *       type, address_line, country, state, city, pin,
- *       cp_name, cp_designation, cp_contact, cp_email, cp_whatsapp
- *    },
- *    locations: [ same shape ... ]
- *  }
- *
- *  primary_email mirrors primary_address.cp_email and is unique
- *  within tenant scope (per client_id).
- */
+
 class ConsigneeController extends Controller
 {
     public function index(Request $request): JsonResponse

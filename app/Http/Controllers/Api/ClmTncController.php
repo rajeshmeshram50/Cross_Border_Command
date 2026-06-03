@@ -8,15 +8,10 @@ use App\Models\ClmTncLibrary;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Terms & Conditions master — covers both tabs:
- *
- *   - /clm/tnc/categories  (DC-NNN: International - Proforma Invoice, …)
- *   - /clm/tnc/library     (TNC-NNN: a reusable T&C block tagged to a category)
- */
+
 class ClmTncController extends Controller
 {
-    /* ── CATEGORIES ── */
+ 
 
     public function categoriesIndex(Request $request)
     {

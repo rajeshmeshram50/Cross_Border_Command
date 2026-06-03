@@ -6,19 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use Illuminate\Http\Request;
 
-/**
- * Face-biometric enrolment / revocation for the signed-in user (or, when
- * called by an admin, for another employee in the same tenant).
- *
- * The descriptor itself is a plain JSON array of 128 floats produced by
- * face-api.js in the browser. We never see the raw photo — only the vector.
- *
- * Consent: every enrolment requires an explicit `consent` flag in the body.
- * DPDP Act / GDPR Art. 9 treats biometric data as special-category and
- * storing it without freely-given consent is illegal. `consent_given_at` is
- * stamped on opt-in; revoke wipes the descriptor and stamps
- * `consent_revoked_at` so the audit trail survives.
- */
 class FaceBiometricController extends Controller
 {
     /** Length of the face descriptor face-api.js's recognizer emits. */

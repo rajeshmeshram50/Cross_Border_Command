@@ -10,24 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Customer Stage 2 — Owner KYC API.
- *
- * Endpoints (nested under customer):
- *   GET    /api/customers/{customer}/owners
- *   POST   /api/customers/{customer}/owners
- *   GET    /api/customers/{customer}/owners/{owner}
- *   PUT    /api/customers/{customer}/owners/{owner}
- *   DELETE /api/customers/{customer}/owners/{owner}
- *
- * Each owner row carries three identity-proof file paths (ID, address,
- * photograph). Uploads land on the public disk under
- *   customer_documents/{customer_id}/owner-{owner_slug}-{rand}.{ext}
- *
- * Tenant scope mirrors CustomerDocumentController — the parent
- * customer is resolved through the user's client scope before
- * touching child rows.
- */
+
 class CustomerOwnerController extends Controller
 {
     private const FILE_FIELDS = [

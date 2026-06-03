@@ -20,22 +20,7 @@ use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Shared\Html;
 
-/**
- * HR > Document & Evidence > Document Templates > Generate Document.
- *
- * Phase 1 ships the wizard's end-to-end flow:
- *   - preview a single render for the Step 3 cards (no DB write)
- *   - bulk-generate one row per employee (status=Generated, rendered_html stored)
- *   - show + download (DOCX) of a generated row
- *
- * Phase 2 (later): email delivery + Sent/Viewed/Acknowledged/Signed
- * state transitions, employee-profile integration.
- *
- * Auth piggy-backs on `hr.doc_templates` — anyone who can edit templates
- * can generate from them. We deliberately don't introduce a separate
- * permission module here; generation is an action ON a template, not a
- * standalone resource.
- */
+
 class HrGeneratedDocumentController extends Controller
 {
     private const WITH = [

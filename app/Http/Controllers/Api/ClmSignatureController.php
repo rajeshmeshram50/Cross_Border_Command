@@ -21,19 +21,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 
-/**
- * CLM Trade Document → Send for Signature (Zoho Sign).
- *
- * Backs the "Send for Signature" modal on Sales → Customers. Picks up one
- * or more [[ClmTradeDocLibrary]] drafts, renders each as a PDF with the
- * customer's data merged into the {{customer.*}} placeholders, ships them
- * to Zoho Sign in a single request, then tracks the status + signed PDFs
- * + completion certificate in clm_signature_requests.
- *
- * Mirrors the New_IDIMS_6.0 DocumentController flow but split across:
- *   - [[ZohoSignService]] (token cache + low-level HTTP)
- *   - this controller (validation, PDF generation, persistence)
- */
+
 class ClmSignatureController extends Controller
 {
     public function __construct(private ZohoSignService $zoho)
@@ -55,16 +43,7 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /* ─────────────────────── PREVIEW ─────────────────────── */
-
-    /**
-     * Render a single draft as a PDF with the customer's data merged in.
-     * Used by the frontend modal step 3 to show what's about to be sent
-     * and to let the user position the Signature field. **Does NOT call
-     * Zoho** — the goal is a fast local render so the preview is snappy.
-     *
-     * Body: { trade_doc_id, party_id, model_name? }
-     */
+    
     public function preview(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -104,12 +83,7 @@ class ClmSignatureController extends Controller
         ]);
     }
 
-    /**
-     * Resolve a party row for the given `model_name`. The three party
-     * models share a `forUser($user)` scope (via App\Support\MasterVisibility)
-     * so they all honour the same sub-branch visibility rules — abort with
-     * 404 if the caller's tier can't see the requested id.
-     */
+   
     private function loadParty(string $modelName, int $partyId, $user): Model
     {
         switch ($modelName) {
@@ -120,7 +94,7 @@ class ClmSignatureController extends Controller
         abort(422, "Unsupported model_name: {$modelName}");
     }
 
-    /* ─────────────────────── SEND ─────────────────────── */
+   
 
     public function send(Request $request)
     {
@@ -333,19 +307,7 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /* ─────────────────────── AGREEMENT PREVIEW / SEND ───────────────────────
-     *
-     * Variant of preview/send that operates on `clm_agreement_library`
-     * rows scoped to a Sales Matrix lead instead of `clm_trade_doc_library`
-     * scoped to a single party. The agreement's `party` CSV
-     * (e.g. "Buyer, Consignee") + the lead's customer/consignee FK auto-
-     * compose the signer list, so one Zoho request can carry the buyer
-     * and consignee as parallel signers on the same PDF.
-     *
-     * Frontend hits these from the Lead detail "Segment Details" popup
-     * (LeadAgreementSendModal). Each agreement row gets its own Send,
-     * one Zoho request per agreement.
-     */
+  
 
     public function agreementPreview(Request $request)
     {
@@ -706,15 +668,7 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /**
-     * Decode the agreement's `party` CSV against the lead's customer +
-     * consignee and produce a signer list ready for Zoho. Returns
-     *   [primaryPartyModel, 'Customer'|'Consignee', signersArray]
-     *
-     * Primary party is the buyer when present (customer), else consignee.
-     * Both are added as signers when the CSV calls for them. Supplier-*
-     * tokens are skipped — supplier signing belongs to procure-to-pay.
-     */
+ 
     private function resolveAgreementSigners(ClmAgreementLibrary $agreement, Lead $lead, $user): array
     {
         $partyTokens = collect(explode(',', (string) $agreement->party))
@@ -768,13 +722,7 @@ class ClmSignatureController extends Controller
         return [null, 'Customer', $signers, $allParties];
     }
 
-    /**
-     * Render an agreement-library row as a PDF with placeholders merged
-     * against the primary party. Reuses the trade-doc blade since the
-     * structural shape (title + processed HTML + signer table) is
-     * identical — agreement-specific header/footer styling can be added
-     * later if needed.
-     */
+
     private function renderAgreementPdf(
         ClmAgreementLibrary $agreement,
         Model $party,

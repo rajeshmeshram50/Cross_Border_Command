@@ -18,16 +18,7 @@ use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Shared\Html;
 
-/**
- * HR > Document & Evidence > Document Templates.
- *
- * Pattern follows AnnouncementController / RecruitmentController:
- *   - tenant scoping by (client_id, branch_id) with the usual main/sub
- *     branch hierarchy + BranchSwitcher narrowing
- *   - per-module permission flag check (module slug: hr.doc_templates)
- *   - tenant-isolated auto-numbered code (CAT-ROLE-NNN sequence per
- *     (client, branch, category, role) tuple)
- */
+
 class HrDocumentTemplateController extends Controller
 {
     private const WITH = [

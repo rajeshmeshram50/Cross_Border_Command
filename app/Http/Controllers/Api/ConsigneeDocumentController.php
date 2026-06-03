@@ -9,23 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Consignee Stage 2 — Documents API (Company DD + Trade Licence).
- *
- * Mirrors CustomerDocumentController. Nested under the consignee:
- *   GET    /api/consignees/{consignee}/documents?kind=dd|tl
- *   POST   /api/consignees/{consignee}/documents
- *   GET    /api/consignees/{consignee}/documents/{document}
- *   POST   /api/consignees/{consignee}/documents/{document}   (file replace)
- *   PUT    /api/consignees/{consignee}/documents/{document}   (json-only)
- *   DELETE /api/consignees/{consignee}/documents/{document}
- *
- * Tenant scope is enforced at the parent consignee level, the same
- * way CustomerDocumentController does it.
- *
- * Files land on the public disk under
- *   consignee_documents/{consignee_id}/{slug}-{rand}.{ext}
- */
+
 class ConsigneeDocumentController extends Controller
 {
     public function index(Request $request, $consigneeId): JsonResponse

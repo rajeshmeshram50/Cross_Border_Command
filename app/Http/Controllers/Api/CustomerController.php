@@ -22,27 +22,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/**
- * Sales Matrix → Customers.
- *
- * Full CRUD backed by the `customers` + `customer_addresses` tables.
- * Tenant-scoped: super_admin sees everything, client_* see their
- * client's rows, branch_user/employee see their branch's rows.
- *
- * Payload contract (POST / PUT):
- *  {
- *    company_name, legal_name, type, segment, classification, risk_level,
- *    website, status,
- *    primary_address: {
- *       type, address_line, country, state, city, pin,
- *       cp_name, cp_designation, cp_contact, cp_email, cp_whatsapp
- *    },
- *    locations: [ same shape ... ]   // optional additional rows
- *  }
- *
- *  primary_email on the customer row is mirrored from
- *  primary_address.cp_email and is unique within tenant scope.
- */
+
 class CustomerController extends Controller
 {
     public function index(Request $request): JsonResponse

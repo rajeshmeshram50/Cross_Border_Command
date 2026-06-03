@@ -16,21 +16,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
-/**
- * Document signing workflow runtime. Each row in `hr_document_signatures`
- * is one "send" of a template against one employee. Per-signer state lives
- * in the JSON `signers` column; the audit trail is a JSON array of events
- * appended to the row on every action.
- *
- * Endpoints:
- *   POST   /hr-document-signatures                       send a template into its workflow
- *   GET    /hr-document-signatures                       list (?employee_id, ?status)
- *   GET    /hr-document-signatures/inbox                 my pending signature tasks
- *   GET    /hr-document-signatures/{id}                  one row + audit log + resolved HTML
- *   POST   /hr-document-signatures/{id}/action           current signer signs / approves / acknowledges
- *   POST   /hr-document-signatures/{id}/reject           current signer rejects
- *   POST   /hr-document-signatures/{id}/cancel           sender cancels the run
- */
+
 class HrDocumentSignatureController extends Controller
 {
     private const WITH = [

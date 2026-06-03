@@ -18,9 +18,7 @@ use Illuminate\Validation\Rule;
 
 class LeaveRequestController extends Controller
 {
-    // ─────────────────────────────────────────────────────────────────────
-    // List — employee's own requests (Pending + History)
-    // ─────────────────────────────────────────────────────────────────────
+
     public function index(Request $request)
     {
         $user = $request->user();
