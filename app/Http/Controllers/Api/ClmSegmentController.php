@@ -9,24 +9,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
-/**
- * Central CLM → Segment master CRUD.
- *
- * Tenant-scoped via $user->client_id (mirrors LeadAckReasonController).
- * super_admin without a client_id gets an empty list — the module hides
- * for them at the sidebar level, but the endpoints stay consistent
- * instead of 403'ing.
- *
- * The `code` field follows S-001 / S-002 / … sequence per client. It's
- * allocated inside a row-lock on the parent client row at insert time so
- * two concurrent POSTs don't end up with the same code; the composite
- * UNIQUE (client_id, code) is the second line of defence.
- */
 class ClmSegmentController extends Controller
 {
-    /**
-     * GET /clm/segments
-     */
+   
     public function index(Request $request)
     {
         $user = $request->user();

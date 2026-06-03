@@ -29,33 +29,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
-/**
- * Vendor onboarding wizard — backend.
- *
- *   POST  /api/vendors/step/identity             create or update Stage 1
- *   PUT   /api/vendors/{vendor}/step/contacts    replace primary + extras
- *   PUT   /api/vendors/{vendor}/step/kyc         replace KYC sub-rows
- *   PUT   /api/vendors/{vendor}/step/products    replace product map, activate
- *
- *   GET    /api/vendors                          list (creator-hierarchy)
- *   GET    /api/vendors/{vendor}                 show with all relations
- *   DELETE /api/vendors/{vendor}                 soft delete
- *
- * Stage 3 (Trade Document Management) is intentionally not persisted —
- * those documents are stored elsewhere and the wizard just advances
- * past that tab on Save & Next.
- *
- * All write endpoints share the same conventions:
- *   - Tenant scope via Vendor::forUser($user) before findOrFail
- *   - Hierarchical edit denial via MasterVisibility::hierarchicalDenial
- *   - Per-file 2 MB cap (matches Products) so multipart uploads stay
- *     under PHP's default post_max_size
- *   - "Replace all" semantics on each step save: existing sub-rows are
- *     deleted (with their on-disk files) and the payload is re-inserted
- *     as the new source of truth. The wizard's modal-driven UX
- *     reloads the full collection on open, so partial updates aren't
- *     needed and the implementation stays simple.
- */
 class VendorController extends Controller
 {
     /** Per-file image / document cap in KB — mirrors ProductController. */

@@ -7,17 +7,7 @@ use App\Models\Employee;
 use App\Models\PreviousEmployment;
 use Illuminate\Http\Request;
 
-/**
- * Stage 2 — Previous Employment Companies CRUD.
- *
- *   GET    /api/employees/{employee}/previous-employments       list
- *   POST   /api/employees/{employee}/previous-employments       create
- *   PATCH  /api/previous-employments/{prev}                     update
- *   DELETE /api/previous-employments/{prev}                     soft-delete
- *
- * Tenant scope mirrors EmployeeDocumentController — same-client gates
- * everything for non-super admins.
- */
+
 class PreviousEmploymentController extends Controller
 {
     public function index(Request $request, Employee $employee)

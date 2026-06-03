@@ -18,26 +18,8 @@ use App\Models\ShipmentOrder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-/**
- * CLM → Buyer Profile dashboard data.
- *
- * One read endpoint that powers the whole page:
- *   GET /api/clm/buyer-profile
- *
- * Sections:
- *   - buyers      : every customer (recurring + fresh) with KYC/DD/TL/TD +
- *                   agreement progress, consignee count and shipment count.
- *   - consignees  : every consignee, grouped by its parent customer.
- *   - ws_eq/ws_neq/wos_eq/wos_neq : the transaction matrix, opportunities
- *                   split by with-/without-shipment × buyer=consignee /
- *                   buyer≠consignee.
- *
- * Compliance progress (the d/t pairs) is computed from the SAME source as
- * the Evidence Vault: the segment-rule "required docs" union vs what's
- * actually uploaded in segment_doc_uploads. Agreement progress is the set
- * of agreements applicable to the party / opportunity's segment(s) vs how
- * many have a completed Zoho Sign request.
- */
+
+
 class ClmBuyerProfileController extends Controller
 {
     private const CATS = ['kyc', 'dd', 'tl', 'td'];

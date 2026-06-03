@@ -12,27 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
-/**
- * Sales Matrix → Productivity Tracker backend.
- *
- * Powers the /sales/todo page in the SPA. Two sub-resources live behind
- * the same controller because they share scope + permission logic:
- *
- *   sales_reminders   — personal follow-ups (status: In Progress / Done)
- *   sales_meetings    — virtual + physical customer meetings
- *                       (status: In Progress / Done / Postponed / Cancelled)
- *
- * Access model:
- *   - Default scope is "mine" — rows where created_by_user_id = current user
- *   - Admins (super_admin, client_admin, client_user, main_branch_user) can
- *     pass ?scope=all to see every reminder/meeting in their tenant
- *   - Tenant-isolation is non-negotiable — non-super_admin rows are always
- *     filtered to the caller's client_id at the database layer
- *
- * Meeting codes (M-### for virtual, P-### for physical) are allocated
- * atomically per (client_id, branch_id) inside a DB transaction so two
- * concurrent saves never collide on the same number.
- */
+
 class SalesTodoController extends Controller
 {
     /** Per-attachment cap. Aligns with the existing 20MB cap used by

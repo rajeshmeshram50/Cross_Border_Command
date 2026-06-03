@@ -15,11 +15,7 @@ use Illuminate\Validation\ValidationException;
 
 class RecruitmentController extends Controller
 {
-    /**
-     * Eager-loads used by every read endpoint so the SPA gets nested names
-     * (department.name, designation.name, hiringManager.display_name, …)
-     * without extra round-trips. Mirrors EmployeeController::WITH.
-     */
+    
     private const WITH = [
         'client:id,org_name',
         'branch:id,name,is_main',

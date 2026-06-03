@@ -15,17 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/**
- * Central CLM → Document Control Panel · Segment Rule CRUD.
- *
- * One row per (segment × regulatory tier) configuration with the per-document
- * Mandatory/Optional matrix stored as JSON. See the migration header on
- * clm_segment_rules for the JSON shape.
- *
- * GET /clm/segment-rules/bootstrap returns every master collection the
- * Add-Segment-Rule modal needs in one round-trip so the frontend doesn't
- * have to chain 7 separate calls when opening the modal.
- */
+
 class ClmSegmentRuleController extends Controller
 {
     public function index(Request $request)
