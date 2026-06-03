@@ -471,6 +471,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     'trade-licence': 'tl',
   };
   const persistSegmentRefUpload = async (refKey: string, file: File, docName: string) => {
+    // File-type / size guard at the upload chokepoint — the picker's accept=
+    // hint is bypassable, so reject a .txt / .php / .exe / oversize file
+    // instantly with a clear message before it reaches the server (which
+    // enforces the same mimes rule too).
+    const check = isAcceptedFile(file);
+    if (!check.ok) {
+      toast.error('Unsupported file', check.reason);
+      return;
+    }
     const ownerId = savedDbId || consignee?.db_id || null;
     if (!ownerId) {
       toast.error('Save first', 'Save the consignee before attaching reference documents.');
