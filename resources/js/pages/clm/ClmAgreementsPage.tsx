@@ -232,28 +232,23 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
     return Array.from(byName.values());
   }, [rows, segs]);
 
-  // Download the agreement's content as an .html file (Word opens .html
-  // gracefully) — no extra backend round-trip needed.
-  const onDownload = (r: AgrLib) => {
-    const body = r.content ?? '<p><em>No content saved for this agreement yet.</em></p>';
-    const html =
-      '<!doctype html><html><head><meta charset="utf-8"/>' +
-      `<title>${escapeHtmlForFile(r.title)}</title>` +
-      '<style>body{font-family:Calibri,Arial,sans-serif;color:#0c4a6e;line-height:1.55;max-width:780px;margin:24px auto;padding:0 16px}h1{color:#0c4a6e}h2,h3{margin-top:1.2em}</style>' +
-      '</head><body>' +
-      `<h1>${escapeHtmlForFile(r.title)}</h1>` +
-      `<p style="color:#475569"><strong>Agreement Type:</strong> ${escapeHtmlForFile(r.agreement_type)} &nbsp;·&nbsp; <strong>ID:</strong> ${escapeHtmlForFile(r.code)}</p>` +
-      body +
-      '</body></html>';
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = `${r.code}-${slugForFile(r.title)}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  // Download the sample agreement as a PDF — rendered server-side with the
+  // saved page-shell header/footer (logo, name, footer text, pagination).
+  const onDownload = async (r: AgrLib) => {
+    try {
+      const resp = await api.get(`/clm/agreement-library/${r.id}/download-pdf`, { responseType: 'blob' });
+      const url  = URL.createObjectURL(resp.data as Blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = `${r.code}-${slugForFile(r.title)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      toast.error('Download failed', msg || 'Please try again.');
+    }
   };
 
   return (
@@ -335,7 +330,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           <Tooltip label={r.is_signed ? 'Signed — cannot edit' : `Edit — ${r.title}`}>
                             <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { if (r.is_signed) { setLocked({ mode: 'edit', row: r }); return; } setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                           </Tooltip>
-                          <Tooltip label={`Download ${r.code} as .html`}>
+                          <Tooltip label={`Download ${r.code} as PDF`}>
                             <button className="clm-act clm-act-dl" aria-label="Download" onClick={() => onDownload(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
                           </Tooltip>
                           <Tooltip label={r.is_signed ? 'Signed — cannot delete' : `Delete — ${r.title}`}>
@@ -385,10 +380,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   );
 }
 
-/* Small helpers reused by the Library pane (download). */
-function escapeHtmlForFile(s: string) {
-  return (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+/* Small helper reused by the Library pane (PDF download filename). */
 function slugForFile(s: string) {
   return (s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'agreement';
 }

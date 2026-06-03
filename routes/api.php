@@ -305,8 +305,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/clm/agreement-library',      [ClmAgreementController::class, 'libraryStore']);
     Route::put   ('/clm/agreement-library/{id}', [ClmAgreementController::class, 'libraryUpdate']);
     Route::delete('/clm/agreement-library/{id}', [ClmAgreementController::class, 'libraryDestroy']);
-    Route::get   ('/clm/agreement-library/{id}/download',    [ClmAgreementController::class, 'downloadDocx'])->whereNumber('id');
-    Route::post  ('/clm/agreement-library/{id}/upload-docx', [ClmAgreementController::class, 'uploadDocx'])->whereNumber('id');
+    Route::get   ('/clm/agreement-library/{id}/download',     [ClmAgreementController::class, 'downloadDocx'])->whereNumber('id');
+    Route::get   ('/clm/agreement-library/{id}/download-pdf', [ClmAgreementController::class, 'downloadPdf'])->whereNumber('id');
+    Route::post  ('/clm/agreement-library/{id}/upload-docx',  [ClmAgreementController::class, 'uploadDocx'])->whereNumber('id');
     Route::post  ('/clm/agreement-library/upload-header-logo', [ClmAgreementController::class, 'uploadHeaderLogo']);
 
     /* Case-to-Case (CTC) Contracts — add/drafting form + the three views

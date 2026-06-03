@@ -795,25 +795,7 @@ class VendorController extends Controller
         ];
     }
 
-    /* ──────────────────────────────────────────────────────────────────
-     * GET /vendors/master-bundle
-     *
-     * Bundle every master dropdown the Add Vendor / Edit Vendor modal
-     * needs into ONE response. Replaces 10+ separate round-trips:
-     *   /master/vendor_types, /master/risk_levels, /master/vendor_behaviour,
-     *   /master/segments, /master/compliance_behaviours, /master/countries,
-     *   /master/state_codes (+ state relation), /master/states,
-     *   /master/license_name, /master/gst_percentage.
-     *
-     * The bundle is cached server-side via Cache::remember (5-min TTL,
-     * per-user) — these masters are global lookups that change rarely, so
-     * the cache absorbs the bulk of repeat opens without staleness pain.
-     *
-     * Status filtering is case-insensitive because clm_segments uses
-     * 'active'/'inactive' while master_* tables use 'Active'/'Inactive'.
-     * Column projections match the REAL DB schema (Segments selects
-     * `name` and lets the model accessor surface `title` in JSON).
-     * ────────────────────────────────────────────────────────────── */
+
     public function masterBundle(Request $request): JsonResponse
     {
         $user = $request->user();

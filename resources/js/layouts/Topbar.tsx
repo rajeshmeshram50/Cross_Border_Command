@@ -187,7 +187,7 @@ function NotificationsDropdown({ open, setOpen }: { open: boolean; setOpen: (v: 
         setUnreadCount(c => Math.max(0, c - 1));
       } catch { /* keep going — navigation is more important */ }
     }
-    const url = n.data?.action_url;
+    const url = n.data?.action_url ?? n.data?.url;
     if (url) {
       // Strip any leading scheme + host so the SPA router handles the path.
       const path = url.replace(/^https?:\/\/[^/]+/, '') || '/';
@@ -294,11 +294,20 @@ function NotificationRow({ item, onClick }: { item: InAppNotification; onClick: 
       case 'approved':              return { icon: 'ri-checkbox-circle-line', bg: '#d1fae5', fg: '#065f46', label: 'Approved' };
       case 'rejected':              return { icon: 'ri-close-circle-line',   bg: '#fee2e2', fg: '#b91c1c', label: 'Rejected' };
       case 'cancelled':             return { icon: 'ri-prohibited-line',     bg: '#f3f4f6', fg: '#374151', label: 'Cancelled' };
+      case 'hr_signature_reminder': return { icon: 'ri-quill-pen-line',     bg: '#ede9fe', fg: '#5a3fd1', label: 'Signature' };
       default:                      return { icon: 'ri-notification-3-line', bg: '#eef2f6', fg: '#374151', label: 'Update' };
     }
   })();
-  const summary = item.data?.subject ?? 'New notification';
+  const summary = item.data?.subject
+    ?? item.data?.message
+    ?? (item.data?.template ? `${item.data.action ?? 'Sign'}: ${item.data.template}` : 'New notification');
   const subline = (() => {
+    // Signature reminders carry the doc code + who sent it, not leave dates.
+    if (k === 'hr_signature_reminder') {
+      const code = item.data?.code;
+      const sender = item.data?.sender_name;
+      return [code, sender ? `from ${sender}` : null].filter(Boolean).join(' · ');
+    }
     const days = item.data?.days;
     const from = item.data?.from_date;
     const to = item.data?.to_date;

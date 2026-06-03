@@ -195,6 +195,7 @@ export default function HeaderFooterPanel({
           children, free drag. Title + subtitle are inline-editable. */}
       <div
         ref={headerRef}
+        className="tpl-page-header"
         onClick={(e) => {
           // Only open the settings popover when the click landed on the
           // empty header backdrop — not on the title/subtitle (which is
@@ -313,6 +314,7 @@ export default function HeaderFooterPanel({
           in the cell matching footer.page_number_align. Both can land in the
           same cell and render side-by-side. */}
       <div
+        className="tpl-page-footer"
         onClick={() => !readOnly && setOpenZone(openZone === 'footer' ? null : 'footer')}
         title={readOnly ? '' : 'Click to edit footer'}
         style={{
@@ -738,16 +740,38 @@ function HfpDarkStyles() {
       [data-bs-theme="dark"] .tpl-page-shell .tpl-page-body {
         background: var(--vz-secondary-bg) !important;
       }
-      /* Read-only DOCUMENT preview (Inbox sign/view, vault) must stay a light
-         "paper" surface in dark mode — content_html carries author-defined
-         (usually dark) text, so a dark body made the document unreadable. Only
-         the read-only preview (has .tpl-readonly-preview) is forced light; the
-         live template EDITOR keeps its dark body. */
+      /* Read-only DOCUMENT preview (Inbox sign/view, vault) — DARK "paper" in
+         dark mode (user preference). The whole page (shell + header + body +
+         footer) goes dark and ALL preview text is forced light so author-
+         defined dark colours in content_html don't vanish on the dark surface.
+         Scoped to :has(.tpl-readonly-preview) so the live template EDITOR is
+         unaffected. NOTE: the generated DOCX/PDF is still white — this is a
+         dark-mode viewing surface only, not the printed output. */
       [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview),
-      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-body {
-        background: #ffffff !important;
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-body,
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header,
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer {
+        background: #1b2230 !important;
       }
-      [data-bs-theme="dark"] .tpl-readonly-preview { color: #1f2937 !important; }
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) {
+        border-color: rgba(255,255,255,0.12) !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header {
+        border-bottom-color: rgba(255,255,255,0.10) !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer {
+        border-top-color: rgba(255,255,255,0.10) !important;
+      }
+      /* Force every preview text node (content + header title/subtitle +
+         footer) light so nothing stays dark-on-dark. */
+      [data-bs-theme="dark"] .tpl-readonly-preview,
+      [data-bs-theme="dark"] .tpl-readonly-preview *,
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header,
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-header *,
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer,
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer * {
+        color: #e5e7eb !important;
+      }
 
       /* Popover (Header Settings / Footer Settings). Inline popoverStyle
          hard-codes background: '#fafaff' so we have to use !important.
