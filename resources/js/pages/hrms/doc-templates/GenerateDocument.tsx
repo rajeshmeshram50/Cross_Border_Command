@@ -3,6 +3,7 @@ import { Card, CardBody, Input } from 'reactstrap';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
+import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 
 /**
  * Generate Document — 3-step wizard launched from a template row.
@@ -454,6 +455,13 @@ function Step1(props: {
     });
   }, [props.employees, search]);
 
+  // 5-per-page pagination over the (search-filtered) employee list.
+  const PER_PAGE = 5;
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+
   const allChecked = filtered.length > 0 && filtered.every(e => props.selectedIds.has(e.id));
   const toggleAll = () => {
     const next = new Set(props.selectedIds);
@@ -479,31 +487,33 @@ function Step1(props: {
       <div style={{ position: 'relative', marginBottom: 12, maxWidth: 360 }}>
         <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
         <Input type="text" placeholder="Search by name, code, email…" value={search}
-          onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 32, height: 36 }} className="gd-search" />
+          onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ paddingLeft: 32, height: 36 }} className="gd-search" />
       </div>
 
       <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }} className="gd-table-wrap">
-        <div style={{ background: '#f5f3ff', padding: '10px 14px', display: 'grid', gridTemplateColumns: '32px 1fr 140px 160px 160px', gap: 12, fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase' }} className="gd-table-head">
+        <div style={{ background: '#f5f3ff', padding: '10px 14px', display: 'grid', gridTemplateColumns: '56px 32px 1fr 140px 160px 160px', gap: 12, fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase' }} className="gd-table-head">
+          <div>Sr No</div>
           <input type="checkbox" checked={allChecked} onChange={toggleAll} style={{ cursor: 'pointer' }} />
           <div>Employee</div>
           <div>Code</div>
           <div>Department</div>
           <div>Designation</div>
         </div>
-        <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+        <div>
           {filtered.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
               <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
               No employees match.
             </div>
-          ) : filtered.map((e, i) => {
+          ) : pageRows.map((e, i) => {
             const checked = props.selectedIds.has(e.id);
             const name = `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim() || `Employee #${e.id}`;
             return (
               <label key={e.id} className="gd-row"
-                style={{ display: 'grid', gridTemplateColumns: '32px 1fr 140px 160px 160px', gap: 12, padding: '10px 14px',
+                style={{ display: 'grid', gridTemplateColumns: '56px 32px 1fr 140px 160px 160px', gap: 12, padding: '10px 14px',
                   borderTop: i === 0 ? 'none' : '1px solid #f1f5f9',
                   background: checked ? '#eef2ff' : '#fff', alignItems: 'center', cursor: 'pointer' }}>
+                <div className="gd-row-cell" style={{ fontSize: 12.5, fontWeight: 700, color: '#6b7280' }}>{(safePage - 1) * PER_PAGE + i + 1}</div>
                 <input type="checkbox" checked={checked} onChange={() => toggleOne(e.id)} style={{ cursor: 'pointer' }} />
                 <div>
                   <div style={{ fontWeight: 700, color: '#1f2937' }} className="gd-row-name">{name}</div>
@@ -516,6 +526,28 @@ function Step1(props: {
             );
           })}
         </div>
+        {filtered.length > PER_PAGE && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderTop: '1px solid #f1f5f9', background: '#fafafa' }} className="gd-pagination">
+            <span style={{ fontSize: 12, color: '#6b7280' }}>
+              {(safePage - 1) * PER_PAGE + 1}–{Math.min(safePage * PER_PAGE, filtered.length)} of {filtered.length}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}
+                aria-label="Previous page"
+                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', cursor: safePage <= 1 ? 'not-allowed' : 'pointer', opacity: safePage <= 1 ? 0.5 : 1 }}>
+                <i className="ri-arrow-left-s-line" />
+              </button>
+              <span style={{ minWidth: 44, textAlign: 'center', fontSize: 12.5, fontWeight: 700, color: '#4338ca' }}>
+                {safePage} / {totalPages}
+              </span>
+              <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}
+                aria-label="Next page"
+                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', cursor: safePage >= totalPages ? 'not-allowed' : 'pointer', opacity: safePage >= totalPages ? 0.5 : 1 }}>
+                <i className="ri-arrow-right-s-line" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -575,10 +607,16 @@ function Step2(props: {
                 {customFields.map(cf => (
                   <div key={cf.id} className="col-md-6">
                     <label style={fieldLabel}>{cf.name}</label>
-                    <input type={inputTypeFor(cf.type)}
-                      onChange={e => applyToAll(cf.name, e.target.value)}
-                      placeholder={cf.description || `Sets {{${cf.name}}} for all selected`}
-                      style={inputStyle} className="gd-input" />
+                    {cf.type === 'date' ? (
+                      <MasterDatePicker
+                        onChange={v => applyToAll(cf.name, v)}
+                        placeholder={cf.description || `Sets {{${cf.name}}} for all`} />
+                    ) : (
+                      <input type={inputTypeFor(cf.type)}
+                        onChange={e => applyToAll(cf.name, e.target.value)}
+                        placeholder={cf.description || `Sets {{${cf.name}}} for all selected`}
+                        style={inputStyle} className="gd-input" />
+                    )}
                   </div>
                 ))}
               </div>
@@ -604,6 +642,10 @@ function Step2(props: {
                       {cf.type === 'textarea' ? (
                         <textarea value={values[cf.name] || ''} onChange={e => setVal(emp.id, cf.name, e.target.value)}
                           rows={2} placeholder={cf.description || ''} style={{ ...inputStyle, resize: 'vertical' }} className="gd-input" />
+                      ) : cf.type === 'date' ? (
+                        <MasterDatePicker value={values[cf.name] || ''}
+                          onChange={v => setVal(emp.id, cf.name, v)}
+                          placeholder={cf.description || 'Select date'} />
                       ) : (
                         <input type={inputTypeFor(cf.type)} value={values[cf.name] || ''}
                           onChange={e => setVal(emp.id, cf.name, e.target.value)}
@@ -988,13 +1030,17 @@ function ScopedStyles() {
       [data-layout-mode="dark"] .gd-page .gd-preview-stage {
         background: #0f172a !important;
       }
+      /* Document preview stays a light "paper" surface in dark mode — the
+         rendered content_html carries author-defined (usually dark) text, so
+         a dark paper made the document unreadable. Keep it white + dark text,
+         like a real printed page / PDF preview. */
       [data-bs-theme="dark"] .gd-page .gd-preview-paper,
       [data-layout-mode="dark"] .gd-page .gd-preview-paper {
-        background: #1f2937 !important;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04);
+        background: #ffffff !important;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.06);
       }
       [data-bs-theme="dark"] .gd-page .gd-preview-body,
-      [data-layout-mode="dark"] .gd-page .gd-preview-body { color: #e5e7eb !important; }
+      [data-layout-mode="dark"] .gd-page .gd-preview-body { color: #1f2937 !important; }
       [data-bs-theme="dark"] .gd-page .gd-preview-body h1,
       [data-bs-theme="dark"] .gd-page .gd-preview-body h2,
       [data-bs-theme="dark"] .gd-page .gd-preview-body h3,
@@ -1002,9 +1048,9 @@ function ScopedStyles() {
       [data-layout-mode="dark"] .gd-page .gd-preview-body h1,
       [data-layout-mode="dark"] .gd-page .gd-preview-body h2,
       [data-layout-mode="dark"] .gd-page .gd-preview-body h3,
-      [data-layout-mode="dark"] .gd-page .gd-preview-body strong { color: #f8fafc !important; }
+      [data-layout-mode="dark"] .gd-page .gd-preview-body strong { color: #111827 !important; }
       [data-bs-theme="dark"] .gd-page .gd-preview-body hr,
-      [data-layout-mode="dark"] .gd-page .gd-preview-body hr { border-top-color: rgba(255,255,255,0.12) !important; }
+      [data-layout-mode="dark"] .gd-page .gd-preview-body hr { border-top-color: #e5e7eb !important; }
       [data-bs-theme="dark"] .gd-page .gd-unfilled,
       [data-layout-mode="dark"] .gd-page .gd-unfilled {
         background: rgba(245, 158, 11, 0.18) !important;

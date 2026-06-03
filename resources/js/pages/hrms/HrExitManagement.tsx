@@ -1837,8 +1837,8 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                                         name: s.name || s.role_name || `Signer ${i + 1}`,
                                         role: s.role_name,
                                         action: s.action,
-                                        status: s.status === 'Done' ? 'Completed' : s.status === 'Rejected' ? 'Rejected' : run.status === 'Completed' ? 'Completed' : (i === run.current_index ? 'Awaiting' : 'Pending'),
-                                        active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
+                                        status: s.status === 'Done' ? 'Completed' : s.status === 'Rejected' ? 'Rejected' : run.status === 'Completed' ? 'Completed' : (String((run as any).template?.signing_mode || '').toLowerCase() === 'parallel' || i === run.current_index) ? 'Awaiting' : 'Pending',
+                                        active: (String((run as any).template?.signing_mode || '').toLowerCase() === 'parallel' ? (s.status !== 'Done' && s.status !== 'Rejected') : i === run.current_index) && (run.status === 'Pending' || run.status === 'In Progress'),
                                       }))
                                       : signers.map((s, i) => ({
                                         name: s.role_name || s.designation_name || `Signer ${i + 1}`,

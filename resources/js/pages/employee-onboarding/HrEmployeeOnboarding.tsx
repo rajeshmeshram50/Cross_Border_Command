@@ -2013,7 +2013,8 @@ export function VaultModal({
                     </div>
                     <span
                       className="d-inline-flex align-items-center"
-                      style={{ padding: '4px 12px', borderRadius: 999, background: '#f5f0ff', color: '#5a3fd1', fontSize: 11.5, fontWeight: 600 }}
+                      className="vault-doc-count d-inline-flex align-items-center"
+                      style={{ padding: '4px 12px', borderRadius: 999, fontSize: 11.5, fontWeight: 600 }}
                     >
                       {section.docs.length} docs
                     </span>
@@ -2033,13 +2034,13 @@ export function VaultModal({
                           </div>
                           {doc.category && (
                             <span
-                              className="d-inline-flex align-items-center"
+                              className="d-inline-flex align-items-center vault-cat-badge"
                               style={{ padding: '4px 10px', borderRadius: 999, background: '#eef2f6', color: '#475569', fontSize: 11, fontWeight: 600 }}
                             >
                               {doc.category}
                             </span>
                           )}
-                          <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
+                          <span className={`badge rounded-pill vault-status-badge bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                             {doc.status}
                           </span>
                           <a
@@ -2243,11 +2244,11 @@ export function VaultModal({
                           <div style={{ position: 'relative' }}>
                             <button type="button" onClick={() => setOpenMenuId(openMenuId === tpl.id ? null : tpl.id)}
                               data-tooltip="More actions" data-tooltip-pos="left" aria-label="More actions"
-                              style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer' }}>
+                              style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-card-bg, #fff)', color: 'var(--vz-secondary-color, #6b7280)', cursor: 'pointer' }}>
                               <i className="ri-more-2-fill" />
                             </button>
                             {openMenuId === tpl.id && (
-                              <div style={{ position: 'absolute', right: 0, top: '110%', minWidth: 180, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 8px 22px rgba(0,0,0,0.08)', padding: 4, zIndex: 20 }}>
+                              <div style={{ position: 'absolute', right: 0, top: '110%', minWidth: 180, background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 10, boxShadow: '0 8px 22px rgba(0,0,0,0.18)', padding: 4, zIndex: 20 }}>
                                 {run ? (
                                   <button type="button" onClick={() => openAudit(run)}
                                     style={menuItemStyle}>
@@ -2305,8 +2306,13 @@ export function VaultModal({
                                           // (fixes the last signer staying on "Awaiting" after the
                                           // final signature flips the run to Completed).
                                           : run.status === 'Completed' ? 'Completed'
-                                          : (i === run.current_index ? 'Awaiting' : 'Pending'),
-                                    active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
+                                          // Parallel mode → EVERY unsigned signer can act now, so all
+                                          // read "Awaiting" (not just current_index).
+                                          : (String((run as any).template?.signing_mode || '').toLowerCase() === 'parallel' || i === run.current_index) ? 'Awaiting' : 'Pending',
+                                    active: (String((run as any).template?.signing_mode || '').toLowerCase() === 'parallel'
+                                              ? (s.status !== 'Done' && s.status !== 'Rejected')
+                                              : i === run.current_index)
+                                            && (run.status === 'Pending' || run.status === 'In Progress'),
                                   }))
                                 : tplSigners.map((s, i) => ({
                                     name:   s.role_name || s.designation_name || `Signer ${i + 1}`,
@@ -2370,7 +2376,7 @@ export function VaultModal({
             </div>
           </div>
 
-          <div style={{ padding: 16, background: '#f9fafb', maxHeight: '70vh', overflowY: 'auto' }}>
+          <div style={{ padding: 16, background: 'var(--vz-secondary-bg, #f9fafb)', maxHeight: '70vh', overflowY: 'auto' }}>
             {previewLoading ? (
               <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>
                 <i className="ri-loader-4-line" style={{ fontSize: 26, display: 'block', marginBottom: 8 }} />
@@ -2407,10 +2413,10 @@ export function VaultModal({
             )}
           </div>
 
-          <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', background: '#fff', display: 'flex', justifyContent: 'flex-end', gap: 8, borderRadius: '0 0 6px 6px' }}>
+          <div style={{ padding: 12, borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-card-bg, #fff)', display: 'flex', justifyContent: 'flex-end', gap: 8, borderRadius: '0 0 6px 6px' }}>
             <button type="button" onClick={() => setPreviewOpen(false)}
               className="tpl-prev-btn tpl-prev-btn--ghost"
-              style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+              style={{ padding: '7px 14px', background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #d1d5db)', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'var(--vz-body-color, #374151)', cursor: 'pointer' }}>
               Close
             </button>
             {previewTpl && previewTpl.status === 'Active' && (
@@ -2756,7 +2762,7 @@ export function VaultModal({
                   <strong style={{ fontSize: 15 }}><i className="ri-quill-pen-line me-2" />{current?.action}</strong>
                   <div style={{ fontSize: 11.5, opacity: 0.85 }}>{actionRun.template?.name} · {actionRun.code}</div>
                 </div>
-                <div style={{ padding: 16, maxHeight: '65vh', overflowY: 'auto', background: '#f9fafb' }}>
+                <div style={{ padding: 16, maxHeight: '65vh', overflowY: 'auto', background: 'var(--vz-secondary-bg, #f9fafb)' }}>
                   {/* Render the locked document for context */}
                   <HeaderFooterPanel
                     header={{ ...DEFAULT_HEADER, ...(actionRun.header_config || {}) } as HeaderConfig}
@@ -2772,7 +2778,7 @@ export function VaultModal({
                   </HeaderFooterPanel>
 
                   {/* Action inputs */}
-                  <div style={{ marginTop: 14, padding: 14, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10 }}>
+                  <div style={{ marginTop: 14, padding: 14, background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 10 }}>
                     {isSign && (
                       <>
                         <label style={{ fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
@@ -2802,7 +2808,7 @@ export function VaultModal({
                     </div>
                   </div>
                 </div>
-                <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, background: '#fff', flexWrap: 'wrap' }}>
+                <div style={{ padding: 12, borderTop: '1px solid var(--vz-border-color, #e5e7eb)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, background: 'var(--vz-card-bg, #fff)', flexWrap: 'wrap' }}>
                   {/* Reject — sits on the left, separated from the positive
                       action. Enabled only once a reason has been entered. */}
                   <button type="button" onClick={submitReject}
@@ -2871,7 +2877,9 @@ function SendWorkflowPreview({ templateId }: { templateId: number | null }) {
 const menuItemStyle: React.CSSProperties = {
   display: 'block', width: '100%', textAlign: 'left',
   padding: '8px 12px', border: 0, background: 'transparent', borderRadius: 6,
-  fontSize: 13, color: '#374151', cursor: 'pointer',
+  // Theme-adaptive so the dropdown text reads on both the light and the dark
+  // (var(--vz-card-bg)) popover surface.
+  fontSize: 13, color: 'var(--vz-body-color, #374151)', cursor: 'pointer',
 };
 
 // ── Checklist modal ──────────────────────────────────────────────────────────

@@ -738,6 +738,16 @@ function HfpDarkStyles() {
       [data-bs-theme="dark"] .tpl-page-shell .tpl-page-body {
         background: var(--vz-secondary-bg) !important;
       }
+      /* Read-only DOCUMENT preview (Inbox sign/view, vault) must stay a light
+         "paper" surface in dark mode — content_html carries author-defined
+         (usually dark) text, so a dark body made the document unreadable. Only
+         the read-only preview (has .tpl-readonly-preview) is forced light; the
+         live template EDITOR keeps its dark body. */
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview),
+      [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-body {
+        background: #ffffff !important;
+      }
+      [data-bs-theme="dark"] .tpl-readonly-preview { color: #1f2937 !important; }
 
       /* Popover (Header Settings / Footer Settings). Inline popoverStyle
          hard-codes background: '#fafaff' so we have to use !important.

@@ -436,6 +436,23 @@
         .vault-action-view:hover { color: #5a3fd1; border-color: #c4b5fd; }
         .vault-action-download { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border: none; box-shadow: 0 4px 10px rgba(124,92,252,0.25); }
 
+        /* Document row badges in dark mode. Bootstrap's *-subtle status tokens
+           render as muddy low-contrast chips on the dark vault surface, and the
+           category badge is an inline light-grey pill. Pin clearer violet/tinted
+           pills with bright readable text. */
+        [data-bs-theme="dark"] .vault-cat-badge { background: rgba(255,255,255,0.08) !important; color: #cbd5e1 !important; }
+        [data-bs-theme="dark"] .vault-status-badge.bg-success-subtle   { background: rgba(16,185,129,0.22) !important;  color: #4ade80 !important; }
+        [data-bs-theme="dark"] .vault-status-badge.bg-info-subtle      { background: rgba(56,189,248,0.22) !important;  color: #7dd3fc !important; }
+        [data-bs-theme="dark"] .vault-status-badge.bg-warning-subtle   { background: rgba(245,158,11,0.22) !important;  color: #fcd34d !important; }
+        [data-bs-theme="dark"] .vault-status-badge.bg-danger-subtle    { background: rgba(239,68,68,0.22) !important;   color: #fca5a5 !important; }
+        [data-bs-theme="dark"] .vault-status-badge.bg-primary-subtle   { background: rgba(99,102,241,0.22) !important;  color: #a5b4fc !important; }
+        [data-bs-theme="dark"] .vault-status-badge.bg-secondary-subtle { background: rgba(148,163,184,0.18) !important; color: #cbd5e1 !important; }
+        /* "View" action was a hard white pill — looked like a bright sticker on
+           the dark vault. Recolour to the dark surface + light text. (Download
+           keeps its violet gradient — already fine in dark.) */
+        [data-bs-theme="dark"] .vault-action-view { background: #1c2531 !important; color: #cbd5e1 !important; border-color: rgba(255,255,255,0.12) !important; }
+        [data-bs-theme="dark"] .vault-action-view:hover { color: #c4b5fd !important; border-color: #6d5bd0 !important; }
+
         /* ─── Organizational tab — match-context strip, doc-count pill,
              loading + empty states. Tied to theme vars so dark mode picks
              up the correct surfaces instead of flashing the light hex

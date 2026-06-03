@@ -20,7 +20,7 @@ use Illuminate\Validation\Rule;
 class HrDocumentSignatureController extends Controller
 {
     private const WITH = [
-        'template:id,code,name,doc_type',
+        'template:id,code,name,doc_type,signing_mode',
         'employee:id,first_name,last_name,display_name,emp_code,department_id,designation_id,reporting_manager_id,reporting_manager_user_id,user_id',
         'employee.department:id,name',
         'employee.designation:id,name,level',
@@ -29,6 +29,16 @@ class HrDocumentSignatureController extends Controller
 
     private const STATUSES = ['Pending', 'In Progress', 'Completed', 'Rejected', 'Cancelled'];
     private const ACTIONS  = ['Sign', 'Approve', 'Review & Acknowledge'];
+
+    /** Parallel signing = every configured signer can act at the SAME time
+     *  (the document lands in ALL their inboxes at once, not one-by-one).
+     *  Sequential = strictly in order via current_index. Derived from the
+     *  source template's signing_mode (so an in-flight run honours the mode
+     *  the template was sent under). */
+    private function isParallel($row): bool
+    {
+        return strtolower((string) ($row->template?->signing_mode ?? 'sequential')) === 'parallel';
+    }
 
     /* ───── LIST / INBOX / SHOW ───── */
 
@@ -60,6 +70,18 @@ class HrDocumentSignatureController extends Controller
         // Filter in PHP since signer matching is JSON-shape-specific.
         $rows = $q->orderByDesc('id')->get()->filter(function ($row) use ($user) {
             $signers = is_array($row->signers) ? $row->signers : [];
+            if ($this->isParallel($row)) {
+                // Parallel: the doc is in EVERY not-yet-acted signer's inbox at
+                // once — show it if THIS user is any pending signer.
+                foreach ($signers as $s) {
+                    if ((int) ($s['user_id'] ?? 0) === (int) $user->id
+                        && !in_array($s['status'] ?? 'Pending', ['Done', 'Rejected', 'Skipped'], true)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            // Sequential: only the current_index signer's turn.
             $idx     = (int) $row->current_index;
             $current = $signers[$idx] ?? null;
             if (!$current) return false;
@@ -179,13 +201,32 @@ class HrDocumentSignatureController extends Controller
         return DB::transaction(function () use ($request, $data, $id) {
             $user = $request->user();
             $row  = $this->loadForAction($request, (int) $id);
-            $idx  = (int) $row->current_index;
             $signers = $row->signers;
+            $parallel = $this->isParallel($row);
+
+            if ($parallel) {
+                // Parallel: act on THIS user's own pending signer slot, wherever
+                // it sits in the list (not gated by current_index).
+                $idx = null;
+                foreach ($signers as $i => $s) {
+                    if ((int) ($s['user_id'] ?? 0) === (int) $user->id
+                        && !in_array($s['status'] ?? 'Pending', ['Done', 'Rejected', 'Skipped'], true)) {
+                        $idx = $i;
+                        break;
+                    }
+                }
+                if ($idx === null) abort(403, "You're not a pending signer on this document.");
+            } else {
+                // Sequential: only the current_index signer may act.
+                $idx = (int) $row->current_index;
+                $cur = $signers[$idx] ?? null;
+                if (!$cur) abort(404, 'No pending signer on this document.');
+                if ((int) ($cur['user_id'] ?? 0) !== (int) $user->id) {
+                    abort(403, "You're not the current signer on this document.");
+                }
+            }
             $current = $signers[$idx] ?? null;
             if (!$current) abort(404, 'No pending signer on this document.');
-            if ((int) ($current['user_id'] ?? 0) !== (int) $user->id) {
-                abort(403, "You're not the current signer on this document.");
-            }
 
             // For Sign rows we require a typed name (always logged in the
             // audit trail) and fill the {{SignerNSign}} token. The signer
@@ -225,13 +266,26 @@ class HrDocumentSignatureController extends Controller
             $signers[$idx] = $current;
             $row->signers = $signers;
 
-            // Advance to the next signer; if none left, the workflow is done.
-            $next = $idx + 1;
-            if ($next >= count($signers)) {
-                $row->status = 'Completed';
+            if ($parallel) {
+                // Parallel: the run is done only when EVERY signer has acted;
+                // until then it stays In Progress and any remaining signer can
+                // still sign from their own inbox. current_index just points at
+                // the first still-pending slot (cosmetic / reminder target).
+                $allActed = collect($signers)->every(
+                    fn ($s) => in_array($s['status'] ?? '', ['Done', 'Skipped'], true)
+                );
+                $firstPending = collect($signers)->search(fn ($s) => ($s['status'] ?? '') === 'Pending');
+                $row->current_index = $firstPending === false ? count($signers) : (int) $firstPending;
+                $row->status = $allActed ? 'Completed' : 'In Progress';
             } else {
-                $row->current_index = $next;
-                $row->status = 'In Progress';
+                // Sequential: advance to the next signer; done when none left.
+                $next = $idx + 1;
+                if ($next >= count($signers)) {
+                    $row->status = 'Completed';
+                } else {
+                    $row->current_index = $next;
+                    $row->status = 'In Progress';
+                }
             }
 
             $signSuffix = '';
