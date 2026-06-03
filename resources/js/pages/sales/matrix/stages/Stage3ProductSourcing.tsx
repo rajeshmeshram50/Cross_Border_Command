@@ -305,7 +305,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
             </svg>
           </div>
           <div>
-            <div className="smd-stg-head-title">Stage 3: Product Sourcing</div>
+            <div className="smd-stg-head-title">{embedded ? 'Product Sourcing' : 'Stage 3: Product Sourcing'}</div>
             <div className="smd-stg-head-sub"><span className="smd-stg-head-dot" />Product and vendor sourcing in progress</div>
           </div>
         </div>

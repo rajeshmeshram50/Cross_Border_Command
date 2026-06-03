@@ -281,7 +281,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
             </svg>
           </div>
           <div>
-            <div className="smd-stg-head-title">Stage 4: Price Shared</div>
+            <div className="smd-stg-head-title">{embedded ? 'Price Shared' : 'Stage 4: Price Shared'}</div>
             <div className="smd-stg-head-sub">● Price shared with customer</div>
           </div>
         </div>

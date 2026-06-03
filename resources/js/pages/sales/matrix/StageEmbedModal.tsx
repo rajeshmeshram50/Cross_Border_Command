@@ -72,6 +72,9 @@ const SEM_CSS = `
 /* The embedded stage renders smd-stg-head (auto) + smd-stg-body (flex:1,
    scrolls). Make sure the body fills + scrolls within the panel height. */
 .sem-panel > .smd-stg-body { flex: 1; min-height: 0; }
+/* Reserve room on the right of the stage header so its "ACTIVE" badge
+   doesn't collide with the modal's close button. */
+.sem-panel > .smd-stg-head { padding-right: 52px; }
 .sem-close {
   position: absolute; top: 11px; right: 12px; z-index: 5;
   width: 30px; height: 30px; border-radius: 8px;
