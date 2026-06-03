@@ -1,0 +1,440 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useToast } from '../../contexts/ToastContext';
+import type { CtcContract } from './clmOpsData';
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Case to Case Contracts → full-screen "Create / Edit CTC Agreement" form.
+ *
+ * Faithful violet-themed port of `_ctcFormHTML` from the prototype: a 4-stage
+ * flow (Agreement Drafting → Internal Review → Counterparty Signing → Final
+ * Repository) driven by a stage stepper. Stage 1 is the three-panel
+ * workspace (Counterparty Details · Draft Workspace · Summary). Stages 2–4
+ * render the styled review / signing / repository panels.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+const ORGS = [
+  { name: 'IGC - Aurentic',   sub: 'Aurentic · Group Entity',   initials: 'AU', grad: '#7C3AED,#4C1D95', industry: 'Financial Services', entityType: 'Group Holding',   jurisdiction: 'UAE · ADGM' },
+  { name: 'IGC - Healthcare', sub: 'Healthcare · Group Entity', initials: 'HC', grad: '#0891b2,#0e7490', industry: 'Healthcare',         entityType: 'Operating Entity', jurisdiction: 'UAE · DHA' },
+  { name: 'IGC - Agrotech',   sub: 'Agrotech · Group Entity',   initials: 'AG', grad: '#16a34a,#15803d', industry: 'Agri-Technology',     entityType: 'Subsidiary',       jurisdiction: 'UAE · DMCC' },
+];
+
+const CP_DIR: Record<'buyer' | 'supplier', { id: string; name: string; initials: string; country: string; phone: string; email: string; grad: string }[]> = {
+  buyer: [
+    { id: 'C-001', name: 'GreenHarvest Global Ltd', initials: 'GG', country: 'United States', phone: '+1-415-555-0123', email: 'james@gh.com',       grad: '#4F46E5,#7C3AED' },
+    { id: 'C-002', name: 'Atlas Trading Co.',       initials: 'AT', country: 'United Kingdom', phone: '+44-20-7946-0958', email: 'info@atlas.co.uk',  grad: '#0891B2,#0E7490' },
+    { id: 'C-003', name: 'Orient Foods Pvt Ltd',    initials: 'OF', country: 'India',          phone: '+91-98200-12345', email: 'ops@orientfoods.in', grad: '#059669,#047857' },
+    { id: 'C-004', name: 'Sahara Imports DMCC',     initials: 'SI', country: 'UAE',            phone: '+971-4-321-0987', email: 'trade@sahara.ae',    grad: '#D97706,#B45309' },
+  ],
+  supplier: [
+    { id: 'S-001', name: 'AgroSource International', initials: 'AS', country: 'Brazil',      phone: '+55-11-3456-7890', email: 'export@agrosource.br', grad: '#16A34A,#15803D' },
+    { id: 'S-002', name: 'MedEquip Solutions GmbH', initials: 'MS', country: 'Germany',     phone: '+49-89-2345-6789', email: 'sales@medequip.de',    grad: '#0891B2,#0E7490' },
+    { id: 'S-003', name: 'PrimePack Industries',    initials: 'PP', country: 'South Korea', phone: '+82-2-789-0123',   email: 'b2b@primepack.kr',     grad: '#7C3AED,#4C1D95' },
+  ],
+};
+
+const STAGES = [
+  { n: 1, label: 'Agreement Drafting',                 sub: 'Create or upload agreement draft' },
+  { n: 2, label: 'Internal Review & Approval',         sub: 'Internal validation and approval workflow' },
+  { n: 3, label: 'Counterparty Negotiation & Signing', sub: 'Negotiation, approval, and signing process' },
+  { n: 4, label: 'Final Contract Repository',          sub: 'Store finalized signed agreement and history' },
+];
+
+type CP = { name: string; initials: string; country: string; phone: string; email: string; grad: string; badge: string; referred: string };
+
+export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: CtcContract | null; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const [stage, setStage] = useState(1);
+  const [cp1, setCp1] = useState<CP | null>(null);
+  const [cp2, setCp2] = useState<CP | null>(null);
+  const [org, setOrg] = useState<typeof ORGS[number] | null>(null);
+  const [orgOpen, setOrgOpen] = useState(false);
+  const [picker, setPicker] = useState<1 | 2 | null>(null);
+  const [agTitle, setAgTitle] = useState(editing?.title ?? '');
+  const [agType, setAgType] = useState(editing?.type ?? '');
+  const [effDate, setEffDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, []);
+
+  const goStage = (n: number) => setStage(n);
+
+  const save = () => {
+    if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title'); setStage(1); return; }
+    toast.success(editing ? 'CTC updated' : 'CTC created', agTitle);
+    onSaved();
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 500000, background: '#F0F0FA', overflowY: 'auto', fontFamily: "'DM Sans', system-ui, sans-serif", WebkitFontSmoothing: 'antialiased' }}>
+      <style>{CTC_FORM_CSS}</style>
+      <div style={{ height: '100vh', background: '#F0F0F8', display: 'flex', flexDirection: 'column', padding: '16px 16px 0', gap: 10, overflow: 'hidden' }}>
+
+        {/* HEADER */}
+        <div style={{ borderRadius: 14, overflow: 'hidden', flexShrink: 0, boxShadow: '0 2px 12px rgba(109,40,217,.1)', border: '1.5px solid rgba(124,58,237,.18)' }}>
+          <div style={{ background: 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 25%,#DDD6FE 55%,#C4B5FD 80%,#A78BFA 100%)', position: 'relative', overflow: 'hidden' }}>
+            <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: 'linear-gradient(180deg,#A78BFA,#7C3AED,#5B21B6)' }} />
+            <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.5),transparent)', pointerEvents: 'none' }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', minHeight: 60, position: 'relative', zIndex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 11, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 0 3px rgba(124,58,237,.2),0 4px 12px rgba(91,33,182,.4)', flexShrink: 0 }}>
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>
+                </div>
+                <div>
+                  <div style={{ fontSize: 15.5, fontWeight: 800, color: '#2e1065', letterSpacing: '-.35px', lineHeight: 1.2 }}>{editing ? `Edit CTC Agreement — ${editing.id}` : 'Case-to-Case Contract'}</div>
+                  <div style={{ fontSize: 10.5, fontWeight: 500, color: '#5B21B6', marginTop: 2, opacity: .9 }}>Create one-time operational agreement with a counterparty</div>
+                </div>
+              </div>
+              <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', border: 'none', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', background: 'linear-gradient(135deg,#8B5CF6,#6D28D9,#5B21B6)', boxShadow: '0 3px 12px rgba(91,33,182,.38)' }}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                Back to CTC Agreement List
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* STAGE FLOW */}
+        <div style={{ borderRadius: 14, overflow: 'hidden', flexShrink: 0, background: '#fff', boxShadow: '0 2px 10px rgba(109,40,217,.07)', border: '1.5px solid rgba(124,58,237,.12)' }}>
+          <div style={{ padding: '10px 16px 12px' }}>
+            <div style={{ display: 'flex', alignItems: 'stretch', justifyContent: 'center' }}>
+              {STAGES.map((s, i) => {
+                const active = s.n === stage, done = s.n < stage, isLast = i === STAGES.length - 1;
+                const num = String(s.n).padStart(2, '0');
+                return (
+                  <div key={s.n} style={{ display: 'flex', alignItems: 'stretch' }}>
+                    <div style={{ flex: '0 0 auto', width: 230, display: 'flex', flexDirection: 'column' }}>
+                      <div onClick={() => goStage(s.n)} style={{
+                        position: 'relative', overflow: 'hidden', cursor: 'pointer', height: '100%', padding: '11px 12px 10px', minHeight: 88, borderRadius: 10,
+                        background: active ? 'linear-gradient(140deg,#5B21B6 0%,#6D28D9 45%,#7C3AED 100%)' : done ? 'linear-gradient(140deg,#EDE9FE 0%,#DDD6FE 100%)' : '#F0F1F8',
+                        border: active ? 'none' : done ? '1.5px solid #C4B5FD' : '1.5px solid #E2E4F0',
+                        boxShadow: active ? '0 6px 20px rgba(109,40,217,.35)' : done ? '0 2px 8px rgba(124,58,237,.1)' : '0 1px 4px rgba(15,23,42,.04)' }}>
+                        {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '45%', background: 'linear-gradient(180deg,rgba(255,255,255,.1),transparent)', pointerEvents: 'none', borderRadius: '10px 10px 0 0' }} />}
+                        {active && <span style={{ position: 'absolute', top: 9, right: 10, display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.32)', borderRadius: 20, padding: '2px 8px', fontSize: 7, fontWeight: 800, color: '#fff', letterSpacing: '.5px', textTransform: 'uppercase', zIndex: 2 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: '#34d399' }} />Active</span>}
+                        {done && <span style={{ position: 'absolute', top: 9, right: 10, width: 17, height: 17, borderRadius: '50%', background: 'linear-gradient(135deg,#A78BFA,#7C3AED)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(124,58,237,.28)', zIndex: 2 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg></span>}
+                        <div style={{ fontSize: 7.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.9px', lineHeight: 1, marginBottom: 6, color: active ? 'rgba(255,255,255,.55)' : done ? '#A78BFA' : '#A5AEC8' }}>STAGE {num}</div>
+                        <div style={{ fontSize: 12, lineHeight: 1.3, marginBottom: 2, paddingRight: active || done ? 26 : 6, color: active ? '#fff' : done ? '#5B21B6' : '#5B6480', fontWeight: active || done ? 800 : 700 }}>{s.label}</div>
+                        <div style={{ fontSize: 9, fontWeight: 500, lineHeight: 1.4, color: active ? 'rgba(255,255,255,.62)' : done ? '#A78BFA' : '#A0AABE' }}>{s.sub}</div>
+                        <div style={{ position: 'absolute', bottom: -12, right: 2, fontSize: 68, fontWeight: 900, lineHeight: 1, letterSpacing: -5, pointerEvents: 'none', userSelect: 'none', color: active ? 'rgba(255,255,255,.12)' : done ? 'rgba(124,58,237,.18)' : 'rgba(148,163,215,.2)' }}>{num}</div>
+                      </div>
+                    </div>
+                    {!isLast && (
+                      <div style={{ flexShrink: 0, width: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="28" height="16" viewBox="0 0 28 16" fill="none"><line x1="0" y1="8" x2="20" y2="8" stroke={done || active ? '#C4B5FD' : '#D8DBE8'} strokeWidth="1.5" /><polygon points="20,4 28,8 20,12" fill={done || active ? '#A78BFA' : '#BEC3D8'} /></svg>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* STAGE BODY */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', paddingBottom: 16 }}>
+          {stage === 1 && (
+            <Stage1
+              cp1={cp1} cp2={cp2} org={org} orgOpen={orgOpen} setOrgOpen={setOrgOpen}
+              onAddCp={setPicker} onRemoveCp={(slot) => slot === 1 ? setCp1(null) : setCp2(null)}
+              onSelectOrg={(o) => { setOrg(o); setOrgOpen(false); }} onResetOrg={() => setOrg(null)}
+              agTitle={agTitle} setAgTitle={setAgTitle} agType={agType} setAgType={setAgType}
+              effDate={effDate} setEffDate={setEffDate} endDate={endDate} setEndDate={setEndDate}
+              draft={draft} setDraft={setDraft}
+              onNext={() => goStage(2)}
+            />
+          )}
+          {stage > 1 && <StageReadonly stage={stage} cp1={cp1} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
+        </div>
+      </div>
+
+      {picker && (
+        <CpPicker slot={picker} onClose={() => setPicker(null)} onPick={(cp) => { if (picker === 1) setCp1(cp); else setCp2(cp); setPicker(null); }} />
+      )}
+    </div>
+  );
+}
+
+/* ── Stage 1 three-panel workspace ── */
+function Stage1(p: {
+  cp1: CP | null; cp2: CP | null; org: typeof ORGS[number] | null; orgOpen: boolean; setOrgOpen: (b: boolean) => void;
+  onAddCp: (slot: 1 | 2) => void; onRemoveCp: (slot: 1 | 2) => void; onSelectOrg: (o: typeof ORGS[number]) => void; onResetOrg: () => void;
+  agTitle: string; setAgTitle: (s: string) => void; agType: string; setAgType: (s: string) => void;
+  effDate: string; setEffDate: (s: string) => void; endDate: string; setEndDate: (s: string) => void;
+  draft: string; setDraft: (s: string) => void; onNext: () => void;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
+      {/* LEFT — Counterparty Details */}
+      <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <Panel header="Panel 01" title="Counterparty Details" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12, overflowY: 'auto' }}>
+            {([1, 2] as const).map(slot => {
+              const cp = slot === 1 ? p.cp1 : p.cp2;
+              return cp ? <CpCard key={slot} slot={slot} cp={cp} onRemove={() => p.onRemoveCp(slot)} />
+                : <button key={slot} onClick={() => p.onAddCp(slot)} style={{ border: '1.5px dashed #C4B5FD', borderRadius: 10, width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg></div>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: '#7C3AED' }}>Add Counter Party {slot}</span>
+                </button>;
+            })}
+            {/* Org */}
+            <div style={{ position: 'relative' }}>
+              {!p.org ? (
+                <div onClick={() => p.setOrgOpen(!p.orgOpen)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, border: '1.5px dashed #C4B5FD', background: 'transparent', cursor: 'pointer' }}>
+                  <div style={{ width: 15, height: 15, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg></div>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: '#7C3AED' }}>Select Organisation</span>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#C4B5FD" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto', transform: p.orgOpen ? 'rotate(180deg)' : 'none' }}><polyline points="6 9 12 15 18 9" /></svg>
+                </div>
+              ) : (
+                <div style={{ borderRadius: 10, border: '1.5px solid #DDD6FE', background: '#fff', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: 'linear-gradient(110deg,#EDE9FE,#DDD6FE)' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: '#6D28D9' }}>Organisation</span></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px 6px' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${p.org.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 8px rgba(109,40,217,.3)' }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{p.org.initials}</span></div>
+                    <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: '#1E1050', lineHeight: 1.3 }}>{p.org.name}</div><div style={{ fontSize: 8.5, color: '#7C3AED', fontWeight: 500, marginTop: 2 }}>{p.org.sub}</div></div>
+                    <button onClick={p.onResetOrg} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+                  </div>
+                  <div style={{ borderTop: '1px solid #F1EEFF', padding: '5px 10px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <OrgDetail text={p.org.jurisdiction} /><OrgDetail text={p.org.entityType} /><OrgDetail text={p.org.industry} />
+                  </div>
+                </div>
+              )}
+              {p.orgOpen && !p.org && (
+                <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, marginBottom: 6, background: '#fff', border: '1.5px solid #DDD6FE', borderRadius: 14, boxShadow: '0 12px 36px rgba(109,40,217,.18)', overflow: 'hidden', zIndex: 50, padding: 7 }}>
+                  {ORGS.map(o => (
+                    <div key={o.name} onClick={() => p.onSelectOrg(o)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9, cursor: 'pointer', marginBottom: 2 }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#F5F3FF')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${o.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: '#fff' }}>{o.initials}</span></div>
+                      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: '#1E1050' }}>{o.name}</div><div style={{ fontSize: 9, color: '#9D76E0', fontWeight: 500, marginTop: 1 }}>{o.sub}</div></div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </Panel>
+      </div>
+
+      {/* MIDDLE — Draft workspace */}
+      <div style={{ flex: 5.5, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <Panel header="Panel 02 · Main Workspace" title="Agreement Draft Workspace" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA">
+          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 18px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Agreement Basics */}
+            <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #EDE9FE', overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)' }}>
+              <div style={{ padding: '11px 14px', background: 'linear-gradient(110deg,#EDE9FE 0%,#F3F0FF 40%,#E8E2FF 100%)', borderBottom: '1.5px solid #DDD6FE', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
+                <div><div style={{ fontSize: 11.5, fontWeight: 800, color: '#3B0764' }}>Agreement Basics</div><div style={{ fontSize: 8, color: '#7C3AED', fontWeight: 500 }}>Title &amp; type of this contract</div></div>
+              </div>
+              <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 9, alignItems: 'end' }}>
+                <Field label="Agreement Title *"><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value)} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={ipt} /></Field>
+                <Field label="Agreement Type *">
+                  <select value={p.agType} onChange={e => p.setAgType(e.target.value)} style={sel}>
+                    <option value="">Select type…</option>
+                    {['NDA', 'SLA', 'MSA', 'CSA', 'VPA', 'DA', 'JVA', 'EAA', 'MOU', 'TTA', 'PFA', 'NCA'].map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </Field>
+              </div>
+            </div>
+            {/* Agreement Details */}
+            <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #BBF7D0', overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)' }}>
+              <div style={{ padding: '11px 14px', background: 'linear-gradient(110deg,#ECFDF5 0%,#F0FDF9 40%,#D1FAE5 100%)', borderBottom: '1.5px solid #A7F3D0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></div>
+                <div><div style={{ fontSize: 11.5, fontWeight: 800, color: '#064E3B' }}>Agreement Details</div><div style={{ fontSize: 8, color: '#059669', fontWeight: 500 }}>Dates &amp; term</div></div>
+              </div>
+              <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+                <Field label="Effective Date *" green><input type="date" value={p.effDate} onChange={e => p.setEffDate(e.target.value)} style={{ ...ipt, borderColor: '#A7F3D0' }} /></Field>
+                <Field label="End Date *" green><input type="date" value={p.endDate} onChange={e => p.setEndDate(e.target.value)} style={{ ...ipt, borderColor: '#A7F3D0' }} /></Field>
+              </div>
+            </div>
+            {/* Draft content */}
+            <div style={{ background: '#fff', borderRadius: 14, border: '1.5px solid #EDE9FE', overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.08)' }}>
+              <div style={{ padding: '12px 14px', background: 'linear-gradient(118deg,#3B0764 0%,#5B21B6 35%,#7C3AED 65%,#8B5CF6 100%)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></div>
+                <div><div style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Stage 03</div><div style={{ fontSize: 12.5, fontWeight: 800, color: '#fff' }}>Draft Agreement Content</div></div>
+              </div>
+              <textarea value={p.draft} onChange={e => p.setDraft(e.target.value)} placeholder="Start drafting your agreement content here…" style={{ width: '100%', minHeight: 160, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 11, fontFamily: 'inherit', color: '#1E1050', lineHeight: 1.8, resize: 'vertical', background: '#fff', boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          <div style={{ flexShrink: 0, padding: '10px 18px', borderTop: '1px solid #EDE9FE', background: 'rgba(255,255,255,.85)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+            <button onClick={p.onNext} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(79,70,229,.35)' }}>
+              <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>Next: Internal Review</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+            </button>
+          </div>
+        </Panel>
+      </div>
+
+      {/* RIGHT — Summary */}
+      <div style={{ flex: 2.5, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <Panel header="Panel 03" title="Agreement Summary" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD">
+          <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ borderRadius: 11, border: '1.5px solid #EDE9FE', background: '#fff' }}>
+              <div style={{ padding: '6px 10px', background: 'linear-gradient(110deg,#EDE9FE,#F3F0FF)', borderBottom: '1px solid #DDD6FE', borderRadius: '11px 11px 0 0' }}><span style={{ fontSize: 7, fontWeight: 800, color: '#6D28D9', letterSpacing: '.1em', textTransform: 'uppercase' }}>Agreement Summary</span></div>
+              <div style={{ padding: '8px 10px 4px' }}>
+                {[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['CP 1', p.cp1?.name || '—'], ['CP 2', p.cp2?.name || '—'], ['Organisation', p.org?.name || '—']].map(([k, v]) => (
+                  <div key={k} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6, padding: '4px 0', borderBottom: '1px solid #FAF8FF' }}>
+                    <span style={{ fontSize: 7.5, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '.06em', flexShrink: 0, minWidth: 55 }}>{k}</span>
+                    <span style={{ fontSize: 8.5, fontWeight: 700, color: '#1E1050', textAlign: 'right', wordBreak: 'break-word', lineHeight: 1.4, flex: 1 }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function StageReadonly({ stage, cp1, org, agTitle, agType, effDate, endDate, onBack, onNext, onSave }: {
+  stage: number; cp1: CP | null; org: typeof ORGS[number] | null; agTitle: string; agType: string; effDate: string; endDate: string;
+  onBack: () => void; onNext: () => void; onSave: () => void;
+}) {
+  const cfg = {
+    2: { hgrad: '#4C1D95,#6D28D9,#7C3AED', title: 'Internal Review & Approval', icon: 'review', note: 'Agreement submitted for internal validation and approval.' },
+    3: { hgrad: '#3B0764,#5B21B6,#7C3AED', title: 'Counterparty Negotiation & Signing', icon: 'sign', note: 'Share the agreement with the counterparty for negotiation, approval, and signing.' },
+    4: { hgrad: '#064E3B,#065F46,#059669,#10B981', title: 'Final Contract Repository', icon: 'store', note: 'Store the finalized signed agreement with complete contract history and records.' },
+  }[stage]!;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, width: '100%' }}>
+      <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: 16, border: stage === 4 ? '1.5px solid rgba(5,150,105,.25)' : '1.5px solid rgba(124,58,237,.18)', boxShadow: '0 4px 20px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ padding: '11px 16px', background: `linear-gradient(118deg,${cfg.hgrad})`, position: 'relative', overflow: 'hidden', flexShrink: 0, borderRadius: '14px 14px 0 0', display: 'flex', alignItems: 'center', gap: 9 }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.14),transparent)', pointerEvents: 'none' }} />
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 1 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+          </div>
+          <div style={{ position: 'relative', zIndex: 1 }}><div style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Stage 0{stage}</div><div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>{cfg.title}</div></div>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.6 }}>{cfg.note}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
+            {[['Agreement', agTitle || '—'], ['Type', agType || '—'], ['Counterparty', cp1?.name || '—'], ['Organisation', org?.name || '—'], ['Eff. Date', effDate || '—'], ['End Date', endDate || '—']].map(([k, v]) => (
+              <div key={k} style={{ border: '1.5px solid #EDE9FE', borderRadius: 12, padding: '12px 14px', background: stage === 4 ? '#F0FDF4' : '#FAFBFF' }}>
+                <div style={{ fontSize: 8, fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 4 }}>{k}</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#1E1050' }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ flexShrink: 0, padding: '10px 16px', background: '#fff', borderTop: '1.5px solid #EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, background: '#F5F0FF', border: '1.5px solid #DDD6FE', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 700, color: '#6D28D9' }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6D28D9" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg> Previous Stage
+          </button>
+          {stage < 4
+            ? <button onClick={onNext} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(109,40,217,.35)' }}>Next Stage <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg></button>
+            : <button onClick={onSave} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(5,150,105,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> Store in Repository</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── building blocks ── */
+function Panel({ header, title, headGrad, children }: { header: string; title: string; headGrad: string; children: React.ReactNode }) {
+  return (
+    <div style={{ flex: 1, minHeight: 0, background: 'linear-gradient(160deg,#faf8ff 0%,#f5f0fe 35%,#ede8fd 100%)', borderRadius: 16, border: '1.5px solid rgba(139,92,246,.28)', boxShadow: '0 6px 32px rgba(109,40,217,.12)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'center', gap: 11, flexShrink: 0, position: 'relative', overflow: 'hidden', background: `linear-gradient(118deg,${headGrad})`, borderRadius: '14px 14px 0 0' }}>
+        <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '55%', background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent)', pointerEvents: 'none', borderRadius: '14px 14px 0 0' }} />
+        <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', zIndex: 1 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg></div>
+        <div style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}><div style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,.65)', marginBottom: 2 }}>{header}</div><div style={{ fontSize: 13, fontWeight: 800, color: '#fff', letterSpacing: '-.25px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div></div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function CpCard({ slot, cp, onRemove }: { slot: number; cp: CP; onRemove: () => void }) {
+  const badgeGrad = cp.badge === 'BUYER' ? '#0891b2,#0e7490' : cp.badge === 'SUPPLIER' ? '#16A34A,#059669' : '#6D28D9,#4C1D95';
+  return (
+    <div style={{ borderRadius: 10, border: '1.5px solid #DDD6FE', background: '#fff', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: 'linear-gradient(110deg,#EDE9FE,#DDD6FE)' }}>
+        <span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: '#6D28D9' }}>Counter Party {slot}</span>
+        {cp.badge && <span style={{ fontSize: 7, fontWeight: 800, padding: '2px 7px', borderRadius: 20, background: `linear-gradient(135deg,${badgeGrad})`, color: '#fff', textTransform: 'uppercase', letterSpacing: '.06em' }}>{cp.badge}</span>}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px 6px' }}>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${cp.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 8px rgba(79,70,229,.3)' }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{cp.initials}</span></div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#1E1050', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>{cp.name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3, flexWrap: 'wrap' }}>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.5" strokeLinecap="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+            <span style={{ fontSize: 8.5, fontWeight: 700, color: '#A78BFA' }}>Referred as:</span>
+            <span style={{ fontSize: 8.5, fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg,#6D28D9,#A78BFA)', padding: '2px 8px', borderRadius: 20 }}>{cp.referred}</span>
+          </div>
+        </div>
+        <button onClick={onRemove} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+      </div>
+      <div style={{ borderTop: '1px solid #F1EEFF', padding: '5px 10px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <OrgDetail text={cp.country} /><OrgDetail text={cp.phone} /><OrgDetail text={cp.email} />
+      </div>
+    </div>
+  );
+}
+
+function OrgDetail({ text }: { text: string }) {
+  return <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /></svg><span style={{ fontSize: 9, color: '#475569', fontWeight: 500 }}>{text}</span></div>;
+}
+
+function Field({ label, green, children }: { label: string; green?: boolean; children: React.ReactNode }) {
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}><label style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: green ? '#059669' : '#7C3AED' }}>{label}</label>{children}</div>;
+}
+
+/* ── Counterparty picker modal ── */
+function CpPicker({ slot, onClose, onPick }: { slot: number; onClose: () => void; onPick: (cp: CP) => void }) {
+  const [tab, setTab] = useState<'buyer' | 'supplier'>('buyer');
+  const [search, setSearch] = useState('');
+  const [pending, setPending] = useState<typeof CP_DIR['buyer'][number] | null>(null);
+  const [referred, setReferred] = useState('');
+  const list = CP_DIR[tab].filter(p => (p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,5,40,.42)', backdropFilter: 'blur(6px)' }} />
+      <div style={{ position: 'relative', zIndex: 1, width: pending ? 300 : 300, background: '#fff', borderRadius: 16, boxShadow: '0 10px 48px rgba(109,40,217,.32)', overflow: 'hidden', fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+        <div style={{ background: 'linear-gradient(118deg,#4C1D95,#6D28D9,#8B5CF6)', padding: '12px 14px 11px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{pending ? `Confirm CP ${slot}` : `Add Counter Party ${slot}`}</div>
+          <button onClick={onClose} style={{ width: 24, height: 24, borderRadius: 7, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+        </div>
+        {!pending ? (
+          <div style={{ padding: '10px 12px 12px' }}>
+            <div style={{ display: 'flex', gap: 3, background: '#F3F0FD', borderRadius: 9, padding: 3, marginBottom: 9 }}>
+              {(['buyer', 'supplier'] as const).map(t => (
+                <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, textTransform: 'capitalize', background: tab === t ? 'linear-gradient(135deg,#7C3AED,#6D28D9)' : 'transparent', color: tab === t ? '#fff' : '#94A3B8', boxShadow: tab === t ? '0 2px 6px rgba(109,40,217,.3)' : 'none' }}>{t}</button>
+              ))}
+            </div>
+            <div style={{ position: 'relative', marginBottom: 8 }}>
+              <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" style={{ width: '100%', padding: '8px 10px 8px 30px', border: '1.5px solid #E4E7EF', borderRadius: 9, fontSize: 11, fontFamily: 'inherit', color: '#0F172A', outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ overflowY: 'auto', maxHeight: 220, display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {list.map(p => (
+                <div key={p.id} onClick={() => { setPending(p); setReferred(p.name); }} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 8px', borderRadius: 9, cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#F5F0FF')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg,${p.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 800, color: '#fff' }}>{p.initials}</span></div>
+                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 9, fontWeight: 700, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div><div style={{ fontSize: 7, color: '#94A3B8' }}>{p.country}</div></div>
+                </div>
+              ))}
+              {!list.length && <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 8, color: '#94A3B8' }}>No results</div>}
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: '12px 14px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, background: `linear-gradient(135deg,${pending.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{pending.initials}</span></div>
+              <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: '#1E1050' }}>{pending.name}</div><div style={{ fontSize: 8, color: '#94A3B8' }}>{pending.email}</div></div>
+            </div>
+            <label style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#A78BFA' }}>Referred As In Agreement</label>
+            <input value={referred} onChange={e => setReferred(e.target.value)} style={{ width: '100%', padding: '7px 10px', border: '1.5px solid #DDD6FE', borderRadius: 8, fontSize: 10.5, fontFamily: 'inherit', color: '#0F172A', outline: 'none', boxSizing: 'border-box', marginTop: 4 }} />
+            <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
+              <button onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name })} style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, color: '#fff', boxShadow: '0 3px 12px rgba(109,40,217,.38)' }}>Confirm &amp; Add</button>
+              <button onClick={() => setPending(null)} style={{ padding: '8px 13px', borderRadius: 8, background: '#F8F6FF', border: '1.5px solid #DDD6FE', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 600, color: '#64748B' }}>Back</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const ipt: React.CSSProperties = { width: '100%', height: 34, padding: '0 12px', border: '1.5px solid #DDD6FE', borderRadius: 9, fontSize: 11, fontFamily: 'inherit', color: '#0F172A', outline: 'none', background: '#fff', boxSizing: 'border-box' };
+const sel: React.CSSProperties = { ...ipt, cursor: 'pointer' };
+
+const CTC_FORM_CSS = `
+#ctc-form-scroll::-webkit-scrollbar { width: 4px; }
+`;

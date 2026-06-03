@@ -89,7 +89,6 @@ api.interceptors.response.use(
             message: err.response?.data?.message || '(no message)',
           }));
         } catch {}
-        console.warn('[api] 401 from', url, '— clearing session');
         localStorage.removeItem('cbc_token');
         localStorage.removeItem('cbc_user');
         window.location.reload();

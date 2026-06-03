@@ -61,13 +61,18 @@ function itemsFor(vault: VaultData, category: DocCategory): DocItem[] {
   }));
 }
 
-/* Status pill — same palette as the Evidence Vault's StatusPill. */
-function StatusPill({ s }: { s: VaultStatus }) {
-  const tone =
-    s === 'Verified' ? { bg: '#d1fae5', fg: '#047857', dot: '#10b981', mark: '✓' }
-    : s === 'Signed'   ? { bg: '#dbeafe', fg: '#1e40af', dot: '#3b82f6', mark: '✓' }
-    : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b', mark: '⚠' }
-    :                    { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444', mark: '⌛' };
+/* Status pill — same palette as the Evidence Vault's StatusPill, with dark
+ * variants (translucent fills + lightened text) for dark mode. */
+function StatusPill({ s, dark }: { s: VaultStatus; dark?: boolean }) {
+  const tone = dark
+    ? (s === 'Verified' ? { bg: 'rgba(16,185,129,.18)', fg: '#6ee7b7', dot: '#10b981' }
+      : s === 'Signed'   ? { bg: 'rgba(59,130,246,.18)', fg: '#93c5fd', dot: '#3b82f6' }
+      : s === 'Expiring' ? { bg: 'rgba(245,158,11,.18)', fg: '#fcd34d', dot: '#f59e0b' }
+      :                    { bg: 'rgba(239,68,68,.18)',  fg: '#fca5a5', dot: '#ef4444' })
+    : (s === 'Verified' ? { bg: '#d1fae5', fg: '#047857', dot: '#10b981' }
+      : s === 'Signed'   ? { bg: '#dbeafe', fg: '#1e40af', dot: '#3b82f6' }
+      : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' }
+      :                    { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' });
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 20, background: tone.bg, color: tone.fg, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
       <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot }} />
@@ -79,6 +84,18 @@ function StatusPill({ s }: { s: VaultStatus }) {
 export default function ClmDocsPopup({ open, onClose, category, ownerType, ownerId, company }: Props) {
   const [vault, setVault] = useState<VaultData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isDark, setIsDark] = useState(() => document.documentElement.getAttribute('data-bs-theme') === 'dark');
+
+  /* Track <html data-bs-theme> so the popup re-themes live on toggle. */
+  useEffect(() => {
+    if (!open) return;
+    const root = document.documentElement;
+    const sync = () => setIsDark(root.getAttribute('data-bs-theme') === 'dark');
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(root, { attributes: true, attributeFilter: ['data-bs-theme'] });
+    return () => obs.disconnect();
+  }, [open]);
 
   /* Close on Escape. */
   useEffect(() => {
@@ -108,6 +125,26 @@ export default function ClmDocsPopup({ open, onClose, category, ownerType, owner
   const total = items.length;
   const noun = category === 'agr' ? 'agreements' : 'documents';
 
+  /* Theme palette — the teal header / Close button read fine on both, so only
+   * the card surface, row text, badges and footer swap for dark mode. */
+  const c = isDark
+    ? {
+        card: '#1e293b', rowBorder: 'rgba(148,163,184,.14)',
+        numBg: 'rgba(6,182,212,.16)', numBd: 'rgba(8,145,178,.4)', numFg: '#67e8f9',
+        name: '#e2e8f0', sub: '#94a3b8', muted: '#94a3b8',
+        reqBg: 'rgba(234,179,8,.16)', reqBd: 'rgba(253,224,71,.32)', reqFg: '#fcd34d',
+        footerBg: 'linear-gradient(110deg,#16263a,#11202f)', footerBd: 'rgba(6,182,212,.28)',
+        footerFg: '#7dd3fc', footerDot: '#22d3ee',
+      }
+    : {
+        card: '#fff', rowBorder: '#eef2f6',
+        numBg: '#ecfeff', numBd: '#a5f3fc', numFg: '#0e7490',
+        name: '#0f172a', sub: '#94a3b8', muted: '#64748b',
+        reqBg: '#fef9c3', reqBd: '#fde68a', reqFg: '#a16207',
+        footerBg: 'linear-gradient(110deg,#f0fdff,#e8fafb)', footerBd: '#a5f3fc',
+        footerFg: '#0e7490', footerDot: '#0891b2',
+      };
+
   return createPortal(
     <div
       role="dialog"
@@ -117,7 +154,7 @@ export default function ClmDocsPopup({ open, onClose, category, ownerType, owner
     >
       <div
         onMouseDown={(e) => e.stopPropagation()}
-        style={{ width: 'min(640px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 18, overflow: 'hidden', boxShadow: '0 24px 60px rgba(8,47,73,.4)' }}
+        style={{ width: 'min(640px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: c.card, borderRadius: 18, overflow: 'hidden', boxShadow: '0 24px 60px rgba(8,47,73,.4)' }}
       >
         {/* ── Header ── */}
         <div style={{ position: 'relative', padding: '20px 22px', background: 'linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%)', color: '#fff', flexShrink: 0 }}>
@@ -142,32 +179,32 @@ export default function ClmDocsPopup({ open, onClose, category, ownerType, owner
         </div>
 
         {/* ── Body ── */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: '#fff' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: c.card }}>
           {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', fontSize: 13, color: '#64748b' }}>Loading documents…</div>
+            <div style={{ padding: 40, textAlign: 'center', fontSize: 13, color: c.muted }}>Loading documents…</div>
           ) : total === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', fontSize: 13, color: '#64748b' }}>No {noun} in this bucket yet.</div>
+            <div style={{ padding: 40, textAlign: 'center', fontSize: 13, color: c.muted }}>No {noun} in this bucket yet.</div>
           ) : (
             items.map((it, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', borderBottom: '1px solid #eef2f6' }}>
-                <span style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 10, background: '#ecfeff', border: '1px solid #a5f3fc', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#0e7490' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', borderBottom: `1px solid ${c.rowBorder}` }}>
+                <span style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 10, background: c.numBg, border: `1px solid ${c.numBd}`, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: c.numFg }}>
                   {String(i + 1).padStart(2, '0')}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</div>
-                  <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.sub}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: c.name, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</div>
+                  <div style={{ fontSize: 12, color: c.sub, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.sub}</div>
                 </div>
-                <span style={{ flexShrink: 0, padding: '3px 9px', borderRadius: 6, background: '#fef9c3', border: '1px solid #fde68a', color: '#a16207', fontSize: 10, fontWeight: 800, letterSpacing: '.04em' }}>REQ</span>
-                <span style={{ flexShrink: 0 }}><StatusPill s={it.status} /></span>
+                <span style={{ flexShrink: 0, padding: '3px 9px', borderRadius: 6, background: c.reqBg, border: `1px solid ${c.reqBd}`, color: c.reqFg, fontSize: 10, fontWeight: 800, letterSpacing: '.04em' }}>REQ</span>
+                <span style={{ flexShrink: 0 }}><StatusPill s={it.status} dark={isDark} /></span>
               </div>
             ))
           )}
         </div>
 
         {/* ── Footer ── */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 22px', background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderTop: '1.5px solid #a5f3fc', flexShrink: 0 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: '#0e7490' }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#0891b2' }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 22px', background: c.footerBg, borderTop: `1.5px solid ${c.footerBd}`, flexShrink: 0 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: c.footerFg }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.footerDot }} />
             {verified} of {total} {noun} verified
           </span>
           <button
