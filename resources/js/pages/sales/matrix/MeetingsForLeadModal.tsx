@@ -655,7 +655,9 @@ const MFL_CSS = `
 [data-bs-theme="dark"] .mfl-modal {
   background: linear-gradient(180deg, #0c2620 0%, #0a1a17 100%);
 }
-[data-bs-theme="dark"] .mfl-body { color: #d1fae5; }
+/* The body has its own light mint fill; clear it so the modal's dark
+ * gradient shows through instead of reading light behind the inputs. */
+[data-bs-theme="dark"] .mfl-body { background: transparent; color: #d1fae5; }
 [data-bs-theme="dark"] .mfl-lbl  { color: #5eead4; }
 [data-bs-theme="dark"] .mfl-input {
   background: #0f1f1c;
