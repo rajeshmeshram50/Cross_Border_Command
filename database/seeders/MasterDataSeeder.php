@@ -73,12 +73,20 @@ class MasterDataSeeder extends Seeder
 
         // countries + states are owned by GeographySeeder (full ISO dataset).
         // Skip them here so we don't wipe + re-seed with the older small sample.
-        $ownedByGeographySeeder = ['countries', 'states'];
+        //
+        // `segments` maps to the unified `clm_segments` table, which is
+        // TENANT-scoped: client_id is NOT NULL and code/regulatory_status/
+        // buyer_consignee are required + auto-filled only by the Segments model
+        // hook (this seeder uses the raw query builder, which bypasses it). A
+        // global null-client row therefore violates the NOT NULL constraint
+        // (23502). CLM segments are created per-client at runtime by
+        // ClmSegmentController, so we don't seed them here.
+        $ownedElsewhere = ['countries', 'states', 'segments'];
 
         // Walk masters in dependency-safe order so ref columns (e.g. states -> countries)
         // always find the referenced row already present.
         foreach ($order as $slug) {
-            if (in_array($slug, $ownedByGeographySeeder, true)) {
+            if (in_array($slug, $ownedElsewhere, true)) {
                 continue;
             }
             $modelClass = $MODELS[$slug];

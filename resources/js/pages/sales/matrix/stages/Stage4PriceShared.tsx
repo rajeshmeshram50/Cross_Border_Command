@@ -71,7 +71,7 @@ function formatDateTime(s: string | null | undefined): { date: string; time: str
   };
 }
 
-export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }: StageProps) {
+export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, embedded }: StageProps) {
   const toast = useToast();
   const leadId = header.leadId ?? null;
 
@@ -281,7 +281,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
             </svg>
           </div>
           <div>
-            <div className="smd-stg-head-title">Stage 4: Price Shared</div>
+            <div className="smd-stg-head-title">{embedded ? 'Price Shared' : 'Stage 4: Price Shared'}</div>
             <div className="smd-stg-head-sub">● Price shared with customer</div>
           </div>
         </div>
@@ -629,6 +629,8 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
         )}
       </div>
 
+      {/* Footer — pipeline navigation; hidden when opened as a toolbar popup. */}
+      {!embedded && (
       <div className="smd-stg-foot">
         <div className="smd-stg-foot-note">
           ⚠ <strong>Note :</strong> Map a customer &amp; consignee and share at least one quoted price before advancing to Stage 5.
@@ -645,6 +647,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead }
           </button>
         </div>
       </div>
+      )}
 
     </>
   );

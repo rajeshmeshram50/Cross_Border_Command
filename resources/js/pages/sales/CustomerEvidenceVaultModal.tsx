@@ -123,17 +123,37 @@ interface Props {
    *  the API response. Until then, the demo builder below produces a
    *  realistic snapshot for the design review. */
   data?: VaultData | null;
+  /** Tab to open on. Lets callers deep-link straight to a bucket — e.g.
+   *  the Buyer Profile page opens the vault on 'owner-kyc' when a KYC
+   *  progress cell is clicked. Defaults to 'company-dd'. */
+  initialTab?: TabKey;
 }
 
-type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses' | 'trade-documents' | 'shipment-agreements';
+export type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses' | 'trade-documents' | 'shipment-agreements';
 
-const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultData }[] = [
-  { key: 'company-dd',          label: 'Company Due Diligence', icon: 'ri-shield-check-line',   countKey: 'company_dd_count' },
-  { key: 'owner-kyc',           label: 'Owner KYC Details',     icon: 'ri-user-3-line',         countKey: 'owner_kyc_count' },
-  { key: 'trade-licenses',      label: 'Trade Licenses',        icon: 'ri-file-list-3-line',    countKey: 'trade_license_count' },
-  { key: 'trade-documents',     label: 'Trade Documents',       icon: 'ri-article-line',        countKey: 'trade_documents_count' },
-  { key: 'shipment-agreements', label: 'Shipment Agreements',   icon: 'ri-truck-line',          countKey: 'total_shipments' },
+/* Top-level grouping — the tabs are split into two buckets:
+ *   • standard      — one-time party documents (KYC, DD, Trade Licenses)
+ *   • case-to-case  — per-deal records (Trade Documents, Agreements)
+ * The header shows the two group cards; the sub-tab row below shows only
+ * the tabs belonging to the active group. */
+type GroupKey = 'standard' | 'case-to-case';
+
+const GROUPS: { key: GroupKey; title: string; sub: string; icon: string }[] = [
+  { key: 'standard',     title: 'Standard Documents',      sub: 'ONE TIME · KYC, DD & LICENSES',        icon: 'ri-shield-check-line' },
+  { key: 'case-to-case', title: 'Case to Case Agreements', sub: 'PER DEAL · TRADE DOCS & AGREEMENTS',    icon: 'ri-todo-line' },
 ];
+
+const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultData; group: GroupKey }[] = [
+  { key: 'company-dd',          label: 'Company Due Diligence', icon: 'ri-shield-check-line',   countKey: 'company_dd_count',       group: 'standard' },
+  { key: 'owner-kyc',           label: 'Owner KYC Details',     icon: 'ri-user-3-line',         countKey: 'owner_kyc_count',        group: 'standard' },
+  { key: 'trade-licenses',      label: 'Trade Licenses',        icon: 'ri-file-list-3-line',    countKey: 'trade_license_count',    group: 'standard' },
+  { key: 'trade-documents',     label: 'Trade Documents',       icon: 'ri-article-line',        countKey: 'trade_documents_count',  group: 'case-to-case' },
+  { key: 'shipment-agreements', label: 'Agreements',            icon: 'ri-truck-line',          countKey: 'total_shipments',        group: 'case-to-case' },
+];
+
+/* Which group a tab belongs to — used to sync the group cards when the
+ * active tab is set programmatically (e.g. via initialTab deep-link). */
+const groupOfTab = (t: TabKey): GroupKey => TABS.find(x => x.key === t)?.group ?? 'standard';
 
 /* ─── Demo-data builder — produces a realistic vault snapshot keyed
  *      off the customer's id so the same customer always renders the
@@ -191,10 +211,18 @@ function buildDemoVault(customer: CustomerVaultTarget): VaultData {
   };
 }
 
-export default function CustomerEvidenceVaultModal({ open, customer, onClose, data }: Props) {
+export default function CustomerEvidenceVaultModal({ open, customer, onClose, data, initialTab }: Props) {
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
+  const [group, setGroup] = useState<GroupKey>('standard');
   const [shipmentFilter, setShipmentFilter] = useState<'all' | 'buyer-eq-consignee' | 'buyer-neq-consignee'>('all');
+
+  /* Switch the active group and jump to its first sub-tab. */
+  const selectGroup = (g: GroupKey) => {
+    setGroup(g);
+    const first = TABS.find(t => t.group === g);
+    if (first) setTab(first.key);
+  };
   const kpiStripRef = useRef<HTMLDivElement | null>(null);
   const [kpiPaused, setKpiPaused] = useState(false);
   /* Export All — in-flight flag drives spinner + disabled state on
@@ -221,11 +249,15 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
-    // Reset to first tab whenever the modal opens for a new customer.
-    setTab('company-dd');
+    // Open on the caller-requested tab (deep-link from the Buyer Profile
+    // progress cells), falling back to the first tab — and sync the group
+    // card to whichever group that tab lives in.
+    const startTab = initialTab ?? 'company-dd';
+    setTab(startTab);
+    setGroup(groupOfTab(startTab));
     setShipmentFilter('all');
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, customer?.db_id, onClose]);
+  }, [open, customer?.db_id, onClose, initialTab]);
 
   /* Fetch the vault payload when the modal opens for a new customer.
    * Skips the fetch when (a) the parent passed an override via `data`
@@ -591,10 +623,30 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           </div>
         </div>
 
-        {/* ─── TABS — pill ribbon, gradient active state. */}
+        {/* ─── GROUP CARDS — Standard Documents vs Case to Case. */}
+        <div className="cev-groups-wrap">
+          <div className="cev-groups">
+            {GROUPS.map(g => (
+              <button
+                key={g.key}
+                type="button"
+                className={`cev-group ${group === g.key ? 'is-active' : ''}`}
+                onClick={() => selectGroup(g.key)}
+              >
+                <span className="cev-group-icon"><i className={g.icon} aria-hidden /></span>
+                <span className="cev-group-text">
+                  <span className="cev-group-title">{g.title}</span>
+                  <span className="cev-group-sub">{g.sub}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ─── SUB-TABS — pill ribbon for the active group. */}
         <div className="cev-tabs-wrap">
           <div className="cev-tabs">
-            {TABS.map(t => (
+            {TABS.filter(t => t.group === group).map(t => (
               <button
                 key={t.key}
                 type="button"
@@ -1341,6 +1393,44 @@ const CEV_CSS = `
 /* ─── TABS — pill ribbon. Inactive tabs read as soft chips,
    active tab gets a violet gradient + lifted shadow. Animated icon
    square and pill count badge keep the row visually rich. */
+/* ─── GROUP CARDS — two big selectors that split the sub-tabs into
+   Standard Documents (one-time) and Case to Case Agreements (per-deal). */
+.cev-groups-wrap {
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #faf7ff 0%, #f5f3ff 100%);
+  padding: 14px 18px 0;
+}
+.cev-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cev-group {
+  display: flex; align-items: center; gap: 14px;
+  padding: 13px 18px;
+  background: #ffffff;
+  border: 1.5px solid #e9e3fb;
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: all .2s ease;
+}
+.cev-group:hover { border-color: #c4b5fd; background: #faf7ff; }
+.cev-group.is-active {
+  background: linear-gradient(120deg, #4c1d95 0%, #6d28d9 55%, #7c3aed 100%);
+  border-color: #6d28d9;
+  box-shadow: 0 6px 18px rgba(109,40,217,.35);
+}
+.cev-group-icon {
+  width: 42px; height: 42px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px;
+  background: #f1edfd; color: #6d28d9; border: 1px solid #e0d8fa;
+  font-size: 20px;
+}
+.cev-group.is-active .cev-group-icon { background: rgba(255,255,255,.18); color: #fff; border-color: rgba(255,255,255,.25); }
+.cev-group-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cev-group-title { font-size: 15px; font-weight: 800; color: #1e1b4b; letter-spacing: -.01em; }
+.cev-group.is-active .cev-group-title { color: #ffffff; }
+.cev-group-sub { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: #8b80b5; }
+.cev-group.is-active .cev-group-sub { color: rgba(255,255,255,.8); }
+
 .cev-tabs-wrap {
   flex-shrink: 0;
   background: linear-gradient(180deg, #faf7ff 0%, #f5f3ff 100%);
@@ -1685,6 +1775,14 @@ const CEV_CSS = `
 
 /* ─── DARK MODE — violet palette mapped to lavender-on-deep-purple ─── */
 [data-bs-theme="dark"] .cev-card { background: #1a1430; }
+[data-bs-theme="dark"] .cev-groups-wrap { background: linear-gradient(180deg, #1a1430 0%, #211a3d 100%); }
+[data-bs-theme="dark"] .cev-group { background: #211a3d; border-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .cev-group:hover { background: #2a2150; border-color: rgba(167,139,250,.5); }
+[data-bs-theme="dark"] .cev-group.is-active { background: linear-gradient(120deg,#4c1d95,#6d28d9); border-color: #7c3aed; }
+[data-bs-theme="dark"] .cev-group-icon { background: rgba(124,58,237,.22); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .cev-group.is-active .cev-group-icon { background: rgba(255,255,255,.18); color: #fff; }
+[data-bs-theme="dark"] .cev-group-title { color: #ede9fe; }
+[data-bs-theme="dark"] .cev-group-sub { color: #a99fcf; }
 [data-bs-theme="dark"] .cev-tabs-wrap { background: linear-gradient(180deg, #1a1430 0%, #211a3d 100%); border-bottom-color: rgba(124,58,237,.22); }
 [data-bs-theme="dark"] .cev-tab { background: transparent; color: #c4b5fd; border: 1.5px solid rgba(167,139,250,0.40); box-shadow: none; }
 [data-bs-theme="dark"] .cev-tab-icon { background: transparent; color: #c4b5fd; }
@@ -1768,6 +1866,8 @@ const CEV_CSS = `
   .cev-kpi-nav { width: 30px; height: 30px; font-size: 16px; }
   .cev-kpi-nav-prev { left: 10px; }
   .cev-kpi-nav-next { right: 10px; }
+  .cev-groups-wrap { padding: 12px 14px 0; }
+  .cev-groups { grid-template-columns: 1fr; gap: 10px; }
   .cev-tabs-wrap { padding: 10px 14px; }
   .cev-tab { padding: 7px 14px; font-size: 12px; gap: 7px; }
   .cev-tab-icon { width: 16px; height: 16px; font-size: 13px; }

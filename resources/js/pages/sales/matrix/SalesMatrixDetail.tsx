@@ -9,8 +9,7 @@ import AddConsigneeModal from '../AddConsigneeModal';
 import LeadEvidenceVaultModal, { type LeadVaultTarget } from '../LeadEvidenceVaultModal';
 import AddProductModal from '../../products/AddProductModal';
 import ProductDirectoryModal from './ProductDirectoryModal';
-import ProductSourcingModal from './ProductSourcingModal';
-import PriceSharedModal from './PriceSharedModal';
+import StageEmbedModal from './StageEmbedModal';
 import ChangeOwnerModal from './ChangeOwnerModal';
 import RemarksModal from './RemarksModal';
 import KeyOpportunityModal from './KeyOpportunityModal';
@@ -1197,21 +1196,31 @@ export default function SalesMatrixDetail() {
         }}
       />
 
-      {/* ── Product Sourcing (Stage 3) popup ── */}
-      <ProductSourcingModal
-        open={productSourcingOpen}
-        leadId={resolvedLeadId ?? null}
-        onClose={() => setProductSourcingOpen(false)}
-        onChanged={() => { void reloadLead(); }}
-      />
+      {/* ── Product Sourcing (Stage 3) popup — embeds the REAL Stage 3 so
+              the toolbar action is identical to the inline pipeline view
+              (single source of truth; pipeline footer suppressed). ── */}
+      <StageEmbedModal open={productSourcingOpen} onClose={() => setProductSourcingOpen(false)}>
+        <Stage3ProductSourcing
+          header={header}
+          stage={3}
+          onPrev={() => {}}
+          onNext={() => {}}
+          reloadLead={reloadLead}
+          embedded
+        />
+      </StageEmbedModal>
 
-      {/* ── Price Shared (Stage 4) popup ── */}
-      <PriceSharedModal
-        open={priceSharedOpen}
-        leadId={resolvedLeadId ?? null}
-        onClose={() => setPriceSharedOpen(false)}
-        onChanged={() => { void reloadLead(); }}
-      />
+      {/* ── Price Shared (Stage 4) popup — embeds the REAL Stage 4. ── */}
+      <StageEmbedModal open={priceSharedOpen} onClose={() => setPriceSharedOpen(false)}>
+        <Stage4PriceShared
+          header={header}
+          stage={4}
+          onPrev={() => {}}
+          onNext={() => {}}
+          reloadLead={reloadLead}
+          embedded
+        />
+      </StageEmbedModal>
 
       {/* ── Change Lead Owner popup ── */}
       <ChangeOwnerModal

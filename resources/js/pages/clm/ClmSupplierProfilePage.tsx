@@ -1,6 +1,7 @@
 import { useState, useEffect, type CSSProperties } from 'react';
 import api from '../../api';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from '../vendors/SupplierEvidenceVaultModal';
+import ClmDocsPopup, { type DocCategory } from './ClmDocsPopup';
 
 /*
  * CLM → Supplier Profile.
@@ -354,7 +355,7 @@ const PG_WRAP: CSSProperties = { padding: '10px 16px', background: '#f8feff', bo
 /* ───────────────────────── Helper components ───────────────────────── */
 
 // Party-wise progress cell — larger size variant (58px bar)
-function PartyProgCell({ obj }: { obj: Prog }) {
+function PartyProgCell({ obj, onClick }: { obj: Prog; onClick?: () => void }) {
   const { d, t } = obj;
   const pct = t > 0 ? Math.round((d / t) * 100) : 0;
   const isComplete = pct === 100;
@@ -364,7 +365,11 @@ function PartyProgCell({ obj }: { obj: Prog }) {
   const numBg = isComplete ? '#ecfdf5' : isPartial ? '#fffbeb' : '#f8fafc';
   const numBd = isComplete ? '#A7F3D0' : isPartial ? '#FDE68A' : '#e2e8f0';
   return (
-    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+    <td
+      style={{ padding: '8px 10px', textAlign: 'center', cursor: onClick ? 'pointer' : undefined }}
+      title={onClick ? 'View these documents' : undefined}
+      onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
+    >
       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '5px', minWidth: '62px', padding: '3px 4px', borderRadius: '7px' }}>
         <span style={{ fontSize: '11px', fontWeight: 900, color: numC, background: numBg, border: `1px solid ${numBd}`, padding: '2px 8px', borderRadius: '20px', letterSpacing: '-.2px', lineHeight: 1.4 }}>
           {d}<span style={{ fontSize: '9px', fontWeight: 500, color: '#94a3b8' }}>/{t}</span>
@@ -535,7 +540,7 @@ function slicePage<T>(data: T[], page: number): T[] {
 }
 
 /* ───────────────────────── Party-wise table ───────────────────────── */
-function PartyTable({ data, label, onVault }: { data: PartyRow[]; label: string; onVault?: (row: PartyRow) => void }) {
+function PartyTable({ data, label, onVault, onDocs }: { data: PartyRow[]; label: string; onVault?: (row: PartyRow) => void; onDocs?: (row: PartyRow, category: DocCategory) => void }) {
   const [page, setPage] = usePage();
   const rows = slicePage(data, page);
   return (
@@ -574,12 +579,12 @@ function PartyTable({ data, label, onVault }: { data: PartyRow[]; label: string;
                     <span style={{ fontSize: '8.5px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.22)', padding: '1px 6px', borderRadius: '4px', letterSpacing: '.05em' }}>{r.sc2}</span>
                   </div>
                 </td>
-                <PartyProgCell obj={r.kyc} />
-                <PartyProgCell obj={r.dd} />
-                <PartyProgCell obj={r.tl} />
-                <PartyProgCell obj={r.td} />
+                <PartyProgCell obj={r.kyc} onClick={onDocs ? () => onDocs(r, 'kyc') : undefined} />
+                <PartyProgCell obj={r.dd} onClick={onDocs ? () => onDocs(r, 'dd') : undefined} />
+                <PartyProgCell obj={r.tl} onClick={onDocs ? () => onDocs(r, 'tl') : undefined} />
+                <PartyProgCell obj={r.td} onClick={onDocs ? () => onDocs(r, 'td') : undefined} />
                 <td style={{ padding: '9px 11px', textAlign: 'center' }}><ShipBadge n={r.ship} /></td>
-                <PartyProgCell obj={r.agr} />
+                <PartyProgCell obj={r.agr} onClick={onDocs ? () => onDocs(r, 'agr') : undefined} />
                 <td style={{ padding: '9px 12px', textAlign: 'center' }}><EvidenceVaultBtn onClick={() => onVault?.(r)} /></td>
               </tr>
             );
@@ -806,6 +811,14 @@ export default function ClmSupplierProfilePage() {
     setSupVault({ id: row.id, db_id: row.db_id, company: row.name, segment: row.seg, contactCity: row.state });
   };
 
+  // Single-bucket documents popup — opened when a KYC / DD / TL / TD /
+  // Agreements progress cell is clicked. No-ops without a db_id.
+  const [docsPopup, setDocsPopup] = useState<{ ownerId: number; company: string; category: DocCategory } | null>(null);
+  const openDocs = (row: PartyRow, category: DocCategory) => {
+    if (!row.db_id) return;
+    setDocsPopup({ ownerId: row.db_id, company: row.name, category });
+  };
+
   // ── Live Party-wise data from GET /clm/supplier-profile ──
   const [sp, setSp] = useState<SpData>(EMPTY_SP);
   useEffect(() => {
@@ -952,8 +965,8 @@ export default function ClmSupplierProfilePage() {
                   <SubTab active={wsSub === 'mat'} onClick={() => setWsSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={wsSub === 'mat'} icon="mat" />
                   <SubTab active={wsSub === 'logi'} onClick={() => setWsSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={wsSub === 'logi'} icon="logi" />
                 </div>
-                {wsSub === 'mat' && <PartyTable data={spMatData} label="suppliers" onVault={openVault} />}
-                {wsSub === 'logi' && <PartyTable data={spLogiData} label="suppliers" onVault={openVault} />}
+                {wsSub === 'mat' && <PartyTable data={spMatData} label="suppliers" onVault={openVault} onDocs={openDocs} />}
+                {wsSub === 'logi' && <PartyTable data={spLogiData} label="suppliers" onVault={openVault} onDocs={openDocs} />}
               </div>
             )}
 
@@ -965,9 +978,9 @@ export default function ClmSupplierProfilePage() {
                   <SubTab active={wosSub === 'mat'} onClick={() => setWosSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={wosSub === 'mat'} icon="mat" />
                   <SubTab active={wosSub === 'logi'} onClick={() => setWosSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={wosSub === 'logi'} icon="logi" />
                 </div>
-                {wosSub === 'svc' && <PartyTable data={spWosSvcData} label="suppliers" onVault={openVault} />}
-                {wosSub === 'mat' && <PartyTable data={spWosMatData} label="suppliers" onVault={openVault} />}
-                {wosSub === 'logi' && <PartyTable data={spWosLogiData} label="suppliers" onVault={openVault} />}
+                {wosSub === 'svc' && <PartyTable data={spWosSvcData} label="suppliers" onVault={openVault} onDocs={openDocs} />}
+                {wosSub === 'mat' && <PartyTable data={spWosMatData} label="suppliers" onVault={openVault} onDocs={openDocs} />}
+                {wosSub === 'logi' && <PartyTable data={spWosLogiData} label="suppliers" onVault={openVault} onDocs={openDocs} />}
               </div>
             )}
           </div>
@@ -1023,6 +1036,17 @@ export default function ClmSupplierProfilePage() {
 
       {/* Evidence Vault popup — same modal used by the Suppliers (Vendors) table. */}
       <SupplierEvidenceVaultModal open={!!supVault} supplier={supVault} onClose={() => setSupVault(null)} />
+
+      {/* Single-bucket documents popup — opened from a KYC / DD / TL / TD /
+          Agreements progress cell instead of the full Evidence Vault. */}
+      <ClmDocsPopup
+        open={!!docsPopup}
+        onClose={() => setDocsPopup(null)}
+        category={docsPopup?.category ?? 'kyc'}
+        ownerType="supplier"
+        ownerId={docsPopup?.ownerId ?? null}
+        company={docsPopup?.company ?? ''}
+      />
     </div>
   );
 }
