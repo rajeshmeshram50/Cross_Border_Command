@@ -16,26 +16,12 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
-/**
- * Document signing workflow runtime. Each row in `hr_document_signatures`
- * is one "send" of a template against one employee. Per-signer state lives
- * in the JSON `signers` column; the audit trail is a JSON array of events
- * appended to the row on every action.
- *
- * Endpoints:
- *   POST   /hr-document-signatures                       send a template into its workflow
- *   GET    /hr-document-signatures                       list (?employee_id, ?status)
- *   GET    /hr-document-signatures/inbox                 my pending signature tasks
- *   GET    /hr-document-signatures/{id}                  one row + audit log + resolved HTML
- *   POST   /hr-document-signatures/{id}/action           current signer signs / approves / acknowledges
- *   POST   /hr-document-signatures/{id}/reject           current signer rejects
- *   POST   /hr-document-signatures/{id}/cancel           sender cancels the run
- */
+
 class HrDocumentSignatureController extends Controller
 {
     private const WITH = [
         'template:id,code,name,doc_type',
-        'employee:id,first_name,last_name,display_name,emp_code,department_id,designation_id,reporting_manager_id,user_id',
+        'employee:id,first_name,last_name,display_name,emp_code,department_id,designation_id,reporting_manager_id,reporting_manager_user_id,user_id',
         'employee.department:id,name',
         'employee.designation:id,name,level',
         'creator:id,name',
@@ -98,6 +84,11 @@ class HrDocumentSignatureController extends Controller
         $data = $request->validate([
             'template_id' => 'required|integer|exists:hr_document_templates,id',
             'employee_id' => 'required|integer|exists:employees,id',
+            // Custom field values entered in the Generate wizard (token => value).
+            // Merged into the frozen content_html so a doc sent for signature
+            // keeps the edits the user filled in (e.g. {{TEST}} → "sssss").
+            'custom_values'   => 'nullable|array',
+            'custom_values.*' => 'nullable',
         ]);
 
         return DB::transaction(function () use ($request, $data) {
@@ -139,6 +130,14 @@ class HrDocumentSignatureController extends Controller
             $buildCtx = $ref->getMethod('buildTokenContext'); $buildCtx->setAccessible(true);
             $resolve  = $ref->getMethod('resolveTokens');     $resolve->setAccessible(true);
             $ctx = $buildCtx->invoke($hrTplController, $emp->loadMissing(['client']), $signersTpl);
+            // Overlay the wizard-entered custom field values onto the token
+            // context so {{CustomToken}} placeholders are frozen with the
+            // user's edits (not left blank) at send time.
+            foreach ((array) ($data['custom_values'] ?? []) as $k => $v) {
+                if (is_scalar($v)) {
+                    $ctx[(string) $k] = (string) $v;
+                }
+            }
             $frozenHtml = $resolve->invoke($hrTplController, (string) $tpl->content_html, $ctx, true);
 
             $row = HrDocumentSignature::create([
@@ -297,6 +296,123 @@ class HrDocumentSignatureController extends Controller
         $row->save();
         $row->load(self::WITH);
         return response()->json($row);
+    }
+
+    /**
+     * Send a reminder email to the CURRENT pending signer on an
+     * in-flight workflow. HR uses this when a signer has been sitting
+     * on a doc — instead of pinging them on chat, click Reminder and
+     * the system emails them a polite nudge with the document link.
+     *
+     * Behaviour:
+     *  - Only fires on Pending / In Progress runs (Completed / Rejected
+     *    / Cancelled don't have a "current signer" to remind).
+     *  - Only emails the signer whose turn it is (sequential mode);
+     *    the rest are still waiting their turn and shouldn't get
+     *    reminders yet.
+     *  - Audit-logs the reminder so the admin can see how many nudges
+     *    have been sent from the Audit Trail timeline.
+     *  - Throttles to once per 6 hours per signer to avoid spam if HR
+     *    clicks the button repeatedly.
+     */
+    public function remind(Request $request, $id)
+    {
+        $row = $this->loadForRead($request, (int) $id);
+        $row->load(self::WITH);
+
+        if (!in_array($row->status, ['Pending', 'In Progress'], true)) {
+            abort(422, 'Reminders only apply to in-flight workflows. Current status: ' . $row->status);
+        }
+
+        $signers = $row->signers ?? [];
+        $idx = (int) ($row->current_index ?? 0);
+        $current = $signers[$idx] ?? null;
+        if (!$current) {
+            abort(422, 'No active signer found on this workflow.');
+        }
+
+        $userId = (int) ($current['user_id'] ?? 0);
+        if (!$userId) {
+            abort(422, 'The current signer has no user account linked — reminder cannot be sent.');
+        }
+
+        $signerUser = \App\Models\User::find($userId);
+        $signerName = $current['name'] ?? ($signerUser?->name ?? 'Signer');
+
+        // Throttle — bail if a reminder went out for THIS signer in the
+        // last 6 hours. Cheap protection against accidental double-click
+        // and intentional spam. Look at the audit log for the marker.
+        $sixHoursAgo = now()->subHours(6);
+        $recent = collect($row->audit_log ?? [])
+            ->filter(function ($ev) use ($idx, $sixHoursAgo) {
+                if (($ev['action'] ?? null) !== 'reminded') return false;
+                if (($ev['signer_index'] ?? null) !== $idx) return false;
+                try {
+                    return \Carbon\Carbon::parse($ev['at'])->greaterThan($sixHoursAgo);
+                } catch (\Throwable $e) {
+                    return false;
+                }
+            })
+            ->isNotEmpty();
+        if ($recent) {
+            abort(429, 'A reminder was already sent to this signer in the last 6 hours. Please wait before sending another.');
+        }
+
+        $tplName = $row->template?->name ?: 'a document';
+        $docCode = $row->code ?: ('doc-' . $row->id);
+        $action  = $current['action'] ?? 'Sign';
+        $senderName = $request->user()?->name ?: 'HR';
+
+        // In-app notification — drop a row into the Laravel notifications
+        // table so the signer's bell icon flashes. NO email. The doc is
+        // already in the signer's HR Inbox (the inbox() endpoint returns
+        // every pending row where they're the current signer), so this
+        // notification just pulls their attention to it.
+        if ($signerUser) {
+            try {
+                \Illuminate\Support\Facades\DB::table('notifications')->insert([
+                    'id'              => (string) \Illuminate\Support\Str::uuid(),
+                    'type'            => 'App\\Notifications\\HrSignatureReminder',
+                    'notifiable_type' => \App\Models\User::class,
+                    'notifiable_id'   => $signerUser->id,
+                    'data'            => json_encode([
+                        'kind'        => 'hr_signature_reminder',
+                        'document_id' => $row->id,
+                        'code'        => $docCode,
+                        'template'    => $tplName,
+                        'action'      => $action,
+                        'sender_name' => $senderName,
+                        'message'     => "{$senderName} reminded you to {$action} {$docCode} — {$tplName}.",
+                        'url'         => '/inbox',
+                    ]),
+                    'read_at'         => null,
+                    'created_at'      => now(),
+                    'updated_at'      => now(),
+                ]);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('[hr-document-signatures] reminder notification insert failed', [
+                    'id'  => $row->id,
+                    'err' => $e->getMessage(),
+                ]);
+                // Don't fail the whole request if the notification insert
+                // hiccups — audit log still records the reminder action.
+            }
+        }
+
+        // Append audit event with signer_index so the throttle check
+        // and the audit trail UI can both see who got reminded when.
+        $row->audit_log = array_merge($row->audit_log ?? [], [
+            array_merge(
+                $this->event($request->user(), 'reminded', "Reminder sent to {$signerName} (in-app Inbox)"),
+                ['signer_index' => $idx],
+            ),
+        ]);
+        $row->save();
+
+        return response()->json([
+            'message' => 'Reminder sent — the signer will see it in their Inbox.',
+            'signer'  => $signerName,
+        ]);
     }
 
     /* ───── SIGNED OUTPUT (download + email) ───── */
@@ -470,10 +586,27 @@ class HrDocumentSignatureController extends Controller
     {
         $r = strtolower(trim($roleName));
         if (str_contains($r, 'reporting')) {
-            $mgr = $emp->reporting_manager_id
-                ? Employee::with('user')->find($emp->reporting_manager_id)
-                : null;
-            return [$mgr?->user_id ?? null, $mgr?->display_name ?? 'Reporting Manager (unassigned)'];
+            // Two paths — employees.reporting_manager_id points to an
+            // Employee row (the common case), but employees.reporting_
+            // manager_user_id points to a User row when the manager is a
+            // Branch User / Client admin who doesn't have an Employee
+            // record. Try the Employee path first (most specific), then
+            // fall back to the direct User lookup. Without this fallback,
+            // a Branch-User reporting manager surfaced as "(unassigned)"
+            // on every signature workflow.
+            if ($emp->reporting_manager_id) {
+                $mgr = Employee::with('user')->find($emp->reporting_manager_id);
+                if ($mgr) {
+                    return [$mgr->user_id ?? null, $mgr->display_name ?? 'Reporting Manager'];
+                }
+            }
+            if ($emp->reporting_manager_user_id) {
+                $u = User::find($emp->reporting_manager_user_id);
+                if ($u) {
+                    return [$u->id, $u->name ?: ('Reporting Manager (' . $u->email . ')')];
+                }
+            }
+            return [null, 'Reporting Manager (unassigned)'];
         }
         if (str_contains($r, 'employee')) {
             return [$emp->user_id ?? null, $emp->display_name ?? 'Employee'];

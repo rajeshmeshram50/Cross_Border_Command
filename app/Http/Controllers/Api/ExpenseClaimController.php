@@ -13,26 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
-/**
- * Two-stage approval workflow controller for employee expense claims.
- *
- * Endpoints (registered in routes/api.php under auth:sanctum):
- *   GET    /api/expense-claims?scope=mine|team|all  — list (role-scoped)
- *   POST   /api/expense-claims                      — create (employee submits)
- *   GET    /api/expense-claims/{id}                 — show (with audit fields)
- *   POST   /api/expense-claims/{id}/manager-approve — manager approves
- *   POST   /api/expense-claims/{id}/manager-reject  — manager rejects
- *   POST   /api/expense-claims/{id}/hr-approve      — HR/Finance approves
- *   POST   /api/expense-claims/{id}/hr-reject       — HR/Finance rejects
- *
- * Scoping rules per scope:
- *   mine — claims where employee_id = current user's Employee.id
- *   team — claims where manager_id   = current user's Employee.id
- *   all  — every claim under tenant scope (admin / HR view)
- *
- * The overall `status` is rolled up from the two stage statuses so list
- * filters stay simple (pending / approved / rejected).
- */
+
 class ExpenseClaimController extends Controller
 {
     private const STATUSES = ['pending', 'approved', 'rejected'];

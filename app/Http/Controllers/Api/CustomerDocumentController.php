@@ -10,23 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Customer Stage 2 — Documents API (Company DD + Trade Licence).
- *
- * Endpoints are nested under the customer:
- *   GET    /api/customers/{customer}/documents?kind=dd|tl
- *   POST   /api/customers/{customer}/documents
- *   GET    /api/customers/{customer}/documents/{document}
- *   PUT    /api/customers/{customer}/documents/{document}
- *   DELETE /api/customers/{customer}/documents/{document}
- *
- * Tenant scope is enforced at the parent customer level: we resolve
- * the customer through the same applyScope() rules used in
- * CustomerController and let cascadeOnDelete handle row teardown.
- *
- * File uploads land on the `public` disk under
- *   customer_documents/{customer_id}/{slug}-{rand}.{ext}
- */
+
 class CustomerDocumentController extends Controller
 {
     public function index(Request $request, $customerId): JsonResponse

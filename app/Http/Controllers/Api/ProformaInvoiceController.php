@@ -11,21 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
-/**
- * Sales Matrix → Proforma Invoice API.
- *
- *  GET    /sales/proforma-invoices                paginated list
- *  GET    /sales/proforma-invoices/{id}           single + items + relations
- *  POST   /sales/proforma-invoices                create
- *  PUT    /sales/proforma-invoices/{id}           update (replaces items)
- *  DELETE /sales/proforma-invoices/{id}           soft delete (status=cancelled)
- *  POST   /sales/proforma-invoices/{id}/duplicate clone as draft
- *  POST   /sales/proforma-invoices/from-quotation/{quotationId}
- *                                                 create a PI seeded from a Quotation
- *
- * Code: INV/YYYY-NN/SEQ allocated per (client, financial year). BT-NNN
- * for the bank-transfer reference on with_shipment PIs.
- */
+
 class ProformaInvoiceController extends Controller
 {
     /* ── LIST ───────────────────────────────────────────────── */

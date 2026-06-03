@@ -410,19 +410,7 @@ class HiringRequestController extends Controller
         }
     }
 
-    /**
-     * Validation rules.
-     *
-     * The frontend has TWO submit paths:
-     *   - "Save as Draft"  → status='Draft'; the strict required fields are
-     *     relaxed so a partial form can still be persisted.
-     *   - "Submit to HR"   → status='Submitted'; everything the form marks
-     *     with a red asterisk is required.
-     *
-     * We don't differentiate at the schema level — whichever required
-     * fields the frontend chooses to omit it'll send as empty strings, and
-     * the request validates either way.
-     */
+  
     private function validatePayload(Request $request, ?int $id = null): array
     {
         $isUpdate = $id !== null;

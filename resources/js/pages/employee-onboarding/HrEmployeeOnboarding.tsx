@@ -1412,6 +1412,23 @@ export function VaultModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, emp?.dbId]);
 
+  /* Re-fetch the signing runs when the user returns to this tab/window while
+     the vault is open — covers the case where a signer just signed the
+     document from their Inbox (a separate view) and comes back here. Without
+     this the vault kept showing the stale "Awaiting" state until it was
+     closed and reopened. */
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) return;
+    const refresh = () => { if (document.visibilityState === 'visible') fetchRuns(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, emp?.dbId]);
+
   // Latest run per template_id — handy to surface a status pill alongside the template.
   const runByTemplateId = useMemo(() => {
     const m = new Map<number, SignatureRun>();
@@ -1616,9 +1633,66 @@ export function VaultModal({
   };
 
   const openAudit = (run: SignatureRun) => { setAuditRun(run); setOpenMenuId(null); };
+  /* Send an in-app reminder (Inbox notification) to the CURRENT pending
+   * signer. The doc is already in their Inbox via the polling query —
+   * this just pushes a fresh notification to their bell icon so they
+   * notice it. No email is sent. Backend throttles to 1 reminder per
+   * 6 hours per signer; if HR clicks again too soon the API returns
+   * 429 and we surface that in the toast. */
+  const sendReminder = async (run: SignatureRun) => {
+    const current = run.signers?.[run.current_index];
+    const signerName = current?.name || 'the current signer';
+    const ok = await confirmDialog({
+      title: 'Send Reminder?',
+      message: (
+        <>
+          Nudge <strong>{signerName}</strong> in their Inbox to {current?.action?.toLowerCase() || 'sign'} this document?
+          <br />
+          <span style={{ opacity: 0.75 }}>Reminders are limited to once every 6 hours per signer.</span>
+        </>
+      ),
+      confirmLabel: 'Send Reminder',
+      cancelLabel:  'Cancel',
+      tone:         'info',
+      icon:         'notification-3-line',
+    });
+    if (!ok) return;
+    try {
+      const res = await api.post(`/hr-document-signatures/${run.id}/remind`);
+      toast.success('Reminder sent', `${res?.data?.signer || signerName} will see it in their Inbox.`);
+      fetchRuns();
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.message || 'Please try again.';
+      if (status === 429) {
+        toast.error('Slow down', msg);
+      } else {
+        toast.error('Could not send reminder', msg);
+      }
+    }
+  };
   const cancelRun = async (run: SignatureRun) => {
-    if (!confirm(`Cancel signing workflow for ${run.code || `run #${run.id}`}? This cannot be undone.`)) return;
+    // Close the row's "•••" menu BEFORE the confirm dialog opens, otherwise
+    // the menu sits there in the background while the modal is up.
     setOpenMenuId(null);
+    const code = run.code || `run #${run.id}`;
+    const ok = await confirmDialog({
+      title: 'Cancel signing workflow?',
+      message: (
+        <>
+          Cancel the signing workflow for <strong>{code}</strong>?
+          <br />
+          <span style={{ opacity: 0.75 }}>
+            This will halt all pending signatures and cannot be undone.
+          </span>
+        </>
+      ),
+      confirmLabel: 'Yes, cancel workflow',
+      cancelLabel:  'Keep workflow',
+      tone:         'danger',
+      icon:         'close-circle-line',
+    });
+    if (!ok) return;
     try {
       await api.post(`/hr-document-signatures/${run.id}/cancel`);
       toast.success('Cancelled', 'Workflow halted.');
@@ -1743,6 +1817,25 @@ export function VaultModal({
       toast.success('Document generated', `${tpl.code || tpl.name} downloaded.`);
     } catch (err: any) {
       toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
+    }
+  };
+
+  /* Download the fully-signed PDF once a run is Completed (all signers done).
+     Hits the same endpoint the Employee Profile "My Signed Documents" tab uses. */
+  const downloadSignedDoc = async (run: SignatureRun) => {
+    try {
+      const resp = await api.get(`/hr-document-signatures/${run.id}/download-pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${run.code || `doc-${run.id}`}-signed.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Downloaded', 'Signed PDF saved.');
+    } catch (err: any) {
+      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
     }
   };
 
@@ -2085,7 +2178,7 @@ export function VaultModal({
                             {tpl.status}
                           </span>
                           <button type="button" className="vault-action-view" onClick={() => handleView(tpl)}
-                            title="Preview this document with this employee's data filled in">
+                            data-tooltip="Preview with this employee's data" data-tooltip-pos="bottom" aria-label="Preview document">
                             <i className="ri-eye-line" /> View
                           </button>
                           {/* If the current user is the next signer, surface
@@ -2094,30 +2187,62 @@ export function VaultModal({
                           {isMyTurn && run && (
                             <button type="button"
                               onClick={() => openAction(run)}
+                              data-tooltip={`Your turn — ${currentSigner!.action} this document`} data-tooltip-pos="bottom" aria-label={currentSigner!.action}
                               style={{ padding: '6px 12px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', border: 0, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                               <i className="ri-quill-pen-line me-1" />{currentSigner!.action}
                             </button>
                           )}
-                          {/* Send for signing — only if there isn't an active run already. */}
-                          {(!run || run.status === 'Completed' || run.status === 'Rejected' || run.status === 'Cancelled') && (
-                            <button type="button" onClick={() => openSend(tpl)}
-                              disabled={!canGenerate}
-                              style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: canGenerate ? 'pointer' : 'not-allowed', opacity: canGenerate ? 1 : 0.5 }}
-                              title={canGenerate ? 'Send through the configured signing workflow' : 'Only Active templates can be sent'}>
-                              <i className="ri-send-plane-line me-1" /> Send
+                          {/* Send for signing — shown when there's no active run.
+                              Once the run is fully signed (Completed) the button
+                              is DISABLED (greyed) so a signed document can't be
+                              re-sent by mistake. Rejected/Cancelled still allow
+                              a fresh send. */}
+                          {(!run || run.status === 'Completed' || run.status === 'Rejected' || run.status === 'Cancelled') && (() => {
+                            const isCompleted = run?.status === 'Completed';
+                            const sendDisabled = !canGenerate || isCompleted;
+                            return (
+                              <button type="button" onClick={() => { if (!sendDisabled) openSend(tpl); }}
+                                disabled={sendDisabled}
+                                style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: sendDisabled ? 'not-allowed' : 'pointer', opacity: sendDisabled ? 0.5 : 1 }}
+                                data-tooltip={isCompleted ? 'Already fully signed — cannot re-send' : (canGenerate ? 'Send through the signing workflow' : 'Only Active templates can be sent')} data-tooltip-pos="bottom" aria-label="Send for signing">
+                                <i className="ri-send-plane-line me-1" /> Send
+                              </button>
+                            );
+                          })()}
+                          {/* Reminder — visible only on in-flight runs.
+                              Pings the CURRENT pending signer by email.
+                              Backend throttles to 1 reminder / 6 hours
+                              per signer so accidental double-clicks
+                              don't spam. */}
+                          {run && (run.status === 'Pending' || run.status === 'In Progress') && (
+                            <button type="button" onClick={() => sendReminder(run)}
+                              style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                              data-tooltip="Email a reminder to the current pending signer" data-tooltip-pos="bottom" aria-label="Send reminder">
+                              <i className="ri-mail-send-line me-1" /> Reminder
                             </button>
                           )}
                           <button type="button" className="vault-action-download" onClick={() => handleGenerate(tpl)}
                             disabled={!canGenerate}
                             style={{ opacity: canGenerate ? 1 : 0.5, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
-                            title={canGenerate ? 'Generate DOCX with this employee\'s data' : 'Only Active templates can be generated'}>
+                            data-tooltip={canGenerate ? 'Generate DOCX with this employee\'s data' : 'Only Active templates can be generated'} data-tooltip-pos="bottom" aria-label="Generate document">
                             <i className="ri-play-fill" /> Generate
                           </button>
+                          {/* Download signed PDF — icon-only (compact) so the
+                              action row stays uncluttered. Shown only once the
+                              run is fully signed. */}
+                          {run && run.status === 'Completed' && (
+                            <button type="button" onClick={() => downloadSignedDoc(run)}
+                              aria-label="Download signed PDF"
+                              style={{ width: 32, height: 32, padding: 0, borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                              data-tooltip="Download signed PDF" data-tooltip-pos="bottom">
+                              <i className="ri-file-pdf-2-line" style={{ fontSize: 15 }} />
+                            </button>
+                          )}
 
                           {/* 3-dot menu — audit trail + cancel (when a run exists) */}
                           <div style={{ position: 'relative' }}>
                             <button type="button" onClick={() => setOpenMenuId(openMenuId === tpl.id ? null : tpl.id)}
-                              title="More actions"
+                              data-tooltip="More actions" data-tooltip-pos="left" aria-label="More actions"
                               style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer' }}>
                               <i className="ri-more-2-fill" />
                             </button>
@@ -2176,6 +2301,10 @@ export function VaultModal({
                                     action: s.action,
                                     status: s.status === 'Done' ? 'Completed'
                                           : s.status === 'Rejected' ? 'Rejected'
+                                          // Run fully signed → every remaining step reads Completed
+                                          // (fixes the last signer staying on "Awaiting" after the
+                                          // final signature flips the run to Completed).
+                                          : run.status === 'Completed' ? 'Completed'
                                           : (i === run.current_index ? 'Awaiting' : 'Pending'),
                                     active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
                                   }))
@@ -2328,58 +2457,289 @@ export function VaultModal({
       {/* Audit trail modal */}
       <Modal isOpen={!!auditRun} toggle={() => setAuditRun(null)} size="lg" centered contentClassName="border-0" backdrop="static">
         <ModalBody className="p-0">
-          <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', borderRadius: '6px 6px 0 0' }}>
-            <div className="d-flex align-items-center justify-content-between">
-              <div>
-                <strong style={{ fontSize: 15 }}><i className="ri-history-line me-2" />Audit Trail</strong>
-                <div style={{ fontSize: 11.5, opacity: 0.85 }}>{auditRun?.template?.name} · {auditRun?.code} · Status {auditRun?.status}</div>
-              </div>
-              <button type="button" onClick={() => setAuditRun(null)} aria-label="Close"
-                style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 28, height: 28 }}>
-                <i className="ri-close-line" />
-              </button>
-            </div>
-          </div>
-          <div style={{ padding: 16, maxHeight: '60vh', overflowY: 'auto' }}>
-            {/* Signing flow snapshot */}
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 }}>Signing Flow</div>
-            <div className="d-flex flex-wrap" style={{ gap: 6, marginBottom: 16 }}>
-              {(auditRun?.signers || []).map((s, i) => {
-                const done = s.status === 'Done';
-                const rejected = s.status === 'Rejected';
-                const isCurrent = i === auditRun?.current_index && (auditRun?.status === 'Pending' || auditRun?.status === 'In Progress');
-                const bg = rejected ? '#fee2e2' : done ? '#dcfce7' : isCurrent ? '#dbeafe' : '#f3f4f6';
-                const fg = rejected ? '#b91c1c' : done ? '#15803d' : isCurrent ? '#1d4ed8' : '#374151';
-                return (
-                  <div key={i} className="d-flex align-items-center" style={{ gap: 6 }}>
-                    <div style={{ padding: '6px 12px', background: bg, border: `1px solid ${fg}33`, borderRadius: 8, fontSize: 12, fontWeight: 700, color: fg }}>
-                      <span style={{ display: 'inline-flex', width: 18, height: 18, borderRadius: '50%', background: fg, color: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 6, fontSize: 10 }}>{i + 1}</span>
-                      {s.name}
-                      <div style={{ fontSize: 10.5, fontWeight: 500 }}>{s.action} {done ? '· Done' : rejected ? '· Rejected' : isCurrent ? '· Pending you' : '· Waiting'}</div>
-                    </div>
-                    {i < (auditRun?.signers?.length || 0) - 1 && <i className="ri-arrow-right-line" style={{ color: '#9ca3af' }} />}
-                  </div>
-                );
-              })}
-            </div>
+          {auditRun && (() => {
+            const signers = auditRun.signers || [];
+            const totalSteps = signers.length;
+            const doneSteps  = signers.filter(s => s.status === 'Done').length;
+            const progressPct = totalSteps > 0 ? (doneSteps / totalSteps) * 100 : 0;
+            return (
+              <>
+                {/* ── Header — violet gradient with icon + workflow code +
+                      title on the LEFT, circular percentage progress on the
+                      RIGHT (matches the "VAULT STATUS" doughnut pattern used
+                      on the Evidence Vault header). ── */}
+                <div style={{
+                  position: 'relative',
+                  padding: '20px 22px',
+                  background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%)',
+                  color: '#fff',
+                  borderRadius: '8px 8px 0 0',
+                }}>
+                  {/* Close button — absolute top right so it's always reachable */}
+                  <button
+                    type="button"
+                    onClick={() => setAuditRun(null)}
+                    aria-label="Close"
+                    style={{
+                      position: 'absolute',
+                      top: 12, right: 12,
+                      background: 'rgba(255,255,255,0.18)',
+                      border: 0, color: '#fff',
+                      borderRadius: 10,
+                      width: 32, height: 32,
+                      cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <i className="ri-close-line" style={{ fontSize: 16 }} />
+                  </button>
 
-            {/* Audit events */}
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 }}>Events</div>
-            <div style={{ borderLeft: '2px solid #e5e7eb', paddingLeft: 14 }}>
-              {(auditRun?.audit_log || []).slice().reverse().map((ev, i) => (
-                <div key={i} style={{ position: 'relative', marginBottom: 12 }}>
-                  <span style={{ position: 'absolute', left: -22, top: 6, width: 10, height: 10, borderRadius: '50%', background: '#3b82f6', border: '2px solid #fff' }} />
-                  <div style={{ fontSize: 12.5, color: '#1f2937', fontWeight: 600 }}>{ev.message}</div>
-                  <div style={{ fontSize: 11, color: '#6b7280' }}>
-                    {new Date(ev.at).toLocaleString()} · {ev.actor_name} · <code style={{ fontSize: 10.5, background: '#f3f4f6', padding: '1px 5px', borderRadius: 3 }}>{ev.action}</code>
+                  <div className="d-flex align-items-center" style={{ gap: 16, paddingRight: 48 }}>
+                    {/* Glass icon */}
+                    <div style={{
+                      width: 48, height: 48,
+                      background: 'rgba(255,255,255,0.18)',
+                      borderRadius: 12,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                      backdropFilter: 'blur(8px)',
+                    }}>
+                      <i className="ri-history-line" style={{ fontSize: 22 }} />
+                    </div>
+
+                    {/* Title block */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 11, fontWeight: 700,
+                        letterSpacing: '0.08em', textTransform: 'uppercase',
+                        opacity: 0.78,
+                        marginBottom: 2,
+                      }}>
+                        {auditRun.code || `Run #${auditRun.id}`} · Signature Workflow
+                      </div>
+                      <div style={{
+                        fontSize: 18, fontWeight: 800,
+                        letterSpacing: '-0.01em',
+                        lineHeight: 1.2,
+                      }}>
+                        {auditRun.template?.name || 'Document Timeline'}
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.85, marginTop: 3 }}>
+                        Status · <strong>{auditRun.status}</strong> · {doneSteps} / {totalSteps} signed
+                      </div>
+                    </div>
+
+                    {/* Circular percentage progress — SVG donut chart.
+                        circumference = 2π × r (r=26) ≈ 163.36. dashoffset is
+                        the *unfilled* length, so (1 - pct/100) * circumference
+                        leaves the filled arc visible. */}
+                    {(() => {
+                      const r = 26;
+                      const C = 2 * Math.PI * r;
+                      const offset = C - (progressPct / 100) * C;
+                      return (
+                        <div style={{
+                          position: 'relative',
+                          width: 64, height: 64,
+                          flexShrink: 0,
+                        }}>
+                          <svg width="64" height="64" viewBox="0 0 64 64" style={{ transform: 'rotate(-90deg)' }}>
+                            {/* Track */}
+                            <circle
+                              cx="32" cy="32" r={r}
+                              fill="none"
+                              stroke="rgba(255,255,255,0.20)"
+                              strokeWidth="6"
+                            />
+                            {/* Progress arc */}
+                            <circle
+                              cx="32" cy="32" r={r}
+                              fill="none"
+                              stroke="#ffffff"
+                              strokeWidth="6"
+                              strokeLinecap="round"
+                              strokeDasharray={C}
+                              strokeDashoffset={offset}
+                              style={{ transition: 'stroke-dashoffset .6s ease-out' }}
+                            />
+                          </svg>
+                          {/* Centered percentage label */}
+                          <div style={{
+                            position: 'absolute',
+                            inset: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 14,
+                            fontWeight: 800,
+                            color: '#fff',
+                            letterSpacing: '-0.02em',
+                          }}>
+                            {Math.round(progressPct)}%
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
-              ))}
-              {(!auditRun?.audit_log || auditRun.audit_log.length === 0) && (
-                <div style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>No events yet.</div>
-              )}
-            </div>
-          </div>
+
+                {/* ── Vertical timeline ── */}
+                <div style={{ padding: '16px 22px 18px', maxHeight: '55vh', overflowY: 'auto', background: '#fff' }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 800,
+                    color: '#6b7280', letterSpacing: '0.08em',
+                    textTransform: 'uppercase', marginBottom: 14,
+                  }}>
+                    Signature Timeline
+                  </div>
+
+                  {signers.length === 0 && (
+                    <div style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>
+                      No signers configured for this workflow.
+                    </div>
+                  )}
+
+                  {signers.map((s, i) => {
+                    const done = s.status === 'Done';
+                    const rejected = s.status === 'Rejected';
+                    const isCurrent = i === auditRun.current_index
+                      && (auditRun.status === 'Pending' || auditRun.status === 'In Progress');
+                    const isLast = i === signers.length - 1;
+
+                    // Color tokens per state
+                    const tone = rejected
+                      ? { bg: '#fee2e2', border: '#fca5a5', icon: '#dc2626', pill: '#dc2626', pillBg: '#fee2e2', pillBorder: '#fca5a5', label: 'Rejected', iconClass: 'ri-close-line' }
+                      : done
+                      ? { bg: '#10b981', border: '#10b981', icon: '#fff',    pill: '#10b981', pillBg: '#d1fae5', pillBorder: '#a7f3d0', label: 'Done',     iconClass: 'ri-check-line' }
+                      : isCurrent
+                      ? { bg: '#7c3aed', border: '#7c3aed', icon: '#fff',    pill: '#7c3aed', pillBg: '#ede9fe', pillBorder: '#c4b5fd', label: 'Pending you', iconClass: 'ri-time-line' }
+                      : { bg: '#f3f4f6', border: '#d1d5db', icon: '#9ca3af', pill: '#6b7280', pillBg: '#f3f4f6', pillBorder: '#e5e7eb', label: 'Waiting',  iconClass: 'ri-time-line' };
+
+                    return (
+                      <div key={i} style={{ position: 'relative', display: 'flex', gap: 16, paddingBottom: isLast ? 0 : 20 }}>
+                        {/* Vertical connector line behind the dot */}
+                        {!isLast && (
+                          <span style={{
+                            position: 'absolute',
+                            left: 17,
+                            top: 36,
+                            bottom: 0,
+                            width: 2,
+                            background: done ? '#10b981' : '#e5e7eb',
+                            borderRadius: 1,
+                          }} />
+                        )}
+
+                        {/* Circular state icon */}
+                        <div style={{
+                          width: 36, height: 36,
+                          borderRadius: '50%',
+                          background: tone.bg,
+                          border: `2px solid ${tone.border}`,
+                          color: tone.icon,
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 16,
+                          flexShrink: 0,
+                          position: 'relative',
+                          zIndex: 1,
+                          boxShadow: done || isCurrent ? `0 4px 12px ${tone.bg}40` : 'none',
+                        }}>
+                          <i className={tone.iconClass} />
+                        </div>
+
+                        {/* Row content */}
+                        <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+                          <div className="d-flex justify-content-between align-items-start" style={{ gap: 12 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', lineHeight: 1.3 }}>
+                                {s.name}
+                              </div>
+                              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                                {s.action} · Step {i + 1} of {signers.length}
+                              </div>
+                              {s.acted_at && (
+                                <div style={{ fontSize: 11.5, color: '#9ca3af', marginTop: 4 }}>
+                                  <i className="ri-calendar-line" style={{ marginRight: 4 }} />
+                                  {new Date(s.acted_at).toLocaleString()}
+                                </div>
+                              )}
+                              {s.note && (
+                                <div style={{
+                                  fontSize: 11.5, color: '#7f1d1d',
+                                  background: '#fef2f2',
+                                  border: '1px solid #fecaca',
+                                  borderRadius: 6,
+                                  padding: '6px 10px',
+                                  marginTop: 6,
+                                }}>
+                                  <strong>Note:</strong> {s.note}
+                                </div>
+                              )}
+                            </div>
+                            {/* Status pill */}
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center',
+                              gap: 4,
+                              padding: '4px 10px',
+                              fontSize: 11, fontWeight: 700,
+                              color: tone.pill,
+                              background: tone.pillBg,
+                              border: `1px solid ${tone.pillBorder}`,
+                              borderRadius: 999,
+                              flexShrink: 0,
+                              whiteSpace: 'nowrap',
+                            }}>
+                              <i className={tone.iconClass} style={{ fontSize: 12 }} />
+                              {tone.label}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* ── Event log (collapsible-feel section) ── */}
+                  {(auditRun.audit_log && auditRun.audit_log.length > 0) && (
+                    <>
+                      <div style={{
+                        marginTop: 24, paddingTop: 16,
+                        borderTop: '1px solid #f3f4f6',
+                        fontSize: 11, fontWeight: 800,
+                        color: '#6b7280', letterSpacing: '0.08em',
+                        textTransform: 'uppercase', marginBottom: 12,
+                      }}>
+                        Activity Log
+                      </div>
+                      <div style={{ borderLeft: '2px solid #ede9fe', paddingLeft: 14, marginLeft: 8 }}>
+                        {auditRun.audit_log.slice().reverse().map((ev, i) => (
+                          <div key={i} style={{ position: 'relative', marginBottom: 10 }}>
+                            <span style={{
+                              position: 'absolute',
+                              left: -22, top: 5,
+                              width: 10, height: 10,
+                              borderRadius: '50%',
+                              background: '#7c3aed',
+                              border: '2px solid #fff',
+                              boxShadow: '0 0 0 2px #ede9fe',
+                            }} />
+                            <div style={{ fontSize: 12.5, color: '#1f2937', fontWeight: 600 }}>
+                              {ev.message}
+                            </div>
+                            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 1 }}>
+                              {new Date(ev.at).toLocaleString()} · {ev.actor_name}
+                              <code style={{ fontSize: 10, background: '#f3f4f6', padding: '1px 5px', borderRadius: 3, marginLeft: 6 }}>
+                                {ev.action}
+                              </code>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </>
+            );
+          })()}
         </ModalBody>
       </Modal>
 

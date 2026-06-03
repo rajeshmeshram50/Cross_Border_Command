@@ -337,7 +337,11 @@ export default function SalesConsignee() {
                          contactCity: c.countryDetail,
                          customerId: c.customerId,
                        })} />
-            {canEdit && <ActionBtn title="Delete Consignee"        icon="ri-delete-bin-line"  color="danger"  onClick={() => setDelTarget(c)} />}
+            {/* Delete action removed per product request — consignees
+                are kept (soft-delete only via API if ever needed). The
+                handleDelete + DeleteConfirmModal wiring is intentionally
+                left below so it's a one-line restore if requirements
+                change. */}
           </div>
         );
       },

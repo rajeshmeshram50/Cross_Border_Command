@@ -290,6 +290,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * individually. The flag itself isn't persisted server-side — it's
    * a UX shortcut for copy-once-and-edit. */
   const [sameAsCustomer, setSameAsCustomer] = useState(false);
+  /* True iff the consignee currently being EDITED was SAVED as
+   * same-as-customer (authoritative — read from the fetched detail, not the
+   * list-row prop which doesn't always carry the flag). Locks the toggle so a
+   * saved mirror can't be unticked from the edit screen. */
+  const [savedAsMirror, setSavedAsMirror] = useState(false);
   /* Inline validation errors for Stage 1 fields. Keyed by form1 field
    * name. Each `goNext` from Stage 1 runs validateStage1() and refuses
    * to advance if any required field is empty/invalid; the error map
@@ -549,6 +554,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setLinkedHidden(true);
     setErrors1({});
     setSameAsCustomer(false);
+    setSavedAsMirror(false);
     setEvSub('dd');
     setLocations([]);
     /* Reset Stage 1 form to empty defaults — CREATE mode only. In edit
@@ -818,6 +824,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         // the consignee flagged as same-as-customer on update.
         if (typeof d.same_as_customer === 'boolean') {
           setSameAsCustomer(d.same_as_customer);
+          // Authoritative saved-mirror flag → locks the toggle on edit.
+          setSavedAsMirror(d.same_as_customer === true);
           // Linked Customer panel stays collapsed by default — the
           // user can click the bar to expand it on demand. (Previous
           // behavior auto-expanded for same-as-customer rows, but
@@ -2093,6 +2101,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 (existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
                 !(consignee?.same_as_customer === true)
               }
+              /* Editing a consignee that was SAVED as same-as-customer →
+                 lock the toggle (can't untick) + keep fields read-only.
+                 Uses the authoritative fetched-detail flag (savedAsMirror),
+                 not the list-row prop which may omit same_as_customer. */
+              mirrorLocked={savedAsMirror}
               locations={locations}
               onAddLocation={() => setLocModal({ open: true, editing: null })}
               onEditLocation={(id) => setLocModal({ open: true, editing: id })}
@@ -2279,6 +2292,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         primaryPhone,
         ...otherLocs.map(l => (l.cpContact || '').trim()),
       ].filter(Boolean);
+      /* Address type uniqueness — every type already used on this
+       * consignee (primary + other locations) is blocked from the
+       * dropdown so each type can only appear once. The row being
+       * edited keeps its own value visible (handled inside the
+       * sub-modal's availableAddressTypes filter). */
+      const usedAddressTypes = [
+        (form1.addressType || '').trim(),
+        ...otherLocs.map(l => (l.type || '').trim()),
+      ].filter(Boolean);
       return (
         <LocationSubModal
           editing={editingId ? locations.find(l => l.id === editingId) ?? null : null}
@@ -2288,10 +2310,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             states: mStates,
             designations: mDesignations,
           }}
-          /* Block "Registered Office" in additional locations when the
-           * primary address already claims it — a consignee can only
-           * have one registered office. */
-          disallowedTypes={form1.addressType === 'Registered Office' ? ['Registered Office'] : []}
+          disallowedTypes={usedAddressTypes}
           existingEmails={existingEmails}
           existingPhones={existingPhones}
           onClose={() => setLocModal({ open: false, editing: null })}
@@ -2612,7 +2631,7 @@ const optsWith = (
 
 const Stage1 = ({
   tab, setTab, form, setForm, masters, errors, clearErr, validateField,
-  sameAsCustomer, setSameAsCustomer, customer, mirrorAlreadyTakenByOther,
+  sameAsCustomer, setSameAsCustomer, customer, mirrorAlreadyTakenByOther, mirrorLocked,
   locations, onAddLocation, onEditLocation, onDeleteLocation,
 }: {
   tab: IdentityTab;
@@ -2633,6 +2652,10 @@ const Stage1 = ({
    *  marked same-as-customer. Disables the toggle so the user can't
    *  create a second mirror — the business rule is 1 mirror / customer. */
   mirrorAlreadyTakenByOther: boolean;
+  /** True when editing a consignee that was SAVED as same-as-customer.
+   *  Locks the toggle so it can't be unticked from the edit screen — a
+   *  saved mirror stays a mirror; change the source on the Customer. */
+  mirrorLocked: boolean;
   locations: LocationRow[];
   onAddLocation: () => void;
   onEditLocation: (id: string) => void;
@@ -2642,7 +2665,10 @@ const Stage1 = ({
    * company + primary address fields lock to read-only — every
    * input + MasterSelect receives `disabled={lock}` so the user can
    * tell at a glance the values are being mirrored. */
-  const lock = sameAsCustomer && !!customer;
+  /* Lock whenever Same-as-Customer is on — including edit mode where the
+     linked `customer` object may not be re-resolved yet. (Earlier the
+     `&& !!customer` guard let a saved mirror's fields stay editable on edit.) */
+  const lock = sameAsCustomer;
   const set = (k: string, v: any) => {
     const nextForm = { ...form, [k]: v };
     setForm(nextForm);
@@ -2680,12 +2706,19 @@ const Stage1 = ({
                           *immediate* feedback instead of waiting
                           until Save & Next.
               - is-disabled: greyed out, no customer resolved yet */}
-        <label className={`acm-same-banner acm-same-banner-inline ${sameAsCustomer ? 'is-on' : ''} ${!customer ? 'is-disabled' : ''} ${mirrorAlreadyTakenByOther && customer ? 'is-blocked' : ''}`}>
+        <label
+          className={`acm-same-banner acm-same-banner-inline ${sameAsCustomer ? 'is-on' : ''} ${(!customer || mirrorLocked) ? 'is-disabled' : ''} ${mirrorAlreadyTakenByOther && customer ? 'is-blocked' : ''}`}
+          title={mirrorLocked ? 'This consignee was created as Same as Customer — it stays linked. Edit the source on the Customer.' : undefined}
+          style={mirrorLocked ? { cursor: 'not-allowed' } : undefined}
+        >
           <input
             type="checkbox"
             checked={sameAsCustomer}
-            disabled={!customer}
-            onChange={e => setSameAsCustomer(e.target.checked)}
+            /* Disabled until a customer is resolved, AND locked on when
+               editing a consignee already saved as Same-as-Customer — a
+               saved mirror can't be unticked from the edit screen. */
+            disabled={!customer || mirrorLocked}
+            onChange={e => { if (mirrorLocked) return; setSameAsCustomer(e.target.checked); }}
           />
           <span className="acm-same-banner-box" aria-hidden>
             {sameAsCustomer && (

@@ -16,29 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
-/**
- * HR > Document & Evidence > Custom Fields.
- *
- * Variables document templates can reference via {{FieldName}} that are NOT
- * available in the employee data set. At document-generation time the system
- * prompts the user to fill them in manually.
- *
- * Scoping mirrors HrDocumentTemplateController exactly so a custom field
- * defined at a tenant is visible to the same tenants as the templates that
- * would reference it.
- *
- *   used_in:  intentionally NOT a column — derived on read by scanning
- *             hr_document_templates.content_html for the literal {{name}}.
- *             Always-truthful, no de-sync risk.
- *
- *   tokens:   the known-tokens endpoint feeds the TemplateEditor's left
- *             sidebar so the user can insert custom-field placeholders the
- *             same way they insert employee-data placeholders. The
- *             validate-tokens endpoint returns the list of {{X}} found in a
- *             given HTML blob that are neither known employee fields nor
- *             registered custom fields — used by the editor to surface an
- *             "Add as Custom Field" CTA.
- */
+
 class HrCustomFieldController extends Controller
 {
     private const WITH = [

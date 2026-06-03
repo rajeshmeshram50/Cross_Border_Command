@@ -257,6 +257,13 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page-card tbody tr { background: transparent !important; border-bottom-color: rgba(6,182,212,.10) !important; }
 [data-bs-theme="dark"] .seg-page-card tbody td { color: #cbd5e1 !important; }
 [data-bs-theme="dark"] .bp-buyer-row:hover { background: rgba(8,145,178,.14)!important; box-shadow: inset 3px 0 0 #22d3ee; }
+/* Count badges (KYC/DD/TL/TD/Agreements "d/t") — swap the light pill fills for
+ * translucent-dark equivalents so all three states read consistently on dark.
+ * !important overrides the inline colours; the inner "/t" denominator already
+ * recolours via the rgb(148,163,184) sweep above. */
+[data-bs-theme="dark"] .bp-prog.is-complete { background: rgba(16,185,129,.18) !important; border-color: rgba(16,185,129,.38) !important; color: #6ee7b7 !important; }
+[data-bs-theme="dark"] .bp-prog.is-partial  { background: rgba(245,158,11,.18) !important; border-color: rgba(245,158,11,.38) !important; color: #fcd34d !important; }
+[data-bs-theme="dark"] .bp-prog.is-none     { background: rgba(148,163,184,.16) !important; border-color: rgba(148,163,184,.30) !important; color: #cbd5e1 !important; }
 `;
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -313,7 +320,7 @@ function ProgCell({ obj, big = true, onClick }: { obj: Prog; big?: boolean; onCl
       onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
     >
       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: big ? '5px' : '4px', minWidth: minW }}>
-        <span style={{ fontSize: '11px', fontWeight: 900, color: numC, background: numBg, border: `1px solid ${numBd}`, padding: pad, borderRadius: '20px', letterSpacing: '-.2px', lineHeight: 1.4 }}>
+        <span className={`bp-prog ${isComplete ? 'is-complete' : isPartial ? 'is-partial' : 'is-none'}`} style={{ fontSize: '11px', fontWeight: 900, color: numC, background: numBg, border: `1px solid ${numBd}`, padding: pad, borderRadius: '20px', letterSpacing: '-.2px', lineHeight: 1.4 }}>
           {d}<span style={{ fontSize: '9px', fontWeight: 500, color: '#94a3b8' }}>/{t}</span>
         </span>
         <div style={{ width: barW, height: barH, borderRadius: '5px', background: 'rgba(6,182,212,.1)', overflow: 'hidden' }}>
@@ -999,11 +1006,6 @@ export default function ClmBuyerProfilePage() {
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                       <input type="text" placeholder="Search buyers..." style={{ border: 'none', outline: 'none', fontSize: '11px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
                     </div>
-                    <button style={{ position: 'relative', overflow: 'hidden', display: 'inline-flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 18px', border: 'none', borderRadius: '10px', fontFamily: 'inherit', fontSize: '12px', fontWeight: 700, color: '#fff', cursor: 'pointer', background: 'linear-gradient(135deg,#06b6d4,#0891b2,#0e7490)', boxShadow: '0 4px 14px rgba(8,145,178,.4),inset 0 1px 0 rgba(255,255,255,.18)', transition: 'all .18s' }}>
-                      <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', borderRadius: '10px 10px 0 0', pointerEvents: 'none' }} />
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                      <span style={{ position: 'relative', zIndex: 1 }}>Add Customer</span>
-                    </button>
                   </div>
                 </div>
                 <div style={{ overflowX: 'auto' }}>

@@ -101,6 +101,7 @@ export default function GenerateDocument() {
   const [previewing, setPreviewing] = useState(false);
 
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
   const [generated, setGenerated] = useState<GeneratedDoc[] | null>(null);
 
   // ── Bootstrap ─────────────────────────────────────────────────────────────
@@ -224,6 +225,34 @@ export default function GenerateDocument() {
       toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  /* Send the customised document into the signing workflow for each selected
+     employee — same custom values the user filled here are frozen into the
+     signed copy (backend store() merges custom_values). One run per employee. */
+  const onSendForSignature = async () => {
+    setSending(true);
+    let ok = 0; let fail = 0;
+    try {
+      for (const e of selectedEmployees) {
+        try {
+          await api.post('/hr-document-signatures', {
+            template_id: templateId,
+            employee_id: e.id,
+            custom_values: customByEmp[e.id] || {},
+          });
+          ok++;
+        } catch { fail++; }
+      }
+      if (ok > 0) {
+        toast.success('Sent for signature', `${ok} document(s) sent to the signing workflow${fail ? ` · ${fail} failed` : ''}.`);
+        navigate('/hr/doc-templates');
+      } else {
+        toast.error('Could not send', 'No documents were sent. Make sure the template has a signing workflow configured.');
+      }
+    } finally {
+      setSending(false);
     }
   };
 
@@ -357,10 +386,19 @@ export default function GenerateDocument() {
                 {previewing ? 'Building preview…' : 'Next →'}
               </button>
             ) : (
-              <button type="button" onClick={onGenerate} disabled={saving}
-                style={{ padding: '8px 22px', background: PRIMARY_GRADIENT, border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', boxShadow: PRIMARY_GLOW }}>
-                <i className="ri-send-plane-fill me-1" />{saving ? 'Generating…' : `Generate ${selectedEmployees.length} document${selectedEmployees.length === 1 ? '' : 's'}`}
-              </button>
+              <>
+                {/* Send the customised doc straight into the signing workflow
+                    (preserves the custom values filled in this wizard). */}
+                <button type="button" onClick={onSendForSignature} disabled={saving || sending}
+                  title="Send into the configured signing workflow for the selected employee(s)"
+                  style={{ padding: '8px 18px', background: '#fff', border: '2px solid #7c3aed', borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#7c3aed', cursor: (saving || sending) ? 'default' : 'pointer', opacity: (saving || sending) ? 0.6 : 1 }}>
+                  <i className="ri-quill-pen-line me-1" />{sending ? 'Sending…' : 'Send for Signature'}
+                </button>
+                <button type="button" onClick={onGenerate} disabled={saving || sending}
+                  style={{ padding: '8px 22px', background: PRIMARY_GRADIENT, border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: (saving || sending) ? 'default' : 'pointer', boxShadow: PRIMARY_GLOW, opacity: (saving || sending) ? 0.6 : 1 }}>
+                  <i className="ri-download-2-line me-1" />{saving ? 'Generating…' : `Generate ${selectedEmployees.length} document${selectedEmployees.length === 1 ? '' : 's'}`}
+                </button>
+              </>
             )}
           </div>
         </div>

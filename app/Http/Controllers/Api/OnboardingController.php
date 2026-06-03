@@ -24,18 +24,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/**
- * Self-service onboarding flow.
- *
- *   1. Admin POSTs to /employees/onboarding-invite with the candidate's
- *      basic details + expiry. We mint a one-shot token, email the link.
- *   2. Candidate GETs /onboarding/{token} — public, returns invite preview
- *      + master dropdowns scoped to the inviting tenant so the form has
- *      the same lists the admin would see.
- *   3. Candidate POSTs /onboarding/{token}/complete with the full form.
- *      We create the Employee + paired User + send the welcome credentials
- *      email, then flip the invite to `completed`.
- */
+
 class OnboardingController extends Controller
 {
     /* ─────────────────────────────────────────────────────────────────

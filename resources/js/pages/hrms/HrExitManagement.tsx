@@ -1054,6 +1054,24 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
     }
   };
 
+  /* Download the fully-signed PDF once a run is Completed (all signers done). */
+  const downloadSignedRun = async (run: { id: number; code?: string | null }) => {
+    try {
+      const resp = await api.get(`/hr-document-signatures/${run.id}/download-pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${run.code || `doc-${run.id}`}-signed.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Downloaded', 'Signed PDF saved.');
+    } catch (err: any) {
+      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    }
+  };
+
   // ── Send for signing — kicks off the configured signing workflow ────────
   const [sendForTpl, setSendForTpl] = useState<ExitTemplate | null>(null);
   const [sending, setSending] = useState(false);
@@ -1783,6 +1801,18 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                               >
                                 <i className="ri-download-2-line" />Generate
                               </button>
+                              {/* Download signed PDF — only once the run is
+                                  fully signed (all signers done). */}
+                              {run && run.status === 'Completed' && (
+                                <button
+                                  type="button"
+                                  className="ep-doc-btn ep-doc-btn--done"
+                                  onClick={() => downloadSignedRun(run)}
+                                  title="Download the signed PDF — all signatures complete"
+                                >
+                                  <i className="ri-file-pdf-2-line" />Download
+                                </button>
+                              )}
                             </div>
 
                             {/* Signing flow — render whatever the template
@@ -1807,7 +1837,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                                         name: s.name || s.role_name || `Signer ${i + 1}`,
                                         role: s.role_name,
                                         action: s.action,
-                                        status: s.status === 'Done' ? 'Completed' : s.status === 'Rejected' ? 'Rejected' : (i === run.current_index ? 'Awaiting' : 'Pending'),
+                                        status: s.status === 'Done' ? 'Completed' : s.status === 'Rejected' ? 'Rejected' : run.status === 'Completed' ? 'Completed' : (i === run.current_index ? 'Awaiting' : 'Pending'),
                                         active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
                                       }))
                                       : signers.map((s, i) => ({

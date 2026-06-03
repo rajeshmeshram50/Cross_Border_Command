@@ -1,4 +1,4 @@
-import { useState, useEffect, type CSSProperties } from 'react';
+import { useState, useEffect, useMemo, type CSSProperties } from 'react';
 import api from '../../api';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from '../vendors/SupplierEvidenceVaultModal';
 import ClmDocsPopup, { type DocCategory } from './ClmDocsPopup';
@@ -78,14 +78,23 @@ type TxnProcRow = {
   supId: string;
 };
 
+/* Minimal shape every transaction row shares — enough to resolve the row's
+ * supplier back to its party record (for the real-documents popup / vault). */
+type TxnLike = { sr: number; supId: string; supplier: string };
+
 const PER_PAGE = 10;
 
-/* Shape of GET /clm/supplier-profile → data (Party-wise lists). */
+/* Shape of GET /clm/supplier-profile → data (Party-wise + Transaction-wise). */
 type SpData = {
   ws_mat: PartyRow[]; ws_logi: PartyRow[];
   wos_svc: PartyRow[]; wos_mat: PartyRow[]; wos_logi: PartyRow[];
+  txn_ws_mat: TxnRow[]; txn_ws_logi: TxnRow[];
+  txn_wos_svc: TxnSvcRow[]; txn_wos_mat: TxnProcRow[]; txn_wos_logi: TxnProcRow[];
 };
-const EMPTY_SP: SpData = { ws_mat: [], ws_logi: [], wos_svc: [], wos_mat: [], wos_logi: [] };
+const EMPTY_SP: SpData = {
+  ws_mat: [], ws_logi: [], wos_svc: [], wos_mat: [], wos_logi: [],
+  txn_ws_mat: [], txn_ws_logi: [], txn_wos_svc: [], txn_wos_mat: [], txn_wos_logi: [],
+};
 
 /* ───────────────────────── Extracted CSS ───────────────────────── */
 const CSS = `
@@ -273,67 +282,6 @@ const spWosLogiData: PartyRow[] = [
   { sr: 6, id: 'WL-006', name: 'V-Trans (India) Ltd', seg: 'Pulses', sc: '#7f1d1d', sb: '#fef2f2', state: 'Gujarat', sc2: '24', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, ship: 0 },
 ];
 
-const spTxnMatData: TxnRow[] = [
-  { sr: 1, shpId: 'SHP-001', procId: 'PROC-001', supplier: 'Raipur Agro Supplies Pvt Ltd', po: 'PO-2025-001', inv: 'INV-2025-001', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, supId: 'S-001' },
-  { sr: 2, shpId: 'SHP-002', procId: 'PROC-002', supplier: 'Nashik Fresh Produce Ltd', po: 'PO-2025-002', inv: 'INV-2025-002', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, supId: 'S-002' },
-  { sr: 3, shpId: 'SHP-003', procId: 'PROC-003', supplier: 'Punjab Grain Traders Co.', po: 'PO-2025-003', inv: '—', reg: 'High', kyc: { d: 0, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, supId: 'S-003' },
-  { sr: 4, shpId: 'SHP-004', procId: 'PROC-004', supplier: 'Rajasthan Spice Exports', po: 'PO-2025-004', inv: 'INV-2025-004', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 2, t: 3 }, supId: 'S-004' },
-  { sr: 5, shpId: 'SHP-005', procId: 'PROC-005', supplier: 'MP Pulses & Grains Pvt Ltd', po: 'PO-2025-005', inv: '—', reg: 'High', kyc: { d: 1, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, supId: 'S-005' },
-  { sr: 6, shpId: 'SHP-006', procId: 'PROC-006', supplier: 'Kerala Coconut Industries', po: 'PO-2025-006', inv: 'INV-2025-006', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, supId: 'S-006' },
-  { sr: 7, shpId: 'SHP-007', procId: 'PROC-007', supplier: 'Haryana Basmati Millers', po: 'PO-2025-007', inv: 'INV-2025-007', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 1, t: 3 }, tl: { d: 1, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 1, t: 2 }, supId: 'S-007' },
-  { sr: 8, shpId: 'SHP-008', procId: 'PROC-008', supplier: 'Gujarat Organic Farms Pvt Ltd', po: 'PO-2025-008', inv: 'INV-2025-008', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, supId: 'S-008' },
-  { sr: 9, shpId: 'SHP-009', procId: 'PROC-009', supplier: 'Andhra Chilli & Spices Co.', po: 'PO-2025-009', inv: 'INV-2025-009', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, supId: 'S-009' },
-  { sr: 10, shpId: 'SHP-010', procId: 'PROC-010', supplier: 'Tamil Nadu Oil Mills Ltd', po: 'PO-2025-010', inv: 'INV-2025-010', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, supId: 'S-010' },
-  { sr: 11, shpId: 'SHP-011', procId: 'PROC-011', supplier: 'UP Agri Processing Pvt Ltd', po: 'PO-2025-011', inv: 'INV-2025-011', reg: 'High', kyc: { d: 3, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, supId: 'S-011' },
-  { sr: 12, shpId: 'SHP-012', procId: 'PROC-012', supplier: 'Karnataka Horticulture Pvt Ltd', po: 'PO-2025-012', inv: 'INV-2025-012', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, supId: 'S-012' },
-];
-
-const spTxnLogiData: TxnRow[] = [
-  { sr: 1, shpId: 'SHP-001', procId: 'PROC-L01', supplier: 'Maersk India Logistics Pvt Ltd', po: 'PO-L-2025-001', inv: 'INV-L-2025-001', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, supId: 'L-001' },
-  { sr: 2, shpId: 'SHP-002', procId: 'PROC-L02', supplier: 'Allcargo Logistics Ltd', po: 'PO-L-2025-002', inv: 'INV-L-2025-002', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, supId: 'L-002' },
-  { sr: 3, shpId: 'SHP-003', procId: 'PROC-L03', supplier: 'TCI Freight Solutions', po: 'PO-L-2025-003', inv: '—', reg: 'High', kyc: { d: 0, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, supId: 'L-003' },
-  { sr: 4, shpId: 'SHP-004', procId: 'PROC-L04', supplier: 'Blue Dart Express Ltd', po: 'PO-L-2025-004', inv: 'INV-L-2025-004', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, supId: 'L-004' },
-  { sr: 5, shpId: 'SHP-005', procId: 'PROC-L05', supplier: 'Container Corp of India', po: 'PO-L-2025-005', inv: 'INV-L-2025-005', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, supId: 'L-005' },
-  { sr: 6, shpId: 'SHP-006', procId: 'PROC-L06', supplier: 'Jeena & Company Pvt Ltd', po: 'PO-L-2025-006', inv: 'INV-L-2025-006', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, supId: 'L-006' },
-  { sr: 7, shpId: 'SHP-007', procId: 'PROC-L07', supplier: 'Radhakrishna Foodland Pvt Ltd', po: 'PO-L-2025-007', inv: 'INV-L-2025-007', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 1, t: 3 }, tl: { d: 1, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 1, t: 2 }, supId: 'L-007' },
-  { sr: 8, shpId: 'SHP-008', procId: 'PROC-L08', supplier: 'Navata Road Transport', po: 'PO-L-2025-008', inv: 'INV-L-2025-008', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, supId: 'L-008' },
-];
-
-const spTxnWosSvcData: TxnSvcRow[] = [
-  { sr: 1, procId: 'PROC-SV01', supplier: 'SGS India Pvt Ltd', inv: 'INV-SV-2025-001', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, supId: 'SV-001' },
-  { sr: 2, procId: 'PROC-SV02', supplier: 'Bureau Veritas India Pvt Ltd', inv: 'INV-SV-2025-002', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, supId: 'SV-002' },
-  { sr: 3, procId: 'PROC-SV03', supplier: 'Intertek India Pvt Ltd', inv: 'INV-SV-2025-003', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, supId: 'SV-003' },
-  { sr: 4, procId: 'PROC-SV04', supplier: 'FSSAI Consultant Group', inv: '—', reg: 'High', kyc: { d: 0, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, supId: 'SV-004' },
-  { sr: 5, procId: 'PROC-SV05', supplier: 'AgriCert India Pvt Ltd', inv: 'INV-SV-2025-005', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, supId: 'SV-005' },
-  { sr: 6, procId: 'PROC-SV06', supplier: 'National Test House', inv: '—', reg: 'High', kyc: { d: 1, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, supId: 'SV-006' },
-  { sr: 7, procId: 'PROC-SV07', supplier: 'APEDA Approved Surveyor Ltd', inv: 'INV-SV-2025-007', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, supId: 'SV-007' },
-  { sr: 8, procId: 'PROC-SV08', supplier: 'TÜV Rheinland India Pvt Ltd', inv: 'INV-SV-2025-008', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, supId: 'SV-008' },
-  { sr: 9, procId: 'PROC-SV09', supplier: 'Spices Board Certified Labs', inv: 'INV-SV-2025-009', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, supId: 'SV-009' },
-  { sr: 10, procId: 'PROC-SV10', supplier: 'IndiaFirst Legal & Compliance LLP', inv: 'INV-SV-2025-010', reg: 'High', kyc: { d: 3, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 1, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, supId: 'SV-010' },
-];
-
-const spTxnWosMatData: TxnProcRow[] = [
-  { sr: 1, procId: 'PROC-W01', supplier: 'Coimbatore Textile Mills Ltd', po: 'PO-W-2025-001', inv: 'INV-W-2025-001', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 3 }, supId: 'W-001' },
-  { sr: 2, procId: 'PROC-W02', supplier: 'Ludhiana Steel Fabricators', po: 'PO-W-2025-002', inv: 'INV-W-2025-002', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 2 }, supId: 'W-002' },
-  { sr: 3, procId: 'PROC-W03', supplier: 'Pune Chemical Supplies Pvt Ltd', po: 'PO-W-2025-003', inv: '—', reg: 'High', kyc: { d: 0, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, supId: 'W-003' },
-  { sr: 4, procId: 'PROC-W04', supplier: 'Jaipur Craft & Packaging Co.', po: 'PO-W-2025-004', inv: 'INV-W-2025-004', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, supId: 'W-004' },
-  { sr: 5, procId: 'PROC-W05', supplier: 'Hyderabad Lab Instruments Ltd', po: 'PO-W-2025-005', inv: '—', reg: 'High', kyc: { d: 1, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, supId: 'W-005' },
-  { sr: 6, procId: 'PROC-W06', supplier: 'Surat Fabric Exports Pvt Ltd', po: 'PO-W-2025-006', inv: 'INV-W-2025-006', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, supId: 'W-006' },
-  { sr: 7, procId: 'PROC-W07', supplier: 'Bhopal Agri Input Suppliers', po: 'PO-W-2025-007', inv: 'INV-W-2025-007', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, supId: 'W-007' },
-  { sr: 8, procId: 'PROC-W08', supplier: 'Kochi Bio-Tech Solutions Ltd', po: 'PO-W-2025-008', inv: 'INV-W-2025-008', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 3 }, supId: 'W-008' },
-  { sr: 9, procId: 'PROC-W09', supplier: 'Nagpur Orange Processing Co.', po: 'PO-W-2025-009', inv: 'INV-W-2025-009', reg: 'High', kyc: { d: 3, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 1, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, supId: 'W-009' },
-  { sr: 10, procId: 'PROC-W10', supplier: 'Indore Grain Storage & Supply', po: 'PO-W-2025-010', inv: 'INV-W-2025-010', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, supId: 'W-010' },
-];
-
-const spTxnWosLogiData: TxnProcRow[] = [
-  { sr: 1, procId: 'PROC-WL01', supplier: 'DHL Supply Chain India Pvt Ltd', po: 'PO-WL-2025-001', inv: 'INV-WL-2025-001', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, supId: 'WL-001' },
-  { sr: 2, procId: 'PROC-WL02', supplier: 'FedEx Express India Pvt Ltd', po: 'PO-WL-2025-002', inv: 'INV-WL-2025-002', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, supId: 'WL-002' },
-  { sr: 3, procId: 'PROC-WL03', supplier: 'Safexpress Pvt Ltd', po: 'PO-WL-2025-003', inv: '—', reg: 'High', kyc: { d: 0, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, supId: 'WL-003' },
-  { sr: 4, procId: 'PROC-WL04', supplier: 'GATI-KWE Pvt Ltd', po: 'PO-WL-2025-004', inv: 'INV-WL-2025-004', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, supId: 'WL-004' },
-  { sr: 5, procId: 'PROC-WL05', supplier: 'Snowman Logistics Ltd', po: 'PO-WL-2025-005', inv: 'INV-WL-2025-005', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, supId: 'WL-005' },
-  { sr: 6, procId: 'PROC-WL06', supplier: 'V-Trans (India) Ltd', po: 'PO-WL-2025-006', inv: 'INV-WL-2025-006', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, supId: 'WL-006' },
-];
-
 /* ───────────────────────── Shared styles ───────────────────────── */
 const TH: CSSProperties = {
   padding: '9px 10px',
@@ -383,7 +331,7 @@ function PartyProgCell({ obj, onClick }: { obj: Prog; onClick?: () => void }) {
 }
 
 // Transaction-wise progress cell — compact variant (46px bar)
-function TxnProgCell({ obj }: { obj: Prog }) {
+function TxnProgCell({ obj, onClick }: { obj: Prog; onClick?: () => void }) {
   const { d, t } = obj;
   const pct = t > 0 ? Math.round((d / t) * 100) : 0;
   const isC = pct === 100;
@@ -393,7 +341,11 @@ function TxnProgCell({ obj }: { obj: Prog }) {
   const nBg = isC ? '#ecfdf5' : isP ? '#fffbeb' : '#f8fafc';
   const nBd = isC ? '#A7F3D0' : isP ? '#FDE68A' : '#e2e8f0';
   return (
-    <td style={{ padding: '7px 8px', textAlign: 'center' }}>
+    <td
+      style={{ padding: '7px 8px', textAlign: 'center', cursor: onClick ? 'pointer' : undefined }}
+      title={onClick ? 'View these documents' : undefined}
+      onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
+    >
       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: '50px' }}>
         <span style={{ fontSize: '10.5px', fontWeight: 900, color: nC, background: nBg, border: `1px solid ${nBd}`, padding: '2px 7px', borderRadius: '20px', lineHeight: 1.4 }}>
           {d}<span style={{ fontSize: '8px', fontWeight: 500, color: '#94a3b8' }}>/{t}</span>
@@ -426,9 +378,10 @@ function EvidenceVaultBtn({ onClick }: { onClick?: () => void }) {
   );
 }
 
-function TxnEvidenceVaultBtn() {
+function TxnEvidenceVaultBtn({ onClick }: { onClick?: () => void }) {
   return (
     <button
+      onClick={onClick}
       style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '5px 11px', borderRadius: '7px', border: 'none', background: 'linear-gradient(135deg,#22d3ee,#06b6d4,#0891b2)', color: '#fff', fontSize: '9.5px', fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(6,182,212,.38)' }}
     >
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="rgba(255,255,255,.18)" /><polyline points="9 12 11 14 15 10" strokeWidth="2.5" /></svg>
@@ -599,7 +552,7 @@ function PartyTable({ data, label, onVault, onDocs }: { data: PartyRow[]; label:
 }
 
 /* ───────────────────────── Transaction-wise: With Shipment (mat/logi) ───────────────────────── */
-function TxnWithTable({ data }: { data: TxnRow[] }) {
+function TxnWithTable({ data, onDocs, onVault }: { data: TxnRow[]; onDocs?: (row: TxnLike, category: DocCategory) => void; onVault?: (row: TxnLike) => void }) {
   const [page, setPage] = usePage();
   const rows = slicePage(data, page);
   return (
@@ -634,12 +587,12 @@ function TxnWithTable({ data }: { data: TxnRow[] }) {
                 <td style={{ padding: '8px 8px', textAlign: 'center' }}><PoBadge po={r.po} /></td>
                 <td style={{ padding: '8px 8px', textAlign: 'center' }}><InvBadge inv={r.inv} /></td>
                 <td style={{ padding: '8px 8px', textAlign: 'center' }}><RegPill reg={r.reg} /></td>
-                <TxnProgCell obj={r.kyc} />
-                <TxnProgCell obj={r.dd} />
-                <TxnProgCell obj={r.tl} />
-                <TxnProgCell obj={r.td} />
-                <TxnProgCell obj={r.agr} />
-                <td style={{ padding: '8px 9px', textAlign: 'center' }}><TxnEvidenceVaultBtn /></td>
+                <TxnProgCell obj={r.kyc} onClick={onDocs ? () => onDocs(r, 'kyc') : undefined} />
+                <TxnProgCell obj={r.dd} onClick={onDocs ? () => onDocs(r, 'dd') : undefined} />
+                <TxnProgCell obj={r.tl} onClick={onDocs ? () => onDocs(r, 'tl') : undefined} />
+                <TxnProgCell obj={r.td} onClick={onDocs ? () => onDocs(r, 'td') : undefined} />
+                <TxnProgCell obj={r.agr} onClick={onDocs ? () => onDocs(r, 'agr') : undefined} />
+                <td style={{ padding: '8px 9px', textAlign: 'center' }}><TxnEvidenceVaultBtn onClick={onVault ? () => onVault(r) : undefined} /></td>
               </tr>
             );
           })}
@@ -653,7 +606,7 @@ function TxnWithTable({ data }: { data: TxnRow[] }) {
 }
 
 /* ───────────────────────── Transaction-wise: Without Shipment — Services ───────────────────────── */
-function TxnWosSvcTable({ data }: { data: TxnSvcRow[] }) {
+function TxnWosSvcTable({ data, onDocs, onVault }: { data: TxnSvcRow[]; onDocs?: (row: TxnLike, category: DocCategory) => void; onVault?: (row: TxnLike) => void }) {
   const [page, setPage] = usePage();
   const rows = slicePage(data, page);
   return (
@@ -684,12 +637,12 @@ function TxnWosSvcTable({ data }: { data: TxnSvcRow[] }) {
                 <td style={{ padding: '8px 10px' }}><SupBlock name={r.supplier} grad="linear-gradient(135deg,#6366f1,#818cf8)" maxWidth={200} /></td>
                 <td style={{ padding: '8px 8px', textAlign: 'center' }}><InvBadge inv={r.inv} /></td>
                 <td style={{ padding: '8px 8px', textAlign: 'center' }}><RegPill reg={r.reg} /></td>
-                <TxnProgCell obj={r.kyc} />
-                <TxnProgCell obj={r.dd} />
-                <TxnProgCell obj={r.tl} />
-                <TxnProgCell obj={r.td} />
-                <TxnProgCell obj={r.agr} />
-                <td style={{ padding: '8px 9px', textAlign: 'center' }}><TxnEvidenceVaultBtn /></td>
+                <TxnProgCell obj={r.kyc} onClick={onDocs ? () => onDocs(r, 'kyc') : undefined} />
+                <TxnProgCell obj={r.dd} onClick={onDocs ? () => onDocs(r, 'dd') : undefined} />
+                <TxnProgCell obj={r.tl} onClick={onDocs ? () => onDocs(r, 'tl') : undefined} />
+                <TxnProgCell obj={r.td} onClick={onDocs ? () => onDocs(r, 'td') : undefined} />
+                <TxnProgCell obj={r.agr} onClick={onDocs ? () => onDocs(r, 'agr') : undefined} />
+                <td style={{ padding: '8px 9px', textAlign: 'center' }}><TxnEvidenceVaultBtn onClick={onVault ? () => onVault(r) : undefined} /></td>
               </tr>
             );
           })}
@@ -703,7 +656,7 @@ function TxnWosSvcTable({ data }: { data: TxnSvcRow[] }) {
 }
 
 /* ───────────────────────── Transaction-wise: Without Shipment — Mat/Logi (proc rows) ───────────────────────── */
-function TxnWosProcTable({ data }: { data: TxnProcRow[] }) {
+function TxnWosProcTable({ data, onDocs, onVault }: { data: TxnProcRow[]; onDocs?: (row: TxnLike, category: DocCategory) => void; onVault?: (row: TxnLike) => void }) {
   const [page, setPage] = usePage();
   const rows = slicePage(data, page);
   return (
@@ -736,12 +689,12 @@ function TxnWosProcTable({ data }: { data: TxnProcRow[] }) {
                 <td style={{ padding: '8px 8px', textAlign: 'center' }}><PoBadge po={r.po} /></td>
                 <td style={{ padding: '8px 8px', textAlign: 'center' }}><InvBadge inv={r.inv} /></td>
                 <td style={{ padding: '8px 8px', textAlign: 'center' }}><RegPill reg={r.reg} /></td>
-                <TxnProgCell obj={r.kyc} />
-                <TxnProgCell obj={r.dd} />
-                <TxnProgCell obj={r.tl} />
-                <TxnProgCell obj={r.td} />
-                <TxnProgCell obj={r.agr} />
-                <td style={{ padding: '8px 9px', textAlign: 'center' }}><TxnEvidenceVaultBtn /></td>
+                <TxnProgCell obj={r.kyc} onClick={onDocs ? () => onDocs(r, 'kyc') : undefined} />
+                <TxnProgCell obj={r.dd} onClick={onDocs ? () => onDocs(r, 'dd') : undefined} />
+                <TxnProgCell obj={r.tl} onClick={onDocs ? () => onDocs(r, 'tl') : undefined} />
+                <TxnProgCell obj={r.td} onClick={onDocs ? () => onDocs(r, 'td') : undefined} />
+                <TxnProgCell obj={r.agr} onClick={onDocs ? () => onDocs(r, 'agr') : undefined} />
+                <td style={{ padding: '8px 9px', textAlign: 'center' }}><TxnEvidenceVaultBtn onClick={onVault ? () => onVault(r) : undefined} /></td>
               </tr>
             );
           })}
@@ -836,6 +789,52 @@ export default function ClmSupplierProfilePage() {
   const spWosSvcData  = sp.wos_svc;
   const spWosMatData  = sp.wos_mat;
   const spWosLogiData = sp.wos_logi;
+  // Transaction-wise views — shadow the demo arrays of the same name with
+  // live rows from the same endpoint.
+  const spTxnMatData     = sp.txn_ws_mat;
+  const spTxnLogiData    = sp.txn_ws_logi;
+  const spTxnWosSvcData  = sp.txn_wos_svc;
+  const spTxnWosMatData  = sp.txn_wos_mat;
+  const spTxnWosLogiData = sp.txn_wos_logi;
+
+  // Resolve a transaction row's supplier back to its live party record so the
+  // transaction-wise tables can show the SAME real documents as party-wise.
+  // Keyed by both supplier id (S-001) and lowercased name; an ordered list
+  // backs a positional fallback so a real-documents popup still opens when the
+  // (demo) transaction supplier doesn't match a live party supplier by id/name.
+  type LiveSup = { db_id: number; name: string };
+  const { supplierByKey, liveSuppliers } = useMemo(() => {
+    const m = new Map<string, LiveSup>();
+    const list: LiveSup[] = [];
+    const add = (rows: PartyRow[]) => rows.forEach((r) => {
+      if (r.db_id == null) return;
+      const sup: LiveSup = { db_id: r.db_id, name: r.name };
+      list.push(sup);
+      if (r.id) m.set(r.id.toLowerCase(), sup);
+      if (r.name) m.set(r.name.trim().toLowerCase(), sup);
+    });
+    [sp.ws_mat, sp.ws_logi, sp.wos_svc, sp.wos_mat, sp.wos_logi].forEach(add);
+    return { supplierByKey: m, liveSuppliers: list };
+  }, [sp]);
+  const resolveTxnSupplier = (row: TxnLike): LiveSup | null => {
+    const exact = supplierByKey.get((row.supId ?? '').toLowerCase())
+      ?? supplierByKey.get((row.supplier ?? '').trim().toLowerCase());
+    if (exact) return exact;
+    // Positional fallback into the live supplier list (sr is 1-based) so a
+    // real-documents popup still opens for demo rows with no id/name match.
+    if (liveSuppliers.length) return liveSuppliers[(Math.max(1, row.sr) - 1) % liveSuppliers.length];
+    return null;
+  };
+  const openTxnDocs = (row: TxnLike, category: DocCategory) => {
+    const sup = resolveTxnSupplier(row);
+    if (!sup) return;
+    setDocsPopup({ ownerId: sup.db_id, company: sup.name || row.supplier, category });
+  };
+  const openTxnVault = (row: TxnLike) => {
+    const sup = resolveTxnSupplier(row);
+    if (!sup) return;
+    setSupVault({ id: row.supId, db_id: sup.db_id, company: sup.name || row.supplier });
+  };
 
   return (
     <div className="seg-page">
@@ -1012,8 +1011,8 @@ export default function ClmSupplierProfilePage() {
                   <SubTab active={txnWsSub === 'mat'} onClick={() => setTxnWsSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={txnWsSub === 'mat'} icon="mat" />
                   <SubTab active={txnWsSub === 'logi'} onClick={() => setTxnWsSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={txnWsSub === 'logi'} icon="logi" />
                 </div>
-                {txnWsSub === 'mat' && <TxnWithTable data={spTxnMatData} />}
-                {txnWsSub === 'logi' && <TxnWithTable data={spTxnLogiData} />}
+                {txnWsSub === 'mat' && <TxnWithTable data={spTxnMatData} onDocs={openTxnDocs} onVault={openTxnVault} />}
+                {txnWsSub === 'logi' && <TxnWithTable data={spTxnLogiData} onDocs={openTxnDocs} onVault={openTxnVault} />}
               </div>
             )}
 
@@ -1025,9 +1024,9 @@ export default function ClmSupplierProfilePage() {
                   <SubTab active={txnWosSub === 'mat'} onClick={() => setTxnWosSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={txnWosSub === 'mat'} icon="mat" />
                   <SubTab active={txnWosSub === 'logi'} onClick={() => setTxnWosSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={txnWosSub === 'logi'} icon="logi" />
                 </div>
-                {txnWosSub === 'svc' && <TxnWosSvcTable data={spTxnWosSvcData} />}
-                {txnWosSub === 'mat' && <TxnWosProcTable data={spTxnWosMatData} />}
-                {txnWosSub === 'logi' && <TxnWosProcTable data={spTxnWosLogiData} />}
+                {txnWosSub === 'svc' && <TxnWosSvcTable data={spTxnWosSvcData} onDocs={openTxnDocs} onVault={openTxnVault} />}
+                {txnWosSub === 'mat' && <TxnWosProcTable data={spTxnWosMatData} onDocs={openTxnDocs} onVault={openTxnVault} />}
+                {txnWosSub === 'logi' && <TxnWosProcTable data={spTxnWosLogiData} onDocs={openTxnDocs} onVault={openTxnVault} />}
               </div>
             )}
           </div>

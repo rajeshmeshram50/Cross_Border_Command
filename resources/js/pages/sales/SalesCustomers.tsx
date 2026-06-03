@@ -353,6 +353,36 @@ export default function SalesCustomers() {
     <div className="smc-root">
       <style>{SCOPED_CSS}</style>
 
+      {/* ── Hero strip — solid violet/purple gradient with user icon,
+            page title + description, and the primary "Add Customer" CTA.
+            Mirrors the green hero on the Consignee page for visual
+            parity across Sales Matrix top-level pages, but uses
+            Customer's purple palette so the rest of the page (wdh
+            banner, tabs, action accents) stays cohesive. */}
+      <div className="smc-cstrip">
+        <div className="smc-cstrip-left">
+          <div className="smc-cstrip-icon">
+            <i className="ri-user-3-line" />
+          </div>
+          <div>
+            <div className="smc-cstrip-title">Customer</div>
+            <div className="smc-cstrip-sub">
+              Manage customer identity, KYC compliance, contact ownership, and consignee linkage that drive every export and shipment downstream.
+            </div>
+          </div>
+        </div>
+        {canAdd && (
+          <button
+            type="button"
+            className="smc-cstrip-add"
+            onClick={() => { setEditing(null); setAddOpen(true); }}
+          >
+            <i className="ri-add-line" />
+            Add Customer
+          </button>
+        )}
+      </div>
+
       {/* ── Slim "What you are doing here" banner — same pattern as the
             Master/Countries page. Collapsed by default to give a clean
             list view; expanding reveals the 4-step guide cards. */}
@@ -402,7 +432,10 @@ export default function SalesCustomers() {
       {/* ── Main card — search + Add Customer + tabs + table + pagination ── */}
       <div className="smc-table-card">
 
-        {/* Search row + Add Customer (Countries-style) */}
+        {/* Toolbar — search only. The Add Customer CTA moved to the
+            violet hero strip above (matches Consignee page pattern).
+            Block kept commented in case we ever want the second button
+            back. */}
         <div className="smc-toolbar">
           <div className="smc-search">
             <i className="ri-search-line smc-search-icon" />
@@ -413,7 +446,7 @@ export default function SalesCustomers() {
               onChange={(e) => onSearch(e.target.value)}
             />
           </div>
-          {canAdd && (
+          {false && canAdd && (
             <button
               type="button"
               className="smc-add-btn"
@@ -542,6 +575,159 @@ export default function SalesCustomers() {
   );
 }
 
+/* ─── Hero strip — violet/purple gradient header card at the top of
+ * the page (mirrors the green hero on SalesConsignee). Holds the page
+ * icon, title + subtitle, and the primary "Add Customer" CTA on the
+ * right. The gradient + soft white overlays give it the same
+ * "ultra HD" pop the Consignee page has. */
+const CSTRIP_CSS = `
+.smc-cstrip {
+  /* Mirror of .cv-cstrip in salesMatrixDetail.styles.ts — same gradient
+     degree (110deg), same stops, same shadow, same height. Kept in
+     lockstep so the Customer list hero strip and the SalesMatrix
+     detail header read as one design language. */
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 66px;
+  padding: 0 18px;
+  margin-bottom: 0;
+  border: 1px solid #c4b5fd;
+  border-radius: 16px;
+  background: linear-gradient(110deg, #faf5ff 0%, #f3e8ff 25%, #ede9fe 55%, #ddd6fe 85%, #c4b5fd 100%);
+  box-shadow: 0 2px 0 rgba(255, 255, 255, .85) inset, 0 8px 28px rgba(139, 92, 246, .2), 0 2px 8px rgba(0, 0, 0, .06);
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+.smc-cstrip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(ellipse at 12% 50%, rgba(255,255,255,0.40) 0%, transparent 55%),
+    radial-gradient(ellipse at 88% 50%, rgba(167,139,250,0.22) 0%, transparent 55%);
+}
+.smc-cstrip-left {
+  display: flex; align-items: center; gap: 16px;
+  position: relative; z-index: 1;
+  min-width: 0;
+  flex: 1;
+}
+.smc-cstrip-icon {
+  position: relative;
+  width: 46px; height: 46px; border-radius: 12px;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff;
+  font-size: 22px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(255,255,255,0.50);
+}
+.smc-cstrip-icon::after {
+  content: '';
+  position: absolute;
+  bottom: -2px; right: -2px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #a78bfa;
+  border: 2px solid #f5f3ff;
+  box-shadow: 0 2px 4px rgba(167,139,250,0.40);
+}
+.smc-cstrip-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #2e1065;
+  letter-spacing: -.3px;
+  line-height: 1.2;
+}
+.smc-cstrip-sub {
+  font-size: 12px;
+  color: #3b1d8a;
+  font-weight: 400;
+  margin-top: 4px;
+  line-height: 1.5;
+  max-width: 760px;
+  opacity: 0.85;
+}
+/* Mirror of .cv-add-customer-btn in salesMatrixDetail.styles.ts —
+   solid violet (#7c3aed), 44px tall, 14px radius, weighty shadow.
+   Kept identical so the customer list CTA and the customer-view
+   header CTA look like the same button. */
+.smc-cstrip-add {
+  position: relative; z-index: 1;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 26px;
+  height: 44px;
+  margin-top: 0;
+  border: none;
+  border-radius: 14px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  background: #7c3aed;
+  box-shadow:
+    0 6px 20px rgba(124, 58, 237, .5),
+    0 2px 6px rgba(91, 33, 182, .3),
+    0 1px 0 rgba(255, 255, 255, .18) inset;
+  text-shadow: none;
+  transition: background .18s, transform .18s, box-shadow .18s;
+  align-self: center;
+}
+.smc-cstrip-add:hover {
+  transform: translateY(-2px);
+  background: #6d28d9;
+  box-shadow:
+    0 10px 28px rgba(124, 58, 237, .55),
+    0 2px 6px rgba(91, 33, 182, .35),
+    0 1px 0 rgba(255, 255, 255, .18) inset;
+}
+.smc-cstrip-add:active { transform: translateY(0); }
+.smc-cstrip-add i { font-size: 16px; }
+
+[data-bs-theme="dark"] .smc-cstrip {
+  background: linear-gradient(110deg, #1e1b4b 0%, #2e1065 30%, #4c1d95 60%, #6d28d9 85%, #7c3aed 100%);
+  border-color: rgba(167,139,250,0.40);
+  box-shadow:
+    0 2px 0 rgba(255,255,255,0.05) inset,
+    0 8px 28px rgba(0,0,0,0.50),
+    0 2px 8px rgba(0,0,0,0.35);
+}
+[data-bs-theme="dark"] .smc-cstrip::before {
+  background-image:
+    radial-gradient(ellipse at 12% 50%, rgba(167,139,250,0.18) 0%, transparent 55%),
+    radial-gradient(ellipse at 88% 50%, rgba(124,58,237,0.15) 0%, transparent 55%);
+}
+[data-bs-theme="dark"] .smc-cstrip-title { color: #f5f3ff; }
+[data-bs-theme="dark"] .smc-cstrip-sub   { color: #ede9fe; opacity: 0.92; }
+[data-bs-theme="dark"] .smc-cstrip-icon  {
+  background: linear-gradient(135deg, #a78bfa, #7c3aed);
+  box-shadow: 0 4px 14px rgba(124,58,237,0.50), 0 0 0 3px rgba(167,139,250,0.18);
+}
+[data-bs-theme="dark"] .smc-cstrip-icon::after { border-color: #1e1b4b; }
+[data-bs-theme="dark"] .smc-cstrip-add {
+  background: #7c3aed;
+  color: #fff;
+  box-shadow:
+    0 6px 20px rgba(124, 58, 237, .5),
+    0 2px 6px rgba(91, 33, 182, .3),
+    0 1px 0 rgba(255, 255, 255, .18) inset;
+}
+[data-bs-theme="dark"] .smc-cstrip-add:hover {
+  background: #8b5cf6;
+}
+`;
+
 /* ─── 4-step "What we are doing here" content ─── */
 const STEPS: { n: number; name: string; desc: string }[] = [
   { n: 1, name: 'Create Customer',  desc: 'Add basic company, contact, and legal details to create the customer profile.' },
@@ -557,6 +743,7 @@ const STEPS: { n: number; name: string; desc: string }[] = [
 
 /* ─── Scoped page CSS (all rules under .smc-root) ─── */
 const SCOPED_CSS = `
+${CSTRIP_CSS}
 .smc-root {
   font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
   background: transparent;

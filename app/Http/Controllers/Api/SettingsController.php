@@ -8,16 +8,7 @@ use App\Support\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Platform Settings API.
- *
- *  GET    /api/settings                      — every section, any auth user
- *  PUT    /api/settings/{section}            — upsert one section, super_admin only
- *  POST   /api/settings/appearance/asset     — upload logo or favicon, super_admin only
- *
- * Section payloads are validated per-section so each tab can evolve its
- * shape without breaking the others.
- */
+
 class SettingsController extends Controller
 {
     /**

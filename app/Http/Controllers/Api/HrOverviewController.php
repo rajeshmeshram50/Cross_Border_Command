@@ -15,16 +15,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- *  HRMS Overview — single aggregate endpoint that powers the live dashboard
- *  at /hr/overview. Returns KPIs, breakdowns (department / gender / status),
- *  12-month trends (joinings + exits), and short tables (recent joiners,
- *  upcoming joiners, pending onboarding invites).
- *
- *  All counts are tenant-scoped: super_admin can pass ?branch_id to drill in,
- *  client_admin/user are auto-bound to their client, and branch_user/employee
- *  are further bound to their branch.
- */
+
 class HrOverviewController extends Controller
 {
     public function index(Request $request)

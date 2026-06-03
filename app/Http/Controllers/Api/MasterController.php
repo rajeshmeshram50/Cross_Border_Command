@@ -321,7 +321,7 @@ class MasterController extends Controller
         $this->authorizeMaster($request, $slug, 'can_add');
 
         // Locked-fixed masters — Address Types is a closed vocabulary
-        // (Warehouse / Registered Address / Billing Address only). No
+        // (Warehouse / Registered Office / Billing Address only). No
         // tenant can extend it; the three rows are seeded by migration
         // 2026_06_02_000200_lock_address_types_to_three_fixed and are
         // protected from edit + delete via the is_system flag. Block
@@ -329,7 +329,7 @@ class MasterController extends Controller
         // new entries.
         if ($slug === 'address_types') {
             return response()->json([
-                'message' => 'Address Types is a fixed master. Only Warehouse, Registered Address, and Billing Address are allowed — no new types can be added.',
+                'message' => 'Address Types is a fixed master. Only Warehouse, Registered Office, and Billing Address are allowed — no new types can be added.',
             ], 403);
         }
 

@@ -32,7 +32,7 @@ class AddressTypes extends Model
      * entries are allowed across the entire platform:
      *
      *   • Warehouse
-     *   • Registered Address
+     *   • Registered Office
      *   • Billing Address
      *
      * These constants are referenced by the model boot guards below to
@@ -41,7 +41,7 @@ class AddressTypes extends Model
      * factory states, and any other code path that bypasses the API
      * (where MasterController already rejects POSTs).
      */
-    public const FIXED_NAMES = ['Warehouse', 'Registered Address', 'Billing Address'];
+    public const FIXED_NAMES = ['Warehouse', 'Registered Office', 'Billing Address'];
 
     protected static function booted(): void
     {
@@ -52,7 +52,7 @@ class AddressTypes extends Model
         static::creating(function ($model) {
             throw new \RuntimeException(
                 'Address Types is a fixed master — new rows cannot be created. '
-                . 'Only Warehouse, Registered Address, and Billing Address are allowed.'
+                . 'Only Warehouse, Registered Office, and Billing Address are allowed.'
             );
         });
 

@@ -23,12 +23,7 @@ use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Shared\Html;
 
-/**
- * Agreements master — covers both tabs:
- *
- *   - /clm/agreements/types     (AT-NNN: Sales Contract, MSA, NDA, …)
- *   - /clm/agreements/library   (A-NNN: concrete templates tagged to a type)
- */
+
 class ClmAgreementController extends Controller
 {
     use HandlesDocxHtmlRoundtrip;

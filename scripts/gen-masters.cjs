@@ -539,10 +539,3 @@ ${schemaMapLines}
 
 fs.writeFileSync(CTRL_PATH, controller);
 
-console.log(`Generated:`);
-console.log(`  ${metadata.length} migrations in ${MIG_DIR}`);
-console.log(`  ${metadata.length} models in ${MODEL_DIR}`);
-console.log(`  1 controller at ${CTRL_PATH}`);
-console.log('');
-console.log('Masters processed:');
-metadata.forEach(m => console.log(`  - ${m.slug}  (table=${m.table}, fields=${m.fields.length}, u=[${m.uFields.join(',')}])`));

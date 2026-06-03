@@ -258,10 +258,14 @@ export default function PublicOnboarding() {
   const validateStep1 = (): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!firstName.trim())             e.first_name  = 'First name is required';
+    else if (firstName.trim().length > 15) e.first_name = 'First name must be 15 characters or fewer';
     else if (!nameRe.test(firstName.trim())) e.first_name = 'First name cannot contain numbers';
-    if (middleName.trim() && !nameRe.test(middleName.trim()))
-      e.middle_name = 'Middle name cannot contain numbers';
+    if (middleName.trim()) {
+      if (middleName.trim().length > 15) e.middle_name = 'Middle name must be 15 characters or fewer';
+      else if (!nameRe.test(middleName.trim())) e.middle_name = 'Middle name cannot contain numbers';
+    }
     if (!lastName.trim())              e.last_name   = 'Last name is required';
+    else if (lastName.trim().length > 15) e.last_name = 'Last name must be 15 characters or fewer';
     else if (!nameRe.test(lastName.trim())) e.last_name = 'Last name cannot contain numbers';
     if (!gender)            e.gender      = 'Gender is required';
     if (!dob) {
@@ -713,23 +717,70 @@ export default function PublicOnboarding() {
           pointer-events: none;
           z-index: 0;
         }
-        @media (max-width: 900px) { .onb-arc, .onb-arc-br-inner { display: none; } }
+        @media (max-width: 1024px) { .onb-arc, .onb-arc-br-inner { display: none; } }
 
-        .onb-layout {
+        /* Kill body default 8px margin + any inherited padding/scroll
+           that would push min-height 100vh past the viewport and trigger
+           an unwanted vertical scrollbar on short Step 3 forms. Scoped
+           via :has so it only applies on pages that contain the shell. */
+        html:has(.onb-shell), body:has(.onb-shell) {
+          margin: 0;
+          padding: 0;
+        }
+        body:has(.onb-shell) {
+          overflow-x: hidden;
+        }
+
+        /* The onb-shell class is the OUTER vertical-centering frame.
+           It owns min-height 100vh plus flex centering so the card
+           sits in the middle of the viewport when content is short,
+           and the page scrolls naturally when content is taller than
+           the viewport. Centering is on this wrapper (not on the
+           onb-layout itself) so the decorative ::before notch and
+           the onb-wave SVG inside onb-layout track the card height,
+           not the viewport height. */
+        .onb-shell {
           min-height: 100vh;
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+          z-index: 1;
+          /* Hard cap — anything inside that tries to extend past viewport
+             width (decorative wave SVG, runaway long text, etc.) gets
+             clipped instead of triggering a horizontal scrollbar. */
+          overflow-x: hidden;
+        }
+        .onb-layout {
+          /* Natural height — sizes to its content (sidebar + form).
+             Decorative ::before + .onb-wave can now safely position
+             themselves relative to this container without stretching
+             across the full viewport. */
           display: grid;
           grid-template-columns: 300px minmax(0, 1fr);
-          /* Contained card feel — page edges have padding so the white
-             form pane reads as a card on top of the tinted backdrop. */
+          align-items: stretch;
+          width: 100%;
           margin: 0 auto;
-          max-width: 1440px;
           padding: 28px;
           gap: 0;
           position: relative;
           z-index: 1;
           background: transparent;
+          /* Hard guard — content can never push the layout horizontally
+             off the viewport even if a child has runaway long text. */
+          max-width: min(1440px, 100vw);
+          overflow-x: hidden;
         }
-        @media (max-width: 900px) {
+        /* Laptop screens (1024–1280px) — narrower sidebar so the form
+           area gets more breathing room. */
+        @media (max-width: 1280px) {
+          .onb-layout { grid-template-columns: 260px minmax(0, 1fr); padding: 20px; }
+        }
+        /* Tablets and below — collapse to single column. Sidebar stacks
+           above the form. Removed at 1024px (was 900px) because 900-1024
+           laptop screens felt cramped with the 2-col layout. */
+        @media (max-width: 1024px) {
           .onb-layout { grid-template-columns: 1fr; padding: 0; }
         }
         /* Curved transition between the blue sidebar and the white form
@@ -749,7 +800,7 @@ export default function PublicOnboarding() {
           z-index: 2;
         }
         [data-bs-theme="dark"] .onb-layout::before { background: var(--vz-card-bg); }
-        @media (max-width: 900px) { .onb-layout::before { display: none; } }
+        @media (max-width: 1024px) { .onb-layout::before { display: none; } }
 
         /* SVG wave-edge overlay — extends the blue sidebar into the
            form area along an S-curve silhouette. The bulges at top and
@@ -770,29 +821,12 @@ export default function PublicOnboarding() {
           display: block;
           filter: drop-shadow(8px 0 18px rgba(13,38,76,0.22));
         }
-        @media (max-width: 900px) { .onb-wave { display: none; } }
+        @media (max-width: 1024px) { .onb-wave { display: none; } }
 
-        /* Vertical brand label on the form card's outer right edge —
-           matches the reference's "DiveShop360" rotated wordmark. Sits
-           inside the layout's right padding so it overlaps the form
-           card's right margin area, just like the reference. */
-        .onb-form-vlabel {
-          position: absolute;
-          top: 50%;
-          right: 6px;
-          transform: translateY(-50%) rotate(90deg);
-          transform-origin: center;
-          font-size: 12px;
-          font-weight: 800;
-          letter-spacing: 0.36em;
-          text-transform: uppercase;
-          color: rgba(15,38,76,0.35);
-          white-space: nowrap;
-          z-index: 3;
-          pointer-events: none;
-        }
-        [data-bs-theme="dark"] .onb-form-vlabel { color: rgba(255,255,255,0.30); }
-        @media (max-width: 900px) { .onb-form-vlabel { display: none; } }
+        /* Vertical brand label (.onb-form-vlabel) removed per QA feedback —
+           the rotated wordmark was reading as a watermark obscuring the
+           form on narrow viewports and was deemed unnecessary clutter
+           on the public onboarding flow. */
 
         /* Left rail — bright blue gradient matching the reference
            template's vibrant blue sidebar. Sticky so only the right
@@ -812,10 +846,13 @@ export default function PublicOnboarding() {
              seam (top-right and bottom-right stay flat so the wave's
              curves don't fight with a corner-radius curve). */
           border-radius: 20px 0 0 20px;
-          height: calc(100vh - 56px);
-          position: sticky;
-          top: 28px;
-          align-self: start;
+          /* Match the form pane's height naturally via grid stretch
+             instead of forcing 100vh. With min-height set to a sensible
+             floor (so the BH brand + 3 steps + footer fit), the sidebar
+             grows only as tall as the form needs — no more giant empty
+             blue rail next to a short form. */
+          min-height: 540px;
+          align-self: stretch;
           /* overflow visible so the step number circles can OVERLAP the
              seam between sidebar and form (matches the DiveShop360 ref).
              Brand + 3 steps + footer fit comfortably without scroll.
@@ -826,7 +863,7 @@ export default function PublicOnboarding() {
           z-index: 3;
           box-shadow: 0 18px 40px -10px rgba(29,78,216,0.40);
         }
-        @media (max-width: 900px) {
+        @media (max-width: 1024px) {
           .onb-side { border-radius: 0; height: auto; position: static; }
         }
         .onb-side::before, .onb-side::after {
@@ -975,7 +1012,7 @@ export default function PublicOnboarding() {
         /* Mobile (no form pane beside sidebar) — pull the floating circle
            and connector line back inside the sidebar so they don't hang
            off the right edge of the screen. */
-        @media (max-width: 900px) {
+        @media (max-width: 1024px) {
           .onb-step { padding-right: 64px; }
           .onb-step-circle { right: 8px; }
           .onb-step-line { right: 31.25px; }
@@ -1013,9 +1050,28 @@ export default function PublicOnboarding() {
           max-width: 1000px;
           background: transparent;
         }
-        @media (max-width: 900px) {
+        @media (max-width: 1024px) {
           .onb-main { padding: 24px 20px 22px; border-radius: 0; }
         }
+        /* True mobile (<=480px) — minimal padding so form fields use the
+           full viewport width. Anything more breaks 40-column form rhythm
+           on narrow phones. */
+        @media (max-width: 480px) {
+          .onb-main { padding: 18px 14px 16px; }
+          .onb-welcome { padding: 8px 12px; gap: 8px; }
+          .onb-welcome-icon { width: 30px; height: 30px; font-size: 14px; border-radius: 8px; }
+          .onb-welcome-title { font-size: 12px; }
+          .onb-welcome-sub { font-size: 11px; }
+        }
+
+        /* Global horizontal-overflow guard — last line of defence so a
+           rogue child element (long token, runaway grid item, etc.) can
+           never make the page scroll sideways on any screen size. */
+        :where(.onb-page, .onb-layout, .onb-main, .onb-main-inner) {
+          max-width: 100%;
+          overflow-x: clip;
+        }
+
         /* Form field rhythm — make every input/select/datepicker the same
            40px height and the same 10px corner radius so a Step 1 with 8
            fields reads as a unified grid instead of an uneven stack. The
@@ -1051,6 +1107,10 @@ export default function PublicOnboarding() {
           background: linear-gradient(120deg, rgba(37,99,235,0.06) 0%, rgba(59,130,246,0.08) 100%);
           border: 1px solid rgba(37,99,235,0.14);
           margin-bottom: 14px;
+          /* overflow: hidden traps any rogue long text inside the card
+             instead of letting it stretch the parent container off-screen. */
+          overflow: hidden;
+          max-width: 100%;
         }
         [data-bs-theme="dark"] .onb-welcome {
           background: linear-gradient(120deg, rgba(59,130,246,0.16) 0%, rgba(96,165,250,0.20) 100%);
@@ -1063,8 +1123,28 @@ export default function PublicOnboarding() {
           font-size: 16px; flex-shrink: 0;
           box-shadow: 0 4px 12px rgba(37,99,235,0.35);
         }
-        .onb-welcome-title { font-size: 13px; font-weight: 700; letter-spacing: -0.005em; color: var(--vz-heading-color, #0f1e4b); line-height: 1.2; }
-        .onb-welcome-sub { font-size: 11.5px; color: var(--vz-secondary-color, #6b7280); margin-top: 1px; }
+        /* The text wrapper — min-width: 0 lets it shrink inside the flex
+           parent (default flex min-width is auto which would force it to
+           grow with its content). Without this, a 200-char invitee name
+           or org name balloons the welcome card off the right edge. */
+        .onb-welcome > div:not(.onb-welcome-icon) {
+          min-width: 0;
+          flex: 1 1 auto;
+        }
+        .onb-welcome-title {
+          font-size: 13px; font-weight: 700; letter-spacing: -0.005em;
+          color: var(--vz-heading-color, #0f1e4b); line-height: 1.2;
+          /* Long org names wrap onto a second line rather than stretching
+             the card sideways. break-word handles unspaced gibberish too. */
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
+        .onb-welcome-sub {
+          font-size: 11.5px; color: var(--vz-secondary-color, #6b7280);
+          margin-top: 1px;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
         .onb-welcome-sub strong { color: var(--vz-heading-color, #374151); font-weight: 600; }
 
         /* Bottom progress bar — slim track + filled gradient with the
@@ -1197,7 +1277,7 @@ export default function PublicOnboarding() {
           max-width: 1100px;
           margin: 0 auto;
         }
-        @media (max-width: 900px) {
+        @media (max-width: 1024px) {
           .onb-hgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
         @media (max-width: 600px) {
@@ -1312,7 +1392,7 @@ export default function PublicOnboarding() {
           .onb-foot-actions { width: 100%; justify-content: flex-end; }
         }
 
-        @media (max-width: 900px) {
+        @media (max-width: 1024px) {
           .onb-side { padding: 20px 20px 16px; gap: 18px; }
           .onb-side-brand-logo, .onb-side-brand-fallback { width: 94px; height: 64px; }
           .onb-main { padding: 24px 20px 22px; }
@@ -1400,6 +1480,14 @@ export default function PublicOnboarding() {
       <div className="onb-arc onb-arc-br" aria-hidden />
       <div className="onb-arc-br-inner" aria-hidden />
 
+      {/* `.onb-shell` is a 100vh flex container that vertically centers
+          the card. We do the centering on THIS wrapper (not on
+          .onb-layout itself) so the decorative ::before notch and the
+          .onb-wave SVG inside .onb-layout match the card's actual
+          height — not the full viewport height. Without this wrapper
+          the wave/notch were rendering as tall vertical stripes
+          extending way above + below the card. */}
+      <div className="onb-shell">
       <div className="onb-layout">
         {/* SVG wave silhouette extending the sidebar's blue color into
             the form area along an S-curve. The two bulges + middle
@@ -1428,11 +1516,6 @@ export default function PublicOnboarding() {
             />
           </svg>
         </div>
-
-        {/* Vertical brand label on the form card's OUTER right edge —
-            "DiveShop360"-style rotated text sitting just inside the
-            white card's right edge, like the reference template. */}
-        <span className="onb-form-vlabel" aria-hidden>{invite?.org_name || 'CrossBorder'}</span>
 
         {/* ── Left rail — brand + step breadcrumbs ─────────────────────── */}
         <aside className="onb-side">
@@ -1496,18 +1579,33 @@ export default function PublicOnboarding() {
 
             {/* Welcome banner — greets the invitee by name and surfaces
                 the tenant context. Only shown when we know who they are. */}
-            {invite && (
-              <div className="onb-welcome">
-                <div className="onb-welcome-icon"><i className="ri-hand-heart-line" /></div>
-                <div>
-                  <div className="onb-welcome-title">Welcome to {invite.org_name} · Onboarding Form</div>
-                  <div className="onb-welcome-sub">
-                    Hi <strong>{firstName || invite.invitee_email?.split('@')[0] || 'there'}</strong>
-                    {invite.invitee_email && <> · {invite.invitee_email}</>}
+            {invite && (() => {
+              // Trim runaway long org names / display names so the greeting
+              // card never balloons. 80 chars is enough for "Acme Corporation,
+              // Mumbai Branch Office, Andheri East" but caps the testing
+              // gibberish ("ssssssss...") that QA pastes.
+              const cap = (s: string, n: number) =>
+                s.length > n ? s.slice(0, n).trim() + '…' : s;
+              const orgName = cap((invite.org_name || '').trim(), 80);
+              const displayHi = cap(
+                (firstName || invite.invitee_email?.split('@')[0] || 'there').trim(),
+                40
+              );
+              return (
+                <div className="onb-welcome">
+                  <div className="onb-welcome-icon"><i className="ri-hand-heart-line" /></div>
+                  <div>
+                    <div className="onb-welcome-title" title={invite.org_name || ''}>
+                      Welcome to {orgName} · Onboarding Form
+                    </div>
+                    <div className="onb-welcome-sub">
+                      Hi <strong>{displayHi}</strong>
+                      {invite.invitee_email && <> · {invite.invitee_email}</>}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Per-step title + subtitle — gives the form section a clear
                 heading like "Basic Info" / "Tell us a bit about yourself". */}
@@ -1548,21 +1646,21 @@ export default function PublicOnboarding() {
               <div className="onb-hrow">
                 <label className="emp-label">First Name<span className="req">*</span></label>
                 <div className="onb-hrow-input">
-                  <input className={`emp-input${errs.first_name ? ' is-invalid' : ''}`} placeholder="e.g. Aarav" value={firstName} onChange={e => { setFirstName(e.target.value); clearErr('first_name'); }} />
+                  <input className={`emp-input${errs.first_name ? ' is-invalid' : ''}`} placeholder="e.g. Aarav" maxLength={15} value={firstName} onChange={e => { setFirstName(e.target.value); clearErr('first_name'); }} />
                   {errs.first_name && <small className="emp-err">{errs.first_name}</small>}
                 </div>
               </div>
               <div className="onb-hrow">
                 <label className="emp-label">Middle Name</label>
                 <div className="onb-hrow-input">
-                  <input className={`emp-input${errs.middle_name ? ' is-invalid' : ''}`} placeholder="Middle name (optional)" value={middleName} onChange={e => { setMiddleName(e.target.value); clearErr('middle_name'); }} />
+                  <input className={`emp-input${errs.middle_name ? ' is-invalid' : ''}`} placeholder="Middle name (optional)" maxLength={15} value={middleName} onChange={e => { setMiddleName(e.target.value); clearErr('middle_name'); }} />
                   {errs.middle_name && <small className="emp-err">{errs.middle_name}</small>}
                 </div>
               </div>
               <div className="onb-hrow">
                 <label className="emp-label">Last Name<span className="req">*</span></label>
                 <div className="onb-hrow-input">
-                  <input className={`emp-input${errs.last_name ? ' is-invalid' : ''}`} placeholder="e.g. Kale" value={lastName} onChange={e => { setLastName(e.target.value); clearErr('last_name'); }} />
+                  <input className={`emp-input${errs.last_name ? ' is-invalid' : ''}`} placeholder="e.g. Kale" maxLength={15} value={lastName} onChange={e => { setLastName(e.target.value); clearErr('last_name'); }} />
                   {errs.last_name && <small className="emp-err">{errs.last_name}</small>}
                 </div>
               </div>
@@ -1821,6 +1919,7 @@ export default function PublicOnboarding() {
             </div>
           </div>
         </main>
+      </div>
       </div>
     </>
   );

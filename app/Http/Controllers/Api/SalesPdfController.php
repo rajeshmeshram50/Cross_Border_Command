@@ -22,22 +22,7 @@ use Illuminate\Support\Str;
 use Milon\Barcode\DNS1D;
 use stdClass;
 
-/**
- * Sales Matrix → QPI page PDF previews.
- *
- * Renders the Proforma Invoice in the IDIMS-derived layout (see
- * resources/views/pdf/proforma-invoice.blade.php). Two variants ride
- * on the same template — `signature=1` stamps the authorised-signatory
- * mark, `signature=0` leaves the block blank for manual signing.
- *
- * QPI is mock-data only right now, so the request body carries the row
- * fields the frontend has (piNo, customer, etc.). Everything else is
- * filled with dummy data shaped exactly like the production IDIMS PDF
- * controller expects — $companyDetails, $buyerDetails, $consigneeDetails,
- * $bankDetails, $quotation (with currency relationship), $quotationProducts
- * (Collection), $pdf_title, $signature, $opportunity_id, $opportunity_date,
- * $termsAndConditions.
- */
+
 class SalesPdfController extends Controller
 {
     

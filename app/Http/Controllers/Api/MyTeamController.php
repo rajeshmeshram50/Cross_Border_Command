@@ -12,15 +12,7 @@ use App\Models\Module;
 use App\Models\Permission;
 use Illuminate\Http\Request;
 
-/**
- * "My Team" view — accessible from the profile dropdown for anyone who manages
- * people (reporting managers + branch users + client users). Two endpoints:
- *
- *   GET /api/my-team/employees   scope-aware list of direct/branch/client reports
- *   GET /api/my-team/approvals   unified queue of pending approvals (currently
- *                                document signatures; expense / leave plug in
- *                                here later)
- */
+
 class MyTeamController extends Controller
 {
     private const EMP_COLUMNS = [

@@ -1530,6 +1530,17 @@ const CNEV_CSS = `
 .cnev-row-act-upload   { color: #047857; background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.30); }
 .cnev-row-act-upload:hover:not(.is-disabled)   { background: rgba(16,185,129,.20); transform: translateY(-1px); }
 .cnev-row-act.is-disabled, .cnev-row-act:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
+/* Dark mode — lift the action-button fills + icon colours. Send / Reminder /
+ * Certificate set colours inline, so those need !important. */
+[data-bs-theme="dark"] .cnev-row-act-view     { color: #93c5fd; background: rgba(59,130,246,.16); border-color: rgba(59,130,246,.34); }
+[data-bs-theme="dark"] .cnev-row-act-view:hover:not(.is-disabled)     { background: rgba(59,130,246,.28); }
+[data-bs-theme="dark"] .cnev-row-act-download { color: #67e8f9; background: rgba(8,145,178,.18); border-color: rgba(8,145,178,.36); }
+[data-bs-theme="dark"] .cnev-row-act-download:hover:not(.is-disabled) { background: rgba(8,145,178,.30); }
+[data-bs-theme="dark"] .cnev-row-act-upload   { color: #6ee7b7; background: rgba(16,185,129,.18); border-color: rgba(16,185,129,.38); }
+[data-bs-theme="dark"] .cnev-row-act-upload:hover:not(.is-disabled)   { background: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .cnev-row-act-send   { background: rgba(16,185,129,.22) !important; color: #6ee7b7 !important; border-color: rgba(16,185,129,.42) !important; }
+[data-bs-theme="dark"] .cnev-row-act-remind { background: rgba(245,158,11,.20) !important; color: #fcd34d !important; border-color: rgba(245,158,11,.42) !important; }
+[data-bs-theme="dark"] .cnev-row-act-cert   { background: rgba(8,145,178,.22) !important; color: #67e8f9 !important; border-color: rgba(8,145,178,.42) !important; }
 
 .cnev-pill {
   display: inline-flex; align-items: center; gap: 4px;

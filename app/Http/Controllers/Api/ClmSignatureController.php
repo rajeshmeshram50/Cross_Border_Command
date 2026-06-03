@@ -21,19 +21,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 
-/**
- * CLM Trade Document → Send for Signature (Zoho Sign).
- *
- * Backs the "Send for Signature" modal on Sales → Customers. Picks up one
- * or more [[ClmTradeDocLibrary]] drafts, renders each as a PDF with the
- * customer's data merged into the {{customer.*}} placeholders, ships them
- * to Zoho Sign in a single request, then tracks the status + signed PDFs
- * + completion certificate in clm_signature_requests.
- *
- * Mirrors the New_IDIMS_6.0 DocumentController flow but split across:
- *   - [[ZohoSignService]] (token cache + low-level HTTP)
- *   - this controller (validation, PDF generation, persistence)
- */
+
 class ClmSignatureController extends Controller
 {
     public function __construct(private ZohoSignService $zoho)
@@ -55,19 +43,11 @@ class ClmSignatureController extends Controller
         }
     }
 
-    /* ─────────────────────── PREVIEW ─────────────────────── */
 
-    /**
-     * Render a single draft as a PDF with the customer's data merged in.
-     * Used by the frontend modal step 3 to show what's about to be sent
-     * and to let the user position the Signature field. **Does NOT call
-     * Zoho** — the goal is a fast local render so the preview is snappy.
-     *
-     * Body: { trade_doc_id, party_id, model_name? }
-     */
     public function preview(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
 
         $data = $request->validate([
             'trade_doc_id' => 'required|integer|exists:clm_trade_doc_library,id',
@@ -90,7 +70,10 @@ class ClmSignatureController extends Controller
         $party = $this->loadParty($modelName, (int) $data['party_id'], $user);
 
         $pdf = $this->renderPdf(
-            $doc, $party, $modelName, Str::uuid()->toString(),
+            $doc,
+            $party,
+            $modelName,
+            Str::uuid()->toString(),
             null,
             $data['header_config_override'] ?? null,
             $data['footer_config_override'] ?? null,
@@ -104,27 +87,26 @@ class ClmSignatureController extends Controller
         ]);
     }
 
-    /**
-     * Resolve a party row for the given `model_name`. The three party
-     * models share a `forUser($user)` scope (via App\Support\MasterVisibility)
-     * so they all honour the same sub-branch visibility rules — abort with
-     * 404 if the caller's tier can't see the requested id.
-     */
+
     private function loadParty(string $modelName, int $partyId, $user): Model
     {
         switch ($modelName) {
-            case 'Customer':  return Customer::query()->forUser($user)->findOrFail($partyId);
-            case 'Consignee': return Consignee::query()->forUser($user)->findOrFail($partyId);
-            case 'Vendor':    return Vendor::query()->forUser($user)->findOrFail($partyId);
+            case 'Customer':
+                return Customer::query()->forUser($user)->findOrFail($partyId);
+            case 'Consignee':
+                return Consignee::query()->forUser($user)->findOrFail($partyId);
+            case 'Vendor':
+                return Vendor::query()->forUser($user)->findOrFail($partyId);
         }
         abort(422, "Unsupported model_name: {$modelName}");
     }
 
-    /* ─────────────────────── SEND ─────────────────────── */
+
 
     public function send(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
         if (!$this->zoho->isConfigured()) {
@@ -169,7 +151,7 @@ class ClmSignatureController extends Controller
 
         // Preserve the user's chosen order, not whatever DB order we got back.
         $orderedDocs = collect($data['trade_doc_ids'])
-            ->map(fn ($id) => $docs->get($id))
+            ->map(fn($id) => $docs->get($id))
             ->filter()
             ->values();
 
@@ -188,8 +170,14 @@ class ClmSignatureController extends Controller
                 $footerOverride = is_array($footerByDoc[$docKey]  ?? null) ? $footerByDoc[$docKey]  : null;
                 $contentOver    = is_string($contentByDoc[$docKey] ?? null) ? $contentByDoc[$docKey] : null;
                 $pdf  = $this->renderPdf(
-                    $doc, $party, $modelName, $requestUuid, $data['signers'],
-                    $headerOverride, $footerOverride, $contentOver,
+                    $doc,
+                    $party,
+                    $modelName,
+                    $requestUuid,
+                    $data['signers'],
+                    $headerOverride,
+                    $footerOverride,
+                    $contentOver,
                 );
                 $tmp  = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
                 file_put_contents($tmp, $pdf->output());
@@ -215,7 +203,7 @@ class ClmSignatureController extends Controller
 
             $requestName = $orderedDocs->count() > 1
                 ? 'Multiple Documents: ' . $orderedDocs->pluck('name')->take(3)->implode(', ')
-                  . ($orderedDocs->count() > 3 ? '…' : '')
+                . ($orderedDocs->count() > 3 ? '…' : '')
                 : (string) $orderedDocs->first()->name;
 
             $requestBody = [
@@ -228,7 +216,7 @@ class ClmSignatureController extends Controller
                 ],
             ];
 
-            $filenames = array_map(fn ($m) => Str::slug($m['document_name']) ?: ('document_' . $m['id']), $localDocMeta);
+            $filenames = array_map(fn($m) => Str::slug($m['document_name']) ?: ('document_' . $m['id']), $localDocMeta);
 
             // 3. Create the Zoho request (multipart — JSON + N PDFs).
             $createResp     = $this->zoho->createRequestMultipart($tempPaths, $filenames, $requestBody);
@@ -273,7 +261,7 @@ class ClmSignatureController extends Controller
             $sigReq->trade_doc_id        = $orderedDocs->first()->id;
             $sigReq->trade_doc_ids       = $orderedDocs->pluck('id')->values()->all();
             $sigReq->document_names      = collect($localDocMeta)->pluck('document_name')->values()->all();
-            $sigReq->zoho_document_ids   = array_values(array_filter(array_map(fn ($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
+            $sigReq->zoho_document_ids   = array_values(array_filter(array_map(fn($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
             $sigReq->model_name          = $modelName;
             $sigReq->party_id            = $party->id;
             $sigReq->zoho_request_id     = $zohoRequestId;
@@ -329,27 +317,18 @@ class ClmSignatureController extends Controller
             ]);
             return response()->json(['status' => false, 'message' => 'Failed to send documents: ' . $e->getMessage()], 500);
         } finally {
-            foreach ($tempPaths as $p) { @unlink($p); }
+            foreach ($tempPaths as $p) {
+                @unlink($p);
+            }
         }
     }
 
-    /* ─────────────────────── AGREEMENT PREVIEW / SEND ───────────────────────
-     *
-     * Variant of preview/send that operates on `clm_agreement_library`
-     * rows scoped to a Sales Matrix lead instead of `clm_trade_doc_library`
-     * scoped to a single party. The agreement's `party` CSV
-     * (e.g. "Buyer, Consignee") + the lead's customer/consignee FK auto-
-     * compose the signer list, so one Zoho request can carry the buyer
-     * and consignee as parallel signers on the same PDF.
-     *
-     * Frontend hits these from the Lead detail "Segment Details" popup
-     * (LeadAgreementSendModal). Each agreement row gets its own Send,
-     * one Zoho request per agreement.
-     */
+
 
     public function agreementPreview(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
 
         $data = $request->validate([
             'agreement_id'            => 'required|integer|exists:clm_agreement_library,id',
@@ -388,8 +367,8 @@ class ClmSignatureController extends Controller
             'lead_customer_id'  => $lead->customer_id,
             'lead_consignee_id' => $lead->consignee_id,
             'primary'        => [$primaryModel, $primary->id ?? null, $primary->company_name ?? null],
-            'all_parties'    => collect($allParties)->map(fn ($p, $k) => [$k, $p->id, $p->company_name])->values()->all(),
-            'body_has_tokens'=> str_contains((string) $agreement->content, '{{'),
+            'all_parties'    => collect($allParties)->map(fn($p, $k) => [$k, $p->id, $p->company_name])->values()->all(),
+            'body_has_tokens' => str_contains((string) $agreement->content, '{{'),
         ]);
 
         $pdf = $this->renderAgreementPdf(
@@ -413,7 +392,8 @@ class ClmSignatureController extends Controller
 
     public function agreementSend(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
         if (!$this->zoho->isConfigured()) {
@@ -451,7 +431,7 @@ class ClmSignatureController extends Controller
         $rawIds = !empty($data['agreement_ids'])
             ? array_map('intval', $data['agreement_ids'])
             : (!empty($data['agreement_id']) ? [(int) $data['agreement_id']] : []);
-        $ids = array_values(array_unique(array_filter($rawIds, fn ($v) => $v > 0)));
+        $ids = array_values(array_unique(array_filter($rawIds, fn($v) => $v > 0)));
         if (empty($ids)) {
             return response()->json(['status' => false, 'message' => 'No agreement_ids supplied'], 422);
         }
@@ -468,7 +448,7 @@ class ClmSignatureController extends Controller
 
         // Preserve caller order (DB returns rows in arbitrary order).
         $orderedAgreements = collect($ids)
-            ->map(fn ($id) => $agreements->get($id))
+            ->map(fn($id) => $agreements->get($id))
             ->filter()
             ->values();
 
@@ -479,13 +459,13 @@ class ClmSignatureController extends Controller
         // "buyer,consignee" group together.
         $normaliseParty = function (?string $p): string {
             return collect(explode(',', (string) $p))
-                ->map(fn ($s) => strtolower(trim($s)))
+                ->map(fn($s) => strtolower(trim($s)))
                 ->filter()
                 ->sort()
                 ->values()
                 ->implode(',');
         };
-        $partyKeys = $orderedAgreements->map(fn ($a) => $normaliseParty($a->party))->unique()->values();
+        $partyKeys = $orderedAgreements->map(fn($a) => $normaliseParty($a->party))->unique()->values();
         if ($partyKeys->count() > 1) {
             return response()->json([
                 'status'  => false,
@@ -561,7 +541,7 @@ class ClmSignatureController extends Controller
 
             $requestName = $orderedAgreements->count() > 1
                 ? 'Agreements: ' . $orderedAgreements->pluck('title')->take(3)->implode(', ')
-                  . ($orderedAgreements->count() > 3 ? '…' : '')
+                . ($orderedAgreements->count() > 3 ? '…' : '')
                 : (string) $headAgreement->title;
 
             $requestBody = [
@@ -574,7 +554,7 @@ class ClmSignatureController extends Controller
                 ],
             ];
 
-            $filenames = array_map(fn ($m) => Str::slug($m['document_name']) ?: ('agreement_' . $m['id']), $localDocMeta);
+            $filenames = array_map(fn($m) => Str::slug($m['document_name']) ?: ('agreement_' . $m['id']), $localDocMeta);
 
             // 3. Create Zoho request (multipart — JSON + N PDFs).
             $createResp    = $this->zoho->createRequestMultipart($tempPaths, $filenames, $requestBody);
@@ -597,7 +577,7 @@ class ClmSignatureController extends Controller
             // rather than every signer sharing one coord and visually
             // stacking on top of each other.
             $signersByEmail = collect($signers)
-                ->keyBy(fn ($s) => strtolower((string) ($s['email'] ?? '')));
+                ->keyBy(fn($s) => strtolower((string) ($s['email'] ?? '')));
             foreach ($zohoActions as &$zohoAction) {
                 $email = strtolower((string) ($zohoAction['recipient_email'] ?? ''));
                 $match = $signersByEmail->get($email);
@@ -639,7 +619,7 @@ class ClmSignatureController extends Controller
             $sigReq->trade_doc_id      = $orderedAgreements->first()->id;
             $sigReq->trade_doc_ids     = $orderedAgreements->pluck('id')->values()->all();
             $sigReq->document_names    = collect($localDocMeta)->pluck('document_name')->values()->all();
-            $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn ($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
+            $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
             $sigReq->model_name        = $primaryModel;
             $sigReq->party_id          = $primary->id;
             $sigReq->zoho_request_id   = $zohoRequestId;
@@ -702,7 +682,9 @@ class ClmSignatureController extends Controller
             ]);
             return response()->json(['status' => false, 'message' => 'Failed to send agreement: ' . $e->getMessage()], 500);
         } finally {
-            foreach ($tempPaths as $p) { @unlink($p); }
+            foreach ($tempPaths as $p) {
+                @unlink($p);
+            }
         }
     }
 
@@ -719,7 +701,8 @@ class ClmSignatureController extends Controller
      */
     public function salesDocSend(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
         if (!$this->zoho->isConfigured()) {
@@ -818,7 +801,7 @@ class ClmSignatureController extends Controller
             $zohoActions     = data_get($details, 'requests.actions',      []);
             $zohoDocumentIds = data_get($details, 'requests.document_ids', []);
 
-            $signersByEmail = collect($signers)->keyBy(fn ($s) => strtolower((string) ($s['email'] ?? '')));
+            $signersByEmail = collect($signers)->keyBy(fn($s) => strtolower((string) ($s['email'] ?? '')));
             foreach ($zohoActions as &$zohoAction) {
                 $email = strtolower((string) ($zohoAction['recipient_email'] ?? ''));
                 $match = $signersByEmail->get($email);
@@ -864,7 +847,7 @@ class ClmSignatureController extends Controller
             $sigReq->trade_doc_id      = $docId;
             $sigReq->trade_doc_ids     = [$docId];
             $sigReq->document_names    = [$docName];
-            $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn ($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
+            $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
             $sigReq->model_name        = $primaryIsCustomer ? 'Customer' : 'Consignee';
             $sigReq->party_id          = $primaryId;
             $sigReq->zoho_request_id   = $zohoRequestId;
@@ -957,12 +940,12 @@ class ClmSignatureController extends Controller
     private function resolveAgreementSigners(ClmAgreementLibrary $agreement, Lead $lead, $user): array
     {
         $partyTokens = collect(explode(',', (string) $agreement->party))
-            ->map(fn ($s) => trim($s))
+            ->map(fn($s) => trim($s))
             ->filter()
             ->values();
 
-        $wantsBuyer     = $partyTokens->contains(fn ($t) => strcasecmp($t, 'Buyer') === 0);
-        $wantsConsignee = $partyTokens->contains(fn ($t) => strcasecmp($t, 'Consignee') === 0);
+        $wantsBuyer     = $partyTokens->contains(fn($t) => strcasecmp($t, 'Buyer') === 0);
+        $wantsConsignee = $partyTokens->contains(fn($t) => strcasecmp($t, 'Consignee') === 0);
 
         $customer  = $lead->customer_id  ? Customer::query()->forUser($user)->find($lead->customer_id)   : null;
         $consignee = $lead->consignee_id ? Consignee::query()->forUser($user)->find($lead->consignee_id) : null;
@@ -1007,13 +990,7 @@ class ClmSignatureController extends Controller
         return [null, 'Customer', $signers, $allParties];
     }
 
-    /**
-     * Render an agreement-library row as a PDF with placeholders merged
-     * against the primary party. Reuses the trade-doc blade since the
-     * structural shape (title + processed HTML + signer table) is
-     * identical — agreement-specific header/footer styling can be added
-     * later if needed.
-     */
+
     private function renderAgreementPdf(
         ClmAgreementLibrary $agreement,
         Model $party,
@@ -1077,15 +1054,16 @@ class ClmSignatureController extends Controller
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
         ])
-        ->setPaper('a4')
-        ->setOption('isPhpEnabled', true);
+            ->setPaper('a4')
+            ->setOption('isPhpEnabled', true);
     }
 
     /* ─────────────────────── LIST / SHOW ─────────────────────── */
 
     public function index(Request $request)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
 
         // Same-as-customer read-through: a consignee flagged
         // `same_as_customer = true` has no signature requests of its own —
@@ -1098,7 +1076,8 @@ class ClmSignatureController extends Controller
         $filterModelName = $request->filled('model_name') ? (string) $request->model_name : null;
         if ($filterPartyId && $filterModelName === 'Consignee') {
             $consignee = Consignee::query()->find($filterPartyId);
-            if ($consignee
+            if (
+                $consignee
                 && $consignee->same_as_customer
                 && $consignee->customer_id
                 && (!$user->client_id || (int) ($consignee->client_id ?? 0) === (int) $user->client_id)
@@ -1173,7 +1152,8 @@ class ClmSignatureController extends Controller
                     // overwrites on success). The user's "View/Download
                     // stuck disabled" stops as soon as the PDF download
                     // succeeds.
-                    if ($newStatus === 'completed'
+                    if (
+                        $newStatus === 'completed'
                         && empty($row->fresh()->signed_document_paths)
                     ) {
                         $this->fetchSignedArtifacts($row, $details);
@@ -1259,7 +1239,8 @@ class ClmSignatureController extends Controller
      */
     public function show(Request $request, $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
 
         try {
@@ -1289,13 +1270,17 @@ class ClmSignatureController extends Controller
 
     public function remind(Request $request, $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
 
         try {
             $live   = $this->zoho->getRequest($row->zoho_request_id);
             $state  = strtolower((string) data_get($live, 'requests.request_status', $row->status));
-            if ($state !== $row->status) { $row->status = $state; $row->save(); }
+            if ($state !== $row->status) {
+                $row->status = $state;
+                $row->save();
+            }
             if ($state !== 'inprogress') {
                 return response()->json(['status' => false, 'message' => "Reminder cannot be sent. Current status is '{$state}'."], 400);
             }
@@ -1324,7 +1309,8 @@ class ClmSignatureController extends Controller
 
     public function recall(Request $request, $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $data = $request->validate(['reason' => 'required|string|max:500']);
         $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
 
@@ -1358,7 +1344,8 @@ class ClmSignatureController extends Controller
 
     private function streamSignedFile(Request $request, $id, int $index, string $disposition)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
 
         $paths = is_array($row->signed_document_paths) ? $row->signed_document_paths : [];
@@ -1387,7 +1374,8 @@ class ClmSignatureController extends Controller
 
     public function viewCertificate(Request $request, $id)
     {
-        $user = $request->user(); if (!$user) abort(401);
+        $user = $request->user();
+        if (!$user) abort(401);
         $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
 
         $path = $row->certificate_path;
@@ -1475,8 +1463,8 @@ class ClmSignatureController extends Controller
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
         ])
-        ->setPaper('a4')
-        ->setOption('isPhpEnabled', true);
+            ->setPaper('a4')
+            ->setOption('isPhpEnabled', true);
     }
 
     /**
@@ -1571,9 +1559,9 @@ class ClmSignatureController extends Controller
         foreach ($signatureAliases as $alias => $canonical) {
             $token  = self::sigMarkerToken($canonical);
             $sigBox = '<div class="sig-box">'
-                    . '<span class="sig-marker">' . $token . '</span>'
-                    . '[ Signature ]'
-                    . '</div>';
+                . '<span class="sig-marker">' . $token . '</span>'
+                . '[ Signature ]'
+                . '</div>';
             $pattern = '/\{\{\s*' . preg_quote($alias, '/') . '\s*\.\s*signature\s*\}\}/iu';
             $html = preg_replace($pattern, $sigBox, $html);
         }
@@ -1645,12 +1633,16 @@ class ClmSignatureController extends Controller
         $pinStr     = $scalar($modelName === 'Vendor' ? ($addr?->pincode ?? null) : ($addr?->pin ?? null));
 
         $addressLine = trim(implode(', ', array_filter([
-            $addr?->address_line, $addr?->city, $stateStr, $countryStr, $pinStr,
+            $addr?->address_line,
+            $addr?->city,
+            $stateStr,
+            $countryStr,
+            $pinStr,
         ])));
 
         $codeAttr = $modelName === 'Customer'  ? 'customer_code'
-                  : ($modelName === 'Consignee' ? 'consignee_code'
-                  : 'vendor_code');
+            : ($modelName === 'Consignee' ? 'consignee_code'
+                : 'vendor_code');
 
         // Pre-compute resolved values for the canonical field names.
         $nameValue   = e($party->company_name ?? '');
@@ -1702,8 +1694,8 @@ class ClmSignatureController extends Controller
         foreach ($namespaces as $ns) {
             foreach ($values as $field => $value) {
                 $pattern = '/\{\{\s*'
-                         . preg_quote($ns,    '/') . '\s*\.\s*'
-                         . preg_quote($field, '/') . '\s*\}\}/iu';
+                    . preg_quote($ns,    '/') . '\s*\.\s*'
+                    . preg_quote($field, '/') . '\s*\}\}/iu';
                 $html = preg_replace($pattern, $value, $html);
             }
         }
@@ -1926,7 +1918,7 @@ class ClmSignatureController extends Controller
 
         $signedOnly = array_values(array_filter(
             $all,
-            fn ($p) => is_string($p)
+            fn($p) => is_string($p)
                 && str_contains($p, '/signed_')
                 && str_ends_with(strtolower($p), '.pdf'),
         ));
@@ -1945,10 +1937,10 @@ class ClmSignatureController extends Controller
             // always a later send.
             $candidates = array_values(array_filter(
                 $signedOnly,
-                fn ($p) => str_contains($p, $needle),
+                fn($p) => str_contains($p, $needle),
             ));
             if (empty($candidates)) continue;
-            usort($candidates, fn ($a, $b) => strcmp($b, $a));
+            usort($candidates, fn($a, $b) => strcmp($b, $a));
             $path = $candidates[0];
 
             $url = file_url($path);

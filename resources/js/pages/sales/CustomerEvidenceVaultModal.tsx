@@ -1642,6 +1642,18 @@ const CEV_CSS = `
 .cev-row-act.is-disabled, .cev-row-act:disabled {
   opacity: .45; cursor: not-allowed; pointer-events: none;
 }
+/* Dark mode — lift the action-button fills + icon colours so they read on the
+ * dark row. Send / Reminder / Certificate set their colours inline, so those
+ * need !important to win over the inline style attribute. */
+[data-bs-theme="dark"] .cev-row-act-view     { color: #93c5fd; background: rgba(59,130,246,.16); border-color: rgba(59,130,246,.34); }
+[data-bs-theme="dark"] .cev-row-act-view:hover:not(.is-disabled)     { background: rgba(59,130,246,.28); }
+[data-bs-theme="dark"] .cev-row-act-download { color: #67e8f9; background: rgba(8,145,178,.18); border-color: rgba(8,145,178,.36); }
+[data-bs-theme="dark"] .cev-row-act-download:hover:not(.is-disabled) { background: rgba(8,145,178,.30); }
+[data-bs-theme="dark"] .cev-row-act-upload   { color: #c4b5fd; background: rgba(124,58,237,.20); border-color: rgba(124,58,237,.40); }
+[data-bs-theme="dark"] .cev-row-act-upload:hover:not(.is-disabled)   { background: rgba(124,58,237,.32); }
+[data-bs-theme="dark"] .cev-row-act-send   { background: rgba(124,58,237,.24) !important; color: #c4b5fd !important; border-color: rgba(124,58,237,.42) !important; }
+[data-bs-theme="dark"] .cev-row-act-remind { background: rgba(245,158,11,.20) !important; color: #fcd34d !important; border-color: rgba(245,158,11,.42) !important; }
+[data-bs-theme="dark"] .cev-row-act-cert   { background: rgba(8,145,178,.22) !important; color: #67e8f9 !important; border-color: rgba(8,145,178,.42) !important; }
 
 .cev-pill {
   display: inline-flex; align-items: center; gap: 4px;

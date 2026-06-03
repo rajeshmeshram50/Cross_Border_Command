@@ -25,12 +25,7 @@ use Illuminate\Validation\ValidationException;
 
 class EmployeeController extends Controller
 {
-    /**
-     * Eager-loads used by every read endpoint so the SPA gets nested names
-     * (department.name, designation.name, manager.display_name, …) without
-     * extra round-trips. Each "with" pair is a (relation, columns) tuple to
-     * avoid pulling huge rows.
-     */
+   
     private const WITH = [
         'client:id,org_name',
         'branch:id,name,is_main',
