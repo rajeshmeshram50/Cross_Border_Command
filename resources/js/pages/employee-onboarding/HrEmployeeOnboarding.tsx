@@ -2819,7 +2819,7 @@ export function VaultModal({
                   </button>
                   <div className="d-flex gap-2">
                     <button type="button" onClick={() => setActionRun(null)} disabled={actionSubmitting}
-                      style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+                      style={{ padding: '7px 14px', background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #d1d5db)', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'var(--vz-body-color, #374151)', cursor: 'pointer' }}>
                       Cancel
                     </button>
                     <button type="button" onClick={submitAction} disabled={actionSubmitting || (isSign && !actionName.trim())}
