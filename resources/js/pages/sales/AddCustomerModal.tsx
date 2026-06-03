@@ -1842,9 +1842,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       </div>
 
       {/* SUB-MODAL: Add/edit a single Location (address + contact).
-          `disallowedTypes` blocks "Registered Office" when the primary
-          address is already the registered office — a customer can
-          have only one. */}
+          `disallowedTypes` blocks every address type already claimed on
+          this customer (primary + every other location row) so each
+          type can only appear ONCE per customer. The row being edited
+          keeps its own type available so it doesn't disappear from
+          its own dropdown. */}
       {locModal.open && (() => {
         /* Collect every email + phone already used on this customer —
          * primary contact (Stage 1) plus every additional location
@@ -1867,11 +1869,18 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           primaryPhone,
           ...otherLocs.map(l => (l.cpContact || '').trim()),
         ].filter(Boolean);
+        // Address type uniqueness — collect every type already used on
+        // the primary + other locations. Each type can be used only once
+        // per customer, so the dropdown excludes these on the next Add.
+        const usedAddressTypes = [
+          (form.addrType || '').trim(),
+          ...otherLocs.map(l => (l.type || '').trim()),
+        ].filter(Boolean);
         return (
           <LocationSubModal
             editing={editingId ? locations.find(l => l.id === editingId) ?? null : null}
             masters={masters}
-            disallowedTypes={form.addrType === 'Registered Office' ? ['Registered Office'] : []}
+            disallowedTypes={usedAddressTypes}
             existingEmails={existingEmails}
             existingPhones={existingPhones}
             onClose={() => setLocModal({ open:false, editing:null })}

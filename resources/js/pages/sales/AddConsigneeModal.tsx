@@ -2279,6 +2279,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         primaryPhone,
         ...otherLocs.map(l => (l.cpContact || '').trim()),
       ].filter(Boolean);
+      /* Address type uniqueness — every type already used on this
+       * consignee (primary + other locations) is blocked from the
+       * dropdown so each type can only appear once. The row being
+       * edited keeps its own value visible (handled inside the
+       * sub-modal's availableAddressTypes filter). */
+      const usedAddressTypes = [
+        (form1.addressType || '').trim(),
+        ...otherLocs.map(l => (l.type || '').trim()),
+      ].filter(Boolean);
       return (
         <LocationSubModal
           editing={editingId ? locations.find(l => l.id === editingId) ?? null : null}
@@ -2288,10 +2297,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             states: mStates,
             designations: mDesignations,
           }}
-          /* Block "Registered Office" in additional locations when the
-           * primary address already claims it — a consignee can only
-           * have one registered office. */
-          disallowedTypes={form1.addressType === 'Registered Office' ? ['Registered Office'] : []}
+          disallowedTypes={usedAddressTypes}
           existingEmails={existingEmails}
           existingPhones={existingPhones}
           onClose={() => setLocModal({ open: false, editing: null })}
