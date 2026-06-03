@@ -672,6 +672,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post('/hr-document-signatures/{id}/action',  [HrDocumentSignatureController::class, 'action']);
     Route::post('/hr-document-signatures/{id}/reject',  [HrDocumentSignatureController::class, 'reject']);
     Route::post('/hr-document-signatures/{id}/cancel',  [HrDocumentSignatureController::class, 'cancel']);
+    Route::post('/hr-document-signatures/{id}/remind',  [HrDocumentSignatureController::class, 'remind']);
     // Final-output paths — download the signed DOCX or email it to the
     // subject employee. Both work only after the workflow reaches
     // 'Completed' (the controller guards the email path; download stays

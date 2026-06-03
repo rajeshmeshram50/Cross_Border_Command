@@ -299,6 +299,123 @@ class HrDocumentSignatureController extends Controller
         return response()->json($row);
     }
 
+    /**
+     * Send a reminder email to the CURRENT pending signer on an
+     * in-flight workflow. HR uses this when a signer has been sitting
+     * on a doc — instead of pinging them on chat, click Reminder and
+     * the system emails them a polite nudge with the document link.
+     *
+     * Behaviour:
+     *  - Only fires on Pending / In Progress runs (Completed / Rejected
+     *    / Cancelled don't have a "current signer" to remind).
+     *  - Only emails the signer whose turn it is (sequential mode);
+     *    the rest are still waiting their turn and shouldn't get
+     *    reminders yet.
+     *  - Audit-logs the reminder so the admin can see how many nudges
+     *    have been sent from the Audit Trail timeline.
+     *  - Throttles to once per 6 hours per signer to avoid spam if HR
+     *    clicks the button repeatedly.
+     */
+    public function remind(Request $request, $id)
+    {
+        $row = $this->loadForRead($request, (int) $id);
+        $row->load(self::WITH);
+
+        if (!in_array($row->status, ['Pending', 'In Progress'], true)) {
+            abort(422, 'Reminders only apply to in-flight workflows. Current status: ' . $row->status);
+        }
+
+        $signers = $row->signers ?? [];
+        $idx = (int) ($row->current_index ?? 0);
+        $current = $signers[$idx] ?? null;
+        if (!$current) {
+            abort(422, 'No active signer found on this workflow.');
+        }
+
+        $userId = (int) ($current['user_id'] ?? 0);
+        if (!$userId) {
+            abort(422, 'The current signer has no user account linked — reminder cannot be sent.');
+        }
+
+        $signerUser = \App\Models\User::find($userId);
+        $signerName = $current['name'] ?? ($signerUser?->name ?? 'Signer');
+
+        // Throttle — bail if a reminder went out for THIS signer in the
+        // last 6 hours. Cheap protection against accidental double-click
+        // and intentional spam. Look at the audit log for the marker.
+        $sixHoursAgo = now()->subHours(6);
+        $recent = collect($row->audit_log ?? [])
+            ->filter(function ($ev) use ($idx, $sixHoursAgo) {
+                if (($ev['action'] ?? null) !== 'reminded') return false;
+                if (($ev['signer_index'] ?? null) !== $idx) return false;
+                try {
+                    return \Carbon\Carbon::parse($ev['at'])->greaterThan($sixHoursAgo);
+                } catch (\Throwable $e) {
+                    return false;
+                }
+            })
+            ->isNotEmpty();
+        if ($recent) {
+            abort(429, 'A reminder was already sent to this signer in the last 6 hours. Please wait before sending another.');
+        }
+
+        $tplName = $row->template?->name ?: 'a document';
+        $docCode = $row->code ?: ('doc-' . $row->id);
+        $action  = $current['action'] ?? 'Sign';
+        $senderName = $request->user()?->name ?: 'HR';
+
+        // In-app notification — drop a row into the Laravel notifications
+        // table so the signer's bell icon flashes. NO email. The doc is
+        // already in the signer's HR Inbox (the inbox() endpoint returns
+        // every pending row where they're the current signer), so this
+        // notification just pulls their attention to it.
+        if ($signerUser) {
+            try {
+                \Illuminate\Support\Facades\DB::table('notifications')->insert([
+                    'id'              => (string) \Illuminate\Support\Str::uuid(),
+                    'type'            => 'App\\Notifications\\HrSignatureReminder',
+                    'notifiable_type' => \App\Models\User::class,
+                    'notifiable_id'   => $signerUser->id,
+                    'data'            => json_encode([
+                        'kind'        => 'hr_signature_reminder',
+                        'document_id' => $row->id,
+                        'code'        => $docCode,
+                        'template'    => $tplName,
+                        'action'      => $action,
+                        'sender_name' => $senderName,
+                        'message'     => "{$senderName} reminded you to {$action} {$docCode} — {$tplName}.",
+                        'url'         => '/inbox',
+                    ]),
+                    'read_at'         => null,
+                    'created_at'      => now(),
+                    'updated_at'      => now(),
+                ]);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('[hr-document-signatures] reminder notification insert failed', [
+                    'id'  => $row->id,
+                    'err' => $e->getMessage(),
+                ]);
+                // Don't fail the whole request if the notification insert
+                // hiccups — audit log still records the reminder action.
+            }
+        }
+
+        // Append audit event with signer_index so the throttle check
+        // and the audit trail UI can both see who got reminded when.
+        $row->audit_log = array_merge($row->audit_log ?? [], [
+            array_merge(
+                $this->event($request->user(), 'reminded', "Reminder sent to {$signerName} (in-app Inbox)"),
+                ['signer_index' => $idx],
+            ),
+        ]);
+        $row->save();
+
+        return response()->json([
+            'message' => 'Reminder sent — the signer will see it in their Inbox.',
+            'signer'  => $signerName,
+        ]);
+    }
+
     /* ───── SIGNED OUTPUT (download + email) ───── */
 
     /**

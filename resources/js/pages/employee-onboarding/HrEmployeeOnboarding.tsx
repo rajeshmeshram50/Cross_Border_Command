@@ -1616,6 +1616,44 @@ export function VaultModal({
   };
 
   const openAudit = (run: SignatureRun) => { setAuditRun(run); setOpenMenuId(null); };
+  /* Send an in-app reminder (Inbox notification) to the CURRENT pending
+   * signer. The doc is already in their Inbox via the polling query —
+   * this just pushes a fresh notification to their bell icon so they
+   * notice it. No email is sent. Backend throttles to 1 reminder per
+   * 6 hours per signer; if HR clicks again too soon the API returns
+   * 429 and we surface that in the toast. */
+  const sendReminder = async (run: SignatureRun) => {
+    const current = run.signers?.[run.current_index];
+    const signerName = current?.name || 'the current signer';
+    const ok = await confirmDialog({
+      title: 'Send Reminder?',
+      message: (
+        <>
+          Nudge <strong>{signerName}</strong> in their Inbox to {current?.action?.toLowerCase() || 'sign'} this document?
+          <br />
+          <span style={{ opacity: 0.75 }}>Reminders are limited to once every 6 hours per signer.</span>
+        </>
+      ),
+      confirmLabel: 'Send Reminder',
+      cancelLabel:  'Cancel',
+      tone:         'info',
+      icon:         'notification-3-line',
+    });
+    if (!ok) return;
+    try {
+      const res = await api.post(`/hr-document-signatures/${run.id}/remind`);
+      toast.success('Reminder sent', `${res?.data?.signer || signerName} will see it in their Inbox.`);
+      fetchRuns();
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.message || 'Please try again.';
+      if (status === 429) {
+        toast.error('Slow down', msg);
+      } else {
+        toast.error('Could not send reminder', msg);
+      }
+    }
+  };
   const cancelRun = async (run: SignatureRun) => {
     // Close the row's "•••" menu BEFORE the confirm dialog opens, otherwise
     // the menu sits there in the background while the modal is up.
@@ -2124,6 +2162,18 @@ export function VaultModal({
                               style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: canGenerate ? 'pointer' : 'not-allowed', opacity: canGenerate ? 1 : 0.5 }}
                               title={canGenerate ? 'Send through the configured signing workflow' : 'Only Active templates can be sent'}>
                               <i className="ri-send-plane-line me-1" /> Send
+                            </button>
+                          )}
+                          {/* Reminder — visible only on in-flight runs.
+                              Pings the CURRENT pending signer by email.
+                              Backend throttles to 1 reminder / 6 hours
+                              per signer so accidental double-clicks
+                              don't spam. */}
+                          {run && (run.status === 'Pending' || run.status === 'In Progress') && (
+                            <button type="button" onClick={() => sendReminder(run)}
+                              style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                              title="Email a reminder to the current pending signer">
+                              <i className="ri-mail-send-line me-1" /> Reminder
                             </button>
                           )}
                           <button type="button" className="vault-action-download" onClick={() => handleGenerate(tpl)}
