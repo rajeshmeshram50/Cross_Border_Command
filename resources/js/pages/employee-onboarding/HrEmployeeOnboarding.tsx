@@ -1412,6 +1412,23 @@ export function VaultModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, emp?.dbId]);
 
+  /* Re-fetch the signing runs when the user returns to this tab/window while
+     the vault is open — covers the case where a signer just signed the
+     document from their Inbox (a separate view) and comes back here. Without
+     this the vault kept showing the stale "Awaiting" state until it was
+     closed and reopened. */
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) return;
+    const refresh = () => { if (document.visibilityState === 'visible') fetchRuns(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, emp?.dbId]);
+
   // Latest run per template_id — handy to surface a status pill alongside the template.
   const runByTemplateId = useMemo(() => {
     const m = new Map<number, SignatureRun>();
@@ -1803,6 +1820,25 @@ export function VaultModal({
     }
   };
 
+  /* Download the fully-signed PDF once a run is Completed (all signers done).
+     Hits the same endpoint the Employee Profile "My Signed Documents" tab uses. */
+  const downloadSignedDoc = async (run: SignatureRun) => {
+    try {
+      const resp = await api.get(`/hr-document-signatures/${run.id}/download-pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${run.code || `doc-${run.id}`}-signed.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Downloaded', 'Signed PDF saved.');
+    } catch (err: any) {
+      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    }
+  };
+
   return (
     <Modal
       isOpen={isOpen}
@@ -2142,7 +2178,7 @@ export function VaultModal({
                             {tpl.status}
                           </span>
                           <button type="button" className="vault-action-view" onClick={() => handleView(tpl)}
-                            title="Preview this document with this employee's data filled in">
+                            data-tooltip="Preview with this employee's data" data-tooltip-pos="bottom" aria-label="Preview document">
                             <i className="ri-eye-line" /> View
                           </button>
                           {/* If the current user is the next signer, surface
@@ -2151,19 +2187,28 @@ export function VaultModal({
                           {isMyTurn && run && (
                             <button type="button"
                               onClick={() => openAction(run)}
+                              data-tooltip={`Your turn — ${currentSigner!.action} this document`} data-tooltip-pos="bottom" aria-label={currentSigner!.action}
                               style={{ padding: '6px 12px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', border: 0, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                               <i className="ri-quill-pen-line me-1" />{currentSigner!.action}
                             </button>
                           )}
-                          {/* Send for signing — only if there isn't an active run already. */}
-                          {(!run || run.status === 'Completed' || run.status === 'Rejected' || run.status === 'Cancelled') && (
-                            <button type="button" onClick={() => openSend(tpl)}
-                              disabled={!canGenerate}
-                              style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: canGenerate ? 'pointer' : 'not-allowed', opacity: canGenerate ? 1 : 0.5 }}
-                              title={canGenerate ? 'Send through the configured signing workflow' : 'Only Active templates can be sent'}>
-                              <i className="ri-send-plane-line me-1" /> Send
-                            </button>
-                          )}
+                          {/* Send for signing — shown when there's no active run.
+                              Once the run is fully signed (Completed) the button
+                              is DISABLED (greyed) so a signed document can't be
+                              re-sent by mistake. Rejected/Cancelled still allow
+                              a fresh send. */}
+                          {(!run || run.status === 'Completed' || run.status === 'Rejected' || run.status === 'Cancelled') && (() => {
+                            const isCompleted = run?.status === 'Completed';
+                            const sendDisabled = !canGenerate || isCompleted;
+                            return (
+                              <button type="button" onClick={() => { if (!sendDisabled) openSend(tpl); }}
+                                disabled={sendDisabled}
+                                style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: sendDisabled ? 'not-allowed' : 'pointer', opacity: sendDisabled ? 0.5 : 1 }}
+                                data-tooltip={isCompleted ? 'Already fully signed — cannot re-send' : (canGenerate ? 'Send through the signing workflow' : 'Only Active templates can be sent')} data-tooltip-pos="bottom" aria-label="Send for signing">
+                                <i className="ri-send-plane-line me-1" /> Send
+                              </button>
+                            );
+                          })()}
                           {/* Reminder — visible only on in-flight runs.
                               Pings the CURRENT pending signer by email.
                               Backend throttles to 1 reminder / 6 hours
@@ -2172,21 +2217,32 @@ export function VaultModal({
                           {run && (run.status === 'Pending' || run.status === 'In Progress') && (
                             <button type="button" onClick={() => sendReminder(run)}
                               style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
-                              title="Email a reminder to the current pending signer">
+                              data-tooltip="Email a reminder to the current pending signer" data-tooltip-pos="bottom" aria-label="Send reminder">
                               <i className="ri-mail-send-line me-1" /> Reminder
                             </button>
                           )}
                           <button type="button" className="vault-action-download" onClick={() => handleGenerate(tpl)}
                             disabled={!canGenerate}
                             style={{ opacity: canGenerate ? 1 : 0.5, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
-                            title={canGenerate ? 'Generate DOCX with this employee\'s data' : 'Only Active templates can be generated'}>
+                            data-tooltip={canGenerate ? 'Generate DOCX with this employee\'s data' : 'Only Active templates can be generated'} data-tooltip-pos="bottom" aria-label="Generate document">
                             <i className="ri-play-fill" /> Generate
                           </button>
+                          {/* Download signed PDF — icon-only (compact) so the
+                              action row stays uncluttered. Shown only once the
+                              run is fully signed. */}
+                          {run && run.status === 'Completed' && (
+                            <button type="button" onClick={() => downloadSignedDoc(run)}
+                              aria-label="Download signed PDF"
+                              style={{ width: 32, height: 32, padding: 0, borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                              data-tooltip="Download signed PDF" data-tooltip-pos="bottom">
+                              <i className="ri-file-pdf-2-line" style={{ fontSize: 15 }} />
+                            </button>
+                          )}
 
                           {/* 3-dot menu — audit trail + cancel (when a run exists) */}
                           <div style={{ position: 'relative' }}>
                             <button type="button" onClick={() => setOpenMenuId(openMenuId === tpl.id ? null : tpl.id)}
-                              title="More actions"
+                              data-tooltip="More actions" data-tooltip-pos="left" aria-label="More actions"
                               style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer' }}>
                               <i className="ri-more-2-fill" />
                             </button>
@@ -2245,6 +2301,10 @@ export function VaultModal({
                                     action: s.action,
                                     status: s.status === 'Done' ? 'Completed'
                                           : s.status === 'Rejected' ? 'Rejected'
+                                          // Run fully signed → every remaining step reads Completed
+                                          // (fixes the last signer staying on "Awaiting" after the
+                                          // final signature flips the run to Completed).
+                                          : run.status === 'Completed' ? 'Completed'
                                           : (i === run.current_index ? 'Awaiting' : 'Pending'),
                                     active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
                                   }))

@@ -84,6 +84,11 @@ class HrDocumentSignatureController extends Controller
         $data = $request->validate([
             'template_id' => 'required|integer|exists:hr_document_templates,id',
             'employee_id' => 'required|integer|exists:employees,id',
+            // Custom field values entered in the Generate wizard (token => value).
+            // Merged into the frozen content_html so a doc sent for signature
+            // keeps the edits the user filled in (e.g. {{TEST}} → "sssss").
+            'custom_values'   => 'nullable|array',
+            'custom_values.*' => 'nullable',
         ]);
 
         return DB::transaction(function () use ($request, $data) {
@@ -125,6 +130,14 @@ class HrDocumentSignatureController extends Controller
             $buildCtx = $ref->getMethod('buildTokenContext'); $buildCtx->setAccessible(true);
             $resolve  = $ref->getMethod('resolveTokens');     $resolve->setAccessible(true);
             $ctx = $buildCtx->invoke($hrTplController, $emp->loadMissing(['client']), $signersTpl);
+            // Overlay the wizard-entered custom field values onto the token
+            // context so {{CustomToken}} placeholders are frozen with the
+            // user's edits (not left blank) at send time.
+            foreach ((array) ($data['custom_values'] ?? []) as $k => $v) {
+                if (is_scalar($v)) {
+                    $ctx[(string) $k] = (string) $v;
+                }
+            }
             $frozenHtml = $resolve->invoke($hrTplController, (string) $tpl->content_html, $ctx, true);
 
             $row = HrDocumentSignature::create([
