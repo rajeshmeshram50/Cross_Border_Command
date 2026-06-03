@@ -999,11 +999,6 @@ export default function ClmBuyerProfilePage() {
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                       <input type="text" placeholder="Search buyers..." style={{ border: 'none', outline: 'none', fontSize: '11px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
                     </div>
-                    <button style={{ position: 'relative', overflow: 'hidden', display: 'inline-flex', alignItems: 'center', gap: '7px', height: '36px', padding: '0 18px', border: 'none', borderRadius: '10px', fontFamily: 'inherit', fontSize: '12px', fontWeight: 700, color: '#fff', cursor: 'pointer', background: 'linear-gradient(135deg,#06b6d4,#0891b2,#0e7490)', boxShadow: '0 4px 14px rgba(8,145,178,.4),inset 0 1px 0 rgba(255,255,255,.18)', transition: 'all .18s' }}>
-                      <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', borderRadius: '10px 10px 0 0', pointerEvents: 'none' }} />
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                      <span style={{ position: 'relative', zIndex: 1 }}>Add Customer</span>
-                    </button>
                   </div>
                 </div>
                 <div style={{ overflowX: 'auto' }}>

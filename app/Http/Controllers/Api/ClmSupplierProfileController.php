@@ -40,8 +40,10 @@ use Illuminate\Support\Facades\DB;
  * segment_doc_uploads for the vendor. Agreement progress = agreements
  * applicable to the vendor's segment vs completed Zoho Sign requests.
  *
- * The transaction-wise tables are intentionally NOT built yet (Party tab
- * only for now).
+ * Transaction-wise lists (txn_*) enumerate one row per (procurement,
+ * supplier) where the supplier's product was procured, split with/without a
+ * shipment per the procurement's lead. PO / Supplier Tax Invoice have no
+ * source column yet, so they render as '—'.
  */
 class ClmSupplierProfileController extends Controller
 {
@@ -52,13 +54,20 @@ class ClmSupplierProfileController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         $cid  = (int) ($user->client_id ?? 0);
 
-        $empty = ['ws_mat' => [], 'ws_logi' => [], 'wos_svc' => [], 'wos_mat' => [], 'wos_logi' => []];
+        $empty = [
+            'ws_mat' => [], 'ws_logi' => [], 'wos_svc' => [], 'wos_mat' => [], 'wos_logi' => [],
+            'txn_ws_mat' => [], 'txn_ws_logi' => [], 'txn_wos_svc' => [], 'txn_wos_mat' => [], 'txn_wos_logi' => [],
+        ];
         if (!$cid) return response()->json(['status' => true, 'data' => $empty]);
 
         /* ── Segment masters. ── */
         $segments = ClmSegment::where('client_id', $cid)->get(['id', 'name', 'code', 'regulatory_status']);
         $segNameById = [];
-        foreach ($segments as $s) $segNameById[(int) $s->id] = (string) $s->name;
+        $segRegById  = [];
+        foreach ($segments as $s) {
+            $segNameById[(int) $s->id] = (string) $s->name;
+            $segRegById[(int) $s->id]  = (string) $s->regulatory_status;
+        }
 
         /* ── Segment rules → required-doc union per segment. ── */
         $rulesBySeg = [];
@@ -117,18 +126,22 @@ class ClmSupplierProfileController extends Controller
          *   "shipped products"; plus a per-product shipment-count so we can
          *   roll a count up to each vendor. ── */
         $shipCountByLead = [];   // lead_id → number of shipment orders
-        foreach (ShipmentOrder::where('client_id', $cid)->get(['lead_id']) as $so) {
+        $shipIdsByLead   = [];   // lead_id → [shipment_order_id, …] (transaction-wise)
+        foreach (ShipmentOrder::where('client_id', $cid)->get(['id', 'lead_id']) as $so) {
             $lid = (int) $so->lead_id;
             $shipCountByLead[$lid] = ($shipCountByLead[$lid] ?? 0) + 1;
+            $shipIdsByLead[$lid][] = (int) $so->id;
         }
         $procLeadById = Procurement::where('client_id', $cid)->pluck('lead_id', 'id')->all();
-        $leadsByProduct = [];     // product_id → set(lead_id) that procured it
+        $leadsByProduct        = [];   // product_id → set(lead_id) that procured it
+        $procurementsByProduct = [];   // product_id → set(procurement_id) (transaction-wise)
         foreach (ProcurementProduct::query()
             ->whereIn('procurement_id', array_map('intval', array_keys($procLeadById)))
             ->whereNotNull('product_id')
             ->get(['procurement_id', 'product_id']) as $pp) {
             $lead = (int) ($procLeadById[(int) $pp->procurement_id] ?? 0);
             if ($lead) $leadsByProduct[(int) $pp->product_id][$lead] = true;
+            $procurementsByProduct[(int) $pp->product_id][(int) $pp->procurement_id] = true;
         }
 
         /* ── Closures. ── */
@@ -170,6 +183,11 @@ class ClmSupplierProfileController extends Controller
             if ($n === 'logistic' || $n === 'logistics') return 'logistic';
             return 'services';   // Tech / Advisory / Risk Services + anything else
         };
+        // Segment regulatory tier → the Reg. Status pill value used by the
+        // transaction-wise tables ('highly' → High, everything else → Low).
+        $regFor = function (int $segId) use ($segRegById): string {
+            return mb_strtolower((string) ($segRegById[$segId] ?? '')) === 'highly' ? 'High' : 'Low';
+        };
 
         /* ── Vendors. ── */
         $vendors = Vendor::query()->forUser($user)
@@ -177,8 +195,12 @@ class ClmSupplierProfileController extends Controller
             ->orderBy('id')
             ->get();
 
-        $out = ['ws_mat' => [], 'ws_logi' => [], 'wos_svc' => [], 'wos_mat' => [], 'wos_logi' => []];
+        $out = [
+            'ws_mat' => [], 'ws_logi' => [], 'wos_svc' => [], 'wos_mat' => [], 'wos_logi' => [],
+            'txn_ws_mat' => [], 'txn_ws_logi' => [], 'txn_wos_svc' => [], 'txn_wos_mat' => [], 'txn_wos_logi' => [],
+        ];
         $counters = ['ws_mat' => 0, 'ws_logi' => 0, 'wos_svc' => 0, 'wos_mat' => 0, 'wos_logi' => 0];
+        $tc = ['txn_ws_mat' => 0, 'txn_ws_logi' => 0, 'txn_wos_svc' => 0, 'txn_wos_mat' => 0, 'txn_wos_logi' => 0];
 
         foreach ($vendors as $v) {
             $segId   = (int) ($v->segment_id ?? 0);
@@ -222,6 +244,52 @@ class ClmSupplierProfileController extends Controller
             } else { // logistic
                 if ($withShipment) { $row['sr'] = ++$counters['ws_logi'];  $out['ws_logi'][]  = $row; }
                 else               { $row['sr'] = ++$counters['wos_logi']; $out['wos_logi'][] = $row; }
+            }
+
+            /* ── Transaction-wise rows: one per (procurement, supplier) where
+             *    this supplier's product was procured. With/without shipment is
+             *    decided per-procurement by its lead's shipment orders.
+             *    Services suppliers never carry a shipment (mirrors party-wise).
+             *    PO / Supplier Tax Invoice have no source field → '—'. ── */
+            $vendorProcs = [];
+            foreach ($productsByVendor[(int) $v->id] ?? [] as $pid) {
+                foreach (array_keys($procurementsByProduct[$pid] ?? []) as $procId) $vendorProcs[$procId] = true;
+            }
+            $txnBase = [
+                'supplier' => $v->company_name,
+                'supId'    => $row['id'],
+                'reg'      => $regFor($segId),
+                'po'       => '—',
+                'inv'      => '—',
+                'kyc'      => $prog['kyc'],
+                'dd'       => $prog['dd'],
+                'tl'       => $prog['tl'],
+                'td'       => $prog['td'],
+                'agr'      => $agr,
+            ];
+            foreach (array_keys($vendorProcs) as $procId) {
+                $lead    = (int) ($procLeadById[$procId] ?? 0);
+                $shipIds = $shipIdsByLead[$lead] ?? [];
+                $hasShip = !empty($shipIds);
+                $procCode = 'PROC-' . str_pad((string) $procId, 3, '0', STR_PAD_LEFT);
+
+                if ($bucket === 'services') {
+                    $out['txn_wos_svc'][] = array_merge(['sr' => ++$tc['txn_wos_svc'], 'procId' => $procCode], $txnBase);
+                } elseif ($bucket === 'material') {
+                    if ($hasShip) {
+                        $shpCode = 'SHP-' . str_pad((string) $shipIds[0], 3, '0', STR_PAD_LEFT);
+                        $out['txn_ws_mat'][] = array_merge(['sr' => ++$tc['txn_ws_mat'], 'shpId' => $shpCode, 'procId' => $procCode], $txnBase);
+                    } else {
+                        $out['txn_wos_mat'][] = array_merge(['sr' => ++$tc['txn_wos_mat'], 'procId' => $procCode], $txnBase);
+                    }
+                } else { // logistic
+                    if ($hasShip) {
+                        $shpCode = 'SHP-' . str_pad((string) $shipIds[0], 3, '0', STR_PAD_LEFT);
+                        $out['txn_ws_logi'][] = array_merge(['sr' => ++$tc['txn_ws_logi'], 'shpId' => $shpCode, 'procId' => $procCode], $txnBase);
+                    } else {
+                        $out['txn_wos_logi'][] = array_merge(['sr' => ++$tc['txn_wos_logi'], 'procId' => $procCode], $txnBase);
+                    }
+                }
             }
         }
 
