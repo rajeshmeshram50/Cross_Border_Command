@@ -16,7 +16,10 @@
         /* Thin green top border per the reference spec (#8BC34A).
            No bottom border — the reference shows only the top line. */
         border-top: 1px solid #8BC34A;
-        padding: 5px 0 10px 0;
+        /* Tall enough that the absolutely-positioned page indicator
+           (drawn at height − 28pt by page_text) lands inside this white
+           strip now that the company strip + barcode have been removed. */
+        padding: 12px 0 18px 0;
         background: white;
         z-index: 1000;
         /* Typography per spec — Helvetica preferred, font-size 9px,
@@ -130,36 +133,10 @@
             the vertical space so the page indicator lands on the same
             white background as the rest of the footer. -->
 <div class="pdf-footer">
-    <table style="width: 100%; border-collapse: collapse; margin: 0;">
-        <tr>
-            <td rowspan="2" style="width: 18%; text-align: center; vertical-align: middle; padding: 2px 6px 2px 10px;">
-                @if(!empty($barcodeData))
-                    <img src="{{ $barcodeData }}" alt="Barcode" style="width:110px; height:35px; display:block; margin:0 auto;">
-                    @if(!empty($companyDetails->website))
-                        <div style="font-size:7px; color:#4d4d4d; text-align:center; word-break:break-all; line-height:9px; margin-top:2px;">
-                            {{ $companyDetails->website }}
-                        </div>
-                    @endif
-                @endif
-            </td>
-            <td style="width: 67%; text-align: center; vertical-align: top; padding: 8px 8px 0 8px; line-height: 13px;">
-                {{ $companyDetails->name }}
-                @if($companyDetails->cin)    | CIN: {{ $companyDetails->cin }}    @endif
-                @if($companyDetails->gst_no) | GST: {{ $companyDetails->gst_no }} @endif
-                @if($companyDetails->iec)    | IEC: {{ $companyDetails->iec }}    @endif
-                @if($companyDetails->pan_no) | PAN: {{ $companyDetails->pan_no }} @endif
-            </td>
-            <td rowspan="2" style="width: 15%; text-align: right; vertical-align: top; padding: 8px 10px 0 6px;">
-                {{ date('d/m/Y') }}
-            </td>
-        </tr>
-        <tr>
-            <td class="pf-pageindicator">
-                {{-- "Page X of Y" drawn here by the page_text() script. --}}
-                &nbsp;
-            </td>
-        </tr>
-    </table>
+    {{-- Footer carries ONLY the page indicator, centred. No barcode, no
+         company strip, no date — the page_text() script below draws
+         "<page> / <total>" onto this white strip on every page. --}}
+    <div class="pf-pageindicator">&nbsp;</div>
 </div>
 
 <!-- MAIN CONTENT -->
@@ -993,12 +970,16 @@ if (isset($pdf)) {
     // not the literal placeholder "Page {PAGE_NUM} of {PAGE_COUNT}" —
     // the placeholder is ~3× wider than the actual rendered text, which
     // was offsetting the text left of true center.
+    // "<page> / <total>" centred on every page — including single-page
+    // docs (1 / 1) and the true last page of a multi-page doc (e.g. 4 / 4,
+    // 10 / 10). DomPDF draws page_text() on EVERY page and substitutes the
+    // {PAGE_NUM}/{PAGE_COUNT} placeholders per page.
     $font = $fontMetrics->get_font("DejaVu Sans", "normal");
-    $size = 7;
-    $text = "Page {PAGE_NUM} of {PAGE_COUNT}";
-    $width = $fontMetrics->get_text_width("Page 9 of 9", $font, $size);
+    $size = 8;
+    $text = "{PAGE_NUM} / {PAGE_COUNT}";
+    $width = $fontMetrics->get_text_width("99 / 99", $font, $size);
     $x = ($pdf->get_width() - $width) / 2 + 2;
-    $y = $pdf->get_height() - 28;
+    $y = $pdf->get_height() - 24;
     $pdf->page_text($x, $y, $text, $font, $size, [0.30, 0.30, 0.30]);
 }
 </script>

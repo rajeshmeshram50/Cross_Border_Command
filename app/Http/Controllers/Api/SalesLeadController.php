@@ -397,6 +397,38 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
+        // Gate the move to Stage 6 (Victory): the opportunity must have a
+        // Proforma Invoice, and that PI must be SIGNED. A won deal isn't
+        // real until the customer has e-signed the PI. Only enforced on the
+        // forward transition (currently below Stage 6) so re-saves /
+        // regressions back to 6 aren't blocked.
+        if (isset($data['lead_stage_id'])
+            && (int) $data['lead_stage_id'] === 6
+            && (int) ($lead->lead_stage_id ?? 0) < 6
+        ) {
+            $pi = \App\Models\ProformaInvoice::where('client_id', $user->client_id)
+                ->where('opp_id', $lead->id)
+                ->where('status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED)
+                ->orderByDesc('id')
+                ->first();
+            if (!$pi) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Create a Proforma Invoice on this opportunity before moving to Victory (Stage 6).',
+                ], 422);
+            }
+            if (!\App\Models\ClmSignatureRequest::hasSignedForDoc(
+                $user->client_id,
+                \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE,
+                $pi->id,
+            )) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => "The Proforma Invoice {$pi->code} must be signed before moving to Victory (Stage 6). Send it for signature and wait for the customer to finish signing.",
+                ], 422);
+            }
+        }
+
         // Auto-mark the deal as won the FIRST time it lands on Stage 6
         // (Victory). Keeping this server-side means we don't trust the
         // client to send a timestamp, and the column is set exactly once

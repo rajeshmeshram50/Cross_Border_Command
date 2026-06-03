@@ -921,6 +921,20 @@ class SalesPdfController extends Controller
             $branch?->address, $branch?->city, $branch?->state, $branch?->pincode, $branch?->country,
         ]))) ?: '';
 
+        // Header logo, in priority order:
+        //   1. the branch's own uploaded logo,
+        //   2. else the CLIENT (organisation) logo,
+        //   3. else the CLIENT profile photo (the org image uploaded under
+        //      the client form's "File Photo" field),
+        // so the document carries a brand mark wherever the org saved it.
+        // Only when ALL are missing does the blade draw its text-box fallback.
+        $logoData = $this->branchAssetDataUri($branch?->logo);
+        if (!$logoData && !empty($q->client_id)) {
+            $client   = \App\Models\Client::find($q->client_id);
+            $logoData = $this->branchAssetDataUri($client?->logo)
+                ?: $this->branchAssetDataUri($client?->profile_photo);
+        }
+
         $companyDetails = (object) [
             'name'              => $branch?->name              ?? ($branch?->code ?? 'Branch'),
             'address'           => $branchAddress,
@@ -954,7 +968,7 @@ class SalesPdfController extends Controller
             // default and the branch's storage URLs (storage/branch-logos/…)
             // wouldn't resolve from inside the PHP request context. Inlining
             // the bytes guarantees the image renders on every server config.
-            'logo_data'         => $this->branchAssetDataUri($branch?->logo),
+            'logo_data'         => $logoData,
             // Signature: branch's uploaded file first (when the Edit Branch
             // form gets a "Signature" upload field), then a bundled test
             // signature at public/images/test-signature.png so a tester can
@@ -1141,15 +1155,17 @@ class SalesPdfController extends Controller
         ];
 
         // ── Real scannable barcode ─────────────────────────────────────
-        // Top-right header barcode: Code128 of the BRANCH WEBSITE URL so
-        // scanning the printed letterhead opens the company's site.
-        // If the branch hasn't set a website, we skip the barcode entirely
-        // and the template falls back to showing the branch NAME as text
-        // in that slot — better than a meaningless barcode of an unrelated
-        // string (the QT number is already shown in the block above).
+        // Top-right header barcode (every page): Code128 of the BRANCH
+        // WEBSITE when set so scanning the letterhead opens the company's
+        // site. When no website is configured we fall back to the
+        // ORGANISATION NAME so the barcode + its caption are still
+        // meaningful on every page, instead of leaving the slot as plain
+        // text.
         $branchWebsite  = trim((string) ($branch?->website ?? ''));
-        $barcodeData    = $branchWebsite !== '' ? $this->makeCode128($branchWebsite) : null;
-        $barcodePayload = $branchWebsite;
+        $orgName        = trim((string) ($branch?->name ?? '')) ?: trim((string) ($branch?->code ?? ''));
+        $barcodeValue   = $branchWebsite !== '' ? $branchWebsite : $orgName;
+        $barcodeData    = $barcodeValue !== '' ? $this->makeCode128($barcodeValue) : null;
+        $barcodePayload = $barcodeValue;
         // Bottom-left bank QR: plain-text payload that includes the bank
         // account info + this quotation's grand total so a scan gives the
         // receiver everything they need to pay (bank-to-bank or UPI). The
