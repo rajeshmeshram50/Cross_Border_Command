@@ -75,6 +75,12 @@ export default function Inbox() {
   const [rows, setRows] = useState<SignatureRun[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Inbox tabs — "New" holds everything still waiting on your sign/approve
+  // action (Leave · Expense · Documents); "Updated" is the history of items
+  // already acted on (Your Claim Updates). The containers themselves are
+  // unchanged — they're just grouped under the matching tab.
+  const [tab, setTab] = useState<'new' | 'updated'>('new');
+
   // Leave approvals — pending leave requests where the current user is
   // an approver. Reporting managers see their direct reports;
   // branch_user / client_admin / super_admin see every pending request
@@ -143,6 +149,31 @@ export default function Inbox() {
   const [expensePage,  setExpensePage]  = useState(0);
   const [updatesPage,  setUpdatesPage]  = useState(0);
   const [docsPage,     setDocsPage]     = useState(0);
+
+  // ── Updated (History) tab data — the same Leave / Expense / Document
+  //    containers, but listing items this user has already acted on. ──
+  type ActedExpenseRow = ExpenseApprovalRow & { verdict: 'approved' | 'rejected'; acted_at: string | null };
+  const [histLeave, setHistLeave]     = useState<ApiLeaveRequest[]>([]);
+  const [histExpense, setHistExpense] = useState<ActedExpenseRow[]>([]);
+  const [histDocs, setHistDocs]       = useState<SignatureRun[]>([]);
+  const [histLoading, setHistLoading] = useState(true);
+  const [histLeavePage,   setHistLeavePage]   = useState(0);
+  const [histExpensePage, setHistExpensePage] = useState(0);
+  const [histDocsPage,    setHistDocsPage]    = useState(0);
+
+  const loadHistory = async () => {
+    setHistLoading(true);
+    const [lv, ex, dc] = await Promise.allSettled([
+      leaveRequestsApi.approvals({ status: 'All' }),
+      api.get('/my-team/approvals', { params: { history: 1 } }),
+      api.get<SignatureRun[]>('/hr-document-signatures/inbox', { params: { history: 1 } }),
+    ]);
+    setHistLeave(lv.status === 'fulfilled' ? (Array.isArray(lv.value) ? lv.value : []).filter(r => r.status === 'Approved' || r.status === 'Rejected') : []);
+    setHistExpense(ex.status === 'fulfilled' ? ((ex.value.data?.approvals ?? []) as any[]).filter(a => a.module === 'expense') : []);
+    setHistDocs(dc.status === 'fulfilled' ? (Array.isArray(dc.value.data) ? dc.value.data : []) : []);
+    setHistLoading(false);
+  };
+  useEffect(() => { loadHistory(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   // View modal (read-only preview)
   const [viewRun, setViewRun] = useState<SignatureRun | null>(null);
@@ -496,11 +527,44 @@ export default function Inbox() {
             </CardBody>
           </Card>
 
+          {/* New / Updated tabs — segregate items waiting on your action from
+              the history of items you've already signed/approved. */}
+          {(() => {
+            const newCount = rows.length + leaveRows.length + expenseRows.length;
+            const updatedCount = histLeave.length + histExpense.length + histDocs.length + myUpdates.length;
+            const TabBtn = ({ id, label, icon, count, tone }: { id: 'new' | 'updated'; label: string; icon: string; count: number; tone: string }) => {
+              const active = tab === id;
+              return (
+                <button type="button" onClick={() => setTab(id)} className="inbox-tab" style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 10, cursor: 'pointer',
+                  border: active ? `1.5px solid ${tone}` : '1.5px solid var(--vz-border-color)',
+                  background: active ? tone : 'var(--vz-card-bg)', color: active ? '#fff' : 'var(--vz-body-color)',
+                  fontSize: 13, fontWeight: 700, transition: 'all .15s',
+                }}>
+                  <i className={icon} style={{ fontSize: 16 }} />
+                  {label}
+                  <span style={{ minWidth: 20, padding: '1px 7px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: active ? 'rgba(255,255,255,.25)' : 'var(--vz-secondary-bg)', color: active ? '#fff' : 'var(--vz-body-color)' }}>{count}</span>
+                </button>
+              );
+            };
+            return (
+              <Card className="mb-3" style={{ borderRadius: 12 }}>
+                <CardBody style={{ padding: 10 }}>
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    <TabBtn id="new" label="New" icon="ri-inbox-unarchive-line" count={newCount} tone="#f59e0b" />
+                    <TabBtn id="updated" label="Updated (History)" icon="ri-history-line" count={updatedCount} tone="#1d4ed8" />
+                  </div>
+                </CardBody>
+              </Card>
+            );
+          })()}
+
           {/* Leave approval requests ─ shown above the documents section so
               time-sensitive items (people waiting on a yes/no) bubble to the
               top of the inbox. Same endpoint HrLeaveApprovals uses; either
               the reporting manager OR a branch admin can act (first one to
               click wins). */}
+          {tab === 'new' && (
           <Card className="mb-3" style={{ borderRadius: 12 }}>
             <CardBody style={{ padding: 0 }}>
               <div className="d-flex align-items-center justify-content-between"
@@ -642,11 +706,13 @@ export default function Inbox() {
               <Pager total={leaveRows.length} page={leavePage} onChange={setLeavePage} />
             </CardBody>
           </Card>
+          )}
 
           {/* Expense claims ─ pending approvals where the current user is
               either the assigned reporting manager (manager stage) or
               someone with HR/Finance approval rights (hr stage). raw.stage
               decides which controller endpoint each action call dispatches. */}
+          {tab === 'new' && (
           <Card className="mb-3" style={{ borderRadius: 12 }}>
             <CardBody style={{ padding: 0 }}>
               <div className="d-flex align-items-center justify-content-between"
@@ -798,11 +864,124 @@ export default function Inbox() {
               <Pager total={expenseRows.length} page={expensePage} onChange={setExpensePage} />
             </CardBody>
           </Card>
+          )}
+
+          {/* ── Updated (History) tab: the same Leave / Expense / Document
+                 containers, listing items you've already acted on. ── */}
+          {tab === 'updated' && (() => {
+            const fmtD = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+            const StatusPill = ({ ok, label }: { ok: boolean; label: string }) => (
+              <span style={{ padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: ok ? '#d1fae5' : '#fee2e2', color: ok ? '#047857' : '#b91c1c', whiteSpace: 'nowrap' }}>
+                <i className={ok ? 'ri-checkbox-circle-line me-1' : 'ri-close-circle-line me-1'} />{label}
+              </span>
+            );
+            const HistHead = ({ icon, bg, fg, title, sub, count }: { icon: string; bg: string; fg: string; title: string; sub: string; count: number }) => (
+              <div className="d-flex align-items-center justify-content-between" style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                <div className="d-flex align-items-center gap-2">
+                  <span style={{ width: 32, height: 32, borderRadius: 8, background: bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><i className={icon} style={{ fontSize: 16, color: fg }} /></span>
+                  <div><h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>{title}</h6><div className="text-muted" style={{ fontSize: 11.5 }}>{sub}</div></div>
+                </div>
+                <span style={{ padding: '4px 10px', borderRadius: 999, background: bg, color: fg, fontWeight: 700, fontSize: 11.5 }}>{histLoading ? '…' : count}</span>
+              </div>
+            );
+            return (
+              <>
+                {/* Leave — decided */}
+                <Card className="mb-3" style={{ borderRadius: 12 }}>
+                  <CardBody style={{ padding: 0 }}>
+                    <HistHead icon="ri-calendar-2-line" bg="#ede9fe" fg="#5a3fd1" title="Leave Requests" sub="Requests you've approved or rejected." count={histLeave.length} />
+                    {histLoading ? (
+                      <div style={{ padding: 18 }}>{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={40} radius={8} />)}</div>
+                    ) : histLeave.length === 0 ? (
+                      <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 12.5 }}>No decided leave requests yet.</div>
+                    ) : paginate(histLeave, histLeavePage).map((r) => {
+                      const emp = r.employee; const empName = emp ? (emp.display_name?.trim() || `${emp.first_name} ${emp.last_name ?? ''}`.trim()) : '—';
+                      const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
+                      return (
+                        <div key={r.id} style={{ padding: '12px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                          <div className="d-flex align-items-center gap-3 flex-wrap">
+                            <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0" style={{ width: 34, height: 34, fontSize: 11, background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' }}>{initials}</span>
+                            <div style={{ flex: '1 1 280px', minWidth: 200 }}>
+                              <div className="d-flex align-items-center gap-2 flex-wrap"><strong style={{ fontSize: 13 }}>{empName}</strong><span style={{ fontSize: 11, color: '#6b7280' }}>{emp?.emp_code || '—'}{emp?.department?.name ? ` · ${emp.department.name}` : ''}</span></div>
+                              <div style={{ fontSize: 12, marginTop: 2 }}><span style={{ padding: '1px 7px', borderRadius: 6, background: '#ede9fe', color: '#5a3fd1', fontWeight: 700, fontSize: 10.5 }}>{r.leave_type?.name || 'Leave'}</span><span className="ms-2 text-muted">{fmtD(r.from_date)} – {fmtD(r.to_date)}</span></div>
+                            </div>
+                            <StatusPill ok={r.status === 'Approved'} label={r.status} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <Pager total={histLeave.length} page={histLeavePage} onChange={setHistLeavePage} />
+                  </CardBody>
+                </Card>
+
+                {/* Expense — decided */}
+                <Card className="mb-3" style={{ borderRadius: 12 }}>
+                  <CardBody style={{ padding: 0 }}>
+                    <HistHead icon="ri-bill-line" bg="#fef3c7" fg="#a16207" title="Expense Claims" sub="Claims you've approved or rejected at your stage." count={histExpense.length} />
+                    {histLoading ? (
+                      <div style={{ padding: 18 }}>{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={40} radius={8} />)}</div>
+                    ) : histExpense.length === 0 ? (
+                      <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 12.5 }}>No decided expense claims yet.</div>
+                    ) : paginate(histExpense, histExpensePage).map((r) => {
+                      const empName = r.raw.employee_name || r.subject_name || '—';
+                      const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
+                      const amt = `₹${Number(r.raw.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+                      return (
+                        <div key={r.id} style={{ padding: '12px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                          <div className="d-flex align-items-center gap-3 flex-wrap">
+                            <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0" style={{ width: 34, height: 34, fontSize: 11, background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>{initials}</span>
+                            <div style={{ flex: '1 1 280px', minWidth: 200 }}>
+                              <div className="d-flex align-items-center gap-2 flex-wrap"><strong style={{ fontSize: 13 }}>{empName}</strong>{r.code && <code style={{ fontSize: 10.5, background: '#f3f4f6', color: '#4b5563', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}</div>
+                              <div style={{ fontSize: 12, marginTop: 2 }}><span style={{ padding: '1px 7px', borderRadius: 6, background: '#fef3c7', color: '#a16207', fontWeight: 700, fontSize: 10.5 }}>{r.raw.category_name || 'Expense'}</span><span className="ms-2 fw-bold" style={{ color: '#a16207' }}>{amt}</span><span className="ms-2 text-muted" style={{ fontSize: 11 }}>{r.raw.stage === 'hr' ? 'HR stage' : 'Manager stage'}</span></div>
+                            </div>
+                            <StatusPill ok={r.verdict === 'approved'} label={r.verdict === 'approved' ? 'Approved' : 'Rejected'} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <Pager total={histExpense.length} page={histExpensePage} onChange={setHistExpensePage} />
+                  </CardBody>
+                </Card>
+
+                {/* Documents — acted */}
+                <Card className="mb-3" style={{ borderRadius: 12 }}>
+                  <CardBody style={{ padding: 0 }}>
+                    <HistHead icon="ri-file-text-line" bg="#e0e7ff" fg="#4338ca" title="Documents" sub="Documents you've signed, approved or acknowledged." count={histDocs.length} />
+                    {histLoading ? (
+                      <div style={{ padding: 18 }}>{Array.from({ length: 2 }).map((_, i) => <Shimmer key={i} height={40} radius={8} />)}</div>
+                    ) : histDocs.length === 0 ? (
+                      <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af', fontSize: 12.5 }}>No signed or approved documents yet.</div>
+                    ) : paginate(histDocs, histDocsPage).map((r) => {
+                      const mine = r.signers.find(s => s.user_id === user?.id);
+                      const empName = r.employee?.display_name || `${r.employee?.first_name || ''} ${r.employee?.last_name || ''}`.trim() || '—';
+                      const rejected = mine?.status === 'Rejected';
+                      return (
+                        <div key={r.id} style={{ padding: '12px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                          <div className="d-flex align-items-center gap-3 flex-wrap">
+                            <span className="d-inline-flex align-items-center justify-content-center flex-shrink-0" style={{ width: 34, height: 34, borderRadius: 8, background: '#e0e7ff', color: '#4338ca' }}><i className="ri-file-text-line" style={{ fontSize: 17 }} /></span>
+                            <div style={{ flex: '1 1 280px', minWidth: 200 }}>
+                              <div className="d-flex align-items-center gap-2 flex-wrap"><strong style={{ fontSize: 13 }}>{r.template?.name || '(template removed)'}</strong>{r.code && <code style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}</div>
+                              <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>Subject: {empName}{mine?.acted_at ? ` · ${fmtD(mine.acted_at)}` : ''}</div>
+                            </div>
+                            <StatusPill ok={!rejected} label={rejected ? 'Rejected' : (mine?.action === 'Sign' ? 'Signed' : mine?.action === 'Approve' ? 'Approved' : 'Acknowledged')} />
+                            <button type="button" onClick={() => setViewRun(r)} className="inbox-view-btn" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}><i className="ri-eye-line me-1" />View</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <Pager total={histDocs.length} page={histDocsPage} onChange={setHistDocsPage} />
+                  </CardBody>
+                </Card>
+              </>
+            );
+          })()}
 
           {/* Personal claim/advance updates ─ FYI notifications for the
               current user about their own filings that a manager or HR
               just acted on. Read-only — no approve / reject controls.
-              Source: /api/my-team/my-updates (last 30 days, max 50). */}
+              Source: /api/my-team/my-updates (last 30 days, max 50).
+              Lives under the "Updated (History)" tab. */}
+          {tab === 'updated' && (
           <Card className="mb-3" style={{ borderRadius: 12 }}>
             <CardBody style={{ padding: 0 }}>
               <div className="d-flex align-items-center justify-content-between"
@@ -913,8 +1092,10 @@ export default function Inbox() {
               <Pager total={myUpdates.length} page={updatesPage} onChange={setUpdatesPage} />
             </CardBody>
           </Card>
+          )}
 
           {/* Document signatures (existing) */}
+          {tab === 'new' && (
           <Card style={{ borderRadius: 12 }}>
             <CardBody style={{ padding: 0 }}>
               <div className="table-responsive">
@@ -1004,6 +1185,7 @@ export default function Inbox() {
               <Pager total={rows.length} page={docsPage} onChange={setDocsPage} />
             </CardBody>
           </Card>
+          )}
         </div>
       </Col>
 

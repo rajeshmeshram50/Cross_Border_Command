@@ -112,6 +112,17 @@ class MyTeamController extends Controller
             ];
         }
 
+        // history=1 → the inbox "Updated (History)" tab: claims this user has
+        // already decided on (approved / rejected at their stage), instead of
+        // the pending queue. Documents have their own history endpoint, so the
+        // history response carries acted expense claims only.
+        if ($request->boolean('history')) {
+            return response()->json([
+                'scope'     => $this->describeScope($user),
+                'approvals' => $this->actedExpenseClaims($user),
+            ]);
+        }
+
         // Expense claims pending the user's action. Two paths feed in here:
         //   - manager stage: rows whose assigned reporting manager is the
         //     current user (manager_status = pending)
@@ -231,6 +242,85 @@ class MyTeamController extends Controller
                     'employee_code'  => $emp?->emp_code,
                     'department_name'=> $emp?->department?->name,
                     'creator_name'   => $row->creator?->name,
+                ],
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Acted expense claims for the inbox "Updated (History)" tab — claims the
+     * current user has already decided on at their stage: manager-stage rows
+     * they approved/rejected as the assigned reporting manager, plus HR-stage
+     * rows they cleared when they hold HR/Finance approval rights.
+     */
+    private function actedExpenseClaims($user): array
+    {
+        $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        $canHrApprove = $this->userCanHrApproveExpense($user);
+        if (!$myEmployeeId && !$canHrApprove) return [];
+
+        $q = ExpenseClaim::query()
+            ->with([
+                'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id',
+                'employee.department:id,name',
+                'category:id,name',
+                'manager:id,display_name,first_name,last_name,emp_code',
+            ])
+            ->where(function ($w) use ($myEmployeeId, $canHrApprove) {
+                if ($myEmployeeId) {
+                    $w->orWhere(function ($wm) use ($myEmployeeId) {
+                        $wm->where('manager_id', $myEmployeeId)
+                           ->whereIn('manager_status', ['approved', 'rejected']);
+                    });
+                }
+                if ($canHrApprove) {
+                    $w->orWhere(function ($wh) {
+                        $wh->whereIn('hr_status', ['approved', 'rejected']);
+                    });
+                }
+            });
+
+        $this->applyExpenseTenantScope($q, $user, $myEmployeeId);
+
+        $out = [];
+        foreach ($q->orderByDesc('updated_at')->limit(60)->get() as $row) {
+            // Which stage did THIS user act at? Prefer the manager stage when
+            // they're the assigned manager and acted, else the HR stage.
+            $stage = null; $verdict = null;
+            if ($myEmployeeId && (int) $row->manager_id === (int) $myEmployeeId
+                && in_array($row->manager_status, ['approved', 'rejected'], true)) {
+                $stage = 'manager'; $verdict = $row->manager_status;
+            } elseif ($canHrApprove && in_array($row->hr_status, ['approved', 'rejected'], true)) {
+                $stage = 'hr'; $verdict = $row->hr_status;
+            }
+            if (!$stage) continue;
+
+            $emp = $row->employee;
+            $employeeName = $emp ? ($emp->display_name ?: trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? ''))) : '—';
+
+            $out[] = [
+                'module'       => 'expense',
+                'id'           => $row->id,
+                'code'         => $row->claim_no,
+                'title'        => $row->title ?: 'Expense Claim',
+                'subject_name' => $employeeName ?: '—',
+                'subject_dept' => $emp?->department?->name ?? '—',
+                'verdict'      => $verdict,                 // approved | rejected
+                'acted_at'     => optional($row->updated_at)->toIso8601String(),
+                'status'       => $row->status,
+                'created_at'   => $row->created_at,
+                'raw'          => [
+                    'stage'         => $stage,
+                    'amount'        => (float) $row->amount,
+                    'currency'      => $row->currency,
+                    'expense_date'  => optional($row->expense_date)->format('Y-m-d'),
+                    'category_name' => $row->category?->name ?? $row->category_name,
+                    'vendor'        => $row->vendor,
+                    'purpose'       => $row->purpose,
+                    'employee_name' => $employeeName,
+                    'employee_code' => $emp?->emp_code,
+                    'department_name' => $emp?->department?->name,
                 ],
             ];
         }
