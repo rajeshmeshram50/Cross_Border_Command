@@ -7,6 +7,7 @@ import ClmClauseInsertPanel from './ClmClauseInsertPanel';
 import HeaderFooterPanel, { DEFAULT_HEADER, DEFAULT_FOOTER, type HeaderConfig, type FooterConfig } from '../hrms/doc-templates/HeaderFooterPanel';
 import { pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import { VersionHistoryModal, type CtcVersion } from './clmCtcModals';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Case to Case Contracts → full-screen "Create / Edit CTC Agreement" form.
@@ -62,11 +63,32 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   const [endDate, setEndDate] = useState('');
   const [draft, setDraft] = useState('');
   const [sentForApproval, setSentForApproval] = useState(false);   // set when the draft is submitted for approval
+  // The persisted contract we're driving through the lifecycle (set on create
+  // or in edit mode) + its live server snapshot (approval status, versions,
+  // signing recipients) so Stages 2–4 reflect what approvers / signers did.
+  const [workingId, setWorkingId] = useState<number | null>(editing?.dbId ?? null);
+  const [record, setRecord] = useState<Record<string, unknown> | null>(null);
   // Page-shell header/footer config — lifted to the parent so it survives the
   // stage change and the Stage-2 preview can render the same logo/header/footer.
   const [header, setHeader] = useState<HeaderConfig>(DEFAULT_HEADER);
   const [footer, setFooter] = useState<FooterConfig>(DEFAULT_FOOTER);
   useEffect(() => { if (org?.name) setHeader(h => h.title === DEFAULT_HEADER.title ? { ...h, title: org.name } : h); }, [org]);
+
+  const errMsg = (e: unknown) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
+  const refreshRecord = async (id?: number | null) => {
+    const rid = id ?? workingId;
+    if (!rid) return;
+    try { const res = await api.get(`/clm/ctc-contracts/${rid}`); setRecord((res.data?.data ?? res.data ?? null) as Record<string, unknown>); }
+    catch { /* keep last snapshot */ }
+  };
+  // Poll for approver / signer activity while we sit on a review/signing stage.
+  useEffect(() => {
+    if (!workingId || stage < 2) return;
+    const iv = window.setInterval(() => { refreshRecord(); }, 15000);
+    return () => window.clearInterval(iv);
+  }, [workingId, stage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const approval = String((record?.approval_status as string) ?? (sentForApproval ? 'pending' : ''));
 
   useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, []);
 
@@ -99,6 +121,11 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     api.get(`/clm/ctc-contracts/${dbId}`).then(res => {
       if (!alive) return;
       const r = (res.data?.data ?? res.data ?? {}) as Record<string, unknown>;
+      setRecord(r);
+      setWorkingId(dbId);
+      if (r.approval_status) setSentForApproval(true);
+      // Resume the lifecycle at the stage the contract reached.
+      setStage(Math.min(4, Math.max(1, Number(r.stage) || 1)));
       const d = (v: unknown) => (v ? String(v).slice(0, 10) : '');
       setAgTitle(String(r.title ?? ''));
       setAgType(String(r.agreement_type ?? ''));
@@ -151,14 +178,57 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       approvers: approval.approvers, days_to_approve: approval.days, reminder_days: approval.reminder,
     };
     try {
-      await api.post('/clm/ctc-contracts', payload);
+      const res = await api.post('/clm/ctc-contracts', payload);
+      const newId = Number((res.data?.data as { dbId?: number } | undefined)?.dbId ?? 0) || null;
       toast.success('Sent for approval', `${agTitle} is now in the approval queue.`);
       setSentForApproval(true);
+      setWorkingId(newId);
+      await refreshRecord(newId);
       goStage(2);
     } catch (e) {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error('Could not submit', msg || 'Please try again.');
+      toast.error('Could not submit', errMsg(e) || 'Please try again.');
     }
+  };
+
+  // ── Lifecycle transitions (sender side) ──
+  // After a rejection: push the corrected draft back for internal review.
+  const resubmitDraft = async () => {
+    if (!workingId) return;
+    if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); setStage(1); return; }
+    try {
+      await api.post(`/clm/ctc-contracts/${workingId}/resubmit`, { content: draft || null, title: agTitle, header_config: header, footer_config: footer });
+      toast.success('Resubmitted', 'Revised draft sent back for internal review.');
+      await refreshRecord();
+      goStage(2);
+    } catch (e) { toast.error('Could not resubmit', errMsg(e) || 'Please try again.'); }
+  };
+
+  // Approved → send to the chosen counterparties for signature & negotiation.
+  const sendForSigning = async (recipients: { name: string; email: string; role: string; contact: string }[], days: number | null) => {
+    if (!workingId) return;
+    try {
+      await api.post(`/clm/ctc-contracts/${workingId}/send-for-signing`, { recipients, days_to_sign: days });
+      toast.success('Sent for signing', 'Agreement shared with the counterparties.');
+      await refreshRecord();
+      goStage(3);
+    } catch (e) { toast.error('Could not send', errMsg(e) || 'Please try again.'); }
+  };
+
+  const recordSignature = async (payload: { index?: number; all?: boolean }) => {
+    if (!workingId) return;
+    try { await api.post(`/clm/ctc-contracts/${workingId}/record-signature`, payload); await refreshRecord(); }
+    catch (e) { toast.error('Could not update', errMsg(e) || 'Please try again.'); }
+  };
+
+  // All parties signed → store in the Final Contract Repository.
+  const moveToRepository = async () => {
+    if (!workingId) return;
+    try {
+      await api.post(`/clm/ctc-contracts/${workingId}/move-to-repository`, {});
+      toast.success('Moved', 'Stored in the final contract repository.');
+      await refreshRecord();
+      goStage(4);
+    } catch (e) { toast.error('Could not move', errMsg(e) || 'Please try again.'); }
   };
 
   return (
@@ -240,10 +310,11 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               header={header} setHeader={setHeader} footer={footer} setFooter={setFooter}
               isEditing={!!editing?.dbId} onUpdate={saveEdit}
               onSubmitForApproval={submitForApproval}
+              resubmitMode={!!workingId && approval === 'rejected'} onResubmit={resubmitDraft}
               onNext={() => goStage(2)}
             />
           )}
-          {stage > 1 && <StageReview t={t} stage={stage} cps={cps} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} header={header} footer={footer} sentForApproval={sentForApproval} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
+          {stage > 1 && <StageReview t={t} stage={stage} cps={cps} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} header={header} footer={footer} sentForApproval={sentForApproval} workingId={workingId} record={record} approval={approval} onResubmitEdit={() => goStage(1)} onSendForSigning={sendForSigning} onRecordSignature={recordSignature} onMoveToRepository={moveToRepository} onRefresh={refreshRecord} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
         </div>
       </div>
 
@@ -265,6 +336,7 @@ function Stage1(p: {
   header: HeaderConfig; setHeader: (h: HeaderConfig) => void; footer: FooterConfig; setFooter: (f: FooterConfig) => void;
   isEditing: boolean; onUpdate: () => void;
   onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => void;
+  resubmitMode: boolean; onResubmit: () => void;
   onNext: () => void;
 }) {
   const t = p.t;
@@ -587,7 +659,6 @@ function Stage1(p: {
                   <ToolBtn t={t} title="Insert link" onClick={() => { const u = window.prompt('Link URL'); if (u) exec('createLink', u); }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></ToolBtn>
                   <ToolBtn t={t} title="Undo" onClick={() => exec('undo')}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.95" /></ToolBtn>
                   <ToolBtn t={t} title="Redo" onClick={() => exec('redo')}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-.49-4.95" /></ToolBtn>
-                  <button type="button" onClick={() => insertHtml('<p>This Agreement is made and entered into as of the Effective Date by and between the parties identified herein…</p>')} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5, padding: '5px 11px', borderRadius: 7, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 3px 8px rgba(109,40,217,.3)' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" /></svg><span style={{ fontSize: 8.5, fontWeight: 700, color: '#fff' }}>AI Draft</span></button>
                 </div>
                 <div style={{ flex: editorFs ? 1 : undefined, minHeight: editorFs ? 0 : 280, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
                   <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
@@ -618,6 +689,11 @@ function Stage1(p: {
                 <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>{MID_STEPS[midStep - 1].next}</span>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
               </button>
+            ) : p.resubmitMode ? (
+              <button onClick={p.onResubmit} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Resubmit for Review</span>
+              </button>
             ) : p.isEditing ? (
               <button onClick={p.onUpdate} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(5,150,105,.4)' }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
@@ -646,11 +722,27 @@ function Stage1(p: {
 }
 
 /* ── Stages 2–4: shared LEFT (read-only counterparty) + RIGHT (review) panels, changing MIDDLE ── */
-function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, draft, header, footer, sentForApproval, onBack, onNext, onSave }: {
+type SignRecipient = { name: string; email: string; role: string; contact: string; signed: boolean; signed_at: string | null };
+
+function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, draft, header, footer, sentForApproval, workingId, record, approval, onResubmitEdit, onSendForSigning, onRecordSignature, onMoveToRepository, onRefresh, onBack, onNext, onSave }: {
   t: OpsTokens; stage: number; cps: CP[]; org: Org | null; agTitle: string; agType: string; effDate: string; endDate: string; draft: string; header: HeaderConfig; footer: FooterConfig; sentForApproval: boolean;
+  workingId: number | null; record: Record<string, unknown> | null; approval: string;
+  onResubmitEdit: () => void;
+  onSendForSigning: (recipients: { name: string; email: string; role: string; contact: string }[], days: number | null) => void;
+  onRecordSignature: (payload: { index?: number; all?: boolean }) => void;
+  onMoveToRepository: () => void; onRefresh: () => void;
   onBack: () => void; onNext: () => void; onSave: () => void;
 }) {
   const [reminded, setReminded] = useState(false);
+  const [signingOpen, setSigningOpen] = useState(false);
+  const [vhOpen, setVhOpen] = useState(false);
+  const versions = (Array.isArray(record?.versions) ? record!.versions : []) as CtcVersion[];
+  const signers = (Array.isArray(record?.signing_recipients) ? record!.signing_recipients : []) as SignRecipient[];
+  const allSigned = signers.length > 0 && signers.every(s => s.signed);
+  const code = String((record?.code as string) ?? 'CTC');
+  const rejReason = String((record?.rejection_reason as string) ?? '');
+  const apprName = String((record?.primary_approver_name as string) ?? 'Approver');
+  const apprInit = apprName.trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || 'AP';
   const MID = {
     2: { head: '#3B0764,#5B21B6,#7C3AED,#8B5CF6', sup: 'Panel 02 · Agreement Preview', title: 'Agreement Preview' },
     3: { head: '#0e7490,#0891b2,#06b6d4', sup: 'Panel 02 · Negotiation & Signing', title: 'Counterparty Negotiation & Signing' },
@@ -701,7 +793,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
               <div><div style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{MID.sup}</div><div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{MID.title}</div></div>
             </div>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', cursor: 'pointer' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.9)" strokeWidth="2.2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg><span style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.9)' }}>Download</span></span>
+            <span onClick={() => setVhOpen(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', cursor: 'pointer' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.9)" strokeWidth="2.2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg><span style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.9)' }}>Download</span></span>
           </div>
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#F0EFF8', padding: '18px 24px' }}>
             <div style={{ maxWidth: 600, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 40px', position: 'relative' }}>
@@ -714,7 +806,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 </div>
               )}
               <div style={{ textAlign: 'center', marginBottom: 22 }}>
-                <span style={{ display: 'inline-block', padding: '3px 12px', borderRadius: 20, background: t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', border: `1px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, marginBottom: 8 }}><span style={{ fontSize: 8, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#6D28D9', letterSpacing: '.15em' }}>CTC-001</span></span>
+                <span style={{ display: 'inline-block', padding: '3px 12px', borderRadius: 20, background: t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', border: `1px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, marginBottom: 8 }}><span style={{ fontSize: 8, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#6D28D9', letterSpacing: '.15em' }}>{code}</span></span>
                 <div style={{ fontSize: 18, fontWeight: 900, color: t.textStrong, letterSpacing: '-.4px', marginBottom: 4, textTransform: 'uppercase' }}>{agTitle || 'Agreement Draft'}</div>
                 <div style={{ fontSize: 9.5, color: t.textMuted, fontWeight: 500, marginBottom: 10 }}>({agType || 'Mutual Non-Disclosure & Confidentiality Agreement'})</div>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF', border: `1px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}` }}><span style={{ fontSize: 9, color: t.textSub, fontWeight: 500 }}>Entered into as of <span style={{ color: t.dark ? '#c4b5fd' : '#7C3AED', fontWeight: 700, background: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', padding: '1px 7px', borderRadius: 4 }}>{effDate || '—'}</span></span></div>
@@ -749,13 +841,30 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
             </div>
           </div>
           {/* footer nav */}
-          <div style={{ flexShrink: 0, padding: '10px 16px', background: t.surface, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <button onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, background: t.dark ? 'rgba(124,58,237,.16)' : '#F5F0FF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#6D28D9' }}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#6D28D9'} strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg> Previous Stage
-            </button>
-            {stage < 4
-              ? <button onClick={onNext} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(109,40,217,.35)' }}>Next Stage <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg></button>
-              : <button onClick={onSave} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(5,150,105,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> Store in Repository</button>}
+          <div style={{ flexShrink: 0, padding: '10px 16px', background: t.surface, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* Stage 2 — Internal Review & Approval outcomes */}
+              {stage === 2 && approval === 'rejected' && (
+                <button onClick={onResubmitEdit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(217,119,6,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> Edit &amp; Resubmit for Review</button>
+              )}
+              {stage === 2 && approval === 'approved' && (
+                <button onClick={() => setSigningOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(8,145,178,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> Send for Signing &amp; Negotiation</button>
+              )}
+              {stage === 2 && approval !== 'approved' && approval !== 'rejected' && (
+                <button disabled title="Waiting for the approver's decision" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9', border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0'}`, cursor: 'not-allowed', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting Approval</button>
+              )}
+              {/* Stage 3 — Counterparty signing */}
+              {stage === 3 && !allSigned && (
+                <button onClick={() => onRecordSignature({ all: true })} disabled={signers.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: signers.length === 0 ? (t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9') : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', border: 'none', cursor: signers.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: signers.length === 0 ? t.textMuted : '#fff', boxShadow: signers.length === 0 ? 'none' : '0 3px 10px rgba(8,145,178,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> Mark All as Signed</button>
+              )}
+              {stage === 3 && allSigned && (
+                <button onClick={onMoveToRepository} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(5,150,105,.35)' }}>Move to Final Repository <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg></button>
+              )}
+              {/* Stage 4 — store finalized agreement */}
+              {stage === 4 && (
+                <button onClick={onSave} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(5,150,105,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> Store in Repository</button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -768,17 +877,48 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
             <div><div style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Panel 03</div><div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{stage === 4 ? 'Repository Record' : stage === 3 ? 'Negotiation Status' : 'Internal Review & Approval'}</div></div>
           </div>
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* Rejection banner — shown when an approver rejected this draft */}
+            {approval === 'rejected' && (
+              <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(239,68,68,.4)' : '#FECACA'}`, background: t.dark ? 'rgba(239,68,68,.1)' : '#FEF2F2', padding: '9px 11px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#fca5a5' : '#DC2626'} strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+                  <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#fca5a5' : '#DC2626', textTransform: 'uppercase', letterSpacing: '.08em' }}>Returned by Approver</span>
+                </div>
+                <div style={{ fontSize: 9, color: t.dark ? '#fecaca' : '#991B1B', lineHeight: 1.5 }}>{rejReason || 'The approver requested changes before this agreement can proceed.'}</div>
+              </div>
+            )}
             {/* Version History trigger */}
-            <button style={{ width: '100%', padding: '9px 12px', borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.surface, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <button onClick={() => setVhOpen(true)} style={{ width: '100%', padding: '9px 12px', borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.surface, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></div>
-                <div style={{ textAlign: 'left' }}><div style={{ fontSize: 9, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Version History</div><div style={{ fontSize: 7.5, color: t.dark ? '#a78bfa' : '#A78BFA', marginTop: 1 }}>View all drafts &amp; revisions</div></div>
+                <div style={{ textAlign: 'left' }}><div style={{ fontSize: 9, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Version History</div><div style={{ fontSize: 7.5, color: t.dark ? '#a78bfa' : '#A78BFA', marginTop: 1 }}>View &amp; download all versions</div></div>
               </div>
-              <span style={{ padding: '2px 8px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', fontSize: 7.5, fontWeight: 800, color: '#fff' }}>v{stage + 1}</span>
+              <span style={{ padding: '2px 8px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', fontSize: 7.5, fontWeight: 800, color: '#fff' }}>{versions.length ? `${versions.length} ver` : 'v1'}</span>
             </button>
+            {/* Stage 3 — counterparty signing tracker */}
+            {stage === 3 && (
+              <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.3)' : '#A5F3FC'}`, background: t.surface, overflow: 'hidden' }}>
+                <div style={{ padding: '7px 10px', background: t.dark ? 'rgba(6,182,212,.14)' : 'linear-gradient(110deg,#ECFEFF,#CFFAFE)', borderBottom: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : '#A5F3FC'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 7, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0E7490', letterSpacing: '.1em', textTransform: 'uppercase' }}>Signing Status</span>
+                  <span style={{ fontSize: 7, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0891b2' }}>{signers.filter(s => s.signed).length}/{signers.length} signed</span>
+                </div>
+                <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {signers.length === 0 && <div style={{ fontSize: 9, color: t.textMuted, textAlign: 'center', padding: 8 }}>No recipients yet.</div>}
+                  {signers.map((s, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.03)' : '#F8FEFF', border: `1.5px solid ${s.signed ? (t.dark ? 'rgba(16,185,129,.3)' : '#A7F3D0') : (t.dark ? 'rgba(6,182,212,.2)' : '#CFFAFE')}` }}>
+                      <div style={{ width: 24, height: 24, borderRadius: 7, background: s.signed ? 'linear-gradient(135deg,#059669,#047857)' : 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 800, color: '#fff' }}>{(s.name || '?').slice(0, 2).toUpperCase()}</span></div>
+                      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 9, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div><div style={{ fontSize: 7.5, color: t.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.role || s.email || '—'}</div></div>
+                      {s.signed
+                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 7px', borderRadius: 8, background: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', fontSize: 7, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#059669' }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>Signed</span>
+                        : <button onClick={() => onRecordSignature({ index: i })} style={{ padding: '3px 8px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 7, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>Mark Signed</button>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {/* Agreement summary */}
             <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.surface }}>
-              <div style={{ padding: '6px 10px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE,#F3F0FF)', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: 7, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#6D28D9', letterSpacing: '.1em', textTransform: 'uppercase' }}>Agreement Summary</span><span style={{ fontSize: 7, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 600 }}>CTC-001</span></div>
+              <div style={{ padding: '6px 10px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE,#F3F0FF)', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: 7, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#6D28D9', letterSpacing: '.1em', textTransform: 'uppercase' }}>Agreement Summary</span><span style={{ fontSize: 7, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 600 }}>{code}</span></div>
               <div style={{ padding: '8px 10px 4px' }}>{summary.map(([k, v]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 6, padding: '4px 0', borderBottom: `1px solid ${t.dark ? 'rgba(148,163,184,.1)' : '#FAF8FF'}` }}><span style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>{k}</span><span style={{ fontSize: 8.5, fontWeight: 700, color: t.textStrong, textAlign: 'right' }}>{v}</span></div>
               ))}</div>
@@ -787,14 +927,27 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
             <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.surface }}>
               <div style={{ padding: '6px 10px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE,#F3F0FF)', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 7, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#6D28D9', letterSpacing: '.1em', textTransform: 'uppercase' }}>Approvers &amp; Review Status</span>
-                <span style={{ padding: '2px 7px', borderRadius: 10, background: t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7', border: `1px solid ${t.dark ? 'rgba(245,158,11,.4)' : '#FDE68A'}`, fontSize: 7, fontWeight: 700, color: t.dark ? '#fcd34d' : '#D97706' }}>● {stage === 4 ? 'Completed' : 'Pending'}</span>
+                {(() => {
+                  const lbl = approval === 'approved' ? 'Approved' : approval === 'rejected' ? 'Rejected' : stage === 4 ? 'Completed' : 'Pending';
+                  const ok = approval === 'approved' || stage === 4, bad = approval === 'rejected';
+                  const bg = ok ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : bad ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7');
+                  const fg = ok ? (t.dark ? '#6ee7b7' : '#059669') : bad ? (t.dark ? '#fca5a5' : '#DC2626') : (t.dark ? '#fcd34d' : '#D97706');
+                  return <span style={{ padding: '2px 7px', borderRadius: 10, background: bg, border: `1px solid ${fg}33`, fontSize: 7, fontWeight: 700, color: fg }}>● {lbl}</span>;
+                })()}
               </div>
               <div style={{ padding: '10px 10px 14px' }}>
+                {(() => {
+                  const ok = approval === 'approved' || stage >= 4, bad = approval === 'rejected';
+                  const stBg = ok ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : bad ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7');
+                  const stFg = ok ? (t.dark ? '#6ee7b7' : '#059669') : bad ? (t.dark ? '#fca5a5' : '#DC2626') : (t.dark ? '#fcd34d' : '#D97706');
+                  return (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 9px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.03)' : 'linear-gradient(135deg,#FAFBFF,#F5F0FF)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, marginBottom: 14 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#F97316,#EA580C)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>RK</span></div>
-                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 9.5, fontWeight: 800, color: t.textStrong }}>Rajesh Kumar</div><div style={{ display: 'flex', gap: 3, marginTop: 3 }}><span style={{ fontSize: 6.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7', color: t.dark ? '#fcd34d' : '#D97706' }}>C-SUITE</span><span style={{ fontSize: 6.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2', color: t.dark ? '#fca5a5' : '#DC2626' }}>Mandatory</span></div></div>
-                  <span style={{ padding: '3px 8px', borderRadius: 8, background: stage >= 3 ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7'), fontSize: 7, fontWeight: 700, color: stage >= 3 ? (t.dark ? '#6ee7b7' : '#059669') : (t.dark ? '#fcd34d' : '#D97706') }}>{stage >= 3 ? 'Approved' : 'Pending'}</span>
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#F97316,#EA580C)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{apprInit}</span></div>
+                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 9.5, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{apprName}</div><div style={{ display: 'flex', gap: 3, marginTop: 3 }}><span style={{ fontSize: 6.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7', color: t.dark ? '#fcd34d' : '#D97706' }}>APPROVER</span><span style={{ fontSize: 6.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2', color: t.dark ? '#fca5a5' : '#DC2626' }}>Mandatory</span></div></div>
+                  <span style={{ padding: '3px 8px', borderRadius: 8, background: stBg, fontSize: 7, fontWeight: 700, color: stFg }}>{ok ? 'Approved' : bad ? 'Rejected' : 'Pending'}</span>
                 </div>
+                  );
+                })()}
                 {/* Send Reminder — enabled only once the draft has been sent for approval */}
                 <button onClick={() => sentForApproval && setReminded(true)} disabled={!sentForApproval || reminded} title={sentForApproval ? '' : 'Send the draft for approval first'} style={{ width: '100%', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', borderRadius: 9, border: `1.5px solid ${reminded ? (t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0') : sentForApproval ? (t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD') : (t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0')}`, background: reminded ? (t.dark ? 'rgba(16,185,129,.12)' : '#ECFDF5') : sentForApproval ? (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF') : (t.dark ? 'rgba(255,255,255,.02)' : '#F8FAFC'), cursor: sentForApproval && !reminded ? 'pointer' : 'not-allowed', opacity: sentForApproval ? 1 : .55, fontFamily: 'inherit' }}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={reminded ? (t.dark ? '#6ee7b7' : '#059669') : sentForApproval ? (t.dark ? '#c4b5fd' : '#7C3AED') : (t.dark ? '#94a3b8' : '#94A3B8')} strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
@@ -802,11 +955,68 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 </button>
                 <div style={{ fontSize: 7, fontWeight: 800, color: t.textMuted, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ height: 1, background: t.dark ? 'rgba(148,163,184,.15)' : '#EDE9FE', flex: 1 }} />Review Timeline<div style={{ height: 1, background: t.dark ? 'rgba(148,163,184,.15)' : '#EDE9FE', flex: 1 }} /></div>
                 <TimelineItem t={t} tone="done" title="Draft Submitted" badge="Done" sub="Agreement drafted & submitted for internal review" />
-                <TimelineItem t={t} tone={stage >= 3 ? 'done' : 'active'} title="Internal Review" badge={stage >= 3 ? 'Done' : 'Active'} sub="Rajesh Kumar reviewing the agreement" last={stage < 3} />
-                {stage >= 3 && <TimelineItem t={t} tone={stage === 4 ? 'done' : 'active'} title={stage === 4 ? 'Signed & Stored' : 'Counterparty Signing'} badge={stage === 4 ? 'Done' : 'Active'} sub={stage === 4 ? 'Final signed agreement archived' : 'Awaiting counterparty signature'} last />}
+                <TimelineItem t={t} tone={approval === 'approved' || stage >= 3 ? 'done' : 'active'} title="Internal Review" badge={approval === 'approved' || stage >= 3 ? 'Done' : approval === 'rejected' ? 'Returned' : 'Active'} sub={approval === 'approved' ? `Approved by ${apprName}` : approval === 'rejected' ? `Returned by ${apprName} for changes` : `${apprName} reviewing the agreement`} last={stage < 3} />
+                {stage >= 3 && <TimelineItem t={t} tone={stage === 4 ? 'done' : 'active'} title={stage === 4 ? 'Signed & Stored' : 'Counterparty Signing'} badge={stage === 4 ? 'Done' : allSigned ? 'Signed' : 'Active'} sub={stage === 4 ? 'Final signed agreement archived' : allSigned ? 'All parties signed — ready to store' : 'Awaiting counterparty signature'} last />}
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {vhOpen && <VersionHistoryModal t={t} code={code} workingId={workingId} versions={versions} onClose={() => setVhOpen(false)} />}
+      {signingOpen && <SendForSigningModal t={t} cps={cps} onClose={() => setSigningOpen(false)} onSend={(recipients, days) => { setSigningOpen(false); onSendForSigning(recipients, days); }} />}
+    </div>
+  );
+}
+
+/* ── Version History — every draft / revision / decision / signing event, each downloadable as PDF ── */
+/* ── Send for Signing & Negotiation — pick recipients (counterparties + contact + days) ── */
+function SendForSigningModal({ t, cps, onClose, onSend }: { t: OpsTokens; cps: CP[]; onClose: () => void; onSend: (recipients: { name: string; email: string; role: string; contact: string }[], days: number | null) => void }) {
+  const toast = useToast();
+  const [rows, setRows] = useState(() => cps.map(c => ({ name: c.name, email: c.email || '', role: c.badge || 'Counterparty', contact: '', selected: true })));
+  const [days, setDays] = useState('14');
+  const toggle = (i: number) => setRows(rs => rs.map((r, j) => j === i ? { ...r, selected: !r.selected } : r));
+  const setField = (i: number, k: 'contact' | 'email', v: string) => setRows(rs => rs.map((r, j) => j === i ? { ...r, [k]: v } : r));
+  const submit = () => {
+    const chosen = rows.filter(r => r.selected).map(({ name, email, role, contact }) => ({ name, email, role, contact }));
+    if (chosen.length === 0) { toast.error('No recipients', 'Select at least one party to send for signing.'); return; }
+    onSend(chosen, days ? Number(days) : null);
+  };
+  const ipt: React.CSSProperties = { width: '100%', height: 30, padding: '0 10px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 8, fontSize: 10, fontFamily: 'inherit', color: t.text, outline: 'none', background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', boxSizing: 'border-box' };
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: '84vh', background: t.surface, borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.35)' : '#A5F3FC'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Rubik',system-ui,sans-serif" }}>
+        <div style={{ padding: '13px 16px', background: 'linear-gradient(118deg,#0e7490,#0891b2,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></div>
+            <div><div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>Send for Signing &amp; Negotiation</div><div style={{ fontSize: 9, color: 'rgba(255,255,255,.7)', marginTop: 1 }}>Choose the counterparties who must sign</div></div>
+          </div>
+          <button onClick={onClose} style={{ width: 26, height: 26, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {rows.length === 0 && <div style={{ fontSize: 11, color: t.textMuted, textAlign: 'center', padding: 24 }}>No counterparties on this agreement. Add them in Stage 1 first.</div>}
+          {rows.map((r, i) => (
+            <div key={i} style={{ borderRadius: 12, border: `1.5px solid ${r.selected ? (t.dark ? 'rgba(6,182,212,.35)' : '#A5F3FC') : (t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0')}`, background: r.selected ? (t.dark ? 'rgba(6,182,212,.08)' : '#F8FEFF') : (t.dark ? 'rgba(255,255,255,.02)' : '#F8FAFC'), padding: '10px 12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: r.selected ? 9 : 0 }}>
+                <button onClick={() => toggle(i)} style={{ width: 20, height: 20, borderRadius: 6, border: `1.5px solid ${r.selected ? '#0891b2' : (t.dark ? 'rgba(148,163,184,.4)' : '#CBD5E1')}`, background: r.selected ? 'linear-gradient(135deg,#0891b2,#0e7490)' : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{r.selected && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}</button>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name || 'Counterparty'}</div><div style={{ fontSize: 8.5, color: t.textMuted }}>{r.role}</div></div>
+              </div>
+              {r.selected && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div><div style={{ fontSize: 8, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Contact Person</div><input value={r.contact} onChange={e => setField(i, 'contact', e.target.value)} placeholder="Name of signatory" style={ipt} /></div>
+                  <div><div style={{ fontSize: 8, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Email</div><input value={r.email} onChange={e => setField(i, 'email', e.target.value)} placeholder="signatory@company.com" style={ipt} /></div>
+                </div>
+              )}
+            </div>
+          ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF' }}>
+            <div style={{ flex: 1 }}><div style={{ fontSize: 9, fontWeight: 800, color: t.textStrong }}>Days to Sign</div><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1 }}>Deadline for all parties to complete signing</div></div>
+            <input type="number" min={1} max={365} value={days} onChange={e => setDays(e.target.value)} style={{ ...ipt, width: 76, textAlign: 'center' }} />
+          </div>
+        </div>
+        <div style={{ flexShrink: 0, padding: '11px 16px', borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.25)' : '#E2E8F0'}`, background: 'transparent', color: t.textSub, fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button onClick={submit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', color: '#fff', fontSize: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(8,145,178,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> Send for Signing</button>
         </div>
       </div>
     </div>
@@ -1073,9 +1283,7 @@ function Field({ t, label, green, children }: { t: OpsTokens; label: string; gre
 /* ── Stage-1 Step-3 "Submit & Send for Approval" → Review & Approval Workflow popup ── */
 type Approver = { name: string; email: string; initials: string; grad: string; tags: [string, string][]; locked: boolean };
 function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens; orgName: string; onClose: () => void; onSubmit: (data: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => void }) {
-  const [approvers, setApprovers] = useState<Approver[]>([
-    { name: 'Rajesh Kumar', email: 'ceo@organisation.com', initials: 'RK', grad: '#F97316,#EA580C', tags: [['C-SUITE', '#D97706'], ['Mandatory', '#DC2626']], locked: true },
-  ]);
+  const [approvers, setApprovers] = useState<Approver[]>([]);
   const [days, setDays] = useState(7);
   const [reminder, setReminder] = useState(5);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1150,7 +1358,7 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
             {stepper('Reminder', reminder, setReminder, 'd', <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>)}
           </div>
           {/* submit */}
-          <button onClick={() => onSubmit({ approvers: approvers.map(a => ({ name: a.name, email: a.email, role: a.tags[0]?.[0] ?? '', mandatory: a.locked || a.tags.some(tg => tg[0] === 'Mandatory') })), days, reminder })} style={{ width: '100%', padding: 11, borderRadius: 11, border: 'none', background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}>
+          <button disabled={approvers.length === 0} onClick={() => onSubmit({ approvers: approvers.map(a => ({ name: a.name, email: a.email, role: a.tags[0]?.[0] ?? '', mandatory: a.locked || a.tags.some(tg => tg[0] === 'Mandatory') })), days, reminder })} title={approvers.length === 0 ? 'Add at least one approver' : ''} style={{ width: '100%', padding: 11, borderRadius: 11, border: 'none', background: approvers.length === 0 ? (t.dark ? 'rgba(124,58,237,.25)' : '#C4B5FD') : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: approvers.length === 0 ? 'not-allowed' : 'pointer', opacity: approvers.length === 0 ? .6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: approvers.length === 0 ? 'none' : '0 4px 14px rgba(109,40,217,.4)' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
             Submit for Approval
           </button>
@@ -1161,7 +1369,8 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
   );
 }
 
-/* Multi-select "Select Approvers" picker — internal employees from GET /employees. */
+/* Multi-select "Select Approvers" picker — the client, the branch and the
+ * employees under the active branch (GET /clm/ctc-contracts/approver-candidates). */
 const ROLE_FG = ['#D97706', '#059669', '#DC2626', '#7C3AED', '#0891b2', '#DB2777'];
 function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; existing: string[]; onClose: () => void; onAdd: (a: Approver[]) => void }) {
   type Emp = { name: string; email: string; title: string; role: string; roleFg: string; initials: string; grad: string };
@@ -1171,16 +1380,18 @@ function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; ex
   const [sel, setSel] = useState<Set<string>>(new Set());
   useEffect(() => {
     let alive = true;
-    api.get('/employees', { params: { per_page: 200 } })
+    api.get('/clm/ctc-contracts/approver-candidates')
       .then(res => {
         if (!alive) return;
-        const rows = (Array.isArray(res.data) ? res.data : (res.data?.data ?? [])) as Record<string, unknown>[];
+        const rows = (res.data?.data ?? (Array.isArray(res.data) ? res.data : [])) as Record<string, unknown>[];
         setEmps(rows.map((e, i) => {
-          const dept = (e.department as { name?: string } | undefined)?.name;
-          const desig = (e.designation as { name?: string } | undefined)?.name;
-          const name = String(e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim() || e.emp_code || 'Employee');
-          const role = String(dept ?? desig ?? '').toUpperCase();
-          return { name, email: String(e.email ?? ''), title: String(desig ?? dept ?? ''), role, roleFg: ROLE_FG[role.split('').reduce((s, c) => s + c.charCodeAt(0), 0) % ROLE_FG.length], initials: orgInitials(name), grad: ORG_GRADS[i % ORG_GRADS.length] };
+          const ut = String(e.user_type ?? '');
+          const branchName = e.branch_name ? String(e.branch_name) : '';
+          const role = ut === 'client_admin' ? 'CLIENT' : ut === 'branch_user' ? 'BRANCH' : (branchName || 'EMPLOYEE').toUpperCase();
+          const roleFg = ut === 'client_admin' ? '#7C3AED' : ut === 'branch_user' ? '#0891b2' : ROLE_FG[role.split('').reduce((s, c) => s + c.charCodeAt(0), 0) % ROLE_FG.length];
+          const title = ut === 'client_admin' ? 'Client Administrator' : ut === 'branch_user' ? (branchName ? `${branchName} · Branch` : 'Branch') : branchName;
+          const name = String(e.name ?? 'User');
+          return { name, email: String(e.email ?? ''), title, role, roleFg, initials: orgInitials(name), grad: ORG_GRADS[i % ORG_GRADS.length] };
         }));
         setLoading(false);
       })
@@ -1202,7 +1413,7 @@ function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; ex
         <div style={{ background: 'linear-gradient(118deg,#5B21B6,#6D28D9,#7C3AED,#8B5CF6)', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg></div>
-            <div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Select Approvers</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>Choose from internal employees — select multiple</div></div>
+            <div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Select Approvers</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.7)', fontWeight: 500 }}>Client, branch &amp; employees — select multiple</div></div>
           </div>
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.12)', border: '1.5px solid rgba(255,255,255,.22)', color: '#fff', cursor: 'pointer', fontSize: 13, flexShrink: 0 }}>✕</button>
         </div>
