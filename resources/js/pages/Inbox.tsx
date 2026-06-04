@@ -1130,20 +1130,12 @@ export default function Inbox() {
                           current?.action === 'Sign'    ? { bg: '#fef3c7', fg: '#92400e' }
                           : current?.action === 'Approve'? { bg: '#dcfce7', fg: '#15803d' }
                           :                                { bg: '#e0e7ff', fg: '#4338ca' };
-                        const reminder = latestReminder(r);
                         return (
-                          <tr key={r.id} className={reminder ? 'inbox-row--reminded' : undefined}>
+                          <tr key={r.id}>
                             <td>{i + 1}</td>
                             <td>
                               <div className="inbox-doc-name" style={{ fontWeight: 700 }}>{r.template?.name || '(template removed)'}</div>
                               {r.code && <code className="inbox-code-pill" style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}
-                              {reminder && (
-                                <div className="inbox-reminder-pill" style={{ marginTop: 5 }}
-                                  title={`${reminder.actor_name || 'Someone'} reminded you on ${new Date(reminder.at).toLocaleString()}`}>
-                                  <i className="ri-notification-badge-line" />
-                                  Reminder{reminder.actor_name ? ` from ${reminder.actor_name}` : ''}
-                                </div>
-                              )}
                             </td>
                             <td>
                               <div>{empName}</div>
@@ -1355,9 +1347,8 @@ const inputLabelStyle: React.CSSProperties = {
 function InboxDarkStyles() {
   return (
     <style>{`
-      /* Reminder highlight — drawn in both themes (not dark-only). A pending
-         row that has been nudged gets an amber left-rail + tinted cells, and
-         a pulsing pill so the signer reads "you've been reminded" at a glance. */
+      /* Reminder badge — the pulsing amber pill in the header strip that tells
+         the signer "someone nudged you". Drawn in both themes (not dark-only). */
       @keyframes inboxReminderPulse {
         0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.45); }
         50%      { box-shadow: 0 0 0 4px rgba(245,158,11,0); }
@@ -1373,9 +1364,6 @@ function InboxDarkStyles() {
         padding: 6px 12px; font-size: 12px; color: #92400e;
         background: #fde68a;
       }
-      .inbox-page .inbox-row--reminded > td { background: #fff8eb; }
-      .inbox-page .inbox-row--reminded > td:first-child { box-shadow: inset 3px 0 0 0 #f59e0b; }
-      [data-bs-theme="dark"] .inbox-page .inbox-row--reminded > td { background: rgba(245,158,11,0.09) !important; }
       [data-bs-theme="dark"] .inbox-reminder-pill { background: rgba(245,158,11,0.20); color: #fbbf24; }
       [data-bs-theme="dark"] .inbox-reminder-pill--header { background: rgba(245,158,11,0.22); color: #fcd34d; }
 

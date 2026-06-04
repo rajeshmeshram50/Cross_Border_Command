@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\HandlesDocxHtmlRoundtrip;
 use App\Http\Controllers\Controller;
 use App\Models\CtcContract;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * CLM Operations · Without Shipment ID → Case-to-Case (CTC) Contracts.
@@ -22,6 +25,8 @@ use Illuminate\Support\Facades\DB;
  */
 class CtcContractController extends Controller
 {
+    use HandlesDocxHtmlRoundtrip;
+
     /* ── shared helpers ── */
 
     private function fmt($d): string
@@ -29,6 +34,21 @@ class CtcContractController extends Controller
         if (!$d) return '—';
         try { return \Illuminate\Support\Carbon::parse($d)->format('d M Y'); }
         catch (\Throwable $e) { return '—'; }
+    }
+
+    /** Append a content-snapshot version entry (append-only audit). */
+    private function pushVersion(CtcContract $c, string $label, string $status, string $by, ?string $content = null): void
+    {
+        $versions = array_values($c->versions ?? []);
+        $versions[] = [
+            'v'       => count($versions) + 1,
+            'label'   => $label,
+            'status'  => $status,
+            'date'    => now()->format('d M Y H:i'),
+            'by'      => $by,
+            'content' => $content !== null ? $content : $c->content,
+        ];
+        $c->versions = $versions;
     }
 
     /** Approval lifecycle → CTC-list bucket. */
@@ -150,6 +170,48 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $row]);
     }
 
+    /**
+     * GET /clm/ctc-contracts/approver-candidates
+     *
+     * Internal people who can be picked as approvers for a CTC draft:
+     * the client (client_admin), the branch (branch_user) and the employees
+     * under the active branch. Scoped to the caller's client; when a
+     * branch_id is present (auto-injected by the SPA), employees/branch users
+     * are narrowed to that branch while the client admin stays tenant-wide.
+     */
+    public function approverCandidates(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $branchFilter = $request->integer('branch_id') ?: null;
+
+        $query = User::where('client_id', $user->client_id)
+            ->where('status', 'active')
+            ->whereIn('user_type', ['client_admin', 'branch_user', 'employee'])
+            ->with('branch:id,name');
+
+        if ($branchFilter) {
+            $query->where(function ($w) use ($branchFilter) {
+                $w->where('user_type', 'client_admin')      // client stays tenant-wide
+                  ->orWhere('branch_id', $branchFilter);    // branch + its employees
+            });
+        }
+
+        // CLIENT first, then BRANCH, then employees — and alphabetical within each.
+        $order = ['client_admin' => 0, 'branch_user' => 1, 'employee' => 2];
+        $rows = $query->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id'])
+            ->sortBy(fn ($u) => [$order[$u->user_type] ?? 9, strtolower($u->name ?? '')])
+            ->values()
+            ->map(fn ($u) => [
+                'id'          => $u->id,
+                'name'        => $u->name,
+                'email'       => $u->email,
+                'user_type'   => $u->user_type,
+                'branch_name' => $u->branch->name ?? null,
+            ]);
+
+        return response()->json(['status' => true, 'data' => $rows]);
+    }
+
     /* ── Create (Submit & Send for Approval from the add form) ── */
     public function store(Request $request)
     {
@@ -191,6 +253,15 @@ class CtcContractController extends Controller
             $seq  = CtcContract::withTrashed()->where('client_id', $user->client_id)->count() + 1;
             $code = sprintf('CTC-%03d', $seq);
 
+            $v1 = [[
+                'v'       => 1,
+                'label'   => 'Agreement drafted & submitted for internal review',
+                'status'  => 'Under Review',
+                'date'    => now()->format('d M Y H:i'),
+                'by'      => $user->name ?? '',
+                'content' => $data['content'] ?? null,
+            ]];
+
             return CtcContract::create([
                 'client_id'          => $user->client_id,
                 'branch_id'          => $user->branch_id ?? null,
@@ -213,6 +284,7 @@ class CtcContractController extends Controller
                 'approvers'          => $approvers->all(),
                 'approver_emails'    => $approvers->pluck('email')->filter()->values()->all(),
                 'clarifications'     => [],
+                'versions'           => $v1,
                 'stage'              => 2,                 // submitted → Internal Review
                 'approval_status'    => 'pending',
                 'status'             => 'inprogress',
@@ -261,7 +333,12 @@ class CtcContractController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
-        $row->update(['approval_status' => 'approved', 'stage' => max($row->stage, 3)]);
+        // Approved → stays at Stage 2 (Internal Review); the sender then chooses
+        // "Send for Signing & Negotiation" to advance to Stage 3.
+        $row->approval_status = 'approved';
+        $row->rejection_reason = null;
+        $this->pushVersion($row, 'Approved by ' . ($user->name ?? 'approver'), 'Approved', $user->name ?? '');
+        $row->save();
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
     }
 
@@ -270,7 +347,13 @@ class CtcContractController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         $data = $request->validate(['reason' => 'required|string|max:1000']);
-        $row->update(['approval_status' => 'rejected', 'status' => 'rejected', 'rejection_reason' => $data['reason']]);
+        // Rejected → sender can revise & resubmit (multiple times), so the row
+        // stays workable (status 'inprogress'); only approval_status flips.
+        $row->approval_status = 'rejected';
+        $row->status = 'inprogress';
+        $row->rejection_reason = $data['reason'];
+        $this->pushVersion($row, 'Rejected by ' . ($user->name ?? 'approver') . ' — ' . $data['reason'], 'Rejected', $user->name ?? '');
+        $row->save();
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
     }
 
@@ -297,5 +380,210 @@ class CtcContractController extends Controller
         }
         $row->update(['clarifications' => $thread]);
         return response()->json(['status' => true, 'data' => $this->shapeSent($row->fresh())]);
+    }
+
+    /* ── Lifecycle transitions (sender side, from the add/edit form) ── */
+
+    /**
+     * POST /clm/ctc-contracts/{id}/resubmit
+     * After a rejection, revise the draft and re-send for internal review.
+     * May happen multiple times — each pass appends a new version.
+     */
+    public function resubmit(Request $request, int $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
+
+        $data = $request->validate([
+            'content'       => 'nullable|string',
+            'title'         => 'sometimes|string|max:255',
+            'header_config' => 'nullable|array',
+            'footer_config' => 'nullable|array',
+        ]);
+
+        if (array_key_exists('content', $data))       $row->content = $data['content'];
+        if (array_key_exists('title', $data))         $row->title = $data['title'];
+        if (array_key_exists('header_config', $data)) $row->header_config = $data['header_config'];
+        if (array_key_exists('footer_config', $data)) $row->footer_config = $data['footer_config'];
+
+        $row->approval_status = 'pending';
+        $row->status = 'inprogress';
+        $row->stage = 2;
+        $row->rejection_reason = null;
+        $row->submitted_at = now();
+        $this->pushVersion($row, 'Revised draft resubmitted for internal review', 'Under Review', $user->name ?? '');
+        $row->save();
+
+        return response()->json(['status' => true, 'data' => $row->fresh()]);
+    }
+
+    /**
+     * POST /clm/ctc-contracts/{id}/send-for-signing
+     * Approved → send to counterparties for signature & negotiation (Stage 3).
+     */
+    public function sendForSigning(Request $request, int $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
+
+        if ($row->approval_status !== 'approved') {
+            return response()->json(['status' => false, 'message' => 'Agreement must be approved before sending for signing.'], 422);
+        }
+
+        $data = $request->validate([
+            'recipients'             => 'required|array|min:1',
+            'recipients.*.name'      => 'required|string|max:255',
+            'recipients.*.email'     => 'nullable|string|max:255',
+            'recipients.*.role'      => 'nullable|string|max:128',
+            'recipients.*.contact'   => 'nullable|string|max:255',
+            'days_to_sign'           => 'nullable|integer|min:1|max:365',
+        ]);
+
+        $recipients = collect($data['recipients'])->map(fn ($r) => [
+            'name'      => (string) ($r['name'] ?? ''),
+            'email'     => strtolower((string) ($r['email'] ?? '')),
+            'role'      => (string) ($r['role'] ?? ''),
+            'contact'   => (string) ($r['contact'] ?? ''),
+            'signed'    => false,
+            'signed_at' => null,
+        ])->values()->all();
+
+        $row->signing_recipients = $recipients;
+        $row->days_to_sign = $data['days_to_sign'] ?? null;
+        $row->stage = 3;
+        $row->status = 'inprogress';
+        $this->pushVersion($row, 'Agreement sent to counterparty for signature & negotiation', 'Sent for Signing', $user->name ?? '');
+        $row->save();
+
+        return response()->json(['status' => true, 'data' => $row->fresh()]);
+    }
+
+    /**
+     * POST /clm/ctc-contracts/{id}/record-signature
+     * Mark one recipient (by index/email) signed, or all at once.
+     * When every recipient has signed, a "signed by all parties" version is added.
+     */
+    public function recordSignature(Request $request, int $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
+
+        $data = $request->validate([
+            'index' => 'nullable|integer|min:0',
+            'email' => 'nullable|string|max:255',
+            'all'   => 'nullable|boolean',
+        ]);
+
+        $recipients = array_values($row->signing_recipients ?? []);
+        if (!count($recipients)) {
+            return response()->json(['status' => false, 'message' => 'No signing recipients to mark.'], 422);
+        }
+
+        $stamp = now()->format('d M Y H:i');
+        if (!empty($data['all'])) {
+            foreach ($recipients as &$r) { if (empty($r['signed'])) { $r['signed'] = true; $r['signed_at'] = $stamp; } }
+            unset($r);
+        } elseif (array_key_exists('index', $data) && $data['index'] !== null && isset($recipients[$data['index']])) {
+            $recipients[$data['index']]['signed'] = true;
+            $recipients[$data['index']]['signed_at'] = $stamp;
+        } elseif (!empty($data['email'])) {
+            $email = strtolower($data['email']);
+            foreach ($recipients as &$r) { if (($r['email'] ?? '') === $email) { $r['signed'] = true; $r['signed_at'] = $stamp; } }
+            unset($r);
+        } else {
+            return response()->json(['status' => false, 'message' => 'Specify which recipient signed.'], 422);
+        }
+
+        $row->signing_recipients = $recipients;
+        $allSigned = collect($recipients)->every(fn ($r) => !empty($r['signed']));
+        if ($allSigned) {
+            $row->cp_signed_date = now();
+            $this->pushVersion($row, 'Agreement signed by all parties', 'Signed', $user->name ?? '');
+        }
+        $row->save();
+
+        return response()->json(['status' => true, 'data' => $row->fresh(), 'allSigned' => $allSigned]);
+    }
+
+    /**
+     * POST /clm/ctc-contracts/{id}/move-to-repository
+     * All parties signed → store in the Final Contract Repository (Stage 4).
+     */
+    public function moveToRepository(Request $request, int $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
+
+        $recipients = array_values($row->signing_recipients ?? []);
+        $allSigned  = count($recipients) > 0 && collect($recipients)->every(fn ($r) => !empty($r['signed']));
+        if (!$allSigned) {
+            return response()->json(['status' => false, 'message' => 'All parties must sign before moving to the repository.'], 422);
+        }
+
+        $row->stage = 4;
+        $row->status = 'signed';
+        if (!$row->cp_signed_date) $row->cp_signed_date = now();
+        $this->pushVersion($row, 'Agreement stored in final contract repository', 'Signed', $user->name ?? '');
+        $row->save();
+
+        return response()->json(['status' => true, 'data' => $row->fresh()]);
+    }
+
+    /** GET /clm/ctc-contracts/{id}/versions — version history list. */
+    public function versions(Request $request, int $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
+        return response()->json(['status' => true, 'data' => array_values($row->versions ?? [])]);
+    }
+
+    /**
+     * GET /clm/ctc-contracts/{id}/versions/{v}/download
+     * Render a specific version's content snapshot to PDF (page-shell + footer
+     * page numbers), reusing the shared signature-document blade + dompdf.
+     */
+    public function downloadVersion(Request $request, int $id, int $v)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
+
+        $versions = array_values($row->versions ?? []);
+        $entry = collect($versions)->firstWhere('v', $v);
+        if (!$entry) abort(404);
+
+        $html = trim((string) ($entry['content'] ?? $row->content));
+        if ($html === '') $html = '<p><em>No content saved for this version.</em></p>';
+        $processedHtml = $this->normaliseEditorHtml($html);
+
+        $headerConfig = is_array($row->header_config) ? $row->header_config : [];
+        $footerConfig = is_array($row->footer_config) ? $row->footer_config : [];
+        $client = \App\Models\Client::find($row->client_id);
+
+        $urlPath = (isset($headerConfig['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerConfig['logo_url'], $m)) ? $m[1] : null;
+        $headerLogoBase64 = '';
+        foreach (array_filter([$headerConfig['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
+            try {
+                if (Storage::disk('public')->exists($path)) { $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path)); break; }
+            } catch (\Throwable $e) { /* try next candidate */ }
+        }
+
+        // Make the document title reflect the version for the blade heading.
+        $row->title = ($row->title ?: 'Agreement') . ' — v' . $v;
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
+            'document'         => $row,
+            'party'            => null,
+            'modelName'        => '',
+            'processedHtml'    => $processedHtml,
+            'generatedDate'    => now()->format('d/m/Y'),
+            'requestId'        => $row->code ?: 'CTC',
+            'signers'          => [],
+            'client'           => $client,
+            'headerConfig'     => $headerConfig,
+            'footerConfig'     => $footerConfig,
+            'headerLogoBase64' => $headerLogoBase64,
+        ])->setPaper('a4')->setOption('isPhpEnabled', true);
+
+        return $pdf->download(($row->code ?: 'CTC') . '-v' . $v . '.pdf');
     }
 }

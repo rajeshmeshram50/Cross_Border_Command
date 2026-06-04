@@ -8,6 +8,7 @@ use App\Models\EmployeeExit;
 use App\Models\Module;
 use App\Models\Permission;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Exit Process — Stage 1 (Exit Initiation & Approval) backend.
@@ -52,7 +53,70 @@ class ExitController extends Controller
         ]);
     }
 
+    /**
+     * Finalise the exit. This is the ONE action that moves an employee into
+     * the "Exited" bucket: it persists the final-stage form, locks the case
+     * Closed, flips employees.status to the right terminal value, and
+     * disables the paired login. No soft-delete — the row stays visible in
+     * the Exited tab and is reversible (re-activate the employee).
+     */
+    public function complete(Request $request, Employee $employee)
+    {
+        $this->guardSameTenant($request, $employee);
+        $data = $this->validatePayload($request);
+
+        return DB::transaction(function () use ($request, $data, $employee) {
+            $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
+            $row->fill($data);
+            $row->employee_id          = $employee->id;
+            $row->client_id            = $employee->client_id;
+            $row->branch_id            = $employee->branch_id;
+            $row->reporting_manager_id = $row->reporting_manager_id ?? $employee->reporting_manager_id;
+            if (!$row->exists) $row->created_by = $request->user()?->id;
+
+            // Lock the case closed regardless of what the client sent.
+            $row->exit_case_status = 'Closed';
+            $row->current_stage    = 4;
+            $row->completed_at     = now();
+            $row->save();
+
+            // Map exit type → terminal employees.status so the list buckets
+            // the person as Exited and the login gate (EnsureUserActive) trips.
+            $employee->status = $this->resolveFinalStatus((string) ($row->exit_type ?? ''));
+            $employee->save();
+
+            // Disable the paired login + revoke tokens (mirrors
+            // EmployeeController::destroy, minus the soft-delete).
+            if ($employee->user) {
+                $employee->user->update(['status' => 'inactive']);
+                $employee->user->tokens()->delete();
+            }
+
+            $row->load(['manager:id,first_name,middle_name,last_name,display_name,emp_code']);
+            return response()->json([
+                'message' => 'Exit completed — employee marked as exited and login disabled.',
+                'exit'    => $this->format($row, $employee->fresh()),
+            ]);
+        });
+    }
+
     /* ── Helpers ───────────────────────────────────────────────────── */
+
+    /**
+     * Terminal employees.status for a given exit type. Constrained to the
+     * values the employees.status enum actually allows (Active, Inactive,
+     * On Leave, Probation, Notice Period, Resigned, Terminated) — there is
+     * no 'Retired'/'Exited' value, so Retirement maps to the nearest valid
+     * terminal state. Using an out-of-enum value would trip the Postgres
+     * CHECK constraint and 500 the whole completion.
+     */
+    private function resolveFinalStatus(string $exitType): string
+    {
+        return match ($exitType) {
+            'Termination', 'Absconding' => 'Terminated',
+            default                     => 'Resigned',   // Resignation / Retirement / End of Contract / Other / blank
+        };
+    }
 
     private function validatePayload(Request $request): array
     {
@@ -71,6 +135,23 @@ class ExitController extends Controller
             'comments'              => 'nullable|string|max:2000',
             'business_impact'       => 'nullable|in:Low,Medium,High,Critical',
             'replacement_required'  => 'nullable|in:Yes — Immediate,Yes — Within 30 days,Yes — Within 90 days,No',
+
+            // Stage 2 — Clearance & Handover. Free-form JSON shapes the React
+            // wizard owns; stored verbatim so reopening restores HR's progress.
+            'clearances'            => 'nullable|array',
+            'asset_returns'         => 'nullable|array',
+            'handover_notes'        => 'nullable|string|max:5000',
+
+            // Stage 4 — Final Deactivation & Closure
+            'validation'            => 'nullable|array',
+            'final_employee_status' => 'nullable|in:Active,Inactive,Exited',
+            'profile_lock'          => 'nullable|in:Locked,Unlocked',
+            'exit_case_status'      => 'nullable|in:Open,Closed',
+            'hr_sign_off'           => 'nullable|in:Pending,Approved,Rejected',
+
+            // Process meta — per-stage status map + current wizard step.
+            'stage_status'          => 'nullable|array',
+            'current_stage'         => 'nullable|integer|min:1|max:4',
         ]);
     }
 
@@ -162,6 +243,24 @@ class ExitController extends Controller
             'comments'              => $row?->comments,
             'business_impact'       => $row?->business_impact,
             'replacement_required'  => $row?->replacement_required,
+
+            // Stage 2 — Clearance & Handover
+            'clearances'            => $row?->clearances ?? [],
+            'asset_returns'         => $row?->asset_returns ?? [],
+            'handover_notes'        => $row?->handover_notes,
+
+            // Stage 4 — Final Deactivation & Closure
+            'validation'            => $row?->validation ?? [],
+            'final_employee_status' => $row?->final_employee_status,
+            'profile_lock'          => $row?->profile_lock,
+            'exit_case_status'      => $row?->exit_case_status ?? 'Open',
+            'hr_sign_off'           => $row?->hr_sign_off,
+
+            // Process meta
+            'stage_status'          => $row?->stage_status ?? null,
+            'current_stage'         => $row?->current_stage ?? 1,
+            'completed_at'          => $row?->completed_at?->toIso8601String(),
+            'employee_status'       => $employee->status,
             'updated_at'            => $row?->updated_at?->toIso8601String(),
         ];
     }

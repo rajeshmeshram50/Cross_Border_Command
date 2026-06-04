@@ -59,7 +59,7 @@ class EmployeeController extends Controller
         // Progress → Exited once the notice period elapses, without an
         // extra round-trip per row. Selected columns only; the full row
         // is loaded on the exit modal itself via /employees/{id}/exit.
-        'exit:id,employee_id,notice_date,last_working_day',
+        'exit:id,employee_id,notice_date,last_working_day,exit_type,exit_case_status,completed_at,current_stage',
     ];
 
     /* ─────────────────────────────────────────────────────────────────
