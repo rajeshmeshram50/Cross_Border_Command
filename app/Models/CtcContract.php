@@ -17,6 +17,7 @@ class CtcContract extends Model
         'auto_renewal', 'renewal_type', 'content', 'header_config', 'footer_config',
         'approvers', 'approver_emails', 'clarifications',
         'versions', 'signing_recipients', 'days_to_sign',
+        'zoho_request_id', 'signature_request_id', 'signature_declined_at',
         'stage', 'approval_status', 'status', 'rejection_reason',
         'days_to_approve', 'reminder_days', 'cp_signed_date',
         'primary_approver_name', 'primary_approver_email',
@@ -41,6 +42,9 @@ class CtcContract extends Model
         'termination_notice' => 'integer',
         'days_to_approve'    => 'integer',
         'reminder_days'      => 'integer',
+        'days_to_sign'       => 'integer',
+        'signature_request_id' => 'integer',
+        'signature_declined_at' => 'datetime',
     ];
 
     public function client(): BelongsTo { return $this->belongsTo(Client::class); }

@@ -3,6 +3,7 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { type AtaContract, inits, pad2, PER_PAGE } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import { ShimmerTable } from '../../components/ui/Shimmer';
 
 /** To-approve rows from GET /clm/ctc-contracts/to-approve (AtaContract + db id). */
 type AtaRow = AtaContract & { dbId: number };
@@ -49,7 +50,14 @@ export default function ClmAgreementsToApprovePage() {
   const [page, setPage] = useState(1);
   const [actionId, setActionId] = useState<string | null>(null);
   const [ata, setAta]   = useState<AtaRow[]>([]);
-  const load = () => { api.get('/clm/ctc-contracts/to-approve').then(r => setAta(r.data?.data ?? [])).catch(() => setAta([])); };
+  const [loading, setLoading] = useState(true);
+  const load = () => {
+    setLoading(true);
+    api.get('/clm/ctc-contracts/to-approve')
+      .then(r => setAta(r.data?.data ?? []))
+      .catch(() => { setAta([]); toast.error('Could not load agreements', 'Please refresh and try again.'); })
+      .finally(() => setLoading(false));
+  };
   useEffect(() => { load(); }, []);
 
   const counts = useMemo(() => ({
@@ -146,7 +154,9 @@ export default function ClmAgreementsToApprovePage() {
           </div>
         </div>
 
-        {tab === 'clarification'
+        {loading
+          ? <ShimmerTable rows={6} cols={9} />
+          : tab === 'clarification'
           ? <ClarificationTable rows={list} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} toast={toast} t={t} />
           : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} toast={toast} t={t} />}
       </div>

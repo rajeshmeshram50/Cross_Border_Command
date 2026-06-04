@@ -37,18 +37,70 @@ class CtcContractController extends Controller
     }
 
     /** Append a content-snapshot version entry (append-only audit). */
-    private function pushVersion(CtcContract $c, string $label, string $status, string $by, ?string $content = null): void
+    private function pushVersion(CtcContract $c, string $label, string $status, string $by, ?string $content = null, array $extra = []): void
     {
         $versions = array_values($c->versions ?? []);
-        $versions[] = [
+        $versions[] = array_merge([
             'v'       => count($versions) + 1,
             'label'   => $label,
             'status'  => $status,
             'date'    => now()->format('d M Y H:i'),
             'by'      => $by,
             'content' => $content !== null ? $content : $c->content,
-        ];
+        ], $extra);
         $c->versions = $versions;
+    }
+
+    /**
+     * Each approval round derived from the version audit, newest first. A
+     * round opens on every "Under Review" submission (initial draft +
+     * resubmissions) and closes on the approver's Rejected / Approved
+     * decision — so a draft that was rejected, revised and approved yields
+     * three persistent entries (Rejected → Pending → Approved) instead of a
+     * single row whose status keeps flipping.
+     */
+    private function approvalRoundsShaped(CtcContract $c, string $approverName): array
+    {
+        $reasonFromLabel = function (string $label): ?string {
+            return preg_match('/—\s*(.+)$/u', $label, $m) ? trim($m[1]) : null;
+        };
+        $rounds = [];
+        $cur = null;
+        foreach (array_values($c->versions ?? []) as $v) {
+            $st = $v['status'] ?? '';
+            if ($st === 'Under Review') {
+                if ($cur) $rounds[] = $cur;
+                $cur = ['status' => 'pending', 'date' => $v['date'] ?? null, 'reason' => null];
+            } elseif ($st === 'Rejected') {
+                $entry = ['status' => 'rejected', 'date' => $v['date'] ?? ($cur['date'] ?? null), 'reason' => $v['reason'] ?? $reasonFromLabel((string) ($v['label'] ?? ''))];
+                $rounds[] = $cur ? array_merge($cur, $entry) : $entry;
+                $cur = null;
+            } elseif ($st === 'Approved') {
+                $entry = ['status' => 'approved', 'date' => $v['date'] ?? ($cur['date'] ?? null), 'reason' => null];
+                $rounds[] = $cur ? array_merge($cur, $entry) : $entry;
+                $cur = null;
+            }
+            // 'Sent for Signing' / 'Signed' are post-approval — ignored here.
+        }
+        if ($cur) {
+            // Open round — reflect a live clarification state if one is pending.
+            if ($c->approval_status === 'clarification') $cur['status'] = 'clarification';
+            $rounds[] = $cur;
+        }
+        if (empty($rounds)) return [$this->shapeApprove($c, $approverName)];  // legacy rows w/o audit
+
+        return collect(array_reverse($rounds))->map(fn ($r) => [
+            'id'             => $c->code,
+            'dbId'           => $c->id,
+            'title'          => $c->title,
+            'date'           => $r['date'] ?: $this->fmt($c->submitted_at ?: $c->created_at),
+            'createdBy'      => $c->created_by_name ?: '—',
+            'approver'       => $c->primary_approver_name ?: $approverName,
+            'status'         => $r['status'],
+            'clarifications' => ($r['status'] === 'clarification') ? array_values($c->clarifications ?? []) : [],
+            'expDate'        => $this->fmt($c->end_date),
+            'rejReason'      => $r['reason'] ?? null,
+        ])->all();
     }
 
     /** Approval lifecycle → CTC-list bucket. */
@@ -159,15 +211,105 @@ class CtcContractController extends Controller
                   ->orWhere('primary_approver_email', $email);
             })
             ->orderByDesc('id')->get()
-            ->map(fn ($c) => $this->shapeApprove($c, $user->name ?? ''));
-        return response()->json(['status' => true, 'data' => $rows]);
+            ->flatMap(fn ($c) => $this->approvalRoundsShaped($c, $user->name ?? ''));
+        return response()->json(['status' => true, 'data' => $rows->values()]);
+    }
+
+    /** Branch (our-organisation) authorised-signatory image = signature + stamp combined. */
+    private function orgSignatureUrl(CtcContract $c): ?string
+    {
+        $branch = $c->branch_id ? \App\Models\Branch::find($c->branch_id) : null;
+        return $branch?->signature_url;
+    }
+
+    /** Same image as a data URI for dompdf (which can't fetch /storage URLs). */
+    private function orgSignatureDataUri(CtcContract $c): ?string
+    {
+        $branch = $c->branch_id ? \App\Models\Branch::find($c->branch_id) : null;
+        $path = $branch?->signature_path;
+        if (!$path) return null;
+        if (preg_match('#/storage/(.+)$#', (string) $path, $m)) $path = $m[1];
+        try {
+            if (!Storage::disk('public')->exists($path)) return null;
+            $data = base64_encode(Storage::disk('public')->get($path));
+            $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION) ?: 'png');
+            $mime = in_array($ext, ['jpg', 'jpeg']) ? 'image/jpeg' : ($ext === 'webp' ? 'image/webp' : 'image/png');
+            return "data:$mime;base64,$data";
+        } catch (\Throwable $e) { return null; }
+    }
+
+    /**
+     * GET /clm/ctc-contracts/contact-persons?type=buyer|consignee|supplier&id=...
+     *
+     * Contact persons captured on the counterparty's own form — the address /
+     * contact rows of the Customer (buyer), Consignee or Vendor (supplier).
+     * Drives the "Select contact persons to notify" picker in Send-for-Signing.
+     */
+    public function contactPersons(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $type = strtolower((string) $request->query('type'));
+        $id   = $request->query('id');
+        if ($id === null || $id === '') return response()->json(['status' => true, 'data' => []]);
+
+        if ($type === 'buyer' || $type === 'customer') {
+            $row = \App\Models\Customer::where('client_id', $user->client_id)->with('addresses')->find($id);
+            return response()->json(['status' => true, 'data' => $this->mapCpAddresses($row)]);
+        }
+        if ($type === 'consignee') {
+            $row = \App\Models\Consignee::where('client_id', $user->client_id)->with('addresses')->find($id);
+            return response()->json(['status' => true, 'data' => $this->mapCpAddresses($row)]);
+        }
+        if ($type === 'supplier' || $type === 'vendor') {
+            $q = \App\Models\Vendor::where('client_id', $user->client_id)->with('addresses');
+            $row = is_numeric($id) ? $q->find($id) : $q->where('vendor_code', $id)->first();
+            if (!$row) return response()->json(['status' => true, 'data' => []]);
+            $contacts = collect($row->addresses ?? [])->map(fn ($a) => [
+                'name'        => $a->contact_name,
+                'email'       => $a->email,
+                'designation' => $a->designation,
+                'phone'       => $a->contact_no,
+                'is_primary'  => (bool) $a->is_primary,
+            ])->filter(fn ($c) => $c['name'] || $c['email'])->values()->all();
+            return response()->json(['status' => true, 'data' => $contacts]);
+        }
+        return response()->json(['status' => true, 'data' => []]);
+    }
+
+    /** Customer/Consignee addresses → contact persons (shared cp_* columns). */
+    private function mapCpAddresses($row): array
+    {
+        if (!$row) return [];
+        return collect($row->addresses ?? [])->map(fn ($a) => [
+            'name'        => $a->cp_name,
+            'email'       => $a->cp_email,
+            'designation' => $a->cp_designation,
+            'phone'       => $a->cp_contact,
+            'is_primary'  => (bool) $a->is_primary,
+        ])->filter(fn ($c) => $c['name'] || $c['email'])->values()->all();
     }
 
     public function show(Request $request, int $id)
     {
         $user = $request->user(); if (!$user) abort(401);
         $row = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
+        // Surface the branch signature+stamp so the SPA can drop it onto the
+        // {{signature}} placeholder once the agreement is approved.
+        $row->org_signature_url = $this->orgSignatureUrl($row);
+        // Fully-signed PDF (from Zoho) once the signature request completed.
+        $row->signed_document_url = $this->signedDocumentUrl($row);
         return response()->json(['status' => true, 'data' => $row]);
+    }
+
+    /** Public URL of the fully-signed PDF (from the linked signature request), or null. */
+    private function signedDocumentUrl(CtcContract $c): ?string
+    {
+        if (!$c->signature_request_id) return null;
+        $sr = \App\Models\ClmSignatureRequest::find($c->signature_request_id);
+        $paths = is_array($sr?->signed_document_paths) ? $sr->signed_document_paths : [];
+        $first = $paths[0] ?? null;
+        if (!is_array($first)) return null;
+        return $first['file_url'] ?? $first['url'] ?? (isset($first['path']) ? file_url($first['path']) : null);
     }
 
     /**
@@ -352,7 +494,7 @@ class CtcContractController extends Controller
         $row->approval_status = 'rejected';
         $row->status = 'inprogress';
         $row->rejection_reason = $data['reason'];
-        $this->pushVersion($row, 'Rejected by ' . ($user->name ?? 'approver') . ' — ' . $data['reason'], 'Rejected', $user->name ?? '');
+        $this->pushVersion($row, 'Rejected by ' . ($user->name ?? 'approver') . ' — ' . $data['reason'], 'Rejected', $user->name ?? '', null, ['reason' => $data['reason']]);
         $row->save();
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
     }
@@ -386,8 +528,10 @@ class CtcContractController extends Controller
 
     /**
      * POST /clm/ctc-contracts/{id}/resubmit
-     * After a rejection, revise the draft and re-send for internal review.
-     * May happen multiple times — each pass appends a new version.
+     * Revise the draft and re-send for internal review — used both after an
+     * internal rejection AND after a counterparty declined the e-sign. Either
+     * way the contract re-enters Stage 2 approval (a decline cannot go straight
+     * back to Zoho), so any live signing request is cleared. Repeatable.
      */
     public function resubmit(Request $request, int $id)
     {
@@ -406,12 +550,23 @@ class CtcContractController extends Controller
         if (array_key_exists('header_config', $data)) $row->header_config = $data['header_config'];
         if (array_key_exists('footer_config', $data)) $row->footer_config = $data['footer_config'];
 
+        $wasDeclined = collect($row->signing_recipients ?? [])->contains(fn ($r) => !empty($r['declined']));
+
         $row->approval_status = 'pending';
         $row->status = 'inprogress';
         $row->stage = 2;
         $row->rejection_reason = null;
         $row->submitted_at = now();
-        $this->pushVersion($row, 'Revised draft resubmitted for internal review', 'Under Review', $user->name ?? '');
+        // Re-entering the approval cycle → drop the previous signing request so
+        // it can't be reused; a fresh one is created after the new approval.
+        $row->signing_recipients   = [];
+        $row->zoho_request_id      = null;
+        $row->signature_request_id = null;
+        $row->signature_declined_at = null;
+        $label = $wasDeclined
+            ? 'Draft revised after counterparty decline & resubmitted for internal review'
+            : 'Revised draft resubmitted for internal review';
+        $this->pushVersion($row, $label, 'Under Review', $user->name ?? '');
         $row->save();
 
         return response()->json(['status' => true, 'data' => $row->fresh()]);
@@ -554,6 +709,15 @@ class CtcContractController extends Controller
         $html = trim((string) ($entry['content'] ?? $row->content));
         if ($html === '') $html = '<p><em>No content saved for this version.</em></p>';
         $processedHtml = $this->normaliseEditorHtml($html);
+
+        // Once approved, the {{signature}} placeholder (receiving-party / our
+        // organisation) is filled with the branch's signature + stamp image.
+        $approved = $row->approval_status === 'approved' || (int) $row->stage >= 3;
+        $sigUri = $approved ? $this->orgSignatureDataUri($row) : null;
+        $sigHtml = $sigUri
+            ? '<img src="' . $sigUri . '" alt="Authorised Signatory" style="max-height:80px;max-width:210px;object-fit:contain;" />'
+            : '';
+        $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $processedHtml);
 
         $headerConfig = is_array($row->header_config) ? $row->header_config : [];
         $footerConfig = is_array($row->footer_config) ? $row->footer_config : [];

@@ -913,37 +913,40 @@ class SalesPdfController extends Controller
     private function buildQuotationViewData($q, bool $withSignature, string $pdfTitle = 'QUOTATION DOCUMENT', string $docLabelShort = 'QT'): array
     {
         $branch = $q->branch;
+        // Client (organisation) — the FALLBACK source for every letterhead
+        // field: use the issuing Branch's value first, fall back to the
+        // Client's value only when the branch hasn't filled that field in.
+        // (gst_state_code, cin, iec, drug_license, pcpndt_no, aeo_code and the
+        // One Star file/udin live on the branch only — no client fallback.)
+        $client = !empty($q->client_id) ? \App\Models\Client::find($q->client_id) : null;
 
-        // Company (issuing branch) — letterhead fields come from the Branch row.
-        // Address block is composed from the branch's structured address
-        // columns (address + city + state + pincode + country).
+        // Address blocks composed from the structured address columns —
+        // branch first, then client.
         $branchAddress = trim(implode(', ', array_filter([
             $branch?->address, $branch?->city, $branch?->state, $branch?->pincode, $branch?->country,
         ]))) ?: '';
+        $clientAddress = trim(implode(', ', array_filter([
+            $client?->address, $client?->city, $client?->state, $client?->pincode, $client?->country,
+        ]))) ?: '';
 
-        // Header logo, in priority order:
-        //   1. the branch's own uploaded logo,
-        //   2. else the CLIENT (organisation) logo,
-        //   3. else the CLIENT profile photo (the org image uploaded under
-        //      the client form's "File Photo" field),
-        // so the document carries a brand mark wherever the org saved it.
-        // Only when ALL are missing does the blade draw its text-box fallback.
-        $logoData = $this->branchAssetDataUri($branch?->logo);
-        if (!$logoData && !empty($q->client_id)) {
-            $client   = \App\Models\Client::find($q->client_id);
-            $logoData = $this->branchAssetDataUri($client?->logo)
-                ?: $this->branchAssetDataUri($client?->profile_photo);
-        }
+        // Header logo: the branch's uploaded logo, else the CLIENT
+        // (organisation) logo from the client form's "Organization Branding
+        // > Logo" field. The client PROFILE photo is intentionally NOT used.
+        // When both are missing the blade draws its text-box fallback.
+        $logoData = $this->branchAssetDataUri($branch?->logo)
+            ?: $this->branchAssetDataUri($client?->logo);
 
         $companyDetails = (object) [
-            'name'              => $branch?->name              ?? ($branch?->code ?? 'Branch'),
-            'address'           => $branchAddress,
-            'mobile'            => $branch?->phone             ?? '',
-            'email'             => $branch?->email             ?? '',
-            'website'           => $branch?->website           ?? '',
-            'gst_no'            => $branch?->gst_number        ?? '',
+            // Branch value first, Client value as fallback (per spec).
+            'name'              => ($branch?->name ?: $client?->org_name) ?: ($branch?->code ?: 'Branch'),
+            'address'           => $branchAddress ?: $clientAddress,
+            'mobile'            => $branch?->phone      ?: ($client?->phone      ?? ''),
+            'email'             => $branch?->email      ?: ($client?->email      ?? ''),
+            'website'           => $branch?->website    ?: ($client?->website    ?? ''),
+            'gst_no'            => $branch?->gst_number ?: ($client?->gst_number ?? ''),
+            'pan_no'            => $branch?->pan_number ?: ($client?->pan_number ?? ''),
+            // Branch-only fields (no matching client column) — blank when unset.
             'gst_state_code'    => $branch?->gst_state_code    ?? '',
-            'pan_no'            => $branch?->pan_number        ?? '',
             'cin'               => $branch?->cin               ?? '',
             'iec'               => $branch?->iec               ?? '',
             'drug_license'      => $branch?->drug_license      ?? '',
@@ -957,8 +960,8 @@ class SalesPdfController extends Controller
             // header bar, "Amount In Words" banner, divider lines). Falls
             // back to a neutral Inorbvict green when the branch hasn't
             // picked colors yet so the PDF still looks intentional.
-            'primary_color'      => $primaryColor = ($this->normalizeHex($branch?->primary_color)   ?: '#7CB342'),
-            'secondary_color'    => $this->normalizeHex($branch?->secondary_color) ?: '#37B1E0',
+            'primary_color'      => $primaryColor = ($this->normalizeHex($branch?->primary_color ?: $client?->primary_color)   ?: '#7CB342'),
+            'secondary_color'    => $this->normalizeHex($branch?->secondary_color ?: $client?->secondary_color) ?: '#37B1E0',
             // Text color that READS on top of the primary color (white for
             // dark brand colors, near-black for light ones). Used by the
             // template wherever text sits on a primary-color background

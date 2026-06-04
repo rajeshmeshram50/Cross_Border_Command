@@ -170,11 +170,18 @@ class IndiaMartLeadSyncService
                 ];
 
                 if ($existing) {
+                    // Backfill branch on rows synced before branch attribution
+                    // existed, but never clobber a branch already set (e.g. a
+                    // manual reassignment).
+                    if (!$existing->branch_id) {
+                        $payload['branch_id'] = $this->resolveSyncBranchId($triggeredBy);
+                    }
                     $existing->update($payload);
                     $stats['updated']++;
                 } else {
                     $payload['opp_code']   = $this->nextOppCode($client->id);
                     $payload['created_by'] = $triggeredBy?->id;
+                    $payload['branch_id']  = $this->resolveSyncBranchId($triggeredBy);
                     Lead::create($payload);
                     $stats['created']++;
                 }
@@ -193,6 +200,23 @@ class IndiaMartLeadSyncService
         }
 
         return $stats;
+    }
+
+    /**
+     * Branch to stamp on synced leads. Mirrors the manual-create path, which
+     * uses the acting user's branch_id — so a lead synced by a branch user is
+     * attributed to that branch. Super-admins have no branch, so fall back to
+     * the env-pinned branch (config('lead_sync.branch')) only when it names a
+     * single id; for 'all' / a list / disabled it stays null (client-level).
+     */
+    private function resolveSyncBranchId(?User $triggeredBy): ?int
+    {
+        if ($triggeredBy?->branch_id) {
+            return (int) $triggeredBy->branch_id;
+        }
+
+        $configured = config('lead_sync.branch');
+        return is_int($configured) ? $configured : null;
     }
 
     /**

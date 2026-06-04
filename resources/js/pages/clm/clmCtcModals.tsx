@@ -14,7 +14,7 @@ import type { OpsTokens } from './useOpsTheme';
  * ───────────────────────────────────────────────────────────────────────── */
 
 export type CtcVersion = { v: number; label: string; status: string; date: string; by: string };
-export type CtcSigner = { name: string; email: string; role: string; contact: string; signed: boolean; signed_at: string | null };
+export type CtcSigner = { name: string; email: string; role: string; contact: string; signed: boolean; signed_at: string | null; declined?: boolean; decline_reason?: string };
 
 /* ── Version History — per-version PDF download ── */
 export function VersionHistoryModal({ t, code, workingId, versions, onClose }: { t: OpsTokens; code: string; workingId: number | null; versions: CtcVersion[]; onClose: () => void }) {
@@ -39,14 +39,22 @@ export function VersionHistoryModal({ t, code, workingId, versions, onClose }: {
     } catch { toast.error('Download failed', 'Could not generate this version PDF.'); }
     finally { setBusy(null); }
   };
-  const sorted = [...versions].sort((a, b) => b.v - a.v);
+  // Only the actual document drafts are versions — the initial submission and
+  // each revised resubmission (status "Under Review"). Rejection / approval /
+  // signing events are part of the Agreement Timeline, not the version list.
+  // They're renumbered sequentially for display but download by their real `v`.
+  const drafts = versions
+    .filter(v => (v.status || '').toLowerCase() === 'under review')
+    .sort((a, b) => a.v - b.v)
+    .map((v, i) => ({ ...v, no: i + 1 }));
+  const sorted = [...drafts].sort((a, b) => b.no - a.no);
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={e => e.stopPropagation()} style={{ width: 'min(520px,94vw)', maxHeight: '82vh', background: t.surface, borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Rubik',system-ui,sans-serif" }}>
         <div style={{ padding: '13px 16px', background: 'linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></div>
-            <div><div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>Version History</div><div style={{ fontSize: 9, color: 'rgba(255,255,255,.7)', marginTop: 1 }}>{code} · {versions.length} version{versions.length === 1 ? '' : 's'}</div></div>
+            <div><div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>Version History</div><div style={{ fontSize: 9, color: 'rgba(255,255,255,.7)', marginTop: 1 }}>{code} · {drafts.length} version{drafts.length === 1 ? '' : 's'}</div></div>
           </div>
           <button onClick={onClose} style={{ width: 26, height: 26, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
         </div>
@@ -56,11 +64,11 @@ export function VersionHistoryModal({ t, code, workingId, versions, onClose }: {
             const [fg, bg] = statusTone(ver.status);
             return (
               <div key={ver.v} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 12px', borderRadius: 12, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}` }}>
-                <div style={{ width: 34, height: 34, borderRadius: 9, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>v{ver.v}</span></div>
+                <div style={{ width: 34, height: 34, borderRadius: 9, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>v{ver.no}</span></div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: t.textStrong }}>Version {ver.v}</span>
-                    <span style={{ padding: '1px 7px', borderRadius: 8, background: bg, fontSize: 7.5, fontWeight: 800, color: fg }}>{ver.status}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: t.textStrong }}>Version {ver.no}</span>
+                    <span style={{ padding: '1px 7px', borderRadius: 8, background: bg, fontSize: 7.5, fontWeight: 800, color: fg }}>{ver.no === 1 ? 'Initial Draft' : 'Revised Draft'}</span>
                   </div>
                   <div style={{ fontSize: 9, color: t.textSub, lineHeight: 1.4 }}>{ver.label}</div>
                   <div style={{ fontSize: 8, color: t.textMuted, marginTop: 2 }}>{ver.date}{ver.by ? ` · ${ver.by}` : ''}</div>
@@ -90,9 +98,15 @@ export function AgreementTimelineModal({ t, code, title, stage, versions, signer
   const sentV = last(v => v.status === 'Sent for Signing');
   const signedAllV = last(v => (v.label || '').toLowerCase().includes('signed by all'));
   const storedV = last(v => (v.label || '').toLowerCase().includes('repository'));
+  const declinedV = last(v => v.status === 'Declined');
   const isApproved = !!approvedV && (!rejectedV || approvedV.v > rejectedV.v);
   const isRejected = !!rejectedV && (!approvedV || rejectedV.v > approvedV.v);
   const cpNames = signers.length ? signers.map(s => s.name).filter(Boolean).join(', ') : '';
+  // Counterparty declined the e-sign — surface who + the remark they wrote.
+  const declinedSigner = signers.find(s => s.declined);
+  const isDeclined = (!!declinedSigner || !!declinedV) && !signedAllV;
+  const declineBy = declinedSigner?.name || declinedV?.by || 'Signer';
+  const declineReason = declinedSigner?.decline_reason || (declinedV?.label?.split('—')[1]?.trim() ?? '');
 
   const ic = {
     doc: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></>,
@@ -108,7 +122,7 @@ export function AgreementTimelineModal({ t, code, title, stage, versions, signer
     { title: 'Internal Review & Approval', desc: 'Agreement submitted for internal validation', status: isRejected ? 'rejected' : isApproved ? 'done' : 'pending', by: (rejectedV || approvedV)?.by || '—', date: (rejectedV || approvedV)?.date || '—', icon: ic.shield },
     { title: 'Agreement Approved', desc: 'Approved by internal reviewer, ready for signing', status: isApproved ? 'done' : isRejected ? 'rejected' : 'pending', by: approvedV?.by || rejectedV?.by || '—', date: approvedV?.date || '—', icon: ic.check },
     { title: 'Sent for Counterparty Signing', desc: 'Agreement shared with the counterparties for signature', status: sentV ? 'done' : 'pending', by: cpNames || sentV?.by || 'Counterparty', date: sentV?.date || '—', icon: ic.send },
-    { title: 'Agreement Signed', desc: 'All parties have executed the agreement', status: signedAllV ? 'done' : 'pending', by: cpNames || 'Counterparty', date: signedAllV?.date || '—', icon: ic.pen },
+    { title: isDeclined ? 'Agreement Declined' : 'Agreement Signed', desc: isDeclined ? `Declined by ${declineBy}${declineReason ? ` — “${declineReason}”` : ''}` : 'All parties have executed the agreement', status: signedAllV ? 'done' : isDeclined ? 'rejected' : 'pending', by: isDeclined ? declineBy : (cpNames || 'Counterparty'), date: signedAllV?.date || declinedV?.date || '—', icon: ic.pen },
     { title: 'Contract Stored in Repository', desc: 'Moved to Final Contract Repository', status: (storedV || stage >= 4) ? 'done' : 'pending', by: 'System', date: storedV?.date || '—', icon: ic.archive },
   ];
   const doneCount = steps.filter(s => s.status === 'done').length;
