@@ -19,12 +19,25 @@ class EmployeeExit extends Model
         'notice_date', 'last_working_day',
         'reporting_manager_id', 'comments',
         'business_impact', 'replacement_required',
+        // Stage 2 — Clearance & Handover
+        'clearances', 'asset_returns', 'handover_notes',
+        // Stage 4 — Final Deactivation & Closure
+        'validation', 'final_employee_status', 'profile_lock',
+        'exit_case_status', 'hr_sign_off',
+        // Process meta
+        'stage_status', 'current_stage', 'completed_at',
         'created_by',
     ];
 
     protected $casts = [
         'notice_date'      => 'date',
         'last_working_day' => 'date',
+        'clearances'       => 'array',
+        'asset_returns'    => 'array',
+        'validation'       => 'array',
+        'stage_status'     => 'array',
+        'current_stage'    => 'integer',
+        'completed_at'     => 'datetime',
     ];
 
     public function employee(): BelongsTo

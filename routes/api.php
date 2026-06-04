@@ -591,6 +591,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // the admin works through the wizard.
     Route::get('/employees/{employee}/exit', [ExitController::class, 'show']);
     Route::put('/employees/{employee}/exit', [ExitController::class, 'upsert']);
+    // Finalise the exit — closes the case, flips employees.status to the
+    // terminal value, and disables the login. Moves the row to "Exited".
+    Route::post('/employees/{employee}/exit/complete', [ExitController::class, 'complete']);
 
     // Previous Employment Companies — one row per company the candidate
     // worked at before. Per-company doc uploads use the
