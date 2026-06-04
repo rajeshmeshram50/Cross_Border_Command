@@ -6,6 +6,7 @@ import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../utils/vaultSignatureRows';
+import { downloadFile } from '../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -228,12 +229,20 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  /* Init the active tab ONLY on open / customer / deep-link change — NOT on
+   * onClose (fresh closure each parent render), so a background re-render no
+   * longer snaps the user's tab back to the default. */
+  useEffect(() => {
+    if (!open) return;
     const startTab = initialTab ?? 'company-dd';
     setTab(startTab);
     setGroup(groupOfTab(startTab));
     setShipmentFilter('all');
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, consignee?.db_id, onClose, initialTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, consignee?.db_id, initialTab]);
 
   /* Re-fetch helper — invoked after the Actions column re-uploads a
    * file so the row picks up the fresh attachment_url. */
@@ -801,15 +810,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     try { await onRemindTradeDoc(doc); } finally { setReminding(false); }
   };
 
-  const download = () => {
-    if (!doc.attachment_url) return;
-    const a = document.createElement('a');
-    a.href = doc.attachment_url;
-    a.download = doc.attachment || '';
-    a.target = '_blank';
-    a.rel = 'noreferrer';
-    document.body.appendChild(a); a.click(); a.remove();
-  };
+  // Blob download so it works on the deployed server too (a plain <a download>
+  // is ignored cross-origin / for inline-served files → opens instead of saving).
+  const download = () => { void downloadFile(doc.attachment_url, doc.attachment); };
 
   const onPick = async (f: File | undefined) => {
     if (!f || !ownerId || !doc.doc_code) return;

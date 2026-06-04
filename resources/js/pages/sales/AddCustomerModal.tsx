@@ -4,6 +4,7 @@ import { MasterSelect, MasterDatePicker, MasterMultiSelect } from '../master/mas
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
+import { downloadFile } from '../../utils/downloadFile';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
@@ -2571,7 +2572,7 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
         </a>
       </Tooltip>
       <Tooltip label={`Download ${uploaded.name}`}>
-        <a href={uploaded.url} download={uploaded.name} className="acm-doc-action acm-doc-action-download" aria-label="Download">
+        <a href={uploaded.url} onClick={e => { e.preventDefault(); void downloadFile(uploaded.url, uploaded.name); }} className="acm-doc-action acm-doc-action-download" aria-label="Download">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </a>
       </Tooltip>
@@ -3149,8 +3150,7 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                       <Tooltip label={d.signed_url ? 'Download signed document' : 'Download document'}>
                         <a
                           href={d.signed_url || '#'}
-                          download={d.signed_url ? '' : undefined}
-                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          onClick={e => { e.preventDefault(); if (d.signed_url) void downloadFile(d.signed_url, d.name || ''); }}
                           className="acm-doc-action acm-doc-action-download"
                           aria-label="Download"
                           style={{ opacity: d.signed_url ? 1 : 0.5, cursor: d.signed_url ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
@@ -3162,9 +3162,7 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                         <Tooltip label="Download Certificate of Completion">
                           <a
                             href={d.certificate_url}
-                            download=""
-                            target="_blank"
-                            rel="noreferrer"
+                            onClick={e => { e.preventDefault(); void downloadFile(d.certificate_url!, `${d.name || 'document'}-certificate`); }}
                             className="acm-doc-action acm-doc-action-cert"
                             aria-label="Download Certificate"
                             style={{
@@ -3193,10 +3191,6 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
           <button type="button" className="acm-btn-purple-lg" onClick={onSendSelected}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             Send Selected Documents for Signature
-          </button>
-          <button type="button" className="acm-btn-purple-lg-out">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Customer Specific Document
           </button>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
+import { downloadFile } from '../../utils/downloadFile';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
@@ -3162,7 +3163,7 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
         </a>
       </Tooltip>
       <Tooltip label={`Download ${uploaded.name}`}>
-        <a href={uploaded.url} download={uploaded.name} className="acm-loc-btn" aria-label="Download">
+        <a href={uploaded.url} onClick={e => { e.preventDefault(); void downloadFile(uploaded.url, uploaded.name); }} className="acm-loc-btn" aria-label="Download">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </a>
       </Tooltip>
@@ -3725,8 +3726,7 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                       <Tooltip label={d.signed_url ? 'Download signed document' : 'Download document'}>
                         <a
                           href={d.signed_url || '#'}
-                          download={d.signed_url ? '' : undefined}
-                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          onClick={e => { e.preventDefault(); if (d.signed_url) void downloadFile(d.signed_url, d.name || ''); }}
                           style={{
                             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                             width: 26, height: 26, borderRadius: 6,
@@ -3747,9 +3747,7 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                         <Tooltip label="Download Certificate of Completion">
                           <a
                             href={d.certificate_url}
-                            download=""
-                            target="_blank"
-                            rel="noreferrer"
+                            onClick={e => { e.preventDefault(); void downloadFile(d.certificate_url!, `${d.name || 'document'}-certificate`); }}
                             style={{
                               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                               width: 26, height: 26, borderRadius: 6,

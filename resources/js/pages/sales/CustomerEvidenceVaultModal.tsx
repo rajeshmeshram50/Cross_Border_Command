@@ -6,6 +6,7 @@ import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../utils/vaultSignatureRows';
+import { downloadFile } from '../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -249,6 +250,17 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  /* Initialise the active tab/group — ONLY when the modal opens (or the target
+   * customer / deep-link tab changes), so the user's manual tab choice sticks.
+   * Deliberately NOT dependent on `onClose`: that's a fresh closure on every
+   * parent render, and including it reset the active tab back to the default
+   * whenever the parent re-rendered (e.g. on a background refresh) — which made
+   * Case-to-Case snap back to Standard on its own. */
+  useEffect(() => {
+    if (!open) return;
     // Open on the caller-requested tab (deep-link from the Buyer Profile
     // progress cells), falling back to the first tab — and sync the group
     // card to whichever group that tab lives in.
@@ -256,8 +268,8 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     setTab(startTab);
     setGroup(groupOfTab(startTab));
     setShipmentFilter('all');
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, customer?.db_id, onClose, initialTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, customer?.db_id, initialTab]);
 
   /* Fetch the vault payload when the modal opens for a new customer.
    * Skips the fetch when (a) the parent passed an override via `data`
@@ -854,17 +866,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     try { await onRemindTradeDoc(doc); } finally { setReminding(false); }
   };
 
-  const download = () => {
-    if (!doc.attachment_url) return;
-    const a = document.createElement('a');
-    a.href = doc.attachment_url;
-    a.download = doc.attachment || '';
-    a.target = '_blank';
-    a.rel = 'noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  };
+  // Blob download so it works on the deployed server too (a plain <a download>
+  // is ignored cross-origin / for inline-served files → opens instead of saving).
+  const download = () => { void downloadFile(doc.attachment_url, doc.attachment); };
 
   const onPick = async (f: File | undefined) => {
     if (!f || !ownerId || !doc.doc_code) return;
