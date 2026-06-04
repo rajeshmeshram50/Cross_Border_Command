@@ -11,8 +11,12 @@ use Illuminate\Support\Facades\DB;
  * data: all 249 countries plus subdivisions (states/provinces/regions)
  * for the major trade partners.
  *
- * Idempotent: deletes previously admin-seeded global rows (created_by =
- * super admin AND client_id IS NULL AND branch_id IS NULL) and re-inserts.
+ * ID-STABLE: upserts by natural key (country = iso_code, state = name +
+ * country_id) so existing rows KEEP their primary key across re-runs. The
+ * old version did delete + re-insert, which handed out fresh auto-increment
+ * ids every time and ORPHANED every FK pointing at the old ids
+ * (employees.country_id / state_id, legal entities, ports, …). Never go back
+ * to truncate-and-insert here — that silently breaks saved addresses.
  *
  * Run: php artisan db:seed --class=Database\\Seeders\\GeographySeeder
  */
@@ -28,66 +32,80 @@ class GeographySeeder extends Seeder
         $adminId = $admin->id;
         $now = now();
 
-        // ── COUNTRIES ──
-        DB::table('master_countries')
-            ->where('created_by', $adminId)
-            ->whereNull('client_id')
-            ->whereNull('branch_id')
-            ->delete();
-
-        $countries = $this->countries();
-        $countryRows = array_map(fn ($c) => [
-            'name'       => $c[0],
-            'iso_code'   => $c[1],
-            'status'     => 'Active',
-            'client_id'  => null,
-            'branch_id'  => null,
-            'created_by' => $adminId,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ], $countries);
-
-        DB::table('master_countries')->insert($countryRows);
-        $this->command->info(sprintf('insert %-28s +%d rows', 'countries', count($countryRows)));
-
-        // Build iso_code -> id map for fast state insert
-        $isoToId = DB::table('master_countries')
-            ->where('created_by', $adminId)
-            ->whereNull('client_id')
-            ->whereNull('branch_id')
-            ->pluck('id', 'iso_code')
-            ->all();
-
-        // ── STATES ──
-        DB::table('master_states')
-            ->where('created_by', $adminId)
-            ->whereNull('client_id')
-            ->whereNull('branch_id')
-            ->delete();
-
-        $stateRows = [];
-        foreach ($this->statesByIso() as $iso => $names) {
-            $countryId = $isoToId[$iso] ?? null;
-            if (! $countryId) continue;
-            foreach ($names as $name) {
-                $stateRows[] = [
-                    'country_id' => (string) $countryId,
-                    'name'       => $name,
+        // ── COUNTRIES ── upsert by iso_code (stable, unique). Match within the
+        // admin-seeded GLOBAL scope (client_id / branch_id NULL) so tenant rows
+        // are never touched. Existing rows are updated in place → id preserved.
+        $cIns = 0; $cKept = 0;
+        foreach ($this->countries() as $c) {
+            $existing = DB::table('master_countries')
+                ->where('iso_code', $c[1])
+                ->whereNull('client_id')
+                ->whereNull('branch_id')
+                ->first(['id']);
+            if ($existing) {
+                DB::table('master_countries')->where('id', $existing->id)->update([
+                    'name'       => $c[0],
+                    'status'     => 'Active',
+                    'updated_at' => $now,
+                ]);
+                $cKept++;
+            } else {
+                DB::table('master_countries')->insert([
+                    'name'       => $c[0],
+                    'iso_code'   => $c[1],
                     'status'     => 'Active',
                     'client_id'  => null,
                     'branch_id'  => null,
                     'created_by' => $adminId,
                     'created_at' => $now,
                     'updated_at' => $now,
-                ];
+                ]);
+                $cIns++;
             }
         }
+        $this->command->info(sprintf('countries: +%d new, %d kept (ids preserved)', $cIns, $cKept));
 
-        // Insert in chunks to stay well under MySQL placeholder limits
-        foreach (array_chunk($stateRows, 200) as $chunk) {
-            DB::table('master_states')->insert($chunk);
+        // iso_code -> id map across the global rows (existing + just-inserted).
+        $isoToId = DB::table('master_countries')
+            ->whereNull('client_id')
+            ->whereNull('branch_id')
+            ->pluck('id', 'iso_code')
+            ->all();
+
+        // ── STATES ── upsert by (country_id, name). Same id-preserving rule.
+        $sIns = 0; $sKept = 0;
+        foreach ($this->statesByIso() as $iso => $names) {
+            $countryId = $isoToId[$iso] ?? null;
+            if (! $countryId) continue;
+            foreach ($names as $name) {
+                $existing = DB::table('master_states')
+                    ->where('country_id', (string) $countryId)
+                    ->where('name', $name)
+                    ->whereNull('client_id')
+                    ->whereNull('branch_id')
+                    ->first(['id']);
+                if ($existing) {
+                    DB::table('master_states')->where('id', $existing->id)->update([
+                        'status'     => 'Active',
+                        'updated_at' => $now,
+                    ]);
+                    $sKept++;
+                } else {
+                    DB::table('master_states')->insert([
+                        'country_id' => (string) $countryId,
+                        'name'       => $name,
+                        'status'     => 'Active',
+                        'client_id'  => null,
+                        'branch_id'  => null,
+                        'created_by' => $adminId,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                    $sIns++;
+                }
+            }
         }
-        $this->command->info(sprintf('insert %-28s +%d rows', 'states', count($stateRows)));
+        $this->command->info(sprintf('states: +%d new, %d kept (ids preserved)', $sIns, $sKept));
     }
 
     /**

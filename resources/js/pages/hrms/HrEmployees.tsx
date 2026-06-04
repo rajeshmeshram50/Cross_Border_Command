@@ -5156,6 +5156,12 @@ export default function HrEmployees() {
                                       toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
                                       return;
                                     }
+                                    // Size guard BEFORE d.set so an oversized
+                                    // file never shows in the tile as "accepted".
+                                    if (f.size > 2 * 1024 * 1024) {
+                                      toast.error('File too large', `${d.label} must be ≤ 2 MB (this file is ${(f.size / 1048576).toFixed(1)} MB)`);
+                                      return;
+                                    }
                                     d.set(f);
                                     uploadEmpDoc(d.key, d.label, f);
                                   }}
@@ -5187,6 +5193,12 @@ export default function HrEmployees() {
                                   if (!f) return;
                                   if (!isAcceptedFile(f, d.accept)) {
                                     toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
+                                    return;
+                                  }
+                                  // Size guard BEFORE d.set so an oversized
+                                  // file never shows in the tile as "accepted".
+                                  if (f.size > 2 * 1024 * 1024) {
+                                    toast.error('File too large', `${d.label} must be ≤ 2 MB (this file is ${(f.size / 1048576).toFixed(1)} MB)`);
                                     return;
                                   }
                                   d.set(f);
