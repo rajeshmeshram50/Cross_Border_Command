@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody } from 'reactstrap';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
+import { useAuth } from '../../contexts/AuthContext';
 import { leaveRequestsApi, ApiLeaveRequest } from './leavePlansApi';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
@@ -370,6 +371,16 @@ const KPI_CARDS = [
 
 export default function HrLeave() {
   const navigate = useNavigate();
+  // Permission gating — the page is keyed by the `hr.leave` leaf on the
+  // Permissions sheet. A view-only grant must NOT expose approve / reject /
+  // bulk-select or the Leave Plans management screen. Super admin bypasses.
+  const { user } = useAuth();
+  const isSuperAdmin = user?.user_type === 'super_admin';
+  const leavePerm = user?.permissions?.['hr.leave'];
+  const canApprove = isSuperAdmin || !!leavePerm?.can_approve;
+  // Leave Plans is a management surface (create/edit/delete plans + types), so
+  // only surface its entry point when the user can add or edit.
+  const canManagePlans = isSuperAdmin || !!leavePerm?.can_add || !!leavePerm?.can_edit;
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
 
   // Pull every leave request the current user is allowed to see.
@@ -602,13 +613,15 @@ export default function HrLeave() {
                 >
                   <i className="ri-check-double-line" />Approvals
                 </button>
-                <button
-                  type="button"
-                  className="rec-btn-primary"
-                  onClick={() => navigate('/hr/leave-plans')}
-                >
-                  <i className="ri-settings-3-line" />Leave Plans
-                </button>
+                {canManagePlans && (
+                  <button
+                    type="button"
+                    className="rec-btn-primary"
+                    onClick={() => navigate('/hr/leave-plans')}
+                  >
+                    <i className="ri-settings-3-line" />Leave Plans
+                  </button>
+                )}
               </div>
             </div>
 
@@ -791,7 +804,7 @@ export default function HrLeave() {
                   selected. Composed from existing recruitment classes
                   (rec-header-count, rec-act-icon, rec-btn-primary,
                   rec-btn-ghost) + Bootstrap utilities. */}
-            {selectedIds.size > 0 && (
+            {canApprove && selectedIds.size > 0 && (
               <div className="d-flex align-items-center gap-2 flex-wrap p-2 rounded-3 border mb-2 bg-light">
                 <span className="rec-header-count">
                   <span className="dot" />
@@ -874,7 +887,7 @@ export default function HrLeave() {
                               className="form-check-input"
                               checked={allVisibleChecked}
                               ref={el => { if (el) el.indeterminate = someVisibleChecked; }}
-                              disabled={visiblePending.length === 0}
+                              disabled={visiblePending.length === 0 || !canApprove}
                               onChange={togglePageSelection}
                               aria-label="Select all pending requests on this page"
                             />
@@ -914,7 +927,7 @@ export default function HrLeave() {
                                     type="checkbox"
                                     className="form-check-input"
                                     checked={isSelected}
-                                    disabled={!isPending}
+                                    disabled={!isPending || !canApprove}
                                     onChange={() => toggleRow(r.id)}
                                     aria-label={`Select request ${r.id}`}
                                   />
@@ -1010,6 +1023,10 @@ export default function HrLeave() {
                                     tone="info"
                                     onClick={() => setDetail(r)}
                                   />
+                                  {/* Approve / Reject require the can_approve grant on
+                                      hr.leave — view-only users see only "View details". */}
+                                  {canApprove && (
+                                    <>
                                   <ActionBtn
                                     title={
                                       r.stage === 'Approved'  ? 'Already approved'
@@ -1032,6 +1049,8 @@ export default function HrLeave() {
                                     disabled={r.stage === 'Rejected' || r.stage === 'Cancelled'}
                                     onClick={() => setConfirmAction({ row: r, action: 'reject' })}
                                   />
+                                    </>
+                                  )}
                                 </div>
                               </td>
                             </tr>
