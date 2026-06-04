@@ -4,6 +4,7 @@ import api from '../../api';
 import { type CtcContract, inits, PER_PAGE } from './clmOpsData';
 import ClmCtcForm from './ClmCtcForm';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcSigner } from './clmCtcModals';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Operations · Without Shipment ID → Case to Case Contracts.
@@ -66,6 +67,25 @@ export default function ClmCaseToCasePage() {
   const [rows, setRows] = useState<CtcContract[]>([]);
   const load = () => { api.get('/clm/ctc-contracts').then(r => setRows(r.data?.data ?? [])).catch(() => setRows([])); };
   useEffect(() => { load(); }, []);
+
+  // Version-history / timeline modals need the full record (versions +
+  // signing recipients + stage), which the list rows don't carry — fetch on demand.
+  type CtcDetail = { code: string; title: string; dbId: number | null; stage: number; versions: CtcVersion[]; signers: CtcSigner[] };
+  const [verFor, setVerFor] = useState<CtcDetail | null>(null);
+  const [tlFor, setTlFor] = useState<CtcDetail | null>(null);
+  const openLifecycle = async (c: CtcContract, kind: 'version' | 'timeline') => {
+    if (!c.dbId) { toast.error('Not available', 'This agreement has no saved record yet.'); return; }
+    try {
+      const res = await api.get(`/clm/ctc-contracts/${c.dbId}`);
+      const r = (res.data?.data ?? res.data ?? {}) as Record<string, unknown>;
+      const detail: CtcDetail = {
+        code: String(r.code ?? c.id), title: String(r.title ?? c.title ?? ''), dbId: c.dbId, stage: Number(r.stage) || 1,
+        versions: (Array.isArray(r.versions) ? r.versions : []) as CtcVersion[],
+        signers: (Array.isArray(r.signing_recipients) ? r.signing_recipients : []) as CtcSigner[],
+      };
+      if (kind === 'version') setVerFor(detail); else setTlFor(detail);
+    } catch { toast.error('Could not load', 'Failed to fetch the agreement history.'); }
+  };
 
   const counts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -253,8 +273,8 @@ export default function ClmCaseToCasePage() {
                               )}
                             </div>
                             <ActBtn t={t} tone="violet" title="Edit CTC" onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></ActBtn>
-                            <ActBtn t={t} tone="blue" title="Version History" onClick={() => toast.info('Version History', c.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
-                            <ActBtn t={t} tone="amber" title="Agreement Timeline" onClick={() => toast.info('Agreement Timeline', c.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
+                            <ActBtn t={t} tone="blue" title="Version History" onClick={() => openLifecycle(c, 'version')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
+                            <ActBtn t={t} tone="amber" title="Agreement Timeline" onClick={() => openLifecycle(c, 'timeline')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
                           </div>
                         </td>
                       </tr>
@@ -275,6 +295,9 @@ export default function ClmCaseToCasePage() {
           )}
         </div>
       </div>
+
+      {verFor && <VersionHistoryModal t={t} code={verFor.code} workingId={verFor.dbId} versions={verFor.versions} onClose={() => setVerFor(null)} />}
+      {tlFor && <AgreementTimelineModal t={t} code={tlFor.code} title={tlFor.title} stage={tlFor.stage} versions={tlFor.versions} signers={tlFor.signers} onClose={() => setTlFor(null)} />}
     </div>
   );
 }

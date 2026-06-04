@@ -79,7 +79,6 @@ const hrLeafLink = (leafId: string): string => {
     case "hr.expense":     return "/hr/expense";
     case "hr.payroll":     return "/hr/payroll";
     case "hr.pip":         return "/hr/pip";
-    case "hr.calculation_master": return "/hr/calculation-master";
     // Attendance Master Management leaves — these live under the HR sidebar
     // (branch-only) but reuse the generic /master/:slug page shell because
     // they're standard MasterController-backed CRUD masters.

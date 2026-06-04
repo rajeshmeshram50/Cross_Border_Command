@@ -32,7 +32,6 @@ const HR_PATH_TO_LEAF: Record<string, string> = {
   'expense':             'hr.expense',
   'payroll':             'hr.payroll',
   'pip':                 'hr.pip',
-  'calculation-master':  'hr.calculation_master',
 };
 
 // Helper to get page name from path. The Sidebar uses the returned id to
