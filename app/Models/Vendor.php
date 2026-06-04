@@ -121,9 +121,10 @@ class Vendor extends Model
      * Usage:
      *   Vendor::query()->forUser($user)->where(...)
      */
-    public function scopeForUser(Builder $q, $user): Builder
+    public function scopeForUser(Builder $q, $user, ?int $branchFilter = null): Builder
     {
-        \App\Support\MasterVisibility::applyReadScope($q, $user);
+        // $branchFilter = BranchSwitcher narrowing; see Customer::scopeForUser.
+        \App\Support\MasterVisibility::applyReadScope($q, $user, $branchFilter);
         return $q;
     }
 }

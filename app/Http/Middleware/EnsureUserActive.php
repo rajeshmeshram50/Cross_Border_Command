@@ -43,20 +43,13 @@ class EnsureUserActive
             abort(401, 'Account is no longer active. Please sign in again.');
         }
 
-        // Onboarding gate — an employee whose onboarding isn't fully complete
-        // (onboarding_stage_completed = 6) must not retain access, even with a
-        // token issued BEFORE the login-level gate existed. We wipe the token
-        // and 401 so the SPA force-logs-them-out on their next request. Only
-        // users linked to an Employee row are affected (admins / branch users
-        // have no Employee.user_id link, so the lookup misses and they pass).
-        // A NULL stage is treated as 0 (incomplete). One indexed lookup per
-        // request — cheap, and only for accounts that have an employee row.
-        $emp = \App\Models\Employee::where('user_id', $user->id)
-            ->first(['id', 'onboarding_stage_completed']);
-        if ($emp && (int) ($emp->onboarding_stage_completed ?? 0) < 6) {
-            $user->tokens()->delete();
-            abort(401, 'Your onboarding is not complete yet. You can sign in once HR finishes your onboarding.');
-        }
+        // NOTE: onboarding-incomplete employees are intentionally NOT blocked
+        // here. They must be able to reach the Inbox to sign their pending
+        // onboarding documents (blocking them created a deadlock — no login →
+        // no signing → onboarding never completes). The SPA restricts them to
+        // the Inbox via the `onboarding_pending` flag, and every business
+        // module is still permission-gated, which a fresh employee lacks until
+        // the branch grants access post-onboarding.
 
         return $next($request);
     }

@@ -742,6 +742,12 @@ export default function HrEmployees() {
   const [eLegalEntity, setELegalEntity]          = useState('');
   const [eLocation, setELocation]                = useState('');
   const [eReportingMgr, setEReportingMgr]        = useState('');
+  // The manager saved on the row being edited, projected as a ready-to-use
+  // picker option. Injected into the options list even when that manager is
+  // no longer a live candidate (resigned / onboarding incomplete / outside
+  // the current branch scope) so the field renders the saved value instead
+  // of looking empty — which read as "the manager didn't save".
+  const [savedMgrOption, setSavedMgrOption] = useState<{ value: string; label: string } | null>(null);
   const [eProbationPolicy, setEProbationPolicy]  = useState('');
   const [eNoticePeriod, setENoticePeriod]        = useState('');
   // Custom values that appear below their dropdowns when "Set Custom…" is picked.
@@ -1033,7 +1039,7 @@ export default function HrEmployees() {
     // Empty defaults — these dropdowns must be picked explicitly by the
     // admin on Add Employee instead of being silently pre-selected.
     setEPrimaryRole(''); setEAncillaryRole([]); setEWorkType('');
-    setELegalEntity(''); setELocation(''); setEReportingMgr('');
+    setELegalEntity(''); setELocation(''); setEReportingMgr(''); setSavedMgrOption(null);
     setEProbationPolicy(''); setENoticePeriod('');
     setECustomProbation(''); setECustomNotice('');
     // Step 3 — all dropdowns reset to empty so admin must pick on every
@@ -1350,10 +1356,19 @@ export default function HrEmployees() {
       const mgrUserType = raw.reporting_manager_user?.user_type;
       if (raw.reporting_manager_id) {
         setEReportingMgr(`employee:${raw.reporting_manager_id}`);
+        const m = raw.reporting_manager;
+        const nm = m?.display_name
+          || [m?.first_name, m?.last_name].filter(Boolean).join(' ').trim()
+          || `Employee #${raw.reporting_manager_id}`;
+        setSavedMgrOption({ value: `employee:${raw.reporting_manager_id}`, label: `${nm} (Employee)` });
       } else if (mgrUserId && mgrUserType) {
         setEReportingMgr(`${mgrUserType}:${mgrUserId}`);
+        const u = raw.reporting_manager_user;
+        const nm = u?.name || u?.email || `User #${mgrUserId}`;
+        setSavedMgrOption({ value: `${mgrUserType}:${mgrUserId}`, label: nm });
       } else {
         setEReportingMgr('');
+        setSavedMgrOption(null);
       }
       // Edit hydration — show whatever the admin actually saved. Earlier
       // code special-cased the old "Default Probation Policy" / "Default
@@ -2115,16 +2130,25 @@ export default function HrEmployees() {
   }, []);
   useEffect(() => { reloadManagers(); }, [reloadManagers]);
   const reportingManagerOptions = useMemo(
-    () => managerCandidates
-      // An employee can't report to themselves — strip the row currently
-      // being edited out of the manager list. `editingDbId` is the DB id
-      // of the open employee row; kind === 'employee' is the candidate
-      // kind that corresponds to a row in the employees table (the other
-      // kind, 'login_users', is a separate user account and never
-      // collides with the employee id space).
-      .filter(m => !(editingDbId && m.kind === 'employee' && m.id === editingDbId))
-      .map(m => ({ value: `${m.kind}:${m.id}`, label: m.label })),
-    [managerCandidates, editingDbId]
+    () => {
+      const base = managerCandidates
+        // An employee can't report to themselves — strip the row currently
+        // being edited out of the manager list. `editingDbId` is the DB id
+        // of the open employee row; kind === 'employee' is the candidate
+        // kind that corresponds to a row in the employees table (the other
+        // kind, 'login_users', is a separate user account and never
+        // collides with the employee id space).
+        .filter(m => !(editingDbId && m.kind === 'employee' && m.id === editingDbId))
+        .map(m => ({ value: `${m.kind}:${m.id}`, label: m.label }));
+      // Guarantee the saved manager is selectable/visible even when they're
+      // no longer a live candidate, so editing an existing employee always
+      // shows who their manager is (and doesn't silently blank the field).
+      if (savedMgrOption && !base.some(o => o.value === savedMgrOption.value)) {
+        return [savedMgrOption, ...base];
+      }
+      return base;
+    },
+    [managerCandidates, editingDbId, savedMgrOption]
   );
 
   const filtered = useMemo(() => {
@@ -5156,6 +5180,12 @@ export default function HrEmployees() {
                                       toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
                                       return;
                                     }
+                                    // Size guard BEFORE d.set so an oversized
+                                    // file never shows in the tile as "accepted".
+                                    if (f.size > 2 * 1024 * 1024) {
+                                      toast.error('File too large', `${d.label} must be ≤ 2 MB (this file is ${(f.size / 1048576).toFixed(1)} MB)`);
+                                      return;
+                                    }
                                     d.set(f);
                                     uploadEmpDoc(d.key, d.label, f);
                                   }}
@@ -5187,6 +5217,12 @@ export default function HrEmployees() {
                                   if (!f) return;
                                   if (!isAcceptedFile(f, d.accept)) {
                                     toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
+                                    return;
+                                  }
+                                  // Size guard BEFORE d.set so an oversized
+                                  // file never shows in the tile as "accepted".
+                                  if (f.size > 2 * 1024 * 1024) {
+                                    toast.error('File too large', `${d.label} must be ≤ 2 MB (this file is ${(f.size / 1048576).toFixed(1)} MB)`);
                                     return;
                                   }
                                   d.set(f);

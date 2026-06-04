@@ -32,9 +32,14 @@ class ProductController extends Controller
      * users see globals + client-level + main-branch + own sub-branch
      * rows; sibling sub-branches are blocked. See MasterVisibility.
      * ────────────────────────────────────────────────────────────── */
-    private function applyScope($query, Request $request)
+    private function applyScope($query, Request $request, bool $applyBranchFilter = false)
     {
-        MasterVisibility::applyReadScope($query, $request->user());
+        // $applyBranchFilter is opt-in (true only on the LIST endpoint): the
+        // BranchSwitcher injects ?branch_id= on every GET incl. show/update,
+        // but only the list should narrow by it — resolving a single product
+        // by id must not 404 just because a different branch is being viewed.
+        $branchFilter = $applyBranchFilter ? ($request->integer('branch_id') ?: null) : null;
+        MasterVisibility::applyReadScope($query, $request->user(), $branchFilter);
         return $query;
     }
 
@@ -92,7 +97,7 @@ class ProductController extends Controller
                 'creator.branch:id,name,is_main',
             ]);
 
-        $query = $this->applyScope($query, $request);
+        $query = $this->applyScope($query, $request, true); // opt-in BranchSwitcher narrowing
 
         if ($status = $request->query('status')) {
             // Frontend sends 'active' / 'inactive'. Inactive = inactive + draft
@@ -604,7 +609,9 @@ class ProductController extends Controller
      * ────────────────────────────────────────────────────────────── */
     public function stats(Request $request)
     {
-        $query = $this->applyScope(Product::query(), $request);
+        // Match the list: header chip counts must reflect the BranchSwitcher
+        // narrowing so "Active N / Inactive M" stays in sync with the rows.
+        $query = $this->applyScope(Product::query(), $request, true);
 
         // Mirror the index endpoint's vendor filter so the
         // Active / Inactive tab counts stay in sync with the rows

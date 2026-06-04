@@ -318,6 +318,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/clm/ctc-contracts',              [\App\Http\Controllers\Api\CtcContractController::class, 'store']);
     Route::get   ('/clm/ctc-contracts/sent',         [\App\Http\Controllers\Api\CtcContractController::class, 'sentIndex']);
     Route::get   ('/clm/ctc-contracts/to-approve',   [\App\Http\Controllers\Api\CtcContractController::class, 'toApproveIndex']);
+    Route::get   ('/clm/ctc-contracts/approver-candidates', [\App\Http\Controllers\Api\CtcContractController::class, 'approverCandidates']);
     Route::get   ('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'show'])->whereNumber('id');
     Route::put   ('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'update'])->whereNumber('id');
     Route::delete('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'destroy'])->whereNumber('id');
@@ -325,6 +326,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/clm/ctc-contracts/{id}/reject',  [\App\Http\Controllers\Api\CtcContractController::class, 'reject'])->whereNumber('id');
     Route::post  ('/clm/ctc-contracts/{id}/clarify', [\App\Http\Controllers\Api\CtcContractController::class, 'clarify'])->whereNumber('id');
     Route::post  ('/clm/ctc-contracts/{id}/respond', [\App\Http\Controllers\Api\CtcContractController::class, 'respond'])->whereNumber('id');
+    Route::post  ('/clm/ctc-contracts/{id}/resubmit',          [\App\Http\Controllers\Api\CtcContractController::class, 'resubmit'])->whereNumber('id');
+    Route::post  ('/clm/ctc-contracts/{id}/send-for-signing',  [\App\Http\Controllers\Api\CtcContractController::class, 'sendForSigning'])->whereNumber('id');
+    Route::post  ('/clm/ctc-contracts/{id}/record-signature',  [\App\Http\Controllers\Api\CtcContractController::class, 'recordSignature'])->whereNumber('id');
+    Route::post  ('/clm/ctc-contracts/{id}/move-to-repository',[\App\Http\Controllers\Api\CtcContractController::class, 'moveToRepository'])->whereNumber('id');
+    Route::get   ('/clm/ctc-contracts/{id}/versions',          [\App\Http\Controllers\Api\CtcContractController::class, 'versions'])->whereNumber('id');
+    Route::get   ('/clm/ctc-contracts/{id}/versions/{v}/download', [\App\Http\Controllers\Api\CtcContractController::class, 'downloadVersion'])->whereNumber('id')->whereNumber('v');
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
     Route::get   ('/clm/buyer-profile',                          [ClmBuyerProfileController::class, 'index']);
     Route::get   ('/clm/supplier-profile',                       [ClmSupplierProfileController::class, 'index']);
@@ -591,6 +598,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // the admin works through the wizard.
     Route::get('/employees/{employee}/exit', [ExitController::class, 'show']);
     Route::put('/employees/{employee}/exit', [ExitController::class, 'upsert']);
+    // Finalise the exit — closes the case, flips employees.status to the
+    // terminal value, and disables the login. Moves the row to "Exited".
+    Route::post('/employees/{employee}/exit/complete', [ExitController::class, 'complete']);
 
     // Previous Employment Companies — one row per company the candidate
     // worked at before. Per-company doc uploads use the

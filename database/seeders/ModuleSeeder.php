@@ -182,7 +182,6 @@ class ModuleSeeder extends Seeder
             ],
             'hr.time_pay' => [
                 ['name' => 'Payroll',            'slug' => 'hr.payroll',            'icon' => 'IndianRupee',  'description' => 'Salary processing, payslips, statutory'],
-                ['name' => 'Calculation Master', 'slug' => 'hr.calculation_master', 'icon' => 'Calculator',   'description' => 'Pay heads, formulas, tax slabs'],
                 ['name' => 'Attendance',         'slug' => 'hr.attendance',         'icon' => 'CalendarCheck','description' => 'Daily attendance & shift tracking'],
                 ['name' => 'Leave',              'slug' => 'hr.leave',              'icon' => 'CalendarOff',  'description' => 'Leave requests, balance & policy'],
                 ['name' => 'Expense Management', 'slug' => 'hr.expense',            'icon' => 'Receipt',      'description' => 'Reimbursable expenses & approvals'],
@@ -224,6 +223,18 @@ class ModuleSeeder extends Seeder
                     ]
                 );
             }
+        }
+
+        // Retired modules — removed from the product. Drop the module rows and
+        // their permission grants so they no longer surface in the Permissions
+        // matrix (/api/modules returns is_active=true rows). Idempotent: a
+        // no-op once the rows are gone. 'hr.calculation_master' removed
+        // 2026-06-04 (Calculation Master feature dropped).
+        $retiredSlugs = ['hr.calculation_master'];
+        $retiredIds = Module::whereIn('slug', $retiredSlugs)->pluck('id');
+        if ($retiredIds->isNotEmpty()) {
+            \App\Models\Permission::whereIn('module_id', $retiredIds)->delete();
+            Module::whereIn('id', $retiredIds)->delete();
         }
 
         // Sales Matrix tree — 3 grouping categories + 8 leaves. Matches the

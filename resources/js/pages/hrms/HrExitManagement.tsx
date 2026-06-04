@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Modal, ModalBody, Input } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import api from '../../api';
@@ -47,6 +47,15 @@ interface EmployeeRow {
   managerAccent: string;
   exitReadiness: number;          // 0–100
   status: ExitStatus;
+  // True once an exit has been initiated (exit row has a type or a last
+  // working day). Used to label the action button "Continue" even while the
+  // row is still in the Active tab — e.g. a future-dated notice that hasn't
+  // started yet, so the exit is scheduled but not yet "In Progress".
+  exitInitiated: boolean;
+  // Notice start date (ISO yyyy-mm-dd, '' if none). When this is in the
+  // future the employee stays Active and only enters "In Progress" on/after
+  // this date — the notice window hasn't begun yet.
+  noticeStartIso: string;
   // Asset assignments (Stage 2). Pulled from the eager-loaded
   // laptopAsset / mobileAsset relations + the resolved JSON array
   // accessor on the Employee model so Stage 2's "Asset Return
@@ -96,26 +105,26 @@ export default function HrExitManagement() {
   //    /api/employees (the same endpoint the HR list / onboarding pages
   //    use). Soft-deleted rows are surfaced as "Exited" so all three
   //    tabs stay populated without a separate exit endpoint.
-  useEffect(() => {
-    let cancelled = false;
+  // Exit Management only handles employees that have actually finished
+  // onboarding (all 6 macro stages). Anyone still in the wizard isn't a
+  // candidate for the exit flow yet — they belong on the Onboarding page.
+  // KPIs, tabs, search and the table all derive from `employees`, so
+  // filtering here keeps every count and bucket honest in one place.
+  // `silent` skips the shimmer for background refreshes (e.g. after the
+  // exit modal saves/completes) so the table doesn't flash on every close.
+  const loadEmployees = useCallback((silent = false) => {
+    if (!silent) setListLoading(true);
     api.get('/employees')
       .then(({ data }) => {
-        if (cancelled) return;
-        // Exit Management only handles employees that have actually
-        // finished onboarding (all 6 macro stages). Anyone still in the
-        // wizard isn't a candidate for the exit flow yet — they belong
-        // on the Onboarding page. KPIs, tabs, search and the table all
-        // derive from `employees`, so filtering here keeps every count
-        // and bucket honest in one place.
         const list = (Array.isArray(data) ? data : []).filter(
           e => Number((e as any)?.onboarding_stage_completed ?? 0) >= 6
         );
         setEmployees(list.map(apiToExitRow));
       })
-      .catch(() => { if (!cancelled) setEmployees([]); })
-      .finally(() => { if (!cancelled) setListLoading(false); });
-    return () => { cancelled = true; };
+      .catch(() => setEmployees([]))
+      .finally(() => setListLoading(false));
   }, []);
+  useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
   // Reset page when filters change
   useEffect(() => { setPage(1); }, [tab, search, deptFilter, statusFilter]);
@@ -436,6 +445,13 @@ export default function HrExitManagement() {
                           const statusColor = STATUS_COLOR[e.status];
                           const isExited = e.status === 'Exited';
                           const isInProgress = e.status === 'Exit In Progress';
+                          // Exit initiated but the notice period hasn't begun
+                          // yet (future notice start) — sits in Active, but the
+                          // case already exists so we let HR re-open it.
+                          const isScheduled = e.status === 'Active' && e.exitInitiated;
+                          const noticeFromLabel = e.noticeStartIso
+                            ? new Date(e.noticeStartIso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+                            : '';
                           return (
                             <tr key={e.id}>
                               <td className="ps-3 text-center fs-13 hr-exit-srno">{sliceFrom + idx + 1}</td>
@@ -457,7 +473,10 @@ export default function HrExitManagement() {
                                   <div className="d-flex flex-column" style={{ lineHeight: 1.15 }}>
                                     <span className="fw-bold fs-13">{e.name}</span>
                                     <span className="text-muted" style={{ fontSize: 10.5, fontWeight: 500 }}>
-                                      {e.status === 'Active' ? 'Active' : e.status === 'Exit In Progress' ? 'In Progress' : e.status === 'Exited' ? 'Exited' : 'Action Needed'}
+                                      {isScheduled ? (noticeFromLabel ? `Exit scheduled · notice ${noticeFromLabel}` : 'Exit scheduled')
+                                        : e.status === 'Active' ? 'Active'
+                                        : e.status === 'Exit In Progress' ? 'In Progress'
+                                        : e.status === 'Exited' ? 'Exited' : 'Action Needed'}
                                     </span>
                                   </div>
                                 </div>
@@ -565,8 +584,10 @@ export default function HrExitManagement() {
                                   <button type="button" className="exit-action-btn exit-action-btn--vault" title="Open evidence vault" onClick={() => setVault(e)}>
                                     <i className="ri-shield-check-line" />Evidence Vault
                                   </button>
-                                ) : isInProgress ? (
-                                  <button type="button" className="exit-action-btn exit-action-btn--continue" title="Continue exit process" onClick={() => setProcessing(e)}>
+                                ) : (isInProgress || isScheduled) ? (
+                                  <button type="button" className="exit-action-btn exit-action-btn--continue"
+                                    title={isScheduled ? `Exit scheduled — notice starts ${noticeFromLabel || 'later'}. Continue editing.` : 'Continue exit process'}
+                                    onClick={() => setProcessing(e)}>
                                     <i className="ri-arrow-right-line" />Continue
                                   </button>
                                 ) : (
@@ -620,7 +641,11 @@ export default function HrExitManagement() {
       </Row>
 
       <ExitChecklistModal open={checklistOpen} onClose={() => setChecklistOpen(false)} />
-      <ExitProcessModal employee={processing} onClose={() => setProcessing(null)} />
+      <ExitProcessModal
+        employee={processing}
+        onClose={() => { setProcessing(null); loadEmployees(true); }}
+        onCompleted={() => loadEmployees(true)}
+      />
       <EvidenceVaultModal employee={vault} onClose={() => setVault(null)} />
     </>
   );
@@ -842,7 +867,7 @@ const EXIT_STAGES = [
   { num: 4, title: 'Final Deactivation & Closure', short: 'Final Deactivation & Closure', sub: 'Complete final validation, lock profile, and close the exit case.',  icon: 'ri-flag-line' },
 ] as const;
 
-function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null; onClose: () => void }) {
+function ExitProcessModal({ employee, onClose, onCompleted }: { employee: EmployeeRow | null; onClose: () => void; onCompleted?: () => void }) {
   const [stage, setStage] = useState<number>(1);
   const [stageStatus, setStageStatus] = useState<Record<number, StageStatus>>({});
 
@@ -877,12 +902,14 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   // the stage flip lands.
   const [advancingStage, setAdvancingStage] = useState(false);
 
-  // Date guards — Notice Date and Last Working Day must be strictly in
-  // the future. ISO yyyy-mm-dd compares lexicographically so a string
-  // compare against today's ISO date is enough; no Date() ceremony.
+  // Date guards. Notice START may be today or later (the notice period can
+  // begin now). The Last Working Day must be strictly in the future AND on
+  // or after the notice start — the window between the two is the notice
+  // period during which the employee stays "Exit In Progress". ISO
+  // yyyy-mm-dd compares lexicographically so a string compare is enough.
   const todayIso = new Date().toISOString().slice(0, 10);
-  const noticeDateInvalid = !!noticeDate && noticeDate <= todayIso;
-  const lwdInvalid        = !!lwd        && lwd        <= todayIso;
+  const noticeDateInvalid = !!noticeDate && noticeDate < todayIso;
+  const lwdInvalid        = !!lwd && (lwd <= todayIso || (!!noticeDate && lwd < noticeDate));
 
   // Stage 2 — Clearance & Handover. Asset Recovery used to be its own
   // stage; we now surface the asset handover dropdown at the TOP of
@@ -1109,6 +1136,10 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   // 5 entries to match the trimmed Final Validation Checklist (FnF
   // payment row was dropped along with the FnF stage).
   const [validation, setValidation] = useState<boolean[]>([false, false, false, false, false]);
+  // Network flags for the whole-process draft save + final completion. Must
+  // live ABOVE the `if (!employee) return null` early return — they're hooks.
+  const [draftSaving, setDraftSaving] = useState(false);
+  const [completing, setCompleting]   = useState(false);
   const [empStatus, setEmpStatus] = useState('Active');
   const [profileLock, setProfileLock] = useState('Unlocked');
   const [exitCaseStatus, setExitCaseStatus] = useState('Open');
@@ -1149,6 +1180,37 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
         setComments(String(data.comments ?? ''));
         setBusinessImpact(String(data.business_impact ?? 'Low'));
         setReplacementNeeded(String(data.replacement_required ?? 'Yes — Immediate'));
+
+        // Stage 2 — Clearance & Handover. Restore the saved arrays/object so
+        // reopening the modal resumes exactly where HR left off instead of
+        // resetting every clearance to Pending.
+        if (Array.isArray(data.clearances) && data.clearances.length) {
+          setClearances(data.clearances.map((c: any) => ({
+            checked: !!c?.checked,
+            status: String(c?.status ?? 'Pending'),
+          })));
+        }
+        if (data.asset_returns && typeof data.asset_returns === 'object') {
+          setAssetReturns(data.asset_returns as Record<number, { checked: boolean; status: string }>);
+        }
+        setHandoverNotes(String(data.handover_notes ?? ''));
+
+        // Stage 4 — Final Deactivation & Closure
+        if (Array.isArray(data.validation) && data.validation.length) {
+          setValidation(data.validation.map((v: any) => !!v));
+        }
+        setEmpStatus(String(data.final_employee_status ?? data.employee_status ?? 'Active'));
+        setProfileLock(String(data.profile_lock ?? 'Unlocked'));
+        setExitCaseStatus(String(data.exit_case_status ?? 'Open'));
+        setHrSignOff(String(data.hr_sign_off ?? 'Pending'));
+
+        // Process meta — resume on the saved stage with the saved per-stage
+        // status map so the sidebar shows completed stages on reopen.
+        if (data.stage_status && typeof data.stage_status === 'object') {
+          setStageStatus(data.stage_status as Record<number, StageStatus>);
+        }
+        const savedStage = Number(data.current_stage);
+        if (savedStage >= 1 && savedStage <= EXIT_STAGES.length) setStage(savedStage);
       })
       .catch(() => { /* keep blank state — admin will fill from scratch */ });
     return () => { cancelled = true; };
@@ -1251,14 +1313,67 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
       setStageStatus(prev => ({ ...prev, [stage - 1]: 'In Progress' }));
     }
   };
-  const closeAll = () => {
-    // "Complete Exit" on the final stage marks that stage as done. If
-    // earlier stages were skipped without saving, they stay In Progress
-    // (or Pending) so the progress ring accurately reflects which
-    // stages still need data — no more "100% done" on a half-filled
-    // wizard.
-    markStageCompleted(stage);
-    onClose();
+  // Full exit payload — every stage's data in one object. Draft saves and
+  // the final complete() call both send this, so nothing a stage owns is
+  // lost on close (the old wizard kept Stages 2-4 in throwaway local state).
+  const buildExitPayload = () => ({
+    exit_type:             exitType || null,
+    reason_for_exit:       reasonForExit.trim() || null,
+    notice_date:           noticeDate || null,
+    last_working_day:      lwd || null,
+    reporting_manager_id:  reportingManagerId,
+    comments:              comments.trim() || null,
+    business_impact:       businessImpact || null,
+    replacement_required:  replacementNeeded || null,
+    // Stage 2
+    clearances,
+    asset_returns:         assetReturns,
+    handover_notes:        handoverNotes.trim() || null,
+    // Stage 4
+    validation,
+    final_employee_status: empStatus || null,
+    profile_lock:          profileLock || null,
+    hr_sign_off:           hrSignOff || null,
+    // meta
+    stage_status:          stageStatus,
+    current_stage:         stage,
+  });
+
+  // Persist a draft of the WHOLE process (Save Draft + Next Stage on stages
+  // 2-4). Stage 1 keeps its own validated saver; here we just snapshot
+  // whatever is filled so reopening resumes exactly where HR left off.
+  const persistDraft = async (opts?: { silent?: boolean }): Promise<boolean> => {
+    if (!employee || draftSaving) return false;
+    setDraftSaving(true);
+    try {
+      await api.put(`/employees/${employee.id}/exit`, buildExitPayload());
+      if (!opts?.silent) toast.success('Draft saved', 'Your progress on this stage was saved.');
+      return true;
+    } catch (err: any) {
+      toast.error('Could not save draft', err?.response?.data?.message || 'Please try again.');
+      return false;
+    } finally {
+      setDraftSaving(false);
+    }
+  };
+
+  // Finalise the exit. Hits the dedicated complete endpoint which closes the
+  // case, flips employees.status to the terminal value and disables the
+  // login — the ONE action that actually moves the employee to "Exited".
+  const completeExit = async () => {
+    if (!employee || completing) return;
+    setCompleting(true);
+    try {
+      await api.post(`/employees/${employee.id}/exit/complete`, buildExitPayload());
+      markStageCompleted(stage);
+      toast.success('Exit completed', `${employee.name} has been marked as exited and their login disabled.`);
+      onCompleted?.();
+      onClose();
+    } catch (err: any) {
+      toast.error('Could not complete exit', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setCompleting(false);
+    }
   };
 
   /** Persist the Stage 1 fields. Returns true on success so the Next
@@ -1274,7 +1389,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
     const errs = new Set<Stage1FieldKey>();
     if (!exitType.trim())      { missing.push('Exit Type');        errs.add('exitType'); }
     if (!reasonForExit.trim()) { missing.push('Reason for Exit');  errs.add('reasonForExit'); }
-    if (!noticeDate)           { missing.push('Notice Date');      errs.add('noticeDate'); }
+    if (!noticeDate)           { missing.push('Notice Start Date'); errs.add('noticeDate'); }
     if (!lwd)                  { missing.push('Last Working Day'); errs.add('lwd'); }
     if (missing.length) {
       setS1Errors(errs);
@@ -1296,10 +1411,10 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
       toast.error(
         'Fix the highlighted dates',
         noticeDateInvalid && lwdInvalid
-          ? 'Notice Date and Last Working Day must both be in the future.'
+          ? 'Notice start date cannot be in the past, and the last working day must be a future date on/after it.'
           : noticeDateInvalid
-            ? 'Notice Date must be in the future.'
-            : 'Last Working Day must be in the future.',
+            ? 'Notice start date cannot be in the past.'
+            : 'Last working day must be a future date on/after the notice start date.',
       );
       return false;
     }
@@ -1462,21 +1577,21 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     </EpField>
                   </Col>
                   <Col md={6}>
-                    <EpField label="Notice Date" required invalid={s1Errors.has('noticeDate') || noticeDateInvalid}>
+                    <EpField label="Notice Start Date" required invalid={s1Errors.has('noticeDate') || noticeDateInvalid}>
                       <EpInput
                         type="date"
                         value={noticeDate}
                         onChange={(v) => { setNoticeDate(v); clearS1Err('noticeDate'); }}
-                        // Browser-level guard so the picker can't open on
-                        // a past day; the inline error below catches
-                        // pasted / typed values that bypass the picker.
+                        // The day the notice period begins. Browser-level guard
+                        // so the picker can't open on a past day; the inline
+                        // error catches pasted / typed values.
                         min={todayIso}
                         invalid={s1Errors.has('noticeDate') || noticeDateInvalid}
                       />
                       {(s1Errors.has('noticeDate') || noticeDateInvalid) && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <i className="ri-error-warning-line" />
-                          {noticeDateInvalid ? 'Notice date must be after today.' : 'Notice date is required.'}
+                          {noticeDateInvalid ? 'Notice start date cannot be in the past.' : 'Notice start date is required.'}
                         </div>
                       )}
                     </EpField>
@@ -1487,16 +1602,23 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                         type="date"
                         value={lwd}
                         onChange={(v) => { setLwd(v); clearS1Err('lwd'); }}
-                        min={todayIso}
+                        // Must be on/after the notice start day.
+                        min={noticeDate || todayIso}
                         invalid={s1Errors.has('lwd') || lwdInvalid}
                       />
                       {(s1Errors.has('lwd') || lwdInvalid) && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <i className="ri-error-warning-line" />
-                          {lwdInvalid ? 'Last working day must be after today.' : 'Last working day is required.'}
+                          {lwdInvalid ? 'Last working day must be on/after the notice start date and not in the past.' : 'Last working day is required.'}
                         </div>
                       )}
                     </EpField>
+                  </Col>
+                  <Col xs={12}>
+                    <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', display: 'flex', alignItems: 'center', gap: 6, marginTop: -2, marginBottom: 4 }}>
+                      <i className="ri-information-line" style={{ color: '#6366f1' }} />
+                      Notice start → last working day ke beech employee <strong>Exit In Progress</strong> rahega; last working day nikalte hi apne-aap <strong>Exited</strong> ho jayega.
+                    </div>
                   </Col>
                   <Col md={6}>
                     <EpField label="Reporting Manager">
@@ -1931,23 +2053,26 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
             <button
               type="button"
               className="ep-btn ep-btn--ghost"
-              disabled={stage === 1 && stage1Saving}
-              onClick={() => { if (stage === 1) saveStage1(); }}
+              disabled={(stage === 1 && stage1Saving) || draftSaving}
+              onClick={() => { if (stage === 1) saveStage1(); else persistDraft(); }}
             >
-              <i className={stage === 1 && stage1Saving ? 'ri-loader-line' : 'ri-save-3-line'} />
-              {stage === 1 && stage1Saving ? 'Saving…' : 'Save Draft'}
+              <i className={(stage === 1 ? stage1Saving : draftSaving) ? 'ri-loader-line' : 'ri-save-3-line'} />
+              {(stage === 1 ? stage1Saving : draftSaving) ? 'Saving…' : 'Save Draft'}
             </button>
             <div className="flex-grow-1" />
             {stage > 1 && (
               <button type="button" className="ep-btn ep-btn--prev" onClick={goBack}><i className="ri-arrow-left-s-line" />Previous</button>
             )}
             {isLastStage ? (
-              <button type="button" className="ep-btn ep-btn--complete" onClick={closeAll}><i className="ri-check-double-line" />Complete Exit</button>
+              <button type="button" className="ep-btn ep-btn--complete" disabled={completing} onClick={completeExit}>
+                <i className={completing ? 'ri-loader-4-line ri-spin' : 'ri-check-double-line'} />
+                {completing ? 'Completing…' : 'Complete Exit'}
+              </button>
             ) : (() => {
-              // Loader gating: stage 1 has an API round-trip (saveStage1),
-              // other stages just advance the local stepper but we still
-              // show a brief spinner so the click feels acknowledged.
-              const busy = stage === 1 ? stage1Saving : advancingStage;
+              // Loader gating: stage 1 saves via saveStage1; stages 2-3
+              // persist a draft (so clearances/handover survive) before
+              // advancing. Either way we show a spinner during the round-trip.
+              const busy = stage === 1 ? stage1Saving : (advancingStage || draftSaving);
               return (
                 <button
                   type="button"
@@ -1965,13 +2090,15 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                       advance();
                       return;
                     }
+                    // Stages 2-3 — persist the draft so the stage's data is
+                    // saved server-side, then advance. Gate the advance on a
+                    // clean save so a network error doesn't silently lose work.
                     setAdvancingStage(true);
-                    // Yield to the browser so the disabled / spinner state
-                    // paints before the synchronous advance() flips the stage.
-                    requestAnimationFrame(() => {
-                      advance();
-                      setAdvancingStage(false);
-                    });
+                    const ok = await persistDraft({ silent: true });
+                    setAdvancingStage(false);
+                    if (!ok) return;
+                    markStageCompleted(stage);
+                    advance();
                   }}
                 >
                   {busy
@@ -2795,50 +2922,58 @@ function apiToExitRow(e: any): EmployeeRow {
     || '—';
 
   // Map server status → ExitStatus bucket.
-  // Priority order:
-  //   1. Soft-deleted (`deleted_at`) → always Exited.
-  //   2. Last Working Day on or before today → auto-Exited. This is
-  //      the "notice period elapsed → employee has left" rule QA
-  //      asked for. Used to require Stage 4's manual final-deactivate
-  //      flip, so a resigned employee whose LWD had already passed
-  //      stayed in the In-Progress bucket forever if HR forgot to
-  //      close the case. Computing it from the date here keeps the
-  //      list accurate without a backend cron.
-  //   3. Exit-flow `status` (`Resigned` / `Notice Period`) OR a
-  //      future-dated LWD → Exit In Progress (notice period running).
-  //   4. Required-field guards → Missing Details.
-  //   5. Otherwise → Active.
+  // Priority order — date-driven so the notice window auto-advances:
+  //   1. Soft-deleted (`deleted_at`)                        → Exited.
+  //   2. Exit case Closed / completed_at set                → Exited
+  //      (HR clicked "Complete Exit").
+  //   3. Terminal employees.status (Resigned/Terminated/    → Exited.
+  //      Retired/Exited).
+  //   4. Last Working Day has PASSED (lwd < today)          → Exited.
+  //      The notice period is over — the employee's last day has gone, so
+  //      the list auto-moves them to Exited without HR re-opening the case.
+  //   5. Notice period RUNNING → Exit In Progress. The window is
+  //      notice start → last working day (inclusive). An exit with a
+  //      FUTURE notice start date stays Active until that date arrives —
+  //      it only enters In Progress on/after the notice start, NOT from
+  //      the day it was initiated. (status Notice Period also counts.)
+  //   6. Required-field guards                               → Missing Details.
+  //   7. Otherwise                                           → Active
+  //      (includes a scheduled exit whose notice hasn't begun yet).
   const trashed   = !!e.deleted_at;
   const rawStatus = String(e.status ?? 'Active');
-  /* last_working_day comes off the eager-loaded `exit` relation
-   * (employee_exits table is 1:1 on employee_id). The projector still
-   * tolerates a flat top-level field for any caller that flattens the
-   * row before handing it to this function. */
-  const lwdSrc    = e?.exit?.last_working_day ?? e?.last_working_day ?? null;
-  const lwdRaw    = lwdSrc ? String(lwdSrc).slice(0, 10) : '';
+  const ex        = e?.exit ?? null;
   const todayIso  = new Date().toISOString().slice(0, 10);
-  const lwdPassed = !!lwdRaw && lwdRaw <= todayIso;
-  const lwdFuture = !!lwdRaw && lwdRaw >  todayIso;
-  const exitFlow  = rawStatus === 'Resigned' || rawStatus === 'Notice Period';
+  const lwdRaw    = ex?.last_working_day ? String(ex.last_working_day).slice(0, 10) : '';
+  const noticeRaw = ex?.notice_date ? String(ex.notice_date).slice(0, 10) : '';
+  // Strictly before today — the last working day is the employee's final
+  // working day, so they're still "In Progress" ON that day and only flip to
+  // Exited once it has passed.
+  const lwdPassed   = !!lwdRaw && lwdRaw < todayIso;
+  // Notice has begun if there's no start date (legacy / immediate) or the
+  // start date is today-or-earlier. A future start date means "not yet".
+  const noticeStarted = !noticeRaw || noticeRaw <= todayIso;
+  const caseClosed   = (ex?.exit_case_status === 'Closed') || !!ex?.completed_at;
+  // Terminal employees.status values (matches the DB enum — Complete Exit
+  // sets one of these). No 'Retired'/'Exited' — those aren't enum values.
+  const statusExited = ['Resigned', 'Terminated'].includes(rawStatus);
+  const statusNotice = rawStatus === 'Notice Period';
+  const exitInitiated = !!ex && (!!ex.exit_type || !!ex.last_working_day);
+
   let status: ExitStatus;
-  if      (trashed)                                              status = 'Exited';
-  else if (lwdPassed && exitFlow)                                status = 'Exited';
-  else if (exitFlow || lwdFuture)                                status = 'Exit In Progress';
-  else if (!e.email || !e.department_id || !e.designation_id)    status = 'Missing Details';
-  else                                                           status = 'Active';
+  if      (trashed || caseClosed || statusExited || lwdPassed)      status = 'Exited';
+  else if ((exitInitiated && noticeStarted) || statusNotice)        status = 'Exit In Progress';
+  else if (!e.email || !e.department_id || !e.designation_id)        status = 'Missing Details';
+  else                                                              status = 'Active';
 
   // Exit readiness — how far along the EXIT process this employee is.
-  // Soft proxy until a dedicated exit-checklist endpoint exists.
   //   • Active  → 0%. The exit hasn't been initiated, so nothing is ready.
-  //     (This column used to read the employee's ONBOARDING completion %
-  //     here, which made a fully-onboarded active employee show "100% exit
-  //     ready" even though the exit had never started — flagged by QA.)
-  //   • Exit In Progress → 60% placeholder (per-stage progress isn't
-  //     persisted server-side yet; the 4 exit stages are tracked inside the
-  //     modal only, so we can't compute the real figure here).
+  //   • Exit In Progress → derived from the saved wizard stage (1-4 of 4) so
+  //     the bar reflects real progress instead of a flat placeholder. Capped
+  //     at 90% until the case is actually closed.
   //   • Exited → 100%.
+  const currentStage = Math.max(1, Math.min(EXIT_STAGES.length, Number(ex?.current_stage) || 1));
   const exitReadiness = status === 'Exited' ? 100
-    : status === 'Exit In Progress' ? 60
+    : status === 'Exit In Progress' ? Math.min(90, Math.round((currentStage / EXIT_STAGES.length) * 100))
     : 0;
 
   return {
@@ -2860,6 +2995,8 @@ function apiToExitRow(e: any): EmployeeRow {
     managerAccent:   _exitAccent(mgrName || 'manager'),
     exitReadiness,
     status,
+    exitInitiated,
+    noticeStartIso: noticeRaw,
     // The API returns these via eager-loaded relations + accessor on
     // the Employee model. Project to a small shape so Stage 2 can map
     // each into a checkbox row without re-fetching.
@@ -2953,6 +3090,8 @@ function buildDummyEmployees(): EmployeeRow[] {
     managerAccent: palette[(idx + 4) % palette.length],
     exitReadiness: s.readiness,
     status: s.status,
+    exitInitiated: s.status === 'Exit In Progress' || s.status === 'Exited',
+    noticeStartIso: '',
     laptopAsset: null,
     mobileAsset: null,
     otherAssets: [],

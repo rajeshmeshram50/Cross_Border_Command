@@ -7,6 +7,7 @@ import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse } from './leavePlansApi';
 import EmployeePicker, { PickedEmployee } from '../../components/ui/EmployeePicker';
+import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -390,6 +391,15 @@ type TopTab = 'plans' | 'types' | 'balances';
 
 export default function HrLeavePlans() {
   const navigate = useNavigate();
+  // Permission gating — keyed by the `hr.leave` leaf (Leave Plans has no
+  // separate leaf). A view-only grant must not expose create / edit / delete
+  // of plans or types. Super admin bypasses.
+  const { user } = useAuth();
+  const isSuperAdmin = user?.user_type === 'super_admin';
+  const leavePerm = user?.permissions?.['hr.leave'];
+  const canAdd    = isSuperAdmin || !!leavePerm?.can_add;
+  const canEdit   = isSuperAdmin || !!leavePerm?.can_edit;
+  const canDelete = isSuperAdmin || !!leavePerm?.can_delete;
   const [plans, setPlans] = useState<LeavePlan[]>([]);
   const [topTab, setTopTab] = useState<TopTab>('plans');
   const [activePlanId, setActivePlanId] = useState<string>('');
@@ -678,7 +688,7 @@ export default function HrLeavePlans() {
                   </button>
                 ))}
               </div>
-              {topTab === 'plans' && (
+              {topTab === 'plans' && canAdd && (
                 <button
                   type="button"
                   className="rec-btn-primary"
@@ -687,7 +697,7 @@ export default function HrLeavePlans() {
                   <i className="ri-add-line" />Add Leave Plan
                 </button>
               )}
-              {topTab === 'types' && (
+              {topTab === 'types' && canAdd && (
                 <button
                   type="button"
                   className="rec-btn-primary"
@@ -732,13 +742,15 @@ export default function HrLeavePlans() {
                       </button>
                     ))}
                   </div>
-                  <button
-                    type="button"
-                    className="lp-new-plan-btn"
-                    onClick={() => setShowAddPlan(true)}
-                  >
-                    <i className="ri-add-line" />New Plan
-                  </button>
+                  {canAdd && (
+                    <button
+                      type="button"
+                      className="lp-new-plan-btn"
+                      onClick={() => setShowAddPlan(true)}
+                    >
+                      <i className="ri-add-line" />New Plan
+                    </button>
+                  )}
                 </aside>
 
                 {/* Main panel */}
@@ -755,25 +767,37 @@ export default function HrLeavePlans() {
                             Apr – Mar
                           </div>
                         </div>
+                        {/* Plan actions — each gated by the matching hr.leave
+                            flag. Hidden entirely for view-only users. */}
+                        {(canEdit || canDelete || canAdd) && (
                         <Dropdown isOpen={planMenuOpen} toggle={() => setPlanMenuOpen(o => !o)}>
                           <DropdownToggle tag="button" type="button" className="lp-icon-btn" aria-label="More options">
                             <i className="ri-more-2-fill" />
                           </DropdownToggle>
                           <DropdownMenu end className="lp-plan-menu">
+                            {canEdit && (
                             <DropdownItem onClick={onEditPlan}>
                               <i className="ri-pencil-line me-2" />Edit
                             </DropdownItem>
+                            )}
+                            {canDelete && (
                             <DropdownItem onClick={onDeletePlan} disabled={activePlan.isDefault}>
                               <i className="ri-delete-bin-line me-2" />Delete Plan
                             </DropdownItem>
+                            )}
+                            {canEdit && (
                             <DropdownItem onClick={onMakeDefault} disabled={activePlan.isDefault}>
                               <i className="ri-star-line me-2" />Make as Default
                             </DropdownItem>
+                            )}
+                            {canAdd && (
                             <DropdownItem onClick={onClonePlan}>
                               <i className="ri-file-copy-line me-2" />Clone Leave Plan
                             </DropdownItem>
+                            )}
                           </DropdownMenu>
                         </Dropdown>
+                        )}
                       </div>
 
                       <div className="lp-sub-tabs">
@@ -785,6 +809,7 @@ export default function HrLeavePlans() {
                         onAssignTypes={() => setShowAssignTypes(true)}
                         onSetupType={(typeId) => setSetupTypeId(typeId)}
                         onShowGuide={() => setShowGuide(true)}
+                        canEdit={canEdit}
                       />
                     </>
                   )}
@@ -797,6 +822,8 @@ export default function HrLeavePlans() {
                 onEdit={onEditLeaveType}
                 onDelete={onDeleteLeaveType}
                 onShowGuide={() => setShowGuide(true)}
+                canEdit={canEdit}
+                canDelete={canDelete}
               />
             ) : (
               <LeaveBalancesTab />
@@ -876,6 +903,7 @@ export default function HrLeavePlans() {
         leaveType={catalog.find(c => c.id === viewingTypeId) ?? null}
         onClose={() => setViewingTypeId(null)}
         onEdit={(id) => { setViewingTypeId(null); onEditLeaveType(id); }}
+        canEdit={canEdit}
       />
 
       <GuidanceModal
@@ -890,19 +918,22 @@ export default function HrLeavePlans() {
 // Configuration tab — leave-type table with Setup buttons
 // ─────────────────────────────────────────────────────────────────────────────
 function ConfigurationTab({
-  plan, onAssignTypes, onSetupType, onShowGuide,
+  plan, onAssignTypes, onSetupType, onShowGuide, canEdit,
 }: {
   plan: LeavePlan;
   onAssignTypes: () => void;
   onSetupType: (typeId: string) => void;
   onShowGuide: () => void;
+  canEdit: boolean;
 }) {
   return (
     <div className="lp-config">
       <div className="lp-config-actions">
+        {canEdit && (
         <button type="button" className="rec-btn-primary" onClick={onAssignTypes}>
           <i className="ri-add-line" />Add leave type
         </button>
+        )}
         <span className="lp-help-chip">
           <i className="ri-information-line" />
           Need help configuring?{' '}
@@ -956,7 +987,9 @@ function ConfigurationTab({
                   </span>
                 </td>
                 <td style={{ textAlign: 'right' }}>
-                  <button type="button" className="lp-setup-btn" onClick={() => onSetupType(t.id)}>Setup</button>
+                  {canEdit
+                    ? <button type="button" className="lp-setup-btn" onClick={() => onSetupType(t.id)}>Setup</button>
+                    : <span className="text-muted fs-13">—</span>}
                 </td>
               </tr>
             ))}
@@ -993,13 +1026,15 @@ type CatalogType = {
 };
 
 function LeaveTypesTab({
-  catalog, onView, onEdit, onDelete, onShowGuide,
+  catalog, onView, onEdit, onDelete, onShowGuide, canEdit, canDelete,
 }: {
   catalog: CatalogType[];
   onView: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onShowGuide: () => void;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
   const [search, setSearch] = useState('');
   const filter = (rows: CatalogType[]) => {
@@ -1053,13 +1088,13 @@ function LeaveTypesTab({
             </tr>
           </thead>
           <tbody>
-            {regular.map(t => <CatalogRow key={t.id} t={t} onView={onView} onEdit={onEdit} onDelete={onDelete} />)}
+            {regular.map(t => <CatalogRow key={t.id} t={t} onView={onView} onEdit={onEdit} onDelete={onDelete} canEdit={canEdit} canDelete={canDelete} />)}
             {incidental.length > 0 && (
               <tr className="lp-group-row">
                 <td colSpan={5}>STATUTORY / INCIDENTAL</td>
               </tr>
             )}
-            {incidental.map(t => <CatalogRow key={t.id} t={t} onView={onView} onEdit={onEdit} onDelete={onDelete} />)}
+            {incidental.map(t => <CatalogRow key={t.id} t={t} onView={onView} onEdit={onEdit} onDelete={onDelete} canEdit={canEdit} canDelete={canDelete} />)}
             {regular.length === 0 && incidental.length === 0 && (
               <tr>
                 <td colSpan={5} className="text-center py-5 text-muted">
@@ -1076,12 +1111,14 @@ function LeaveTypesTab({
 }
 
 function CatalogRow({
-  t, onView, onEdit, onDelete,
+  t, onView, onEdit, onDelete, canEdit, canDelete,
 }: {
   t: CatalogType;
   onView: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
   return (
     <tr>
@@ -1111,9 +1148,12 @@ function CatalogRow({
           <button type="button" className="lp-row-action" aria-label="View" onClick={() => onView(t.id)} title="View details">
             <i className="ri-eye-line" />
           </button>
+          {canEdit && (
           <button type="button" className="lp-row-action" aria-label="Edit" onClick={() => onEdit(t.id)} title="Edit leave type">
             <i className="ri-pencil-line" />
           </button>
+          )}
+          {canDelete && (
           <button
             type="button"
             className="lp-row-action"
@@ -1124,6 +1164,7 @@ function CatalogRow({
           >
             <i className="ri-delete-bin-line" />
           </button>
+          )}
         </div>
       </td>
     </tr>
@@ -1322,12 +1363,13 @@ function LeaveBalancesTab() {
 // shortcut into Edit so HR doesn't need to close → reopen via the pencil.
 // ─────────────────────────────────────────────────────────────────────────────
 function ViewLeaveTypeModal({
-  isOpen, leaveType, onClose, onEdit,
+  isOpen, leaveType, onClose, onEdit, canEdit,
 }: {
   isOpen: boolean;
   leaveType: CatalogType | null;
   onClose: () => void;
   onEdit: (id: string) => void;
+  canEdit: boolean;
 }) {
   if (!leaveType) return null;
   const t = leaveType;
@@ -1387,9 +1429,11 @@ function ViewLeaveTypeModal({
           <span className="hint">Catalog entry — open Edit to change values</span>
           <div className="d-flex gap-2">
             <button type="button" className="rec-btn-ghost" onClick={onClose}>Close</button>
+            {canEdit && (
             <button type="button" className="rec-btn-primary" onClick={() => onEdit(t.id)}>
               <i className="ri-pencil-line" />Edit
             </button>
+            )}
           </div>
         </div>
       </ModalBody>

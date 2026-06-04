@@ -80,9 +80,10 @@ class Consignee extends Model
      * delegating to the same creator-hierarchy rule. See Customer.php
      * for the role matrix.
      */
-    public function scopeForUser(Builder $q, $user): Builder
+    public function scopeForUser(Builder $q, $user, ?int $branchFilter = null): Builder
     {
-        \App\Support\MasterVisibility::applyReadScope($q, $user);
+        // $branchFilter = BranchSwitcher narrowing; see Customer::scopeForUser.
+        \App\Support\MasterVisibility::applyReadScope($q, $user, $branchFilter);
         return $q;
     }
 }

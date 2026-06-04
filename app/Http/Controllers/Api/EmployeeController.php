@@ -59,7 +59,7 @@ class EmployeeController extends Controller
         // Progress → Exited once the notice period elapses, without an
         // extra round-trip per row. Selected columns only; the full row
         // is loaded on the exit modal itself via /employees/{id}/exit.
-        'exit:id,employee_id,notice_date,last_working_day',
+        'exit:id,employee_id,notice_date,last_working_day,exit_type,exit_case_status,completed_at,current_stage',
     ];
 
     /* ─────────────────────────────────────────────────────────────────
@@ -381,7 +381,15 @@ class EmployeeController extends Controller
 
         $bookedIds = collect();
         if (!empty($assetIds)) {
-            $bookingQ = Employee::query()->whereNull('deleted_at');
+            // Only ACTIVE-roster employees actually hold an asset. Someone who
+            // has exited (Resigned / Terminated) has effectively returned their
+            // devices, so their old assignment must NOT keep the asset locked —
+            // otherwise the picker shows "No other assets available" forever
+            // even though the holder has left. Soft-deleted rows are excluded
+            // for the same reason.
+            $bookingQ = Employee::query()
+                ->whereNull('deleted_at')
+                ->whereNotIn('status', ['Resigned', 'Terminated']);
             if ($excludeEmployeeId) {
                 $bookingQ->where('id', '!=', (int) $excludeEmployeeId);
             }

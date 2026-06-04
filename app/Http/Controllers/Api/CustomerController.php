@@ -30,7 +30,10 @@ class CustomerController extends Controller
         $user = $request->user();
 
         $q = Customer::query()
-            ->forUser($user)
+            // Honour the BranchSwitcher: when a client-admin / main-branch user
+            // has picked a specific branch, narrow the list to it. Ignored for
+            // sub-branch users (they can't switch) inside applyReadScope.
+            ->forUser($user, $request->integer('branch_id') ?: null)
             /* Single eager-load — `addresses` returns ALL rows in
              * customer_addresses (primary + extras). The Customer
              * model's `primaryAddress` relationship reads from the

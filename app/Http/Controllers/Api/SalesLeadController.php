@@ -67,7 +67,7 @@ class SalesLeadController extends Controller
             ])
             ->orderByDesc('id');
 
-        $this->applyScope($q, $user);
+        $this->applyScope($q, $user, $request->integer('branch_id') ?: null);
 
         $status = $request->query('status');
         if ($status === 'qualified') {
@@ -93,7 +93,9 @@ class SalesLeadController extends Controller
         $counts = null;
         if ((int) $request->query('with_counts', 1) === 1) {
             $countsQ = Lead::query();
-            $this->applyScope($countsQ, $user);
+            // Same BranchSwitcher narrowing as the list above, so the tab
+            // pill counts match the rows actually shown.
+            $this->applyScope($countsQ, $user, $request->integer('branch_id') ?: null);
             $this->applyListFilters($countsQ, $request);
 
             // NOTE: comparing booleans with `= 1`/`= 0` works on MySQL but
@@ -1384,12 +1386,16 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
+        // Honour the BranchSwitcher so this summary reflects the branch the
+        // user is currently viewing "as" (consistent with the leads list).
+        $branchFilter = $request->integer('branch_id') ?: null;
+
         // ── 1) Lead counts pivoted per (salesperson, platform).
         $countsQ = Lead::query()
             ->whereNotNull('salesperson_id')
             ->selectRaw('salesperson_id, platform, COUNT(*) AS cnt')
             ->groupBy('salesperson_id', 'platform');
-        $this->applyScope($countsQ, $user);
+        $this->applyScope($countsQ, $user, $branchFilter);
         $countRows = $countsQ->get();
 
         $platforms = $countRows->pluck('platform')->filter()->unique()->sort()->values()->all();
@@ -1407,7 +1413,7 @@ class SalesLeadController extends Controller
 
         // ── 2) Aggregate stats for the 4 header cards.
         $totalsQ = Lead::query();
-        $this->applyScope($totalsQ, $user);
+        $this->applyScope($totalsQ, $user, $branchFilter);
         $totalsRow = $totalsQ->selectRaw(
             "COUNT(*) AS total_all,
              SUM(CASE WHEN salesperson_id IS NOT NULL THEN 1 ELSE 0 END) AS total_assigned,
@@ -1640,9 +1646,12 @@ class SalesLeadController extends Controller
      * (non-main branch_user) are pinned to their branch. Mirror of
      * SalesTodoController::applyScope tailored for leads.
      */
-    private function applyScope($q, $user): void
+    private function applyScope($q, $user, ?int $branchFilter = null): void
     {
-        if ($user->user_type === 'super_admin') return;
+        if ($user->user_type === 'super_admin') {
+            if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
+            return;
+        }
 
         if ($user->client_id) {
             $q->where('client_id', $user->client_id);
@@ -1650,10 +1659,29 @@ class SalesLeadController extends Controller
 
         $isMain = $user->branch?->is_main ?? false;
         if ($user->user_type === 'branch_user' && !$isMain) {
+            // Sub-branch users are locked to own + main branch; they can't use
+            // the BranchSwitcher, so $branchFilter is ignored here.
             $q->where(function ($w) use ($user) {
                 $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
             });
+            return;
         }
+
+        // Switchable roles (client-level admins + main-branch users): honour
+        // the BranchSwitcher's narrowing when a specific branch is picked.
+        $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+    }
+
+    /** Narrow an already-tenant-scoped query when the BranchSwitcher injects
+     *  ?branch_id=N. Cross-tenant ids are silently dropped. */
+    private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
+    {
+        if ($branchFilter === null) return;
+        $belongsToClient = \App\Models\Branch::where('id', $branchFilter)
+            ->where('client_id', $user->client_id)
+            ->exists();
+        if (!$belongsToClient) return;
+        $q->where('branch_id', $branchFilter);
     }
 
     /**

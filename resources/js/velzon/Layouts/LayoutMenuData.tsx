@@ -79,7 +79,6 @@ const hrLeafLink = (leafId: string): string => {
     case "hr.expense":     return "/hr/expense";
     case "hr.payroll":     return "/hr/payroll";
     case "hr.pip":         return "/hr/pip";
-    case "hr.calculation_master": return "/hr/calculation-master";
     // Attendance Master Management leaves — these live under the HR sidebar
     // (branch-only) but reuse the generic /master/:slug page shell because
     // they're standard MasterController-backed CRUD masters.
@@ -150,6 +149,18 @@ const clmLeafLink = (leafId: string): string => {
 
 const Navdata = () => {
   const { user } = useAuth();
+
+  // Onboarding gate — an employee whose onboarding isn't finished yet may only
+  // reach the Inbox (to sign their pending documents). Hide every other nav
+  // item until HR completes onboarding and `onboarding_pending` clears. Mirror
+  // of the route guard in App.tsx so the navbar can't even offer a dead link.
+  if (user?.user_type === "employee" && (user as any)?.onboarding_pending) {
+    return (
+      <React.Fragment>
+        {[{ id: "inbox", label: "Inbox", icon: "ri-inbox-line", link: "/inbox" }] as any}
+      </React.Fragment>
+    );
+  }
 
   // Collapse state for HR parent + categories lives in a module-level Set
   // (see ./menuState). Necessary because Navdata is called as a function from
