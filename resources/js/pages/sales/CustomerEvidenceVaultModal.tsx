@@ -868,6 +868,13 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 
   const onPick = async (f: File | undefined) => {
     if (!f || !ownerId || !doc.doc_code) return;
+    // Only PDF / JPG / PNG may be uploaded. Word / Excel are blocked so every
+    // stored attachment can be previewed in-browser via View (browsers can't
+    // display .doc/.docx — they download them).
+    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
+      window.alert('Only PDF, JPG or PNG files are allowed. Word / Excel files are not supported.');
+      return;
+    }
     setBusy(true);
     try {
       const fd = new FormData();
@@ -892,7 +899,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
         ref={fileRef}
         type="file"
         hidden
-        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+        accept=".pdf,.jpg,.jpeg,.png"
         onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }}
       />
       {canSend && (

@@ -80,6 +80,12 @@ export const DEFAULT_FOOTER: FooterConfig = {
 export const HEADER_HEIGHT = 90;
 export const FOOTER_HEIGHT = 50;
 
+// Max characters for the single-line footer text. The footer band is a fixed
+// 50px-high, 3-column strip; without a cap a long paste runs off the edge (and
+// would overflow the same way in the exported DOCX footer). 120 comfortably
+// fits a "Company Name Pvt. Ltd. | Confidential" style line.
+export const FOOTER_TEXT_MAX = 120;
+
 // ── Component ────────────────────────────────────────────────────────────────
 /**
  * Page-style preview: fixed-height header on top, fixed-height footer at the
@@ -232,7 +238,7 @@ export default function HeaderFooterPanel({
               <img src={header.logo_url} alt="logo" draggable={false}
                 style={{ height: logoHeightPx, maxWidth: Math.max(180, logoHeightPx * 3), objectFit: 'contain', pointerEvents: 'none' }} />
             ) : (
-              <div style={{ width: Math.max(72, logoHeightPx * 1.8), height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
+              <div className="tpl-logo-placeholder" style={{ width: Math.max(72, logoHeightPx * 1.8), height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
                 LOGO
               </div>
             )}
@@ -245,7 +251,14 @@ export default function HeaderFooterPanel({
               ...draggableItemStyle(titlePos),
               cursor: readOnly ? 'default' : 'text',
               textAlign: (header.align === 'left' || header.align === 'center' || header.align === 'right') ? header.align : 'right',
-              maxWidth: '60%',
+              // Block is center-anchored at titlePos, so its half-width can't
+              // exceed the distance to the nearest edge or it spills out of the
+              // (overflow:hidden) header. Cap maxWidth = 2 × that gap, ceiling
+              // 60%. Long unbreakable strings then wrap instead of clipping off
+              // the right edge.
+              maxWidth: `${Math.min(60, 2 * Math.min(titlePos.x, 100 - titlePos.x))}%`,
+              boxSizing: 'border-box',
+              overflowWrap: 'anywhere',
             }}
             title={readOnly ? '' : 'Click to edit, or drag the handle to reposition'}
           >
@@ -508,8 +521,14 @@ function FooterEditor({
       <PopoverHeader title="Footer Settings" onClose={onClose} />
       <div className="row g-3" style={{ padding: 14 }}>
         <div className="col-md-8">
-          <label className="tpl-popover-label" style={labelStyle}>Footer Text</label>
-          <input type="text" value={footer.text} onChange={e => setFooter({ ...footer, text: e.target.value })}
+          <div className="d-flex align-items-center justify-content-between mb-1">
+            <label className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 0 }}>Footer Text</label>
+            <span className="tpl-popover-hint" style={{ fontSize: 11, color: (footer.text || '').length >= FOOTER_TEXT_MAX ? '#b45309' : '#9ca3af', fontWeight: 700 }}>
+              {(footer.text || '').length}/{FOOTER_TEXT_MAX}
+            </span>
+          </div>
+          <input type="text" value={footer.text} maxLength={FOOTER_TEXT_MAX}
+            onChange={e => setFooter({ ...footer, text: e.target.value.slice(0, FOOTER_TEXT_MAX) })}
             placeholder="e.g. Company Name Pvt. Ltd. | Confidential" className="tpl-popover-input" style={inputStyle} />
         </div>
         <div className="col-md-4">
@@ -771,6 +790,40 @@ function HfpDarkStyles() {
       [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer,
       [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer * {
         color: #e5e7eb !important;
+      }
+
+      /* Live EDITOR page (Template Design step). The header + footer bands use
+         inline white backgrounds, which left them bright white against the
+         already-dark editor body in dark mode. Make them dark too so the whole
+         "page" reads cohesively, and force their text light so the default
+         dark header/footer text doesn't vanish. Scoped with
+         :not(:has(.tpl-readonly-preview)) so the read-only preview rules above
+         keep owning the Inbox/vault surface. */
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header,
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer {
+        background: #1b2230 !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header {
+        border-bottom-color: rgba(255,255,255,0.10) !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer {
+        border-top-color: rgba(255,255,255,0.10) !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header,
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header *,
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer,
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer * {
+        color: #e5e7eb !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-body {
+        color: #e5e7eb !important;
+      }
+      /* "LOGO" placeholder box (shown until a logo is uploaded) — inline
+         #f8fafc + dashed light border stayed bright on the dark header band. */
+      [data-bs-theme="dark"] .tpl-page-shell .tpl-logo-placeholder {
+        background: rgba(255,255,255,0.04) !important;
+        border-color: rgba(255,255,255,0.22) !important;
+        color: rgba(255,255,255,0.50) !important;
       }
 
       /* Popover (Header Settings / Footer Settings). Inline popoverStyle

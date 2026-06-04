@@ -93,6 +93,10 @@ export default function SalesCustomers() {
   const canEdit   = isSuperAdmin || !!customerPerm?.can_edit;
 
   const [tab, setTab] = useState<'fresh' | 'recurring'>('fresh');
+  // Brief skeleton flash when the Fresh/Recurring tab changes — the rows are
+  // already in memory (client-side filter), so this just gives the switch a
+  // smooth "loading new view" feel (same as the HR Employees tabs).
+  const [tabSwitching, setTabSwitching] = useState(false);
   const [q, setQ] = useState('');
   const [wdhOpen, setWdhOpen] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
@@ -184,7 +188,12 @@ export default function SalesCustomers() {
 
   // TableContainer manages its own pagination, so the page-side
   // state used by the old custom table is gone now.
-  const switchTab = (next: 'fresh' | 'recurring') => { setTab(next); };
+  const switchTab = (next: 'fresh' | 'recurring') => {
+    if (next === tab) return;
+    setTabSwitching(true);
+    setTab(next);
+    window.setTimeout(() => setTabSwitching(false), 450);
+  };
   const onSearch = (v: string) => { setQ(v); };
 
   /* `soon()` helper removed — the only caller (Customer Evidence Vault)
@@ -480,7 +489,7 @@ export default function SalesCustomers() {
               produce the colored type pills + segment chips so the
               row reads with personality, but the chrome is the same
               clean look used in HR Employees, Clients, etc. */}
-          {loading && customers.length === 0 ? (
+          {(loading && customers.length === 0) || tabSwitching ? (
             /* Canonical ShimmerTable from the shared Shimmer component
                — matches the skeleton used on Dashboard + Master pages
                for a consistent loading look across the app. cols=12
@@ -501,7 +510,7 @@ export default function SalesCustomers() {
               condensedPagination
             />
           )}
-          {!loading && filtered.length === 0 && (
+          {!loading && !tabSwitching && filtered.length === 0 && (
             <div className="smc-empty py-4">No customers found</div>
           )}
         </div>

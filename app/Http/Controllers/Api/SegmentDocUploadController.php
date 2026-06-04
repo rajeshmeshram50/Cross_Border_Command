@@ -126,11 +126,11 @@ class SegmentDocUploadController extends Controller
             'doc_code'    => ['required', 'string', 'max:32'],
             'doc_name'    => ['required', 'string', 'max:255'],
             'requirement' => ['nullable', Rule::in(['M', 'O'])],
-            // 2 MB cap + restricted to the same six extensions the
-            // frontend allow-list enforces (PDF / JPG / JPEG / PNG /
-            // DOC / DOCX). xls/xlsx dropped — spreadsheets aren't a
-            // supported KYC/DD/TL attachment format on the client.
-            'attachment'  => ['required', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png,doc,docx'],
+            // 2 MB cap + restricted to PDF / JPG / JPEG / PNG only — these all
+            // preview in-browser via the row's View action. Word (doc/docx)
+            // and spreadsheets are NOT accepted: browsers download Office
+            // files instead of showing them, which broke the View flow.
+            'attachment'  => ['required', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png'],
         ]);
         $requirement = $data['requirement'] ?? 'O';
 

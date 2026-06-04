@@ -5,6 +5,7 @@ import { type CtcContract, inits, PER_PAGE } from './clmOpsData';
 import ClmCtcForm from './ClmCtcForm';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcSigner } from './clmCtcModals';
+import { Shimmer } from '../../components/ui/Shimmer';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Operations · Without Shipment ID → Case to Case Contracts.
@@ -61,11 +62,18 @@ export default function ClmCaseToCasePage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [infoOpen, setInfoOpen] = useState(true);
-  const [dlOpen, setDlOpen] = useState<string | null>(null);
+  const [cpOpen, setCpOpen] = useState<{ id: string; names: string[]; x: number; y: number } | null>(null);   // counterparties popover
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CtcContract | null>(null);
   const [rows, setRows] = useState<CtcContract[]>([]);
-  const load = () => { api.get('/clm/ctc-contracts').then(r => setRows(r.data?.data ?? [])).catch(() => setRows([])); };
+  const [loading, setLoading] = useState(true);
+  const load = () => {
+    setLoading(true);
+    api.get('/clm/ctc-contracts')
+      .then(r => setRows(r.data?.data ?? []))
+      .catch(() => { setRows([]); toast.error('Could not load contracts', 'Please refresh and try again.'); })
+      .finally(() => setLoading(false));
+  };
   useEffect(() => { load(); }, []);
 
   // Version-history / timeline modals need the full record (versions +
@@ -85,6 +93,32 @@ export default function ClmCaseToCasePage() {
       };
       if (kind === 'version') setVerFor(detail); else setTlFor(detail);
     } catch { toast.error('Could not load', 'Failed to fetch the agreement history.'); }
+  };
+
+  // Download the contract — the fully-signed PDF from Zoho when available,
+  // otherwise the latest drafted version rendered to PDF.
+  const downloadContract = async (c: CtcContract) => {
+    if (!c.dbId) { toast.error('Not available', 'This agreement has no saved record yet.'); return; }
+    const grab = async (url: string, name: string) => {
+      const f = await api.get(url, { responseType: 'blob' });
+      const u = URL.createObjectURL(f.data as Blob);
+      const a = document.createElement('a'); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(u);
+    };
+    try {
+      const res = await api.get(`/clm/ctc-contracts/${c.dbId}`);
+      const r = (res.data?.data ?? res.data ?? {}) as Record<string, unknown>;
+      const signedUrl = String(r.signed_document_url ?? '');
+      const srId = Number(r.signature_request_id) || null;
+      if (signedUrl && srId) {
+        try { await grab(`/clm/signature-requests/${srId}/download-file/0`, `${c.id}-signed.pdf`); toast.success('Signed copy downloaded', c.id); return; }
+        catch { window.open(signedUrl, '_blank'); return; }
+      }
+      const versions = (Array.isArray(r.versions) ? r.versions : []) as { v: number }[];
+      const latestV = versions.length ? Math.max(...versions.map(v => Number(v.v) || 0)) : 1;
+      await grab(`/clm/ctc-contracts/${c.dbId}/versions/${latestV}/download`, `${c.id}.pdf`);
+      toast.success('Download started', c.id);
+    } catch { toast.error('Download failed', 'Could not download the contract.'); }
   };
 
   const counts = useMemo(() => {
@@ -231,7 +265,11 @@ export default function ClmCaseToCasePage() {
                   ))}
                 </tr></thead>
                 <tbody>
-                  {slice.map((c, i) => {
+                  {loading ? Array.from({ length: 6 }).map((_, r) => (
+                    <tr key={`shim-${r}`}>{Array.from({ length: 12 }).map((__, c) => <td key={c} style={{ ...TD }}><Shimmer height={14} /></td>)}</tr>
+                  )) : slice.length === 0 ? (
+                    <tr><td colSpan={12} style={{ ...TD, textAlign: 'center', padding: '36px 16px', color: t.textMuted, fontSize: 12, fontWeight: 600 }}>No contracts found.</td></tr>
+                  ) : slice.map((c, i) => {
                     const n = start + i + 1;
                     const s = S_CFG[c.status];
                     const ap = AP_CFG[c.approval];
@@ -248,7 +286,7 @@ export default function ClmCaseToCasePage() {
                         <td style={{ ...TD, width: 110 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.date}</span></td>
                         <td style={TDL}><div style={{ fontSize: 11.5, fontWeight: 700, color: t.textStrong, letterSpacing: '-.2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }} title={c.title}>{c.title}</div></td>
                         <td style={{ ...TDL, width: 155 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 24, height: 24, borderRadius: 7, background: `linear-gradient(135deg,${orgGrad(c.org)})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(109,40,217,.2)' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff', letterSpacing: '-.3px' }}>{inits(c.org)}</span></div><span style={{ fontSize: 12, fontWeight: 600, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 105 }}>{c.org}</span></div></td>
-                        <td style={{ ...TDL, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 24, height: 24, borderRadius: 7, background: 'linear-gradient(135deg,#6D28D9,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(109,40,217,.18)' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff', letterSpacing: '-.3px' }}>{inits(c.cp[0])}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }} title={c.cp.join(', ')}>{c.cp[0]}</span>{extra > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 4px', borderRadius: 20, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontSize: 8.5, fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 4px rgba(109,40,217,.28)' }} title={c.cp.slice(1).join(', ')}>+{extra}</span>}</div></td>
+                        <td style={{ ...TDL, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 24, height: 24, borderRadius: 7, background: 'linear-gradient(135deg,#6D28D9,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(109,40,217,.18)' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff', letterSpacing: '-.3px' }}>{inits(c.cp[0])}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }} title={c.cp.join(', ')}>{c.cp[0]}</span>{extra > 0 && <button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cp, x: r.left, y: r.bottom + 4 }); }} title="View all counterparties" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontSize: 8.5, fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 4px rgba(109,40,217,.28)', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button>}</div></td>
                         <td style={{ ...TDL, width: 136 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#C4B5FD,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #DDD6FE' }}><span style={{ fontSize: 8, fontWeight: 900, color: '#4C1D95' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 10.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                         <td style={{ ...TD, width: 122 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 20, background: apb.bg, border: `1px solid ${apb.border}`, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: ap.dot, flexShrink: 0, boxShadow: `0 0 5px ${ap.dot}60` }} /><span style={{ fontSize: 9.5, fontWeight: 700, color: apb.text }}>{ap.label}</span></span></td>
                         <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: c.effDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{c.effDate}</span></td>
@@ -256,22 +294,9 @@ export default function ClmCaseToCasePage() {
                         <td style={{ ...TD, width: 122 }}>{cpS === '—' ? <span style={{ fontSize: 11.5, fontWeight: 600, color: '#C4B5FD' }}>—</span> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5, fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>{cpS}</span>}</td>
                         <td style={{ ...TD, width: 150 }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
-                            <div style={{ position: 'relative' }}>
-                              <ActBtn t={t} tone="green" title="Download Contract" onClick={() => setDlOpen(dlOpen === c.id ? null : c.id)}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                              </ActBtn>
-                              {dlOpen === c.id && (
-                                <div style={{ position: 'absolute', top: 30, right: 0, zIndex: 50, background: t.surface, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.15)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E8E4F9'}`, minWidth: 160, overflow: 'hidden' }}>
-                                  {[['PDF', '#047857', '#D1FAE5', '#A7F3D0', t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5'], ['DOCX', '#0369A1', '#DBEAFE', '#93C5FD', t.dark ? 'rgba(56,189,248,.16)' : '#EFF6FF']].map(([fmt, col, sbg, sbd, hov]) => (
-                                    <button key={fmt} onClick={() => { setDlOpen(null); toast.info('Download started', `${c.id} · ${fmt}`); }} style={{ width: '100%', padding: '10px 14px', border: 'none', background: t.surface, fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, color: t.dark ? (fmt === 'PDF' ? '#6ee7b7' : '#7dd3fc') : col, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left' }}
-                                      onMouseEnter={e => (e.currentTarget.style.background = hov)} onMouseLeave={e => (e.currentTarget.style.background = t.surface)}>
-                                      <span style={{ width: 26, height: 26, borderRadius: 7, background: sbg, border: `1px solid ${sbd}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: col }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg></span>
-                                      Download as {fmt}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
+                            <ActBtn t={t} tone="green" title="Download signed copy / latest PDF" onClick={() => downloadContract(c)}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                            </ActBtn>
                             <ActBtn t={t} tone="violet" title="Edit CTC" onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></ActBtn>
                             <ActBtn t={t} tone="blue" title="Version History" onClick={() => openLifecycle(c, 'version')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
                             <ActBtn t={t} tone="amber" title="Agreement Timeline" onClick={() => openLifecycle(c, 'timeline')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
@@ -298,6 +323,22 @@ export default function ClmCaseToCasePage() {
 
       {verFor && <VersionHistoryModal t={t} code={verFor.code} workingId={verFor.dbId} versions={verFor.versions} onClose={() => setVerFor(null)} />}
       {tlFor && <AgreementTimelineModal t={t} code={tlFor.code} title={tlFor.title} stage={tlFor.stage} versions={tlFor.versions} signers={tlFor.signers} onClose={() => setTlFor(null)} />}
+
+      {/* All-counterparties popover (opened from the +N badge) */}
+      {cpOpen && (
+        <>
+          <div onClick={() => setCpOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
+          <div style={{ position: 'fixed', left: Math.min(cpOpen.x, window.innerWidth - 240), top: cpOpen.y, zIndex: 601, width: 220, maxHeight: 280, overflowY: 'auto', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 16px 40px rgba(0,0,0,.28)', padding: 8, fontFamily: "'Rubik', system-ui, sans-serif" }}>
+            <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9', padding: '4px 8px 7px' }}>Counterparties ({cpOpen.names.length})</div>
+            {cpOpen.names.map((name, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 8, background: i % 2 ? (t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF') : 'transparent' }}>
+                <div style={{ width: 22, height: 22, borderRadius: 7, background: 'linear-gradient(135deg,#6D28D9,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(name)}</span></div>
+                <span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

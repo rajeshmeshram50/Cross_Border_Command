@@ -285,6 +285,11 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/clm/signature-requests/{id}/download-file/{index}',    [ClmSignatureController::class, 'downloadFile'])->whereNumber('id')->whereNumber('index');
     Route::get   ('/clm/signature-requests/{id}/view-file/{index}',        [ClmSignatureController::class, 'viewFile'])->whereNumber('id')->whereNumber('index');
     Route::get   ('/clm/signature-requests/{id}/certificate',              [ClmSignatureController::class, 'viewCertificate'])->whereNumber('id');
+    // CTC (Case-to-Case Contract) → Zoho Sign preview / send / status sync.
+    Route::post  ('/clm/signature-requests/ctc-preview',                   [ClmSignatureController::class, 'ctcPreview']);
+    Route::post  ('/clm/signature-requests/ctc-send',                      [ClmSignatureController::class, 'ctcSend']);
+    Route::get   ('/clm/ctc-contracts/{id}/sync-signature',               [ClmSignatureController::class, 'ctcSignatureStatus'])->whereNumber('id');
+    Route::post  ('/clm/ctc-contracts/{id}/remind-signing',               [ClmSignatureController::class, 'ctcRemindSigning'])->whereNumber('id');
 
     // Central CLM → Terms & Conditions (two tabs: categories + library).
     Route::get   ('/clm/tnc-categories',      [ClmTncController::class, 'categoriesIndex']);
@@ -319,6 +324,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/clm/ctc-contracts/sent',         [\App\Http\Controllers\Api\CtcContractController::class, 'sentIndex']);
     Route::get   ('/clm/ctc-contracts/to-approve',   [\App\Http\Controllers\Api\CtcContractController::class, 'toApproveIndex']);
     Route::get   ('/clm/ctc-contracts/approver-candidates', [\App\Http\Controllers\Api\CtcContractController::class, 'approverCandidates']);
+    Route::get   ('/clm/ctc-contracts/contact-persons',     [\App\Http\Controllers\Api\CtcContractController::class, 'contactPersons']);
     Route::get   ('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'show'])->whereNumber('id');
     Route::put   ('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'update'])->whereNumber('id');
     Route::delete('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'destroy'])->whereNumber('id');

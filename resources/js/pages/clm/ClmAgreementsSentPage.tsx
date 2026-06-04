@@ -6,6 +6,7 @@ import {
   inits, pad2, PER_PAGE,
 } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import { ShimmerTable } from '../../components/ui/Shimmer';
 
 /* Sent rows from GET /clm/ctc-contracts/sent — the AwsContract list shape
  * enriched with the clarification thread + approver so the Clarifications
@@ -46,7 +47,14 @@ export default function ClmAgreementsSentPage() {
   const [respondId, setRespondId] = useState<string | null>(null);
 
   const [sent, setSent] = useState<SentRow[]>([]);
-  const load = () => { api.get('/clm/ctc-contracts/sent').then(r => setSent(r.data?.data ?? [])).catch(() => setSent([])); };
+  const [loading, setLoading] = useState(true);
+  const load = () => {
+    setLoading(true);
+    api.get('/clm/ctc-contracts/sent')
+      .then(r => setSent(r.data?.data ?? []))
+      .catch(() => { setSent([]); toast.error('Could not load agreements', 'Please refresh and try again.'); })
+      .finally(() => setLoading(false));
+  };
   useEffect(() => { load(); }, []);
 
   const counts = useMemo(() => ({
@@ -115,13 +123,13 @@ export default function ClmAgreementsSentPage() {
 
       {/* SUMMARY CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
-        <SummaryCard t={t} accent="#06b6d4,#0891b2" border="#B2EBF2" hoverBorder="#A5F3FC" titleColor="#0e7490" tag="Total" tagBg="#CFFAFE" tagColor="#0891b2" value={24} label="Total Agreements" sub="Created and shared with counterparties"
+        <SummaryCard t={t} accent="#06b6d4,#0891b2" border="#B2EBF2" hoverBorder="#A5F3FC" titleColor="#0e7490" tag="Total" tagBg="#CFFAFE" tagColor="#0891b2" value={counts.all} label="Total Agreements" sub="Created and shared with counterparties"
           icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>} />
-        <SummaryCard t={t} accent="#f59e0b,#d97706" border="#FEF3C7" hoverBorder="#FCD34D" titleColor="#92400E" tag="Pending" tagBg="#FEF3C7" tagColor="#D97706" value={9} label="Pending Agreements" sub="Awaiting counterparty response"
+        <SummaryCard t={t} accent="#f59e0b,#d97706" border="#FEF3C7" hoverBorder="#FCD34D" titleColor="#92400E" tag="Pending" tagBg="#FEF3C7" tagColor="#D97706" value={counts.pending} label="Pending Agreements" sub="Awaiting counterparty response"
           icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>} />
-        <SummaryCard t={t} accent="#10b981,#0891b2" border="#B2EBF2" hoverBorder="#A5F3FC" titleColor="#0e7490" tag="Approved" tagBg="#B2EBF2" tagColor="#0891b2" value={11} label="Approved Agreements" sub="Approved and ready for execution"
+        <SummaryCard t={t} accent="#10b981,#0891b2" border="#B2EBF2" hoverBorder="#A5F3FC" titleColor="#0e7490" tag="Approved" tagBg="#B2EBF2" tagColor="#0891b2" value={counts.approved} label="Approved Agreements" sub="Approved and ready for execution"
           icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>} />
-        <SummaryCard t={t} accent="#ef4444,#dc2626" border="#FEE2E2" hoverBorder="#FCA5A5" titleColor="#7F1D1D" tag="Rejected" tagBg="#FEE2E2" tagColor="#DC2626" value={4} label="Rejected Agreements" sub="Sent back for changes or revision"
+        <SummaryCard t={t} accent="#ef4444,#dc2626" border="#FEE2E2" hoverBorder="#FCA5A5" titleColor="#7F1D1D" tag="Rejected" tagBg="#FEE2E2" tagColor="#DC2626" value={counts.rejected} label="Rejected Agreements" sub="Sent back for changes or revision"
           icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>} />
       </div>
 
@@ -161,7 +169,9 @@ export default function ClmAgreementsSentPage() {
           </div>
         </div>
 
-        {tab === 'clarify'
+        {loading
+          ? <ShimmerTable rows={6} cols={11} />
+          : tab === 'clarify'
           ? <ClarifyTable rows={clarifyList} onRespond={setRespondId} t={t} />
           : tab === 'rejected'
             ? <RejectedTable rows={filtered} ata={sent} page={page} setPage={setPage} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />
