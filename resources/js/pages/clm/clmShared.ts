@@ -366,8 +366,10 @@ export const CLM_CSS = `
 .clm-table tbody tr:hover { background: rgba(6,182,212,.06); box-shadow: inset 3px 0 0 #0891b2; }
 .clm-table tbody td { padding: 13px 16px; font-size: 13px; color: #0c4a6e; vertical-align: middle; }
 .clm-td-num  { text-align: center; color: #94a3b8; font-weight: 700; width: 48px; }
-.clm-td-name { font-weight: 700; color: #0c4a6e; letter-spacing: -.15px; text-align: left; font-size: 13.5px; text-transform: capitalize; }
-.clm-td-desc { font-size: 12px; color: #475569; text-transform: capitalize; }
+/* Wrap long, space-less names/descriptions instead of letting the cell grow
+   and stretch the whole table past its container. */
+.clm-td-name { font-weight: 700; color: #0c4a6e; letter-spacing: -.15px; text-align: left; font-size: 13.5px; text-transform: capitalize; overflow-wrap: anywhere; word-break: break-word; }
+.clm-td-desc { font-size: 12px; color: #475569; text-transform: capitalize; overflow-wrap: anywhere; word-break: break-word; }
 .clm-td-desc::first-letter { text-transform: uppercase; }
 
 /* Code chip */
@@ -1195,6 +1197,20 @@ body > .dropdown-menu.master-select-menu,
   background: rgba(15,23,42,.55) !important;
   border-color: rgba(22,163,74,.25) !important;
 }
+/* Segment code + name are hard-coded dark inline (navy / slate) — unreadable
+   on the dark list surface. Lighten them in dark mode. */
+[data-bs-theme="dark"] .dcp-multi-seg-list .dcp-seg-code { color: #67e8f9 !important; }
+[data-bs-theme="dark"] .dcp-multi-seg-list .dcp-seg-name { color: #e2e8f0 !important; }
+
+/* Stage 1 — "rule already exists" amber warning strip. The pale amber gradient
+   + dark-amber text is unreadable on the dark modal surface; give it a darker
+   translucent amber fill and light amber text. */
+[data-bs-theme="dark"] .dcp-rule-warn {
+  background: rgba(217,119,6,.16) !important;
+  border-color: rgba(251,191,36,.45) !important;
+}
+[data-bs-theme="dark"] .dcp-rule-warn div { color: #fde68a !important; }
+[data-bs-theme="dark"] .dcp-rule-warn strong { color: #fef3c7 !important; }
 
 /* Stage 1 — Segment Details grid */
 [data-bs-theme="dark"] .dcp-segdtl-cell { border-right-color: rgba(6,182,212,.18) !important; }
