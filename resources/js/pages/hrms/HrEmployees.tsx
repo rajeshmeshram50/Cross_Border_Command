@@ -742,6 +742,12 @@ export default function HrEmployees() {
   const [eLegalEntity, setELegalEntity]          = useState('');
   const [eLocation, setELocation]                = useState('');
   const [eReportingMgr, setEReportingMgr]        = useState('');
+  // The manager saved on the row being edited, projected as a ready-to-use
+  // picker option. Injected into the options list even when that manager is
+  // no longer a live candidate (resigned / onboarding incomplete / outside
+  // the current branch scope) so the field renders the saved value instead
+  // of looking empty — which read as "the manager didn't save".
+  const [savedMgrOption, setSavedMgrOption] = useState<{ value: string; label: string } | null>(null);
   const [eProbationPolicy, setEProbationPolicy]  = useState('');
   const [eNoticePeriod, setENoticePeriod]        = useState('');
   // Custom values that appear below their dropdowns when "Set Custom…" is picked.
@@ -828,13 +834,17 @@ export default function HrEmployees() {
   const [aMobileAssigned, setAMobileAssigned]           = useState('No');
   const [aMobileMasterAssetId, setAMobileMasterAssetId] = useState('');
   const [aOtherMasterAssetIds, setAOtherMasterAssetIds] = useState<string[]>([]);
+  // Other Assets is now a free-text field (employees.other_assets) — the
+  // admin types whatever the employee was given (e.g. "Monitor, Headset")
+  // instead of being limited to the master-asset dropdown, which was empty
+  // whenever every catalogued asset was already booked.
+  const [aOtherAssets, setAOtherAssets] = useState('');
   const [aSaving, setASaving] = useState(false);
   // Available-asset pools for the Assign modal. Refilled when the modal
   // opens; current employee is excluded from the booked-set so the
   // admin can keep their own pre-existing pick.
   const [aLaptopOpts, setALaptopOpts] = useState<AssetOpt[]>([]);
   const [aMobileOpts, setAMobileOpts] = useState<AssetOpt[]>([]);
-  const [aOtherOpts,  setAOtherOpts]  = useState<AssetOpt[]>([]);
 
   const openAssignAssets = (row: EmployeeRow) => {
     setAssignEmp(row);
@@ -847,6 +857,7 @@ export default function HrEmployees() {
     setAOtherMasterAssetIds(Array.isArray(raw.other_master_asset_ids)
       ? raw.other_master_asset_ids.map((n: any) => String(n))
       : []);
+    setAOtherAssets(raw.other_assets || '');
     setAssignOpen(true);
   };
 
@@ -864,7 +875,6 @@ export default function HrEmployees() {
     Promise.allSettled([
       fetchCat('laptop', setALaptopOpts),
       fetchCat('mobile', setAMobileOpts),
-      fetchCat('other',  setAOtherOpts),
     ]);
     return () => { cancelled = true; };
   }, [assignOpen, assignEmp]);
@@ -885,7 +895,11 @@ export default function HrEmployees() {
       await api.put(`/employees/${dbId}`, {
         laptop_master_asset_id: aLaptopAssigned === 'Yes' ? intOrNull(aLaptopMasterAssetId) : null,
         mobile_master_asset_id: aMobileAssigned === 'Yes' ? intOrNull(aMobileMasterAssetId) : null,
+        // Structured master-asset picks are preserved as-is; the free-text
+        // "Other Assets" the admin typed is saved on the employees.other_assets
+        // column (nullable string, max 255 — validated server-side).
         other_master_asset_ids: aOtherMasterAssetIds.map(v => parseInt(v, 10)).filter(n => Number.isFinite(n)),
+        other_assets: aOtherAssets.trim() || null,
       });
       toast.success('Assets saved', `Updated assignments for ${assignEmp.name}.`);
       closeAssign();
@@ -1033,7 +1047,7 @@ export default function HrEmployees() {
     // Empty defaults — these dropdowns must be picked explicitly by the
     // admin on Add Employee instead of being silently pre-selected.
     setEPrimaryRole(''); setEAncillaryRole([]); setEWorkType('');
-    setELegalEntity(''); setELocation(''); setEReportingMgr('');
+    setELegalEntity(''); setELocation(''); setEReportingMgr(''); setSavedMgrOption(null);
     setEProbationPolicy(''); setENoticePeriod('');
     setECustomProbation(''); setECustomNotice('');
     // Step 3 — all dropdowns reset to empty so admin must pick on every
@@ -1350,10 +1364,19 @@ export default function HrEmployees() {
       const mgrUserType = raw.reporting_manager_user?.user_type;
       if (raw.reporting_manager_id) {
         setEReportingMgr(`employee:${raw.reporting_manager_id}`);
+        const m = raw.reporting_manager;
+        const nm = m?.display_name
+          || [m?.first_name, m?.last_name].filter(Boolean).join(' ').trim()
+          || `Employee #${raw.reporting_manager_id}`;
+        setSavedMgrOption({ value: `employee:${raw.reporting_manager_id}`, label: `${nm} (Employee)` });
       } else if (mgrUserId && mgrUserType) {
         setEReportingMgr(`${mgrUserType}:${mgrUserId}`);
+        const u = raw.reporting_manager_user;
+        const nm = u?.name || u?.email || `User #${mgrUserId}`;
+        setSavedMgrOption({ value: `${mgrUserType}:${mgrUserId}`, label: nm });
       } else {
         setEReportingMgr('');
+        setSavedMgrOption(null);
       }
       // Edit hydration — show whatever the admin actually saved. Earlier
       // code special-cased the old "Default Probation Policy" / "Default
@@ -2115,16 +2138,25 @@ export default function HrEmployees() {
   }, []);
   useEffect(() => { reloadManagers(); }, [reloadManagers]);
   const reportingManagerOptions = useMemo(
-    () => managerCandidates
-      // An employee can't report to themselves — strip the row currently
-      // being edited out of the manager list. `editingDbId` is the DB id
-      // of the open employee row; kind === 'employee' is the candidate
-      // kind that corresponds to a row in the employees table (the other
-      // kind, 'login_users', is a separate user account and never
-      // collides with the employee id space).
-      .filter(m => !(editingDbId && m.kind === 'employee' && m.id === editingDbId))
-      .map(m => ({ value: `${m.kind}:${m.id}`, label: m.label })),
-    [managerCandidates, editingDbId]
+    () => {
+      const base = managerCandidates
+        // An employee can't report to themselves — strip the row currently
+        // being edited out of the manager list. `editingDbId` is the DB id
+        // of the open employee row; kind === 'employee' is the candidate
+        // kind that corresponds to a row in the employees table (the other
+        // kind, 'login_users', is a separate user account and never
+        // collides with the employee id space).
+        .filter(m => !(editingDbId && m.kind === 'employee' && m.id === editingDbId))
+        .map(m => ({ value: `${m.kind}:${m.id}`, label: m.label }));
+      // Guarantee the saved manager is selectable/visible even when they're
+      // no longer a live candidate, so editing an existing employee always
+      // shows who their manager is (and doesn't silently blank the field).
+      if (savedMgrOption && !base.some(o => o.value === savedMgrOption.value)) {
+        return [savedMgrOption, ...base];
+      }
+      return base;
+    },
+    [managerCandidates, editingDbId, savedMgrOption]
   );
 
   const filtered = useMemo(() => {
@@ -5697,13 +5729,18 @@ export default function HrEmployees() {
 
               <Col md={12}>
                 <label>Other Assets <span style={{ color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(optional)</span></label>
-                <MasterMultiSelect
-                  value={aOtherMasterAssetIds}
-                  onChange={setAOtherMasterAssetIds}
-                  options={aOtherOpts}
-                  placeholder={aOtherOpts.length === 0 ? 'No other assets available' : 'Pick one or more'}
-                  disabled={aOtherOpts.length === 0}
+                <input
+                  type="text"
+                  className="form-control"
+                  value={aOtherAssets}
+                  onChange={e => setAOtherAssets(e.target.value)}
+                  maxLength={255}
+                  placeholder="Type asset names, e.g. Monitor, Headset, Access Card"
+                  style={{ height: 38, borderRadius: 8 }}
                 />
+                <small style={{ color: 'var(--vz-secondary-color)', fontSize: 11 }}>
+                  Free text — separate multiple with commas (max 255 chars).
+                </small>
               </Col>
             </Row>
           </div>
