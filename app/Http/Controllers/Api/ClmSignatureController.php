@@ -1087,7 +1087,12 @@ class ClmSignatureController extends Controller
             }
         }
 
-        $q = ClmSignatureRequest::query()->forUser($user)->latest();
+        // Honour the BranchSwitcher (see CustomerController::index) so a
+        // main-branch user viewing "as" a specific branch only sees that
+        // branch's signature requests.
+        $q = ClmSignatureRequest::query()
+            ->forUser($user, $request->integer('branch_id') ?: null)
+            ->latest();
 
         if ($filterPartyId)   $q->where('party_id', $filterPartyId);
         if ($filterModelName) $q->where('model_name', $filterModelName);

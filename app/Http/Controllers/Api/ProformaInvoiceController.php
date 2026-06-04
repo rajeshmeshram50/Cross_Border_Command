@@ -44,7 +44,7 @@ class ProformaInvoiceController extends Controller
             ])
             ->orderByDesc('id');
 
-        $this->applyScope($q, $user);
+        $this->applyScope($q, $user, $request->integer('branch_id') ?: null);
         $this->applyFilters($q, $request);
 
         $perPage = min(max((int) $request->query('per_page', 25), 1), 200);
@@ -768,18 +768,30 @@ class ProformaInvoiceController extends Controller
     }
 
   
-    private function applyScope($q, $user): void
+    private function applyScope($q, $user, ?int $branchFilter = null): void
     {
-        if ($user->user_type === 'super_admin') return;
+        if ($user->user_type === 'super_admin') {
+            if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
+            return;
+        }
         if (!$user->client_id) {
             $q->whereRaw('1 = 0');
             return;
         }
         $q->where('client_id', $user->client_id);
 
-        if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
-        if ($user->branch && (bool) $user->branch->is_main) return;
+        // Client-level admins / users + main-branch users see every branch
+        // under their client, but honour the BranchSwitcher's narrowing.
+        if ($user->user_type !== 'branch_user' || !$user->branch_id) {
+            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+            return;
+        }
+        if ($user->branch && (bool) $user->branch->is_main) {
+            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+            return;
+        }
 
+        // Sub-branch user: own + main branch only; can't switch.
         $mainBranchId = \DB::table('branches')
             ->where('client_id', $user->client_id)
             ->where('is_main', true)
@@ -792,6 +804,18 @@ class ProformaInvoiceController extends Controller
                 $w->orWhere('branch_id', $mainBranchId);
             }
         });
+    }
+
+    /** Narrow an already-tenant-scoped query when the BranchSwitcher injects
+     *  ?branch_id=N. Cross-tenant ids are silently dropped. */
+    private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
+    {
+        if ($branchFilter === null) return;
+        $belongsToClient = \App\Models\Branch::where('id', $branchFilter)
+            ->where('client_id', $user->client_id)
+            ->exists();
+        if (!$belongsToClient) return;
+        $q->where('branch_id', $branchFilter);
     }
 
    

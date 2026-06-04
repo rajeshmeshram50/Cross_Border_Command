@@ -90,9 +90,12 @@ class Customer extends Model
      * Usage:
      *   Customer::query()->forUser($user)->where(...)
      */
-    public function scopeForUser(Builder $q, $user): Builder
+    public function scopeForUser(Builder $q, $user, ?int $branchFilter = null): Builder
     {
-        \App\Support\MasterVisibility::applyReadScope($q, $user);
+        // $branchFilter is the BranchSwitcher's narrowing — only honoured for
+        // switchable roles (client admin / main-branch user) inside
+        // applyReadScope; silently ignored for sub-branch users & employees.
+        \App\Support\MasterVisibility::applyReadScope($q, $user, $branchFilter);
         return $q;
     }
 }

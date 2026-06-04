@@ -38,7 +38,7 @@ class QuotationController extends Controller
             ])
             ->orderByDesc('id');
 
-        $this->applyScope($q, $user);
+        $this->applyScope($q, $user, $request->integer('branch_id') ?: null);
         $this->applyFilters($q, $request);
 
         $perPage = min(max((int) $request->query('per_page', 25), 1), 200);
@@ -642,23 +642,34 @@ class QuotationController extends Controller
      * so head-office templates / company-wide quotations stay reachable;
      * write access on them is still blocked by `assertScope($row, $user, 'write')`.
      */
-    private function applyScope($q, $user): void
+    private function applyScope($q, $user, ?int $branchFilter = null): void
     {
-        if ($user->user_type === 'super_admin') return;
+        if ($user->user_type === 'super_admin') {
+            if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
+            return;
+        }
         if (!$user->client_id) {
             $q->whereRaw('1 = 0');  // No tenant → no rows
             return;
         }
         $q->where('client_id', $user->client_id);
 
-        // Only branch_users get branch-level isolation. Client-level
-        // admins / users see every branch under their client.
-        if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
+        // Client-level admins / users see every branch under their client —
+        // but honour the BranchSwitcher when they've picked a specific branch.
+        if ($user->user_type !== 'branch_user' || !$user->branch_id) {
+            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+            return;
+        }
 
-        // Main-branch users see everything — same as a client admin.
-        if ($user->branch && (bool) $user->branch->is_main) return;
+        // Main-branch users see everything — same as a client admin — and
+        // likewise honour the switcher's narrowing.
+        if ($user->branch && (bool) $user->branch->is_main) {
+            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+            return;
+        }
 
-        // Normal branch user: own branch + main branch only.
+        // Normal sub-branch user: own branch + main branch only. They can't
+        // use the switcher, so $branchFilter is ignored.
         $mainBranchId = \DB::table('branches')
             ->where('client_id', $user->client_id)
             ->where('is_main', true)
@@ -671,6 +682,18 @@ class QuotationController extends Controller
                 $w->orWhere('branch_id', $mainBranchId);
             }
         });
+    }
+
+    /** Narrow an already-tenant-scoped query when the BranchSwitcher injects
+     *  ?branch_id=N. Cross-tenant ids are silently dropped. */
+    private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
+    {
+        if ($branchFilter === null) return;
+        $belongsToClient = \App\Models\Branch::where('id', $branchFilter)
+            ->where('client_id', $user->client_id)
+            ->exists();
+        if (!$belongsToClient) return;
+        $q->where('branch_id', $branchFilter);
     }
 
     /**

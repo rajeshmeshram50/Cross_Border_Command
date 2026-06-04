@@ -67,7 +67,7 @@ class SalesLeadController extends Controller
             ])
             ->orderByDesc('id');
 
-        $this->applyScope($q, $user);
+        $this->applyScope($q, $user, $request->integer('branch_id') ?: null);
 
         $status = $request->query('status');
         if ($status === 'qualified') {
@@ -1640,9 +1640,12 @@ class SalesLeadController extends Controller
      * (non-main branch_user) are pinned to their branch. Mirror of
      * SalesTodoController::applyScope tailored for leads.
      */
-    private function applyScope($q, $user): void
+    private function applyScope($q, $user, ?int $branchFilter = null): void
     {
-        if ($user->user_type === 'super_admin') return;
+        if ($user->user_type === 'super_admin') {
+            if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
+            return;
+        }
 
         if ($user->client_id) {
             $q->where('client_id', $user->client_id);
@@ -1650,10 +1653,29 @@ class SalesLeadController extends Controller
 
         $isMain = $user->branch?->is_main ?? false;
         if ($user->user_type === 'branch_user' && !$isMain) {
+            // Sub-branch users are locked to own + main branch; they can't use
+            // the BranchSwitcher, so $branchFilter is ignored here.
             $q->where(function ($w) use ($user) {
                 $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
             });
+            return;
         }
+
+        // Switchable roles (client-level admins + main-branch users): honour
+        // the BranchSwitcher's narrowing when a specific branch is picked.
+        $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+    }
+
+    /** Narrow an already-tenant-scoped query when the BranchSwitcher injects
+     *  ?branch_id=N. Cross-tenant ids are silently dropped. */
+    private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
+    {
+        if ($branchFilter === null) return;
+        $belongsToClient = \App\Models\Branch::where('id', $branchFilter)
+            ->where('client_id', $user->client_id)
+            ->exists();
+        if (!$belongsToClient) return;
+        $q->where('branch_id', $branchFilter);
     }
 
     /**
