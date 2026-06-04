@@ -834,17 +834,13 @@ export default function HrEmployees() {
   const [aMobileAssigned, setAMobileAssigned]           = useState('No');
   const [aMobileMasterAssetId, setAMobileMasterAssetId] = useState('');
   const [aOtherMasterAssetIds, setAOtherMasterAssetIds] = useState<string[]>([]);
-  // Other Assets is now a free-text field (employees.other_assets) — the
-  // admin types whatever the employee was given (e.g. "Monitor, Headset")
-  // instead of being limited to the master-asset dropdown, which was empty
-  // whenever every catalogued asset was already booked.
-  const [aOtherAssets, setAOtherAssets] = useState('');
   const [aSaving, setASaving] = useState(false);
   // Available-asset pools for the Assign modal. Refilled when the modal
   // opens; current employee is excluded from the booked-set so the
   // admin can keep their own pre-existing pick.
   const [aLaptopOpts, setALaptopOpts] = useState<AssetOpt[]>([]);
   const [aMobileOpts, setAMobileOpts] = useState<AssetOpt[]>([]);
+  const [aOtherOpts,  setAOtherOpts]  = useState<AssetOpt[]>([]);
 
   const openAssignAssets = (row: EmployeeRow) => {
     setAssignEmp(row);
@@ -857,7 +853,6 @@ export default function HrEmployees() {
     setAOtherMasterAssetIds(Array.isArray(raw.other_master_asset_ids)
       ? raw.other_master_asset_ids.map((n: any) => String(n))
       : []);
-    setAOtherAssets(raw.other_assets || '');
     setAssignOpen(true);
   };
 
@@ -875,6 +870,7 @@ export default function HrEmployees() {
     Promise.allSettled([
       fetchCat('laptop', setALaptopOpts),
       fetchCat('mobile', setAMobileOpts),
+      fetchCat('other',  setAOtherOpts),
     ]);
     return () => { cancelled = true; };
   }, [assignOpen, assignEmp]);
@@ -895,11 +891,7 @@ export default function HrEmployees() {
       await api.put(`/employees/${dbId}`, {
         laptop_master_asset_id: aLaptopAssigned === 'Yes' ? intOrNull(aLaptopMasterAssetId) : null,
         mobile_master_asset_id: aMobileAssigned === 'Yes' ? intOrNull(aMobileMasterAssetId) : null,
-        // Structured master-asset picks are preserved as-is; the free-text
-        // "Other Assets" the admin typed is saved on the employees.other_assets
-        // column (nullable string, max 255 — validated server-side).
         other_master_asset_ids: aOtherMasterAssetIds.map(v => parseInt(v, 10)).filter(n => Number.isFinite(n)),
-        other_assets: aOtherAssets.trim() || null,
       });
       toast.success('Assets saved', `Updated assignments for ${assignEmp.name}.`);
       closeAssign();
@@ -5729,18 +5721,13 @@ export default function HrEmployees() {
 
               <Col md={12}>
                 <label>Other Assets <span style={{ color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(optional)</span></label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={aOtherAssets}
-                  onChange={e => setAOtherAssets(e.target.value)}
-                  maxLength={255}
-                  placeholder="Type asset names, e.g. Monitor, Headset, Access Card"
-                  style={{ height: 38, borderRadius: 8 }}
+                <MasterMultiSelect
+                  value={aOtherMasterAssetIds}
+                  onChange={setAOtherMasterAssetIds}
+                  options={aOtherOpts}
+                  placeholder={aOtherOpts.length === 0 ? 'No other assets available' : 'Pick one or more'}
+                  disabled={aOtherOpts.length === 0}
                 />
-                <small style={{ color: 'var(--vz-secondary-color)', fontSize: 11 }}>
-                  Free text — separate multiple with commas (max 255 chars).
-                </small>
               </Col>
             </Row>
           </div>
