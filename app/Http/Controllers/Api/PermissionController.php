@@ -310,6 +310,17 @@ class PermissionController extends Controller
             $canImport = filter_var($perm['can_import'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $canApprove = filter_var($perm['can_approve'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
+            // Action permissions imply visibility. Granting add / edit / delete /
+            // export / import / approve on a module MUST also grant can_view:
+            // the sidebar menu, the page-access guards, and the controller
+            // index() checks all key off can_view, so an "edit-only" row would
+            // hide the module entirely and lock the user out of the very page
+            // they were given edit rights on. View is the baseline every other
+            // action sits on top of. (View granted alone stays view-only.)
+            if ($canAdd || $canEdit || $canDelete || $canExport || $canImport || $canApprove) {
+                $canView = true;
+            }
+
             $hasAny = $canView || $canAdd || $canEdit || $canDelete || $canExport || $canImport || $canApprove;
             if (!$hasAny) continue;
 
