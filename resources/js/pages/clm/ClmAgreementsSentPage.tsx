@@ -6,6 +6,7 @@ import {
   inits, pad2, PER_PAGE,
 } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import { ShimmerTable } from '../../components/ui/Shimmer';
 
 /* Sent rows from GET /clm/ctc-contracts/sent — the AwsContract list shape
  * enriched with the clarification thread + approver so the Clarifications
@@ -46,7 +47,14 @@ export default function ClmAgreementsSentPage() {
   const [respondId, setRespondId] = useState<string | null>(null);
 
   const [sent, setSent] = useState<SentRow[]>([]);
-  const load = () => { api.get('/clm/ctc-contracts/sent').then(r => setSent(r.data?.data ?? [])).catch(() => setSent([])); };
+  const [loading, setLoading] = useState(true);
+  const load = () => {
+    setLoading(true);
+    api.get('/clm/ctc-contracts/sent')
+      .then(r => setSent(r.data?.data ?? []))
+      .catch(() => { setSent([]); toast.error('Could not load agreements', 'Please refresh and try again.'); })
+      .finally(() => setLoading(false));
+  };
   useEffect(() => { load(); }, []);
 
   const counts = useMemo(() => ({
@@ -161,7 +169,9 @@ export default function ClmAgreementsSentPage() {
           </div>
         </div>
 
-        {tab === 'clarify'
+        {loading
+          ? <ShimmerTable rows={6} cols={11} />
+          : tab === 'clarify'
           ? <ClarifyTable rows={clarifyList} onRespond={setRespondId} t={t} />
           : tab === 'rejected'
             ? <RejectedTable rows={filtered} ata={sent} page={page} setPage={setPage} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />

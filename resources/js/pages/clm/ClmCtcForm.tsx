@@ -9,6 +9,7 @@ import { pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, type CtcVersion } from './clmCtcModals';
 import ClmCtcSignPositionModal from './ClmCtcSignPositionModal';
+import { Shimmer } from '../../components/ui/Shimmer';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Case to Case Contracts → full-screen "Create / Edit CTC Agreement" form.
@@ -70,6 +71,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   const [workingId, setWorkingId] = useState<number | null>(editing?.dbId ?? null);
   const [record, setRecord] = useState<Record<string, unknown> | null>(null);
   const [signPos, setSignPos] = useState<{ name: string; email: string }[] | null>(null);  // open → signature positioning step
+  const [hydrating, setHydrating] = useState(!!editing?.dbId);  // edit-mode initial fetch in progress
   // Page-shell header/footer config — lifted to the parent so it survives the
   // stage change and the Stage-2 preview can render the same logo/header/footer.
   const [header, setHeader] = useState<HeaderConfig>(DEFAULT_HEADER);
@@ -150,7 +152,8 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       setCps(cpArr.map((c, i) => ({ name: String(c.name ?? ''), initials: orgInitials(String(c.name ?? '')), country: String(c.country ?? ''), phone: String(c.phone ?? ''), email: String(c.email ?? ''), grad: ORG_GRADS[i % ORG_GRADS.length], badge: String(c.badge ?? ''), referred: String(c.referred ?? c.name ?? ''), sourceType: c.source_type ? String(c.source_type) : undefined, sourceId: (c.source_id as string | number | undefined) ?? undefined })));
       if (r.header_config) setHeader({ ...DEFAULT_HEADER, ...(r.header_config as object) } as HeaderConfig);
       if (r.footer_config) setFooter({ ...DEFAULT_FOOTER, ...(r.footer_config as object) } as FooterConfig);
-    }).catch(() => { if (alive) toast.error('Could not load', 'Failed to open this agreement for editing.'); });
+    }).catch(() => { if (alive) toast.error('Could not load', 'Failed to open this agreement for editing.'); })
+      .finally(() => { if (alive) setHydrating(false); });
     return () => { alive = false; };
   }, [editing?.dbId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -316,7 +319,8 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
 
         {/* STAGE BODY */}
         <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', paddingBottom: 16 }}>
-          {stage === 1 && (
+          {hydrating && <CtcFormShimmer t={t} />}
+          {!hydrating && stage === 1 && (
             <Stage1
               t={t}
               cps={cps} orgs={orgs} agTypes={agTypes} agTypesLoading={agTypesLoading} org={org} orgOpen={orgOpen} setOrgOpen={setOrgOpen}
@@ -333,7 +337,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               onNext={() => goStage(2)}
             />
           )}
-          {stage > 1 && <StageReview t={t} stage={stage} cps={cps} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} header={header} footer={footer} sentForApproval={sentForApproval} workingId={workingId} record={record} approval={approval} onResubmitEdit={() => goStage(1)} onSendForSigning={sendForSigning} onRecordSignature={recordSignature} onMoveToRepository={moveToRepository} onRefresh={refreshRecord} onRemind={remindSigning} onExit={onClose} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
+          {!hydrating && stage > 1 && <StageReview t={t} stage={stage} cps={cps} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} header={header} footer={footer} sentForApproval={sentForApproval} workingId={workingId} record={record} approval={approval} onResubmitEdit={() => goStage(1)} onSendForSigning={sendForSigning} onRecordSignature={recordSignature} onMoveToRepository={moveToRepository} onRefresh={refreshRecord} onRemind={remindSigning} onExit={onClose} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
         </div>
       </div>
 
@@ -349,6 +353,33 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
           onSent={async () => { setSignPos(null); await refreshRecord(); goStage(3); }}
         />
       )}
+    </div>
+  );
+}
+
+/* ── Edit-mode hydration shimmer — mirrors the 3-panel workspace layout ── */
+function CtcFormShimmer({ t }: { t: OpsTokens }) {
+  const card: React.CSSProperties = { flex: 1, minHeight: 0, background: t.surface, borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : 'rgba(124,58,237,.18)'}`, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 4px 20px rgba(109,40,217,.08)' };
+  const head = (grad: string) => (
+    <div style={{ padding: '13px 14px', background: `linear-gradient(118deg,${grad})`, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+      <div style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.28)' }} />
+      <div style={{ width: '46%', height: 12, borderRadius: 6, background: 'rgba(255,255,255,.26)' }} />
+    </div>
+  );
+  const body = (n: number) => (
+    <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'hidden', padding: 14, display: 'flex', flexDirection: 'column', gap: 11 }}>
+      {Array.from({ length: n }).map((_, i) => (
+        i % 4 === 0
+          ? <Shimmer key={i} height={48} radius={12} />
+          : <Shimmer key={i} height={12} width={i % 3 === 0 ? '70%' : i % 5 === 0 ? '55%' : '100%'} radius={6} />
+      ))}
+    </div>
+  );
+  return (
+    <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
+      <div style={{ flex: 2, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}><div style={card}>{head('#4C1D95,#6D28D9,#7C3AED,#8B5CF6')}{body(6)}</div></div>
+      <div style={{ flex: 5.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}><div style={card}>{head('#3B0764,#5B21B6,#7C3AED,#8B5CF6')}{body(11)}</div></div>
+      <div style={{ flex: 2.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}><div style={card}>{head('#6D28D9,#7C3AED,#8B5CF6,#A78BFA')}{body(7)}</div></div>
     </div>
   );
 }
@@ -691,7 +722,7 @@ function Stage1(p: {
                 </div>
                 <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
                   <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
-                    <div ref={editorRef} className="ctc-editor" contentEditable suppressContentEditableWarning data-ph="Start drafting your agreement content here…  This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" onInput={syncDraft} onBlur={syncDraft} style={{ minHeight: 220, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', color: '#1f2937', lineHeight: 1.8, background: '#fff', boxSizing: 'border-box' }} />
+                    <div ref={editorRef} className="ctc-editor" contentEditable suppressContentEditableWarning data-ph="Start drafting your agreement content here…  This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" onInput={syncDraft} onBlur={syncDraft} style={{ minHeight: 220, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', color: t.dark ? '#e8eaed' : '#1f2937', lineHeight: 1.8, background: t.dark ? '#1b2230' : '#fff', boxSizing: 'border-box' }} />
                   </HeaderFooterPanel>
                 </div>
                 {/* footer hint */}
