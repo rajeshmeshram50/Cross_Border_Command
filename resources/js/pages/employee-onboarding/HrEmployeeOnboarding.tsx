@@ -1884,6 +1884,20 @@ export function VaultModal({
         // consistent frame. Capped to 90vh so it still fits short screens.
         style={{ background: 'var(--vz-card-bg)', height: 'min(90vh, 720px)' }}
       >
+        <style>{`
+          /* 3-dot row menu (Audit Trail / Cancel Workflow). Inline bg uses the
+             card-scoped --vz-card-bg which doesn't resolve inside this portal
+             (fell back to #fff → white menu). Force a dark surface + readable
+             items in dark mode. */
+          [data-bs-theme="dark"] .vault-kebab-menu {
+            background: var(--vz-secondary-bg) !important;
+            border-color: var(--vz-border-color) !important;
+            box-shadow: 0 10px 26px rgba(0,0,0,0.45) !important;
+          }
+          [data-bs-theme="dark"] .vault-kebab-menu button:hover {
+            background: rgba(255,255,255,0.06) !important;
+          }
+        `}</style>
         {/* Header — indigo gradient with status ring (fixed, non-scrolling) */}
         <div
           style={{
@@ -2272,7 +2286,7 @@ export function VaultModal({
                               <i className="ri-more-2-fill" />
                             </button>
                             {openMenuId === tpl.id && (
-                              <div style={{ position: 'absolute', right: 0, top: '110%', minWidth: 180, background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 10, boxShadow: '0 8px 22px rgba(0,0,0,0.18)', padding: 4, zIndex: 20 }}>
+                              <div className="vault-kebab-menu" style={{ position: 'absolute', right: 0, top: '110%', minWidth: 180, background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 10, boxShadow: '0 8px 22px rgba(0,0,0,0.18)', padding: 4, zIndex: 20 }}>
                                 {run ? (
                                   <button type="button" onClick={() => openAudit(run)}
                                     style={menuItemStyle}>
@@ -2374,6 +2388,41 @@ export function VaultModal({
       {/* Document preview — opens on top of the vault modal */}
       <Modal isOpen={previewOpen} toggle={() => setPreviewOpen(false)} size="lg" centered
         contentClassName="border-0" modalClassName="vault-preview-modal" backdrop="static">
+        <style>{`
+          /* Dark-mode chrome for the View preview modal. --vz-card-bg is
+             card-scoped and doesn't resolve inside this portal (it fell back to
+             #fff, leaving the footer white); root-level --vz-secondary-bg /
+             --vz-border-color / --vz-body-color resolve everywhere, so we use
+             those plus explicit amber for the "unfilled placeholders" band. */
+          [data-bs-theme="dark"] .vault-preview-modal .modal-content {
+            background: var(--vz-secondary-bg) !important;
+            color: var(--vz-body-color);
+          }
+          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-foot {
+            background: var(--vz-secondary-bg) !important;
+            border-top-color: var(--vz-border-color) !important;
+            box-shadow: 0 -3px 10px rgba(0,0,0,0.25);
+          }
+          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-btn--ghost {
+            background: var(--vz-card-bg, #1f2937) !important;
+            border-color: var(--vz-border-color) !important;
+            color: var(--vz-body-color) !important;
+          }
+          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn {
+            background: rgba(245,158,11,0.15) !important;
+            border-color: rgba(245,158,11,0.40) !important;
+          }
+          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn,
+          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn strong,
+          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn i,
+          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn div {
+            color: #fcd34d !important;
+          }
+          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn code {
+            background: rgba(0,0,0,0.30) !important;
+            color: #fde68a !important;
+          }
+        `}</style>
         <ModalBody className="p-0">
           {/* Preview header bar */}
           <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)', borderRadius: '6px 6px 0 0' }}>
@@ -2409,7 +2458,7 @@ export function VaultModal({
             ) : (
               <>
                 {previewMissing.length > 0 && (
-                  <div className="d-flex align-items-start gap-2 mb-3"
+                  <div className="d-flex align-items-start gap-2 mb-3 tpl-prev-warn"
                     style={{ padding: '8px 12px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12 }}>
                     <i className="ri-error-warning-line" style={{ color: '#b45309', fontSize: 16, marginTop: 1 }} />
                     <div style={{ color: '#92400e' }}>
@@ -2437,7 +2486,7 @@ export function VaultModal({
             )}
           </div>
 
-          <div style={{ padding: 12, borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-card-bg, #fff)', display: 'flex', justifyContent: 'flex-end', gap: 8, borderRadius: '0 0 6px 6px' }}>
+          <div className="tpl-prev-foot" style={{ padding: 12, borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-card-bg, #fff)', display: 'flex', justifyContent: 'flex-end', gap: 8, borderRadius: '0 0 6px 6px' }}>
             <button type="button" onClick={() => setPreviewOpen(false)}
               className="tpl-prev-btn tpl-prev-btn--ghost"
               style={{ padding: '7px 14px', background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #d1d5db)', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'var(--vz-body-color, #374151)', cursor: 'pointer' }}>
@@ -2485,7 +2534,28 @@ export function VaultModal({
       </Modal>
 
       {/* Audit trail modal */}
-      <Modal isOpen={!!auditRun} toggle={() => setAuditRun(null)} size="lg" centered contentClassName="border-0" backdrop="static">
+      <Modal isOpen={!!auditRun} toggle={() => setAuditRun(null)} size="lg" centered contentClassName="border-0" modalClassName="audit-trail-modal" backdrop="static">
+        <style>{`
+          /* Dark-mode for the Audit Trail / Signature Timeline modal — the
+             body + most text are hardcoded light. Darken the surfaces and lift
+             every text node; the colored status pills (span) keep their own
+             tints, which read fine on the dark body. */
+          [data-bs-theme="dark"] .audit-trail-modal .modal-content,
+          [data-bs-theme="dark"] .audit-trail-modal .audit-body {
+            background: var(--vz-secondary-bg) !important;
+          }
+          [data-bs-theme="dark"] .audit-trail-modal .audit-body div {
+            color: #e5e7eb !important;
+          }
+          [data-bs-theme="dark"] .audit-trail-modal .audit-body code {
+            background: rgba(255,255,255,0.08) !important;
+            color: #cbd5e1 !important;
+          }
+          [data-bs-theme="dark"] .audit-trail-modal .audit-note {
+            background: rgba(239,68,68,0.12) !important;
+            border-color: rgba(239,68,68,0.40) !important;
+          }
+        `}</style>
         <ModalBody className="p-0">
           {auditRun && (() => {
             const signers = auditRun.signers || [];
@@ -2614,7 +2684,7 @@ export function VaultModal({
                 </div>
 
                 {/* ── Vertical timeline ── */}
-                <div style={{ padding: '16px 22px 18px', maxHeight: '55vh', overflowY: 'auto', background: '#fff' }}>
+                <div className="audit-body" style={{ padding: '16px 22px 18px', maxHeight: '55vh', overflowY: 'auto', background: '#fff' }}>
                   <div style={{
                     fontSize: 11, fontWeight: 800,
                     color: '#6b7280', letterSpacing: '0.08em',
@@ -2694,7 +2764,7 @@ export function VaultModal({
                                 </div>
                               )}
                               {s.note && (
-                                <div style={{
+                                <div className="audit-note" style={{
                                   fontSize: 11.5, color: '#7f1d1d',
                                   background: '#fef2f2',
                                   border: '1px solid #fecaca',

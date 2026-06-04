@@ -348,6 +348,15 @@ type ExpiryDays = 3 | 7 | 15;
 
 export default function HrEmployees() {
   const [tab, setTab] = useState<'active' | 'disabled'>('active');
+  // Brief skeleton flash when the Active/Disabled tab changes. The data is
+  // already in memory (client-side filter), so the switch is instant — this
+  // shimmer just gives the change a smooth, "loading new view" feel.
+  const [tabSwitching, setTabSwitching] = useState(false);
+  useEffect(() => {
+    setTabSwitching(true);
+    const t = setTimeout(() => setTabSwitching(false), 450);
+    return () => clearTimeout(t);
+  }, [tab]);
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<'Active' | 'Disabled' | 'All'>('Active');
 
@@ -3083,7 +3092,7 @@ export default function HrEmployees() {
                       </tr>
                     </thead>
                     <tbody>
-                      {loadingEmployees ? (
+                      {loadingEmployees || tabSwitching ? (
                         <ShimmerTableRows rows={6} cols={11} keyPrefix="emp" />
                       ) : filtered.length === 0 ? (
                         <tr>

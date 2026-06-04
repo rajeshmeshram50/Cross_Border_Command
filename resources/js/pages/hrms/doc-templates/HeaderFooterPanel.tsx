@@ -232,7 +232,7 @@ export default function HeaderFooterPanel({
               <img src={header.logo_url} alt="logo" draggable={false}
                 style={{ height: logoHeightPx, maxWidth: Math.max(180, logoHeightPx * 3), objectFit: 'contain', pointerEvents: 'none' }} />
             ) : (
-              <div style={{ width: Math.max(72, logoHeightPx * 1.8), height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
+              <div className="tpl-logo-placeholder" style={{ width: Math.max(72, logoHeightPx * 1.8), height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
                 LOGO
               </div>
             )}
@@ -771,6 +771,40 @@ function HfpDarkStyles() {
       [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer,
       [data-bs-theme="dark"] .tpl-page-shell:has(.tpl-readonly-preview) .tpl-page-footer * {
         color: #e5e7eb !important;
+      }
+
+      /* Live EDITOR page (Template Design step). The header + footer bands use
+         inline white backgrounds, which left them bright white against the
+         already-dark editor body in dark mode. Make them dark too so the whole
+         "page" reads cohesively, and force their text light so the default
+         dark header/footer text doesn't vanish. Scoped with
+         :not(:has(.tpl-readonly-preview)) so the read-only preview rules above
+         keep owning the Inbox/vault surface. */
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header,
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer {
+        background: #1b2230 !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header {
+        border-bottom-color: rgba(255,255,255,0.10) !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer {
+        border-top-color: rgba(255,255,255,0.10) !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header,
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-header *,
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer,
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-footer * {
+        color: #e5e7eb !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell:not(:has(.tpl-readonly-preview)) .tpl-page-body {
+        color: #e5e7eb !important;
+      }
+      /* "LOGO" placeholder box (shown until a logo is uploaded) — inline
+         #f8fafc + dashed light border stayed bright on the dark header band. */
+      [data-bs-theme="dark"] .tpl-page-shell .tpl-logo-placeholder {
+        background: rgba(255,255,255,0.04) !important;
+        border-color: rgba(255,255,255,0.22) !important;
+        color: rgba(255,255,255,0.50) !important;
       }
 
       /* Popover (Header Settings / Footer Settings). Inline popoverStyle
