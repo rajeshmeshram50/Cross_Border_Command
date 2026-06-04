@@ -93,7 +93,9 @@ class SalesLeadController extends Controller
         $counts = null;
         if ((int) $request->query('with_counts', 1) === 1) {
             $countsQ = Lead::query();
-            $this->applyScope($countsQ, $user);
+            // Same BranchSwitcher narrowing as the list above, so the tab
+            // pill counts match the rows actually shown.
+            $this->applyScope($countsQ, $user, $request->integer('branch_id') ?: null);
             $this->applyListFilters($countsQ, $request);
 
             // NOTE: comparing booleans with `= 1`/`= 0` works on MySQL but
@@ -1384,12 +1386,16 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
+        // Honour the BranchSwitcher so this summary reflects the branch the
+        // user is currently viewing "as" (consistent with the leads list).
+        $branchFilter = $request->integer('branch_id') ?: null;
+
         // ── 1) Lead counts pivoted per (salesperson, platform).
         $countsQ = Lead::query()
             ->whereNotNull('salesperson_id')
             ->selectRaw('salesperson_id, platform, COUNT(*) AS cnt')
             ->groupBy('salesperson_id', 'platform');
-        $this->applyScope($countsQ, $user);
+        $this->applyScope($countsQ, $user, $branchFilter);
         $countRows = $countsQ->get();
 
         $platforms = $countRows->pluck('platform')->filter()->unique()->sort()->values()->all();
@@ -1407,7 +1413,7 @@ class SalesLeadController extends Controller
 
         // ── 2) Aggregate stats for the 4 header cards.
         $totalsQ = Lead::query();
-        $this->applyScope($totalsQ, $user);
+        $this->applyScope($totalsQ, $user, $branchFilter);
         $totalsRow = $totalsQ->selectRaw(
             "COUNT(*) AS total_all,
              SUM(CASE WHEN salesperson_id IS NOT NULL THEN 1 ELSE 0 END) AS total_assigned,
