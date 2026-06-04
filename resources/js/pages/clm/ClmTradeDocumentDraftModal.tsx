@@ -67,6 +67,18 @@ const STEPS = [
   { key: 2, label: 'Draft Document Content', sub: 'Rich text editor & placeholders' },
 ];
 
+// Length bounds for the Trade Document Title. Min keeps users from saving a
+// 1-2 char placeholder title; max stops a runaway string overflowing the field
+// (and the downstream library list / DOCX header).
+const TITLE_MIN = 3;
+const TITLE_MAX = 150;
+
+// Length bounds for the Purpose field — same rationale as the title: a minimum
+// to force a meaningful description, a maximum to keep the single-line input
+// (and its stored value) bounded.
+const PURPOSE_MIN = 3;
+const PURPOSE_MAX = 250;
+
 interface Props {
   open: boolean;
   existing: TdLib | null;
@@ -256,7 +268,20 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     } catch (e: any) {
-      toast.error('Download failed', e?.response?.data?.message ?? 'Please try again.');
+      // The response is a Blob (responseType: 'blob'), so a server error body
+      // arrives as a Blob too — read it back to surface the real message
+      // instead of a generic "Please try again".
+      let msg = 'Please try again.';
+      try {
+        const blob = e?.response?.data;
+        if (blob instanceof Blob) {
+          const json = JSON.parse(await blob.text());
+          if (json?.message) msg = json.message;
+        } else if (typeof e?.response?.data?.message === 'string') {
+          msg = e.response.data.message;
+        }
+      } catch { /* keep the default message */ }
+      toast.error('Download failed', msg);
     }
   };
   const uploadDocx = async (file: File) => {
@@ -374,7 +399,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     const next: Record<string, string> = {};
     if (!name.trim())    next.name    = 'Document type is required';
     if (!title.trim())   next.title   = 'Title is required';
+    else if (title.trim().length < TITLE_MIN) next.title = `Title must be at least ${TITLE_MIN} characters`;
+    else if (title.trim().length > TITLE_MAX) next.title = `Title must not exceed ${TITLE_MAX} characters`;
     if (!purpose.trim()) next.purpose = 'Purpose is required';
+    else if (purpose.trim().length < PURPOSE_MIN) next.purpose = `Purpose must be at least ${PURPOSE_MIN} characters`;
+    else if (purpose.trim().length > PURPOSE_MAX) next.purpose = `Purpose must not exceed ${PURPOSE_MAX} characters`;
     if (parties.size === 0) next.party = 'Select at least one applicable party';
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -536,26 +565,36 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                 </div>
 
                 <div className="tdw-field">
-                  <label className="tdw-label">Trade Document Title <span className="tdw-req">*</span></label>
+                  <label className="tdw-label">
+                    Trade Document Title <span className="tdw-req">*</span>
+                    <span className="tdw-count" style={{ color: title.length >= TITLE_MAX ? '#b45309' : undefined }}>{title.length}/{TITLE_MAX}</span>
+                  </label>
                   <input
                     type="text"
                     className={`tdw-input ${errors.title ? 'is-err' : ''}`}
                     placeholder="e.g. Supplier Self Declaration Form"
                     value={title}
-                    onChange={e => { setTitle(e.target.value); setErrors(p => ({ ...p, title: '' })); }}
+                    maxLength={TITLE_MAX}
+                    minLength={TITLE_MIN}
+                    onChange={e => { setTitle(e.target.value.slice(0, TITLE_MAX)); setErrors(p => ({ ...p, title: '' })); }}
                   />
                   {errors.title && <div className="tdw-err">{errors.title}</div>}
                 </div>
               </div>
 
               <div className="tdw-field">
-                <label className="tdw-label">Purpose <span className="tdw-req">*</span></label>
+                <label className="tdw-label">
+                  Purpose <span className="tdw-req">*</span>
+                  <span className="tdw-count" style={{ color: purpose.length >= PURPOSE_MAX ? '#b45309' : undefined }}>{purpose.length}/{PURPOSE_MAX}</span>
+                </label>
                 <input
                   type="text"
                   className={`tdw-input ${errors.purpose ? 'is-err' : ''}`}
                   placeholder="e.g. Vendor onboarding compliance verification"
                   value={purpose}
-                  onChange={e => { setPurpose(e.target.value); setErrors(p => ({ ...p, purpose: '' })); }}
+                  maxLength={PURPOSE_MAX}
+                  minLength={PURPOSE_MIN}
+                  onChange={e => { setPurpose(e.target.value.slice(0, PURPOSE_MAX)); setErrors(p => ({ ...p, purpose: '' })); }}
                 />
                 {errors.purpose && <div className="tdw-err">{errors.purpose}</div>}
               </div>
@@ -957,6 +996,7 @@ const TDW_CSS = `
   color: #0e7490;
 }
 .tdw-req { color: #ef4444; font-size: 12px; line-height: 1; }
+.tdw-count { float: right; font-weight: 700; letter-spacing: 0; text-transform: none; color: #94a3b8; }
 .tdw-input {
   width: 100%; box-sizing: border-box;
   border: 1.5px solid rgba(6,182,212,.25); border-radius: 9px;

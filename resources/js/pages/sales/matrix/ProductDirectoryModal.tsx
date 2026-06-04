@@ -686,6 +686,8 @@ const SCOPED_CSS = `
 .pdm-table-wrap {
   background: #fff; border: 1px solid #e9d5ff; border-radius: 12px;
   overflow: auto;
+  /* Show ~5 product rows; the rest scroll inside (sticky header stays put). */
+  max-height: 320px;
 }
 .pdm-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1000px; }
 /* Table header — gradient lives on the <tr> so a single 90° sweep

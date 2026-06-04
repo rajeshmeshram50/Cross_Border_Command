@@ -400,7 +400,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           </div>
           <div>
             <div className="smd-stg-head-title">Stage 5: Quotation vs PI</div>
-            <div className="smd-stg-head-sub">● Quotation / PI comparison underway</div>
+            <div className="smd-stg-head-sub">
+              {docType === 'quotation'
+                ? `● ${liveQuotationsCount} ${liveQuotationsCount === 1 ? 'Quotation' : 'Quotations'} on this opportunity`
+                : `● ${livePisCount} ${livePisCount === 1 ? 'Proforma Invoice' : 'Proforma Invoices'} on this opportunity`}
+            </div>
           </div>
         </div>
         <div className="s5-head-right">
@@ -430,6 +434,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                 <line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>
               </svg>
               <span>Quotation</span>
+              <span className="s5-seg-count">{liveQuotationsCount}</span>
             </button>
             <button
               type="button"
@@ -441,6 +446,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                 <rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/>
               </svg>
               <span>Proforma Invoice</span>
+              <span className="s5-seg-count">{livePisCount}</span>
             </button>
           </div>
           <div className="s5-create-group">
@@ -595,10 +601,17 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             );
                           })()}
                           <span className="s5-act-sep" />
-                          <button type="button" className="s5-icn s5-icn-mail" title="Send via Email"
-                            onClick={() => void onEmail(docType, r.id, r.code)} disabled={anyActing}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                          </button>
+                          {/* Email button shown for Quotations only. For a PI the
+                              document is delivered to the customer via Zoho Sign
+                              ("Send for Sign"), so the manual email button is
+                              hidden. Code kept (docType guard) so it still works
+                              for quotations and can be restored for PI if needed. */}
+                          {docType !== 'pi' && (
+                            <button type="button" className="s5-icn s5-icn-mail" title="Send via Email"
+                              onClick={() => void onEmail(docType, r.id, r.code)} disabled={anyActing}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                            </button>
+                          )}
                           {(() => {
                             // A signed doc is locked — show the pencil greyed
                             // out; clicking still explains why (handled in onEdit).
@@ -1085,6 +1098,14 @@ const STAGE5_CSS = `
 .s5-seg-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: #a78bfa; box-shadow: 0 0 4px rgba(167,139,250,.5); }
 .s5-seg-btn.active .s5-seg-dot { background: rgba(255,255,255,.85); box-shadow: 0 0 6px rgba(255,255,255,.6); }
 .s5-seg-btn svg { flex-shrink: 0; }
+/* Count chip on each segmented tab — number of live quotations / PIs. */
+.s5-seg-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; margin-left: 2px;
+  border-radius: 9px; background: rgba(124,58,237,.14); color: #7c3aed;
+  font-size: 10.5px; font-weight: 800; line-height: 1;
+}
+.s5-seg-btn.active .s5-seg-count { background: rgba(255,255,255,.28); color: #fff; }
 
 .s5-create-group { position: relative; z-index: 1; display: flex; align-items: center; gap: 7px; }
 .s5-create-div { width: 1px; height: 26px; flex-shrink: 0; background: linear-gradient(180deg, transparent, rgba(124,58,237,.25), transparent); }
@@ -1137,7 +1158,7 @@ const STAGE5_CSS = `
 .s5-dt2 { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .s5-cur2 { display: inline-flex; padding: 3px 10px; border-radius: 6px; font-size: 10.5px; font-weight: 800; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
 .s5-val2 { font-weight: 800; color: #059669; font-size: 12px; font-family: ui-monospace, monospace; }
-.s5-st-live { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.s5-st-live { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; white-space: nowrap; }
 .s5-st-dot { width: 5px; height: 5px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.8); }
 
 /* ─── Action cell ─── */
@@ -1231,7 +1252,7 @@ const STAGE5_CSS = `
 .s5-ps-stat-val.c-red { color: #dc2626; }
 
 /* Table */
-.s5-ps-tablewrap { flex: 1; overflow-y: auto; }
+.s5-ps-tablewrap { flex: 1; overflow-y: auto; max-height: 300px; }
 .s5-ps-table { width: 100%; border-collapse: collapse; }
 .s5-ps-table thead tr { background: linear-gradient(90deg, #0f172a 0%, #1e3a5f 55%, #0f172a 100%); box-shadow: 0 2px 8px rgba(0,0,0,.22); }
 .s5-ps-table thead th { padding: 11px 13px; text-align: left; white-space: nowrap; font-size: 8.5px; font-weight: 800; color: rgba(255,255,255,.93); text-transform: uppercase; letter-spacing: .1em; position: sticky; top: 0; }
