@@ -589,25 +589,12 @@ export const MASTER_MODAL_CSS = `
     box-shadow: 0 8px 22px rgba(0,0,0,0.55);
   }
 
-  /* MultiSelect selected chips — the inline style sets a pale indigo
-     (#eef2ff bg + #4338ca text) which looks like a white sticker on
-     the dark form background. Override the inline values with !important
-     in dark mode so the chips read as tinted-glass tokens. The remove
-     × icon (role="button" inside the chip) inherits the chip text colour. */
-  [data-bs-theme="dark"] .master-select-toggle > span > span.d-inline-flex {
-    background: rgba(124,58,237,0.18) !important;
-    color: #c4b5fd !important;
-    border: 1px solid rgba(167,139,250,0.35) !important;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
-  }
-  [data-bs-theme="dark"] .master-select-toggle > span > span.d-inline-flex > span[role="button"] {
-    color: #ede9fe !important;
-    opacity: 0.85;
-  }
-  [data-bs-theme="dark"] .master-select-toggle > span > span.d-inline-flex > span[role="button"]:hover {
-    color: #fff !important;
-    opacity: 1;
-  }
+  /* NOTE: dark-mode styling for the individual selected chips lives in
+     CHIPSTRIP_CSS (.master-multi-chip). We intentionally do NOT style the
+     chip-strip *wrapper* span here — doing so painted a second tinted box
+     behind the whole chip group (a stray "background square"). The wrapper
+     stays transparent; only the chips themselves carry a background. */
+
   /* "+N more" / "Show less" toggle — match the chip tinting in dark mode. */
   [data-bs-theme="dark"] .master-multi-more {
     background: rgba(124,58,237,0.22) !important;
