@@ -115,8 +115,12 @@
                         </td>
                         <td style="padding-left:14px;vertical-align:middle;">
                           <div style="font-size:12px;color:#64748b;line-height:1.3;">Email / Username</div>
+                          {{-- user-select:all makes a single click/tap select the
+                               whole value in browser-based webmail (Gmail web etc.)
+                               so it's quick to copy. A clickable copy BUTTON can't
+                               work in email (no JavaScript). --}}
                           <div
-                            style="font-size:15px;font-weight:800;color:#0f172a;margin-top:4px;letter-spacing:-0.2px;">
+                            style="font-size:15px;font-weight:800;color:#0f172a;margin-top:4px;letter-spacing:-0.2px;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;user-select:all;-webkit-user-select:all;-moz-user-select:all;">
                             {{ $userEmail }}
                           </div>
                         </td>
@@ -152,7 +156,7 @@
                           <td style="padding-left:14px;vertical-align:middle;">
                             <div style="font-size:12px;color:#64748b;line-height:1.3;">Temporary Password</div>
                             <div
-                              style="font-size:15px;font-weight:800;color:#0f172a;margin-top:4px;letter-spacing:-0.2px;">
+                              style="font-size:15px;font-weight:800;color:#0f172a;margin-top:4px;letter-spacing:-0.2px;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;user-select:all;-webkit-user-select:all;-moz-user-select:all;">
                               {{ $password }}
                             </div>
                           </td>
