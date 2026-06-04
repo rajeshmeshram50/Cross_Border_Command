@@ -7,6 +7,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import SalesDocSendForSignatureModal from './matrix/stages/SalesDocSendForSignatureModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Quotations V/S Proforma Invoice (QPI)
@@ -27,7 +28,10 @@ export type Quotation = {
   id?: number;         // server PK (undefined for legacy seed rows / new draft)
   qtNo: string;        // QT/2026-27/3
   qtDate: string;      // dd/mm/yyyy
-  oppId: string;       // 436670875
+  oppId: string;       // 436670875 (display opp_code)
+  // Numeric lead id (quotation.opp_id) — the Send-for-Signature flow POSTs
+  // this as lead_id and the backend verifies record.opp_id === lead_id.
+  leadId?: number | null;
   oppDate: string;
   customer: string;
   consignee: string;
@@ -77,6 +81,8 @@ type PI = {
   btDate: string | null;
   convertFrom: string | null;
   oppId: string;
+  // Numeric lead id (proforma_invoice.opp_id) — for Send-for-Signature.
+  leadId?: number | null;
   oppDate: string;
   customer: string;
   consignee: string;
@@ -489,6 +495,7 @@ export default function SalesQPI() {
           qtNo:         r.code,
           qtDate:       r.created_at ? new Date(r.created_at).toLocaleDateString('en-GB') : '',
           oppId:        r.opp_code ?? '',
+          leadId:       r.opp_id != null ? Number(r.opp_id) : null,
           oppDate:      r.opportunity_date
                         ? new Date(r.opportunity_date).toLocaleDateString('en-GB')
                         : '',
@@ -535,6 +542,7 @@ export default function SalesQPI() {
           btDate:      r.bt_date ? new Date(r.bt_date).toLocaleDateString('en-GB') : null,
           convertFrom: r.convert_from_code ?? r.sourceQuotation?.code ?? null,
           oppId:       r.opp_code ?? '',
+          leadId:      r.opp_id != null ? Number(r.opp_id) : null,
           oppDate:     r.opportunity_date
                        ? new Date(r.opportunity_date).toLocaleDateString('en-GB')
                        : '',
@@ -629,6 +637,72 @@ export default function SalesQPI() {
   const switchPiSub = (next: PISubTab) => { setPiSub(next); setQ(''); };
 
   const [convertingId, setConvertingId] = useState<number | null>(null);
+
+  /* ── Send-for-Signature (Zoho Sign) — same flow as Sales Matrix Stage 5.
+   * `sigSendFor` opens the modal for one row; `sigByRow` holds the live
+   * status per row keyed `${kind}:${docId}` (quotation/pi), driving the
+   * action button (Send -> Sent +Remind/View -> Signed +View). `sigTick`
+   * is bumped after a send so the poller refreshes immediately. */
+  const [sigSendFor, setSigSendFor] = useState<
+    { kind: 'quotation' | 'pi'; id: number; code: string; customerName: string | null; leadId: number } | null
+  >(null);
+  const [sigByRow, setSigByRow] = useState<Record<string, { id: number; status: string }>>({});
+  const [sigTick, setSigTick] = useState(0);
+
+  /* Poll signature status for ALL quotations + PIs of this client (no
+   * lead filter — this page spans many leads). `sync=1` round-trips Zoho
+   * so an in-progress request flips to Signed without a manual refresh. */
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const [qr, pr] = await Promise.allSettled([
+          api.get('/clm/signature-requests', { params: { document_type: 'quotation', sync: 1 } }),
+          api.get('/clm/signature-requests', { params: { document_type: 'proforma_invoice', sync: 1 } }),
+        ]);
+        if (!alive) return;
+        const map: Record<string, { id: number; status: string }> = {};
+        const ingest = (rows: any, kind: 'quotation' | 'pi') => (Array.isArray(rows) ? rows : []).forEach((row: any) => {
+          const did = row.trade_doc_id ?? (Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids[0] : null);
+          if (did == null) return;
+          const key = `${kind}:${did}`;
+          if (!map[key] || row.id > map[key].id) map[key] = { id: row.id, status: String(row.status ?? '').toLowerCase() };
+        });
+        if (qr.status === 'fulfilled') ingest((qr.value as any).data?.data, 'quotation');
+        if (pr.status === 'fulfilled') ingest((pr.value as any).data?.data, 'pi');
+        setSigByRow(map);
+      } catch { /* signature status is best-effort — never blocks the table */ }
+    };
+    void load();
+    const t = setInterval(load, 20000);
+    return () => { alive = false; clearInterval(t); };
+  }, [sigTick]);
+
+  const onRemindSig = async (sigId: number) => {
+    try {
+      await api.post(`/clm/signature-requests/${sigId}/remind`);
+      toast.success('Reminder sent', 'The signer has been reminded.');
+    } catch (e: any) {
+      toast.error('Reminder failed', e?.response?.data?.message ?? 'Could not send the reminder.');
+    }
+  };
+  const onViewSignedSig = async (sigId: number) => {
+    try {
+      const r = await api.get(`/clm/signature-requests/${sigId}/view-file/0`, { responseType: 'blob' });
+      window.open(URL.createObjectURL(r.data as Blob), '_blank');
+    } catch (e: any) {
+      toast.error('Open failed', e?.response?.data?.message ?? 'Could not open the signed document.');
+    }
+  };
+  const onViewSentPdf = async (kind: 'quotation' | 'pi', id: number) => {
+    try {
+      const url = kind === 'quotation' ? `/sales/quotations/${id}/preview-pdf` : `/sales/proforma-invoices/${id}/preview-pdf`;
+      const res = await api.post(url, { signature: true }, { responseType: 'blob' });
+      window.open(URL.createObjectURL(res.data as Blob), '_blank');
+    } catch {
+      toast.error('Preview failed', 'Could not open the document.');
+    }
+  };
 
   /* Email PDF state — per-row busy flag (so only the clicked row shows
    * a spinner). Tagged with the kind so the same id can't collide
@@ -811,6 +885,46 @@ export default function SalesQPI() {
     </Tooltip>
   );
 
+  /* Send-for-Signature control for a row — status-aware, shared by both
+   * the Quotation and PI action cells:
+   *   not sent   -> "Send for Sign" (opens the Zoho modal)
+   *   inprogress -> View sent doc + Send reminder
+   *   completed  -> View signed PDF
+   * Disabled when the row is read-only or has no numeric lead id. */
+  const renderSignAction = (
+    kind: 'quotation' | 'pi', id: number | undefined, code: string,
+    customer: string, leadId: number | null | undefined, readOnly: boolean,
+  ) => {
+    if (!id) return null;
+    const sig = sigByRow[`${kind}:${id}`];
+    const st = sig?.status;
+    if (st === 'inprogress') {
+      return (
+        <>
+          <ActionBtn title="View sent document" color="#0ea5e9" onClick={() => void onViewSentPdf(kind, id)}
+            icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>} />
+          <ActionBtn title="Send signing reminder" color="#0ea5e9" onClick={() => void onRemindSig(sig!.id)}
+            icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>} />
+        </>
+      );
+    }
+    if (st === 'completed') {
+      return (
+        <ActionBtn title="View signed PDF" color="#16a34a" onClick={() => void onViewSignedSig(sig!.id)}
+          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12"/></svg>} />
+      );
+    }
+    return (
+      <ActionBtn
+        title={readOnly ? 'View-only — this record belongs to the main branch.' : (!leadId ? 'No linked opportunity — cannot send for signature' : 'Send for Signature')}
+        color="#0ea5e9"
+        disabled={readOnly || !leadId}
+        onClick={() => leadId && setSigSendFor({ kind, id, code, customerName: customer || null, leadId })}
+        icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>}
+      />
+    );
+  };
+
   /* ── Quotation table columns ──────────────────────────────────── */
   const quotationColumns = useMemo<any[]>(() => [
     {
@@ -904,6 +1018,8 @@ export default function SalesQPI() {
                 </button>
               </Tooltip>
             )}
+            {/* Send for Signature (Zoho Sign) — status-aware control. */}
+            {renderSignAction('quotation', r.id, r.qtNo, r.customer, r.leadId, readOnly)}
             {/* Email button — only enabled until the first send AND only
                 when the user can modify this row. Read-only rows
                 (main-branch viewed by normal branch) show a hint instead. */}
@@ -988,7 +1104,7 @@ export default function SalesQPI() {
         );
       },
     },
-  ], [convertingId, currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [convertingId, sigByRow, currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── PI table columns — header set differs by sub-tab (BT ID / BT Date
    *    only on With Shipment). Build both column sets memoised. */
@@ -1039,6 +1155,8 @@ export default function SalesQPI() {
         const readOnlyHint = 'View-only — this record belongs to the main branch.';
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
+            {/* Send for Signature (Zoho Sign) — status-aware control. */}
+            {renderSignAction('pi', r.id, r.piNo, r.customer, r.leadId, readOnly)}
             {/* Email + Reminder pair — mirrors the Quotation row:
                 Email disabled once emailedAt is set; Reminder enabled
                 only after that. Both also disabled on read-only rows. */}
@@ -1114,8 +1232,8 @@ export default function SalesQPI() {
       },
     },
   ];
-  const piWithColumns    = useMemo<any[]>(() => piColumnsBase(true),  [currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
-  const piWithoutColumns = useMemo<any[]>(() => piColumnsBase(false), [currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
+  const piWithColumns    = useMemo<any[]>(() => piColumnsBase(true),  [sigByRow, currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
+  const piWithoutColumns = useMemo<any[]>(() => piColumnsBase(false), [sigByRow, currentUser?.id, currentUser?.is_main_branch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="qpi-root">
@@ -1334,6 +1452,21 @@ export default function SalesQPI() {
             reloadPis();
             if (piSourceQuotation) reloadQuotations();
           }}
+        />
+      )}
+
+      {/* Send for Signature (Zoho Sign) — Quotation / PI, same modal as
+          Sales Matrix Stage 5. Refreshes the status poller on send. */}
+      {sigSendFor && (
+        <SalesDocSendForSignatureModal
+          open={!!sigSendFor}
+          kind={sigSendFor.kind}
+          docId={sigSendFor.id}
+          docCode={sigSendFor.code}
+          leadId={sigSendFor.leadId}
+          customerName={sigSendFor.customerName}
+          onClose={() => setSigSendFor(null)}
+          onSent={() => setSigTick(t => t + 1)}
         />
       )}
     </div>
