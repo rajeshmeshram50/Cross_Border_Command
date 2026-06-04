@@ -983,6 +983,19 @@ export default function SalesQPI() {
       },
     },
     {
+      // Signature status — mirrors the Send-for-Sign lifecycle:
+      // Not Sent -> Sent (awaiting signature) -> Signed.
+      header: () => <div className="text-center">Status</div>,
+      id: '__sigstatus', meta: { align: 'center' },
+      cell: (info: any) => {
+        const r  = info.row.original as Quotation;
+        const st = r.id ? sigByRow[`quotation:${r.id}`]?.status : undefined;
+        if (st === 'completed')  return <span className="qpi-sig-pill qpi-sig-signed">Signed</span>;
+        if (st === 'inprogress') return <span className="qpi-sig-pill qpi-sig-sent">Sent</span>;
+        return <span className="qpi-sig-pill qpi-sig-none">Not Sent</span>;
+      },
+    },
+    {
       header: () => <div className="text-center">Action</div>,
       id: '__actions', meta: { align: 'center' },
       cell: (info: any) => {
@@ -1157,40 +1170,45 @@ export default function SalesQPI() {
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
             {/* Send for Signature (Zoho Sign) — status-aware control. */}
             {renderSignAction('pi', r.id, r.piNo, r.customer, r.leadId, readOnly)}
-            {/* Email + Reminder pair — mirrors the Quotation row:
-                Email disabled once emailedAt is set; Reminder enabled
-                only after that. Both also disabled on read-only rows. */}
-            <ActionBtn
-              title={
-                readOnly
-                  ? readOnlyHint
-                  : emailingFor?.kind === 'pi' && emailingFor.id === r.id
-                    ? 'Sending…'
-                    : r.emailedAt
-                      ? 'Already emailed — use Reminder to follow up'
-                      : 'Email PI'
-              }
-              icon={<IconMail />}
-              color="#2563eb"
-              disabled={readOnly || !!r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
-              onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
-            />
-            <ActionBtn
-              title={
-                readOnly
-                  ? readOnlyHint
-                  : emailingFor?.kind === 'pi' && emailingFor.id === r.id
-                    ? 'Sending…'
-                    : r.emailedAt
-                      ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
-                      : 'Send initial email first to enable reminders'
-              }
-              icon={<IconBellSm />}
-              color="#f59e0b"
-              disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
-              badge={r.reminderCount ?? 0}
-              onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
-            />
+            {/* Email + Reminder are DISABLED for PI — the PI is delivered to
+                the customer via Zoho Sign ("Send for Sign"), so the manual
+                email + reminder buttons are hidden here. Code is kept under
+                `false &&` (not deleted) so it can be re-enabled later. */}
+            {false && (
+              <>
+                <ActionBtn
+                  title={
+                    readOnly
+                      ? readOnlyHint
+                      : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                        ? 'Sending…'
+                        : r.emailedAt
+                          ? 'Already emailed — use Reminder to follow up'
+                          : 'Email PI'
+                  }
+                  icon={<IconMail />}
+                  color="#2563eb"
+                  disabled={readOnly || !!r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+                  onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
+                />
+                <ActionBtn
+                  title={
+                    readOnly
+                      ? readOnlyHint
+                      : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                        ? 'Sending…'
+                        : r.emailedAt
+                          ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
+                          : 'Send initial email first to enable reminders'
+                  }
+                  icon={<IconBellSm />}
+                  color="#f59e0b"
+                  disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+                  badge={r.reminderCount ?? 0}
+                  onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
+                />
+              </>
+            )}
             <ActionBtn
               title={readOnly ? readOnlyHint : 'Edit PI'}
               icon={<IconEdit />}
@@ -1255,10 +1273,10 @@ export default function SalesQPI() {
         </div>
         <div className="qpi-tab-switch">
           <button className={`qpi-tab ${tab === 'quotation' ? 'active' : ''}`} onClick={() => switchTab('quotation')}>
-            <IconFile /> Quotation
+            <IconFile /> Quotation <span className="qpi-tab-count">{quotations.length}</span>
           </button>
           <button className={`qpi-tab ${tab === 'pi' ? 'active' : ''}`} onClick={() => switchTab('pi')}>
-            <IconMonitor /> Proforma Invoice
+            <IconMonitor /> Proforma Invoice <span className="qpi-tab-count">{pis.length}</span>
           </button>
         </div>
       </div>
@@ -2778,6 +2796,12 @@ function BasicForm(props: {
       if (custRow.currency) nextCurrency = custRow.currency;
     }
 
+    // Currency is driven by the opportunity's PRODUCTS (lead enforces a
+    // single currency across its products), so the lead/opportunity currency
+    // wins over the customer default. The Currency field is read-only and
+    // simply reflects this.
+    if (row.currency) nextCurrency = row.currency;
+
     // Consignee resolution priority:
     //  (a) If the lead itself has a consignee mapped, use it.
     //  (b) Otherwise, if the matched customer has exactly one consignee, pick it.
@@ -2880,6 +2904,24 @@ function BasicForm(props: {
     setForm({ ...form, bankName: v, bankAccountId: b?.dbId ?? null });
   };
 
+  // Currency is owned by the opportunity's PRODUCTS (the lead enforces one
+  // currency across them). Whenever an opportunity is active — whether the
+  // user picks it here or it's pre-selected when the modal opens from Stage 5
+  // — fetch the product currency and reflect it in the read-only field.
+  useEffect(() => {
+    if (!form.oppId) return;
+    let cancelled = false;
+    api.get<{ status: boolean; data: Array<any> }>(`/sales/leads/${form.oppId}/products`)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        const ccy = rows.map((r: any) => r.currency).find((c: any) => c);
+        if (ccy) setForm((f) => ({ ...f, currency: ccy }));
+      })
+      .catch(() => { /* leave currency as-is on failure */ });
+    return () => { cancelled = true; };
+  }, [form.oppId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <>
       <div className={`qpi-form-heading qpi-form-heading-${theme}`}>BASIC {partyKind === 'PI' ? 'PI' : 'QUOTATION'} DETAILS</div>
@@ -2971,14 +3013,17 @@ function BasicForm(props: {
           </Field>
         ) : (
           <>
+            {/* Currency is NOT chosen here — it comes from the opportunity's
+                products (the lead enforces one currency across its products).
+                Read-only display so it can't drift from the product pricing. */}
             <Field label="Currency" required>
-              <MasterSelect
-                key={`cur-${masters.currencies.length}`}
-                value={form.currency}
-                loading={masters.loading}
-                placeholder="— Select Currency —"
-                options={withCurrent(masters.currencies, form.currency)}
-                onChange={(v) => set('currency', v)}
+              <input
+                className="qpi-input"
+                value={form.currency || ''}
+                readOnly
+                placeholder="Auto — from the opportunity's products"
+                title="Currency is taken from the opportunity's products and cannot be changed here."
+                style={{ background: '#f8fafc', cursor: 'not-allowed' }}
               />
             </Field>
             <Field label="Exchange Rate">
@@ -3546,6 +3591,19 @@ const SCOPED_CSS = `
 }
 .qpi-tab:hover { background: rgba(124,58,237,.08); }
 .qpi-tab.active { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.4); }
+/* Count chip on each tab — shows how many quotations / PIs exist. */
+.qpi-tab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: rgba(124,58,237,.14); color: #7c3aed;
+  font-size: 10.5px; font-weight: 800; line-height: 1;
+}
+.qpi-tab.active .qpi-tab-count { background: rgba(255,255,255,.25); color: #fff; }
+/* Signature-status pill in the Quotation table Status column. */
+.qpi-sig-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 10.5px; font-weight: 800; white-space: nowrap; }
+.qpi-sig-none   { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+.qpi-sig-sent   { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
+.qpi-sig-signed { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
 
 /* ─── What We Are Doing Here ─── */
 .qpi-wdh {

@@ -122,6 +122,21 @@ class ClmSignatureRequest extends Model
     }
 
     /**
+     * True when the sales document has been SENT for signature at least once
+     * (still in progress, or already completed). Used to gate Stage 6: once
+     * the PI is out for the customer's signature the deal may advance to
+     * Victory — we no longer wait for the signing to finish.
+     */
+    public static function hasSentForDoc(int $clientId, string $documentType, int $docId): bool
+    {
+        return static::where('client_id', $clientId)
+            ->where('document_type', $documentType)
+            ->where('trade_doc_id', $docId)
+            ->whereIn('status', ['inprogress', 'completed'])
+            ->exists();
+    }
+
+    /**
      * Mark any still-pending (draft / inprogress) signature request for a
      * sales document as superseded — called when that document is EDITED
      * while a signature is in flight, so the stale request no longer counts

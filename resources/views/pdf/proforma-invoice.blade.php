@@ -8,7 +8,7 @@
         /* Reserve a bottom band on every page for the fixed footer so it
        never overlaps content. */
         @page {
-            margin-bottom: 42px;
+            margin-bottom: 48px;
         }
 
         .pdf-footer {
@@ -18,7 +18,7 @@
             left: 0;
             right: 0;
             width: 100%;
-            height: 38px;
+            height: 44px;
             /* Thin green top border per the reference spec (#8BC34A). */
             border-top: 1px solid #8BC34A;
             padding: 0;
@@ -45,13 +45,13 @@
         }
 
         .pdf-footer .pf-barcode {
-            height: 14px;
+            height: 18px;
             width: auto;
             display: block;
         }
 
         .pdf-footer .pf-date {
-            font-size: 9px;
+            font-size: 13px;
             color: #4d4d4d;
         }
 
@@ -1207,7 +1207,7 @@ if (isset($pdf)) {
     $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
     $width = $fontMetrics->get_text_width("Page 99 of 99", $font, $size);
     $x     = ($pdf->get_width() - $width) / 2 + 2;
-    $y     = $pdf->get_height() - 24;
+    $y     = $pdf->get_height() - 28;
     $pdf->page_text($x, $y, $text, $font, $size, [0.30, 0.30, 0.30]);
 }
 </script>

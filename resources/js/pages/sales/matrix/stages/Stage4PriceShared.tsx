@@ -282,7 +282,11 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
           </div>
           <div>
             <div className="smd-stg-head-title">{embedded ? 'Price Shared' : 'Stage 4: Price Shared'}</div>
-            <div className="smd-stg-head-sub">● Price shared with customer</div>
+            <div className="smd-stg-head-sub">
+              {tab === 'to_share'
+                ? `● ${toShareCount} ${toShareCount === 1 ? 'product' : 'products'} to be priced`
+                : `● ${sharedCount} ${sharedCount === 1 ? 'shared price' : 'shared prices'}`}
+            </div>
           </div>
         </div>
         <span className="smd-stg-head-badge">ACTIVE</span>
