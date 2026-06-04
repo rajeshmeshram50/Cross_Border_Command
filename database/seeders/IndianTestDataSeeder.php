@@ -30,6 +30,20 @@ class IndianTestDataSeeder extends Seeder
     {
         $now = Carbon::now();
 
+        // Idempotency guard — this fixture inserts a fixed list of 20
+        // customers/consignees/products/vendors, so re-running it would
+        // DUPLICATE them. If the first marker row already exists for this
+        // tenant, treat the fixture as already seeded and skip. To re-seed
+        // from scratch, clear the tenant's rows first.
+        $already = DB::table('customers')
+            ->where('client_id', $this->clientId)
+            ->where('company_name', 'Rajdhani Agro Exports Pvt Ltd')
+            ->exists();
+        if ($already) {
+            $this->command?->warn('IndianTestDataSeeder: fixture already seeded for this tenant — skipping (re-run safe).');
+            return;
+        }
+
         DB::transaction(function () use ($now) {
             $customerIds = $this->seedCustomers($now);
             $this->seedConsignees($now, $customerIds);

@@ -292,7 +292,11 @@ class BranchController extends Controller
 
             // Send welcome email — gated by Settings → Notifications →
             // newUser (and the master emailNotif). Non-fatal so branch
-            // creation succeeds even if mail fails or is disabled.
+            // creation succeeds even if mail fails or is disabled. When it
+            // DOES fail, the reason is bubbled up in $mailWarning so the UI
+            // can tell the admin the credentials email didn't go out (and
+            // why) instead of silently logging it.
+            $mailWarning = null;
             if (Settings::shouldSendMail('newUser')) {
                 try {
                     $clientName = \App\Models\Client::find($clientId)?->org_name ?? 'Your Organization';
@@ -327,6 +331,8 @@ class BranchController extends Controller
                         'branch_email' => $request->email,
                         'error' => $e->getMessage(),
                     ]);
+                    $mailWarning = 'Branch created, but the welcome email could not be sent to '
+                        . $request->user_email . ': ' . $e->getMessage();
                 }
             }
 
@@ -334,6 +340,9 @@ class BranchController extends Controller
                 'message' => 'Branch created successfully',
                 'branch' => $branch,
                 'branch_user' => $branchUser->only(['id', 'name', 'email', 'user_type', 'status']),
+                // null when the mail sent fine (or notifications are off);
+                // otherwise the exact reason the welcome email failed.
+                'mail_warning' => $mailWarning,
             ], 201);
             });
         } catch (QueryException $e) {
