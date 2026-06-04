@@ -368,7 +368,12 @@ class LeaveRequestController extends Controller
             $uid  = (int) $user->id;
             $eid  = (int) $myEmployeeId;
             $q->where(function ($w) use ($myEmployeeId, $user, $uid, $eid) {
-                $w->whereIn('employee_id', function ($sub) use ($myEmployeeId) {
+                // My OWN leave requests — I'm the requestor, so the Leave page
+                // must show them (with their live status) even though I'm never
+                // an approver on my own chain. This is what a regular employee
+                // with `hr.leave` view expects to see.
+                $w->where('employee_id', $myEmployeeId)
+                  ->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
                     $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
                 })->orWhere('approved_by', $user->id)
                   ->orWhere(function ($w2) use ($uid) {
@@ -414,7 +419,11 @@ class LeaveRequestController extends Controller
         // decided requests fall back to "I was somewhere on the chain"
         // so my history view still includes them.
         if (!$isAdminScope) {
-            $rows = $rows->filter(function (LeaveRequest $row) use ($user) {
+            $rows = $rows->filter(function (LeaveRequest $row) use ($user, $myEmployeeId) {
+                // Always keep my own requests — I'm the requestor, not an
+                // approver, so the canActOnLevel pass below would otherwise
+                // drop them and leave my own Leave page empty.
+                if ((int) $row->employee_id === (int) $myEmployeeId) return true;
                 $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
                 if ($row->status === 'Pending') {
                     $idx = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
