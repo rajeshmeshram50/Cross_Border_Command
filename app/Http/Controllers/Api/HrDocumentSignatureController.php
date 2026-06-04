@@ -63,9 +63,28 @@ class HrDocumentSignatureController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $q = HrDocumentSignature::query()->with(self::WITH)
-            ->whereIn('status', ['Pending', 'In Progress']);
+        // history=1 → the "Updated" tab: documents this user has ALREADY
+        // acted on (signed / approved / acknowledged / rejected), regardless
+        // of the run's overall status. Default (no flag) → pending inbox.
+        $history = $request->boolean('history');
+
+        $q = HrDocumentSignature::query()->with(self::WITH);
+        if (!$history) $q->whereIn('status', ['Pending', 'In Progress']);
         $this->applyScope($q, $user);
+
+        if ($history) {
+            $rows = $q->orderByDesc('id')->get()->filter(function ($row) use ($user) {
+                $signers = is_array($row->signers) ? $row->signers : [];
+                foreach ($signers as $s) {
+                    if ((int) ($s['user_id'] ?? 0) === (int) $user->id
+                        && in_array($s['status'] ?? 'Pending', ['Done', 'Rejected'], true)) {
+                        return true;
+                    }
+                }
+                return false;
+            })->values();
+            return response()->json($rows);
+        }
 
         // Filter in PHP since signer matching is JSON-shape-specific.
         $rows = $q->orderByDesc('id')->get()->filter(function ($row) use ($user) {

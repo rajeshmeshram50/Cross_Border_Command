@@ -207,6 +207,28 @@ export default function ClientForm({ onBack, editId }: Props) {
   // leaves the field unchanged we skip sending admin_password on submit so
   // the backend won't re-hash and won't fire the password-changed email.
   const [originalAdminPassword, setOriginalAdminPassword] = useState('');
+
+  /* Copy a credential to the clipboard. navigator.clipboard works in secure
+   * contexts (https + localhost); the textarea/execCommand fallback covers
+   * plain-http LANs. This is the "working copy button" the welcome email
+   * can't have (email clients strip JS) — here in the SPA it actually runs. */
+  const copyToClipboard = async (value: string, label: string) => {
+    const v = (value ?? '').trim();
+    if (!v) { toast.warning('Nothing to copy', `${label} is empty.`); return; }
+    try {
+      await navigator.clipboard.writeText(v);
+      toast.success('Copied', `${label} copied to clipboard.`);
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = v; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.focus(); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+        toast.success('Copied', `${label} copied to clipboard.`);
+      } catch { toast.error('Copy failed', 'Could not copy — please select the text manually.'); }
+    }
+  };
+
   const [serverErrors, setServerErrors]         = useState<Record<string, string[]>>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const touchedRef = useRef<Record<string, boolean>>({});
@@ -1259,9 +1281,17 @@ export default function ClientForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Email <span className="text-danger">*</span></Lbl>
-                <Input style={css.input} type="email" value={form.admin_email} invalid={fieldInvalid('admin_email')}
-                  onChange={e => set('admin_email', e.target.value)} onBlur={() => touch('admin_email')}
-                  placeholder="admin@company.com" />
+                <div style={{ position: 'relative' }}>
+                  <Input style={{ ...css.input, paddingRight: 36 }} type="email" value={form.admin_email} invalid={fieldInvalid('admin_email')}
+                    onChange={e => set('admin_email', e.target.value)} onBlur={() => touch('admin_email')}
+                    placeholder="admin@company.com" />
+                  <button type="button" onClick={() => copyToClipboard(form.admin_email, 'Email')}
+                    aria-label="Copy email" title="Copy email"
+                    className="btn btn-link p-0 position-absolute"
+                    style={{ top: '50%', right: 10, transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', textDecoration: 'none', lineHeight: 1, fontSize: 16 }}>
+                    <i className="ri-file-copy-line" />
+                  </button>
+                </div>
                 <FormFeedback style={css.formFeedback}>{fieldError('admin_email')}</FormFeedback>
               </Col>
               <Col md={4}>
@@ -1280,7 +1310,7 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <Lbl>{isEdit ? 'Password' : 'Password'} {!isEdit && <span className="text-danger">*</span>}</Lbl>
                 <div style={{ position: 'relative' }}>
                   <Input
-                    style={{ ...css.input, paddingRight: 36 }}
+                    style={{ ...css.input, paddingRight: 64 }}
                     type={showPassword ? 'text' : 'password'}
                     value={form.admin_password}
                     invalid={fieldInvalid('admin_password')}
@@ -1289,6 +1319,15 @@ export default function ClientForm({ onBack, editId }: Props) {
                     onBlur={() => touch('admin_password')}
                     placeholder={isEdit ? 'Enter new password to change' : 'Minimum 8 characters'}
                   />
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(form.admin_password, 'Password')}
+                    aria-label="Copy password" title="Copy password"
+                    className="btn btn-link p-0 position-absolute"
+                    style={{ top: '50%', right: 36, transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', textDecoration: 'none', lineHeight: 1, fontSize: 16 }}
+                  >
+                    <i className="ri-file-copy-line" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => setShowPassword(s => !s)}

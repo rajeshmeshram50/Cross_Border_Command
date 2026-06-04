@@ -61,7 +61,8 @@ class VendorController extends Controller
         $user = $request->user();
 
         $q = Vendor::query()
-            ->forUser($user)
+            // Honour the BranchSwitcher (see CustomerController::index).
+            ->forUser($user, $request->integer('branch_id') ?: null)
             ->with([
                 'primaryAddress:id,vendor_id,city,state_id,contact_name,email,contact_no,designation',
                 'vendorType:id,name',

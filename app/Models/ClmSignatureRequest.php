@@ -147,9 +147,10 @@ class ClmSignatureRequest extends Model
      * to the shared MasterVisibility scope so this list page can't ever
      * leak data across the [[project_branch_hierarchy]] boundaries.
      */
-    public function scopeForUser(Builder $q, $user): Builder
+    public function scopeForUser(Builder $q, $user, ?int $branchFilter = null): Builder
     {
-        \App\Support\MasterVisibility::applyReadScope($q, $user);
+        // $branchFilter = BranchSwitcher narrowing; see Customer::scopeForUser.
+        \App\Support\MasterVisibility::applyReadScope($q, $user, $branchFilter);
         return $q;
     }
 

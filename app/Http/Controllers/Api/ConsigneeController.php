@@ -23,7 +23,8 @@ class ConsigneeController extends Controller
         $user = $request->user();
 
         $q = Consignee::query()
-            ->forUser($user)
+            // Honour the BranchSwitcher (see CustomerController::index).
+            ->forUser($user, $request->integer('branch_id') ?: null)
             ->with(['primaryAddress', 'addresses', 'customer'])
             ->orderByDesc('id');
 

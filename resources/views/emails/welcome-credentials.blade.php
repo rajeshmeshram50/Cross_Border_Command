@@ -115,14 +115,15 @@
                         </td>
                         <td style="padding-left:14px;vertical-align:middle;">
                           <div style="font-size:12px;color:#64748b;line-height:1.3;">Email / Username</div>
+                          {{-- user-select:all makes a single click/tap select the
+                               whole value so it's quick to copy with the device's
+                               own Copy menu. A clickable copy BUTTON cannot work in
+                               email (clients strip JavaScript) — so no copy icon. --}}
                           <div
-                            style="font-size:15px;font-weight:800;color:#0f172a;margin-top:4px;letter-spacing:-0.2px;">
+                            style="font-size:15px;font-weight:800;color:#0f172a;margin-top:4px;letter-spacing:-0.2px;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;user-select:all;-webkit-user-select:all;-moz-user-select:all;">
                             {{ $userEmail }}
                           </div>
-                        </td>
-                        <td valign="middle" align="right" style="width:28px;">
-                          <img src="{{ asset('images/email-icons/copy.png') }}" alt="" width="20" height="20"
-                            style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;" />
+                          <div style="font-size:11px;color:#94a3b8;line-height:1.3;margin-top:3px;">Tap the value to select &amp; copy</div>
                         </td>
                       </tr>
                     </table>
@@ -152,17 +153,14 @@
                           <td style="padding-left:14px;vertical-align:middle;">
                             <div style="font-size:12px;color:#64748b;line-height:1.3;">Temporary Password</div>
                             <div
-                              style="font-size:15px;font-weight:800;color:#0f172a;margin-top:4px;letter-spacing:-0.2px;">
+                              style="font-size:15px;font-weight:800;color:#0f172a;margin-top:4px;letter-spacing:-0.2px;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;user-select:all;-webkit-user-select:all;-moz-user-select:all;">
                               {{ $password }}
                             </div>
+                            <div style="font-size:11px;color:#94a3b8;line-height:1.3;margin-top:3px;">Tap the value to select &amp; copy</div>
                           </td>
                           <td valign="middle" align="right" style="padding-right:10px;">
                             <span
                               style="display:inline-block;background-color:#dbeafe;color:#2563eb;font-size:11px;font-weight:700;padding:5px 12px;border-radius:8px;letter-spacing:0.2px;">Temporary</span>
-                          </td>
-                          <td valign="middle" align="right" style="width:28px;">
-                            <img src="{{ asset('images/email-icons/copy.png') }}" alt="" width="20" height="20"
-                              style="display:inline-block;border:0;outline:none;text-decoration:none;vertical-align:middle;" />
                           </td>
                         </tr>
                       </table>

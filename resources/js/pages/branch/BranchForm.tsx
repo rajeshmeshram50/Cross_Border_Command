@@ -635,17 +635,24 @@ export default function BranchForm({ onBack, editId }: Props) {
         }
         toast.success('Branch Updated', 'Branch details have been updated successfully');
       } else {
+        let createRes;
         if (logoFile || profilePhotoFile || signatureFile) {
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
           if (logoFile)         fd.append('logo', logoFile);
           if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
           if (signatureFile)    fd.append('signature_path', signatureFile);
-          await api.post('/branches', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+          createRes = await api.post('/branches', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
-          await api.post('/branches', payload);
+          createRes = await api.post('/branches', payload);
         }
         toast.success('Branch Created', 'New branch has been created with login credentials');
+        // Surface the welcome-email outcome — if it couldn't be sent (e.g.
+        // SMTP auth failure) the backend returns the exact reason here.
+        const mailWarning = createRes?.data?.mail_warning;
+        if (mailWarning) {
+          toast.warning('Welcome email not sent', String(mailWarning));
+        }
       }
       setTimeout(() => onBack(), 1200);
     } catch (err: any) {

@@ -14,6 +14,24 @@ export interface PermModule {
 
 export type PermKey = 'can_view' | 'can_add' | 'can_edit' | 'can_delete' | 'can_export' | 'can_import' | 'can_approve';
 
+// Every action below requires being able to see the module, so granting any of
+// them implies can_view. Mirrors the backend rule in
+// PermissionController::savePermissions — keep the two in sync.
+const ACTION_KEYS: PermKey[] = ['can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
+
+/** Force can_view on for any leaf row that has at least one action flag set. */
+function withImpliedView(
+  next: Record<number, Record<PermKey, boolean>>
+): Record<number, Record<PermKey, boolean>> {
+  const out: Record<number, Record<PermKey, boolean>> = {};
+  for (const [id, row] of Object.entries(next)) {
+    const merged = { ...row };
+    if (ACTION_KEYS.some((k) => merged[k])) merged.can_view = true;
+    out[Number(id)] = merged;
+  }
+  return out;
+}
+
 export const PERMS: { key: PermKey; label: string; icon: string; color: string }[] = [
   { key: 'can_view', label: 'View', icon: 'ri-eye-line', color: 'info' },
   { key: 'can_add', label: 'Add', icon: 'ri-add-line', color: 'success' },
@@ -153,10 +171,15 @@ export default function PermissionMatrix({
     return out;
   };
 
+  // All matrix mutations funnel through emit() so the "action implies view"
+  // invariant is enforced no matter which control changed (single cell, row,
+  // column, branch, or Select-All).
+  const emit = (next: Record<number, Record<PermKey, boolean>>) => onChange(withImpliedView(next));
+
   const toggle = (modId: number, key: PermKey) => {
     const mod = tree.byId.get(modId);
     if (!mod || !isPermAllowed(mod.slug, key)) return;
-    onChange({
+    emit({
       ...matrix,
       [modId]: { ...(matrix[modId] || emptyPerms()), [key]: !(matrix[modId]?.[key]) },
     });
@@ -172,7 +195,7 @@ export default function PermissionMatrix({
     const allOn = allowedKeys.every(k => current[k]);
     const nextRow: Record<PermKey, boolean> = { ...current };
     allowedKeys.forEach(k => { nextRow[k] = !allOn; });
-    onChange({ ...matrix, [modId]: nextRow });
+    emit({ ...matrix, [modId]: nextRow });
   };
 
   /** Row state — how many of 7 perms are granted for this leaf. */
@@ -191,7 +214,7 @@ export default function PermissionMatrix({
       if (!isPermAllowed(m.slug, key)) return;
       next[m.id] = { ...(next[m.id] || emptyPerms()), [key]: !allOn };
     });
-    onChange(next);
+    emit(next);
   };
 
   /** Toggle ALL perms × ALL descendant leaves under a parent. */
@@ -208,7 +231,7 @@ export default function PermissionMatrix({
     totalSlots.forEach(([m, k]) => {
       next[m.id] = { ...(next[m.id] || emptyPerms()), [k]: !allOn };
     });
-    onChange(next);
+    emit(next);
   };
 
   const branchAllSummary = (parentId: number) => {
@@ -229,7 +252,7 @@ export default function PermissionMatrix({
       if (!isPermAllowed(m.slug, key)) return;
       next[m.id] = { ...(next[m.id] || emptyPerms()), [key]: !allOn };
     });
-    onChange(next);
+    emit(next);
   };
 
   const selectAll = (val: boolean) => {
@@ -240,7 +263,7 @@ export default function PermissionMatrix({
         next[m.id][p.key] = val && isPermAllowed(m.slug, p.key);
       });
     });
-    onChange(next);
+    emit(next);
   };
 
   const totalChecks = leaves.reduce((s, m) => s + PERMS.filter(p => matrix[m.id]?.[p.key]).length, 0);
@@ -391,29 +414,41 @@ export default function PermissionMatrix({
                 : (rowAllOn ? 'Clear all permissions for this row' : 'Grant all permissions for this row')}
             />
           </td>
-          {PERMS.map(p => {
-            // Default modules (Dashboard, Profile) are auto-granted to every user
-            // by SubscriptionController.activatePlan(). Lock the checkboxes so they
-            // appear checked and read-only — toggling them off would be misleading
-            // since the next plan activation re-grants them.
-            const disabled = mod.is_default || !isPermAllowed(mod.slug, p.key);
-            const checked = mod.is_default ? true : !!rowPerms[p.key];
-            return (
-              <td key={p.key} className="text-center py-2">
-                <div className="form-check d-flex justify-content-center m-0">
-                  <Input
-                    type="checkbox"
-                    className="form-check-input"
-                    style={{ width: '0.95rem', height: '0.95rem', cursor: disabled ? 'not-allowed' : 'pointer' }}
-                    checked={checked}
-                    onChange={() => toggle(mod.id, p.key)}
-                    disabled={disabled}
-                    title={mod.is_default ? 'Default module — automatically granted' : undefined}
-                  />
-                </div>
-              </td>
-            );
-          })}
+          {(() => {
+            // View is locked ON whenever this row has any action flag set —
+            // every action implies visibility, so it can't be unchecked while
+            // an action is granted. Untick the actions first to free it.
+            const anyActionOn = ACTION_KEYS.some(k => !!rowPerms[k]);
+            return PERMS.map(p => {
+              const lockedByAction = p.key === 'can_view' && anyActionOn && !mod.is_default;
+              // Default modules (Dashboard, Profile) are auto-granted to every user
+              // by SubscriptionController.activatePlan(). Lock the checkboxes so they
+              // appear checked and read-only — toggling them off would be misleading
+              // since the next plan activation re-grants them.
+              const disabled = mod.is_default || !isPermAllowed(mod.slug, p.key) || lockedByAction;
+              const checked = mod.is_default ? true : (lockedByAction ? true : !!rowPerms[p.key]);
+              const title = mod.is_default
+                ? 'Default module — automatically granted'
+                : lockedByAction
+                  ? 'View is required by Add / Edit / Delete / Export / Import / Approve'
+                  : undefined;
+              return (
+                <td key={p.key} className="text-center py-2">
+                  <div className="form-check d-flex justify-content-center m-0">
+                    <Input
+                      type="checkbox"
+                      className="form-check-input"
+                      style={{ width: '0.95rem', height: '0.95rem', cursor: disabled ? 'not-allowed' : 'pointer' }}
+                      checked={checked}
+                      onChange={() => toggle(mod.id, p.key)}
+                      disabled={disabled}
+                      title={title}
+                    />
+                  </div>
+                </td>
+              );
+            });
+          })()}
         </tr>
       );
     }

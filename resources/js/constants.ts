@@ -362,12 +362,14 @@ export const MENU_ITEMS: MenuItem[] = [
     id: 'hr',
     icon: 'Users',
     label: 'HR',
-    // Branch-only by product call — super_admin and client_admin manage at
-    // the tenant level (Clients / Plans / Settings), and don't need the
-    // day-to-day employee / leave / payroll menus. Branch users run HR for
-    // their branch. Direct URLs still work for client_admin (they can
-    // navigate to /hr/employees etc.) — this just hides the sidebar entry.
-    roles: ['branch_user'],
+    // Branch users + employees — super_admin and client_admin manage at the
+    // tenant level (Clients / Plans / Settings) and don't need the day-to-day
+    // employee / leave / payroll menus, so the sidebar entry is hidden for
+    // them (direct URLs still work). Employees see HR only when a branch admin
+    // has granted them can_view on at least one hr.* leaf: hasAnyHrView()
+    // gates the group and buildHrSubItems() filters to the granted leaves —
+    // identical to how the Sales Matrix and CLM groups already work.
+    roles: ['branch_user', 'employee'],
     groups: HR_GROUPS,
   },
   {

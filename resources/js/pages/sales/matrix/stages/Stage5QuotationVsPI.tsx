@@ -343,8 +343,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       toast.warning('Open from worksheet', 'Re-enter this stage from the Lead Worksheet to save your progress.');
       return;
     }
-    if (liveQuotationsCount === 0 && livePisCount === 0) {
-      toast.warning('Create a quotation or PI first', 'Stage 5 needs at least one active quotation or proforma invoice before advancing.');
+    // Stage 6 (Victory) needs a Proforma Invoice that has been SIGNED.
+    // Quick client-side check for the PI; the signed check is enforced
+    // server-side and its message surfaces via the catch below.
+    if (livePisCount === 0) {
+      toast.warning('Create a PI first', 'Moving to Victory (Stage 6) needs a Proforma Invoice on this opportunity — a quotation alone isn’t enough.');
       return;
     }
     setAdvancing(true);
