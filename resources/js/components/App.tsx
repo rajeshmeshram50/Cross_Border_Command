@@ -514,6 +514,16 @@ function DashboardRoutes({ user }: { user: any }) {
   const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
   const defaultPages = ['/my-plan', '/profile', '/plan-blocked'];
 
+  // Onboarding gate — an employee whose onboarding isn't finished yet CAN sign
+  // in, but is locked to the Inbox so they can sign their pending onboarding
+  // documents. Once HR completes onboarding the `onboarding_pending` flag
+  // clears (on next /me refresh or re-login) and full access opens up, subject
+  // to whatever module permissions the branch then grants. Profile is allowed
+  // so the employee can still view their own record; everything else bounces
+  // back to the Inbox.
+  const onboardingPending = user.user_type === 'employee' && !!user.onboarding_pending;
+  const onboardingPages = ['/inbox', '/profile'];
+
   /* Dashboard stats preload — fires once when this routes wrapper mounts
    * (i.e. immediately after successful login). Warms the sessionStorage
    * cache for the dashboard the user is about to land on, so the very
@@ -568,6 +578,10 @@ function DashboardRoutes({ user }: { user: any }) {
   // Branches table) can read it via useLocation().state.
   const navigateFn = (p: string, data?: any) => {
     const path = getPagePath(p, data);
+    if (onboardingPending && !onboardingPages.includes(path)) {
+      navigate('/inbox', { replace: true });
+      return;
+    }
     if (planExpiredOrMissing && !defaultPages.includes(path)) {
       navigate('/my-plan', { replace: true });
       return;
@@ -580,6 +594,13 @@ function DashboardRoutes({ user }: { user: any }) {
     navigate: navigateFn,
     getPath: getPagePath,
   };
+
+  // Lock an onboarding-incomplete employee to the Inbox (+ their profile).
+  // Any other path — including the dashboard they'd normally land on — is
+  // bounced to /inbox so the only thing they can do is sign their docs.
+  if (onboardingPending && !onboardingPages.includes(location.pathname)) {
+    return <Navigate to="/inbox" replace />;
+  }
 
   // Redirect to my-plan if plan expired and trying to access other pages
   if (planExpiredOrMissing && !defaultPages.includes(location.pathname)) {
@@ -608,6 +629,12 @@ function DashboardRoutes({ user }: { user: any }) {
       <LayoutProvider>
         <BranchSwitcherProvider>
           <VelzonShell>
+            {onboardingPending && (
+              <div style={{ background: '#fef3c7', color: '#92400e', padding: '9px 16px', fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #fde68a' }}>
+                <i className="ri-information-line" style={{ fontSize: 16 }} />
+                Your onboarding isn&rsquo;t complete yet — sign your pending documents in the Inbox below. Full access unlocks once HR finishes your onboarding.
+              </div>
+            )}
             <Routes>
               <Route path="/dashboard" element={<DefaultDashboard />} />
               <Route path="/clients" element={<Clients onNavigate={navigateFn} />} />

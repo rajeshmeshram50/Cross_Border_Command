@@ -102,7 +102,11 @@ class AuthController extends Controller
 
         // Onboarding gate — an employee whose onboarding isn't fully complete
         // cannot enter the app yet (logs the blocked attempt for audit).
-        $this->assertOnboardingComplete($user, $request);
+        // NOTE: onboarding-incomplete employees may now sign in. The SPA
+        // restricts them to the Inbox (via the onboarding_pending flag on the
+        // user payload) so they can sign their pending onboarding documents —
+        // blocking login entirely created a deadlock where the employee could
+        // never sign, so onboarding could never complete.
 
         $user->update([
             'last_login_at' => now(),
@@ -117,61 +121,6 @@ class AuthController extends Controller
         return response()->json([
             'token' => $token,
             'user' => $this->formatUser($user),
-        ]);
-    }
-
-    /**
-     * Block login for an employee whose onboarding isn't fully complete.
-     *
-     * Employees become login-capable as soon as HR adds them, but per the HR
-     * Core 3.5 rule they MUST NOT enter the app until all 6 onboarding stages
-     * are done (onboarding_stage_completed = 6 — "Final Verification &
-     * Activation"). Only users linked to an Employee row are affected; admins
-     * / branch users (no Employee.user_id link) sign in normally. The blocked
-     * attempt is written to activity_logs so HR has an audit trail.
-     */
-    private function assertOnboardingComplete(User $user, Request $request): void
-    {
-        $employee = \App\Models\Employee::where('user_id', $user->id)
-            ->first(['id', 'client_id', 'branch_id', 'onboarding_stage_completed']);
-
-        // No linked employee → not an onboarded-employee account; allow.
-        if (! $employee) {
-            return;
-        }
-
-        $stage = (int) ($employee->onboarding_stage_completed ?? 0);
-        if ($stage >= 6) {
-            return; // onboarding complete — login allowed
-        }
-
-        // Audit the blocked attempt. Never let a logging failure swallow the
-        // security gate, so wrap it defensively.
-        try {
-            \App\Models\ActivityLog::create([
-                'user_id'     => $user->id,
-                'client_id'   => $employee->client_id,
-                'branch_id'   => $employee->branch_id,
-                'action'      => 'login_blocked',
-                'module'      => 'auth',
-                'target_type' => \App\Models\Employee::class,
-                'target_id'   => $employee->id,
-                'description' => "Login blocked — onboarding incomplete (stage {$stage} of 6).",
-                'ip_address'  => $request->ip(),
-                'user_agent'  => $request->userAgent(),
-                'url'         => $request->fullUrl(),
-                'method'      => $request->method(),
-                'created_at'  => now(),
-            ]);
-        } catch (\Throwable $e) {
-            // swallow — auditing must not block the gate
-        }
-
-        throw ValidationException::withMessages([
-            'email' => [
-                'Your onboarding is not complete yet (Stage ' . $stage . ' of 6 done). '
-                . 'You can sign in once HR finishes your onboarding.',
-            ],
         ]);
     }
 
@@ -259,7 +208,11 @@ class AuthController extends Controller
         }
 
         // Same onboarding gate as password login — can't bypass via face.
-        $this->assertOnboardingComplete($user, $request);
+        // NOTE: onboarding-incomplete employees may now sign in. The SPA
+        // restricts them to the Inbox (via the onboarding_pending flag on the
+        // user payload) so they can sign their pending onboarding documents —
+        // blocking login entirely created a deadlock where the employee could
+        // never sign, so onboarding could never complete.
 
         $user->update([
             'last_login_at' => now(),
@@ -352,7 +305,11 @@ class AuthController extends Controller
         }
 
         // Same onboarding gate as password / face login — can't bypass via Google.
-        $this->assertOnboardingComplete($user, $request);
+        // NOTE: onboarding-incomplete employees may now sign in. The SPA
+        // restricts them to the Inbox (via the onboarding_pending flag on the
+        // user payload) so they can sign their pending onboarding documents —
+        // blocking login entirely created a deadlock where the employee could
+        // never sign, so onboarding could never complete.
 
         // Clear the failure counter on success — mirrors password / face paths.
         Cache::forget($lockKey);
@@ -564,12 +521,22 @@ class AuthController extends Controller
         // frontend can detect "is this my own profile?" regardless of which
         // form the URL slug carries — without an extra round-trip.
         $linkedEmployee = \App\Models\Employee::where('user_id', $user->id)
-            ->select(['id', 'emp_code'])
+            ->select(['id', 'emp_code', 'onboarding_stage_completed'])
             ->with('photoDocument:id,employee_id,document_key,file_path')
             ->first();
         $linkedEmployeeId = $linkedEmployee?->id;
         $linkedEmployeeCode = $linkedEmployee?->emp_code;
         $linkedEmployeePhoto = $linkedEmployee?->photo_url;
+
+        // Onboarding gate. An employee whose onboarding isn't fully complete
+        // (onboarding_stage_completed < 6) CAN log in, but the SPA restricts
+        // them to the Inbox so they can sign their pending onboarding
+        // documents. Once HR finishes onboarding (stage 6) the flag clears and
+        // full access opens up (subject to the module permissions the branch
+        // then grants). Without this in-between state the employee could never
+        // sign — they couldn't log in, so onboarding could never complete.
+        $onboardingStage   = $linkedEmployeeId ? (int) ($linkedEmployee->onboarding_stage_completed ?? 0) : 6;
+        $onboardingPending = $linkedEmployeeId && $onboardingStage < 6;
 
         // Flag the My Team menu visibility: anyone who's been assigned as
         // someone else's reporting manager (i.e. has direct reports) — plus
@@ -651,6 +618,10 @@ class AuthController extends Controller
             'is_reporting_manager' => $isReportingManager,
             'has_direct_reports'   => $hasReports,
             'inbox_count'          => $inboxCount,
+            // When true the SPA locks this employee to the Inbox until HR
+            // completes their onboarding (see DashboardRoutes gate).
+            'onboarding_pending'   => $onboardingPending,
+            'onboarding_stage'     => $onboardingStage,
             'status' => $user->status,
             'designation' => $user->designation,
             'phone' => $user->phone,
