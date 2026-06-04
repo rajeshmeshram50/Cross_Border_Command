@@ -178,7 +178,6 @@ export const HR_GROUPS: MenuGroup[] = [
     icon: 'IndianRupee',
     children: [
       { id: 'hr.payroll',            icon: 'IndianRupee',   label: 'Payroll' },
-      { id: 'hr.calculation_master', icon: 'Calculator',    label: 'Calculation Master' },
       ...(FEATURE_FLAGS.hrAttendance
         ? [{ id: 'hr.attendance', icon: 'CalendarCheck', label: 'Attendance' } as MenuItem]
         : []),

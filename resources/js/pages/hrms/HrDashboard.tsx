@@ -23,7 +23,6 @@ const HR_LEAF_ROUTES: Record<string, string> = {
   'hr.expense':     '/hr/expense',
   'hr.payroll':     '/hr/payroll',
   'hr.pip':         '/hr/pip',
-  'hr.calculation_master': '/hr/calculation-master',
 };
 
 interface CategoryStyle { color: string; icon: string; gradient: string; }
@@ -64,7 +63,6 @@ const LEAF_DESCRIPTIONS: Record<string, string> = {
   'hr.onboarding':        'Document collection, induction & day-1 readiness checklist',
   'hr.exit':              'Resignation, F&F settlement & clearance workflow',
   'hr.payroll':           'Salary structure, monthly run, payslips & bank advice',
-  'hr.calculation_master':'Earning, deduction & contribution formula library',
   'hr.attendance':        'Daily attendance, biometric sync & late-mark policies',
   'hr.leave':             'Leave types, balances, approvals & holiday calendar',
   'hr.expense':           'Expense claims, receipts & multi-stage approvals',

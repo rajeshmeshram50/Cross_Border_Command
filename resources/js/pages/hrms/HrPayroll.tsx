@@ -489,7 +489,7 @@ export default function HrPayroll() {
               </span>
             </div>
             <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-              Monthly payroll engine — biometric → calculation master → run payroll → payslips & bank advice
+              Monthly payroll engine — biometric → run payroll → payslips & bank advice
             </div>
           </div>
         </div>
