@@ -8,6 +8,7 @@ import HeaderFooterPanel, { DEFAULT_HEADER, DEFAULT_FOOTER, type HeaderConfig, t
 import { pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, type CtcVersion } from './clmCtcModals';
+import ClmCtcSignPositionModal from './ClmCtcSignPositionModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Case to Case Contracts → full-screen "Create / Edit CTC Agreement" form.
@@ -42,7 +43,7 @@ const STAGES = [
   { n: 4, label: 'Final Contract Repository',          sub: 'Store finalized signed agreement and history' },
 ];
 
-type CP = { name: string; initials: string; country: string; phone: string; email: string; grad: string; badge: string; referred: string };
+type CP = { name: string; initials: string; country: string; phone: string; email: string; grad: string; badge: string; referred: string; sourceType?: string; sourceId?: string | number };
 
 export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: CtcContract | null; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
@@ -68,6 +69,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   // signing recipients) so Stages 2–4 reflect what approvers / signers did.
   const [workingId, setWorkingId] = useState<number | null>(editing?.dbId ?? null);
   const [record, setRecord] = useState<Record<string, unknown> | null>(null);
+  const [signPos, setSignPos] = useState<{ name: string; email: string }[] | null>(null);  // open → signature positioning step
   // Page-shell header/footer config — lifted to the parent so it survives the
   // stage change and the Stage-2 preview can render the same logo/header/footer.
   const [header, setHeader] = useState<HeaderConfig>(DEFAULT_HEADER);
@@ -78,17 +80,28 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   const refreshRecord = async (id?: number | null) => {
     const rid = id ?? workingId;
     if (!rid) return;
-    try { const res = await api.get(`/clm/ctc-contracts/${rid}`); setRecord((res.data?.data ?? res.data ?? null) as Record<string, unknown>); }
+    // When a Zoho signature request is live, hit the sync endpoint so the
+    // Stage-3 tracker reflects each signer's status; it's a superset of show
+    // (returns the contract + org_signature_url, syncing Zoho only if linked).
+    const url = record?.zoho_request_id ? `/clm/ctc-contracts/${rid}/sync-signature` : `/clm/ctc-contracts/${rid}`;
+    try { const res = await api.get(url); setRecord((res.data?.data ?? res.data ?? null) as Record<string, unknown>); }
     catch { /* keep last snapshot */ }
   };
   // Poll for approver / signer activity while we sit on a review/signing stage.
   useEffect(() => {
     if (!workingId || stage < 2) return;
-    const iv = window.setInterval(() => { refreshRecord(); }, 15000);
+    const iv = window.setInterval(() => { refreshRecord(); }, 10000);
     return () => window.clearInterval(iv);
   }, [workingId, stage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const approval = String((record?.approval_status as string) ?? (sentForApproval ? 'pending' : ''));
+  // Counterparty e-sign decline (if any) — surfaced on the editor while the
+  // user revises the draft to address the signer's remark.
+  const signDecline = (() => {
+    const recs = (Array.isArray(record?.signing_recipients) ? record!.signing_recipients : []) as { name?: string; declined?: boolean; decline_reason?: string }[];
+    const d = recs.find(r => r.declined);
+    return d ? { by: d.name || 'a signer', reason: d.decline_reason || '' } : null;
+  })();
 
   useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, []);
 
@@ -134,7 +147,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       setDraft(String(r.content ?? ''));
       if (r.org_name) setOrg({ id: 0, name: String(r.org_name), shortCode: String(r.org_short_code ?? '—'), state: String(r.org_state ?? '—'), country: String(r.org_country ?? 'India'), city: '', grad: ORG_GRADS[0], initials: orgInitials(String(r.org_name)), sub: [r.org_short_code, r.org_state].filter(Boolean).join(' · ') });
       const cpArr = (Array.isArray(r.counterparties) ? r.counterparties : []) as Record<string, unknown>[];
-      setCps(cpArr.map((c, i) => ({ name: String(c.name ?? ''), initials: orgInitials(String(c.name ?? '')), country: String(c.country ?? ''), phone: String(c.phone ?? ''), email: String(c.email ?? ''), grad: ORG_GRADS[i % ORG_GRADS.length], badge: String(c.badge ?? ''), referred: String(c.referred ?? c.name ?? '') })));
+      setCps(cpArr.map((c, i) => ({ name: String(c.name ?? ''), initials: orgInitials(String(c.name ?? '')), country: String(c.country ?? ''), phone: String(c.phone ?? ''), email: String(c.email ?? ''), grad: ORG_GRADS[i % ORG_GRADS.length], badge: String(c.badge ?? ''), referred: String(c.referred ?? c.name ?? ''), sourceType: c.source_type ? String(c.source_type) : undefined, sourceId: (c.source_id as string | number | undefined) ?? undefined })));
       if (r.header_config) setHeader({ ...DEFAULT_HEADER, ...(r.header_config as object) } as HeaderConfig);
       if (r.footer_config) setFooter({ ...DEFAULT_FOOTER, ...(r.footer_config as object) } as FooterConfig);
     }).catch(() => { if (alive) toast.error('Could not load', 'Failed to open this agreement for editing.'); });
@@ -155,7 +168,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       await api.put(`/clm/ctc-contracts/${editing.dbId}`, {
         title: agTitle, agreement_type: agType || null,
         content: draft || null, header_config: header, footer_config: footer,
-        counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred })),
+        counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred, source_type: c.sourceType ?? null, source_id: c.sourceId ?? null })),
         eff_date: effDate || null, end_date: endDate || null,
       });
       toast.success('Changes saved', agTitle);
@@ -172,7 +185,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     const payload = {
       title: agTitle, agreement_type: agType || null,
       org_name: org?.name ?? null, org_short_code: org?.shortCode ?? null, org_state: org?.state ?? null, org_country: org?.country ?? null,
-      counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred })),
+      counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred, source_type: c.sourceType ?? null, source_id: c.sourceId ?? null })),
       eff_date: effDate || null, end_date: endDate || null,
       content: draft || null, header_config: header, footer_config: footer,
       approvers: approval.approvers, days_to_approve: approval.days, reminder_days: approval.reminder,
@@ -203,21 +216,26 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     } catch (e) { toast.error('Could not resubmit', errMsg(e) || 'Please try again.'); }
   };
 
-  // Approved → send to the chosen counterparties for signature & negotiation.
-  const sendForSigning = async (recipients: { name: string; email: string; role: string; contact: string }[], days: number | null) => {
-    if (!workingId) return;
-    try {
-      await api.post(`/clm/ctc-contracts/${workingId}/send-for-signing`, { recipients, days_to_sign: days });
-      toast.success('Sent for signing', 'Agreement shared with the counterparties.');
-      await refreshRecord();
-      goStage(3);
-    } catch (e) { toast.error('Could not send', errMsg(e) || 'Please try again.'); }
+  // Approved → after choosing signers, open the positioning step where the
+  // user drags each signer's signature box, then sends via Zoho Sign.
+  const sendForSigning = (recipients: { name: string; email: string; role: string; contact: string }[], _days: number | null) => {
+    if (!workingId) { toast.error('Not saved', 'Submit the draft for approval first.'); return; }
+    const list = recipients.map(r => ({ name: r.name, email: r.email })).filter(s => s.email);
+    if (!list.length) { toast.error('No signers', 'Select at least one contact person to sign.'); return; }
+    setSignPos(list);
   };
 
   const recordSignature = async (payload: { index?: number; all?: boolean }) => {
     if (!workingId) return;
     try { await api.post(`/clm/ctc-contracts/${workingId}/record-signature`, payload); await refreshRecord(); }
     catch (e) { toast.error('Could not update', errMsg(e) || 'Please try again.'); }
+  };
+
+  // Nudge the counterparty signers via Zoho Sign.
+  const remindSigning = async () => {
+    if (!workingId) return;
+    try { const res = await api.post(`/clm/ctc-contracts/${workingId}/remind-signing`); toast.success('Reminder sent', res.data?.message ?? 'Signers reminded via Zoho Sign.'); }
+    catch (e) { toast.error('Could not send reminder', errMsg(e) || 'Please try again.'); }
   };
 
   // All parties signed → store in the Final Contract Repository.
@@ -310,16 +328,26 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               header={header} setHeader={setHeader} footer={footer} setFooter={setFooter}
               isEditing={!!editing?.dbId} onUpdate={saveEdit}
               onSubmitForApproval={submitForApproval}
-              resubmitMode={!!workingId && approval === 'rejected'} onResubmit={resubmitDraft}
+              resubmitMode={!!workingId && (approval === 'rejected' || !!signDecline)} onResubmit={resubmitDraft}
+              declineReason={signDecline?.reason} declinedBy={signDecline?.by}
               onNext={() => goStage(2)}
             />
           )}
-          {stage > 1 && <StageReview t={t} stage={stage} cps={cps} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} header={header} footer={footer} sentForApproval={sentForApproval} workingId={workingId} record={record} approval={approval} onResubmitEdit={() => goStage(1)} onSendForSigning={sendForSigning} onRecordSignature={recordSignature} onMoveToRepository={moveToRepository} onRefresh={refreshRecord} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
+          {stage > 1 && <StageReview t={t} stage={stage} cps={cps} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} header={header} footer={footer} sentForApproval={sentForApproval} workingId={workingId} record={record} approval={approval} onResubmitEdit={() => goStage(1)} onSendForSigning={sendForSigning} onRecordSignature={recordSignature} onMoveToRepository={moveToRepository} onRefresh={refreshRecord} onRemind={remindSigning} onExit={onClose} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
         </div>
       </div>
 
       {picker && (
         <CpPicker t={t} slot={cps.length + 1} onClose={() => setPicker(false)} onPick={(cp) => { setCps([...cps, cp]); setPicker(false); }} />
+      )}
+
+      {signPos && workingId && (
+        <ClmCtcSignPositionModal
+          t={t} contractId={workingId} code={String((record?.code as string) ?? '')} title={agTitle}
+          signers={signPos} header={header} footer={footer} content={draft}
+          onClose={() => setSignPos(null)}
+          onSent={async () => { setSignPos(null); await refreshRecord(); goStage(3); }}
+        />
       )}
     </div>
   );
@@ -337,6 +365,7 @@ function Stage1(p: {
   isEditing: boolean; onUpdate: () => void;
   onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => void;
   resubmitMode: boolean; onResubmit: () => void;
+  declineReason?: string; declinedBy?: string;
   onNext: () => void;
 }) {
   const t = p.t;
@@ -408,7 +437,7 @@ function Stage1(p: {
       <div style={{ flex: leftOpen ? 2 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!leftOpen ? <CollapsedBar t={t} title="Counterparty Details" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA" dir="left" onExpand={() => setLeftOpen(true)} /> :
         <Panel t={t} header="Panel 01" title="Counterparty Details" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA" onCollapse={() => setLeftOpen(false)} collapseDir="left">
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 10, padding: 12, overflowY: 'auto' }}>
+          <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 10, padding: 12, overflowY: 'auto' }}>
             {(() => {
               const total = p.cps.length;
               const pages = Math.max(1, Math.ceil(total / 2));
@@ -624,7 +653,7 @@ function Stage1(p: {
             {midStep === 3 && (
               <div style={editorFs
                 ? { position: 'fixed', inset: 16, zIndex: 400, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, overflow: 'hidden', boxShadow: '0 30px 80px rgba(8,3,28,.5)', display: 'flex', flexDirection: 'column' }
-                : { background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column' }}>
+                : { flex: 1, minHeight: 0, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column' }}>
                 {/* header with actions */}
                 <div style={{ padding: '12px 14px', background: 'linear-gradient(118deg,#3B0764 0%,#5B21B6 35%,#7C3AED 65%,#8B5CF6 100%)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -660,7 +689,7 @@ function Stage1(p: {
                   <ToolBtn t={t} title="Undo" onClick={() => exec('undo')}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.95" /></ToolBtn>
                   <ToolBtn t={t} title="Redo" onClick={() => exec('redo')}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-.49-4.95" /></ToolBtn>
                 </div>
-                <div style={{ flex: editorFs ? 1 : undefined, minHeight: editorFs ? 0 : 280, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
+                <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
                   <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
                     <div ref={editorRef} className="ctc-editor" contentEditable suppressContentEditableWarning data-ph="Start drafting your agreement content here…  This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" onInput={syncDraft} onBlur={syncDraft} style={{ minHeight: 220, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', color: '#1f2937', lineHeight: 1.8, background: '#fff', boxSizing: 'border-box' }} />
                   </HeaderFooterPanel>
@@ -714,7 +743,7 @@ function Stage1(p: {
       <div style={{ flex: rightOpen ? 2.5 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!rightOpen ? <CollapsedBar t={t} title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" dir="right" onExpand={() => setRightOpen(true)} /> :
         <Panel t={t} header="Panel 03" title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" onCollapse={() => setRightOpen(false)} collapseDir="right">
-          <RightTools t={t} draft={p.draft} onInsert={(tok) => { if (editorRef.current) insertText(tok); else p.setDraft((p.draft ? p.draft + ' ' : '') + tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
+          <RightTools t={t} draft={p.draft} declineReason={p.declineReason} declinedBy={p.declinedBy} onInsert={(tok) => { if (editorRef.current) insertText(tok); else p.setDraft((p.draft ? p.draft + ' ' : '') + tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
         </Panel>}
       </div>
     </div>
@@ -722,27 +751,42 @@ function Stage1(p: {
 }
 
 /* ── Stages 2–4: shared LEFT (read-only counterparty) + RIGHT (review) panels, changing MIDDLE ── */
-type SignRecipient = { name: string; email: string; role: string; contact: string; signed: boolean; signed_at: string | null };
+type SignRecipient = { name: string; email: string; role: string; contact: string; signed: boolean; signed_at: string | null; declined?: boolean; decline_reason?: string };
 
-function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, draft, header, footer, sentForApproval, workingId, record, approval, onResubmitEdit, onSendForSigning, onRecordSignature, onMoveToRepository, onRefresh, onBack, onNext, onSave }: {
+function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, draft, header, footer, sentForApproval, workingId, record, approval, onResubmitEdit, onSendForSigning, onRecordSignature, onMoveToRepository, onRefresh, onRemind, onExit, onBack, onNext, onSave }: {
   t: OpsTokens; stage: number; cps: CP[]; org: Org | null; agTitle: string; agType: string; effDate: string; endDate: string; draft: string; header: HeaderConfig; footer: FooterConfig; sentForApproval: boolean;
   workingId: number | null; record: Record<string, unknown> | null; approval: string;
   onResubmitEdit: () => void;
   onSendForSigning: (recipients: { name: string; email: string; role: string; contact: string }[], days: number | null) => void;
   onRecordSignature: (payload: { index?: number; all?: boolean }) => void;
-  onMoveToRepository: () => void; onRefresh: () => void;
+  onMoveToRepository: () => void; onRefresh: () => void; onRemind: () => void; onExit: () => void;
   onBack: () => void; onNext: () => void; onSave: () => void;
 }) {
   const [reminded, setReminded] = useState(false);
   const [signingOpen, setSigningOpen] = useState(false);
   const [vhOpen, setVhOpen] = useState(false);
   const versions = (Array.isArray(record?.versions) ? record!.versions : []) as CtcVersion[];
+  const draftCount = versions.filter(v => (v.status || '').toLowerCase() === 'under review').length;
   const signers = (Array.isArray(record?.signing_recipients) ? record!.signing_recipients : []) as SignRecipient[];
   const allSigned = signers.length > 0 && signers.every(s => s.signed);
+  const declinedSigner = signers.find(s => s.declined);
+  const isDeclined = !!declinedSigner;
   const code = String((record?.code as string) ?? 'CTC');
   const rejReason = String((record?.rejection_reason as string) ?? '');
   const apprName = String((record?.primary_approver_name as string) ?? 'Approver');
   const apprInit = apprName.trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || 'AP';
+  const fmtNice = (s: unknown) => { if (!s) return '—'; const d = new Date(String(s)); return isNaN(d.getTime()) ? String(s) : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); };
+  const executedOn = fmtNice(record?.cp_signed_date);
+  // Once approved, the {{signature}} placeholder (receiving-party / our org)
+  // resolves to the branch's signature + stamp image; before that it stays a
+  // muted placeholder so reviewers see where the signature will land.
+  const orgSig = String((record?.org_signature_url as string) ?? '');
+  const isSignedOff = approval === 'approved' || stage >= 3;
+  const signedUrl = String((record?.signed_document_url as string) ?? '');
+  const sigToken = isSignedOff && orgSig
+    ? `<img src="${orgSig}" alt="Authorised Signatory" style="max-height:78px;max-width:200px;object-fit:contain;display:inline-block;vertical-align:middle;" />`
+    : '<span style="color:#94a3b8;font-style:italic;">{{signature}}</span>';
+  const previewDraft = (draft || '').replace(/\{\{\s*signature\s*\}\}/gi, sigToken);
   const MID = {
     2: { head: '#3B0764,#5B21B6,#7C3AED,#8B5CF6', sup: 'Panel 02 · Agreement Preview', title: 'Agreement Preview' },
     3: { head: '#0e7490,#0891b2,#06b6d4', sup: 'Panel 02 · Negotiation & Signing', title: 'Counterparty Negotiation & Signing' },
@@ -755,32 +799,28 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
 
-      {/* LEFT — Counterparty Details (read only) */}
+      {/* LEFT — Counterparty Details (stages 2-3) · Contract Summary (stage 4) */}
       <div style={{ flex: 2, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, minHeight: 0, background: t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff,#f3effe 50%,#ede8fd)', borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(139,92,246,.3)' : 'rgba(139,92,246,.22)'}`, boxShadow: '0 4px 20px rgba(109,40,217,.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '11px 14px', background: 'linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div style={{ flex: 1, minHeight: 0, background: t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff,#f3effe 50%,#ede8fd)', borderRadius: 16, border: `1.5px solid ${stage === 4 ? (t.dark ? 'rgba(16,185,129,.3)' : 'rgba(16,185,129,.3)') : (t.dark ? 'rgba(139,92,246,.3)' : 'rgba(139,92,246,.22)')}`, boxShadow: '0 4px 20px rgba(109,40,217,.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '11px 14px', background: stage === 4 ? 'linear-gradient(118deg,#064E3B,#047857,#059669,#10B981)' : 'linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg></div>
-              <div><div style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Panel 01</div><div style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>Counterparty Details</div></div>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stage === 4
+                ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
+                : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>}</div>
+              <div><div style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Panel 01</div><div style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{stage === 4 ? 'Contract Summary' : 'Counterparty Details'}</div></div>
             </div>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 20, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)' }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg><span style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.85)' }}>Read Only</span></span>
+            {stage === 4
+              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.3)' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: '#6ee7b7' }} /><span style={{ fontSize: 7.5, fontWeight: 800, color: '#fff' }}>Executed</span></span>
+              : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 20, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)' }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg><span style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.85)' }}>Read Only</span></span>}
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {cps.map((cp, i) => <CpReadCard key={i} t={t} idx={i + 1} cp={cp} />)}
-            {org && (
-              <div style={{ borderRadius: 12, overflow: 'hidden', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.surface }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 12px', background: `linear-gradient(118deg,${org.grad})` }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{org.initials}</span></div>
-                  <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 8, fontWeight: 800, color: 'rgba(255,255,255,.7)', textTransform: 'uppercase', letterSpacing: '.08em' }}>Our Organisation</div><div style={{ fontSize: 12, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{org.name}</div></div>
-                </div>
-                <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {[['Short Code', org.shortCode], ['Country', org.country], ['State', org.state]].map(([k, v]) => (
-                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><span style={{ fontSize: 8, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.04em' }}>{k}</span><span style={{ fontSize: 9.5, color: t.textSub, fontWeight: 600 }}>{v}</span></div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {cps.length === 0 && !org && <div style={{ fontSize: 10, color: t.textMuted, textAlign: 'center', padding: 20 }}>No counterparty details captured.</div>}
+          <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {stage === 4 ? (
+              <ContractSummaryCard t={t} code={code} agTitle={agTitle} agType={agType} cps={cps} org={org} effDate={effDate} endDate={endDate} executedOn={executedOn} signers={signers} />
+            ) : (<>
+              {cps.map((cp, i) => <CpCard key={i} t={t} slot={i + 1} cp={cp} readOnly />)}
+              {org && <OrgMiniCard t={t} org={org} />}
+              {cps.length === 0 && !org && <div style={{ fontSize: 10, color: t.textMuted, textAlign: 'center', padding: 20 }}>No counterparty details captured.</div>}
+            </>)}
           </div>
         </div>
       </div>
@@ -795,37 +835,37 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
             </div>
             <span onClick={() => setVhOpen(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', cursor: 'pointer' }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.9)" strokeWidth="2.2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg><span style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.9)' }}>Download</span></span>
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#F0EFF8', padding: '18px 24px' }}>
+          <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#F0EFF8', padding: '18px 24px' }}>
+            {stage === 4 && signedUrl ? (
+              /* Final repository → the fully-signed PDF returned by Zoho Sign. */
+              <iframe title="Signed document" src={`${signedUrl}#toolbar=1&navpanes=0&view=FitH`} style={{ width: '100%', height: '100%', minHeight: 560, border: 'none', borderRadius: 6, background: '#fff', boxShadow: '0 2px 14px rgba(0,0,0,.12)' }} />
+            ) : (
             <div style={{ maxWidth: 600, margin: '0 auto', background: t.dark ? '#1a1530' : '#fff', borderRadius: 6, boxShadow: '0 2px 12px rgba(0,0,0,.1)', padding: '36px 40px', position: 'relative' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 5, background: stage === 4 ? 'linear-gradient(90deg,#047857,#059669,#10B981)' : 'linear-gradient(90deg,#4C1D95,#7C3AED,#A78BFA)', borderRadius: '6px 6px 0 0' }} />
-              {/* Configured document header (logo + name) from Stage 1 */}
-              {(header.show_logo || header.show_title) && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14, justifyContent: header.align === 'center' ? 'center' : header.align === 'right' ? 'flex-end' : 'flex-start', padding: '6px 12px', marginBottom: 14, borderRadius: 6, borderBottom: '2px solid rgba(124,58,237,.18)', background: header.background, color: header.text_color }}>
-                  {header.show_logo && header.logo_url && <img src={header.logo_url} alt="logo" style={{ maxHeight: Math.max(24, Math.min(200, header.logo_height ?? 62)), objectFit: 'contain' }} />}
-                  {header.show_title && <div style={{ textAlign: header.align, minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.2 }}>{header.title}</div>{header.subtitle && <div style={{ fontSize: 9, opacity: .7, marginTop: 1 }}>{header.subtitle}</div>}</div>}
-                </div>
-              )}
-              <div style={{ textAlign: 'center', marginBottom: 22 }}>
-                <span style={{ display: 'inline-block', padding: '3px 12px', borderRadius: 20, background: t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', border: `1px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, marginBottom: 8 }}><span style={{ fontSize: 8, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#6D28D9', letterSpacing: '.15em' }}>{code}</span></span>
-                <div style={{ fontSize: 18, fontWeight: 900, color: t.textStrong, letterSpacing: '-.4px', marginBottom: 4, textTransform: 'uppercase' }}>{agTitle || 'Agreement Draft'}</div>
-                <div style={{ fontSize: 9.5, color: t.textMuted, fontWeight: 500, marginBottom: 10 }}>({agType || 'Mutual Non-Disclosure & Confidentiality Agreement'})</div>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF', border: `1px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}` }}><span style={{ fontSize: 9, color: t.textSub, fontWeight: 500 }}>Entered into as of <span style={{ color: t.dark ? '#c4b5fd' : '#7C3AED', fontWeight: 700, background: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', padding: '1px 7px', borderRadius: 4 }}>{effDate || '—'}</span></span></div>
-              </div>
-              <div style={{ height: 1, background: t.dark ? 'rgba(148,163,184,.15)' : 'linear-gradient(90deg,transparent,#DDD6FE 30%,#DDD6FE 70%,transparent)', marginBottom: 20 }} />
-              <div style={{ fontSize: 10, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#4C1D95', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10, textAlign: 'center' }}>Parties</div>
-              {[['Disclosing Party', cp1?.referred || cp1?.name || '{{party_1_name}}', '#7C3AED'], ['Receiving Party', cp2?.referred || cp2?.name || org?.name || '{{party_2_name}}', '#A78BFA']].map(([role, name, clr], i) => (
-                <div key={i}>
-                  {i === 1 && <div style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#A78BFA', margin: '6px 0' }}>— AND —</div>}
-                  <div style={{ borderLeft: `3px solid ${clr}`, padding: '10px 14px', borderRadius: '0 8px 8px 0', background: t.dark ? 'rgba(124,58,237,.07)' : 'linear-gradient(135deg,#FAFBFF,#F5F0FF)', marginBottom: 10 }}>
-                    <div style={{ fontSize: 8, fontWeight: 800, color: clr, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 4 }}>{role}</div>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: t.textStrong }}>{name}</div>
-                    <div style={{ fontSize: 8.5, color: t.textMuted, marginTop: 2 }}>hereinafter referred to as the <strong>"{role}"</strong></div>
+              {/* Configured document header from Stage 1 — logo + title are
+                  free-positioned via logo_pos / title_pos (% of the band, centre
+                  anchor), matching HeaderFooterPanel so the preview lands the
+                  logo exactly where it was placed. */}
+              {(header.show_logo || header.show_title) && (() => {
+                const logoH = Math.max(24, Math.min(200, header.logo_height ?? 62));
+                const cp = (p?: { x?: number; y?: number }) => ({ x: Math.max(0, Math.min(100, p?.x ?? 50)), y: Math.max(0, Math.min(100, p?.y ?? 50)) });
+                const lp = cp(header.logo_pos), tp = cp(header.title_pos);
+                return (
+                  <div style={{ position: 'relative', minHeight: Math.max(64, logoH + 24), marginBottom: 14, borderBottom: '2px solid rgba(124,58,237,.18)', background: header.background, color: header.text_color, borderRadius: 6 }}>
+                    {header.show_logo && header.logo_url && <img src={header.logo_url} alt="logo" style={{ position: 'absolute', left: `${lp.x}%`, top: `${lp.y}%`, transform: 'translate(-50%,-50%)', height: logoH, maxWidth: Math.max(180, logoH * 3), objectFit: 'contain' }} />}
+                    {header.show_title && (
+                      <div style={{ position: 'absolute', left: `${tp.x}%`, top: `${tp.y}%`, transform: 'translate(-50%,-50%)', textAlign: header.align, maxWidth: '60%' }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.2 }}>{header.title}</div>
+                        {header.subtitle && <div style={{ fontSize: 9, opacity: .7, marginTop: 1 }}>{header.subtitle}</div>}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })()}
+              {/* Only the drafted agreement content — no auto-generated title / id / parties scaffold. */}
               {draft
-                ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7, marginTop: 10 }} dangerouslySetInnerHTML={{ __html: draft }} />
-                : <div style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7, marginTop: 10 }}>Each party may be referred to individually as a "Party" and collectively as the "Parties". The Parties wish to explore a potential business relationship relating to {'{{business_purpose}}'} (the "Purpose").</div>}
+                ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: previewDraft }} />
+                : <div style={{ fontSize: 10, color: t.textMuted, lineHeight: 1.7, textAlign: 'center', padding: '40px 10px', fontStyle: 'italic' }}>No agreement content drafted yet.</div>}
               {/* Configured document footer (text + pagination) from Stage 1 */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: 6, marginTop: 26, paddingTop: 10, borderTop: '1.5px solid rgba(124,58,237,.18)', background: footer.background, color: footer.text_color, fontSize: 9, fontWeight: 500 }}>
                 {(['left', 'center', 'right'] as const).map(cell => {
@@ -839,6 +879,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 })}
               </div>
             </div>
+            )}
           </div>
           {/* footer nav */}
           <div style={{ flexShrink: 0, padding: '10px 16px', background: t.surface, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
@@ -853,11 +894,16 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               {stage === 2 && approval !== 'approved' && approval !== 'rejected' && (
                 <button disabled title="Waiting for the approver's decision" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9', border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0'}`, cursor: 'not-allowed', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting Approval</button>
               )}
-              {/* Stage 3 — Counterparty signing */}
-              {stage === 3 && !allSigned && (
-                <button onClick={() => onRecordSignature({ all: true })} disabled={signers.length === 0} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: signers.length === 0 ? (t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9') : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', border: 'none', cursor: signers.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: signers.length === 0 ? t.textMuted : '#fff', boxShadow: signers.length === 0 ? 'none' : '0 3px 10px rgba(8,145,178,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> Mark All as Signed</button>
+              {/* Stage 3 — declined → must re-run internal approval before it can
+                  go back to the counterparty, so route to Stage 1 / resubmit. */}
+              {stage === 3 && isDeclined && (
+                <button onClick={onResubmitEdit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(217,119,6,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> Edit &amp; Resubmit for Approval</button>
               )}
-              {stage === 3 && allSigned && (
+              {/* Stage 3 — awaiting e-signatures → nudge the signers via Zoho Sign */}
+              {stage === 3 && !isDeclined && !allSigned && (
+                <button onClick={onRemind} disabled={signers.length === 0} title="Re-email the counterparty signers via Zoho Sign" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: signers.length === 0 ? (t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9') : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', border: 'none', cursor: signers.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: signers.length === 0 ? t.textMuted : '#fff', boxShadow: signers.length === 0 ? 'none' : '0 3px 10px rgba(8,145,178,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg> Send Reminder</button>
+              )}
+              {stage === 3 && !isDeclined && allSigned && (
                 <button onClick={onMoveToRepository} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(5,150,105,.35)' }}>Move to Final Repository <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg></button>
               )}
               {/* Stage 4 — store finalized agreement */}
@@ -869,14 +915,17 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
         </div>
       </div>
 
-      {/* RIGHT — Internal Review & Approval (shared) */}
+      {/* RIGHT — Internal Review & Approval (2-3) · Contract History (stage 4) */}
       <div style={{ flex: 2.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, minHeight: 0, background: t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff,#f3effe 40%,#ede8fd)', borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(167,139,250,.3)' : 'rgba(167,139,250,.28)'}`, boxShadow: '0 4px 24px rgba(109,40,217,.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '11px 14px', background: 'linear-gradient(118deg,#6D28D9,#7C3AED,#8B5CF6,#A78BFA)', display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></div>
-            <div><div style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Panel 03</div><div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{stage === 4 ? 'Repository Record' : stage === 3 ? 'Negotiation Status' : 'Internal Review & Approval'}</div></div>
+        <div style={{ flex: 1, minHeight: 0, background: stage === 4 ? (t.dark ? '#0e1f1a' : 'linear-gradient(160deg,#f0fdf6,#ecfdf3 45%,#e3fbec)') : (t.dark ? '#161226' : 'linear-gradient(160deg,#faf8ff,#f3effe 40%,#ede8fd)'), borderRadius: 16, border: `1.5px solid ${stage === 4 ? (t.dark ? 'rgba(16,185,129,.3)' : 'rgba(16,185,129,.3)') : (t.dark ? 'rgba(167,139,250,.3)' : 'rgba(167,139,250,.28)')}`, boxShadow: '0 4px 24px rgba(109,40,217,.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ padding: '11px 14px', background: stage === 4 ? 'linear-gradient(118deg,#064E3B,#047857,#059669,#10B981)' : 'linear-gradient(118deg,#6D28D9,#7C3AED,#8B5CF6,#A78BFA)', display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{stage === 4
+              ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}</div>
+            <div><div style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Panel 03</div><div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{stage === 4 ? 'Contract History' : stage === 3 ? 'Negotiation Status' : 'Internal Review & Approval'}</div></div>
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {stage === 4 ? <ContractHistoryPanel t={t} draftCount={draftCount} signedUrl={signedUrl} signatureRequestId={Number(record?.signature_request_id) || null} onVersionHistory={() => setVhOpen(true)} onExit={onExit} /> : (<>
             {/* Rejection banner — shown when an approver rejected this draft */}
             {approval === 'rejected' && (
               <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(239,68,68,.4)' : '#FECACA'}`, background: t.dark ? 'rgba(239,68,68,.1)' : '#FEF2F2', padding: '9px 11px' }}>
@@ -893,29 +942,49 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></div>
                 <div style={{ textAlign: 'left' }}><div style={{ fontSize: 9, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Version History</div><div style={{ fontSize: 7.5, color: t.dark ? '#a78bfa' : '#A78BFA', marginTop: 1 }}>View &amp; download all versions</div></div>
               </div>
-              <span style={{ padding: '2px 8px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', fontSize: 7.5, fontWeight: 800, color: '#fff' }}>{versions.length ? `${versions.length} ver` : 'v1'}</span>
+              <span style={{ padding: '2px 8px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', fontSize: 7.5, fontWeight: 800, color: '#fff' }}>{draftCount ? `${draftCount} ver` : 'v1'}</span>
             </button>
-            {/* Stage 3 — counterparty signing tracker */}
-            {stage === 3 && (
-              <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.3)' : '#A5F3FC'}`, background: t.surface, overflow: 'hidden' }}>
+            {/* Stage 3 — counterparty e-signing (Zoho Sign) tracker */}
+            {stage === 3 && (<>
+              {isDeclined && (
+                <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(239,68,68,.4)' : '#FECACA'}`, background: t.dark ? 'rgba(239,68,68,.1)' : '#FEF2F2', padding: '9px 11px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#fca5a5' : '#DC2626'} strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+                    <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#fca5a5' : '#DC2626', textTransform: 'uppercase', letterSpacing: '.08em' }}>Declined by {declinedSigner?.name || 'a signer'}</span>
+                  </div>
+                  <div style={{ fontSize: 9, color: t.dark ? '#fecaca' : '#991B1B', lineHeight: 1.5 }}>{declinedSigner?.decline_reason || 'The signer declined the document.'}</div>
+                  <div style={{ fontSize: 8, color: t.dark ? '#fca5a5' : '#B91C1C', marginTop: 5, fontWeight: 600 }}>Edit the draft, resubmit for internal approval, then send for signing again.</div>
+                </div>
+              )}
+              <div style={{ borderRadius: 11, border: `1.5px solid ${isDeclined ? (t.dark ? 'rgba(239,68,68,.3)' : '#FECACA') : (t.dark ? 'rgba(6,182,212,.3)' : '#A5F3FC')}`, background: t.surface, overflow: 'hidden' }}>
                 <div style={{ padding: '7px 10px', background: t.dark ? 'rgba(6,182,212,.14)' : 'linear-gradient(110deg,#ECFEFF,#CFFAFE)', borderBottom: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : '#A5F3FC'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 7, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0E7490', letterSpacing: '.1em', textTransform: 'uppercase' }}>Signing Status</span>
+                  <span style={{ fontSize: 7, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0E7490', letterSpacing: '.1em', textTransform: 'uppercase' }}>Signing Status · Zoho Sign</span>
                   <span style={{ fontSize: 7, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0891b2' }}>{signers.filter(s => s.signed).length}/{signers.length} signed</span>
                 </div>
                 <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 7 }}>
                   {signers.length === 0 && <div style={{ fontSize: 9, color: t.textMuted, textAlign: 'center', padding: 8 }}>No recipients yet.</div>}
-                  {signers.map((s, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.03)' : '#F8FEFF', border: `1.5px solid ${s.signed ? (t.dark ? 'rgba(16,185,129,.3)' : '#A7F3D0') : (t.dark ? 'rgba(6,182,212,.2)' : '#CFFAFE')}` }}>
-                      <div style={{ width: 24, height: 24, borderRadius: 7, background: s.signed ? 'linear-gradient(135deg,#059669,#047857)' : 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 800, color: '#fff' }}>{(s.name || '?').slice(0, 2).toUpperCase()}</span></div>
-                      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 9, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div><div style={{ fontSize: 7.5, color: t.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.role || s.email || '—'}</div></div>
-                      {s.signed
-                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 7px', borderRadius: 8, background: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', fontSize: 7, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#059669' }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>Signed</span>
-                        : <button onClick={() => onRecordSignature({ index: i })} style={{ padding: '3px 8px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 7, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>Mark Signed</button>}
-                    </div>
-                  ))}
+                  {signers.map((s, i) => {
+                    const dec = !!s.declined;
+                    const bd = s.signed ? (t.dark ? 'rgba(16,185,129,.3)' : '#A7F3D0') : dec ? (t.dark ? 'rgba(239,68,68,.3)' : '#FECACA') : (t.dark ? 'rgba(6,182,212,.2)' : '#CFFAFE');
+                    const av = s.signed ? '#059669,#047857' : dec ? '#DC2626,#B91C1C' : '#0891b2,#0e7490';
+                    return (
+                      <div key={i} style={{ padding: '7px 8px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.03)' : '#F8FEFF', border: `1.5px solid ${bd}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 24, height: 24, borderRadius: 7, background: `linear-gradient(135deg,${av})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 800, color: '#fff' }}>{(s.name || '?').slice(0, 2).toUpperCase()}</span></div>
+                          <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 9, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div><div style={{ fontSize: 7.5, color: t.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.email || '—'}</div></div>
+                          {s.signed
+                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 7px', borderRadius: 8, background: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', fontSize: 7, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#059669' }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>Signed</span>
+                            : dec
+                              ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 7px', borderRadius: 8, background: t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2', fontSize: 7, fontWeight: 800, color: t.dark ? '#fca5a5' : '#DC2626' }}>✕ Declined</span>
+                              : <span style={{ padding: '3px 7px', borderRadius: 8, background: t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7', fontSize: 7, fontWeight: 800, color: t.dark ? '#fcd34d' : '#D97706' }}>● Awaiting</span>}
+                        </div>
+                        {dec && s.decline_reason && <div style={{ fontSize: 7.5, color: t.dark ? '#fca5a5' : '#B91C1C', marginTop: 5, paddingLeft: 32, lineHeight: 1.4 }}>“{s.decline_reason}”</div>}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            )}
+            </>)}
             {/* Agreement summary */}
             <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.surface }}>
               <div style={{ padding: '6px 10px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE,#F3F0FF)', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: 7, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#6D28D9', letterSpacing: '.1em', textTransform: 'uppercase' }}>Agreement Summary</span><span style={{ fontSize: 7, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 600 }}>{code}</span></div>
@@ -948,78 +1017,206 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 </div>
                   );
                 })()}
-                {/* Send Reminder — enabled only once the draft has been sent for approval */}
+                {/* Approval reminder — only while still awaiting the approver's
+                    decision (Stage 2, pending). Hidden once approved / at Stage 3+. */}
+                {approval !== 'approved' && stage < 3 && (
                 <button onClick={() => sentForApproval && setReminded(true)} disabled={!sentForApproval || reminded} title={sentForApproval ? '' : 'Send the draft for approval first'} style={{ width: '100%', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', borderRadius: 9, border: `1.5px solid ${reminded ? (t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0') : sentForApproval ? (t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD') : (t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0')}`, background: reminded ? (t.dark ? 'rgba(16,185,129,.12)' : '#ECFDF5') : sentForApproval ? (t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF') : (t.dark ? 'rgba(255,255,255,.02)' : '#F8FAFC'), cursor: sentForApproval && !reminded ? 'pointer' : 'not-allowed', opacity: sentForApproval ? 1 : .55, fontFamily: 'inherit' }}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={reminded ? (t.dark ? '#6ee7b7' : '#059669') : sentForApproval ? (t.dark ? '#c4b5fd' : '#7C3AED') : (t.dark ? '#94a3b8' : '#94A3B8')} strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
                   <span style={{ fontSize: 9, fontWeight: 800, color: reminded ? (t.dark ? '#6ee7b7' : '#059669') : sentForApproval ? (t.dark ? '#c4b5fd' : '#6D28D9') : (t.dark ? '#94a3b8' : '#94A3B8') }}>{reminded ? 'Reminder Sent' : 'Send Reminder'}</span>
                 </button>
+                )}
                 <div style={{ fontSize: 7, fontWeight: 800, color: t.textMuted, letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ height: 1, background: t.dark ? 'rgba(148,163,184,.15)' : '#EDE9FE', flex: 1 }} />Review Timeline<div style={{ height: 1, background: t.dark ? 'rgba(148,163,184,.15)' : '#EDE9FE', flex: 1 }} /></div>
                 <TimelineItem t={t} tone="done" title="Draft Submitted" badge="Done" sub="Agreement drafted & submitted for internal review" />
                 <TimelineItem t={t} tone={approval === 'approved' || stage >= 3 ? 'done' : 'active'} title="Internal Review" badge={approval === 'approved' || stage >= 3 ? 'Done' : approval === 'rejected' ? 'Returned' : 'Active'} sub={approval === 'approved' ? `Approved by ${apprName}` : approval === 'rejected' ? `Returned by ${apprName} for changes` : `${apprName} reviewing the agreement`} last={stage < 3} />
                 {stage >= 3 && <TimelineItem t={t} tone={stage === 4 ? 'done' : 'active'} title={stage === 4 ? 'Signed & Stored' : 'Counterparty Signing'} badge={stage === 4 ? 'Done' : allSigned ? 'Signed' : 'Active'} sub={stage === 4 ? 'Final signed agreement archived' : allSigned ? 'All parties signed — ready to store' : 'Awaiting counterparty signature'} last />}
               </div>
             </div>
+            </>)}
           </div>
         </div>
       </div>
 
       {vhOpen && <VersionHistoryModal t={t} code={code} workingId={workingId} versions={versions} onClose={() => setVhOpen(false)} />}
-      {signingOpen && <SendForSigningModal t={t} cps={cps} onClose={() => setSigningOpen(false)} onSend={(recipients, days) => { setSigningOpen(false); onSendForSigning(recipients, days); }} />}
+      {signingOpen && <SendForSigningModal t={t} cps={cps} code={code} title={agTitle} onClose={() => setSigningOpen(false)} onSend={(recipients, days) => { setSigningOpen(false); onSendForSigning(recipients, days); }} />}
     </div>
   );
 }
 
-/* ── Version History — every draft / revision / decision / signing event, each downloadable as PDF ── */
 /* ── Send for Signing & Negotiation — pick recipients (counterparties + contact + days) ── */
-function SendForSigningModal({ t, cps, onClose, onSend }: { t: OpsTokens; cps: CP[]; onClose: () => void; onSend: (recipients: { name: string; email: string; role: string; contact: string }[], days: number | null) => void }) {
+type SignContact = { name: string; email: string; designation: string; phone: string; is_primary: boolean };
+function SendForSigningModal({ t, cps, code, title, onClose, onSend }: { t: OpsTokens; cps: CP[]; code: string; title: string; onClose: () => void; onSend: (recipients: { name: string; email: string; role: string; contact: string }[], days: number | null) => void }) {
   const toast = useToast();
-  const [rows, setRows] = useState(() => cps.map(c => ({ name: c.name, email: c.email || '', role: c.badge || 'Counterparty', contact: '', selected: true })));
+  const [contacts, setContacts] = useState<SignContact[][]>(() => cps.map(() => []));
+  const [loading, setLoading] = useState(true);
+  const [sel, setSel] = useState<Set<string>>(new Set());
   const [days, setDays] = useState('14');
-  const toggle = (i: number) => setRows(rs => rs.map((r, j) => j === i ? { ...r, selected: !r.selected } : r));
-  const setField = (i: number, k: 'contact' | 'email', v: string) => setRows(rs => rs.map((r, j) => j === i ? { ...r, [k]: v } : r));
+
+  // For each counterparty, pull the contact persons captured on its own form
+  // (customer / consignee / vendor addresses). Primary contacts pre-selected.
+  useEffect(() => {
+    let alive = true;
+    Promise.all(cps.map(cp => {
+      if (cp.sourceId === undefined || cp.sourceId === null || !cp.sourceType) return Promise.resolve([] as SignContact[]);
+      return api.get('/clm/ctc-contracts/contact-persons', { params: { type: cp.sourceType, id: cp.sourceId } })
+        .then(r => ((r.data?.data ?? []) as SignContact[])).catch(() => [] as SignContact[]);
+    })).then(results => {
+      if (!alive) return;
+      const norm = results.map((list, i) => list.length ? list : (cps[i].email ? [{ name: cps[i].name, email: cps[i].email, designation: 'Primary Contact', phone: cps[i].phone, is_primary: true }] : []));
+      setContacts(norm);
+      const pre = new Set<string>();
+      norm.forEach((list, i) => list.forEach((c, j) => { if (c.is_primary || j === 0) pre.add(`${i}:${j}`); }));
+      setSel(pre);
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = (k: string) => setSel(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const badgeTone = (badge: string) => badge === 'SUPPLIER' ? { fg: t.dark ? '#6ee7b7' : '#059669' } : badge === 'CONSIGNEE' ? { fg: t.dark ? '#67e8f9' : '#0891b2' } : { fg: t.dark ? '#c4b5fd' : '#7C3AED' };
   const submit = () => {
-    const chosen = rows.filter(r => r.selected).map(({ name, email, role, contact }) => ({ name, email, role, contact }));
-    if (chosen.length === 0) { toast.error('No recipients', 'Select at least one party to send for signing.'); return; }
-    onSend(chosen, days ? Number(days) : null);
+    const recipients = cps.map((cp, i) => {
+      const chosen = (contacts[i] || []).filter((_, j) => sel.has(`${i}:${j}`));
+      if (!chosen.length) return null;
+      const primary = chosen[0];
+      return { name: cp.name, email: primary.email || cp.email, role: cp.badge || 'Counterparty', contact: chosen.map(c => c.name).filter(Boolean).join(', ') };
+    }).filter(Boolean) as { name: string; email: string; role: string; contact: string }[];
+    if (!recipients.length) { toast.error('No recipients', 'Select at least one contact person to notify.'); return; }
+    onSend(recipients, days ? Number(days) : null);
   };
-  const ipt: React.CSSProperties = { width: '100%', height: 30, padding: '0 10px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 8, fontSize: 10, fontFamily: 'inherit', color: t.text, outline: 'none', background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', boxSizing: 'border-box' };
+
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: '84vh', background: t.surface, borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.35)' : '#A5F3FC'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Rubik',system-ui,sans-serif" }}>
-        <div style={{ padding: '13px 16px', background: 'linear-gradient(118deg,#0e7490,#0891b2,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></div>
-            <div><div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>Send for Signing &amp; Negotiation</div><div style={{ fontSize: 9, color: 'rgba(255,255,255,.7)', marginTop: 1 }}>Choose the counterparties who must sign</div></div>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: "'Rubik',system-ui,sans-serif" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(620px,95vw)', maxHeight: '88vh', background: t.surface, borderRadius: 20, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}`, boxShadow: '0 40px 80px rgba(109,40,217,.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* header */}
+        <div style={{ padding: '16px 20px', background: 'linear-gradient(120deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></div>
+            <div><div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Send for Signature &amp; Negotiation · {code}</div><div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '-.3px', marginTop: 1 }}>{title || 'Agreement'}</div><div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg><span style={{ fontSize: 9, color: 'rgba(255,255,255,.72)', fontWeight: 500 }}>Sent via secure e-sign link · All parties notified</span></div></div>
           </div>
-          <button onClick={onClose} style={{ width: 26, height: 26, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: 'rgba(255,255,255,.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
         </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {rows.length === 0 && <div style={{ fontSize: 11, color: t.textMuted, textAlign: 'center', padding: 24 }}>No counterparties on this agreement. Add them in Stage 1 first.</div>}
-          {rows.map((r, i) => (
-            <div key={i} style={{ borderRadius: 12, border: `1.5px solid ${r.selected ? (t.dark ? 'rgba(6,182,212,.35)' : '#A5F3FC') : (t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0')}`, background: r.selected ? (t.dark ? 'rgba(6,182,212,.08)' : '#F8FEFF') : (t.dark ? 'rgba(255,255,255,.02)' : '#F8FAFC'), padding: '10px 12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: r.selected ? 9 : 0 }}>
-                <button onClick={() => toggle(i)} style={{ width: 20, height: 20, borderRadius: 6, border: `1.5px solid ${r.selected ? '#0891b2' : (t.dark ? 'rgba(148,163,184,.4)' : '#CBD5E1')}`, background: r.selected ? 'linear-gradient(135deg,#0891b2,#0e7490)' : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{r.selected && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}</button>
-                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name || 'Counterparty'}</div><div style={{ fontSize: 8.5, color: t.textMuted }}>{r.role}</div></div>
-              </div>
-              {r.selected && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <div><div style={{ fontSize: 8, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Contact Person</div><input value={r.contact} onChange={e => setField(i, 'contact', e.target.value)} placeholder="Name of signatory" style={ipt} /></div>
-                  <div><div style={{ fontSize: 8, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 3 }}>Email</div><input value={r.email} onChange={e => setField(i, 'email', e.target.value)} placeholder="signatory@company.com" style={ipt} /></div>
+        {/* body */}
+        <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg><span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#a78bfa' : '#6D28D9' }}>Select Recipients &amp; Contact Persons</span></div>
+          {cps.length === 0 && <div style={{ fontSize: 11, color: t.textMuted, textAlign: 'center', padding: 24 }}>No counterparties on this agreement. Add them in Stage 1 first.</div>}
+          {cps.map((cp, i) => {
+            const tone = badgeTone(cp.badge);
+            const list = contacts[i] || [];
+            return (
+              <div key={i} style={{ borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, background: t.surface, overflow: 'hidden', boxShadow: '0 3px 12px rgba(109,40,217,.05)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 14px', background: t.dark ? 'rgba(124,58,237,.08)' : '#FAFBFF', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.15)' : '#F1EEFF'}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+                    <div style={{ width: 38, height: 38, borderRadius: 11, background: `linear-gradient(135deg,${cp.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{cp.initials}</span></div>
+                    <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cp.name}</div><div style={{ fontSize: 9, fontWeight: 600, color: tone.fg, marginTop: 1 }}>Counter Party {i + 1} · Will receive agreement</div></div>
+                  </div>
+                  <span style={{ padding: '4px 11px', borderRadius: 20, border: `1.5px solid ${tone.fg}55`, fontSize: 8.5, fontWeight: 800, color: tone.fg, flexShrink: 0 }}>Will receive</span>
                 </div>
-              )}
-            </div>
-          ))}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF' }}>
-            <div style={{ flex: 1 }}><div style={{ fontSize: 9, fontWeight: 800, color: t.textStrong }}>Days to Sign</div><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1 }}>Deadline for all parties to complete signing</div></div>
-            <input type="number" min={1} max={365} value={days} onChange={e => setDays(e.target.value)} style={{ ...ipt, width: 76, textAlign: 'center' }} />
+                <div style={{ padding: '10px 14px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.textMuted} strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.textMuted }}>Select Contact Persons to Notify</span></div>
+                  {loading ? <div style={{ fontSize: 9.5, color: t.textMuted, padding: '8px 2px' }}>Loading contacts…</div>
+                    : list.length === 0 ? <div style={{ fontSize: 9.5, color: t.textMuted, padding: '8px 2px' }}>No contact persons found on this party's form.</div>
+                    : <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                        {list.map((c, j) => {
+                          const k = `${i}:${j}`; const on = sel.has(k);
+                          return (
+                            <div key={j} onClick={() => toggle(k)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, cursor: 'pointer', border: `1.5px solid ${on ? `${tone.fg}66` : (t.dark ? 'rgba(148,163,184,.18)' : '#EDE9FE')}`, background: on ? (t.dark ? 'rgba(124,58,237,.1)' : '#F7F4FF') : t.surface }}>
+                              <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, border: `2px solid ${on ? tone.fg : (t.dark ? 'rgba(148,163,184,.4)' : '#CBD5E1')}`, background: on ? `linear-gradient(135deg,${cp.grad})` : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{on && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}</div>
+                              <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg,${cp.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9, fontWeight: 800, color: '#fff' }}>C{j + 1}</span></div>
+                              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 10.5, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name || `Contact ${j + 1}`}</div><div style={{ fontSize: 8, color: t.textMuted, fontWeight: 600 }}>{c.designation || (c.is_primary ? 'Primary Contact' : 'Contact')}</div></div>
+                              {c.email && <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={t.textMuted} strokeWidth="2" strokeLinecap="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></svg><span style={{ fontSize: 8.5, color: t.textMuted, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{c.email}</span></div>}
+                            </div>
+                          );
+                        })}
+                      </div>}
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF' }}>
+            <div style={{ flex: 1 }}><div style={{ fontSize: 9.5, fontWeight: 800, color: t.textStrong }}>Days to Sign</div><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1 }}>Deadline for all parties to complete signing</div></div>
+            <input type="number" min={1} max={365} value={days} onChange={e => setDays(e.target.value)} style={{ width: 80, height: 34, padding: '0 10px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 12, fontWeight: 700, fontFamily: 'inherit', color: t.text, outline: 'none', background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', textAlign: 'center', boxSizing: 'border-box' }} />
           </div>
         </div>
-        <div style={{ flexShrink: 0, padding: '11px 16px', borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.25)' : '#E2E8F0'}`, background: 'transparent', color: t.textSub, fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-          <button onClick={submit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', color: '#fff', fontSize: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(8,145,178,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> Send for Signing</button>
+        {/* footer */}
+        <div style={{ flexShrink: 0, padding: '12px 18px', borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, fontWeight: 600, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Sent via secure e-sign link</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onClose} style={{ padding: '8px 18px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+            <button onClick={submit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontSize: 10.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> Send for Signing &amp; Negotiation</button>
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/* Stage 4 right panel — repository status, completed timeline, quick actions. */
+function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, onVersionHistory, onExit }: { t: OpsTokens; draftCount: number; signedUrl?: string; signatureRequestId?: number | null; onVersionHistory: () => void; onExit: () => void }) {
+  const toast = useToast();
+  const downloadSigned = async () => {
+    if (signatureRequestId) {
+      try {
+        const res = await api.get(`/clm/signature-requests/${signatureRequestId}/download-file/0`, { responseType: 'blob' });
+        const url = URL.createObjectURL(res.data as Blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'signed-agreement.pdf'; document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url); return;
+      } catch { /* fall through to direct URL */ }
+    }
+    if (signedUrl) { window.open(signedUrl, '_blank'); return; }
+    toast.info('Not ready yet', 'The signed copy will be available once all parties have signed.');
+  };
+  const steps = [
+    { title: 'Contract Stored', sub: 'Moved to Final Contract Repository' },
+    { title: 'Agreement Signed', sub: 'All parties executed the agreement' },
+    { title: 'Sent for Signing', sub: 'Agreement sent via secure e-sign link' },
+    { title: 'Internal Approval', sub: 'Agreement approved internally' },
+    { title: 'Draft Created', sub: 'Agreement draft authored and reviewed' },
+  ];
+  const doneBadge = <span style={{ padding: '2px 8px', borderRadius: 20, background: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', border: `1px solid ${t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0'}`, fontSize: 7.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#059669', flexShrink: 0 }}>Done</span>;
+  return (
+    <>
+      {/* Download the fully-signed copy — pinned at the top of the card */}
+      <button onClick={downloadSigned} disabled={!signedUrl} title={signedUrl ? '' : 'Available once all parties have signed'} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '11px', borderRadius: 11, border: 'none', background: signedUrl ? 'linear-gradient(135deg,#059669,#047857)' : (t.dark ? 'rgba(255,255,255,.06)' : '#E2E8F0'), cursor: signedUrl ? 'pointer' : 'not-allowed', fontFamily: 'inherit', boxShadow: signedUrl ? '0 4px 12px rgba(5,150,105,.32)' : 'none' }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8')} strokeWidth="2.3" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8') }}>{signedUrl ? 'Download Signed Copy' : 'Awaiting Signed Copy'}</span>
+      </button>
+      {/* Repository status */}
+      <div style={{ flexShrink: 0, borderRadius: 12, padding: '13px 14px', background: 'linear-gradient(135deg,#064E3B,#047857,#059669)', boxShadow: '0 6px 18px rgba(5,150,105,.3)' }}>
+        <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,.65)' }}>Repository Status</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: '#fff', marginTop: 3 }}>Final Contract Repository</div>
+        <div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.72)', fontWeight: 500, marginTop: 2 }}>Stored · Searchable · Auditable</div>
+      </div>
+      {/* completed timeline */}
+      <div style={{ flexShrink: 0 }}>
+        <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#6ee7b7' : '#047857', margin: '4px 2px 10px' }}>Agreement Timeline</div>
+        {steps.map((s, i) => (
+          <div key={i} style={{ display: 'flex', gap: 11 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+              <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(5,150,105,.3)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg></div>
+              {i < steps.length - 1 && <div style={{ width: 2, height: 20, background: t.dark ? 'rgba(16,185,129,.3)' : '#A7F3D0', margin: '3px 0' }} />}
+            </div>
+            <div style={{ flex: 1, minWidth: 0, paddingBottom: i < steps.length - 1 ? 8 : 2 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: t.textStrong }}>{s.title}</span>{doneBadge}
+              </div>
+              <div style={{ fontSize: 8.5, color: t.textMuted, fontWeight: 500, marginTop: 2 }}>{s.sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* quick actions */}
+      <div style={{ flexShrink: 0, borderRadius: 12, overflow: 'hidden', border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.25)' : '#A7F3D0'}`, background: t.surface }}>
+        <div style={{ padding: '7px 12px', background: t.dark ? 'rgba(16,185,129,.12)' : 'linear-gradient(110deg,#D1FAE5,#ECFDF5)' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#6ee7b7' : '#047857' }}>Quick Actions</span></div>
+        <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button onClick={onVersionHistory} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 11px', borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.surface, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></div>
+            <div style={{ flex: 1, textAlign: 'left' }}><div style={{ fontSize: 9.5, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Version History</div><div style={{ fontSize: 7.5, color: t.dark ? '#a78bfa' : '#A78BFA', marginTop: 1 }}>View all drafts &amp; revisions</div></div>
+            <span style={{ padding: '2px 8px', borderRadius: 10, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', fontSize: 7.5, fontWeight: 800, color: '#fff', flexShrink: 0 }}>v{draftCount || 1}</span>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#C4B5FD'} strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6" /></svg>
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -1081,9 +1278,65 @@ function ReadEmpty({ t, title, sub, chips }: { t: OpsTokens; title: string; sub:
   );
 }
 
+/* Stage 4 — Contract Summary card: agreement-id hero, fully-executed banner,
+ * summary rows + stage pill, and the signed parties. */
+function ContractSummaryCard({ t, code, agTitle, agType, cps, org, effDate, endDate, executedOn, signers }: { t: OpsTokens; code: string; agTitle: string; agType: string; cps: CP[]; org: Org | null; effDate: string; endDate: string; executedOn: string; signers: SignRecipient[] }) {
+  const cp1 = cps[0] ?? null;
+  const rows: [string, string][] = [
+    ['Agreement', agTitle || '—'], ['Type', agType || '—'],
+    ['Counterparty', cp1?.name || '—'], ['Organisation', org?.name || '—'],
+    ['Eff. Date', effDate || '—'], ['End Date', endDate || '—'], ['Executed On', executedOn || '—'],
+  ];
+  const parties = signers.length
+    ? signers.map((s, i) => ({ role: i === 0 ? 'Disclosing Party' : 'Receiving Party', name: s.name, signed: !!s.signed }))
+    : [{ role: 'Disclosing Party', name: cp1?.name || '—', signed: true }, { role: 'Receiving Party', name: org?.name || cps[1]?.name || '—', signed: true }];
+  return (
+    <>
+      <div style={{ flexShrink: 0, position: 'relative', overflow: 'hidden', borderRadius: 14, padding: '16px 18px', background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', boxShadow: '0 6px 20px rgba(109,40,217,.3)' }}>
+        <div style={{ position: 'absolute', bottom: -18, right: 6, fontSize: 72, fontWeight: 900, color: 'rgba(255,255,255,.1)', lineHeight: 1, pointerEvents: 'none' }}>04</div>
+        <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Agreement ID</div>
+        <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', letterSpacing: '-.5px', margin: '3px 0 2px' }}>{code}</div>
+        <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,.72)' }}>{agType || agTitle || '—'}</div>
+      </div>
+      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0'}`, background: t.dark ? 'rgba(16,185,129,.1)' : '#ECFDF5' }}>
+        <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg></div>
+        <div><div style={{ fontSize: 10.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#047857' }}>Fully Executed</div><div style={{ fontSize: 8.5, color: t.dark ? '#34d399' : '#059669', fontWeight: 500 }}>All parties have signed · Legally binding</div></div>
+      </div>
+      <div style={{ flexShrink: 0, borderRadius: 12, overflow: 'hidden', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.22)' : '#EDE9FE'}`, background: t.surface }}>
+        {rows.map(([k, v], i) => (
+          <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', background: i % 2 ? (t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF') : 'transparent', borderBottom: `1px solid ${t.dark ? 'rgba(148,163,184,.08)' : '#F4F1FF'}` }}>
+            <span style={{ fontSize: 8, fontWeight: 800, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', flexShrink: 0 }}>{k}</span>
+            <span style={{ fontSize: 10, fontWeight: 800, color: t.textStrong, textAlign: 'right', wordBreak: 'break-word' }}>{v}</span>
+          </div>
+        ))}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF' }}>
+          <span style={{ fontSize: 8, fontWeight: 800, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>Stage</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', border: `1px solid ${t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0'}`, fontSize: 8, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#059669' }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>Stage 4 — Repository</span>
+        </div>
+      </div>
+      <div style={{ flexShrink: 0, borderRadius: 12, overflow: 'hidden', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.22)' : '#EDE9FE'}`, background: t.surface }}>
+        <div style={{ padding: '7px 12px', background: t.dark ? 'rgba(124,58,237,.12)' : 'linear-gradient(110deg,#EDE9FE,#F3F0FF)' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9' }}>Parties</span></div>
+        <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {parties.map((p, i) => {
+            const grad = i === 0 ? '#4C1D95,#6D28D9,#7C3AED' : '#047857,#059669,#10b981';
+            const roleClr = i === 0 ? (t.dark ? '#c4b5fd' : '#7C3AED') : (t.dark ? '#6ee7b7' : '#059669');
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 30, height: 30, borderRadius: 9, background: `linear-gradient(135deg,${grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9, fontWeight: 800, color: '#fff' }}>{p.role.split(' ').map(w => w[0]).join('').slice(0, 2)}</span></div>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 7.5, fontWeight: 800, color: roleClr, textTransform: 'uppercase', letterSpacing: '.06em' }}>{p.role}</div><div style={{ fontSize: 10.5, fontWeight: 700, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div></div>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 8, background: p.signed ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7'), fontSize: 7.5, fontWeight: 800, color: p.signed ? (t.dark ? '#6ee7b7' : '#059669') : (t.dark ? '#fcd34d' : '#D97706'), flexShrink: 0 }}>{p.signed && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}{p.signed ? 'Signed' : 'Pending'}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
 function CpReadCard({ t, idx, cp }: { t: OpsTokens; idx: number; cp: CP }) {
   return (
-    <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(109,40,217,.08)' }}>
+    <div style={{ flexShrink: 0, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(109,40,217,.08)' }}>
       <div style={{ background: `linear-gradient(118deg,${cp.badge === 'BUYER' ? '#0e7490,#0891b2,#06b6d4' : cp.badge === 'SUPPLIER' ? '#047857,#059669,#10b981' : '#4C1D95,#6D28D9,#7C3AED'})`, padding: '10px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
           <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,.7)' }}>Counter Party {idx}</span>
@@ -1151,21 +1404,34 @@ function GreenChoice({ t, sel, onClick, title, sub, icon }: { t: OpsTokens; sel:
 }
 
 /* ── Stage-1 right panel: placeholder fields + AI writing assistant + summary ── */
-function RightTools({ t, draft, onInsert, summary }: { t: OpsTokens; draft: string; onInsert: (tok: string) => void; summary: string[][] }) {
+function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy }: { t: OpsTokens; draft: string; onInsert: (tok: string) => void; summary: string[][]; declineReason?: string; declinedBy?: string }) {
   const plain = draft.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
   const words = plain ? plain.split(/\s+/).length : 0;
   const score = Math.min(100, Math.round(words * 1.5));
   const FIELDS = [['SIGNATURE', 'signature'], ['PERSON NAME', 'person_name'], ['COMPANY NAME', 'company_name'], ['EMAIL', 'email'], ['CONTACT NO', 'contact_no'], ['ADDRESS', 'address']];
   const cardBd = `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`;
   return (
-    <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 12px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Signer decline remark — shown while revising the draft to address it */}
+      {(declineReason || declinedBy) && (
+        <div style={{ borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(239,68,68,.4)' : '#FECACA'}`, background: t.dark ? 'rgba(239,68,68,.1)' : '#FEF2F2', overflow: 'hidden', boxShadow: '0 2px 10px rgba(239,68,68,.08)' }}>
+          <div style={{ padding: '7px 11px', background: t.dark ? 'rgba(239,68,68,.16)' : 'linear-gradient(110deg,#FEE2E2,#FEF2F2)', borderBottom: `1px solid ${t.dark ? 'rgba(239,68,68,.3)' : '#FECACA'}`, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#fca5a5' : '#DC2626'} strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+            <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#fca5a5' : '#DC2626' }}>Declined by {declinedBy || 'a signer'}</span>
+          </div>
+          <div style={{ padding: '9px 11px' }}>
+            <div style={{ fontSize: 8, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Signer's remark — revise the draft to address it</div>
+            <div style={{ fontSize: 10, color: t.dark ? '#fecaca' : '#991B1B', lineHeight: 1.55, fontWeight: 500 }}>{declineReason ? `“${declineReason}”` : 'No remark was provided.'}</div>
+          </div>
+        </div>
+      )}
       {/* Placeholder fields */}
       <div style={{ background: t.surface, borderRadius: 12, border: cardBd, overflow: 'hidden', boxShadow: '0 2px 10px rgba(109,40,217,.07)' }}>
         <div style={{ padding: '9px 12px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE 0%,#F3F0FF 40%,#E8E2FF 100%)', borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 22, height: 22, borderRadius: 7, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg></div>
           <div><div style={{ fontSize: 10, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Standard Placeholder Fields</div><div style={{ fontSize: 7.5, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>Click a field to insert into the editor</div></div>
         </div>
-        <div className="ctc-mid-scroll" style={{ padding: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, maxHeight: 118, overflowY: 'auto' }}>
+        <div style={{ padding: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
           {FIELDS.map(([lbl, tok]) => (
             <button key={tok} onClick={() => onInsert(`{{${tok}}}`)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF', cursor: 'pointer', fontFamily: 'inherit' }}>
               <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.04em', color: t.dark ? '#cbd5e1' : '#475569' }}>{lbl}</span>
@@ -1244,10 +1510,10 @@ function CollapsedBar({ t, title, headGrad, dir, onExpand }: { t: OpsTokens; tit
   );
 }
 
-function CpCard({ t, slot, cp, onRemove }: { t: OpsTokens; slot: number; cp: CP; onRemove: () => void }) {
+function CpCard({ t, slot, cp, onRemove, readOnly }: { t: OpsTokens; slot: number; cp: CP; onRemove?: () => void; readOnly?: boolean }) {
   const badgeGrad = cp.badge === 'BUYER' ? '#0891b2,#0e7490' : cp.badge === 'SUPPLIER' ? '#16A34A,#059669' : '#6D28D9,#4C1D95';
   return (
-    <div style={{ borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.surface, overflow: 'hidden' }}>
+    <div style={{ flexShrink: 0, borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.surface, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: t.dark ? 'rgba(124,58,237,.18)' : 'linear-gradient(110deg,#EDE9FE,#DDD6FE)' }}>
         <span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9' }}>Counter Party {slot}</span>
         {cp.badge && <span style={{ fontSize: 7, fontWeight: 800, padding: '2px 7px', borderRadius: 20, background: `linear-gradient(135deg,${badgeGrad})`, color: '#fff', textTransform: 'uppercase', letterSpacing: '.06em' }}>{cp.badge}</span>}
@@ -1262,10 +1528,26 @@ function CpCard({ t, slot, cp, onRemove }: { t: OpsTokens; slot: number; cp: CP;
             <span style={{ fontSize: 8.5, fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg,#6D28D9,#A78BFA)', padding: '2px 8px', borderRadius: 20 }}>{cp.referred}</span>
           </div>
         </div>
-        <button onClick={onRemove} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+        {!readOnly && onRemove && <button onClick={onRemove} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
       </div>
       <div style={{ borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}`, padding: '5px 10px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
         <OrgDetail t={t} text={cp.country} /><OrgDetail t={t} text={cp.phone} /><OrgDetail t={t} text={cp.email} />
+      </div>
+    </div>
+  );
+}
+
+/* Read-only organisation card matching the Stage-1 left-panel style. */
+function OrgMiniCard({ t, org }: { t: OpsTokens; org: Org }) {
+  return (
+    <div style={{ flexShrink: 0, borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.surface, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: t.dark ? 'rgba(124,58,237,.18)' : 'linear-gradient(110deg,#EDE9FE,#DDD6FE)' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9' }}>Organisation</span></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px 6px' }}>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${org.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 8px rgba(109,40,217,.3)' }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{org.initials}</span></div>
+        <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, lineHeight: 1.3 }}>{org.name}</div><div style={{ fontSize: 8.5, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500, marginTop: 2 }}>{org.sub}</div></div>
+      </div>
+      <div style={{ borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}`, padding: '5px 10px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <OrgDetail t={t} label="Country" text={org.country} /><OrgDetail t={t} label="State" text={org.state} /><OrgDetail t={t} label="Short Code" text={org.shortCode} />
       </div>
     </div>
   );
@@ -1535,7 +1817,7 @@ function CpPicker({ t, slot, onClose, onPick }: { t: OpsTokens; slot: number; on
             <label style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#A78BFA' }}>Referred As In Agreement</label>
             <input value={referred} onChange={e => setReferred(e.target.value)} style={{ width: '100%', padding: '7px 10px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 8, fontSize: 10.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box', marginTop: 4 }} />
             <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
-              <button onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name })} style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, color: '#fff', boxShadow: '0 3px 12px rgba(109,40,217,.38)' }}>Confirm &amp; Add</button>
+              <button onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name, sourceType: tab, sourceId: pending.id })} style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, color: '#fff', boxShadow: '0 3px 12px rgba(109,40,217,.38)' }}>Confirm &amp; Add</button>
               <button onClick={() => setPending(null)} style={{ padding: '8px 13px', borderRadius: 8, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F6FF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 600, color: t.textSub }}>Back</button>
             </div>
           </div>
@@ -1546,6 +1828,10 @@ function CpPicker({ t, slot, onClose, onPick }: { t: OpsTokens; slot: number; on
 }
 
 const CTC_FORM_CSS = `
+/* Keep cards/rows in a flex-column scroll list at their natural height — without
+   this, children with overflow:hidden get min-height:0 and compress to fit
+   instead of overflowing, so the scrollbar never appears. */
+.ctc-noshrink > * { flex-shrink: 0; }
 .ctc-mid-scroll { scrollbar-width: thin; scrollbar-color: rgba(124,58,237,.55) transparent; }
 .ctc-mid-scroll::-webkit-scrollbar { width: 9px; }
 .ctc-mid-scroll::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }

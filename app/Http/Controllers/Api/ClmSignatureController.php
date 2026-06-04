@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\Client;
 use App\Models\ClmAgreementLibrary;
 use App\Models\ClmSignatureRequest;
 use App\Models\ClmTradeDocLibrary;
 use App\Models\Consignee;
+use App\Models\CtcContract;
 use App\Models\Customer;
 use App\Models\Lead;
 use App\Models\Vendor;
@@ -686,6 +688,401 @@ class ClmSignatureController extends Controller
                 @unlink($p);
             }
         }
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+     * CTC (Case-to-Case Contract) → Send for Signature & Negotiation.
+     *
+     * Mirrors agreementSend(): renders the CTC contract body to a PDF and
+     * ships it to Zoho Sign for the chosen counterparty contact persons.
+     * Each signer gets a Signature field at the coordinates the user dragged
+     * in the preview (document_settings keyed by contract id → per-signer
+     * coords). The receiving-party {{signature}} placeholder is auto-filled
+     * with the branch signature + stamp. On success the contract advances to
+     * Stage 3 with a signing_recipients tracker linked to the Zoho request.
+     * ───────────────────────────────────────────────────────────────────── */
+
+    public function ctcPreview(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $data = $request->validate([
+            'contract_id'            => 'required|integer',
+            'header_config_override' => 'nullable|array',
+            'footer_config_override' => 'nullable|array',
+            'content_override'       => 'nullable|string',
+        ]);
+        $c = CtcContract::where('client_id', $user->client_id)->findOrFail($data['contract_id']);
+        $pdf = $this->renderCtcPdf(
+            $c, [],
+            $data['header_config_override'] ?? null,
+            $data['footer_config_override'] ?? null,
+            array_key_exists('content_override', $data) ? (string) $data['content_override'] : null,
+            Str::uuid()->toString(),
+        );
+        return response($pdf->output(), 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="ctc-preview-' . ($c->code ?: $c->id) . '.pdf"',
+            'Cache-Control'       => 'no-store',
+        ]);
+    }
+
+    public function ctcSend(Request $request)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
+        if (!$this->zoho->isConfigured()) {
+            return response()->json(['status' => false, 'message' => 'Zoho Sign is not configured. Contact your administrator.'], 503);
+        }
+
+        $data = $request->validate([
+            'contract_id'            => 'required|integer',
+            'signers'                => 'required|array|min:1|max:10',
+            'signers.*.name'         => 'required|string|max:255',
+            'signers.*.email'        => 'required|email|max:255',
+            'signers.*.role'         => 'nullable|string|max:64',
+            'signers.*.order'        => 'nullable|integer',
+            'expiry_days'            => 'nullable|integer|min:1|max:180',
+            'is_sequential'          => 'nullable|boolean',
+            'notes'                  => 'nullable|string|max:1000',
+            'document_settings'      => 'nullable|array',
+            'header_config_override' => 'nullable|array',
+            'footer_config_override' => 'nullable|array',
+            'content_override'       => 'nullable|string',
+        ]);
+
+        $c = CtcContract::where('client_id', $user->client_id)->findOrFail($data['contract_id']);
+
+        // Stable per-signer role key (signer1, signer2, …) so submitWithFields
+        // can place each signer's field at its own dragged position.
+        $signers = [];
+        foreach (array_values($data['signers']) as $i => $s) {
+            $signers[] = [
+                'name'  => (string) $s['name'],
+                'email' => strtolower((string) $s['email']),
+                'role'  => !empty($s['role']) ? (string) $s['role'] : ('signer' . ($i + 1)),
+                'order' => (int) ($s['order'] ?? ($i + 1)),
+            ];
+        }
+
+        $requestUuid = (string) Str::uuid();
+        $tempPaths   = [];
+        try {
+            $pdf = $this->renderCtcPdf(
+                $c, $signers,
+                $data['header_config_override'] ?? null,
+                $data['footer_config_override'] ?? null,
+                array_key_exists('content_override', $data) ? (string) $data['content_override'] : null,
+                $requestUuid,
+            );
+            $tmp = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
+            file_put_contents($tmp, $pdf->output());
+            $tempPaths[] = $tmp;
+
+            $expiryDays = (int) ($data['expiry_days'] ?? ($c->days_to_sign ?: 30));
+            $actions = [];
+            foreach ($signers as $i => $signer) {
+                $actions[] = [
+                    'recipient_email'  => $signer['email'],
+                    'recipient_name'   => $signer['name'],
+                    'action_type'      => 'SIGN',
+                    'signing_order'    => $signer['order'] ?? ($i + 1),
+                    'verify_recipient' => false,
+                ];
+            }
+            $requestName = (string) ($c->title ?: ($c->code ?: 'CTC Agreement'));
+            $requestBody = ['requests' => [
+                'request_name'    => $requestName,
+                'is_sequential'   => (bool) ($data['is_sequential'] ?? false),
+                'expiration_days' => $expiryDays,
+                'notes'           => (string) ($data['notes'] ?? 'Please review and sign this agreement.'),
+                'actions'         => $actions,
+            ]];
+            $filenames = [Str::slug($requestName) ?: ('ctc_' . $c->id)];
+
+            $createResp    = $this->zoho->createRequestMultipart($tempPaths, $filenames, $requestBody);
+            $zohoRequestId = data_get($createResp, 'requests.request_id');
+            if (!$zohoRequestId) throw new RuntimeException('Zoho create-request did not return a request_id: ' . json_encode($createResp));
+
+            $details         = $this->zoho->getRequest($zohoRequestId);
+            $zohoActions     = data_get($details, 'requests.actions',      []);
+            $zohoDocumentIds = data_get($details, 'requests.document_ids', []);
+
+            $signersByEmail = collect($signers)->keyBy(fn ($s) => strtolower((string) ($s['email'] ?? '')));
+            foreach ($zohoActions as &$za) {
+                $email = strtolower((string) ($za['recipient_email'] ?? ''));
+                $m = $signersByEmail->get($email);
+                if (is_array($m) && !empty($m['role'])) $za['cbc_role'] = (string) $m['role'];
+            }
+            unset($za);
+
+            $perDocCoords = $this->mapClientCoordsToZohoDocIds((array) ($data['document_settings'] ?? []), [$c->id], $zohoDocumentIds);
+            $submitResp = $this->zoho->submitWithFields($zohoRequestId, $zohoActions, $zohoDocumentIds, $perDocCoords);
+            $submitted  = isset($submitResp['requests']);
+
+            $finalStatus = 'inprogress';
+            if ($submitted) {
+                try { sleep(1); $after = $this->zoho->getRequest($zohoRequestId); $finalStatus = strtolower((string) data_get($after, 'requests.request_status', 'inprogress')); }
+                catch (\Throwable $e) { $finalStatus = 'inprogress'; }
+            }
+
+            $sigReq = new ClmSignatureRequest();
+            $sigReq->client_id         = $user->client_id;
+            $sigReq->branch_id         = $user->branch_id ?? null;
+            $sigReq->document_type     = 'ctc';
+            $sigReq->trade_doc_id      = $c->id;
+            $sigReq->trade_doc_ids     = [$c->id];
+            $sigReq->document_names    = [$requestName];
+            $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn ($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
+            $sigReq->model_name        = 'CtcContract';
+            $sigReq->party_id          = $c->id;
+            $sigReq->zoho_request_id   = $zohoRequestId;
+            $sigReq->request_name      = $requestName;
+            $sigReq->status            = $finalStatus;
+            $sigReq->signers           = $signers;
+            $sigReq->expiry_date       = now()->addDays($expiryDays);
+            $sigReq->metadata          = [
+                'document_type'     => 'ctc',
+                'ctc_contract_id'   => $c->id,
+                'ctc_code'          => $c->code,
+                'document_settings' => $data['document_settings'] ?? null,
+                'request_uuid'      => $requestUuid,
+                'sent_at'           => now()->toIso8601String(),
+            ];
+            $sigReq->created_by = Auth::id();
+            $sigReq->save();
+
+            // Advance the contract to Stage 3 with the signing tracker.
+            $recipients = collect($signers)->map(fn ($s) => [
+                'name' => $s['name'], 'email' => $s['email'], 'role' => $s['role'],
+                'contact' => $s['name'], 'signed' => false, 'signed_at' => null,
+            ])->all();
+            // A resend after a decline carries the edited draft — persist it so
+            // the contract body, preview and version snapshot all reflect it.
+            if (array_key_exists('content_override', $data) && $data['content_override'] !== null) {
+                $c->content = (string) $data['content_override'];
+            }
+            $c->signing_recipients   = $recipients;
+            $c->days_to_sign         = $expiryDays;
+            $c->stage                = 3;
+            $c->status               = 'inprogress';
+            $c->zoho_request_id      = $zohoRequestId;
+            $c->signature_request_id = $sigReq->id;
+            $versions = array_values($c->versions ?? []);
+            $versions[] = [
+                'v' => count($versions) + 1,
+                'label' => 'Agreement sent to counterparty for signature & negotiation (Zoho Sign)',
+                'status' => 'Sent for Signing', 'date' => now()->format('d M Y H:i'),
+                'by' => $user->name ?? '', 'content' => $c->content,
+            ];
+            $c->versions = $versions;
+            $c->save();
+
+            $message = $finalStatus === 'inprogress' ? 'Agreement sent for signature via Zoho Sign.' : 'Agreement created in Zoho but submission did not flip to inprogress.';
+            if ($this->zoho->isTestingMode()) $message .= ' (Sandbox mode — signer emails are only delivered to Zoho Sign users on this org.)';
+
+            return response()->json(['status' => true, 'message' => $message, 'data' => [
+                'signature_request_id' => $sigReq->id,
+                'zoho_request_id'      => $zohoRequestId,
+                'status'               => $finalStatus,
+                'signers'              => $signers,
+                'expiry_date'          => $sigReq->expiry_date,
+                'testing_mode'         => $this->zoho->isTestingMode(),
+            ]]);
+        } catch (\Throwable $e) {
+            Log::error('CTC send failed', ['error' => $e->getMessage(), 'contract' => $data['contract_id'] ?? null]);
+            return response()->json(['status' => false, 'message' => 'Failed to send for signature: ' . $e->getMessage()], 500);
+        } finally {
+            foreach ($tempPaths as $p) @unlink($p);
+        }
+    }
+
+    /**
+     * GET /clm/ctc-contracts/{id}/sync-signature
+     * Pull the live Zoho status for a CTC's signature request and reflect it
+     * onto the contract's signing_recipients (signed flags) + status. Returns
+     * the contract in the same shape as CtcContractController::show.
+     */
+    public function ctcSignatureStatus(Request $request, int $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $c = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
+        if ($c->zoho_request_id) {
+            try {
+                $details   = $this->zoho->getRequest($c->zoho_request_id);
+                $reqStatus = strtolower((string) data_get($details, 'requests.request_status', 'inprogress'));
+                // Zoho doesn't document the decline-reason key consistently —
+                // it has surfaced as reason / reject_reason / decline_reason /
+                // recipient_comment depending on org/version. Pull the first
+                // non-empty from a broad candidate list on the action.
+                $pickReason = function (array $a): string {
+                    foreach (['reason', 'reject_reason', 'rejection_reason', 'decline_reason', 'declined_reason', 'recipient_comment', 'comments', 'comment', 'action_comment'] as $k) {
+                        if (!empty($a[$k])) return (string) $a[$k];
+                    }
+                    return '';
+                };
+                $reqLevelReason = '';
+                foreach (['reason', 'reject_reason', 'declined_reason', 'decline_reason'] as $k) {
+                    $rv = data_get($details, "requests.$k");
+                    if (!empty($rv)) { $reqLevelReason = (string) $rv; break; }
+                }
+                $byEmail = [];
+                foreach (data_get($details, 'requests.actions', []) as $a) {
+                    $email = strtolower((string) ($a['recipient_email'] ?? ''));
+                    $byEmail[$email] = ['status' => strtolower((string) ($a['action_status'] ?? '')), 'reason' => $pickReason((array) $a), 'raw' => $a];
+                }
+                $recipients = array_values($c->signing_recipients ?? []);
+                $stamp = now()->format('d M Y H:i');
+                $declinedReason = null; $declinedBy = null;
+                foreach ($recipients as &$r) {
+                    $a  = $byEmail[strtolower((string) ($r['email'] ?? ''))] ?? ['status' => '', 'reason' => '', 'raw' => []];
+                    $st = $a['status'];
+                    if (in_array($st, ['signed', 'completed', 'approved']) && empty($r['signed'])) { $r['signed'] = true; $r['signed_at'] = $stamp; $r['declined'] = false; }
+                    if (in_array($st, ['declined', 'rejected', 'recalled'])) {
+                        // Log the raw declined action once so the exact reason key
+                        // can be confirmed if it ever lands somewhere unexpected.
+                        Log::info('CTC signer declined', ['contract' => $c->id, 'email' => $r['email'] ?? null, 'action' => $a['raw']]);
+                        $reason = $a['reason'] ?: $reqLevelReason ?: ($r['decline_reason'] ?? '');
+                        $r['declined'] = true; $r['signed'] = false;
+                        $r['decline_reason'] = $reason;
+                        $declinedReason = $reason; $declinedBy = $r['name'] ?? $r['email'] ?? null;
+                    }
+                }
+                unset($r);
+                $isDeclined = $declinedBy !== null || in_array($reqStatus, ['declined', 'rejected', 'recalled']);
+                $allSigned  = !$isDeclined && count($recipients) > 0 && collect($recipients)->every(fn ($r) => !empty($r['signed']));
+
+                if ($isDeclined && empty($c->signature_declined_at)) {
+                    // First time we see the decline → stamp it + log a version event.
+                    $c->signature_declined_at = now();
+                    $this->ctcPushVersion($c, 'Declined by ' . ($declinedBy ?: 'a signer') . ($declinedReason ? ' — ' . $declinedReason : ''), 'Declined', $declinedBy ?: 'Signer');
+                } elseif (!$isDeclined) {
+                    $c->signature_declined_at = null;
+                }
+                if ($reqStatus === 'completed' || $allSigned) {
+                    foreach ($recipients as &$r2) { if (empty($r2['signed'])) { $r2['signed'] = true; $r2['signed_at'] = $stamp; } }
+                    unset($r2);
+                    if (!$c->cp_signed_date) $c->cp_signed_date = now();
+                    // Pull the fully-signed PDF + certificate down from Zoho onto
+                    // the linked signature request so it can be shown/downloaded.
+                    if ($c->signature_request_id) {
+                        $sr = ClmSignatureRequest::find($c->signature_request_id);
+                        if ($sr) {
+                            if ($sr->status !== 'completed') { $sr->status = 'completed'; if (!$sr->completed_at) $sr->completed_at = now(); $sr->save(); }
+                            if (empty($sr->fresh()->signed_document_paths)) {
+                                try { $this->fetchSignedArtifacts($sr, $details); } catch (\Throwable $e) { Log::warning('CTC signed artifact fetch failed: ' . $e->getMessage()); }
+                            }
+                        }
+                    }
+                }
+                $c->signing_recipients = $recipients;
+                $c->save();
+            } catch (\Throwable $e) {
+                Log::warning('CTC signature sync failed: ' . $e->getMessage());
+            }
+        }
+        $c = $c->fresh();
+        $branch = $c->branch_id ? Branch::find($c->branch_id) : null;
+        $c->org_signature_url = $branch?->signature_url;
+        $c->signed_document_url = $this->ctcSignedDocumentUrl($c);
+        return response()->json(['status' => true, 'data' => $c]);
+    }
+
+    /** Public URL of the fully-signed PDF for a CTC (from its signature request), or null. */
+    private function ctcSignedDocumentUrl(CtcContract $c): ?string
+    {
+        if (!$c->signature_request_id) return null;
+        $sr = ClmSignatureRequest::find($c->signature_request_id);
+        $paths = is_array($sr?->signed_document_paths) ? $sr->signed_document_paths : [];
+        $first = $paths[0] ?? null;
+        if (!is_array($first)) return null;
+        return $first['file_url'] ?? $first['url'] ?? (isset($first['path']) ? file_url($first['path']) : null);
+    }
+
+    /**
+     * POST /clm/ctc-contracts/{id}/remind-signing
+     * Nudge the counterparty signers to sign — Zoho Sign re-emails everyone
+     * who hasn't acted yet on the contract's active signature request.
+     */
+    public function ctcRemindSigning(Request $request, int $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $c = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
+        if (!$c->zoho_request_id) return response()->json(['status' => false, 'message' => 'No active signature request to remind.'], 422);
+        if (!$this->zoho->isConfigured()) return response()->json(['status' => false, 'message' => 'Zoho Sign is not configured.'], 503);
+        try {
+            $this->zoho->remind($c->zoho_request_id);
+            if ($c->signature_request_id) {
+                $sr = ClmSignatureRequest::find($c->signature_request_id);
+                if ($sr) {
+                    $sr->reminder_count        = (int) ($sr->reminder_count ?? 0) + 1;
+                    $sr->last_reminder_sent_at = now();
+                    $sr->save();
+                }
+            }
+            return response()->json(['status' => true, 'message' => 'Reminder sent to the counterparty signers via Zoho Sign.']);
+        } catch (\Throwable $e) {
+            Log::error('CTC signing reminder failed', ['error' => $e->getMessage(), 'contract' => $id]);
+            return response()->json(['status' => false, 'message' => 'Could not send reminder: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /** Render a CTC contract body to a signature-ready PDF (page-shell + org sig). */
+    private function renderCtcPdf(CtcContract $c, array $signers, ?array $headerOverride, ?array $footerOverride, ?string $contentOverride, string $requestUuid)
+    {
+        $sourceHtml = $contentOverride !== null ? $contentOverride : (string) $c->content;
+        $sig = $this->ctcOrgSignatureDataUri($c);
+        $sigHtml = $sig ? '<img src="' . $sig . '" alt="Authorised Signatory" style="max-height:80px;max-width:210px;object-fit:contain;" />' : '';
+        $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $sourceHtml);
+
+        $client = Client::find($c->client_id);
+        $headerConfig = is_array($headerOverride) ? $headerOverride : (is_array($c->header_config) ? $c->header_config : []);
+        $footerConfig = is_array($footerOverride) ? $footerOverride : (is_array($c->footer_config) ? $c->footer_config : []);
+        $headerLogoBase64 = $this->resolveLogoBase64(
+            $headerConfig['logo_path'] ?? null,
+            $this->pathFromStorageUrl($headerConfig['logo_url'] ?? null),
+            $client?->logo,
+        );
+
+        return Pdf::loadView('pdf.clm-signature-document', [
+            'document'         => $c,
+            'party'            => null,
+            'modelName'        => '',
+            'processedHtml'    => $processedHtml,
+            'generatedDate'    => now()->format('d/m/Y'),
+            'requestId'        => substr($requestUuid, 0, 8),
+            'signers'          => $signers,
+            'client'           => $client,
+            'headerConfig'     => $headerConfig,
+            'footerConfig'     => $footerConfig,
+            'headerLogoBase64' => $headerLogoBase64,
+        ])->setPaper('a4')->setOption('isPhpEnabled', true);
+    }
+
+    /** Append an audit/version entry to a CTC contract (mirrors CtcContractController). */
+    private function ctcPushVersion(CtcContract $c, string $label, string $status, string $by): void
+    {
+        $versions = array_values($c->versions ?? []);
+        $versions[] = [
+            'v' => count($versions) + 1, 'label' => $label, 'status' => $status,
+            'date' => now()->format('d M Y H:i'), 'by' => $by, 'content' => $c->content,
+        ];
+        $c->versions = $versions;
+    }
+
+    /** Branch (receiving-party) signature + stamp image as a data URI. */
+    private function ctcOrgSignatureDataUri(CtcContract $c): ?string
+    {
+        $branch = $c->branch_id ? Branch::find($c->branch_id) : null;
+        $path = $branch?->signature_path;
+        if (!$path) return null;
+        if (preg_match('#/storage/(.+)$#', (string) $path, $m)) $path = $m[1];
+        try {
+            if (!Storage::disk('public')->exists($path)) return null;
+            $data = base64_encode(Storage::disk('public')->get($path));
+            $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION) ?: 'png');
+            $mime = in_array($ext, ['jpg', 'jpeg']) ? 'image/jpeg' : ($ext === 'webp' ? 'image/webp' : 'image/png');
+            return "data:$mime;base64,$data";
+        } catch (\Throwable $e) { return null; }
     }
 
     /**
