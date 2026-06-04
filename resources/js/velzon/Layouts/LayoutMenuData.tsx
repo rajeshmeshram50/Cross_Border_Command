@@ -195,14 +195,14 @@ const Navdata = () => {
     );
   };
 
-  // Central CLM rollout — same temporary bypass as Sidebar / TopNav so the
-  // menu surfaces for branch_user + employee even before any clm.* perm
-  // rows are granted. Drop the user-type branch once per-leaf perms are
-  // wired and revert to the perms-only check used by the other modules.
+  // Central CLM is now permission-gated end-to-end, matching HR + Sales: the
+  // menu only surfaces if the user holds can_view on at least one clm.* leaf.
+  // (The rollout bypass that surfaced CLM for every branch_user / employee
+  // regardless of grants has been removed — visibility follows the Permissions
+  // sheet just like the other modules.)
   const hasAnyClmView = () => {
     if (isSuperAdmin) return true;
     if (planExpiredOrMissing) return false;
-    if (user?.user_type === "branch_user" || user?.user_type === "employee") return true;
     return Object.keys(perms).some(
       (slug) => slug.startsWith("clm.") && !!perms[slug]?.can_view
     );
@@ -279,15 +279,14 @@ const Navdata = () => {
   };
 
   // Central CLM dropdown (3 levels): CLM → categories → leaves. Same shape
-  // as buildSalesSubItems. During rollout (no clm.* perms granted yet) we
-  // bypass the per-leaf perm check for branch_user + employee so the
-  // entire tree surfaces — matches the Sidebar / TopNav bypass.
+  // as buildSalesSubItems — leaves the user cannot view are filtered out and
+  // categories with no remaining leaves are dropped, so the sidebar tree
+  // always reflects exactly what was granted on the Permissions sheet.
   const buildClmSubItems = () => {
-    const inClmRollout = user?.user_type === "branch_user" || user?.user_type === "employee";
     return CLM_GROUPS
       .map((g) => {
         const childItems = g.children
-          .filter((c) => isSuperAdmin || inClmRollout || perms[c.id]?.can_view)
+          .filter((c) => isSuperAdmin || perms[c.id]?.can_view)
           .map((c) => ({
             id: c.id,
             label: c.label,
