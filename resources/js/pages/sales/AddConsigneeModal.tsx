@@ -245,6 +245,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
 
   const [phase, setPhase]   = useState<Phase>('pick-customer');
   const [stage, setStage]   = useState<Stage>(1);
+  /* Furthest stage the user has reached — drives which steps the
+   * stepper lets you click back/forward to (parallels AddCustomerModal).
+   * Editing an existing consignee unlocks all three immediately; a fresh
+   * create grows it as the user advances via Save & Next. */
+  const [maxStage, setMaxStage] = useState<Stage>(1);
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
   const [search, setSearch]     = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -552,6 +557,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * yet. */
     const landing: Stage = (consignee ? (initialStage ?? 1) : 1);
     setStage   (landing);
+    // Existing consignee = a saved record → all three stages are
+    // reachable for review. Fresh create starts locked to Stage 1.
+    setMaxStage(consignee ? 3 : (landing as Stage));
     setIdTab   ('identification');
     setKycSub  (remembered?.kycSub   ?? 'company-dd');
     setVaultTab(remembered?.vaultTab ?? 'kyc');
@@ -1025,8 +1033,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * Mirrors the same gate added to AddCustomerModal. We deliberately
      * do NOT clear segmentDocs when stage<2 — if the user navigates
      * Stage 2 → Stage 1, the previously-loaded docs stay cached and
-     * are immediately usable when they go back. */
-    if (stage < 2) return;
+     * are immediately usable when they go back. We ALSO load when
+     * maxStage>=2 (e.g. editing an existing consignee while sitting on
+     * Stage 1) so the stepper's per-stage completeness is accurate
+     * rather than defaulting later stages to a false "done". */
+    if (stage < 2 && maxStage < 2) return;
     const names = (form1.segment ?? []).filter(Boolean);
     if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
     const segRows = names
@@ -1092,7 +1103,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, stage, form1.segment, mSegmentIds]);
+  }, [open, stage, maxStage, form1.segment, mSegmentIds]);
 
   /* Poll the live signature-request list every 15s while the user is on
    * Stage 3 → Trade Documents. The backend's ?sync=true triggers a Zoho
@@ -1624,7 +1635,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           toast.warning('KYC clone partial', err?.response?.data?.message ?? 'Some KYC rows may not have copied — review Stage 2.');
         }
       }
-      setStage(2);
+      setStage(2); setMaxStage(m => Math.max(m, 2) as Stage);
       return;
     }
     if (stage === 2) {
@@ -1638,7 +1649,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       // whichever sub-tab the user last visited.
       setVaultTab('kyc');
       setEvSub('dd');
-      setStage(3);
+      setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
       return;
     }
     /* Stage 3 advance — cycle Evidence Vault › KYC Documents
@@ -1680,6 +1691,16 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     if (evSub === 'tl')  { setEvSub('kyc'); return; }
     if (evSub === 'kyc') { setEvSub('dd');  return; }
     setStage(2);
+  };
+
+  /* Jump straight to any already-reached stage from the stepper (click
+   * a step header). Mirrors AddCustomerModal.gotoStage: forward jumps to
+   * not-yet-reached stages are blocked; landing on Stage 1 resets its
+   * sub-tab so the user sees Identification first. */
+  const gotoStage = (s: Stage) => {
+    if (s > maxStage || s === stage) return;
+    setStage(s);
+    if (s === 1) setIdTab('identification');
   };
 
   /* Build the POST/PUT payload from form1 + locations. Mirrors the
@@ -1957,24 +1978,30 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               n={1}
               title="Consignee Legal Identity"
               sub="Company, address & contact"
-              status={stage === 1 ? 'active' : stage > 1 ? (stageComplete[0] ? 'done' : 'incomplete') : 'idle'}
+              status={stage === 1 ? 'active' : 1 <= maxStage ? (stageComplete[0] ? 'done' : 'incomplete') : 'idle'}
               icon={<IconHome />}
+              clickable={stage !== 1 && 1 <= maxStage}
+              onClick={() => gotoStage(1)}
             />
             <div className="acm-steps-arrow"><IconChevronRight /></div>
             <StepNode
               n={2}
               title="KYC / Due Diligence"
               sub="Docs, identity & compliance"
-              status={stage === 2 ? 'active' : stage > 2 ? (stageComplete[1] ? 'done' : 'incomplete') : 'idle'}
+              status={stage === 2 ? 'active' : 2 <= maxStage ? (stageComplete[1] ? 'done' : 'incomplete') : 'idle'}
               icon={<IconDoc />}
+              clickable={stage !== 2 && 2 <= maxStage}
+              onClick={() => gotoStage(2)}
             />
             <div className="acm-steps-arrow"><IconChevronRight /></div>
             <StepNode
               n={3}
               title="Evidence Vault"
               sub="Trade documents & archive"
-              status={stage === 3 ? 'active' : 'idle'}
+              status={stage === 3 ? 'active' : 3 <= maxStage ? (stageComplete[2] ? 'done' : 'incomplete') : 'idle'}
               icon={<IconVault />}
+              clickable={stage !== 3 && 3 <= maxStage}
+              onClick={() => gotoStage(3)}
             />
           </div>
 
@@ -2496,21 +2523,27 @@ const LinkedField = ({ label, value }: { label: string; value: React.ReactNode }
   </div>
 );
 
-const StepNode = ({ n, title, sub, status, icon }: {
+const StepNode = ({ n, title, sub, status, icon, clickable = false, onClick }: {
   n: number; title: string; sub: string;
   status: 'idle' | 'active' | 'done' | 'incomplete';
   icon: React.ReactNode;
+  clickable?: boolean;
+  onClick?: () => void;
 }) => (
-  <div className={`acm-step ${status === 'active' ? 'acm-step-active' : ''} ${status === 'done' ? 'acm-step-done' : ''} ${status === 'incomplete' ? 'acm-step-incomplete' : ''}`}>
+  <div
+    className={`acm-step ${status === 'active' ? 'acm-step-active' : ''} ${status === 'done' ? 'acm-step-done' : ''} ${status === 'incomplete' ? 'acm-step-incomplete' : ''} ${clickable ? 'acm-step-clickable' : ''}`}
+    onClick={clickable ? onClick : undefined}
+    role={clickable ? 'button' : undefined}
+    tabIndex={clickable ? 0 : undefined}
+  >
     <div className="acm-step-badge">
-      {status === 'done' ? <IconCheck /> : status === 'incomplete' ? <IconWarn /> : status === 'active' ? icon : <span>{n}</span>}
+      {status === 'done' ? <IconCheck /> : status === 'active' ? icon : <span>{n}</span>}
     </div>
     <div className="acm-step-text">
       <div className="acm-step-title">{title}</div>
       <div className="acm-step-sub">{sub}</div>
     </div>
     {status === 'done' && <div className="acm-step-done-mark"><IconCheck size={12} /></div>}
-    {status === 'incomplete' && <div className="acm-step-warn-mark"><IconWarn size={12} /></div>}
   </div>
 );
 
@@ -3396,7 +3429,7 @@ const Stage2 = ({
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-                    <th>ISSUING AUTHORITY</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                    <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3409,6 +3442,12 @@ const Stage2 = ({
                         <td><span className="acm-kyc-code">{d.code}</span></td>
                         <td style={{ fontWeight: 700 }}>{d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}</td>
                         <td>{d.authority ?? '—'}</td>
+                        {/* Requirement — Mandatory / Optional, same as Company DD. */}
+                        <td>
+                          {d.requirement === 'M'
+                            ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
+                            : <span className="acm-badge acm-badge--opt">Optional</span>}
+                        </td>
                         <td>
                           {uploaded
                             ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
@@ -5403,13 +5442,6 @@ const IconCheck = ({ size = 14 }: { size?: number }) => (
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
-/* Amber "!" used by the stepper for a visited-but-incomplete stage. */
-const IconWarn = ({ size = 14 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="12" y1="7" x2="12" y2="14" />
-    <line x1="12" y1="18" x2="12" y2="18" />
-  </svg>
-);
 /* Inline spinner used by the wizard footer buttons while a save/persist
  * request is in flight. Rendered as currentColor so it picks up the
  * button's existing text color on both light and dark mode. */
@@ -5963,6 +5995,13 @@ const SCOPED_CSS = `
   display: flex; align-items: center; gap: 12px;
   padding: 12px 14px;
   background: #fff; border: 1.5px solid #e5e7eb; border-radius: 12px;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.acm-step-clickable { cursor: pointer; }
+.acm-step-clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(16,185,129,0.16);
+  border-color: #10b981;
 }
 .acm-step-active {
   background: #ecfdf5;
@@ -5974,8 +6013,8 @@ const SCOPED_CSS = `
   border-color: #a7f3d0;
 }
 .acm-step-incomplete {
-  background: #fffbeb;
-  border-color: #fcd34d;
+  background: #f8fafc;
+  border-color: #e2e8f0;
 }
 .acm-step-badge {
   width: 36px; height: 36px; border-radius: 10px;
@@ -5991,25 +6030,19 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, #10b981, #047857); color: #fff;
 }
 .acm-step-incomplete .acm-step-badge {
-  background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff;
+  background: linear-gradient(135deg, #e2e8f0, #cbd5e1); color: #64748b;
 }
 .acm-step-text { min-width: 0; flex: 1; }
 .acm-step-title { font-size: 13px; font-weight: 700; color: #1f2937; }
 .acm-step-active .acm-step-title { color: #064e3b; }
-.acm-step-incomplete .acm-step-title { color: #92400e; }
+.acm-step-incomplete .acm-step-title { color: #475569; }
 .acm-step-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
 .acm-step-active .acm-step-sub { color: #047857; }
-.acm-step-incomplete .acm-step-sub { color: #d97706; }
+.acm-step-incomplete .acm-step-sub { color: #94a3b8; }
 .acm-step-done-mark {
   position: absolute; right: 10px; bottom: 8px;
   width: 18px; height: 18px; border-radius: 50%;
   background: #10b981; color: #fff;
-  display: flex; align-items: center; justify-content: center;
-}
-.acm-step-warn-mark {
-  position: absolute; right: 10px; bottom: 8px;
-  width: 18px; height: 18px; border-radius: 50%;
-  background: #f59e0b; color: #fff;
   display: flex; align-items: center; justify-content: center;
 }
 .acm-steps-arrow {
@@ -7214,9 +7247,10 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-step       { background: #103129; border-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-step-active { background: rgba(16,185,129,.15); border-color: #10b981; }
 [data-bs-theme="dark"] .acm-step-done  { background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.30); }
-[data-bs-theme="dark"] .acm-step-incomplete { background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.40); }
-[data-bs-theme="dark"] .acm-step-incomplete .acm-step-title { color: #fde68a; }
-[data-bs-theme="dark"] .acm-step-incomplete .acm-step-sub   { color: #fbbf24; }
+[data-bs-theme="dark"] .acm-step-incomplete { background: rgba(40,52,70,0.60); border-color: rgba(148,163,184,0.25); }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-badge { background: #2b3650; color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-title { color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-sub   { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-step-badge { background: #1a3d34; color: #94a3b8; }
 [data-bs-theme="dark"] .acm-step-title { color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-step-sub   { color: #94a3b8; }

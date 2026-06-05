@@ -945,8 +945,16 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
      *
      * NOTE: we deliberately do NOT clear segmentDocs when stage<2 — if
      * the user navigates Stage 2 → Stage 1, the previously-loaded docs
-     * stay cached and are immediately usable when they go back. */
-    if (stage < 2) return;
+     * stay cached and are immediately usable when they go back.
+     *
+     * We ALSO load when maxStage>=2 even while sitting on Stage 1: in
+     * edit mode the modal restores maxStage (e.g. 3) so the stepper
+     * renders Stages 2 & 3 as "visited". Without the docs loaded their
+     * real completeness can't be computed and they'd falsely paint green.
+     * Loading here keeps the stepper's done/incomplete state honest. A
+     * fresh "Add" (maxStage=1) still skips the fetch — Stages 2 & 3 are
+     * pending/gray there, so their completeness is never read. */
+    if (stage < 2 && maxStage < 2) return;
 
     const names = (form.coSeg ?? []).filter(Boolean);
     if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); return; }
@@ -1019,7 +1027,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, stage, form.coSeg, masters.segments]);
+  }, [open, stage, maxStage, form.coSeg, masters.segments]);
 
   // Inject DM Sans/Inter once
   useEffect(() => {
@@ -2081,10 +2089,6 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
   ];
   const CHECK_BADGE = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>;
   const CHECK_NUM = <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12"/></svg>;
-  /* Amber "!" shown on a visited stage whose data/docs are still
-   * incomplete — distinguishes it from a genuinely finished green ✓. */
-  const WARN_BADGE = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="17" x2="12" y2="17"/></svg>;
-  const WARN_NUM = <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><line x1="12" y1="7" x2="12" y2="14"/><line x1="12" y1="19" x2="12" y2="19"/></svg>;
 
   return (
     <div className="acm-stepper">
@@ -2094,8 +2098,8 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
          * the later stage as visited+clickable, not as a locked
          * pending step. Four visual states:
          *   active     — current stage (purple)
-         *   done       — visited AND genuinely complete (green ✓)
-         *   incomplete — visited but data/docs missing (amber !)
+         *   done       — visited AND genuinely complete (purple ✓)
+         *   incomplete — visited but data/docs missing (neutral gray)
          *   pending    — not yet reached (s.n > maxStage, locked)
          * `complete` is index-0-based (Stage n → complete[n-1]). */
         const visited = s.n <= maxStage;
@@ -2106,13 +2110,12 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
             ? (isComplete ? 'acm-step-done' : 'acm-step-incomplete')
             : 'acm-step-pending';
         const showCheck = visited && s.n !== stage && isComplete;
-        const showWarn = visited && s.n !== stage && !isComplete;
         return (
           <Fragment key={s.n}>
             <div className={`acm-step ${cls}`} onClick={() => onGoto(s.n)}>
               <div className="acm-step-badge-wrap">
-                <div className="acm-step-badge">{showCheck ? CHECK_BADGE : showWarn ? WARN_BADGE : s.icon}</div>
-                <div className="acm-step-num">{showCheck ? CHECK_NUM : showWarn ? WARN_NUM : s.n}</div>
+                <div className="acm-step-badge">{showCheck ? CHECK_BADGE : s.icon}</div>
+                <div className="acm-step-num">{showCheck ? CHECK_NUM : s.n}</div>
               </div>
               <div className="acm-step-text">
                 <div className="acm-step-title">{s.title}</div>
@@ -4626,7 +4629,7 @@ const SCOPED_CSS = `
 .acm-stepper { padding: 16px 22px 14px; display: flex; align-items: center; gap: 0; flex-shrink: 0; background: #fff; border-bottom: 1px solid #ede9fe; }
 .acm-step-connector { flex: 0 0 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; z-index: 0; }
 .acm-connector-line { width: 100%; height: 3px; background: #e2e8f0; border-radius: 3px; position: relative; overflow: hidden; }
-.acm-connector-line::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #10b981, #059669); border-radius: 3px; transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.4,0,.2,1); }
+.acm-connector-line::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #8b5cf6, #6d28d9); border-radius: 3px; transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.4,0,.2,1); }
 .acm-connector-line[data-done="1"]::after { transform: scaleX(1); }
 .acm-step { flex: 1; padding: 11px 14px; border-radius: 14px; display: flex; align-items: center; gap: 12px; position: relative; overflow: hidden; transition: all .25s; cursor: pointer; min-width: 0; }
 .acm-step-badge-wrap { position: relative; flex-shrink: 0; width: 40px; height: 40px; }
@@ -4640,16 +4643,16 @@ const SCOPED_CSS = `
 .acm-step-active .acm-step-num { background: linear-gradient(135deg, #6d28d9, #4c1d95); color: #fff; }
 .acm-step-active .acm-step-title { color: #2e1065; }
 .acm-step-active .acm-step-sub { color: #6d28d9; }
-.acm-step-done { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid #10b981; box-shadow: 0 6px 20px rgba(16,185,129,.2), 0 1px 0 rgba(255,255,255,.85) inset; }
-.acm-step-done .acm-step-badge { background: linear-gradient(135deg, #10b981, #047857); color: #fff; box-shadow: 0 5px 12px rgba(16,185,129,.42); }
-.acm-step-done .acm-step-num { background: linear-gradient(135deg, #059669, #047857); color: #fff; }
-.acm-step-done .acm-step-title { color: #065f46; }
-.acm-step-done .acm-step-sub { color: #10b981; }
-.acm-step-incomplete { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 2px solid #f59e0b; box-shadow: 0 6px 20px rgba(245,158,11,.18), 0 1px 0 rgba(255,255,255,.85) inset; }
-.acm-step-incomplete .acm-step-badge { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; box-shadow: 0 5px 12px rgba(245,158,11,.42); }
-.acm-step-incomplete .acm-step-num { background: linear-gradient(135deg, #d97706, #b45309); color: #fff; }
-.acm-step-incomplete .acm-step-title { color: #92400e; }
-.acm-step-incomplete .acm-step-sub { color: #d97706; }
+.acm-step-done { background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border: 2px solid #a78bfa; box-shadow: 0 6px 20px rgba(124,58,237,.18), 0 1px 0 rgba(255,255,255,.85) inset; }
+.acm-step-done .acm-step-badge { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; box-shadow: 0 5px 12px rgba(124,58,237,.42); }
+.acm-step-done .acm-step-num { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; }
+.acm-step-done .acm-step-title { color: #4c1d95; }
+.acm-step-done .acm-step-sub { color: #7c3aed; }
+.acm-step-incomplete { background: #f8fafc; border: 2px solid #e2e8f0; box-shadow: 0 4px 14px rgba(100,116,139,.10), 0 1px 0 rgba(255,255,255,.85) inset; }
+.acm-step-incomplete .acm-step-badge { background: linear-gradient(135deg, #e2e8f0, #cbd5e1); color: #64748b; }
+.acm-step-incomplete .acm-step-num { background: #94a3b8; color: #fff; }
+.acm-step-incomplete .acm-step-title { color: #475569; }
+.acm-step-incomplete .acm-step-sub { color: #94a3b8; }
 .acm-step-pending { background: #f8fafc; border: 1.5px solid #e2e8f0; cursor: not-allowed; opacity: .75; }
 .acm-step-pending .acm-step-badge { background: linear-gradient(135deg, #f1f5f9, #e2e8f0); color: #94a3b8; border: 1px solid #e2e8f0; }
 .acm-step-pending .acm-step-num { background: #e2e8f0; color: #94a3b8; }
@@ -5475,12 +5478,13 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-step-active { background: linear-gradient(135deg, rgba(76,29,149,0.45) 0%, rgba(109,40,217,0.30) 100%); border-color: #a78bfa; box-shadow: 0 6px 22px rgba(0,0,0,.4), 0 0 0 1px rgba(167,139,250,.15) inset; }
 [data-bs-theme="dark"] .acm-step-active .acm-step-title { color: #f1f5f9; }
 [data-bs-theme="dark"] .acm-step-active .acm-step-sub { color: #c4b5fd; }
-[data-bs-theme="dark"] .acm-step-done { background: linear-gradient(135deg, rgba(6,95,70,0.40) 0%, rgba(16,185,129,0.20) 100%); border-color: #10b981; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
-[data-bs-theme="dark"] .acm-step-done .acm-step-title { color: #d1fae5; }
-[data-bs-theme="dark"] .acm-step-done .acm-step-sub { color: #34d399; }
-[data-bs-theme="dark"] .acm-step-incomplete { background: linear-gradient(135deg, rgba(146,64,14,0.40) 0%, rgba(245,158,11,0.20) 100%); border-color: #f59e0b; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
-[data-bs-theme="dark"] .acm-step-incomplete .acm-step-title { color: #fde68a; }
-[data-bs-theme="dark"] .acm-step-incomplete .acm-step-sub { color: #fbbf24; }
+[data-bs-theme="dark"] .acm-step-done { background: linear-gradient(135deg, rgba(76,29,149,0.40) 0%, rgba(124,58,237,0.20) 100%); border-color: #a78bfa; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .acm-step-done .acm-step-title { color: #ede9fe; }
+[data-bs-theme="dark"] .acm-step-done .acm-step-sub { color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-step-incomplete { background: rgba(40,52,70,0.60); border-color: rgba(148,163,184,0.25); box-shadow: 0 4px 14px rgba(0,0,0,.30); }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-badge { background: #2b3650; color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-title { color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-sub { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-step-pending { background: rgba(40,52,70,0.75); border-color: rgba(167,139,250,0.18); opacity: 0.92; }
 [data-bs-theme="dark"] .acm-step-pending .acm-step-badge { background: #232c44; border-color: rgba(167,139,250,0.25); color: #94a3b8; }
 [data-bs-theme="dark"] .acm-step-pending .acm-step-num { background: #232c44; color: #cbd5e1; border-color: #11182a; }
