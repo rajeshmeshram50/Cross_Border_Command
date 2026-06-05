@@ -1204,6 +1204,41 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     return false;
   };
 
+  /* ── Real per-stage completeness for the stepper ──────────────────
+   * The stepper used to paint a stage GREEN purely because it had been
+   * VISITED (s.n <= maxStage). That misled users: walk forward to
+   * Stage 3 and back, and Stages 2/3 read as "done ✓" even with nothing
+   * uploaded. Here we compute genuine completeness so the stepper can
+   * show an amber "incomplete" state for a visited-but-empty stage.
+   *
+   *   Stage 1 — every required identity field is valid.
+   *   Stage 2 & 3 — share ONE segment-rule upload set (dd/kyc/tl). A
+   *     stage is complete when every MANDATORY doc is uploaded; when the
+   *     rule carries only OPTIONAL docs, it counts as complete once at
+   *     least one is uploaded (so an all-optional, nothing-uploaded
+   *     stage stays amber instead of falsely green). A segment with no
+   *     rule docs at all has nothing to satisfy → complete. */
+  const stageComplete: [boolean, boolean, boolean] = (() => {
+    const s1 = STAGE1_FIELD_KEYS.every(k => !stage1FieldRule(k, form));
+
+    const subFor = (cat: 'dd' | 'kyc' | 'tl') =>
+      cat === 'dd' ? 'company-dd' : cat === 'kyc' ? 'owner-kyc' : 'trade-licence';
+    let mandTotal = 0, mandDone = 0, anyDoc = false, anyUpload = false;
+    (['dd', 'kyc', 'tl'] as const).forEach(cat => {
+      ((segmentDocs as any)[cat] || []).forEach((d: any) => {
+        anyDoc = true;
+        const up = !!segmentRefUploads[`${subFor(cat)}::${d.code}`];
+        if (up) anyUpload = true;
+        if (d.requirement === 'M') { mandTotal++; if (up) mandDone++; }
+      });
+    });
+    const docsComplete = !anyDoc
+      ? true
+      : mandTotal > 0 ? mandDone === mandTotal : anyUpload;
+
+    return [s1, docsComplete, docsComplete];
+  })();
+
   /* Per-keystroke validator passed down to Stage1Identification. Runs
    * the single-field rule against the post-change form and updates the
    * errors map with just that field's error — so inline red shows up
@@ -1572,7 +1607,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             stepper above an empty body. */}
         {showShimmer
           ? <StepperShimmer />
-          : <Stepper stage={stage} maxStage={maxStage} onGoto={gotoStage} />}
+          : <Stepper stage={stage} maxStage={maxStage} onGoto={gotoStage} complete={stageComplete} />}
 
         {/* HISTORY PANEL */}
         {stage > 1 && (
@@ -2035,7 +2070,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 }
 
 /* ───── Stepper ───── */
-function Stepper({ stage, maxStage, onGoto }: { stage: Stage; maxStage: Stage; onGoto: (s: Stage) => void }) {
+function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage: Stage; onGoto: (s: Stage) => void; complete: [boolean, boolean, boolean] }) {
   const steps = [
     { n:1 as Stage, title:'Customer Legal Identity', sub:'Company, GST, PAN & contact',
       icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
@@ -2046,6 +2081,10 @@ function Stepper({ stage, maxStage, onGoto }: { stage: Stage; maxStage: Stage; o
   ];
   const CHECK_BADGE = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>;
   const CHECK_NUM = <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12"/></svg>;
+  /* Amber "!" shown on a visited stage whose data/docs are still
+   * incomplete — distinguishes it from a genuinely finished green ✓. */
+  const WARN_BADGE = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="17" x2="12" y2="17"/></svg>;
+  const WARN_NUM = <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><line x1="12" y1="7" x2="12" y2="14"/><line x1="12" y1="19" x2="12" y2="19"/></svg>;
 
   return (
     <div className="acm-stepper">
@@ -2053,19 +2092,27 @@ function Stepper({ stage, maxStage, onGoto }: { stage: Stage; maxStage: Stage; o
         /* Reachability is driven by `maxStage` so a user who reached
          * Stage 2 (or 3) and then navigated back to Stage 1 still sees
          * the later stage as visited+clickable, not as a locked
-         * pending step. Three visual states:
+         * pending step. Four visual states:
          *   active     — current stage (purple)
-         *   done       — visited (s.n <= maxStage) but not current (green ✓)
-         *   pending    — not yet reached (s.n > maxStage, locked) */
+         *   done       — visited AND genuinely complete (green ✓)
+         *   incomplete — visited but data/docs missing (amber !)
+         *   pending    — not yet reached (s.n > maxStage, locked)
+         * `complete` is index-0-based (Stage n → complete[n-1]). */
         const visited = s.n <= maxStage;
-        const cls = s.n === stage ? 'acm-step-active' : visited ? 'acm-step-done' : 'acm-step-pending';
-        const showCheck = visited && s.n !== stage;
+        const isComplete = !!complete[s.n - 1];
+        const cls = s.n === stage
+          ? 'acm-step-active'
+          : visited
+            ? (isComplete ? 'acm-step-done' : 'acm-step-incomplete')
+            : 'acm-step-pending';
+        const showCheck = visited && s.n !== stage && isComplete;
+        const showWarn = visited && s.n !== stage && !isComplete;
         return (
           <Fragment key={s.n}>
             <div className={`acm-step ${cls}`} onClick={() => onGoto(s.n)}>
               <div className="acm-step-badge-wrap">
-                <div className="acm-step-badge">{showCheck ? CHECK_BADGE : s.icon}</div>
-                <div className="acm-step-num">{showCheck ? CHECK_NUM : s.n}</div>
+                <div className="acm-step-badge">{showCheck ? CHECK_BADGE : showWarn ? WARN_BADGE : s.icon}</div>
+                <div className="acm-step-num">{showCheck ? CHECK_NUM : showWarn ? WARN_NUM : s.n}</div>
               </div>
               <div className="acm-step-text">
                 <div className="acm-step-title">{s.title}</div>
@@ -2249,7 +2296,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
         <div className="acm-section-body">
           <div className="acm-row acm-row-3">
             <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={errors.coName ? 'acm-input-error' : ''} value={form.coName} maxLength={30} onChange={e => set('coName', e.target.value.slice(0, 30))} placeholder="e.g. Shree Agro Pvt Ltd (max 30)" /></Field>
-            <Field label="Company Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
+            <Field label="Customer Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
             <Field label="Customer Type" required error={errors.coType} fieldKey="coType">
               <MasterSelect value={form.coType} options={optsWith(masters.customerTypes, form.coType)} placeholder="Select customer type" invalid={!!errors.coType} onChange={v => set('coType', v)} />
             </Field>
@@ -4320,7 +4367,7 @@ function HistoryStage1({ form, locations, customerId }: { form: any; locations: 
       <div className="acm-hs-grid">
         <ReadInline label="Customer ID"               value={customerId} />
         <ReadInline label="Company Name"              value={form.coName} />
-        <ReadInline label="Company Legal Name"        value={form.coLegal} />
+        <ReadInline label="Customer Legal Name"        value={form.coLegal} />
         <ReadInline label="Customer Type"             value={form.coType} />
 
         <ReadInline label="Company Website"           value={form.coWeb} />
@@ -4598,6 +4645,11 @@ const SCOPED_CSS = `
 .acm-step-done .acm-step-num { background: linear-gradient(135deg, #059669, #047857); color: #fff; }
 .acm-step-done .acm-step-title { color: #065f46; }
 .acm-step-done .acm-step-sub { color: #10b981; }
+.acm-step-incomplete { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 2px solid #f59e0b; box-shadow: 0 6px 20px rgba(245,158,11,.18), 0 1px 0 rgba(255,255,255,.85) inset; }
+.acm-step-incomplete .acm-step-badge { background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff; box-shadow: 0 5px 12px rgba(245,158,11,.42); }
+.acm-step-incomplete .acm-step-num { background: linear-gradient(135deg, #d97706, #b45309); color: #fff; }
+.acm-step-incomplete .acm-step-title { color: #92400e; }
+.acm-step-incomplete .acm-step-sub { color: #d97706; }
 .acm-step-pending { background: #f8fafc; border: 1.5px solid #e2e8f0; cursor: not-allowed; opacity: .75; }
 .acm-step-pending .acm-step-badge { background: linear-gradient(135deg, #f1f5f9, #e2e8f0); color: #94a3b8; border: 1px solid #e2e8f0; }
 .acm-step-pending .acm-step-num { background: #e2e8f0; color: #94a3b8; }
@@ -5426,6 +5478,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-step-done { background: linear-gradient(135deg, rgba(6,95,70,0.40) 0%, rgba(16,185,129,0.20) 100%); border-color: #10b981; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
 [data-bs-theme="dark"] .acm-step-done .acm-step-title { color: #d1fae5; }
 [data-bs-theme="dark"] .acm-step-done .acm-step-sub { color: #34d399; }
+[data-bs-theme="dark"] .acm-step-incomplete { background: linear-gradient(135deg, rgba(146,64,14,0.40) 0%, rgba(245,158,11,0.20) 100%); border-color: #f59e0b; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-title { color: #fde68a; }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-sub { color: #fbbf24; }
 [data-bs-theme="dark"] .acm-step-pending { background: rgba(40,52,70,0.75); border-color: rgba(167,139,250,0.18); opacity: 0.92; }
 [data-bs-theme="dark"] .acm-step-pending .acm-step-badge { background: #232c44; border-color: rgba(167,139,250,0.25); color: #94a3b8; }
 [data-bs-theme="dark"] .acm-step-pending .acm-step-num { background: #232c44; color: #cbd5e1; border-color: #11182a; }

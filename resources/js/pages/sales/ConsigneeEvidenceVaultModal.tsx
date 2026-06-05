@@ -788,6 +788,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   onSendTradeDoc?: (doc: VaultDoc) => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
 }) {
+  const toast = useToast();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
@@ -819,7 +820,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     // Only PDF / JPG / PNG may be uploaded (Word / Excel are blocked so every
     // stored attachment can be previewed in-browser via View).
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
-      window.alert('Only PDF, JPG or PNG files are allowed. Word / Excel files are not supported.');
+      toast.error('Unsupported file type', 'Only PDF, JPG or PNG files are allowed. Word / Excel files are not supported.');
       return;
     }
     setBusy(true);
@@ -833,8 +834,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       await onReload();
-    } catch {
-      // silent — user can retry; toast threading not in scope here
+      toast.success('Document uploaded', `${f.name} has been attached.`);
+    } catch (e: any) {
+      toast.error('Upload failed', e?.response?.data?.message || 'The file could not be uploaded. Please try again.');
     } finally {
       setBusy(false);
     }
