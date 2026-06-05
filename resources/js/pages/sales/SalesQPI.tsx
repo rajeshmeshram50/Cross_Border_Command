@@ -2602,7 +2602,8 @@ export function CreatePIModal(props: {
               form={form} setForm={setForm}
               masters={masters} theme="purple"
               titleLabel="Basic PI Details" partyKind="PI"
-              lockParty={!!initialOpp}
+              lockParty={!!initialOpp || isEdit}
+              lockDocType={isEdit}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
                 if (!prev.has(k)) return prev;
@@ -2712,8 +2713,12 @@ function BasicForm(props: {
    * fixes the Opportunity + its mapped Customer & Consignee — those four
    * fields render read-only so they can't drift away from the lead. */
   lockParty?: boolean;
+  /* Lock the Document Type (e.g. when EDITING a PI) — changing
+   * International/Domestic on an existing doc would break its tax/costing
+   * structure, so it renders read-only. */
+  lockDocType?: boolean;
 }) {
-  const { form, setForm, masters, theme, partyKind, errors, clearError, lockParty } = props;
+  const { form, setForm, masters, theme, partyKind, errors, clearError, lockParty, lockDocType } = props;
   const hasError = (k: string) => errors?.has(k) ?? false;
   const set = <K extends keyof BasicFormState>(k: K, v: BasicFormState[K]) => {
     setForm({ ...form, [k]: v });
@@ -2933,12 +2938,17 @@ function BasicForm(props: {
 
       <div className="qpi-form-grid">
         <Field label="Document Type" required>
+          {lockDocType ? (
+            <input className="qpi-input qpi-input-readonly" value={form.docType} readOnly
+              title="Document Type can't be changed when editing — create a new document to switch International / Domestic." />
+          ) : (
           <MasterSelect
             value={form.docType}
             placeholder="— Select —"
             options={[{ value: 'International', label: 'International' }, { value: 'Domestic', label: 'Domestic' }]}
             onChange={(v) => set('docType', v)}
           />
+          )}
         </Field>
         <Field label="Opportunity" required>
           {lockParty ? (

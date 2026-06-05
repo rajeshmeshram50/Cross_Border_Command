@@ -325,18 +325,30 @@ export default function SalesConsignee() {
         const c = info.row.original as ConsigneeRow;
         return (
           <div className="d-inline-flex align-items-center gap-1">
-            {canEdit && <ActionBtn title="Edit Consignee"          icon="ri-pencil-line"      color="primary" onClick={() => { setEditing(c); setAddOpen(true); }} />}
-                       <ActionBtn title="Evidence Vault"           icon="ri-file-shield-line" color="info"    onClick={() => setVaultTarget({
-                         id: c.id,
-                         db_id: c.db_id,
-                         company: c.company,
-                         risk: c.risk,
-                         segment: c.segment,
-                         country: c.country,
-                         contact: c.contact,
-                         contactCity: c.countryDetail,
-                         customerId: c.customerId,
-                       })} />
+            {canEdit && <ActionBtn title="Edit Consignee" icon="ri-pencil-line" color="primary" onClick={() => { setEditing(c); setAddOpen(true); }} />}
+            {/* Labeled "Vault" button (per the reference design) — opens the
+                consignee Evidence Vault. Teal accent on hover. */}
+            <button
+              type="button"
+              aria-label="Evidence Vault"
+              className="btn p-0 d-inline-flex align-items-center justify-content-center gap-1"
+              style={{ height: 30, padding: '0 11px', borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', color: 'var(--vz-secondary-color)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', transition: 'all .15s ease' }}
+              onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = '#0d9488'; el.style.color = '#0d9488'; }}
+              onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = 'var(--vz-border-color)'; el.style.color = 'var(--vz-secondary-color)'; }}
+              onClick={() => setVaultTarget({
+                id: c.id,
+                db_id: c.db_id,
+                company: c.company,
+                risk: c.risk,
+                segment: c.segment,
+                country: c.country,
+                contact: c.contact,
+                contactCity: c.countryDetail,
+                customerId: c.customerId,
+              })}
+            >
+              <i className="ri-archive-line fs-14" /> Vault
+            </button>
             {/* Delete action removed per product request — consignees
                 are kept (soft-delete only via API if ever needed). The
                 handleDelete + DeleteConfirmModal wiring is intentionally
@@ -624,10 +636,7 @@ const SCOPED_CSS = `
   border-radius: 16px;
   background: linear-gradient(110deg, #f0fdf9 0%, #ccfbf1 25%, #99f6e4 55%, #5eead4 85%, #2dd4bf 100%);
   border: 1px solid #5eead4;
-  box-shadow:
-    0 2px 0 rgba(255,255,255,0.85) inset,
-    0 8px 28px rgba(13,148,136,0.20),
-    0 2px 8px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 0 rgba(255,255,255,0.85) inset, 0 8px 28px rgba(13,148,136,0.20), 0 2px 8px rgba(0,0,0,0.06);
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -726,14 +735,11 @@ const SCOPED_CSS = `
  * the two sections feel like a single visual block. */
 .smcg-wdh-card {
   position: relative;
-  background: linear-gradient(110deg, #f0fdf9 0%, #ccfbf1 25%, #99f6e4 55%, #5eead4 85%, #2dd4bf 100%);
-  border: 1px solid #5eead4;
+  background: linear-gradient(120deg, #f0fdf9 0%, #ecfdf5 40%, #d1fae5 100%);
+  border: 1.5px solid #6ee7b7;
   border-radius: 16px;
   overflow: hidden;
-  box-shadow:
-    0 2px 0 rgba(255,255,255,0.85) inset,
-    0 4px 16px rgba(45,212,191,0.18),
-    0 1px 3px rgba(0,0,0,0.04);
+  box-shadow: 0 4px 16px rgba(13,148,136,0.12), 0 1px 0 rgba(255,255,255,0.8) inset;
 }
 .smcg-wdh-toggle-row {
   width: 100%;
@@ -801,8 +807,8 @@ const SCOPED_CSS = `
   flex: 1 1 0;
   min-width: 200px;
   background: #ffffff;
-  border: 1px solid rgba(16,185,129,0.18);
-  border-left: 4px solid #10b981;
+  border: 1px solid rgba(13,148,136,0.18);
+  border-left: 4px solid #0d9488;
   border-radius: 12px;
   padding: 14px 16px;
   display: flex; flex-direction: column; gap: 6px;
@@ -821,13 +827,13 @@ const SCOPED_CSS = `
 /* Tile 1 — Emerald (matches the page brand color). */
 .smcg-step[data-n="0"] {
   border-color: rgba(16,185,129,0.20);
-  border-left-color: #10b981;
+  border-left-color: #0d9488;
 }
 .smcg-step[data-n="0"]:hover { box-shadow: 0 8px 22px rgba(16,185,129,0.22), 0 2px 6px rgba(16,185,129,0.14); }
-.smcg-step[data-n="0"] .smcg-step-num  { background: #10b981; box-shadow: 0 3px 8px rgba(16,185,129,0.30); }
-.smcg-step[data-n="0"] .smcg-step-name { color: #047857; }
-.smcg-step[data-n="0"] .smcg-step-tag-dot { background: #10b981; }
-.smcg-step[data-n="0"] .smcg-step-tag { color: #047857; }
+.smcg-step[data-n="0"] .smcg-step-num  { background: linear-gradient(135deg, #14b8a6, #0d9488); box-shadow: 0 3px 8px rgba(13,148,136,0.35); }
+.smcg-step[data-n="0"] .smcg-step-name { color: #0f766e; }
+.smcg-step[data-n="0"] .smcg-step-tag-dot { background: #14b8a6; }
+.smcg-step[data-n="0"] .smcg-step-tag { color: #0f766e; }
 
 /* Tiles 2–4 — unified emerald/teal to match the Figma screenshot
    (the prototype renders every step badge in the same teal, not the
@@ -835,47 +841,46 @@ const SCOPED_CSS = `
    Tile 1 so all four read as one cohesive teal set. */
 .smcg-step[data-n="1"] {
   border-color: rgba(16,185,129,0.20);
-  border-left-color: #10b981;
+  border-left-color: #0d9488;
 }
 .smcg-step[data-n="1"]:hover { box-shadow: 0 8px 22px rgba(16,185,129,0.22), 0 2px 6px rgba(16,185,129,0.14); }
-.smcg-step[data-n="1"] .smcg-step-num  { background: #10b981; box-shadow: 0 3px 8px rgba(16,185,129,0.30); }
-.smcg-step[data-n="1"] .smcg-step-name { color: #047857; }
-.smcg-step[data-n="1"] .smcg-step-tag-dot { background: #10b981; }
-.smcg-step[data-n="1"] .smcg-step-tag { color: #047857; }
+.smcg-step[data-n="1"] .smcg-step-num  { background: linear-gradient(135deg, #14b8a6, #0d9488); box-shadow: 0 3px 8px rgba(13,148,136,0.35); }
+.smcg-step[data-n="1"] .smcg-step-name { color: #0f766e; }
+.smcg-step[data-n="1"] .smcg-step-tag-dot { background: #14b8a6; }
+.smcg-step[data-n="1"] .smcg-step-tag { color: #0f766e; }
 
 .smcg-step[data-n="2"] {
   border-color: rgba(16,185,129,0.20);
-  border-left-color: #10b981;
+  border-left-color: #0d9488;
 }
 .smcg-step[data-n="2"]:hover { box-shadow: 0 8px 22px rgba(16,185,129,0.22), 0 2px 6px rgba(16,185,129,0.14); }
-.smcg-step[data-n="2"] .smcg-step-num  { background: #10b981; box-shadow: 0 3px 8px rgba(16,185,129,0.30); }
-.smcg-step[data-n="2"] .smcg-step-name { color: #047857; }
-.smcg-step[data-n="2"] .smcg-step-tag-dot { background: #10b981; }
-.smcg-step[data-n="2"] .smcg-step-tag { color: #047857; }
+.smcg-step[data-n="2"] .smcg-step-num  { background: linear-gradient(135deg, #14b8a6, #0d9488); box-shadow: 0 3px 8px rgba(13,148,136,0.35); }
+.smcg-step[data-n="2"] .smcg-step-name { color: #0f766e; }
+.smcg-step[data-n="2"] .smcg-step-tag-dot { background: #14b8a6; }
+.smcg-step[data-n="2"] .smcg-step-tag { color: #0f766e; }
 
 .smcg-step[data-n="3"] {
   border-color: rgba(16,185,129,0.20);
-  border-left-color: #10b981;
+  border-left-color: #0d9488;
 }
 .smcg-step[data-n="3"]:hover { box-shadow: 0 8px 22px rgba(16,185,129,0.22), 0 2px 6px rgba(16,185,129,0.14); }
-.smcg-step[data-n="3"] .smcg-step-num  { background: #10b981; box-shadow: 0 3px 8px rgba(16,185,129,0.30); }
-.smcg-step[data-n="3"] .smcg-step-name { color: #047857; }
-.smcg-step[data-n="3"] .smcg-step-tag-dot { background: #10b981; }
-.smcg-step[data-n="3"] .smcg-step-tag { color: #047857; }
+.smcg-step[data-n="3"] .smcg-step-num  { background: linear-gradient(135deg, #14b8a6, #0d9488); box-shadow: 0 3px 8px rgba(13,148,136,0.35); }
+.smcg-step[data-n="3"] .smcg-step-name { color: #0f766e; }
+.smcg-step[data-n="3"] .smcg-step-tag-dot { background: #14b8a6; }
+.smcg-step[data-n="3"] .smcg-step-tag { color: #0f766e; }
 .smcg-step-head { display: flex; align-items: center; gap: 8px; }
 .smcg-step-num {
-  width: 24px; height: 24px; border-radius: 50%;
-  /* Default flat emerald — each per-tile rule above overrides this
-     with its own solid colour. No more two-stop gradients. */
-  background: #10b981;
+  width: 26px; height: 26px; border-radius: 8px;
+  /* Figma stepper — deeper teal-emerald rounded-square badge. */
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
   display: inline-flex; align-items: center; justify-content: center;
   color: #fff; font-size: 12px; font-weight: 700;
   flex-shrink: 0;
-  box-shadow: 0 3px 8px rgba(16,185,129,0.30);
+  box-shadow: 0 3px 8px rgba(13,148,136,0.35);
 }
 .smcg-step-name {
   font-size: 14px; font-weight: 700;
-  color: #047857;
+  color: #0f766e;
   line-height: 1.2;
 }
 .smcg-step-desc {
@@ -886,10 +891,10 @@ const SCOPED_CSS = `
 .smcg-step-tag {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 10.5px; font-weight: 700;
-  color: #047857;
+  color: #0f766e;
   margin-top: 4px;
 }
-.smcg-step-tag-dot { width: 5px; height: 5px; border-radius: 50%; background: #10b981; }
+.smcg-step-tag-dot { width: 5px; height: 5px; border-radius: 50%; background: #14b8a6; }
 .smcg-step-arrow {
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -901,8 +906,9 @@ const SCOPED_CSS = `
 /* ─── Toolbar — search + Add Consignee inside the main card. */
 .smcg-toolbar {
   display: flex; align-items: center; gap: 12px;
-  padding: 14px 18px;
-  background: transparent;
+  padding: 10px 16px;
+  background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 50%, #a7f3d0 100%);
+  border-bottom: 2px solid #6ee7b7;
   flex-wrap: wrap;
   position: relative;
   z-index: 1;
