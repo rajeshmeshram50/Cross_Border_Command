@@ -326,15 +326,12 @@ export default function SalesConsignee() {
         return (
           <div className="d-inline-flex align-items-center gap-1">
             {canEdit && <ActionBtn title="Edit Consignee" icon="ri-pencil-line" color="primary" onClick={() => { setEditing(c); setAddOpen(true); }} />}
-            {/* Labeled "Vault" button (per the reference design) — opens the
-                consignee Evidence Vault. Teal accent on hover. */}
-            <button
-              type="button"
-              aria-label="Evidence Vault"
-              className="btn p-0 d-inline-flex align-items-center justify-content-center gap-1"
-              style={{ height: 30, padding: '0 11px', borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', color: 'var(--vz-secondary-color)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', transition: 'all .15s ease' }}
-              onMouseEnter={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = '#0d9488'; el.style.color = '#0d9488'; }}
-              onMouseLeave={e => { const el = e.currentTarget as HTMLButtonElement; el.style.borderColor = 'var(--vz-border-color)'; el.style.color = 'var(--vz-secondary-color)'; }}
+            {/* Evidence Vault — icon-only action, matching the Customer
+                list's "Customer Evidence Vault" button (ri-file-shield-line). */}
+            <ActionBtn
+              title="Consignee Evidence Vault"
+              icon="ri-file-shield-line"
+              color="info"
               onClick={() => setVaultTarget({
                 id: c.id,
                 db_id: c.db_id,
@@ -346,9 +343,7 @@ export default function SalesConsignee() {
                 contactCity: c.countryDetail,
                 customerId: c.customerId,
               })}
-            >
-              <i className="ri-archive-line fs-14" /> Vault
-            </button>
+            />
             {/* Delete action removed per product request — consignees
                 are kept (soft-delete only via API if ever needed). The
                 handleDelete + DeleteConfirmModal wiring is intentionally
@@ -1522,36 +1517,42 @@ const SCOPED_CSS = `
 /* Compact laptop — 4-col WDH tiles get squeezed past 1280 with
    long titles, drop to 2x2 grid which reads more cleanly. */
 @media (max-width: 1280px) {
-  .smcg-wdh-cards { grid-template-columns: repeat(2, 1fr); }
-  .smcg-wdh-arrow { display: none; }
+  /* WDH step tiles wrap to 2-up; hide the connector arrows (they only
+     read correctly in a single horizontal row). */
+  .smcg-wdh-body .smcg-step { flex: 1 1 calc(50% - 6px); }
+  .smcg-step-arrow { display: none; }
   /* Page padding tightens slightly on narrower laptops so the table
      gets more room before horizontal scroll kicks in. */
   .smcg-root { padding: 12px 14px; }
 }
 @media (max-width: 1024px) {
-  .smcg-wdh-cards { grid-template-columns: repeat(2, 1fr); }
-  .smcg-wdh-arrow { display: none; }
+  .smcg-wdh-body .smcg-step { flex: 1 1 calc(50% - 6px); }
+  .smcg-step-arrow { display: none; }
   /* Tighter spacing on tablet so the table card gets max usable
      width before forcing horizontal scroll. */
   .smcg-cstrip { padding: 14px 16px; }
-  .smcg-wdh, .smcg-tabs-row { padding: 12px 14px; }
+  .smcg-wdh-card { padding: 12px 14px; }
 }
 @media (max-width: 768px) {
+  /* Hero stacks: title block over a full-width Add button. */
   .smcg-cstrip { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px; }
-  .smcg-cstrip-right { width: 100%; }
-  .smcg-add-btn { width: 100%; justify-content: center; }
-  .smcg-title { font-size: 18px; }
-  .smcg-sub   { font-size: 12.5px; }
-  .smcg-wdh-cards { grid-template-columns: 1fr; }
-  .smcg-wdh-header { flex-wrap: wrap; gap: 8px; }
-  .smcg-tabs-row { flex-direction: column; align-items: stretch; gap: 10px; }
-  .smcg-search-wrap { max-width: 100%; }
+  .smcg-cstrip-add { width: 100%; justify-content: center; }
+  .smcg-cstrip-title { font-size: 17px; }
+  .smcg-cstrip-sub   { font-size: 12px; }
+  /* WDH tiles stack full-width. */
+  .smcg-wdh-body .smcg-step { flex: 1 1 100%; }
+  .smcg-wdh-toggle-row { flex-wrap: wrap; gap: 8px; }
+  /* Search toolbar takes the full row. */
+  .smcg-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .smcg-toolbar .smcg-search { min-width: 100%; max-width: 100%; }
 }
 @media (max-width: 480px) {
   .smcg-root { padding: 0; }
-  .smcg-cstrip, .smcg-wdh, .smcg-tabs-row { border-radius: 12px; }
-  .smcg-avatar-wrap, .smcg-back-btn { flex-shrink: 0; }
-  .smcg-wdh-card { padding: 12px; }
+  .smcg-cstrip, .smcg-wdh-card, .smcg-table-card { border-radius: 12px; }
+  .smcg-wdh-body { padding: 12px; }
+  /* Drop the long hero subtitle on tiny screens — title + Add button
+     are what matter at this width. */
+  .smcg-cstrip-sub { display: none; }
   .smcg-shimmer-head, .smcg-shimmer-row {
     grid-template-columns: repeat(12, minmax(64px, 1fr));
     overflow-x: auto;

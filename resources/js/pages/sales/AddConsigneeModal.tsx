@@ -15,6 +15,14 @@ import {
   bustCustomerMasterBundle,
 } from './customerBundleCache';
 
+/* Truncate a long attachment file name so it never spills out of the
+ * ATTACHMENT cell into the ACTIONS column. The full name is shown on
+ * hover via the wrapping Tooltip. Caps at 25 chars + ellipsis. */
+const truncFileName = (s: string | undefined | null, n = 25): string => {
+  const v = String(s ?? '');
+  return v.length > n ? v.slice(0, n) + '…' : v;
+};
+
 /* Stage 3 → Trade Documents → Send for Signature.
  * Same shape used by AddCustomerModal / AddVendorModal so the Zoho
  * Sign send modal accepts any of the three flows interchangeably. */
@@ -296,11 +304,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * individually. The flag itself isn't persisted server-side — it's
    * a UX shortcut for copy-once-and-edit. */
   const [sameAsCustomer, setSameAsCustomer] = useState(false);
-  /* True iff the consignee currently being EDITED was SAVED as
-   * same-as-customer (authoritative — read from the fetched detail, not the
-   * list-row prop which doesn't always carry the flag). Locks the toggle so a
-   * saved mirror can't be unticked from the edit screen. */
-  const [savedAsMirror, setSavedAsMirror] = useState(false);
   /* Inline validation errors for Stage 1 fields. Keyed by form1 field
    * name. Each `goNext` from Stage 1 runs validateStage1() and refuses
    * to advance if any required field is empty/invalid; the error map
@@ -572,7 +575,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setLinkedHidden(true);
     setErrors1({});
     setSameAsCustomer(false);
-    setSavedAsMirror(false);
     setEvSub('dd');
     setLocations([]);
     /* Reset Stage 1 form to empty defaults — CREATE mode only. In edit
@@ -842,8 +844,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         // the consignee flagged as same-as-customer on update.
         if (typeof d.same_as_customer === 'boolean') {
           setSameAsCustomer(d.same_as_customer);
-          // Authoritative saved-mirror flag → locks the toggle on edit.
-          setSavedAsMirror(d.same_as_customer === true);
           // Linked Customer panel stays collapsed by default — the
           // user can click the bar to expand it on demand. (Previous
           // behavior auto-expanded for same-as-customer rows, but
@@ -2157,6 +2157,24 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                  */
                 if (!v) {
                   setErrors1({});
+                  /* Clear the auto-filled preview on untick — but ONLY
+                   * while this consignee hasn't been saved yet (no Save &
+                   * Next done). Before the first save, ticking
+                   * Same-as-Customer is just an autofill preview, so
+                   * unticking should undo it and leave a blank form. Once
+                   * it's been persisted (edit mode, or savedDbId set after
+                   * a Save & Next) the mirrored values are the user's own
+                   * committed data, so we keep them and just unlock the
+                   * fields for editing instead of wiping their work. */
+                  const notYetSaved = !consignee?.db_id && !savedDbId;
+                  if (notYetSaved) {
+                    setForm1({
+                      companyName: '', legalName: '', website: '', segment: [] as string[], classification: '', risk: '',
+                      addressType: 'Registered Office', address: '', country: '', state: '', city: '', pin: '',
+                      contactName: '', designation: '', contactNo: '', email: '', whatsapp: 'Yes',
+                    });
+                    setLocations([]);
+                  }
                 }
               }}
               customer={customer}
@@ -2172,11 +2190,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 (existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
                 !(consignee?.same_as_customer === true)
               }
-              /* Editing a consignee that was SAVED as same-as-customer →
-                 lock the toggle (can't untick) + keep fields read-only.
-                 Uses the authoritative fetched-detail flag (savedAsMirror),
-                 not the list-row prop which may omit same_as_customer. */
-              mirrorLocked={savedAsMirror}
+              /* Never lock the toggle. Even a consignee that was saved as
+                 same-as-customer can be UNTICKED later (e.g. it was ticked
+                 by mistake) — unticking just collapses the linked-customer
+                 detail panel and unlocks the Stage 1 fields for editing.
+                 Re-ticking still respects the "one mirror per customer"
+                 constraint enforced in setSameAsCustomer above. */
+              mirrorLocked={false}
               locations={locations}
               onAddLocation={() => setLocModal({ open: true, editing: null })}
               onEditLocation={(id) => setLocModal({ open: true, editing: id })}
@@ -2825,7 +2845,10 @@ const Stage1 = ({
       {tab === 'identification' && (
         <>
           <SectionHeader icon={<IconHome />} title="Basic Company Details"     sub="Company identity, segment, and risk classification" accent="#10b981" />
-          <div className="acm-grid-2 acm-sec-pad">
+          {/* Figma layout: row 1 = Company Name | Legal Name (2-col),
+              row 2 = Website | Segment | Classification | Risk (4-col). */}
+          <div className="acm-sec-pad">
+            <div className="acm-grid-2">
             <Field label="Company Name" required error={errors.companyName} fieldKey="companyName">
               <input
                 className={`acm-input ${errors.companyName ? 'acm-input-error' : ''}`}
@@ -2839,6 +2862,8 @@ const Stage1 = ({
             <Field label="Consignee Legal Name" required error={errors.legalName} fieldKey="legalName">
               <input className={`acm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} disabled={lock} />
             </Field>
+            </div>
+            <div className="acm-grid-4 acm-mt-12">
             <Field label="Company Website" error={errors.website} fieldKey="website">
               <input className={`acm-input ${errors.website ? 'acm-input-error' : ''}`} placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
             </Field>
@@ -2876,6 +2901,7 @@ const Stage1 = ({
                 onChange={v => set('risk', v)}
               />
             </Field>
+            </div>
           </div>
 
           <SectionHeader icon={<IconPin />} title="Primary Address &amp; Contact Person" sub="Registered office and primary contact at this location" />
@@ -3138,23 +3164,6 @@ const KYC_SUB_META: Record<KycSubTab, { title: string; sub: string; nameCol: str
   'owner-kyc':    { title: 'OWNER KYC DETAILS',     sub: '| Owner identity proofs, address proofs, and photographs', nameCol: 'KYC Document Name', placeholder: 'Search owner name…',          addLabel: 'Add Owner KYC' },
   'trade-licence':{ title: 'TRADE LICENCE',         sub: '| Trade licence documents and regulatory approvals',     nameCol: 'Document Name',       placeholder: 'Search trade licence…',       addLabel: 'Add Trade Licence' },
 };
-
-/* Design-only Trade Licence placeholder list — shown in the Stage 2
- * Trade Licence sub-tab and the Stage 3 Evidence Vault > Trade Licence
- * sub-tab when the consignee has no real TL docs yet. Same data shape
- * as the Customer modal so both wizards feel consistent. The actual
- * docs are stored via the regular kycDocs table (kind='tl'). */
-type TradePlaceholderRow = { code: string; name: string; authority: string; expiry: string; status: 'mandatory' | 'optional' };
-const TL_PLACEHOLDER: TradePlaceholderRow[] = [
-  { code: 'TL-001', name: 'Import Export Code (IEC)',      authority: 'DGFT',                     expiry: '03/2026', status: 'mandatory' },
-  { code: 'TL-002', name: 'RCMC Certificate',              authority: 'Export Promotion Council', expiry: '05/2027', status: 'mandatory' },
-  { code: 'TL-003', name: 'Export Licence',                authority: 'DGFT',                     expiry: '12/2026', status: 'optional'  },
-  { code: 'TL-004', name: 'Drug Licence',                  authority: 'CDSCO',                    expiry: '08/2027', status: 'optional'  },
-  { code: 'TL-005', name: 'FSSAI Licence',                 authority: 'FSSAI',                    expiry: '06/2028', status: 'optional'  },
-  { code: 'TL-006', name: 'GST Registration',              authority: 'GST Department',           expiry: 'N/A',     status: 'mandatory' },
-  { code: 'TL-007', name: 'ISO Certification',             authority: 'Certification Body',       expiry: '11/2027', status: 'optional'  },
-  { code: 'TL-008', name: 'Pollution Control Certificate', authority: 'Pollution Control Board',  expiry: '07/2026', status: 'mandatory' },
-];
 
 /* Per-row actions cell for the segment-rule reference rows. Starts as
  * a single Upload icon; on file pick it flips to View / Download /
@@ -3450,7 +3459,7 @@ const Stage2 = ({
                         </td>
                         <td>
                           {uploaded
-                            ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
+                            ? <Tooltip label={uploaded.name}><a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, whiteSpace:'nowrap' }}>{truncFileName(uploaded.name)}</a></Tooltip>
                             : <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span>}
                         </td>
                         <td>
@@ -3535,21 +3544,17 @@ const Stage2 = ({
                       captured yet AND the user isn't searching. Source
                       per sub-tab:
                         company-dd   → segmentDocs.dd
-                        trade-licence → segmentDocs.tl, with TL_PLACEHOLDER
-                                       as a final fallback so the table
-                                       never reads as empty here.
-                      Once a real upload lands the live row takes over
-                      and the placeholders disappear. */}
+                        trade-licence → segmentDocs.tl
+                      Both come straight from the segment's rule in the
+                      Document Control Panel. When the DCP leaves a
+                      category empty, NOTHING renders here (no dummy
+                      placeholder) — the empty message below takes over.
+                      Once a real upload lands the live row takes over. */}
                   {(() => {
                     if (filteredDocs.length > 0 || q) return null;
                     let segSrc: any[] = [];
                     if (sub === 'company-dd')   segSrc = (segmentDocs.dd || []).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
-                    if (sub === 'trade-licence') {
-                      const tl = segmentDocs.tl || [];
-                      segSrc = tl.length > 0
-                        ? tl.map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }))
-                        : TL_PLACEHOLDER.map(r => ({ code:r.code, name:r.name, authority:r.authority, expiry:r.expiry, isMandatory:r.status === 'mandatory' }));
-                    }
+                    if (sub === 'trade-licence') segSrc = (segmentDocs.tl || []).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
                     return segSrc.map((tl, i) => {
                       const refKey = `${sub}::${tl.code}`;
                       const uploaded = segmentRefUploads[refKey];
@@ -3569,7 +3574,7 @@ const Stage2 = ({
                           </td>
                           <td>
                             {uploaded
-                              ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
+                              ? <Tooltip label={uploaded.name}><a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, whiteSpace:'nowrap' }}>{truncFileName(uploaded.name)}</a></Tooltip>
                               : <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span>}
                           </td>
                           <td>
@@ -3591,7 +3596,9 @@ const Stage2 = ({
                       ? <tr className="acm-loc-empty"><td colSpan={7}>No documents match your search.</td></tr>
                       : (sub === 'company-dd' && (segmentDocs.dd?.length ?? 0) === 0)
                         ? <tr className="acm-loc-empty"><td colSpan={7}>{`No DD documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
-                        : null /* trade-licence + company-dd-with-segment-refs already render rows above */
+                        : (sub === 'trade-licence' && (segmentDocs.tl?.length ?? 0) === 0)
+                          ? <tr className="acm-loc-empty"><td colSpan={7}>No trade licence documents configured for this segment in the Document Control Panel.</td></tr>
+                          : null /* company-dd-with-segment-refs already render rows above */
                   )}
                   {filteredDocs.map((d, i) => {
                     const sr = i + 1;
@@ -4008,9 +4015,11 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                             </td>
                             <td>
                               {uploaded ? (
-                                <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, textDecoration:'underline' }}>
-                                  {uploaded.name}
-                                </a>
+                                <Tooltip label={uploaded.name}>
+                                  <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, textDecoration:'underline', whiteSpace:'nowrap' }}>
+                                    {truncFileName(uploaded.name)}
+                                  </a>
+                                </Tooltip>
                               ) : (
                                 <span style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: 11 }}>Not uploaded in Stage 2</span>
                               )}
@@ -5858,17 +5867,16 @@ const SCOPED_CSS = `
 
 /* ─── Phase B — Wizard ─── */
 .acm-wiz {
-  /* Cap at 1224 (≈85% of the prior 1440 cap, matches what the form
-     looked like at 85% browser zoom rendered at 100%). */
-  width: 100%; max-width: 1224px;
+  /* Wider + shorter footprint: cap width at 1440 so the 2-col / 4-col
+     field rows get more horizontal room, and trim the locked height so
+     the modal reads as a wide panel rather than a tall one. */
+  width: 100%; max-width: 1440px;
   /* Locked height so all three stages occupy the same viewport
      footprint — switching between Stage 1 (lots of fields), Stage 2
      (single row table), and Stage 3 no longer makes the modal grow
-     or shrink. min() caps at 900px so 4K / tall monitors don't end
-     up with an oversized modal, while shorter laptops still get a
-     near-fullscreen workspace. Body scrolls internally; header +
-     footer stay anchored. */
-  height: min(900px, calc(100vh - 24px));
+     or shrink. min() caps the height so tall monitors don't get an
+     oversized modal; body scrolls internally, header + footer anchored. */
+  height: min(800px, calc(100vh - 24px));
   background: #f0fdf4; border-radius: 16px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0,0,0,.40);
   display: flex; flex-direction: column;
@@ -7417,7 +7425,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 @media (max-width: 1440px) {
   .acm-overlay { padding: 10px; }
   .acm-wiz {
-    max-width: min(1224px, calc(100vw - 20px));
+    max-width: min(1440px, calc(100vw - 20px));
     max-height: min(94vh, calc(100vh - 16px));
   }
   .acm-pick {

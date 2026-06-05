@@ -14,6 +14,14 @@ import {
   bustCustomerMasterBundle,
 } from './customerBundleCache';
 
+/* Truncate a long attachment file name so it never spills out of the
+ * ATTACHMENT cell into the ACTIONS column. The full name shows on hover
+ * via the wrapping Tooltip. Caps at 25 chars + ellipsis. */
+const truncFileName = (s: string | undefined | null, n = 25): string => {
+  const v = String(s ?? '');
+  return v.length > n ? v.slice(0, n) + '…' : v;
+};
+
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Customer — 3-stage modal
  *
@@ -2718,10 +2726,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
     }));
     if (sub === 'company-dd')   return norm(segmentDocs.dd || []);
     if (sub === 'owner-kyc')    return norm(segmentDocs.kyc || []);
-    if (sub === 'trade-licence') {
-      const tl = segmentDocs.tl || [];
-      return tl.length > 0 ? norm(tl) : TL_DOCS;
-    }
+    if (sub === 'trade-licence') return norm(segmentDocs.tl || []);
     return [];
   }, [sub, segmentDocs]);
   const filteredTradeLegacy = useMemo(() => {
@@ -2740,7 +2745,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
    * customer_documents (kind='tl') but were hidden behind the static
    * segmentRef reference rows. */
   const showSegmentRef =
-       (isTradeLegacy            && filteredDocs.length === 0)
+       (isTradeLegacy            && filteredDocs.length === 0 && (segmentDocs.tl?.length ?? 0) > 0)
     || (sub === 'company-dd'     && filteredDocs.length === 0 && (segmentDocs.dd?.length ?? 0) > 0)
     || (sub === 'owner-kyc'      && owners.length === 0       && (segmentDocs.kyc?.length ?? 0) > 0);
 
@@ -3024,10 +3029,10 @@ function Stage3KycDocs({ sub, setSub, segmentDocs, segmentRefUploads }: {
                       </td>
                       <td>
                         {uploaded ? (
-                          <Tooltip label={`Open ${uploaded.name}`}>
-                            <a href={uploaded.url} target="_blank" rel="noreferrer" className="acm-attach-link" aria-label="View attachment">
+                          <Tooltip label={uploaded.name}>
+                            <a href={uploaded.url} target="_blank" rel="noreferrer" className="acm-attach-link" aria-label="View attachment" style={{ whiteSpace: 'nowrap' }}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                              {uploaded.name}
+                              {truncFileName(uploaded.name)}
                             </a>
                           </Tooltip>
                         ) : (
