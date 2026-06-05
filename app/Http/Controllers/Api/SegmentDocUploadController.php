@@ -178,6 +178,51 @@ class SegmentDocUploadController extends Controller
     }
 
     /**
+     * GET /api/segment-uploads/download?url=<attachment_url>  (or ?path=<disk path>)
+     *
+     * Force-download a stored attachment THROUGH the backend. On the deployed
+     * server files live on Azure Blob (cross-origin, no CORS), so the browser
+     * can't fetch them client-side to force a save — it just opens them. This
+     * endpoint reads the file from the storage disk (Azure or local) and streams
+     * it back same-origin with a `Content-Disposition: attachment` header, so
+     * the download works everywhere. Tenant-scoped: the path must belong to a
+     * segment_doc_uploads row the caller's client owns.
+     */
+    public function download(Request $request)
+    {
+        $user = $request->user();
+
+        // Resolve the disk-relative path. Accept either an explicit ?path= or a
+        // full ?url= (we slice out the segment_doc_uploads/... suffix).
+        $path = ltrim((string) $request->query('path', ''), '/');
+        if ($path === '') {
+            $url = (string) $request->query('url', '');
+            if ($url !== '' && preg_match('#(segment_doc_uploads/.+)$#i', $url, $m)) {
+                $path = urldecode($m[1]);
+            }
+        }
+        // Hard guard against traversal / arbitrary reads — only our upload tree.
+        if ($path === '' || str_contains($path, '..') || ! str_starts_with($path, 'segment_doc_uploads/')) {
+            abort(404, 'File not found.');
+        }
+
+        $row = SegmentDocUpload::where('attachment_path', $path)->first();
+        if (! $row) {
+            abort(404, 'File not found.');
+        }
+        // Tenant scope — non-super users can only pull their own client's files.
+        if ($user && ! $user->isSuperAdmin() && $row->client_id && (int) $row->client_id !== (int) $user->client_id) {
+            abort(403, 'You are not allowed to download this file.');
+        }
+        if (! Storage::disk('public')->exists($path)) {
+            abort(404, 'File is missing on storage.');
+        }
+
+        $name = $row->attachment_name ?: basename($path);
+        return Storage::disk('public')->download($path, $name);
+    }
+
+    /**
      * GET /api/segment-uploads/{type}/{id}/vault
      *
      * Compose the Evidence Vault payload. Combines three sources:
