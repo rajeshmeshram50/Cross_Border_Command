@@ -8,6 +8,7 @@ import { MasterSelect } from '../../components/ui/MasterSelect';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import SalesDocSendForSignatureModal from './matrix/stages/SalesDocSendForSignatureModal';
+import ConvertToPiModal, { ConversionBlockedModal } from './ConvertToPiModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Quotations V/S Proforma Invoice (QPI)
@@ -637,6 +638,13 @@ export default function SalesQPI() {
   const switchPiSub = (next: PISubTab) => { setPiSub(next); setQ(''); };
 
   const [convertingId, setConvertingId] = useState<number | null>(null);
+  // Convert-to-PI confirmation popup: the quotation pending conversion and
+  // the previewed next PI code shown inside the dialog.
+  const [convertTarget, setConvertTarget] = useState<Quotation | null>(null);
+  const [convertPreviewCode, setConvertPreviewCode] = useState<string | null>(null);
+  // Conversion-blocked popup: shown when the lead already has a PI. Holds
+  // the quotation they tried to convert + the existing PI that blocks it.
+  const [convertBlocked, setConvertBlocked] = useState<{ fromQt: string; pi: PI } | null>(null);
 
   /* ── Send-for-Signature (Zoho Sign) — same flow as Sales Matrix Stage 5.
    * `sigSendFor` opens the modal for one row; `sigByRow` holds the live
@@ -797,7 +805,11 @@ export default function SalesQPI() {
   // The backend enforces "one PI per opportunity" — we also pre-check
   // against the in-memory PI list so the user gets instant feedback
   // when the rule blocks them instead of a network round-trip.
-  const onConvertToPi = async (qt: Quotation) => {
+  /* Convert-to-PI now goes through a confirmation popup (ConvertToPiModal)
+   * instead of firing immediately. openConvert() runs the same guards and,
+   * if they pass, opens the dialog and best-effort fetches the next PI code
+   * to preview; confirmConvert() does the actual POST on "Yes, Convert". */
+  const openConvert = (qt: Quotation) => {
     if (!qt.id) {
       toast.error('Cannot convert', 'This quotation has no server id yet.');
       return;
@@ -809,17 +821,27 @@ export default function SalesQPI() {
       toast.info('Already converted', `${qt.qtNo} has already been converted to a PI.`);
       return;
     }
-    // Pre-check: any non-cancelled PI for the same opportunity?
+    // Pre-check: any non-cancelled PI for the same opportunity? If so, the
+    // one-PI-per-lead rule blocks conversion — show the blocker popup that
+    // points the user at editing the existing PI (not deleting it).
     if (qt.oppId) {
       const blocker = pis.find(p => p.oppId === qt.oppId);
       if (blocker) {
-        toast.error(
-          'PI already exists',
-          `Opportunity ${qt.oppId} already has ${blocker.piNo}. Only one PI is allowed per opportunity.`
-        );
+        setConvertBlocked({ fromQt: qt.qtNo, pi: blocker });
         return;
       }
     }
+    setConvertTarget(qt);
+    setConvertPreviewCode(null);
+    // Best-effort preview of the next PI number (never consumes a number).
+    api.get('/sales/proforma-invoices/preview-code')
+      .then(({ data }) => setConvertPreviewCode(data?.data?.code ?? null))
+      .catch(() => setConvertPreviewCode(null));
+  };
+
+  const confirmConvert = async () => {
+    const qt = convertTarget;
+    if (!qt || !qt.id) return;
     setConvertingId(qt.id);
     try {
       const { data } = await api.post(`/sales/proforma-invoices/from-quotation/${qt.id}`);
@@ -829,6 +851,7 @@ export default function SalesQPI() {
       // PI table gets the new row.
       reloadQuotations();
       reloadPis();
+      setConvertTarget(null);
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? 'Could not convert this quotation.';
       toast.error('Convert failed', String(msg));
@@ -1022,7 +1045,7 @@ export default function SalesQPI() {
                   type="button"
                   className="qpi-convert-btn"
                   disabled={readOnly || convertingId === r.id}
-                  onClick={() => onConvertToPi(r)}
+                  onClick={() => openConvert(r)}
                 >
                   <IconRepeatSm />
                   <span className="qpi-convert-btn-label">
@@ -1051,10 +1074,12 @@ export default function SalesQPI() {
               disabled={readOnly || !!r.emailedAt || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
             />
-            {/* Reminder button — opposite of Email: disabled until the
-                initial email has gone out, then enabled with a small
-                count badge showing how many reminders have already
-                been sent. Read-only rows always disabled. */}
+            {/* Reminder button — REMOVED for the email flow. The only
+                reminder on this page is the Zoho Sign signing reminder,
+                rendered inside renderSignAction() above. Code kept under
+                {false && ...} so the email-follow-up reminder can be
+                restored later without re-deriving the state wiring. */}
+            {false && (
             <ActionBtn
               title={
                 readOnly
@@ -1071,6 +1096,7 @@ export default function SalesQPI() {
               badge={r.reminderCount ?? 0}
               onClick={() => r.id && sendReminder('quotation', r.id, r.qtNo)}
             />
+            )}
             <ActionBtn
               title={readOnly ? readOnlyHint : 'Edit Quotation'}
               icon={<IconEdit />}
@@ -1445,6 +1471,29 @@ export default function SalesQPI() {
           loading={deleting}
           onClose={() => { if (!deleting) setDeleteTarget(null); }}
           onConfirm={onConfirmDelete}
+        />
+
+        {/* Convert-to-PI confirmation popup. */}
+        <ConvertToPiModal
+          open={!!convertTarget}
+          fromQuotation={convertTarget?.qtNo ?? ''}
+          newPiCode={convertPreviewCode}
+          piDate={new Date().toLocaleDateString('en-GB')}
+          quotationValue={`${convertTarget?.currency || '$'} —`}
+          converting={!!convertTarget?.id && convertingId === convertTarget.id}
+          onCancel={() => { if (!convertingId) setConvertTarget(null); }}
+          onConfirm={() => void confirmConvert()}
+        />
+
+        {/* Conversion blocked — lead already has a PI. */}
+        <ConversionBlockedModal
+          open={!!convertBlocked}
+          fromQuotation={convertBlocked?.fromQt ?? ''}
+          existingPiCode={convertBlocked?.pi.piNo ?? ''}
+          existingPiDate={convertBlocked?.pi.piDate ?? null}
+          existingPiFromQuotation={convertBlocked?.pi.convertFrom ?? null}
+          onClose={() => setConvertBlocked(null)}
+          onViewExistingPi={() => { setConvertBlocked(null); switchTab('pi'); }}
         />
       </div>
 

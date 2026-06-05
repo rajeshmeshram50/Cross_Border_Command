@@ -7,6 +7,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import SalesDocSendForSignatureModal from './SalesDocSendForSignatureModal';
+import ConvertToPiModal, { ConversionBlockedModal } from '../../ConvertToPiModal';
 import {
   CreateQuotationModal,
   CreatePIModal,
@@ -105,6 +106,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   const [quotations, setQuotations] = useState<QuotationRow[]>([]);
   const [pis, setPis]           = useState<PIRow[]>([]);
   const [actingId, setActingId] = useState<number | null>(null);
+  // Convert-to-PI confirmation popup state (target row + previewed PI code).
+  const [convertTarget, setConvertTarget] = useState<QuotationRow | null>(null);
+  const [convertPreviewCode, setConvertPreviewCode] = useState<string | null>(null);
+  // Conversion-blocked popup (lead already has a PI): the quotation tried
+  // + the existing PI row that blocks it.
+  const [convertBlocked, setConvertBlocked] = useState<{ fromQt: string; pi: PIRow } | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
@@ -261,8 +268,28 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     }
   };
 
-  const onConvertToPi = async (q: QuotationRow) => {
+  /* Convert-to-PI confirmation popup — opens ConvertToPiModal first and
+   * only fires the conversion on confirm (mirrors the standalone SalesQPI
+   * page so the action behaves identically inside and outside the matrix). */
+  const openConvert = (q: QuotationRow) => {
     if (!q.id) return;
+    // One PI per lead — if a live PI already exists, block conversion and
+    // point the user at editing the existing PI (not deleting it).
+    const blocker = pis.find(p => (p.status ?? '').toLowerCase() !== 'cancelled');
+    if (blocker) {
+      setConvertBlocked({ fromQt: q.code ?? '', pi: blocker });
+      return;
+    }
+    setConvertTarget(q);
+    setConvertPreviewCode(null);
+    api.get('/sales/proforma-invoices/preview-code')
+      .then(({ data }) => setConvertPreviewCode(data?.data?.code ?? null))
+      .catch(() => setConvertPreviewCode(null));
+  };
+
+  const confirmConvert = async () => {
+    const q = convertTarget;
+    if (!q || !q.id) return;
     setActingId(q.id);
     try {
       const { data } = await api.post<{ status: boolean; data?: { code?: string } }>(
@@ -273,6 +300,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       setDocType('pi');
       toast.success('Converted to PI', `New proforma invoice ${code} created from ${q.code ?? 'this quotation'}.`);
       onPiChange?.();
+      setConvertTarget(null);
     } catch (e: any) {
       toast.error('Conversion blocked', e?.response?.data?.message ?? 'Could not convert this quotation to a PI.');
     } finally {
@@ -598,7 +626,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             ) : (
                               <button
                                 type="button" className="s5-convert2" title="Convert to PI"
-                                onClick={() => void onConvertToPi(r as QuotationRow)}
+                                onClick={() => openConvert(r as QuotationRow)}
                                 disabled={anyActing}
                               >
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -780,6 +808,33 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           onSent={() => { void fetchSignatures(true); }}
         />
       )}
+
+      {/* Convert-to-PI confirmation popup. */}
+      <ConvertToPiModal
+        open={!!convertTarget}
+        fromQuotation={convertTarget?.code ?? ''}
+        newPiCode={convertPreviewCode}
+        piDate={new Date().toLocaleDateString('en-GB')}
+        quotationValue={`${convertTarget?.currency || '$'} —`}
+        converting={!!convertTarget?.id && actingId === convertTarget.id}
+        onCancel={() => { if (actingId === null) setConvertTarget(null); }}
+        onConfirm={() => void confirmConvert()}
+      />
+
+      {/* Conversion blocked — lead already has a PI. */}
+      <ConversionBlockedModal
+        open={!!convertBlocked}
+        fromQuotation={convertBlocked?.fromQt ?? ''}
+        existingPiCode={convertBlocked?.pi.code ?? ''}
+        existingPiDate={convertBlocked ? fmtDate(convertBlocked.pi.created_at) : null}
+        existingPiFromQuotation={
+          convertBlocked?.pi.source_quotation_id != null
+            ? (quotationCodeById.get(convertBlocked.pi.source_quotation_id) ?? null)
+            : null
+        }
+        onClose={() => setConvertBlocked(null)}
+        onViewExistingPi={() => { setConvertBlocked(null); setDocType('pi'); }}
+      />
     </>
   );
 }
