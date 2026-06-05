@@ -178,11 +178,23 @@ class ConsigneeController extends Controller
         $row = DB::transaction(function () use ($data, $user, $clientId, $branchId) {
             $primary = $data['primary_address'];
 
+            // Allocate the CN-### code PER CLIENT, not from the global
+            // autoincrement id. The id-based code leaked the cross-tenant
+            // sequence into each client's list (gaps like CN-009 → CN-060).
+            // Serialised under a row lock on the owning client — same
+            // pattern QuotationController uses for QT/PI codes — so two
+            // concurrent inserts can't collide on the same number.
+            if ($clientId !== null) {
+                DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
+            }
+            $code = $this->nextConsigneeCode($clientId);
+
             $consignee = Consignee::create([
                 'client_id'      => $clientId,
                 'branch_id'      => $branchId,
                 'created_by'       => optional($user)->id,
                 'customer_id'      => (int) $data['customer_id'],
+                'consignee_code'   => $code,
                 'company_name'     => $data['company_name'],
                 'legal_name'       => $data['legal_name']     ?? null,
                 'segment'          => $data['segment']        ?? null,
@@ -193,11 +205,6 @@ class ConsigneeController extends Controller
                 'status'           => $data['status']         ?? 'Active',
                 'same_as_customer' => (bool) ($data['same_as_customer'] ?? false),
             ]);
-
-            // Display id — CN-### grows from 001 → 1234 naturally with
-            // the row count, no separate sequence table.
-            $consignee->consignee_code = 'CN-' . str_pad((string) $consignee->id, 3, '0', STR_PAD_LEFT);
-            $consignee->save();
 
             ConsigneeAddress::create(array_merge($primary, [
                 'consignee_id' => $consignee->id,
@@ -694,5 +701,35 @@ class ConsigneeController extends Controller
         $clientId = $user->client_id ?? ($user->branch?->client_id);
         $branchId = $user->branch_id;
         return [$clientId, $branchId];
+    }
+
+    /**
+     * Next per-client consignee code (CN-001, CN-002 …).
+     *
+     * Sequential WITHIN a tenant, not global — so each client gets a
+     * clean gap-free list. The caller holds a lockForUpdate on the owning
+     * `clients` row (super_admin null bucket excepted) to serialise
+     * concurrent allocations. Scans `withTrashed` so a soft-deleted
+     * consignee's number is never reused.
+     */
+    private function nextConsigneeCode($clientId): string
+    {
+        $codes = Consignee::withTrashed()
+            ->when(
+                $clientId === null,
+                fn ($q) => $q->whereNull('client_id'),
+                fn ($q) => $q->where('client_id', $clientId)
+            )
+            ->pluck('consignee_code');
+
+        $max = 0;
+        foreach ($codes as $c) {
+            if (preg_match('/^CN-0*(\d+)$/', (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $max) $max = $n;
+            }
+        }
+
+        return 'CN-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 }
