@@ -375,6 +375,11 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
      * | supplier) and {id} is the owning record's primary key. Returns
      * uploaded-doc rows grouped by category so the Evidence Vault can
      * render its KPI cards + per-tab tables off one fetch. */
+    /* Force-download a stored attachment through the backend (streams the file
+     * with Content-Disposition: attachment). Needed because prod files live on
+     * Azure Blob — cross-origin, so the browser can't force-save them directly.
+     * Registered BEFORE the {type}/{id} routes so "download" isn't read as a type. */
+    Route::get   ('/segment-uploads/download',                     [SegmentDocUploadController::class, 'download']);
     Route::get   ('/segment-uploads/{type}/{id}/summary',          [SegmentDocUploadController::class, 'summary'])->whereNumber('id');
     /* Evidence Vault — single fetch that returns the buckets + KPI
      * counts for the standalone Customer/Consignee/Supplier Vault

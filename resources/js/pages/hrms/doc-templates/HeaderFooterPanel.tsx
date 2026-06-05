@@ -80,6 +80,12 @@ export const DEFAULT_FOOTER: FooterConfig = {
 export const HEADER_HEIGHT = 90;
 export const FOOTER_HEIGHT = 50;
 
+// Max characters for the single-line footer text. The footer band is a fixed
+// 50px-high, 3-column strip; without a cap a long paste runs off the edge (and
+// would overflow the same way in the exported DOCX footer). 120 comfortably
+// fits a "Company Name Pvt. Ltd. | Confidential" style line.
+export const FOOTER_TEXT_MAX = 120;
+
 // ── Component ────────────────────────────────────────────────────────────────
 /**
  * Page-style preview: fixed-height header on top, fixed-height footer at the
@@ -245,7 +251,14 @@ export default function HeaderFooterPanel({
               ...draggableItemStyle(titlePos),
               cursor: readOnly ? 'default' : 'text',
               textAlign: (header.align === 'left' || header.align === 'center' || header.align === 'right') ? header.align : 'right',
-              maxWidth: '60%',
+              // Block is center-anchored at titlePos, so its half-width can't
+              // exceed the distance to the nearest edge or it spills out of the
+              // (overflow:hidden) header. Cap maxWidth = 2 × that gap, ceiling
+              // 60%. Long unbreakable strings then wrap instead of clipping off
+              // the right edge.
+              maxWidth: `${Math.min(60, 2 * Math.min(titlePos.x, 100 - titlePos.x))}%`,
+              boxSizing: 'border-box',
+              overflowWrap: 'anywhere',
             }}
             title={readOnly ? '' : 'Click to edit, or drag the handle to reposition'}
           >
@@ -508,8 +521,14 @@ function FooterEditor({
       <PopoverHeader title="Footer Settings" onClose={onClose} />
       <div className="row g-3" style={{ padding: 14 }}>
         <div className="col-md-8">
-          <label className="tpl-popover-label" style={labelStyle}>Footer Text</label>
-          <input type="text" value={footer.text} onChange={e => setFooter({ ...footer, text: e.target.value })}
+          <div className="d-flex align-items-center justify-content-between mb-1">
+            <label className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 0 }}>Footer Text</label>
+            <span className="tpl-popover-hint" style={{ fontSize: 11, color: (footer.text || '').length >= FOOTER_TEXT_MAX ? '#b45309' : '#9ca3af', fontWeight: 700 }}>
+              {(footer.text || '').length}/{FOOTER_TEXT_MAX}
+            </span>
+          </div>
+          <input type="text" value={footer.text} maxLength={FOOTER_TEXT_MAX}
+            onChange={e => setFooter({ ...footer, text: e.target.value.slice(0, FOOTER_TEXT_MAX) })}
             placeholder="e.g. Company Name Pvt. Ltd. | Confidential" className="tpl-popover-input" style={inputStyle} />
         </div>
         <div className="col-md-4">

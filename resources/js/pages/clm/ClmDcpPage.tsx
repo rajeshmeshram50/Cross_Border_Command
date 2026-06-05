@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterMultiSelect } from '../master/masterFormKit';
 
 /* Central CLM → Document Control Panel.
  *
@@ -316,6 +317,7 @@ function SegmentRuleModal(props: {
   onBulkSave?: (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => void;
 }) {
   const { existing, existingRules, boot, onClose, onSave, onBulkSave } = props;
+  const toast = useToast();
   const [stage, setStage]     = useState<1 | 2>(1);
   const [reg, setReg]         = useState<'highly'|'less'|null>(existing?.regulatory_status ?? null);
   /* Multi-select segment codes. Always an array internally; in edit mode
@@ -359,15 +361,12 @@ function SegmentRuleModal(props: {
   const segments = useMemo(() => reg ? boot.segments.filter(s => s.regulatory_status === reg) : [], [reg, boot.segments]);
   const selSeg   = useMemo(() => segCodes.length === 1 ? (boot.segments.find(s => s.code === segCodes[0]) ?? null) : null, [segCodes, boot.segments]);
 
-  const toggleSegCode = (code: string, on: boolean) => {
-    setSegCodes(prev => on ? Array.from(new Set([...prev, code])) : prev.filter(c => c !== code));
-  };
   const selectAllSegments = () => setSegCodes(segments.map(s => s.code));
   const clearAllSegments  = () => setSegCodes([]);
 
   const goStage2 = () => {
-    if (!reg)              { alert('Please select a Regulatory Status to continue.'); return; }
-    if (segCodes.length === 0) { alert(isMulti ? 'Pick at least one segment to continue.' : 'Please select a Segment to continue.'); return; }
+    if (!reg)              { toast.error('Regulatory status required', 'Please select a Regulatory Status to continue.'); return; }
+    if (segCodes.length === 0) { toast.error('Segment required', isMulti ? 'Pick at least one segment to continue.' : 'Please select a Segment to continue.'); return; }
     setStage(2);
   };
 
@@ -501,20 +500,18 @@ function SegmentRuleModal(props: {
                           No less-regulated segments configured yet. Add them in <em>CLM → Segment Master</em> first.
                         </div>
                       ) : (
-                        <div className="dcp-multi-seg-list" style={{ maxHeight: 168, overflowY: 'auto', background: '#fff', border: '1px solid rgba(22,163,74,.18)', borderRadius: 8, padding: 4 }}>
-                          {segments.map(s => {
-                            const checked = segCodes.includes(s.code);
-                            const has = existingRules.some(r => r.segment_code === s.code);
-                            return (
-                              <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 9px', borderRadius: 6, cursor: 'pointer', background: checked ? 'rgba(22,163,74,.07)' : 'transparent', border: `1px solid ${checked ? 'rgba(22,163,74,.22)' : 'transparent'}`, marginBottom: 2 }}>
-                                <input type="checkbox" checked={checked} onChange={e => toggleSegCode(s.code, e.target.checked)} style={{ accentColor: '#16a34a', width: 14, height: 14 }} />
-                                <span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 10.5, fontWeight: 700, color: '#0c4a6e', minWidth: 48 }}>{s.code}</span>
-                                <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: '#1e293b' }}>{s.name}</span>
-                                {has && <span style={{ fontSize: 8.5, fontWeight: 800, color: '#92400e', background: 'rgba(217,119,6,.12)', border: '1px solid rgba(217,119,6,.28)', padding: '1px 6px', borderRadius: 4 }}>HAS RULE</span>}
-                              </label>
-                            );
-                          })}
-                        </div>
+                        // Multi-select dropdown (mirrors the Agreement form's
+                        // less-regulatory segment picker). Segments that already
+                        // have a rule are flagged "• has rule" in the option label.
+                        <MasterMultiSelect
+                          value={segCodes}
+                          placeholder="— Select Segments —"
+                          options={segments.map(s => ({
+                            value: s.code,
+                            label: `${s.name} (${s.code})${existingRules.some(r => r.segment_code === s.code) ? ' • has rule' : ''}`,
+                          }))}
+                          onChange={(vs) => setSegCodes(vs)}
+                        />
                       )
                     ) : (
                       <MasterSelect
@@ -527,7 +524,7 @@ function SegmentRuleModal(props: {
                     )}
 
                     {!existing && matchedRules.length > 0 && (
-                      <div style={{ marginTop: 9, display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 11px', background: 'linear-gradient(110deg, rgba(251,191,36,.10), rgba(254,243,199,.55))', border: '1.5px solid rgba(217,119,6,.32)', borderRadius: 9 }}>
+                      <div className="dcp-rule-warn" style={{ marginTop: 9, display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 11px', background: 'linear-gradient(110deg, rgba(251,191,36,.10), rgba(254,243,199,.55))', border: '1.5px solid rgba(217,119,6,.32)', borderRadius: 9 }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.2" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                         <div style={{ fontSize: 11, color: '#92400e', lineHeight: 1.45 }}>
                           {isMulti

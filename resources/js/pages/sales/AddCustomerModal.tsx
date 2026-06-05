@@ -4,6 +4,7 @@ import { MasterSelect, MasterDatePicker, MasterMultiSelect } from '../master/mas
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
+import { downloadFile } from '../../utils/downloadFile';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { useToast } from '../../contexts/ToastContext';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
@@ -12,6 +13,14 @@ import {
   writeCustomerMasterBundle,
   bustCustomerMasterBundle,
 } from './customerBundleCache';
+
+/* Truncate a long attachment file name so it never spills out of the
+ * ATTACHMENT cell into the ACTIONS column. The full name shows on hover
+ * via the wrapping Tooltip. Caps at 25 chars + ellipsis. */
+const truncFileName = (s: string | undefined | null, n = 25): string => {
+  const v = String(s ?? '');
+  return v.length > n ? v.slice(0, n) + '…' : v;
+};
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Customer — 3-stage modal
@@ -146,9 +155,10 @@ const TL_DOCS: KycDocRow[] = [
  * to "All files" and select a .php / .exe / .zip anyway. We re-check
  * the chosen file's extension + size here and reject + alert if it
  * doesn't match. The server enforces the same list
- * (mimes:jpg,jpeg,png,pdf,doc,docx) so a manipulated request can't
- * slip through either. */
-const ALLOWED_DOC_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
+ * (mimes:jpg,jpeg,png,pdf) so a manipulated request can't slip through
+ * either. Word / Excel are NOT accepted — browsers can't preview them
+ * (they download), which broke the View flow. */
+const ALLOWED_DOC_EXTS = ['pdf', 'jpg', 'jpeg', 'png'];
 const ALLOWED_PHOTO_EXTS = ['jpg', 'jpeg', 'png'];
 const MAX_UPLOAD_MB = 2;
 type FileKind = 'doc' | 'photo';
@@ -943,8 +953,16 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
      *
      * NOTE: we deliberately do NOT clear segmentDocs when stage<2 — if
      * the user navigates Stage 2 → Stage 1, the previously-loaded docs
-     * stay cached and are immediately usable when they go back. */
-    if (stage < 2) return;
+     * stay cached and are immediately usable when they go back.
+     *
+     * We ALSO load when maxStage>=2 even while sitting on Stage 1: in
+     * edit mode the modal restores maxStage (e.g. 3) so the stepper
+     * renders Stages 2 & 3 as "visited". Without the docs loaded their
+     * real completeness can't be computed and they'd falsely paint green.
+     * Loading here keeps the stepper's done/incomplete state honest. A
+     * fresh "Add" (maxStage=1) still skips the fetch — Stages 2 & 3 are
+     * pending/gray there, so their completeness is never read. */
+    if (stage < 2 && maxStage < 2) return;
 
     const names = (form.coSeg ?? []).filter(Boolean);
     if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setTdDocs([]); return; }
@@ -1017,7 +1035,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, stage, form.coSeg, masters.segments]);
+  }, [open, stage, maxStage, form.coSeg, masters.segments]);
 
   // Inject DM Sans/Inter once
   useEffect(() => {
@@ -1201,6 +1219,41 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return false;
   };
+
+  /* ── Real per-stage completeness for the stepper ──────────────────
+   * The stepper used to paint a stage GREEN purely because it had been
+   * VISITED (s.n <= maxStage). That misled users: walk forward to
+   * Stage 3 and back, and Stages 2/3 read as "done ✓" even with nothing
+   * uploaded. Here we compute genuine completeness so the stepper can
+   * show an amber "incomplete" state for a visited-but-empty stage.
+   *
+   *   Stage 1 — every required identity field is valid.
+   *   Stage 2 & 3 — share ONE segment-rule upload set (dd/kyc/tl). A
+   *     stage is complete when every MANDATORY doc is uploaded; when the
+   *     rule carries only OPTIONAL docs, it counts as complete once at
+   *     least one is uploaded (so an all-optional, nothing-uploaded
+   *     stage stays amber instead of falsely green). A segment with no
+   *     rule docs at all has nothing to satisfy → complete. */
+  const stageComplete: [boolean, boolean, boolean] = (() => {
+    const s1 = STAGE1_FIELD_KEYS.every(k => !stage1FieldRule(k, form));
+
+    const subFor = (cat: 'dd' | 'kyc' | 'tl') =>
+      cat === 'dd' ? 'company-dd' : cat === 'kyc' ? 'owner-kyc' : 'trade-licence';
+    let mandTotal = 0, mandDone = 0, anyDoc = false, anyUpload = false;
+    (['dd', 'kyc', 'tl'] as const).forEach(cat => {
+      ((segmentDocs as any)[cat] || []).forEach((d: any) => {
+        anyDoc = true;
+        const up = !!segmentRefUploads[`${subFor(cat)}::${d.code}`];
+        if (up) anyUpload = true;
+        if (d.requirement === 'M') { mandTotal++; if (up) mandDone++; }
+      });
+    });
+    const docsComplete = !anyDoc
+      ? true
+      : mandTotal > 0 ? mandDone === mandTotal : anyUpload;
+
+    return [s1, docsComplete, docsComplete];
+  })();
 
   /* Per-keystroke validator passed down to Stage1Identification. Runs
    * the single-field rule against the post-change form and updates the
@@ -1570,7 +1623,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             stepper above an empty body. */}
         {showShimmer
           ? <StepperShimmer />
-          : <Stepper stage={stage} maxStage={maxStage} onGoto={gotoStage} />}
+          : <Stepper stage={stage} maxStage={maxStage} onGoto={gotoStage} complete={stageComplete} />}
 
         {/* HISTORY PANEL */}
         {stage > 1 && (
@@ -2033,7 +2086,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 }
 
 /* ───── Stepper ───── */
-function Stepper({ stage, maxStage, onGoto }: { stage: Stage; maxStage: Stage; onGoto: (s: Stage) => void }) {
+function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage: Stage; onGoto: (s: Stage) => void; complete: [boolean, boolean, boolean] }) {
   const steps = [
     { n:1 as Stage, title:'Customer Legal Identity', sub:'Company, GST, PAN & contact',
       icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
@@ -2051,13 +2104,20 @@ function Stepper({ stage, maxStage, onGoto }: { stage: Stage; maxStage: Stage; o
         /* Reachability is driven by `maxStage` so a user who reached
          * Stage 2 (or 3) and then navigated back to Stage 1 still sees
          * the later stage as visited+clickable, not as a locked
-         * pending step. Three visual states:
+         * pending step. Four visual states:
          *   active     — current stage (purple)
-         *   done       — visited (s.n <= maxStage) but not current (green ✓)
-         *   pending    — not yet reached (s.n > maxStage, locked) */
+         *   done       — visited AND genuinely complete (purple ✓)
+         *   incomplete — visited but data/docs missing (neutral gray)
+         *   pending    — not yet reached (s.n > maxStage, locked)
+         * `complete` is index-0-based (Stage n → complete[n-1]). */
         const visited = s.n <= maxStage;
-        const cls = s.n === stage ? 'acm-step-active' : visited ? 'acm-step-done' : 'acm-step-pending';
-        const showCheck = visited && s.n !== stage;
+        const isComplete = !!complete[s.n - 1];
+        const cls = s.n === stage
+          ? 'acm-step-active'
+          : visited
+            ? (isComplete ? 'acm-step-done' : 'acm-step-incomplete')
+            : 'acm-step-pending';
+        const showCheck = visited && s.n !== stage && isComplete;
         return (
           <Fragment key={s.n}>
             <div className={`acm-step ${cls}`} onClick={() => onGoto(s.n)}>
@@ -2247,7 +2307,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
         <div className="acm-section-body">
           <div className="acm-row acm-row-3">
             <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={errors.coName ? 'acm-input-error' : ''} value={form.coName} maxLength={30} onChange={e => set('coName', e.target.value.slice(0, 30))} placeholder="e.g. Shree Agro Pvt Ltd (max 30)" /></Field>
-            <Field label="Company Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
+            <Field label="Customer Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
             <Field label="Customer Type" required error={errors.coType} fieldKey="coType">
               <MasterSelect value={form.coType} options={optsWith(masters.customerTypes, form.coType)} placeholder="Select customer type" invalid={!!errors.coType} onChange={v => set('coType', v)} />
             </Field>
@@ -2557,7 +2617,7 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
         <Tooltip label="Upload">
           <label className="acm-doc-action acm-doc-action-upload" aria-label="Upload" style={{ cursor: 'pointer' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
+            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
           </label>
         </Tooltip>
       </div>
@@ -2571,14 +2631,14 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
         </a>
       </Tooltip>
       <Tooltip label={`Download ${uploaded.name}`}>
-        <a href={uploaded.url} download={uploaded.name} className="acm-doc-action acm-doc-action-download" aria-label="Download">
+        <a href={uploaded.url} onClick={e => { e.preventDefault(); void downloadFile(uploaded.url, uploaded.name); }} className="acm-doc-action acm-doc-action-download" aria-label="Download">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </a>
       </Tooltip>
       <Tooltip label="Re-upload (replace file)">
         <label className="acm-doc-action acm-doc-action-upload" aria-label="Re-upload" style={{ cursor: 'pointer' }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
+          <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
         </label>
       </Tooltip>
     </div>
@@ -2666,10 +2726,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
     }));
     if (sub === 'company-dd')   return norm(segmentDocs.dd || []);
     if (sub === 'owner-kyc')    return norm(segmentDocs.kyc || []);
-    if (sub === 'trade-licence') {
-      const tl = segmentDocs.tl || [];
-      return tl.length > 0 ? norm(tl) : TL_DOCS;
-    }
+    if (sub === 'trade-licence') return norm(segmentDocs.tl || []);
     return [];
   }, [sub, segmentDocs]);
   const filteredTradeLegacy = useMemo(() => {
@@ -2688,7 +2745,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
    * customer_documents (kind='tl') but were hidden behind the static
    * segmentRef reference rows. */
   const showSegmentRef =
-       (isTradeLegacy            && filteredDocs.length === 0)
+       (isTradeLegacy            && filteredDocs.length === 0 && (segmentDocs.tl?.length ?? 0) > 0)
     || (sub === 'company-dd'     && filteredDocs.length === 0 && (segmentDocs.dd?.length ?? 0) > 0)
     || (sub === 'owner-kyc'      && owners.length === 0       && (segmentDocs.kyc?.length ?? 0) > 0);
 
@@ -2754,11 +2811,11 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
               <table className="acm-table">
                 <thead><tr>
                   <th>Sr No</th><th>Auto Code</th><th>Document Name</th>
-                  <th>Issuing Authority</th><th>Actions</th>
+                  <th>Issuing Authority</th><th>Requirement</th><th>Actions</th>
                 </tr></thead>
                 <tbody>
                   {totalRows === 0 ? (
-                    <tr className="acm-empty-row"><td colSpan={5}>No reference documents match your search.</td></tr>
+                    <tr className="acm-empty-row"><td colSpan={6}>No reference documents match your search.</td></tr>
                   ) : legacySlice.map((dl, i) => {
                     const sr = start + i + 1;
                     const srPad = String(sr).padStart(2, '0');
@@ -2768,6 +2825,13 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                         <td><span className="acm-doc-code">{dl.code}</span></td>
                         <td style={{ fontWeight: 700, color: '#1f2937' }}>{dl.name}</td>
                         <td style={{ color: '#6b7280' }}>{dl.authority}</td>
+                        {/* Requirement — tells the user up-front whether this
+                            doc must be uploaded (Mandatory) or is optional. */}
+                        <td>
+                          {dl.status === 'mandatory'
+                            ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
+                            : <span className="acm-badge acm-badge--opt">Optional</span>}
+                        </td>
                         <td>
                           <SegmentRefRowActions
                             refKey={`${sub}::${dl.code}`}
@@ -2936,10 +3000,10 @@ function Stage3KycDocs({ sub, setSub, segmentDocs, segmentRefUploads }: {
         <div className="acm-section-body acm-section-body-table">
           <div className="acm-table-wrap">
             <table className="acm-table">
-              <thead><tr><th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>Issuing Authority</th><th>Expiry</th><th>Status</th><th>Attachment</th></tr></thead>
+              <thead><tr><th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>Issuing Authority</th><th>Expiry</th><th>Requirement</th><th>Status</th><th>Attachment</th></tr></thead>
               <tbody>
                 {sourceRows.length === 0 ? (
-                  <tr className="acm-empty-row"><td colSpan={7}>No segment rule loaded for this category yet — pick a segment on Stage 1.</td></tr>
+                  <tr className="acm-empty-row"><td colSpan={8}>No segment rule loaded for this category yet — pick a segment on Stage 1.</td></tr>
                 ) : sourceRows.map((d: any, i: number) => {
                   const refKey = `${stage2Key}::${d.code}`;
                   const uploaded = segmentRefUploads[refKey];
@@ -2951,17 +3015,24 @@ function Stage3KycDocs({ sub, setSub, segmentDocs, segmentRefUploads }: {
                       <td style={{ fontWeight: 700, color: '#1f2937' }}>{d.name}</td>
                       <td style={{ color: '#6b7280' }}>{d.authority || '—'}</td>
                       <td><span className={expCls}>{d.expiry || 'N/A'}</span></td>
+                      {/* Requirement — is this doc required or optional. */}
                       <td>
                         {d.requirement === 'M'
-                          ? <span className="acm-status-mandatory is-on">✓ Mandatory</span>
-                          : <span className="acm-status-optional is-on">Optional</span>}
+                          ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
+                          : <span className="acm-badge acm-badge--opt">Optional</span>}
+                      </td>
+                      {/* Status — completed only when an attachment was uploaded. */}
+                      <td>
+                        {uploaded
+                          ? <span className="acm-badge acm-badge--done">✓ Completed</span>
+                          : <span className={`acm-badge ${d.requirement === 'M' ? 'acm-badge--miss-m' : 'acm-badge--miss-o'}`}>✗ Incomplete</span>}
                       </td>
                       <td>
                         {uploaded ? (
-                          <Tooltip label={`Open ${uploaded.name}`}>
-                            <a href={uploaded.url} target="_blank" rel="noreferrer" className="acm-attach-link" aria-label="View attachment">
+                          <Tooltip label={uploaded.name}>
+                            <a href={uploaded.url} target="_blank" rel="noreferrer" className="acm-attach-link" aria-label="View attachment" style={{ whiteSpace: 'nowrap' }}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                              {uploaded.name}
+                              {truncFileName(uploaded.name)}
                             </a>
                           </Tooltip>
                         ) : (
@@ -3149,8 +3220,7 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                       <Tooltip label={d.signed_url ? 'Download signed document' : 'Download document'}>
                         <a
                           href={d.signed_url || '#'}
-                          download={d.signed_url ? '' : undefined}
-                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          onClick={e => { e.preventDefault(); if (d.signed_url) void downloadFile(d.signed_url, d.name || ''); }}
                           className="acm-doc-action acm-doc-action-download"
                           aria-label="Download"
                           style={{ opacity: d.signed_url ? 1 : 0.5, cursor: d.signed_url ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
@@ -3162,9 +3232,7 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                         <Tooltip label="Download Certificate of Completion">
                           <a
                             href={d.certificate_url}
-                            download=""
-                            target="_blank"
-                            rel="noreferrer"
+                            onClick={e => { e.preventDefault(); void downloadFile(d.certificate_url!, `${d.name || 'document'}-certificate`); }}
                             className="acm-doc-action acm-doc-action-cert"
                             aria-label="Download Certificate"
                             style={{
@@ -3193,10 +3261,6 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
           <button type="button" className="acm-btn-purple-lg" onClick={onSendSelected}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             Send Selected Documents for Signature
-          </button>
-          <button type="button" className="acm-btn-purple-lg-out">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Customer Specific Document
           </button>
         </div>
       </div>
@@ -3644,7 +3708,7 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
                  enforce it. Trade Licence keeps it optional. */
               required={sub === 'company-dd'}
               kind="doc"
-              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              accept=".pdf,.jpg,.jpeg,.png"
               value={d.attachment}
               existingUrl={editing?.attachment_url ?? null}
               existingName={editing?.attachment_name ?? null}
@@ -3969,7 +4033,7 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
   }> = {
     idProof: {
       label: 'ID Proof', kind: 'doc',
-      accept: '.pdf,.jpg,.jpeg,.png,.doc,.docx',
+      accept: '.pdf,.jpg,.jpeg,.png',
       existingUrl:  editing?.id_proof_url,
       existingName: editing?.id_proof_name,
       removeFlag:    removeIdProof,
@@ -3977,7 +4041,7 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
     },
     addressProof: {
       label: 'Address Proof', kind: 'doc',
-      accept: '.pdf,.jpg,.jpeg,.png,.doc,.docx',
+      accept: '.pdf,.jpg,.jpeg,.png',
       existingUrl:  editing?.address_proof_url,
       existingName: editing?.address_proof_name,
       removeFlag:    removeAddressProof,
@@ -4311,7 +4375,7 @@ function HistoryStage1({ form, locations, customerId }: { form: any; locations: 
       <div className="acm-hs-grid">
         <ReadInline label="Customer ID"               value={customerId} />
         <ReadInline label="Company Name"              value={form.coName} />
-        <ReadInline label="Company Legal Name"        value={form.coLegal} />
+        <ReadInline label="Customer Legal Name"        value={form.coLegal} />
         <ReadInline label="Customer Type"             value={form.coType} />
 
         <ReadInline label="Company Website"           value={form.coWeb} />
@@ -4570,7 +4634,7 @@ const SCOPED_CSS = `
 .acm-stepper { padding: 16px 22px 14px; display: flex; align-items: center; gap: 0; flex-shrink: 0; background: #fff; border-bottom: 1px solid #ede9fe; }
 .acm-step-connector { flex: 0 0 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; z-index: 0; }
 .acm-connector-line { width: 100%; height: 3px; background: #e2e8f0; border-radius: 3px; position: relative; overflow: hidden; }
-.acm-connector-line::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #10b981, #059669); border-radius: 3px; transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.4,0,.2,1); }
+.acm-connector-line::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #8b5cf6, #6d28d9); border-radius: 3px; transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.4,0,.2,1); }
 .acm-connector-line[data-done="1"]::after { transform: scaleX(1); }
 .acm-step { flex: 1; padding: 11px 14px; border-radius: 14px; display: flex; align-items: center; gap: 12px; position: relative; overflow: hidden; transition: all .25s; cursor: pointer; min-width: 0; }
 .acm-step-badge-wrap { position: relative; flex-shrink: 0; width: 40px; height: 40px; }
@@ -4584,11 +4648,16 @@ const SCOPED_CSS = `
 .acm-step-active .acm-step-num { background: linear-gradient(135deg, #6d28d9, #4c1d95); color: #fff; }
 .acm-step-active .acm-step-title { color: #2e1065; }
 .acm-step-active .acm-step-sub { color: #6d28d9; }
-.acm-step-done { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid #10b981; box-shadow: 0 6px 20px rgba(16,185,129,.2), 0 1px 0 rgba(255,255,255,.85) inset; }
-.acm-step-done .acm-step-badge { background: linear-gradient(135deg, #10b981, #047857); color: #fff; box-shadow: 0 5px 12px rgba(16,185,129,.42); }
-.acm-step-done .acm-step-num { background: linear-gradient(135deg, #059669, #047857); color: #fff; }
-.acm-step-done .acm-step-title { color: #065f46; }
-.acm-step-done .acm-step-sub { color: #10b981; }
+.acm-step-done { background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border: 2px solid #a78bfa; box-shadow: 0 6px 20px rgba(124,58,237,.18), 0 1px 0 rgba(255,255,255,.85) inset; }
+.acm-step-done .acm-step-badge { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; box-shadow: 0 5px 12px rgba(124,58,237,.42); }
+.acm-step-done .acm-step-num { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; }
+.acm-step-done .acm-step-title { color: #4c1d95; }
+.acm-step-done .acm-step-sub { color: #7c3aed; }
+.acm-step-incomplete { background: #f8fafc; border: 2px solid #e2e8f0; box-shadow: 0 4px 14px rgba(100,116,139,.10), 0 1px 0 rgba(255,255,255,.85) inset; }
+.acm-step-incomplete .acm-step-badge { background: linear-gradient(135deg, #e2e8f0, #cbd5e1); color: #64748b; }
+.acm-step-incomplete .acm-step-num { background: #94a3b8; color: #fff; }
+.acm-step-incomplete .acm-step-title { color: #475569; }
+.acm-step-incomplete .acm-step-sub { color: #94a3b8; }
 .acm-step-pending { background: #f8fafc; border: 1.5px solid #e2e8f0; cursor: not-allowed; opacity: .75; }
 .acm-step-pending .acm-step-badge { background: linear-gradient(135deg, #f1f5f9, #e2e8f0); color: #94a3b8; border: 1px solid #e2e8f0; }
 .acm-step-pending .acm-step-num { background: #e2e8f0; color: #94a3b8; }
@@ -4894,6 +4963,19 @@ const SCOPED_CSS = `
 .acm-status-optional { background: #fff; color: #9ca3af; border-color: #e5e1f3; }
 .acm-status-optional.is-on { background: #fff; color: #374151; border-color: #9ca3af; font-weight: 700; }
 .acm-status-active { display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px; border-radius: 20px; font-size: 10.5px; font-weight: 700; background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #15803d; border: 1px solid #86efac; }
+/* Requirement + completion badges — theme-aware (Stage 2 upload table + Stage 3
+   review). Light defaults plus dark overrides so they never wash out. */
+.acm-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; border:1px solid transparent; white-space:nowrap; }
+.acm-badge--mand   { background:#dcfce7; color:#15803d; border-color:#86efac; }
+.acm-badge--opt    { background:#f3f4f6; color:#4b5563; border-color:#e5e7eb; }
+.acm-badge--done   { background:#d1fae5; color:#065f46; border-color:#6ee7b7; }
+.acm-badge--miss-m { background:#fee2e2; color:#b91c1c; border-color:#fecaca; }
+.acm-badge--miss-o { background:#f3f4f6; color:#6b7280; border-color:#e5e7eb; }
+[data-bs-theme="dark"] .acm-badge--mand   { background:rgba(16,185,129,0.18); color:#6ee7b7; border-color:rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-badge--opt    { background:rgba(255,255,255,0.06); color:#cbd5e1; border-color:rgba(255,255,255,0.14); }
+[data-bs-theme="dark"] .acm-badge--done   { background:rgba(16,185,129,0.18); color:#6ee7b7; border-color:rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-badge--miss-m { background:rgba(239,68,68,0.18); color:#fca5a5; border-color:rgba(239,68,68,0.40); }
+[data-bs-theme="dark"] .acm-badge--miss-o { background:rgba(255,255,255,0.06); color:#94a3b8; border-color:rgba(255,255,255,0.12); }
 .acm-expiry-na, .acm-expiry-date, .acm-expiry-varies, .acm-expiry-future, .acm-expiry-past, .acm-issue-date {
   display: inline-block;
   padding: 4px 12px;
@@ -5401,9 +5483,13 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-step-active { background: linear-gradient(135deg, rgba(76,29,149,0.45) 0%, rgba(109,40,217,0.30) 100%); border-color: #a78bfa; box-shadow: 0 6px 22px rgba(0,0,0,.4), 0 0 0 1px rgba(167,139,250,.15) inset; }
 [data-bs-theme="dark"] .acm-step-active .acm-step-title { color: #f1f5f9; }
 [data-bs-theme="dark"] .acm-step-active .acm-step-sub { color: #c4b5fd; }
-[data-bs-theme="dark"] .acm-step-done { background: linear-gradient(135deg, rgba(6,95,70,0.40) 0%, rgba(16,185,129,0.20) 100%); border-color: #10b981; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
-[data-bs-theme="dark"] .acm-step-done .acm-step-title { color: #d1fae5; }
-[data-bs-theme="dark"] .acm-step-done .acm-step-sub { color: #34d399; }
+[data-bs-theme="dark"] .acm-step-done { background: linear-gradient(135deg, rgba(76,29,149,0.40) 0%, rgba(124,58,237,0.20) 100%); border-color: #a78bfa; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .acm-step-done .acm-step-title { color: #ede9fe; }
+[data-bs-theme="dark"] .acm-step-done .acm-step-sub { color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-step-incomplete { background: rgba(40,52,70,0.60); border-color: rgba(148,163,184,0.25); box-shadow: 0 4px 14px rgba(0,0,0,.30); }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-badge { background: #2b3650; color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-title { color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-sub { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-step-pending { background: rgba(40,52,70,0.75); border-color: rgba(167,139,250,0.18); opacity: 0.92; }
 [data-bs-theme="dark"] .acm-step-pending .acm-step-badge { background: #232c44; border-color: rgba(167,139,250,0.25); color: #94a3b8; }
 [data-bs-theme="dark"] .acm-step-pending .acm-step-num { background: #232c44; color: #cbd5e1; border-color: #11182a; }

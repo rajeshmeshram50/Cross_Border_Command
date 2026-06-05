@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
-import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import AddConsigneeModal, { type ConsigneeRow } from './AddConsigneeModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -17,7 +16,6 @@ import AddConsigneeModal, { type ConsigneeRow } from './AddConsigneeModal';
  *   + Add Consignee     → opens AddConsigneeModal with the customer
  *                         already locked in (preselectedCustomerId).
  *   ✎ Edit Consignee    → opens AddConsigneeModal in edit mode.
- *   🗑 Delete Consignee  → DeleteConfirmModal then DELETE /consignees/{id}.
  *
  * Tenant scope is enforced by the backend; the modal itself is
  * presentation-only.
@@ -45,14 +43,10 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
   const [loading, setLoading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ConsigneeRow | null>(null);
-  const [delTarget, setDelTarget] = useState<ConsigneeRow | null>(null);
   /* Client-side pagination — 5 rows per page. Reset to page 1 whenever
    * the search term or underlying row set changes so the user never
    * lands on an empty page beyond the new last page. */
   const [page, setPage] = useState(1);
-  /* In-flight flag for the delete confirm — drives spinner + disabled
-   * state on the confirm dialog while the DELETE request is going. */
-  const [deleting, setDeleting] = useState(false);
 
   const fetchRows = useCallback(async () => {
     if (!customer?.db_id) return;
@@ -115,20 +109,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
   const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
 
-  const handleDelete = async () => {
-    if (!delTarget?.db_id) { setDelTarget(null); return; }
-    setDeleting(true);
-    try {
-      await api.delete(`/consignees/${delTarget.db_id}`);
-      toast.success('Consignee deleted', delTarget.company);
-      setDelTarget(null);
-      fetchRows();
-    } catch (e: any) {
-      toast.error('Delete failed', e?.response?.data?.message ?? 'Please try again.');
-    } finally {
-      setDeleting(false);
-    }
-  };
 
   if (!open || !customer) return null;
 
@@ -259,16 +239,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                               </button>
                             </Tooltip>
-                            <Tooltip label="Delete Consignee">
-                              <button
-                                type="button"
-                                className="ccm-row-btn ccm-row-btn-del"
-                                aria-label="Delete"
-                                onClick={() => setDelTarget(c)}
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                              </button>
-                            </Tooltip>
                           </div>
                         </td>
                       </tr>
@@ -332,15 +302,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose }: Pro
         onSaved={() => fetchRows()}
       />
 
-      <DeleteConfirmModal
-        open={!!delTarget}
-        title="Delete Consignee"
-        itemName={delTarget?.company}
-        subMessage="This will permanently delete the consignee and all linked addresses. The action cannot be undone."
-        onClose={() => { if (!deleting) setDelTarget(null); }}
-        onConfirm={handleDelete}
-        loading={deleting}
-      />
     </>,
     document.body,
   );

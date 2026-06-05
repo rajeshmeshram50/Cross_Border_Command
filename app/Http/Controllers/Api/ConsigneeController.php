@@ -491,28 +491,14 @@ class ConsigneeController extends Controller
         $rules = [
             'customer_id'      => 'required|integer|exists:customers,id',
             'company_name'     => 'required|string|max:255',
-            /* Legal (registered entity) name must be unique per tenant — two
-             * consignees can't share the same legal name. Case-insensitive,
-             * client-scoped, ignores the row being edited, and skips the
-             * check when blank (legal_name stays optional). Mirrors the
-             * uniqueness rule on customers.legal_name. */
-            'legal_name'       => [
-                'nullable', 'string', 'max:255',
-                function ($attribute, $value, $fail) use ($clientId, $consigneeId) {
-                    if (!trim((string) $value)) return;
-                    $exists = Consignee::query()
-                        ->whereNull('deleted_at')
-                        ->where(function ($q) use ($clientId) {
-                            $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
-                        })
-                        ->whereRaw('LOWER(legal_name) = ?', [mb_strtolower(trim((string) $value))])
-                        ->when($consigneeId, fn ($q) => $q->where('id', '!=', $consigneeId))
-                        ->exists();
-                    if ($exists) {
-                        $fail('This legal name is already used by another consignee.');
-                    }
-                },
-            ],
+            /* Legal (registered entity) name: base format rules only. The
+             * per-tenant UNIQUENESS check is added below — but ONLY when this
+             * is NOT a "Same as Customer" mirror. A mirror intentionally
+             * copies the customer's legal name, so enforcing uniqueness there
+             * would make same-as-customer impossible whenever the customer's
+             * legal name is already in use. (The "one mirror per customer"
+             * rule still prevents duplicate mirrors of the same customer.) */
+            'legal_name'       => 'nullable|string|max:255',
             'segment'          => 'nullable|string|max:1024',
             'classification'   => 'nullable|string|max:64',
             'risk_level'       => 'nullable|string|max:32',
@@ -552,12 +538,30 @@ class ConsigneeController extends Controller
             'locations.*.cp_whatsapp'    => 'nullable|in:yes,no',
         ];
 
-        /* Cross-consignee uniqueness on the primary contact's phone +
-         * email — mirrors CustomerController so two consignees in the
-         * same tenant can't claim the same primary contact. Skipped
-         * when same_as_customer is on because that flow deliberately
-         * copies the customer's contact details onto the consignee. */
+        /* Cross-consignee uniqueness on the legal name + primary contact's
+         * phone + email — mirrors CustomerController so two consignees in the
+         * same tenant can't claim the same identity. ALL skipped when
+         * same_as_customer is on because that flow deliberately copies the
+         * customer's legal name + contact details onto the consignee; the
+         * "one mirror per customer" rule already blocks duplicate mirrors. */
         if (!$sameAsCustomer) {
+            $rules['legal_name'] = [
+                'nullable', 'string', 'max:255',
+                function ($attribute, $value, $fail) use ($clientId, $consigneeId) {
+                    if (!trim((string) $value)) return;
+                    $exists = Consignee::query()
+                        ->whereNull('deleted_at')
+                        ->where(function ($q) use ($clientId) {
+                            $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                        })
+                        ->whereRaw('LOWER(legal_name) = ?', [mb_strtolower(trim((string) $value))])
+                        ->when($consigneeId, fn ($q) => $q->where('id', '!=', $consigneeId))
+                        ->exists();
+                    if ($exists) {
+                        $fail('This legal name is already used by another consignee.');
+                    }
+                },
+            ];
             $rules['primary_address.cp_email'] = [
                 'required', 'email', 'max:255',
                 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/',

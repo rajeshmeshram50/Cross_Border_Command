@@ -29,7 +29,6 @@ const FIELDS: Record<Tab, Field[]> = {
     { label: 'Address',         token: '{{customer.address}}' },
     { label: 'PAN',             token: '{{customer.pan}}' },
     { label: 'IEC',             token: '{{customer.iec}}' },
-    { label: 'Signature',       token: '{{customer.signature}}', isSignature: true },
   ],
   consignee: [
     { label: 'Consignee Name',  token: '{{consignee.name}}' },
@@ -39,7 +38,6 @@ const FIELDS: Record<Tab, Field[]> = {
     { label: 'Email',           token: '{{consignee.email}}' },
     { label: 'Country',         token: '{{consignee.country}}' },
     { label: 'Address',         token: '{{consignee.address}}' },
-    { label: 'Signature',       token: '{{consignee.signature}}', isSignature: true },
   ],
   supplier: [
     { label: 'Supplier Name',   token: '{{supplier.name}}' },
@@ -53,7 +51,6 @@ const FIELDS: Record<Tab, Field[]> = {
     { label: 'Address',         token: '{{supplier.address}}' },
     { label: 'PAN',             token: '{{supplier.pan}}' },
     { label: 'Bank Account',    token: '{{supplier.bank_account}}' },
-    { label: 'Signature',       token: '{{supplier.signature}}', isSignature: true },
   ],
 };
 

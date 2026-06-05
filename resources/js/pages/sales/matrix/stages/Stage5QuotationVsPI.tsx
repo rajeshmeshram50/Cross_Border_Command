@@ -7,6 +7,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import SalesDocSendForSignatureModal from './SalesDocSendForSignatureModal';
+import ConvertToPiModal, { ConversionBlockedModal } from '../../ConvertToPiModal';
 import {
   CreateQuotationModal,
   CreatePIModal,
@@ -105,6 +106,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   const [quotations, setQuotations] = useState<QuotationRow[]>([]);
   const [pis, setPis]           = useState<PIRow[]>([]);
   const [actingId, setActingId] = useState<number | null>(null);
+  // Convert-to-PI confirmation popup state (target row + previewed PI code).
+  const [convertTarget, setConvertTarget] = useState<QuotationRow | null>(null);
+  const [convertPreviewCode, setConvertPreviewCode] = useState<string | null>(null);
+  // Conversion-blocked popup (lead already has a PI): the quotation tried
+  // + the existing PI row that blocks it.
+  const [convertBlocked, setConvertBlocked] = useState<{ fromQt: string; pi: PIRow } | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
 
@@ -261,8 +268,28 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     }
   };
 
-  const onConvertToPi = async (q: QuotationRow) => {
+  /* Convert-to-PI confirmation popup — opens ConvertToPiModal first and
+   * only fires the conversion on confirm (mirrors the standalone SalesQPI
+   * page so the action behaves identically inside and outside the matrix). */
+  const openConvert = (q: QuotationRow) => {
     if (!q.id) return;
+    // One PI per lead — if a live PI already exists, block conversion and
+    // point the user at editing the existing PI (not deleting it).
+    const blocker = pis.find(p => (p.status ?? '').toLowerCase() !== 'cancelled');
+    if (blocker) {
+      setConvertBlocked({ fromQt: q.code ?? '', pi: blocker });
+      return;
+    }
+    setConvertTarget(q);
+    setConvertPreviewCode(null);
+    api.get('/sales/proforma-invoices/preview-code')
+      .then(({ data }) => setConvertPreviewCode(data?.data?.code ?? null))
+      .catch(() => setConvertPreviewCode(null));
+  };
+
+  const confirmConvert = async () => {
+    const q = convertTarget;
+    if (!q || !q.id) return;
     setActingId(q.id);
     try {
       const { data } = await api.post<{ status: boolean; data?: { code?: string } }>(
@@ -273,6 +300,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       setDocType('pi');
       toast.success('Converted to PI', `New proforma invoice ${code} created from ${q.code ?? 'this quotation'}.`);
       onPiChange?.();
+      setConvertTarget(null);
     } catch (e: any) {
       toast.error('Conversion blocked', e?.response?.data?.message ?? 'Could not convert this quotation to a PI.');
     } finally {
@@ -384,6 +412,34 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     [pis],
   );
 
+  /* ── Mandatory-doc gate for Create PI ──────────────────────────────
+   * A PI can't be created until every MANDATORY KYC / Due-Diligence /
+   * Trade doc for BOTH the customer and the consignee is uploaded. We
+   * read each party's vault (requirement = 'M', status = 'Verified' when
+   * uploaded) and flag if anything mandatory is still pending. The
+   * backend also blocks the create (422); this just greys the button. */
+  const [mandatoryIncomplete, setMandatoryIncomplete] = useState(false);
+  useEffect(() => {
+    const custId = header.customerId ?? null;
+    const consId = header.consigneeId ?? null;
+    if (!custId && !consId) { setMandatoryIncomplete(false); return; }
+    let cancelled = false;
+    const hasPendingMandatory = (vault: any): boolean =>
+      ['company_dd', 'owner_kyc', 'trade_licenses', 'trade_documents'].some(b =>
+        (Array.isArray(vault?.[b]) ? vault[b] : []).some((d: any) => d?.requirement === 'M' && d?.status !== 'Verified'));
+    (async () => {
+      try {
+        const calls: Promise<any>[] = [];
+        if (custId) calls.push(api.get(`/segment-uploads/customer/${custId}/vault`));
+        if (consId) calls.push(api.get(`/segment-uploads/consignee/${consId}/vault`));
+        const res = await Promise.allSettled(calls);
+        if (cancelled) return;
+        setMandatoryIncomplete(res.some(r => r.status === 'fulfilled' && hasPendingMandatory((r.value as any).data?.data)));
+      } catch { /* best-effort gate; backend still enforces on submit */ }
+    })();
+    return () => { cancelled = true; };
+  }, [header.customerId, header.consigneeId, pis.length, quotations.length]);
+
   const colSpan = docType === 'quotation' ? 7 : 9;
 
   return (
@@ -400,7 +456,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           </div>
           <div>
             <div className="smd-stg-head-title">Stage 5: Quotation vs PI</div>
-            <div className="smd-stg-head-sub">● Quotation / PI comparison underway</div>
+            <div className="smd-stg-head-sub">
+              {docType === 'quotation'
+                ? `● ${liveQuotationsCount} ${liveQuotationsCount === 1 ? 'Quotation' : 'Quotations'} on this opportunity`
+                : `● ${livePisCount} ${livePisCount === 1 ? 'Proforma Invoice' : 'Proforma Invoices'} on this opportunity`}
+            </div>
           </div>
         </div>
         <div className="s5-head-right">
@@ -430,6 +490,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                 <line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>
               </svg>
               <span>Quotation</span>
+              <span className="s5-seg-count">{liveQuotationsCount}</span>
             </button>
             <button
               type="button"
@@ -441,6 +502,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                 <rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/>
               </svg>
               <span>Proforma Invoice</span>
+              <span className="s5-seg-count">{livePisCount}</span>
             </button>
           </div>
           <div className="s5-create-group">
@@ -449,7 +511,25 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
               Create Quotation
             </button>
             <span className="s5-create-div" />
-            <button type="button" className="s5-create-btn s5-create-p" onClick={() => onCreate('pi')}>
+            {/* One PI per opportunity: once a (non-cancelled) PI exists the
+                Create PI button stays VISIBLE but greyed; clicking it explains
+                why instead of opening the form. */}
+            <button
+              type="button"
+              className="s5-create-btn s5-create-p"
+              style={(livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              onClick={() => {
+                if (livePisCount > 0) {
+                  toast.warning('Only one PI per opportunity', 'A single lead can have only one Proforma Invoice.');
+                  return;
+                }
+                if (mandatoryIncomplete) {
+                  toast.warning('Mandatory documents pending', 'Upload all mandatory KYC / Due Diligence / Trade documents for the customer and consignee before creating a PI.');
+                  return;
+                }
+                onCreate('pi');
+              }}
+            >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Create PI
             </button>
@@ -546,7 +626,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             ) : (
                               <button
                                 type="button" className="s5-convert2" title="Convert to PI"
-                                onClick={() => void onConvertToPi(r as QuotationRow)}
+                                onClick={() => openConvert(r as QuotationRow)}
                                 disabled={anyActing}
                               >
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -595,10 +675,17 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             );
                           })()}
                           <span className="s5-act-sep" />
-                          <button type="button" className="s5-icn s5-icn-mail" title="Send via Email"
-                            onClick={() => void onEmail(docType, r.id, r.code)} disabled={anyActing}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                          </button>
+                          {/* Email button shown for Quotations only. For a PI the
+                              document is delivered to the customer via Zoho Sign
+                              ("Send for Sign"), so the manual email button is
+                              hidden. Code kept (docType guard) so it still works
+                              for quotations and can be restored for PI if needed. */}
+                          {docType !== 'pi' && (
+                            <button type="button" className="s5-icn s5-icn-mail" title="Send via Email"
+                              onClick={() => void onEmail(docType, r.id, r.code)} disabled={anyActing}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                            </button>
+                          )}
                           {(() => {
                             // A signed doc is locked — show the pencil greyed
                             // out; clicking still explains why (handled in onEdit).
@@ -624,10 +711,15 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>
                           </button>
-                          <button type="button" className="s5-icn s5-icn-del" title="Delete"
-                            onClick={() => void onDelete(docType, r.id, r.code)} disabled={anyActing}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                          </button>
+                          {/* Delete shown for Quotations only — a PI shouldn't be
+                              removed once issued. Code kept (docType guard) so it
+                              still works for quotations and can be restored for PI. */}
+                          {docType !== 'pi' && (
+                            <button type="button" className="s5-icn s5-icn-del" title="Delete"
+                              onClick={() => void onDelete(docType, r.id, r.code)} disabled={anyActing}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -716,6 +808,33 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
           onSent={() => { void fetchSignatures(true); }}
         />
       )}
+
+      {/* Convert-to-PI confirmation popup. */}
+      <ConvertToPiModal
+        open={!!convertTarget}
+        fromQuotation={convertTarget?.code ?? ''}
+        newPiCode={convertPreviewCode}
+        piDate={new Date().toLocaleDateString('en-GB')}
+        quotationValue={`${convertTarget?.currency || '$'} —`}
+        converting={!!convertTarget?.id && actingId === convertTarget.id}
+        onCancel={() => { if (actingId === null) setConvertTarget(null); }}
+        onConfirm={() => void confirmConvert()}
+      />
+
+      {/* Conversion blocked — lead already has a PI. */}
+      <ConversionBlockedModal
+        open={!!convertBlocked}
+        fromQuotation={convertBlocked?.fromQt ?? ''}
+        existingPiCode={convertBlocked?.pi.code ?? ''}
+        existingPiDate={convertBlocked ? fmtDate(convertBlocked.pi.created_at) : null}
+        existingPiFromQuotation={
+          convertBlocked?.pi.source_quotation_id != null
+            ? (quotationCodeById.get(convertBlocked.pi.source_quotation_id) ?? null)
+            : null
+        }
+        onClose={() => setConvertBlocked(null)}
+        onViewExistingPi={() => { setConvertBlocked(null); setDocType('pi'); }}
+      />
     </>
   );
 }
@@ -1085,6 +1204,14 @@ const STAGE5_CSS = `
 .s5-seg-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: #a78bfa; box-shadow: 0 0 4px rgba(167,139,250,.5); }
 .s5-seg-btn.active .s5-seg-dot { background: rgba(255,255,255,.85); box-shadow: 0 0 6px rgba(255,255,255,.6); }
 .s5-seg-btn svg { flex-shrink: 0; }
+/* Count chip on each segmented tab — number of live quotations / PIs. */
+.s5-seg-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; margin-left: 2px;
+  border-radius: 9px; background: rgba(124,58,237,.14); color: #7c3aed;
+  font-size: 10.5px; font-weight: 800; line-height: 1;
+}
+.s5-seg-btn.active .s5-seg-count { background: rgba(255,255,255,.28); color: #fff; }
 
 .s5-create-group { position: relative; z-index: 1; display: flex; align-items: center; gap: 7px; }
 .s5-create-div { width: 1px; height: 26px; flex-shrink: 0; background: linear-gradient(180deg, transparent, rgba(124,58,237,.25), transparent); }
@@ -1137,7 +1264,7 @@ const STAGE5_CSS = `
 .s5-dt2 { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .s5-cur2 { display: inline-flex; padding: 3px 10px; border-radius: 6px; font-size: 10.5px; font-weight: 800; background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
 .s5-val2 { font-weight: 800; color: #059669; font-size: 12px; font-family: ui-monospace, monospace; }
-.s5-st-live { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.s5-st-live { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 9.5px; font-weight: 700; background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; white-space: nowrap; }
 .s5-st-dot { width: 5px; height: 5px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.8); }
 
 /* ─── Action cell ─── */
@@ -1231,7 +1358,7 @@ const STAGE5_CSS = `
 .s5-ps-stat-val.c-red { color: #dc2626; }
 
 /* Table */
-.s5-ps-tablewrap { flex: 1; overflow-y: auto; }
+.s5-ps-tablewrap { flex: 1; overflow-y: auto; max-height: 300px; }
 .s5-ps-table { width: 100%; border-collapse: collapse; }
 .s5-ps-table thead tr { background: linear-gradient(90deg, #0f172a 0%, #1e3a5f 55%, #0f172a 100%); box-shadow: 0 2px 8px rgba(0,0,0,.22); }
 .s5-ps-table thead th { padding: 11px 13px; text-align: left; white-space: nowrap; font-size: 8.5px; font-weight: 800; color: rgba(255,255,255,.93); text-transform: uppercase; letter-spacing: .1em; position: sticky; top: 0; }

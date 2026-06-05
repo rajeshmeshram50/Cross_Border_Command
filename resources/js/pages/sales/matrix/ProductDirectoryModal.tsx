@@ -382,11 +382,15 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                     the dedicated popup form (rendered below) so the table
                     stays clean and the form has room for proper labels. */}
 
-                {loading && (
-                  <tr>
-                    <td colSpan={8} className="pdm-status">Loading mapped products…</td>
+                {/* While the API loads, shimmer the WHOLE table (skeleton rows)
+                    instead of a "Loading…" line over stale rows. */}
+                {loading && Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={`pdm-sk-${i}`} className="pdm-skeleton-row">
+                    {Array.from({ length: 8 }).map((__, c) => (
+                      <td key={c}><span className="pdm-shimmer" /></td>
+                    ))}
                   </tr>
-                )}
+                ))}
                 {!loading && rows.length === 0 && !draftOpen && (
                   <tr>
                     <td colSpan={8} className="pdm-status">
@@ -395,7 +399,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   </tr>
                 )}
 
-                {rows.map((r, i) => {
+                {!loading && rows.map((r, i) => {
                   return (
                     <tr key={r.id}>
                       <td><span className="pdm-sr-pill">{i + 1}</span></td>
@@ -686,7 +690,18 @@ const SCOPED_CSS = `
 .pdm-table-wrap {
   background: #fff; border: 1px solid #e9d5ff; border-radius: 12px;
   overflow: auto;
+  /* Show ~5 product rows; the rest scroll inside (sticky header stays put). */
+  max-height: 320px;
 }
+/* Loading shimmer — skeleton bar in each cell of the skeleton rows. */
+.pdm-skeleton-row td { padding: 14px 12px; }
+.pdm-shimmer {
+  display: block; height: 12px; width: 100%; border-radius: 6px;
+  background: linear-gradient(90deg, #ece9f5 25%, #f6f3fb 37%, #ece9f5 63%);
+  background-size: 400% 100%;
+  animation: pdm-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes pdm-shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 .pdm-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1000px; }
 /* Table header — gradient lives on the <tr> so a single 90° sweep
    spans the whole row instead of each <th> rendering its own copy

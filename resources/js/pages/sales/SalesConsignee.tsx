@@ -325,18 +325,25 @@ export default function SalesConsignee() {
         const c = info.row.original as ConsigneeRow;
         return (
           <div className="d-inline-flex align-items-center gap-1">
-            {canEdit && <ActionBtn title="Edit Consignee"          icon="ri-pencil-line"      color="primary" onClick={() => { setEditing(c); setAddOpen(true); }} />}
-                       <ActionBtn title="Evidence Vault"           icon="ri-file-shield-line" color="info"    onClick={() => setVaultTarget({
-                         id: c.id,
-                         db_id: c.db_id,
-                         company: c.company,
-                         risk: c.risk,
-                         segment: c.segment,
-                         country: c.country,
-                         contact: c.contact,
-                         contactCity: c.countryDetail,
-                         customerId: c.customerId,
-                       })} />
+            {canEdit && <ActionBtn title="Edit Consignee" icon="ri-pencil-line" color="primary" onClick={() => { setEditing(c); setAddOpen(true); }} />}
+            {/* Evidence Vault — icon-only action, matching the Customer
+                list's "Customer Evidence Vault" button (ri-file-shield-line). */}
+            <ActionBtn
+              title="Consignee Evidence Vault"
+              icon="ri-file-shield-line"
+              color="info"
+              onClick={() => setVaultTarget({
+                id: c.id,
+                db_id: c.db_id,
+                company: c.company,
+                risk: c.risk,
+                segment: c.segment,
+                country: c.country,
+                contact: c.contact,
+                contactCity: c.countryDetail,
+                customerId: c.customerId,
+              })}
+            />
             {/* Delete action removed per product request — consignees
                 are kept (soft-delete only via API if ever needed). The
                 handleDelete + DeleteConfirmModal wiring is intentionally
@@ -619,25 +626,14 @@ const SCOPED_CSS = `
   position: relative;
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px;
-  padding: 18px 24px;
+  min-height: 66px;
+  padding: 0 18px;
   border-radius: 16px;
   background: linear-gradient(110deg, #f0fdf9 0%, #ccfbf1 25%, #99f6e4 55%, #5eead4 85%, #2dd4bf 100%);
   border: 1px solid #5eead4;
-  box-shadow:
-    0 2px 0 rgba(255,255,255,0.85) inset,
-    0 8px 28px rgba(45,212,191,0.20),
-    0 2px 8px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 0 rgba(255,255,255,0.85) inset, 0 8px 28px rgba(13,148,136,0.20), 0 2px 8px rgba(0,0,0,0.06);
   overflow: hidden;
   flex-shrink: 0;
-}
-.smcg-cstrip::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    radial-gradient(ellipse at 12% 50%, rgba(255,255,255,0.40) 0%, transparent 55%),
-    radial-gradient(ellipse at 88% 50%, rgba(94,234,212,0.22) 0%, transparent 55%);
 }
 .smcg-cstrip-left {
   display: flex; align-items: center; gap: 16px;
@@ -679,7 +675,6 @@ const SCOPED_CSS = `
   font-weight: 400;
   margin-top: 4px;
   line-height: 1.5;
-  max-width: 760px;
   opacity: 0.85;
 }
 .smcg-cstrip-add {
@@ -691,17 +686,17 @@ const SCOPED_CSS = `
   font-family: inherit;
   font-size: 14px; font-weight: 700;
   color: #fff;
-  background: linear-gradient(135deg, #047857 0%, #065f46 100%);
+  background: #0d9488;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  box-shadow: 0 6px 18px rgba(5,150,105,0.40), 0 1px 0 rgba(255,255,255,0.20) inset;
+  box-shadow: 0 6px 18px rgba(13,148,136,0.40), 0 1px 0 rgba(255,255,255,0.20) inset;
   transition: transform .18s, box-shadow .18s, background .18s;
 }
 .smcg-cstrip-add:hover {
   transform: translateY(-2px);
-  background: linear-gradient(135deg, #065f46 0%, #064e3b 100%);
-  box-shadow: 0 10px 28px rgba(5,150,105,0.50), 0 1px 0 rgba(255,255,255,0.20) inset;
+  background: #0b7d72;
+  box-shadow: 0 10px 28px rgba(13,148,136,0.50), 0 1px 0 rgba(255,255,255,0.20) inset;
 }
 .smcg-cstrip-add:active { transform: translateY(0); }
 .smcg-cstrip-add i { font-size: 16px; }
@@ -713,11 +708,6 @@ const SCOPED_CSS = `
     0 8px 28px rgba(0,0,0,0.50),
     0 2px 8px rgba(0,0,0,0.35);
 }
-[data-bs-theme="dark"] .smcg-cstrip::before {
-  background-image:
-    radial-gradient(ellipse at 12% 50%, rgba(94,234,212,0.18) 0%, transparent 55%),
-    radial-gradient(ellipse at 88% 50%, rgba(45,212,191,0.15) 0%, transparent 55%);
-}
 [data-bs-theme="dark"] .smcg-cstrip-title { color: #f0fdfa; }
 [data-bs-theme="dark"] .smcg-cstrip-sub   { color: #ccfbf1; opacity: 0.92; }
 [data-bs-theme="dark"] .smcg-cstrip-icon  {
@@ -726,13 +716,13 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .smcg-cstrip-icon::after { border-color: #0d2f25; }
 [data-bs-theme="dark"] .smcg-cstrip-add {
-  background: linear-gradient(135deg, #14b89a 0%, #10b981 100%);
+  background: #0d9488;
   color: #fff;
-  box-shadow: 0 6px 18px rgba(20,184,154,0.50), 0 1px 0 rgba(255,255,255,0.18) inset;
+  box-shadow: 0 6px 18px rgba(13,148,136,0.50), 0 1px 0 rgba(255,255,255,0.18) inset;
 }
 [data-bs-theme="dark"] .smcg-cstrip-add:hover {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  box-shadow: 0 10px 28px rgba(20,184,154,0.60), 0 1px 0 rgba(255,255,255,0.18) inset;
+  background: #0f766e;
+  box-shadow: 0 10px 28px rgba(13,148,136,0.60), 0 1px 0 rgba(255,255,255,0.18) inset;
 }
 
 /* ─── Slim "What you are doing here" banner ──────────────────────
@@ -740,22 +730,11 @@ const SCOPED_CSS = `
  * the two sections feel like a single visual block. */
 .smcg-wdh-card {
   position: relative;
-  background: linear-gradient(110deg, #f0fdf9 0%, #ccfbf1 25%, #99f6e4 55%, #5eead4 85%, #2dd4bf 100%);
-  border: 1px solid #5eead4;
+  background: linear-gradient(120deg, #f0fdf9 0%, #ecfdf5 40%, #d1fae5 100%);
+  border: 1.5px solid #6ee7b7;
   border-radius: 16px;
   overflow: hidden;
-  box-shadow:
-    0 2px 0 rgba(255,255,255,0.85) inset,
-    0 4px 16px rgba(45,212,191,0.18),
-    0 1px 3px rgba(0,0,0,0.04);
-}
-.smcg-wdh-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #047857 0%, #059669 35%, #10b981 70%, #34d399 100%);
-  z-index: 1;
+  box-shadow: 0 4px 16px rgba(13,148,136,0.12), 0 1px 0 rgba(255,255,255,0.8) inset;
 }
 .smcg-wdh-toggle-row {
   width: 100%;
@@ -823,8 +802,8 @@ const SCOPED_CSS = `
   flex: 1 1 0;
   min-width: 200px;
   background: #ffffff;
-  border: 1px solid rgba(16,185,129,0.18);
-  border-left: 4px solid #10b981;
+  border: 1px solid rgba(13,148,136,0.18);
+  border-left: 4px solid #0d9488;
   border-radius: 12px;
   padding: 14px 16px;
   display: flex; flex-direction: column; gap: 6px;
@@ -843,62 +822,60 @@ const SCOPED_CSS = `
 /* Tile 1 — Emerald (matches the page brand color). */
 .smcg-step[data-n="0"] {
   border-color: rgba(16,185,129,0.20);
-  border-left-color: #10b981;
+  border-left-color: #0d9488;
 }
 .smcg-step[data-n="0"]:hover { box-shadow: 0 8px 22px rgba(16,185,129,0.22), 0 2px 6px rgba(16,185,129,0.14); }
-.smcg-step[data-n="0"] .smcg-step-num  { background: #10b981; box-shadow: 0 3px 8px rgba(16,185,129,0.30); }
-.smcg-step[data-n="0"] .smcg-step-name { color: #047857; }
-.smcg-step[data-n="0"] .smcg-step-tag-dot { background: #10b981; }
-.smcg-step[data-n="0"] .smcg-step-tag { color: #047857; }
+.smcg-step[data-n="0"] .smcg-step-num  { background: linear-gradient(135deg, #14b8a6, #0d9488); box-shadow: 0 3px 8px rgba(13,148,136,0.35); }
+.smcg-step[data-n="0"] .smcg-step-name { color: #0f766e; }
+.smcg-step[data-n="0"] .smcg-step-tag-dot { background: #14b8a6; }
+.smcg-step[data-n="0"] .smcg-step-tag { color: #0f766e; }
 
-/* Tile 2 — Blue (Customer & Trade Linkage). */
+/* Tiles 2–4 — unified emerald/teal to match the Figma screenshot
+   (the prototype renders every step badge in the same teal, not the
+   per-tile blue/indigo/violet the React build had). Kept identical to
+   Tile 1 so all four read as one cohesive teal set. */
 .smcg-step[data-n="1"] {
-  border-color: rgba(64,81,137,0.20);
-  border-left-color: #405189;
+  border-color: rgba(16,185,129,0.20);
+  border-left-color: #0d9488;
 }
-.smcg-step[data-n="1"]:hover { box-shadow: 0 8px 22px rgba(64,81,137,0.22), 0 2px 6px rgba(64,81,137,0.14); }
-.smcg-step[data-n="1"] .smcg-step-num  { background: #405189; box-shadow: 0 3px 8px rgba(64,81,137,0.30); }
-.smcg-step[data-n="1"] .smcg-step-name { color: #405189; }
-.smcg-step[data-n="1"] .smcg-step-tag-dot { background: #405189; }
-.smcg-step[data-n="1"] .smcg-step-tag { color: #405189; }
+.smcg-step[data-n="1"]:hover { box-shadow: 0 8px 22px rgba(16,185,129,0.22), 0 2px 6px rgba(16,185,129,0.14); }
+.smcg-step[data-n="1"] .smcg-step-num  { background: linear-gradient(135deg, #14b8a6, #0d9488); box-shadow: 0 3px 8px rgba(13,148,136,0.35); }
+.smcg-step[data-n="1"] .smcg-step-name { color: #0f766e; }
+.smcg-step[data-n="1"] .smcg-step-tag-dot { background: #14b8a6; }
+.smcg-step[data-n="1"] .smcg-step-tag { color: #0f766e; }
 
-/* Tile 3 — Indigo (Compliance & Risk Details — formal, professional
-   tone that sits between tile 2's navy blue and tile 4's violet
-   without using the harsher red the previous palette had). */
 .smcg-step[data-n="2"] {
-  border-color: rgba(79,70,229,0.22);
-  border-left-color: #4f46e5;
+  border-color: rgba(16,185,129,0.20);
+  border-left-color: #0d9488;
 }
-.smcg-step[data-n="2"]:hover { box-shadow: 0 8px 22px rgba(79,70,229,0.22), 0 2px 6px rgba(79,70,229,0.14); }
-.smcg-step[data-n="2"] .smcg-step-num  { background: #4f46e5; box-shadow: 0 3px 8px rgba(79,70,229,0.30); }
-.smcg-step[data-n="2"] .smcg-step-name { color: #3730a3; }
-.smcg-step[data-n="2"] .smcg-step-tag-dot { background: #4f46e5; }
-.smcg-step[data-n="2"] .smcg-step-tag { color: #3730a3; }
+.smcg-step[data-n="2"]:hover { box-shadow: 0 8px 22px rgba(16,185,129,0.22), 0 2px 6px rgba(16,185,129,0.14); }
+.smcg-step[data-n="2"] .smcg-step-num  { background: linear-gradient(135deg, #14b8a6, #0d9488); box-shadow: 0 3px 8px rgba(13,148,136,0.35); }
+.smcg-step[data-n="2"] .smcg-step-name { color: #0f766e; }
+.smcg-step[data-n="2"] .smcg-step-tag-dot { background: #14b8a6; }
+.smcg-step[data-n="2"] .smcg-step-tag { color: #0f766e; }
 
-/* Tile 4 — Violet (Shipment & Export Readiness — "final execution"). */
 .smcg-step[data-n="3"] {
-  border-color: rgba(124,58,237,0.22);
-  border-left-color: #7c3aed;
+  border-color: rgba(16,185,129,0.20);
+  border-left-color: #0d9488;
 }
-.smcg-step[data-n="3"]:hover { box-shadow: 0 8px 22px rgba(124,58,237,0.22), 0 2px 6px rgba(124,58,237,0.14); }
-.smcg-step[data-n="3"] .smcg-step-num  { background: #7c3aed; box-shadow: 0 3px 8px rgba(124,58,237,0.30); }
-.smcg-step[data-n="3"] .smcg-step-name { color: #6d28d9; }
-.smcg-step[data-n="3"] .smcg-step-tag-dot { background: #7c3aed; }
-.smcg-step[data-n="3"] .smcg-step-tag { color: #6d28d9; }
+.smcg-step[data-n="3"]:hover { box-shadow: 0 8px 22px rgba(16,185,129,0.22), 0 2px 6px rgba(16,185,129,0.14); }
+.smcg-step[data-n="3"] .smcg-step-num  { background: linear-gradient(135deg, #14b8a6, #0d9488); box-shadow: 0 3px 8px rgba(13,148,136,0.35); }
+.smcg-step[data-n="3"] .smcg-step-name { color: #0f766e; }
+.smcg-step[data-n="3"] .smcg-step-tag-dot { background: #14b8a6; }
+.smcg-step[data-n="3"] .smcg-step-tag { color: #0f766e; }
 .smcg-step-head { display: flex; align-items: center; gap: 8px; }
 .smcg-step-num {
-  width: 24px; height: 24px; border-radius: 50%;
-  /* Default flat emerald — each per-tile rule above overrides this
-     with its own solid colour. No more two-stop gradients. */
-  background: #10b981;
+  width: 26px; height: 26px; border-radius: 8px;
+  /* Figma stepper — deeper teal-emerald rounded-square badge. */
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
   display: inline-flex; align-items: center; justify-content: center;
   color: #fff; font-size: 12px; font-weight: 700;
   flex-shrink: 0;
-  box-shadow: 0 3px 8px rgba(16,185,129,0.30);
+  box-shadow: 0 3px 8px rgba(13,148,136,0.35);
 }
 .smcg-step-name {
   font-size: 14px; font-weight: 700;
-  color: #047857;
+  color: #0f766e;
   line-height: 1.2;
 }
 .smcg-step-desc {
@@ -909,10 +886,10 @@ const SCOPED_CSS = `
 .smcg-step-tag {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 10.5px; font-weight: 700;
-  color: #047857;
+  color: #0f766e;
   margin-top: 4px;
 }
-.smcg-step-tag-dot { width: 5px; height: 5px; border-radius: 50%; background: #10b981; }
+.smcg-step-tag-dot { width: 5px; height: 5px; border-radius: 50%; background: #14b8a6; }
 .smcg-step-arrow {
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -924,9 +901,9 @@ const SCOPED_CSS = `
 /* ─── Toolbar — search + Add Consignee inside the main card. */
 .smcg-toolbar {
   display: flex; align-items: center; gap: 12px;
-  padding: 14px 18px;
-  background: linear-gradient(135deg, rgba(16,185,129,0.05), rgba(52,211,153,0.02));
-  border-bottom: 1px solid rgba(16,185,129,0.15);
+  padding: 10px 16px;
+  background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 50%, #a7f3d0 100%);
+  border-bottom: 2px solid #6ee7b7;
   flex-wrap: wrap;
   position: relative;
   z-index: 1;
@@ -992,14 +969,6 @@ const SCOPED_CSS = `
   flex: 1; min-height: 0;
   box-shadow: 0 2px 10px rgba(0,0,0,0.04);
 }
-.smcg-table-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #047857 0%, #059669 35%, #10b981 70%, #34d399 100%);
-  z-index: 1;
-}
 
 /* ─── Table ─── */
 .smcg-table-wrap {
@@ -1051,7 +1020,7 @@ const SCOPED_CSS = `
    so all three sections feel like one connected block. Dark-emerald
    column text reads cleanly against the teal wash. */
 .smcg-table-wrap .table thead.table-light tr {
-  background: linear-gradient(110deg, #f0fdf9 0%, #ccfbf1 25%, #99f6e4 55%, #5eead4 85%, #2dd4bf 100%) !important;
+  background: #0d9488 !important;
 }
 /* Typography matches the HR Employees / Master pages — header reads
    at 12px (was 13px which looked oversized next to 13px body cells
@@ -1061,18 +1030,18 @@ const SCOPED_CSS = `
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
   background: transparent !important;
-  color: #064e3b !important;
+  color: #ffffff !important;
   font-size: 12px !important;
   font-weight: 600 !important;
   letter-spacing: .02em !important;
   padding: 10px 14px !important;
   line-height: 1.3 !important;
-  border-bottom: 1px solid #5eead4 !important;
+  border-bottom: 1px solid #0b7d72 !important;
   white-space: nowrap;
   text-transform: uppercase;
   vertical-align: middle !important;
 }
-.smcg-table-wrap .table thead th i { font-size: 12px; opacity: 0.7; color: #047857; }
+.smcg-table-wrap .table thead th i { font-size: 12px; opacity: 0.85; color: #ffffff; }
 
 /* Body — white rows with soft emerald hover. */
 .smcg-table-wrap .table tbody tr { background: transparent; transition: background .12s ease; }
@@ -1443,8 +1412,7 @@ const SCOPED_CSS = `
 
 /* Toolbar — dark emerald wash on the toolbar background. */
 [data-bs-theme="dark"] .smcg-toolbar {
-  background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(52,211,153,0.04));
-  border-bottom-color: rgba(16,185,129,0.20);
+  background: transparent;
 }
 [data-bs-theme="dark"] .smcg-toolbar .smcg-search {
   background: rgba(255,255,255,0.04);
@@ -1472,13 +1440,13 @@ const SCOPED_CSS = `
   border-color: var(--vz-border-color) !important;
 }
 [data-bs-theme="dark"] .smcg-table-wrap .table thead.table-light tr {
-  background: linear-gradient(110deg, rgba(15,42,35,0.55) 0%, rgba(19,78,58,0.45) 25%, rgba(6,95,70,0.40) 55%, rgba(4,120,87,0.35) 85%, rgba(45,212,191,0.20) 100%) !important;
+  background: #0b7d72 !important;
 }
 [data-bs-theme="dark"] .smcg-table-wrap .table thead.table-light th {
-  color: #99f6e4 !important;
-  border-bottom-color: rgba(94,234,212,0.30) !important;
+  color: #ffffff !important;
+  border-bottom-color: rgba(255,255,255,0.18) !important;
 }
-[data-bs-theme="dark"] .smcg-table-wrap .table thead th i { color: #99f6e4 !important; opacity: 0.7; }
+[data-bs-theme="dark"] .smcg-table-wrap .table thead th i { color: #ffffff !important; opacity: 0.85; }
 [data-bs-theme="dark"] .smcg-table-wrap .table tbody tr:hover { background: rgba(16,185,129,0.08) !important; }
 [data-bs-theme="dark"] .smcg-table-wrap .table tbody td {
   color: var(--vz-body-color);
@@ -1549,36 +1517,42 @@ const SCOPED_CSS = `
 /* Compact laptop — 4-col WDH tiles get squeezed past 1280 with
    long titles, drop to 2x2 grid which reads more cleanly. */
 @media (max-width: 1280px) {
-  .smcg-wdh-cards { grid-template-columns: repeat(2, 1fr); }
-  .smcg-wdh-arrow { display: none; }
+  /* WDH step tiles wrap to 2-up; hide the connector arrows (they only
+     read correctly in a single horizontal row). */
+  .smcg-wdh-body .smcg-step { flex: 1 1 calc(50% - 6px); }
+  .smcg-step-arrow { display: none; }
   /* Page padding tightens slightly on narrower laptops so the table
      gets more room before horizontal scroll kicks in. */
   .smcg-root { padding: 12px 14px; }
 }
 @media (max-width: 1024px) {
-  .smcg-wdh-cards { grid-template-columns: repeat(2, 1fr); }
-  .smcg-wdh-arrow { display: none; }
+  .smcg-wdh-body .smcg-step { flex: 1 1 calc(50% - 6px); }
+  .smcg-step-arrow { display: none; }
   /* Tighter spacing on tablet so the table card gets max usable
      width before forcing horizontal scroll. */
   .smcg-cstrip { padding: 14px 16px; }
-  .smcg-wdh, .smcg-tabs-row { padding: 12px 14px; }
+  .smcg-wdh-card { padding: 12px 14px; }
 }
 @media (max-width: 768px) {
+  /* Hero stacks: title block over a full-width Add button. */
   .smcg-cstrip { flex-direction: column; align-items: stretch; gap: 14px; padding: 14px; }
-  .smcg-cstrip-right { width: 100%; }
-  .smcg-add-btn { width: 100%; justify-content: center; }
-  .smcg-title { font-size: 18px; }
-  .smcg-sub   { font-size: 12.5px; }
-  .smcg-wdh-cards { grid-template-columns: 1fr; }
-  .smcg-wdh-header { flex-wrap: wrap; gap: 8px; }
-  .smcg-tabs-row { flex-direction: column; align-items: stretch; gap: 10px; }
-  .smcg-search-wrap { max-width: 100%; }
+  .smcg-cstrip-add { width: 100%; justify-content: center; }
+  .smcg-cstrip-title { font-size: 17px; }
+  .smcg-cstrip-sub   { font-size: 12px; }
+  /* WDH tiles stack full-width. */
+  .smcg-wdh-body .smcg-step { flex: 1 1 100%; }
+  .smcg-wdh-toggle-row { flex-wrap: wrap; gap: 8px; }
+  /* Search toolbar takes the full row. */
+  .smcg-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+  .smcg-toolbar .smcg-search { min-width: 100%; max-width: 100%; }
 }
 @media (max-width: 480px) {
   .smcg-root { padding: 0; }
-  .smcg-cstrip, .smcg-wdh, .smcg-tabs-row { border-radius: 12px; }
-  .smcg-avatar-wrap, .smcg-back-btn { flex-shrink: 0; }
-  .smcg-wdh-card { padding: 12px; }
+  .smcg-cstrip, .smcg-wdh-card, .smcg-table-card { border-radius: 12px; }
+  .smcg-wdh-body { padding: 12px; }
+  /* Drop the long hero subtitle on tiny screens — title + Add button
+     are what matter at this width. */
+  .smcg-cstrip-sub { display: none; }
   .smcg-shimmer-head, .smcg-shimmer-row {
     grid-template-columns: repeat(12, minmax(64px, 1fr));
     overflow-x: auto;

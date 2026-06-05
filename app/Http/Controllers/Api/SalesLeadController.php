@@ -60,6 +60,16 @@ class SalesLeadController extends Controller
         // mapped rows still surface (with their saved labels) instead of
         // turning into blank/null entries on the worksheet. Source of B2.
         $q = Lead::query()
+            ->select('leads.*')
+            // Lead currency lives on its PRODUCTS (lead_products enforces a
+            // single currency per lead). Expose the first non-null product
+            // currency so the QPI "Create PI" form can auto-fill its
+            // read-only Currency from the chosen opportunity.
+            ->addSelect(['currency' => \Illuminate\Support\Facades\DB::table('lead_products')
+                ->select('currency')
+                ->whereColumn('lead_products.lead_id', 'leads.id')
+                ->whereNotNull('currency')
+                ->limit(1)])
             ->with([
                 'salesperson' => fn ($r) => $r->select('id', 'name')->withTrashed(),
                 'customer'    => fn ($r) => $r->select('id', 'company_name', 'customer_code')->withTrashed(),
@@ -400,9 +410,10 @@ class SalesLeadController extends Controller
         }
 
         // Gate the move to Stage 6 (Victory): the opportunity must have a
-        // Proforma Invoice, and that PI must be SIGNED. A won deal isn't
-        // real until the customer has e-signed the PI. Only enforced on the
-        // forward transition (currently below Stage 6) so re-saves /
+        // Proforma Invoice that has at least been SENT for signature. Once
+        // the PI is out for the customer's e-signature the deal may advance
+        // (we no longer wait for the signing to complete). Only enforced on
+        // the forward transition (currently below Stage 6) so re-saves /
         // regressions back to 6 aren't blocked.
         if (isset($data['lead_stage_id'])
             && (int) $data['lead_stage_id'] === 6
@@ -419,14 +430,14 @@ class SalesLeadController extends Controller
                     'message' => 'Create a Proforma Invoice on this opportunity before moving to Victory (Stage 6).',
                 ], 422);
             }
-            if (!\App\Models\ClmSignatureRequest::hasSignedForDoc(
+            if (!\App\Models\ClmSignatureRequest::hasSentForDoc(
                 $user->client_id,
                 \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE,
                 $pi->id,
             )) {
                 return response()->json([
                     'status'  => false,
-                    'message' => "The Proforma Invoice {$pi->code} must be signed before moving to Victory (Stage 6). Send it for signature and wait for the customer to finish signing.",
+                    'message' => "Send the Proforma Invoice {$pi->code} for signature before moving to Victory (Stage 6).",
                 ], 422);
             }
         }

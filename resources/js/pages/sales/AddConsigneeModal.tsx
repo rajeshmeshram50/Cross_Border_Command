@@ -3,6 +3,7 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
+import { downloadFile } from '../../utils/downloadFile';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
@@ -13,6 +14,14 @@ import {
   writeCustomerMasterBundle,
   bustCustomerMasterBundle,
 } from './customerBundleCache';
+
+/* Truncate a long attachment file name so it never spills out of the
+ * ATTACHMENT cell into the ACTIONS column. The full name is shown on
+ * hover via the wrapping Tooltip. Caps at 25 chars + ellipsis. */
+const truncFileName = (s: string | undefined | null, n = 25): string => {
+  const v = String(s ?? '');
+  return v.length > n ? v.slice(0, n) + '…' : v;
+};
 
 /* Stage 3 → Trade Documents → Send for Signature.
  * Same shape used by AddCustomerModal / AddVendorModal so the Zoho
@@ -244,6 +253,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
 
   const [phase, setPhase]   = useState<Phase>('pick-customer');
   const [stage, setStage]   = useState<Stage>(1);
+  /* Furthest stage the user has reached — drives which steps the
+   * stepper lets you click back/forward to (parallels AddCustomerModal).
+   * Editing an existing consignee unlocks all three immediately; a fresh
+   * create grows it as the user advances via Save & Next. */
+  const [maxStage, setMaxStage] = useState<Stage>(1);
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
   const [search, setSearch]     = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -290,11 +304,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * individually. The flag itself isn't persisted server-side — it's
    * a UX shortcut for copy-once-and-edit. */
   const [sameAsCustomer, setSameAsCustomer] = useState(false);
-  /* True iff the consignee currently being EDITED was SAVED as
-   * same-as-customer (authoritative — read from the fetched detail, not the
-   * list-row prop which doesn't always carry the flag). Locks the toggle so a
-   * saved mirror can't be unticked from the edit screen. */
-  const [savedAsMirror, setSavedAsMirror] = useState(false);
   /* Inline validation errors for Stage 1 fields. Keyed by form1 field
    * name. Each `goNext` from Stage 1 runs validateStage1() and refuses
    * to advance if any required field is empty/invalid; the error map
@@ -551,6 +560,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * yet. */
     const landing: Stage = (consignee ? (initialStage ?? 1) : 1);
     setStage   (landing);
+    // Existing consignee = a saved record → all three stages are
+    // reachable for review. Fresh create starts locked to Stage 1.
+    setMaxStage(consignee ? 3 : (landing as Stage));
     setIdTab   ('identification');
     setKycSub  (remembered?.kycSub   ?? 'company-dd');
     setVaultTab(remembered?.vaultTab ?? 'kyc');
@@ -563,7 +575,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setLinkedHidden(true);
     setErrors1({});
     setSameAsCustomer(false);
-    setSavedAsMirror(false);
     setEvSub('dd');
     setLocations([]);
     /* Reset Stage 1 form to empty defaults — CREATE mode only. In edit
@@ -833,8 +844,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         // the consignee flagged as same-as-customer on update.
         if (typeof d.same_as_customer === 'boolean') {
           setSameAsCustomer(d.same_as_customer);
-          // Authoritative saved-mirror flag → locks the toggle on edit.
-          setSavedAsMirror(d.same_as_customer === true);
           // Linked Customer panel stays collapsed by default — the
           // user can click the bar to expand it on demand. (Previous
           // behavior auto-expanded for same-as-customer rows, but
@@ -1024,8 +1033,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * Mirrors the same gate added to AddCustomerModal. We deliberately
      * do NOT clear segmentDocs when stage<2 — if the user navigates
      * Stage 2 → Stage 1, the previously-loaded docs stay cached and
-     * are immediately usable when they go back. */
-    if (stage < 2) return;
+     * are immediately usable when they go back. We ALSO load when
+     * maxStage>=2 (e.g. editing an existing consignee while sitting on
+     * Stage 1) so the stepper's per-stage completeness is accurate
+     * rather than defaulting later stages to a false "done". */
+    if (stage < 2 && maxStage < 2) return;
     const names = (form1.segment ?? []).filter(Boolean);
     if (names.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); return; }
     const segRows = names
@@ -1091,7 +1103,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, stage, form1.segment, mSegmentIds]);
+  }, [open, stage, maxStage, form1.segment, mSegmentIds]);
 
   /* Poll the live signature-request list every 15s while the user is on
    * Stage 3 → Trade Documents. The backend's ?sync=true triggers a Zoho
@@ -1348,6 +1360,40 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     return e;
   };
 
+  /* ── Real per-stage completeness for the stepper ──────────────────
+   * Mirrors AddCustomerModal: the stepper must not paint a stage green
+   * just because the user advanced past it. A visited-but-empty stage
+   * shows amber "incomplete" instead. Plain const (not useMemo) on
+   * purpose — it must sit after STAGE1_FIELD_KEYS/stage1FieldRule, which
+   * are declared below the `if (!open) return null` early-return, so a
+   * hook here would break React's stable hook order.
+   *
+   *   Stage 1 — every required identity field is valid.
+   *   Stage 2 & 3 — share ONE segment-rule upload set (dd/kyc/tl). Done
+   *     when every MANDATORY doc is uploaded; an all-optional rule is
+   *     done once at least one is uploaded; a rule with no docs at all
+   *     has nothing to satisfy → done. */
+  const stageComplete: [boolean, boolean, boolean] = (() => {
+    const s1 = STAGE1_FIELD_KEYS.every(k => !stage1FieldRule(k, form1));
+
+    const subFor = (cat: 'dd' | 'kyc' | 'tl') =>
+      cat === 'dd' ? 'company-dd' : cat === 'kyc' ? 'owner-kyc' : 'trade-licence';
+    let mandTotal = 0, mandDone = 0, anyDoc = false, anyUpload = false;
+    (['dd', 'kyc', 'tl'] as const).forEach(cat => {
+      ((segmentDocs as any)[cat] || []).forEach((d: any) => {
+        anyDoc = true;
+        const up = !!segmentRefUploads[`${subFor(cat)}::${d.code}`];
+        if (up) anyUpload = true;
+        if (d.requirement === 'M') { mandTotal++; if (up) mandDone++; }
+      });
+    });
+    const docsComplete = !anyDoc
+      ? true
+      : mandTotal > 0 ? mandDone === mandTotal : anyUpload;
+
+    return [s1, docsComplete, docsComplete];
+  })();
+
   /* Guarded tab switcher handed to the Stage 1 tab buttons. The user can't
      jump straight to "Address & Contact" until the Identification fields are
      valid — clicking it validates first and only switches when clean (else it
@@ -1589,7 +1635,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           toast.warning('KYC clone partial', err?.response?.data?.message ?? 'Some KYC rows may not have copied — review Stage 2.');
         }
       }
-      setStage(2);
+      setStage(2); setMaxStage(m => Math.max(m, 2) as Stage);
       return;
     }
     if (stage === 2) {
@@ -1603,7 +1649,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       // whichever sub-tab the user last visited.
       setVaultTab('kyc');
       setEvSub('dd');
-      setStage(3);
+      setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
       return;
     }
     /* Stage 3 advance — cycle Evidence Vault › KYC Documents
@@ -1645,6 +1691,16 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     if (evSub === 'tl')  { setEvSub('kyc'); return; }
     if (evSub === 'kyc') { setEvSub('dd');  return; }
     setStage(2);
+  };
+
+  /* Jump straight to any already-reached stage from the stepper (click
+   * a step header). Mirrors AddCustomerModal.gotoStage: forward jumps to
+   * not-yet-reached stages are blocked; landing on Stage 1 resets its
+   * sub-tab so the user sees Identification first. */
+  const gotoStage = (s: Stage) => {
+    if (s > maxStage || s === stage) return;
+    setStage(s);
+    if (s === 1) setIdTab('identification');
   };
 
   /* Build the POST/PUT payload from form1 + locations. Mirrors the
@@ -1922,24 +1978,30 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               n={1}
               title="Consignee Legal Identity"
               sub="Company, address & contact"
-              status={stage > 1 ? 'done' : stage === 1 ? 'active' : 'idle'}
+              status={stage === 1 ? 'active' : 1 <= maxStage ? (stageComplete[0] ? 'done' : 'incomplete') : 'idle'}
               icon={<IconHome />}
+              clickable={stage !== 1 && 1 <= maxStage}
+              onClick={() => gotoStage(1)}
             />
             <div className="acm-steps-arrow"><IconChevronRight /></div>
             <StepNode
               n={2}
               title="KYC / Due Diligence"
               sub="Docs, identity & compliance"
-              status={stage > 2 ? 'done' : stage === 2 ? 'active' : 'idle'}
+              status={stage === 2 ? 'active' : 2 <= maxStage ? (stageComplete[1] ? 'done' : 'incomplete') : 'idle'}
               icon={<IconDoc />}
+              clickable={stage !== 2 && 2 <= maxStage}
+              onClick={() => gotoStage(2)}
             />
             <div className="acm-steps-arrow"><IconChevronRight /></div>
             <StepNode
               n={3}
               title="Evidence Vault"
               sub="Trade documents & archive"
-              status={stage === 3 ? 'active' : 'idle'}
+              status={stage === 3 ? 'active' : 3 <= maxStage ? (stageComplete[2] ? 'done' : 'incomplete') : 'idle'}
               icon={<IconVault />}
+              clickable={stage !== 3 && 3 <= maxStage}
+              onClick={() => gotoStage(3)}
             />
           </div>
 
@@ -1974,7 +2036,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                     <div className="acg-hs-grid">
                       <ReadInlineG label="Customer ID"          value={customer.id} />
                       <ReadInlineG label="Company Name"         value={customer.name} />
-                      <ReadInlineG label="Company Legal Name"   value={customer.legalName} />
+                      <ReadInlineG label="Customer Legal Name"   value={customer.legalName} />
                       <ReadInlineG label="Customer Type"        value={customer.type} />
 
                       <ReadInlineG label="Customer Segment"     value={customer.segment} />
@@ -2095,6 +2157,24 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                  */
                 if (!v) {
                   setErrors1({});
+                  /* Clear the auto-filled preview on untick — but ONLY
+                   * while this consignee hasn't been saved yet (no Save &
+                   * Next done). Before the first save, ticking
+                   * Same-as-Customer is just an autofill preview, so
+                   * unticking should undo it and leave a blank form. Once
+                   * it's been persisted (edit mode, or savedDbId set after
+                   * a Save & Next) the mirrored values are the user's own
+                   * committed data, so we keep them and just unlock the
+                   * fields for editing instead of wiping their work. */
+                  const notYetSaved = !consignee?.db_id && !savedDbId;
+                  if (notYetSaved) {
+                    setForm1({
+                      companyName: '', legalName: '', website: '', segment: [] as string[], classification: '', risk: '',
+                      addressType: 'Registered Office', address: '', country: '', state: '', city: '', pin: '',
+                      contactName: '', designation: '', contactNo: '', email: '', whatsapp: 'Yes',
+                    });
+                    setLocations([]);
+                  }
                 }
               }}
               customer={customer}
@@ -2110,11 +2190,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 (existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
                 !(consignee?.same_as_customer === true)
               }
-              /* Editing a consignee that was SAVED as same-as-customer →
-                 lock the toggle (can't untick) + keep fields read-only.
-                 Uses the authoritative fetched-detail flag (savedAsMirror),
-                 not the list-row prop which may omit same_as_customer. */
-              mirrorLocked={savedAsMirror}
+              /* Never lock the toggle. Even a consignee that was saved as
+                 same-as-customer can be UNTICKED later (e.g. it was ticked
+                 by mistake) — unticking just collapses the linked-customer
+                 detail panel and unlocks the Stage 1 fields for editing.
+                 Re-ticking still respects the "one mirror per customer"
+                 constraint enforced in setSameAsCustomer above. */
+              mirrorLocked={false}
               locations={locations}
               onAddLocation={() => setLocModal({ open: true, editing: null })}
               onEditLocation={(id) => setLocModal({ open: true, editing: id })}
@@ -2461,12 +2543,19 @@ const LinkedField = ({ label, value }: { label: string; value: React.ReactNode }
   </div>
 );
 
-const StepNode = ({ n, title, sub, status, icon }: {
+const StepNode = ({ n, title, sub, status, icon, clickable = false, onClick }: {
   n: number; title: string; sub: string;
-  status: 'idle' | 'active' | 'done';
+  status: 'idle' | 'active' | 'done' | 'incomplete';
   icon: React.ReactNode;
+  clickable?: boolean;
+  onClick?: () => void;
 }) => (
-  <div className={`acm-step ${status === 'active' ? 'acm-step-active' : ''} ${status === 'done' ? 'acm-step-done' : ''}`}>
+  <div
+    className={`acm-step ${status === 'active' ? 'acm-step-active' : ''} ${status === 'done' ? 'acm-step-done' : ''} ${status === 'incomplete' ? 'acm-step-incomplete' : ''} ${clickable ? 'acm-step-clickable' : ''}`}
+    onClick={clickable ? onClick : undefined}
+    role={clickable ? 'button' : undefined}
+    tabIndex={clickable ? 0 : undefined}
+  >
     <div className="acm-step-badge">
       {status === 'done' ? <IconCheck /> : status === 'active' ? icon : <span>{n}</span>}
     </div>
@@ -2756,7 +2845,10 @@ const Stage1 = ({
       {tab === 'identification' && (
         <>
           <SectionHeader icon={<IconHome />} title="Basic Company Details"     sub="Company identity, segment, and risk classification" accent="#10b981" />
-          <div className="acm-grid-2 acm-sec-pad">
+          {/* Figma layout: row 1 = Company Name | Legal Name (2-col),
+              row 2 = Website | Segment | Classification | Risk (4-col). */}
+          <div className="acm-sec-pad">
+            <div className="acm-grid-2">
             <Field label="Company Name" required error={errors.companyName} fieldKey="companyName">
               <input
                 className={`acm-input ${errors.companyName ? 'acm-input-error' : ''}`}
@@ -2767,9 +2859,11 @@ const Stage1 = ({
                 disabled={lock}
               />
             </Field>
-            <Field label="Company Legal Name" required error={errors.legalName} fieldKey="legalName">
+            <Field label="Consignee Legal Name" required error={errors.legalName} fieldKey="legalName">
               <input className={`acm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} disabled={lock} />
             </Field>
+            </div>
+            <div className="acm-grid-4 acm-mt-12">
             <Field label="Company Website" error={errors.website} fieldKey="website">
               <input className={`acm-input ${errors.website ? 'acm-input-error' : ''}`} placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
             </Field>
@@ -2807,6 +2901,7 @@ const Stage1 = ({
                 onChange={v => set('risk', v)}
               />
             </Field>
+            </div>
           </div>
 
           <SectionHeader icon={<IconPin />} title="Primary Address &amp; Contact Person" sub="Registered office and primary contact at this location" />
@@ -3070,23 +3165,6 @@ const KYC_SUB_META: Record<KycSubTab, { title: string; sub: string; nameCol: str
   'trade-licence':{ title: 'TRADE LICENCE',         sub: '| Trade licence documents and regulatory approvals',     nameCol: 'Document Name',       placeholder: 'Search trade licence…',       addLabel: 'Add Trade Licence' },
 };
 
-/* Design-only Trade Licence placeholder list — shown in the Stage 2
- * Trade Licence sub-tab and the Stage 3 Evidence Vault > Trade Licence
- * sub-tab when the consignee has no real TL docs yet. Same data shape
- * as the Customer modal so both wizards feel consistent. The actual
- * docs are stored via the regular kycDocs table (kind='tl'). */
-type TradePlaceholderRow = { code: string; name: string; authority: string; expiry: string; status: 'mandatory' | 'optional' };
-const TL_PLACEHOLDER: TradePlaceholderRow[] = [
-  { code: 'TL-001', name: 'Import Export Code (IEC)',      authority: 'DGFT',                     expiry: '03/2026', status: 'mandatory' },
-  { code: 'TL-002', name: 'RCMC Certificate',              authority: 'Export Promotion Council', expiry: '05/2027', status: 'mandatory' },
-  { code: 'TL-003', name: 'Export Licence',                authority: 'DGFT',                     expiry: '12/2026', status: 'optional'  },
-  { code: 'TL-004', name: 'Drug Licence',                  authority: 'CDSCO',                    expiry: '08/2027', status: 'optional'  },
-  { code: 'TL-005', name: 'FSSAI Licence',                 authority: 'FSSAI',                    expiry: '06/2028', status: 'optional'  },
-  { code: 'TL-006', name: 'GST Registration',              authority: 'GST Department',           expiry: 'N/A',     status: 'mandatory' },
-  { code: 'TL-007', name: 'ISO Certification',             authority: 'Certification Body',       expiry: '11/2027', status: 'optional'  },
-  { code: 'TL-008', name: 'Pollution Control Certificate', authority: 'Pollution Control Board',  expiry: '07/2026', status: 'mandatory' },
-];
-
 /* Per-row actions cell for the segment-rule reference rows. Starts as
  * a single Upload icon; on file pick it flips to View / Download /
  * Delete using a blob URL the parent caches. Delete revokes the URL
@@ -3148,7 +3226,7 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
         <Tooltip label="Upload">
           <label className="acm-loc-btn" aria-label="Upload" style={{ cursor: 'pointer' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
+            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
           </label>
         </Tooltip>
       </div>
@@ -3162,7 +3240,7 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
         </a>
       </Tooltip>
       <Tooltip label={`Download ${uploaded.name}`}>
-        <a href={uploaded.url} download={uploaded.name} className="acm-loc-btn" aria-label="Download">
+        <a href={uploaded.url} onClick={e => { e.preventDefault(); void downloadFile(uploaded.url, uploaded.name); }} className="acm-loc-btn" aria-label="Download">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </a>
       </Tooltip>
@@ -3170,7 +3248,7 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
         <Tooltip label="Re-upload (replace file)">
           <label className="acm-loc-btn" aria-label="Re-upload" style={{ cursor: 'pointer' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
+            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
           </label>
         </Tooltip>
       )}
@@ -3360,7 +3438,7 @@ const Stage2 = ({
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-                    <th>ISSUING AUTHORITY</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                    <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3373,9 +3451,15 @@ const Stage2 = ({
                         <td><span className="acm-kyc-code">{d.code}</span></td>
                         <td style={{ fontWeight: 700 }}>{d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}</td>
                         <td>{d.authority ?? '—'}</td>
+                        {/* Requirement — Mandatory / Optional, same as Company DD. */}
+                        <td>
+                          {d.requirement === 'M'
+                            ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
+                            : <span className="acm-badge acm-badge--opt">Optional</span>}
+                        </td>
                         <td>
                           {uploaded
-                            ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
+                            ? <Tooltip label={uploaded.name}><a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, whiteSpace:'nowrap' }}>{truncFileName(uploaded.name)}</a></Tooltip>
                             : <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span>}
                         </td>
                         <td>
@@ -3451,7 +3535,7 @@ const Stage2 = ({
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>{meta.nameCol.toUpperCase()}</th>
-                    <th>ISSUING AUTHORITY</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                    <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3460,21 +3544,17 @@ const Stage2 = ({
                       captured yet AND the user isn't searching. Source
                       per sub-tab:
                         company-dd   → segmentDocs.dd
-                        trade-licence → segmentDocs.tl, with TL_PLACEHOLDER
-                                       as a final fallback so the table
-                                       never reads as empty here.
-                      Once a real upload lands the live row takes over
-                      and the placeholders disappear. */}
+                        trade-licence → segmentDocs.tl
+                      Both come straight from the segment's rule in the
+                      Document Control Panel. When the DCP leaves a
+                      category empty, NOTHING renders here (no dummy
+                      placeholder) — the empty message below takes over.
+                      Once a real upload lands the live row takes over. */}
                   {(() => {
                     if (filteredDocs.length > 0 || q) return null;
                     let segSrc: any[] = [];
                     if (sub === 'company-dd')   segSrc = (segmentDocs.dd || []).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
-                    if (sub === 'trade-licence') {
-                      const tl = segmentDocs.tl || [];
-                      segSrc = tl.length > 0
-                        ? tl.map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }))
-                        : TL_PLACEHOLDER.map(r => ({ code:r.code, name:r.name, authority:r.authority, expiry:r.expiry, isMandatory:r.status === 'mandatory' }));
-                    }
+                    if (sub === 'trade-licence') segSrc = (segmentDocs.tl || []).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
                     return segSrc.map((tl, i) => {
                       const refKey = `${sub}::${tl.code}`;
                       const uploaded = segmentRefUploads[refKey];
@@ -3486,9 +3566,15 @@ const Stage2 = ({
                             {tl.name}{tl.isMandatory ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
                           </td>
                           <td>{tl.authority}</td>
+                          {/* Requirement — Mandatory / Optional, shown up-front. */}
+                          <td>
+                            {tl.isMandatory
+                              ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
+                              : <span className="acm-badge acm-badge--opt">Optional</span>}
+                          </td>
                           <td>
                             {uploaded
-                              ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
+                              ? <Tooltip label={uploaded.name}><a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, whiteSpace:'nowrap' }}>{truncFileName(uploaded.name)}</a></Tooltip>
                               : <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span>}
                           </td>
                           <td>
@@ -3507,10 +3593,12 @@ const Stage2 = ({
                   })()}
                   {filteredDocs.length === 0 && (
                     q
-                      ? <tr className="acm-loc-empty"><td colSpan={6}>No documents match your search.</td></tr>
+                      ? <tr className="acm-loc-empty"><td colSpan={7}>No documents match your search.</td></tr>
                       : (sub === 'company-dd' && (segmentDocs.dd?.length ?? 0) === 0)
-                        ? <tr className="acm-loc-empty"><td colSpan={6}>{`No DD documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
-                        : null /* trade-licence + company-dd-with-segment-refs already render rows above */
+                        ? <tr className="acm-loc-empty"><td colSpan={7}>{`No DD documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
+                        : (sub === 'trade-licence' && (segmentDocs.tl?.length ?? 0) === 0)
+                          ? <tr className="acm-loc-empty"><td colSpan={7}>No trade licence documents configured for this segment in the Document Control Panel.</td></tr>
+                          : null /* company-dd-with-segment-refs already render rows above */
                   )}
                   {filteredDocs.map((d, i) => {
                     const sr = i + 1;
@@ -3520,6 +3608,7 @@ const Stage2 = ({
                         <td><span className="acm-kyc-code">{codeFor(kind, sr)}</span></td>
                         <td style={{ fontWeight: 700 }}>{d.name}</td>
                         <td>{d.issuing_authority || '—'}</td>
+                        <td style={{ color: '#9ca3af' }}>—</td>
                         <td><AttachmentLink url={d.attachment_url} path={d.attachment_path} /></td>
                         <td>
                           <div className="acm-loc-actions">
@@ -3725,8 +3814,7 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                       <Tooltip label={d.signed_url ? 'Download signed document' : 'Download document'}>
                         <a
                           href={d.signed_url || '#'}
-                          download={d.signed_url ? '' : undefined}
-                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
+                          onClick={e => { e.preventDefault(); if (d.signed_url) void downloadFile(d.signed_url, d.name || ''); }}
                           style={{
                             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                             width: 26, height: 26, borderRadius: 6,
@@ -3747,9 +3835,7 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                         <Tooltip label="Download Certificate of Completion">
                           <a
                             href={d.certificate_url}
-                            download=""
-                            target="_blank"
-                            rel="noreferrer"
+                            onClick={e => { e.preventDefault(); void downloadFile(d.certificate_url!, `${d.name || 'document'}-certificate`); }}
                             style={{
                               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                               width: 26, height: 26, borderRadius: 6,
@@ -3898,11 +3984,8 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                       <tr>
                         <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
                         <th>ISSUING AUTHORITY</th>
-                        {/* STATUS th gets extra left inset (8px) so the header
-                            text lines up with the pill's TEXT below — the
-                            pill has its own 8px internal padding, otherwise
-                            the header and pill content look offset. */}
-                        <th style={{ paddingLeft: 20 }}>STATUS</th>
+                        <th>REQUIREMENT</th>
+                        <th>STATUS</th>
                         <th>ATTACHMENT</th>
                       </tr>
                     </thead>
@@ -3918,22 +4001,25 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                               {d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
                             </td>
                             <td>{d.authority || '—'}</td>
+                            {/* Requirement — is this doc required or optional. */}
                             <td>
-                              <span style={{
-                                display: 'inline-flex', alignItems: 'center',
-                                padding:'2px 8px', borderRadius:999, fontSize:10.5, fontWeight:600,
-                                background: d.requirement === 'M' ? '#0d9488' : '#e5e7eb',
-                                color:      d.requirement === 'M' ? '#ffffff' : '#374151',
-                                whiteSpace: 'nowrap',
-                              }}>
-                                {d.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
-                              </span>
+                              {d.requirement === 'M'
+                                ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
+                                : <span className="acm-badge acm-badge--opt">Optional</span>}
+                            </td>
+                            {/* Status — completed only when an attachment was uploaded. */}
+                            <td>
+                              {uploaded
+                                ? <span className="acm-badge acm-badge--done">✓ Completed</span>
+                                : <span className={`acm-badge ${d.requirement === 'M' ? 'acm-badge--miss-m' : 'acm-badge--miss-o'}`}>✗ Incomplete</span>}
                             </td>
                             <td>
                               {uploaded ? (
-                                <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, textDecoration:'underline' }}>
-                                  {uploaded.name}
-                                </a>
+                                <Tooltip label={uploaded.name}>
+                                  <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, textDecoration:'underline', whiteSpace:'nowrap' }}>
+                                    {truncFileName(uploaded.name)}
+                                  </a>
+                                </Tooltip>
                               ) : (
                                 <span style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: 11 }}>Not uploaded in Stage 2</span>
                               )}
@@ -4003,7 +4089,7 @@ function ConsigneeHistoryStage1({ form, locations, consigneeCode }: {
       <div className="acg-hs-grid">
         {consigneeCode && <ReadInlineG label="Consignee ID" value={consigneeCode} />}
         <ReadInlineG label="Company Name"        value={form.companyName} />
-        <ReadInlineG label="Company Legal Name"  value={form.legalName} />
+        <ReadInlineG label="Consignee Legal Name"  value={form.legalName} />
         <ReadInlineG label="Customer Segment"    value={(form.segment ?? []).join(', ')} />
 
         <ReadInlineG label="Classification"      value={form.classification} />
@@ -4091,9 +4177,10 @@ function ConsigneeHistoryPanel({ stagesCompleted, children }: { stagesCompleted:
  *   file picker to "All Files" and pick a .php / .exe / .zip anyway.
  *   So we re-validate the chosen file against the allowed extensions
  *   here and reject + toast if it doesn't match. The server enforces
- *   the same list (mimes:jpg,jpeg,png,pdf,doc,docx) so a manipulated
- *   request can't slip through either. */
-const DEFAULT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.doc,.docx';
+ *   the same list (mimes:jpg,jpeg,png,pdf) so a manipulated request
+ *   can't slip through either. Word / Excel are NOT accepted — browsers
+ *   can't preview them (they download), which broke the View flow. */
+const DEFAULT_ACCEPT = '.pdf,.jpg,.jpeg,.png';
 const MAX_MB = 2;
 function parseAcceptExts(accept?: string): string[] {
   if (!accept) return [];
@@ -4587,7 +4674,7 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
                   if (f) setRemoveAttachment(false);   // new pick supersedes any prior "remove"
                 }}
                 onRemoveExisting={() => setRemoveAttachment(true)}
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png"
               />
             </div>
           </div>
@@ -4918,7 +5005,7 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
                 existingUrl={removeIdProof ? null : existingIdProofUrl}
                 onPick={(f) => { setIdProof(f); if (f) setRemoveIdProof(false); }}
                 onRemoveExisting={() => setRemoveIdProof(true)}
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png"
               />
             </div>
             <div className="acm-field">
@@ -4929,7 +5016,7 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
                 existingUrl={removeAddressProof ? null : existingAddressProofUrl}
                 onPick={(f) => { setAddressProof(f); if (f) setRemoveAddressProof(false); }}
                 onRemoveExisting={() => setRemoveAddressProof(true)}
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png"
               />
             </div>
           </div>
@@ -5432,6 +5519,19 @@ const IconTrash = ({ size = 12 }: { size?: number }) => (
 
 /* ─── Scoped CSS ─── */
 const SCOPED_CSS = `
+/* Requirement + completion badges — theme-aware (Stage 2 upload table + Stage 3
+   review). Light defaults plus dark overrides so they never wash out. */
+.acm-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; border:1px solid transparent; white-space:nowrap; }
+.acm-badge--mand   { background:#dcfce7; color:#15803d; border-color:#86efac; }
+.acm-badge--opt    { background:#f3f4f6; color:#4b5563; border-color:#e5e7eb; }
+.acm-badge--done   { background:#d1fae5; color:#065f46; border-color:#6ee7b7; }
+.acm-badge--miss-m { background:#fee2e2; color:#b91c1c; border-color:#fecaca; }
+.acm-badge--miss-o { background:#f3f4f6; color:#6b7280; border-color:#e5e7eb; }
+[data-bs-theme="dark"] .acm-badge--mand   { background:rgba(16,185,129,0.18); color:#6ee7b7; border-color:rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-badge--opt    { background:rgba(255,255,255,0.06); color:#cbd5e1; border-color:rgba(255,255,255,0.14); }
+[data-bs-theme="dark"] .acm-badge--done   { background:rgba(16,185,129,0.18); color:#6ee7b7; border-color:rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-badge--miss-m { background:rgba(239,68,68,0.18); color:#fca5a5; border-color:rgba(239,68,68,0.40); }
+[data-bs-theme="dark"] .acm-badge--miss-o { background:rgba(255,255,255,0.06); color:#94a3b8; border-color:rgba(255,255,255,0.12); }
 .acm-overlay {
   position: fixed; inset: 0;
   background: rgba(15, 42, 35, 0.55);
@@ -5767,17 +5867,16 @@ const SCOPED_CSS = `
 
 /* ─── Phase B — Wizard ─── */
 .acm-wiz {
-  /* Cap at 1224 (≈85% of the prior 1440 cap, matches what the form
-     looked like at 85% browser zoom rendered at 100%). */
-  width: 100%; max-width: 1224px;
+  /* Wider + shorter footprint: cap width at 1440 so the 2-col / 4-col
+     field rows get more horizontal room, and trim the locked height so
+     the modal reads as a wide panel rather than a tall one. */
+  width: 100%; max-width: 1440px;
   /* Locked height so all three stages occupy the same viewport
      footprint — switching between Stage 1 (lots of fields), Stage 2
      (single row table), and Stage 3 no longer makes the modal grow
-     or shrink. min() caps at 900px so 4K / tall monitors don't end
-     up with an oversized modal, while shorter laptops still get a
-     near-fullscreen workspace. Body scrolls internally; header +
-     footer stay anchored. */
-  height: min(900px, calc(100vh - 24px));
+     or shrink. min() caps the height so tall monitors don't get an
+     oversized modal; body scrolls internally, header + footer anchored. */
+  height: min(800px, calc(100vh - 24px));
   background: #f0fdf4; border-radius: 16px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0,0,0,.40);
   display: flex; flex-direction: column;
@@ -5904,6 +6003,13 @@ const SCOPED_CSS = `
   display: flex; align-items: center; gap: 12px;
   padding: 12px 14px;
   background: #fff; border: 1.5px solid #e5e7eb; border-radius: 12px;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.acm-step-clickable { cursor: pointer; }
+.acm-step-clickable:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(16,185,129,0.16);
+  border-color: #10b981;
 }
 .acm-step-active {
   background: #ecfdf5;
@@ -5913,6 +6019,10 @@ const SCOPED_CSS = `
 .acm-step-done {
   background: #ecfdf5;
   border-color: #a7f3d0;
+}
+.acm-step-incomplete {
+  background: #f8fafc;
+  border-color: #e2e8f0;
 }
 .acm-step-badge {
   width: 36px; height: 36px; border-radius: 10px;
@@ -5927,11 +6037,16 @@ const SCOPED_CSS = `
 .acm-step-done .acm-step-badge {
   background: linear-gradient(135deg, #10b981, #047857); color: #fff;
 }
+.acm-step-incomplete .acm-step-badge {
+  background: linear-gradient(135deg, #e2e8f0, #cbd5e1); color: #64748b;
+}
 .acm-step-text { min-width: 0; flex: 1; }
 .acm-step-title { font-size: 13px; font-weight: 700; color: #1f2937; }
 .acm-step-active .acm-step-title { color: #064e3b; }
+.acm-step-incomplete .acm-step-title { color: #475569; }
 .acm-step-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
 .acm-step-active .acm-step-sub { color: #047857; }
+.acm-step-incomplete .acm-step-sub { color: #94a3b8; }
 .acm-step-done-mark {
   position: absolute; right: 10px; bottom: 8px;
   width: 18px; height: 18px; border-radius: 50%;
@@ -7140,6 +7255,10 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-step       { background: #103129; border-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-step-active { background: rgba(16,185,129,.15); border-color: #10b981; }
 [data-bs-theme="dark"] .acm-step-done  { background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .acm-step-incomplete { background: rgba(40,52,70,0.60); border-color: rgba(148,163,184,0.25); }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-badge { background: #2b3650; color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-title { color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-step-incomplete .acm-step-sub   { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-step-badge { background: #1a3d34; color: #94a3b8; }
 [data-bs-theme="dark"] .acm-step-title { color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-step-sub   { color: #94a3b8; }
@@ -7306,7 +7425,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 @media (max-width: 1440px) {
   .acm-overlay { padding: 10px; }
   .acm-wiz {
-    max-width: min(1224px, calc(100vw - 20px));
+    max-width: min(1440px, calc(100vw - 20px));
     max-height: min(94vh, calc(100vh - 16px));
   }
   .acm-pick {
