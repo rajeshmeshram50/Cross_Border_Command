@@ -253,6 +253,13 @@ class SegmentDocUploadController extends Controller
         $owner = $this->resolveOwner($request, $type, $id);
         $cid   = (int) ($owner->client_id ?? 0);
 
+        // "Same as Customer" consignee — resolveOwner has already swapped
+        // $owner to the linked customer (so the vault shows the customer's
+        // docs), but the frontend needs to know to show a badge + block
+        // uploads (a direct upload to the consignee returns 409).
+        $sameAsCustomer = $type === 'consignee'
+            && (bool) optional(Consignee::find($id))->same_as_customer;
+
         // 1. Resolve the entity's segment ids. Customer/Consignee
         // store segment as a comma-joined name string; Vendor uses an
         // FK column.
@@ -344,6 +351,7 @@ class SegmentDocUploadController extends Controller
 
         return response()->json([
             'data' => [
+                'same_as_customer'       => $sameAsCustomer,
                 'total_documents'        => count($allRows),
                 'verified_signed'        => $verified,
                 'pending'                => $pending,
