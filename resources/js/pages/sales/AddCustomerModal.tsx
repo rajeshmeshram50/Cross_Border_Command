@@ -147,9 +147,10 @@ const TL_DOCS: KycDocRow[] = [
  * to "All files" and select a .php / .exe / .zip anyway. We re-check
  * the chosen file's extension + size here and reject + alert if it
  * doesn't match. The server enforces the same list
- * (mimes:jpg,jpeg,png,pdf,doc,docx) so a manipulated request can't
- * slip through either. */
-const ALLOWED_DOC_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
+ * (mimes:jpg,jpeg,png,pdf) so a manipulated request can't slip through
+ * either. Word / Excel are NOT accepted — browsers can't preview them
+ * (they download), which broke the View flow. */
+const ALLOWED_DOC_EXTS = ['pdf', 'jpg', 'jpeg', 'png'];
 const ALLOWED_PHOTO_EXTS = ['jpg', 'jpeg', 'png'];
 const MAX_UPLOAD_MB = 2;
 type FileKind = 'doc' | 'photo';
@@ -2558,7 +2559,7 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
         <Tooltip label="Upload">
           <label className="acm-doc-action acm-doc-action-upload" aria-label="Upload" style={{ cursor: 'pointer' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
+            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
           </label>
         </Tooltip>
       </div>
@@ -2579,7 +2580,7 @@ function SegmentRefRowActions({ refKey, docName, uploads, setUploads, persistUpl
       <Tooltip label="Re-upload (replace file)">
         <label className="acm-doc-action acm-doc-action-upload" aria-label="Re-upload" style={{ cursor: 'pointer' }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
+          <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
         </label>
       </Tooltip>
     </div>
@@ -2755,11 +2756,11 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
               <table className="acm-table">
                 <thead><tr>
                   <th>Sr No</th><th>Auto Code</th><th>Document Name</th>
-                  <th>Issuing Authority</th><th>Actions</th>
+                  <th>Issuing Authority</th><th>Requirement</th><th>Actions</th>
                 </tr></thead>
                 <tbody>
                   {totalRows === 0 ? (
-                    <tr className="acm-empty-row"><td colSpan={5}>No reference documents match your search.</td></tr>
+                    <tr className="acm-empty-row"><td colSpan={6}>No reference documents match your search.</td></tr>
                   ) : legacySlice.map((dl, i) => {
                     const sr = start + i + 1;
                     const srPad = String(sr).padStart(2, '0');
@@ -2769,6 +2770,13 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                         <td><span className="acm-doc-code">{dl.code}</span></td>
                         <td style={{ fontWeight: 700, color: '#1f2937' }}>{dl.name}</td>
                         <td style={{ color: '#6b7280' }}>{dl.authority}</td>
+                        {/* Requirement — tells the user up-front whether this
+                            doc must be uploaded (Mandatory) or is optional. */}
+                        <td>
+                          {dl.status === 'mandatory'
+                            ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
+                            : <span className="acm-badge acm-badge--opt">Optional</span>}
+                        </td>
                         <td>
                           <SegmentRefRowActions
                             refKey={`${sub}::${dl.code}`}
@@ -2937,10 +2945,10 @@ function Stage3KycDocs({ sub, setSub, segmentDocs, segmentRefUploads }: {
         <div className="acm-section-body acm-section-body-table">
           <div className="acm-table-wrap">
             <table className="acm-table">
-              <thead><tr><th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>Issuing Authority</th><th>Expiry</th><th>Status</th><th>Attachment</th></tr></thead>
+              <thead><tr><th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>Issuing Authority</th><th>Expiry</th><th>Requirement</th><th>Status</th><th>Attachment</th></tr></thead>
               <tbody>
                 {sourceRows.length === 0 ? (
-                  <tr className="acm-empty-row"><td colSpan={7}>No segment rule loaded for this category yet — pick a segment on Stage 1.</td></tr>
+                  <tr className="acm-empty-row"><td colSpan={8}>No segment rule loaded for this category yet — pick a segment on Stage 1.</td></tr>
                 ) : sourceRows.map((d: any, i: number) => {
                   const refKey = `${stage2Key}::${d.code}`;
                   const uploaded = segmentRefUploads[refKey];
@@ -2952,10 +2960,17 @@ function Stage3KycDocs({ sub, setSub, segmentDocs, segmentRefUploads }: {
                       <td style={{ fontWeight: 700, color: '#1f2937' }}>{d.name}</td>
                       <td style={{ color: '#6b7280' }}>{d.authority || '—'}</td>
                       <td><span className={expCls}>{d.expiry || 'N/A'}</span></td>
+                      {/* Requirement — is this doc required or optional. */}
                       <td>
                         {d.requirement === 'M'
-                          ? <span className="acm-status-mandatory is-on">✓ Mandatory</span>
-                          : <span className="acm-status-optional is-on">Optional</span>}
+                          ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
+                          : <span className="acm-badge acm-badge--opt">Optional</span>}
+                      </td>
+                      {/* Status — completed only when an attachment was uploaded. */}
+                      <td>
+                        {uploaded
+                          ? <span className="acm-badge acm-badge--done">✓ Completed</span>
+                          : <span className={`acm-badge ${d.requirement === 'M' ? 'acm-badge--miss-m' : 'acm-badge--miss-o'}`}>✗ Incomplete</span>}
                       </td>
                       <td>
                         {uploaded ? (
@@ -3638,7 +3653,7 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
                  enforce it. Trade Licence keeps it optional. */
               required={sub === 'company-dd'}
               kind="doc"
-              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              accept=".pdf,.jpg,.jpeg,.png"
               value={d.attachment}
               existingUrl={editing?.attachment_url ?? null}
               existingName={editing?.attachment_name ?? null}
@@ -3963,7 +3978,7 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
   }> = {
     idProof: {
       label: 'ID Proof', kind: 'doc',
-      accept: '.pdf,.jpg,.jpeg,.png,.doc,.docx',
+      accept: '.pdf,.jpg,.jpeg,.png',
       existingUrl:  editing?.id_proof_url,
       existingName: editing?.id_proof_name,
       removeFlag:    removeIdProof,
@@ -3971,7 +3986,7 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
     },
     addressProof: {
       label: 'Address Proof', kind: 'doc',
-      accept: '.pdf,.jpg,.jpeg,.png,.doc,.docx',
+      accept: '.pdf,.jpg,.jpeg,.png',
       existingUrl:  editing?.address_proof_url,
       existingName: editing?.address_proof_name,
       removeFlag:    removeAddressProof,
@@ -4888,6 +4903,19 @@ const SCOPED_CSS = `
 .acm-status-optional { background: #fff; color: #9ca3af; border-color: #e5e1f3; }
 .acm-status-optional.is-on { background: #fff; color: #374151; border-color: #9ca3af; font-weight: 700; }
 .acm-status-active { display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px; border-radius: 20px; font-size: 10.5px; font-weight: 700; background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #15803d; border: 1px solid #86efac; }
+/* Requirement + completion badges — theme-aware (Stage 2 upload table + Stage 3
+   review). Light defaults plus dark overrides so they never wash out. */
+.acm-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; border:1px solid transparent; white-space:nowrap; }
+.acm-badge--mand   { background:#dcfce7; color:#15803d; border-color:#86efac; }
+.acm-badge--opt    { background:#f3f4f6; color:#4b5563; border-color:#e5e7eb; }
+.acm-badge--done   { background:#d1fae5; color:#065f46; border-color:#6ee7b7; }
+.acm-badge--miss-m { background:#fee2e2; color:#b91c1c; border-color:#fecaca; }
+.acm-badge--miss-o { background:#f3f4f6; color:#6b7280; border-color:#e5e7eb; }
+[data-bs-theme="dark"] .acm-badge--mand   { background:rgba(16,185,129,0.18); color:#6ee7b7; border-color:rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-badge--opt    { background:rgba(255,255,255,0.06); color:#cbd5e1; border-color:rgba(255,255,255,0.14); }
+[data-bs-theme="dark"] .acm-badge--done   { background:rgba(16,185,129,0.18); color:#6ee7b7; border-color:rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-badge--miss-m { background:rgba(239,68,68,0.18); color:#fca5a5; border-color:rgba(239,68,68,0.40); }
+[data-bs-theme="dark"] .acm-badge--miss-o { background:rgba(255,255,255,0.06); color:#94a3b8; border-color:rgba(255,255,255,0.12); }
 .acm-expiry-na, .acm-expiry-date, .acm-expiry-varies, .acm-expiry-future, .acm-expiry-past, .acm-issue-date {
   display: inline-block;
   padding: 4px 12px;

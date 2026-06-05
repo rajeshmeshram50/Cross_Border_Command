@@ -3149,7 +3149,7 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
         <Tooltip label="Upload">
           <label className="acm-loc-btn" aria-label="Upload" style={{ cursor: 'pointer' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
+            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
           </label>
         </Tooltip>
       </div>
@@ -3171,7 +3171,7 @@ function ConsigneeSegmentRefActions({ refKey, docName, uploads, setUploads, pers
         <Tooltip label="Re-upload (replace file)">
           <label className="acm-loc-btn" aria-label="Re-upload" style={{ cursor: 'pointer' }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
+            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
           </label>
         </Tooltip>
       )}
@@ -3452,7 +3452,7 @@ const Stage2 = ({
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>{meta.nameCol.toUpperCase()}</th>
-                    <th>ISSUING AUTHORITY</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                    <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3487,6 +3487,12 @@ const Stage2 = ({
                             {tl.name}{tl.isMandatory ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
                           </td>
                           <td>{tl.authority}</td>
+                          {/* Requirement — Mandatory / Optional, shown up-front. */}
+                          <td>
+                            {tl.isMandatory
+                              ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
+                              : <span className="acm-badge acm-badge--opt">Optional</span>}
+                          </td>
                           <td>
                             {uploaded
                               ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
@@ -3508,9 +3514,9 @@ const Stage2 = ({
                   })()}
                   {filteredDocs.length === 0 && (
                     q
-                      ? <tr className="acm-loc-empty"><td colSpan={6}>No documents match your search.</td></tr>
+                      ? <tr className="acm-loc-empty"><td colSpan={7}>No documents match your search.</td></tr>
                       : (sub === 'company-dd' && (segmentDocs.dd?.length ?? 0) === 0)
-                        ? <tr className="acm-loc-empty"><td colSpan={6}>{`No DD documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
+                        ? <tr className="acm-loc-empty"><td colSpan={7}>{`No DD documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
                         : null /* trade-licence + company-dd-with-segment-refs already render rows above */
                   )}
                   {filteredDocs.map((d, i) => {
@@ -3521,6 +3527,7 @@ const Stage2 = ({
                         <td><span className="acm-kyc-code">{codeFor(kind, sr)}</span></td>
                         <td style={{ fontWeight: 700 }}>{d.name}</td>
                         <td>{d.issuing_authority || '—'}</td>
+                        <td style={{ color: '#9ca3af' }}>—</td>
                         <td><AttachmentLink url={d.attachment_url} path={d.attachment_path} /></td>
                         <td>
                           <div className="acm-loc-actions">
@@ -3896,11 +3903,8 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                       <tr>
                         <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
                         <th>ISSUING AUTHORITY</th>
-                        {/* STATUS th gets extra left inset (8px) so the header
-                            text lines up with the pill's TEXT below — the
-                            pill has its own 8px internal padding, otherwise
-                            the header and pill content look offset. */}
-                        <th style={{ paddingLeft: 20 }}>STATUS</th>
+                        <th>REQUIREMENT</th>
+                        <th>STATUS</th>
                         <th>ATTACHMENT</th>
                       </tr>
                     </thead>
@@ -3916,16 +3920,17 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                               {d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
                             </td>
                             <td>{d.authority || '—'}</td>
+                            {/* Requirement — is this doc required or optional. */}
                             <td>
-                              <span style={{
-                                display: 'inline-flex', alignItems: 'center',
-                                padding:'2px 8px', borderRadius:999, fontSize:10.5, fontWeight:600,
-                                background: d.requirement === 'M' ? '#0d9488' : '#e5e7eb',
-                                color:      d.requirement === 'M' ? '#ffffff' : '#374151',
-                                whiteSpace: 'nowrap',
-                              }}>
-                                {d.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
-                              </span>
+                              {d.requirement === 'M'
+                                ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
+                                : <span className="acm-badge acm-badge--opt">Optional</span>}
+                            </td>
+                            {/* Status — completed only when an attachment was uploaded. */}
+                            <td>
+                              {uploaded
+                                ? <span className="acm-badge acm-badge--done">✓ Completed</span>
+                                : <span className={`acm-badge ${d.requirement === 'M' ? 'acm-badge--miss-m' : 'acm-badge--miss-o'}`}>✗ Incomplete</span>}
                             </td>
                             <td>
                               {uploaded ? (
@@ -4089,9 +4094,10 @@ function ConsigneeHistoryPanel({ stagesCompleted, children }: { stagesCompleted:
  *   file picker to "All Files" and pick a .php / .exe / .zip anyway.
  *   So we re-validate the chosen file against the allowed extensions
  *   here and reject + toast if it doesn't match. The server enforces
- *   the same list (mimes:jpg,jpeg,png,pdf,doc,docx) so a manipulated
- *   request can't slip through either. */
-const DEFAULT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.doc,.docx';
+ *   the same list (mimes:jpg,jpeg,png,pdf) so a manipulated request
+ *   can't slip through either. Word / Excel are NOT accepted — browsers
+ *   can't preview them (they download), which broke the View flow. */
+const DEFAULT_ACCEPT = '.pdf,.jpg,.jpeg,.png';
 const MAX_MB = 2;
 function parseAcceptExts(accept?: string): string[] {
   if (!accept) return [];
@@ -4585,7 +4591,7 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
                   if (f) setRemoveAttachment(false);   // new pick supersedes any prior "remove"
                 }}
                 onRemoveExisting={() => setRemoveAttachment(true)}
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png"
               />
             </div>
           </div>
@@ -4916,7 +4922,7 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
                 existingUrl={removeIdProof ? null : existingIdProofUrl}
                 onPick={(f) => { setIdProof(f); if (f) setRemoveIdProof(false); }}
                 onRemoveExisting={() => setRemoveIdProof(true)}
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png"
               />
             </div>
             <div className="acm-field">
@@ -4927,7 +4933,7 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
                 existingUrl={removeAddressProof ? null : existingAddressProofUrl}
                 onPick={(f) => { setAddressProof(f); if (f) setRemoveAddressProof(false); }}
                 onRemoveExisting={() => setRemoveAddressProof(true)}
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png"
               />
             </div>
           </div>
@@ -5430,6 +5436,19 @@ const IconTrash = ({ size = 12 }: { size?: number }) => (
 
 /* ─── Scoped CSS ─── */
 const SCOPED_CSS = `
+/* Requirement + completion badges — theme-aware (Stage 2 upload table + Stage 3
+   review). Light defaults plus dark overrides so they never wash out. */
+.acm-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; border:1px solid transparent; white-space:nowrap; }
+.acm-badge--mand   { background:#dcfce7; color:#15803d; border-color:#86efac; }
+.acm-badge--opt    { background:#f3f4f6; color:#4b5563; border-color:#e5e7eb; }
+.acm-badge--done   { background:#d1fae5; color:#065f46; border-color:#6ee7b7; }
+.acm-badge--miss-m { background:#fee2e2; color:#b91c1c; border-color:#fecaca; }
+.acm-badge--miss-o { background:#f3f4f6; color:#6b7280; border-color:#e5e7eb; }
+[data-bs-theme="dark"] .acm-badge--mand   { background:rgba(16,185,129,0.18); color:#6ee7b7; border-color:rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-badge--opt    { background:rgba(255,255,255,0.06); color:#cbd5e1; border-color:rgba(255,255,255,0.14); }
+[data-bs-theme="dark"] .acm-badge--done   { background:rgba(16,185,129,0.18); color:#6ee7b7; border-color:rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-badge--miss-m { background:rgba(239,68,68,0.18); color:#fca5a5; border-color:rgba(239,68,68,0.40); }
+[data-bs-theme="dark"] .acm-badge--miss-o { background:rgba(255,255,255,0.06); color:#94a3b8; border-color:rgba(255,255,255,0.12); }
 .acm-overlay {
   position: fixed; inset: 0;
   background: rgba(15, 42, 35, 0.55);
