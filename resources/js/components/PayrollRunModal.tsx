@@ -6,6 +6,8 @@ import { Col, Row } from 'reactstrap';
 export interface PayrollRunActionChip {
   label: string;
   tone: 'blue' | 'green' | 'purple' | 'amber';
+  /** What the chip does when clicked — drives parent navigation. */
+  kind?: 'attendance' | 'employee' | 'proof';
 }
 
 export interface PayrollRunIssue {
@@ -40,6 +42,9 @@ export interface PayrollRunModalProps {
   /** Pay flagged but still payable (display string). */
   atRiskAmountLabel: string;
   issues: PayrollRunIssue[];
+  /** Fired when an issue action chip (Go to Attendance / Open Employee /
+   *  Upload Proof) is clicked — parent handles navigation. */
+  onAction?: (action: PayrollRunActionChip, issue: PayrollRunIssue) => void;
 }
 
 const ACTION_TONES: Record<PayrollRunActionChip['tone'], { bg: string; fg: string; border: string }> = {
@@ -66,6 +71,7 @@ export default function PayrollRunModal({
   blockedAmountLabel,
   atRiskAmountLabel,
   issues,
+  onAction,
 }: PayrollRunModalProps) {
   const [phase, setPhase] = useState<'preflight' | 'success'>('preflight');
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
@@ -276,6 +282,7 @@ export default function PayrollRunModal({
                     issue={i}
                     resolved={resolvedIds.has(i.id)}
                     onMarkResolved={() => markResolved(i.id)}
+                    onAction={onAction}
                   />
                 ))}
               </>
@@ -298,6 +305,7 @@ export default function PayrollRunModal({
                     issue={i}
                     resolved={resolvedIds.has(i.id)}
                     onMarkResolved={() => markResolved(i.id)}
+                    onAction={onAction}
                   />
                 ))}
               </>
@@ -456,10 +464,12 @@ function IssueCard({
   issue,
   resolved,
   onMarkResolved,
+  onAction,
 }: {
   issue: PayrollRunIssue;
   resolved: boolean;
   onMarkResolved: () => void;
+  onAction?: (action: PayrollRunActionChip, issue: PayrollRunIssue) => void;
 }) {
   const isBlocking = issue.type === 'blocking';
   const tone = isBlocking
@@ -497,13 +507,15 @@ function IssueCard({
               {issue.actions.map(a => {
                 const t = ACTION_TONES[a.tone];
                 return (
-                  <span
+                  <button
                     key={a.label}
+                    type="button"
                     className="prm-action-chip"
-                    style={{ background: t.bg, color: t.fg, borderColor: t.border }}
+                    onClick={() => onAction?.(a, issue)}
+                    style={{ background: t.bg, color: t.fg, borderColor: t.border, cursor: 'pointer' }}
                   >
                     {a.label}
-                  </span>
+                  </button>
                 );
               })}
             </div>

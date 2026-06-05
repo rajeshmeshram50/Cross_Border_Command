@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Col, Row } from 'reactstrap';
+import { Col, Row, Spinner } from 'reactstrap';
 import { MasterSelect } from '../pages/master/masterFormKit';
 import { useToast } from '../contexts/ToastContext';
+import api from '../api';
 // Reuses the .ep-pay-* class set already defined for the Employee Profile's
 // payslip viewer so this component renders identically without duplicating
 // the CSS rules.
@@ -17,7 +18,7 @@ export interface PayslipEmployee {
   department: string;
 }
 
-export interface PayslipRecentEntry { label: string; now?: boolean }
+export interface PayslipRecentEntry { label: string; now?: boolean; payslipId?: number; status?: string }
 
 export interface PayslipViewerModalProps {
   open: boolean;
@@ -37,6 +38,16 @@ export interface PayslipViewerModalProps {
   companyMeta?: string;
   companyInitials?: string;
   hrEmail?: string;
+  /** Rule 16 — when false, the slip is provisional (run not yet approved):
+   *  a badge shows and Download/Email are disabled. Undefined = treat as final
+   *  (back-compat for the EmployeeProfile caller). */
+  isFinal?: boolean;
+  /** Fired when a "Recent Payslips" entry is clicked so the parent can load
+   *  that month's payslip. */
+  onSelectRecent?: (entry: PayslipRecentEntry) => void;
+  /** When set, Download/Print hit the real server PDF for this payslip.
+   *  Without it the buttons fall back to a toast (legacy EmployeeProfile use). */
+  payslipId?: number;
 }
 
 const MONTH_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'] as const;
@@ -64,21 +75,21 @@ export default function PayslipViewerModal({
   daysPresent = 31,
   lossOfPay = 0,
   paidDays = 31,
-  recentMonths = [
-    { label: 'Mar 2026', now: true },
-    { label: 'Feb 2026' },
-    { label: 'Jan 2026' },
-    { label: 'Dec 2025' },
-    { label: 'Nov 2025' },
-    { label: 'Oct 2025' },
-  ],
-  companyName = 'INORBVICT Healthcare India Pvt. Ltd.',
-  companyMeta = 'Pune, Maharashtra, India · GSTIN: 27XXXXXXXXXXX · CIN: U85190MH2020PTC339XXX',
-  companyInitials = 'IN',
-  hrEmail = 'hr@inorbvict.com',
+  recentMonths = [],
+  companyName = '',
+  companyMeta = '',
+  companyInitials = '',
+  hrEmail = '',
+  isFinal,
+  onSelectRecent,
+  payslipId,
 }: PayslipViewerModalProps) {
+  const provisional = isFinal === false;
   const [year, setYear]   = useState(defaultYear);
   const [month, setMonth] = useState(defaultMonth);
+  // Which header action is in flight ('download'|'print'|'email'|'view') so
+  // the button can spin + disable until it completes.
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const toast = useToast();
 
   // Sync defaults when the modal is reopened with a different cycle/employee.
@@ -86,12 +97,81 @@ export default function PayslipViewerModal({
 
   if (!open) return null;
 
-  // Header action handlers — wired to toasts since the actual PDF/print/email
-  // pipeline lives server-side and isn't part of this UI-only slice.
+  // Header action handlers. When a payslipId is supplied they hit the real
+  // server-rendered PDF; otherwise (legacy EmployeeProfile use) they fall back
+  // to a toast. Provisional slips can't be downloaded/emailed (Rule 16).
   const fileLabel = `${employee.name.replace(/\s+/g, '_')}_${month}_${year}`;
-  const handleDownload = () => toast.success('Payslip downloaded',  `${fileLabel}.pdf`);
-  const handlePrint    = () => toast.success('Sent to printer',     `${employee.name} · ${month} ${year}`);
-  const handleEmail    = () => toast.success('Email sent',          `Payslip emailed to ${employee.name}.`);
+  const blockProvisional = () => toast.error('Payslip not final', 'This payslip is provisional — approve the payroll run first.');
+
+  const fetchPdfBlob = async () => {
+    const res = await api.get(`/payroll/payslip/${payslipId}/pdf`, { responseType: 'blob' });
+    return new Blob([res.data], { type: 'application/pdf' });
+  };
+
+  const handleDownload = async () => {
+    if (provisional) return blockProvisional();
+    if (!payslipId) return toast.success('Payslip downloaded', `${fileLabel}.pdf`);
+    if (busyAction) return;
+    setBusyAction('download');
+    try {
+      const url = URL.createObjectURL(await fetchPdfBlob());
+      const a = document.createElement('a');
+      a.href = url; a.download = `${fileLabel}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Payslip downloaded', `${fileLabel}.pdf`);
+    } catch {
+      toast.error('Download failed', 'Could not generate the payslip PDF.');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  // Open the rendered PDF inline in a new tab (true "view" of the document).
+  const handleViewPdf = async () => {
+    if (!payslipId) return toast.error('Not available', 'Generate payroll to view the PDF.');
+    if (busyAction) return;
+    setBusyAction('view');
+    try {
+      const url = URL.createObjectURL(await fetchPdfBlob());
+      window.open(url, '_blank');
+      // Give the tab time to load before revoking.
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      toast.error('View failed', 'Could not open the payslip PDF.');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handlePrint = async () => {
+    if (!payslipId) return toast.success('Sent to printer', `${employee.name} · ${month} ${year}`);
+    if (busyAction) return;
+    setBusyAction('print');
+    try {
+      const url = URL.createObjectURL(await fetchPdfBlob());
+      const w = window.open(url, '_blank');
+      if (w) { w.onload = () => { try { w.print(); } catch { /* user can print manually */ } }; }
+    } catch {
+      toast.error('Print failed', 'Could not open the payslip PDF.');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleEmail = async () => {
+    if (provisional) return blockProvisional();
+    if (!payslipId) return toast.success('Email sent', `Payslip emailed to ${employee.name}.`);
+    if (busyAction) return;
+    setBusyAction('email');
+    try {
+      const res = await api.post(`/payroll/payslip/${payslipId}/email`);
+      toast.success('Payslip emailed', res.data?.message || `Sent to ${employee.name}.`);
+    } catch (err: any) {
+      toast.error('Email failed', err?.response?.data?.message || 'Could not email the payslip.');
+    } finally {
+      setBusyAction(null);
+    }
+  };
 
   const totalEarnings   = earnings.reduce((s, r) => s + r.amount, 0);
   const totalDeductions = deductions.reduce((s, r) => s + r.amount, 0);
@@ -130,19 +210,28 @@ export default function PayslipViewerModal({
                 <i className="ri-file-text-line" />
               </span>
               <div>
-                <h5 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Payslip Viewer</h5>
-                <small className="text-muted" style={{ fontSize: 10.5 }}>Select month and year to view or download payslip</small>
+                <h5 className="mb-0 fw-bold d-inline-flex align-items-center gap-2" style={{ fontSize: 13 }}>
+                  Payslip Viewer
+                  {provisional && (
+                    <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: '#a06f00', background: '#fdf3d6', border: '1px solid #f0d990', borderRadius: 999, padding: '2px 8px' }}>
+                      PROVISIONAL
+                    </span>
+                  )}
+                </h5>
+                <small className="text-muted" style={{ fontSize: 10.5 }}>
+                  {provisional ? 'Draft — approve the payroll run to finalize this slip' : 'Select month and year to view or download payslip'}
+                </small>
               </div>
             </div>
             <div className="d-flex align-items-center gap-2">
-              <button type="button" onClick={handleDownload} className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', color: '#fff', border: 'none', fontSize: 11, padding: '5px 12px', borderRadius: 7, boxShadow: '0 3px 10px rgba(10,179,156,0.28)' }}>
-                <i className="ri-download-2-line" /> Download PDF
+              <button type="button" onClick={handleDownload} disabled={!!busyAction} className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', color: '#fff', border: 'none', fontSize: 11, padding: '5px 12px', borderRadius: 7, boxShadow: '0 3px 10px rgba(10,179,156,0.28)', opacity: busyAction ? 0.7 : 1 }}>
+                {busyAction === 'download' ? <Spinner size="sm" style={{ width: 12, height: 12 }} /> : <i className="ri-download-2-line" />} Download PDF
               </button>
-              <button type="button" onClick={handlePrint} className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11, padding: '5px 12px', borderRadius: 7 }}>
-                <i className="ri-printer-line" /> Print
+              <button type="button" onClick={handlePrint} disabled={!!busyAction} className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11, padding: '5px 12px', borderRadius: 7, opacity: busyAction ? 0.7 : 1 }}>
+                {busyAction === 'print' ? <Spinner size="sm" style={{ width: 12, height: 12 }} /> : <i className="ri-printer-line" />} Print
               </button>
-              <button type="button" onClick={handleEmail} className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11, padding: '5px 12px', borderRadius: 7 }}>
-                <i className="ri-mail-line" /> Email
+              <button type="button" onClick={handleEmail} disabled={!!busyAction} className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11, padding: '5px 12px', borderRadius: 7, opacity: busyAction ? 0.7 : 1 }}>
+                {busyAction === 'email' ? <Spinner size="sm" style={{ width: 12, height: 12 }} /> : <i className="ri-mail-line" />} Email
               </button>
               <button type="button" className="ep-pay-x" onClick={onClose} aria-label="Close">
                 <i className="ri-close-line" style={{ fontSize: 14 }} />
@@ -171,8 +260,8 @@ export default function PayslipViewerModal({
                   onChange={setMonth}
                 />
               </div>
-              <button type="button" className="ep-pay-side-btn">
-                <i className="ri-eye-line me-1" /> View Payslip
+              <button type="button" className="ep-pay-side-btn" onClick={handleViewPdf} disabled={!!busyAction} style={busyAction ? { opacity: 0.7 } : undefined}>
+                {busyAction === 'view' ? <Spinner size="sm" className="me-1" style={{ width: 12, height: 12 }} /> : <i className="ri-eye-line me-1" />} View PDF
               </button>
 
               <div className="ep-pay-side-label mt-4">Recent Payslips</div>
@@ -186,6 +275,7 @@ export default function PayslipViewerModal({
                       const [m, y] = p.label.split(' ');
                       setMonth(MONTH_ABBR_TO_FULL[m] || m);
                       setYear(y);
+                      onSelectRecent?.(p);
                     }}
                   >
                     <span>{p.label}</span>
@@ -202,7 +292,7 @@ export default function PayslipViewerModal({
                 <div style={{ position: 'absolute', top: -40, right: -30, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
                 <div className="d-flex align-items-start justify-content-between gap-3" style={{ position: 'relative', zIndex: 1 }}>
                   <div className="d-flex align-items-center gap-2">
-                    <span className="ep-pay-company-logo">{companyInitials}</span>
+                    <span className="ep-pay-company-logo">{companyInitials || (companyName ? companyName.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() : 'CO')}</span>
                     <div>
                       <h5 className="mb-0 text-white fw-bold" style={{ fontSize: 14 }}>{companyName}</h5>
                       <small style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10.5 }}>{companyMeta}</small>
@@ -332,8 +422,8 @@ export default function PayslipViewerModal({
               </div>
 
               <div className="ep-pay-footer">
-                This is a computer-generated payslip. No signature required. Queries:{' '}
-                <a href={`mailto:${hrEmail}`}>{hrEmail}</a>
+                This is a computer-generated payslip. No signature required.
+                {hrEmail ? <> Queries: <a href={`mailto:${hrEmail}`}>{hrEmail}</a></> : null}
               </div>
             </div>
           </div>

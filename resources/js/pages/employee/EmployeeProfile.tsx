@@ -4,6 +4,8 @@ import { Button, Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMen
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import ComingSoonShell from '../../components/ComingSoonShell';
+import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
+import PayslipViewerModal from '../../components/PayslipViewerModal';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
@@ -901,6 +903,104 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     return () => { cancelled = true; };
   }, [employeeId]);
 
+  // Real salary structure (Payroll tab) — the employee's active structure, so
+  // the compensation card / Revise Salary reflect actual payroll data, not the
+  // sample numbers this tab used to hardcode.
+  const [salaryStruct, setSalaryStruct] = useState<any>(null);
+  const [salaryModalOpen, setSalaryModalOpen] = useState(false);
+  const reloadSalaryStruct = () => {
+    const empId = empDetail?.id;
+    if (!empId) return;
+    api.get('/salary-structures', { params: { employee_id: empId, active_only: 1 } })
+      .then(res => setSalaryStruct((Array.isArray(res.data?.data) ? res.data.data : [])[0] ?? null))
+      .catch(() => setSalaryStruct(null));
+  };
+  useEffect(() => { if (empDetail?.id) reloadSalaryStruct(); /* eslint-disable-next-line */ }, [empDetail?.id]);
+
+  // Real compensation derived from the structure (falls back to the employee's
+  // annual_salary, then to 0). Drives the Current Compensation card.
+  const realMonthlyGross = salaryStruct ? Number(salaryStruct.monthly_gross) || 0
+    : (empDetail?.annual_salary ? Math.round(Number(empDetail.annual_salary) / 12) : 0);
+  const realAnnualCtc = salaryStruct ? Math.round((Number(salaryStruct.monthly_gross) || 0) * 12)
+    : (empDetail?.annual_salary ? Math.round(Number(empDetail.annual_salary)) : 0);
+  const fmtRupee = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n || 0);
+
+  // Lightweight employee shape for the shared SalaryStructureModal.
+  const salaryEmpLite: SalaryEmployeeLite | null = empDetail?.id ? {
+    employee_id: empDetail.id,
+    name: empDetail.display_name || `${empDetail.first_name ?? ''} ${empDetail.last_name ?? ''}`.trim() || (employee?.name || ''),
+    emp_code: empDetail.emp_code,
+    pf_eligible: !!empDetail.pf_eligible,
+    annual_salary: empDetail.annual_salary != null ? Number(empDetail.annual_salary) : null,
+    has_structure: !!salaryStruct,
+    structure_id: salaryStruct?.id ?? null,
+    monthly_gross: realMonthlyGross,
+  } : null;
+
+  // ── Real payslip history + salary versions (Payroll tab) ──────────────
+  const MONTH_ABBR_FULL: Record<string, string> = {
+    Jan: 'January', Feb: 'February', Mar: 'March', Apr: 'April', May: 'May', Jun: 'June',
+    Jul: 'July', Aug: 'August', Sep: 'September', Oct: 'October', Nov: 'November', Dec: 'December',
+  };
+  const [payslipHistory, setPayslipHistory] = useState<any[]>([]);
+  const [salaryVersions, setSalaryVersions] = useState<any[]>([]);
+  const [viewSlip, setViewSlip] = useState<any>(null);
+  useEffect(() => {
+    const empId = empDetail?.id;
+    if (!empId) return;
+    api.get(`/payroll/employee/${empId}/payslips`)
+      .then(res => setPayslipHistory(Array.isArray(res.data?.data) ? res.data.data : []))
+      .catch(() => setPayslipHistory([]));
+    api.get('/salary-structures', { params: { employee_id: empId } })
+      .then(res => setSalaryVersions(Array.isArray(res.data?.data) ? res.data.data : []))
+      .catch(() => setSalaryVersions([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empDetail?.id]);
+
+  // Load a payslip's full breakup into the shared viewer.
+  const loadSlip = (payslipId?: number, label?: string) => {
+    if (!payslipId) return;
+    api.get(`/payroll/payslip/${payslipId}`)
+      .then(res => {
+        const d = res.data?.data ?? {};
+        const [mAbbr, y] = String(label || '').split(' ');
+        setViewSlip({
+          id: payslipId,
+          earnings: (d.earningsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 })),
+          deductions: (d.deductionsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 })),
+          isFinal: d.is_final,
+          company: d.company,
+          month: MONTH_ABBR_FULL[mAbbr] || mAbbr || 'March',
+          year: y || String(new Date().getFullYear()),
+          working: d.workingDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
+        });
+      })
+      .catch(() => { /* keep prior */ });
+  };
+  const openLatestPayslip = () => {
+    if (!payslipHistory.length) { toast.error('No payslip yet', 'No payroll has been processed for this employee.'); return; }
+    const latest = payslipHistory[0];
+    loadSlip(latest.payslip_id, latest.label);
+    setPaySlipOpen(true);
+  };
+
+  // Real salary revision timeline from the structure versions (latest first).
+  const realTimeline = salaryVersions.map((v: any) => {
+    const d = v.effective_from ? new Date(v.effective_from) : null;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const dateShort = d && !isNaN(d.getTime())
+      ? `${String(d.getDate()).padStart(2, '0')}-${months[d.getMonth()]}-${d.getFullYear()}`
+      : '—';
+    return {
+      id: String(v.id),
+      current: v.status === 'active',
+      dateShort,
+      annual: Math.round((Number(v.monthly_gross) || 0) * 12),
+      version: v.version,
+      note: v.revision_note,
+    };
+  });
+
   // Helper — formats a date string like "1985-11-02" → "02-Nov-1985".
   const fmtDate = (raw: any): string => {
     if (!raw) return '—';
@@ -1229,8 +1329,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [showBreakdownToggle, setShowBreakdownToggle] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [breakdownRowId, setBreakdownRowId] = useState<string>('sal-1');
-  const breakdownRow   = SALARY_TIMELINE.find(s => s.id === breakdownRowId) || SALARY_TIMELINE[0];
-  const breakdownData  = makeBreakdown(breakdownRow.annual);
+  // Breakdown modal — prefer the REAL salary version's components; fall back
+  // to the mock makeBreakdown only when no real structure exists.
+  const breakdownVersion = salaryVersions.find((v: any) => String(v.id) === breakdownRowId) || salaryVersions[0];
+  const breakdownRow   = realTimeline.find(r => r.id === breakdownRowId) || realTimeline[0] || SALARY_TIMELINE[0];
+  const breakdownData  = breakdownVersion ? {
+    rows: (breakdownVersion.earnings || []).map((c: any) => ({
+      label: c.label, monthly: Number(c.amount) || 0, annual: (Number(c.amount) || 0) * 12,
+    })),
+    totalMonthly: Number(breakdownVersion.monthly_gross) || 0,
+    totalAnnual: Math.round((Number(breakdownVersion.monthly_gross) || 0) * 12),
+    netPay: Math.round((Number(breakdownVersion.monthly_gross) || 0) * 0.88),
+  } : makeBreakdown(breakdownRow.annual);
 
   // Live preview math for the Revise Salary modal.
   const reviseAnnualNum = Number(String(reviseAmount).replace(/[^\d.]/g, '')) || 0;
@@ -4091,9 +4201,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         </>
       )}
 
-      {/* ── Tab: Payroll Details ── */}
+      {/* ── Tab: Payroll Details (live — backend wired) ── */}
       {tab === 'payroll' && (
-        <ComingSoonShell title="Payroll" subtitle="Salary breakdown, payment history, tax sheets">
+        <>
           {/* Sub-tab pill — Payroll Summary (indigo) | Payment Details (green).
               Same compact strap shape as the Evidence Vault subtabs. */}
           <Row className="g-2 mb-3">
@@ -4189,7 +4299,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                         ))}
                         <button
                           type="button"
-                          onClick={() => setPaySlipOpen(true)}
+                          onClick={openLatestPayslip}
                           className="d-inline-flex align-items-center gap-1 fw-semibold lh-1"
                           style={{
                             background: 'rgba(255,255,255,0.10)',
@@ -4390,17 +4500,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                       <div>
                         <p className="mb-1" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.78)' }}>Current Compensation</p>
-                        <h2 className="mb-0 fw-bold text-white" style={{ fontSize: 28, lineHeight: 1.1 }}>₹3,02,400</h2>
-                        <p className="mb-0 mt-1" style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.80)' }}>Per Annum</p>
+                        <h2 className="mb-0 fw-bold text-white" style={{ fontSize: 28, lineHeight: 1.1 }}>
+                          {realAnnualCtc > 0 ? `₹${fmtRupee(realAnnualCtc)}` : '— Not set'}
+                        </h2>
+                        <p className="mb-0 mt-1" style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.80)' }}>
+                          Per Annum{salaryStruct ? '' : (realAnnualCtc > 0 ? ' (from annual salary)' : '')}
+                        </p>
                       </div>
                       <div className="d-flex gap-3 mt-3 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.18)' }}>
                         <div>
                           <p className="mb-1" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)' }}>Monthly</p>
-                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 12 }}>₹25,200</h6>
+                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 12 }}>₹{fmtRupee(realMonthlyGross)}</h6>
                         </div>
                         <div className="ps-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.18)' }}>
-                          <p className="mb-1" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)' }}>Annual</p>
-                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 12 }}>₹3,02,400</h6>
+                          <p className="mb-1" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)' }}>{salaryStruct ? `Structure v${salaryStruct.version ?? 1}` : 'Source'}</p>
+                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 12 }}>{salaryStruct ? 'Active' : (realAnnualCtc > 0 ? 'Annual' : 'None')}</h6>
                         </div>
                       </div>
                     </div>
@@ -4461,7 +4575,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                   <button
                     type="button"
-                    onClick={() => setReviseOpen(true)}
+                    onClick={() => setSalaryModalOpen(true)}
                     className="d-inline-flex align-items-center gap-1 fw-semibold"
                     style={{
                       background: 'linear-gradient(135deg,#0a8a78,#0ab39c)',
@@ -4486,7 +4600,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     background: 'var(--vz-border-color)',
                     pointerEvents: 'none',
                   }} />
-                  {SALARY_TIMELINE.map((row, idx) => (
+                  {realTimeline.length === 0 && (
+                    <div className="text-muted text-center py-3" style={{ fontSize: 12.5 }}>
+                      No salary revisions recorded yet — use <strong>Revise Salary</strong> to set one.
+                    </div>
+                  )}
+                  {realTimeline.map((row, idx) => (
                     <div
                       key={row.id}
                       className="d-flex align-items-center gap-3 py-2 flex-wrap position-relative"
@@ -4573,7 +4692,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
             </>
           )}
-        </ComingSoonShell>
+        </>
       )}
 
       {/* ── Tab: Expense Details ── */}
@@ -5417,490 +5536,37 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       </EpModal>
 
       {/* ── Payslip Viewer Modal ── */}
-      <EpModal open={paySlipOpen} onClose={() => setPaySlipOpen(false)} size="xl" panelClassName="ep-pay-modal">
-        <div className="ep-pay-shell">
-          {/* Header bar */}
-          <div className="ep-pay-header">
-            <div className="d-flex align-items-center gap-3">
-              <span className="ep-pay-logo">
-                <i className="ri-file-text-line" />
-              </span>
-              <div>
-                <h5 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Payslip Viewer</h5>
-                <small className="text-muted" style={{ fontSize: 10.5 }}>Select month and year to view or download payslip</small>
-              </div>
-            </div>
-            <div className="d-flex align-items-center gap-2">
-              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', color: '#fff', border: 'none', fontSize: 11, padding: '5px 12px', borderRadius: 7, boxShadow: '0 3px 10px rgba(10,179,156,0.28)' }}>
-                <i className="ri-download-2-line" /> Download PDF
-              </button>
-              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11, padding: '5px 12px', borderRadius: 7 }}>
-                <i className="ri-printer-line" /> Print
-              </button>
-              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11, padding: '5px 12px', borderRadius: 7 }}>
-                <i className="ri-mail-line" /> Email
-              </button>
-              <button type="button" className="ep-pay-x" onClick={() => setPaySlipOpen(false)} aria-label="Close">
-                <i className="ri-close-line" style={{ fontSize: 14 }} />
-              </button>
-            </div>
-          </div>
+      {/* Payslip viewer — real data via the shared PayslipViewerModal
+          (replaces the old inline mock). Driven by the employee's real
+          payslip history + the rendered PDF. */}
+      <PayslipViewerModal
+        open={paySlipOpen}
+        onClose={() => { setPaySlipOpen(false); setViewSlip(null); }}
+        employee={{
+          name: empDetail?.display_name || employee?.name || String(employeeId),
+          empId: empDetail?.emp_code || String(employeeId),
+          designation: empDetail?.designation_name || empDetail?.designation || '—',
+          department: empDetail?.department_name || empDetail?.department || '—',
+        }}
+        defaultMonth={viewSlip?.month || 'March'}
+        defaultYear={viewSlip?.year || String(new Date().getFullYear())}
+        earnings={viewSlip?.earnings || []}
+        deductions={viewSlip?.deductions || []}
+        workingDays={viewSlip?.working}
+        daysPresent={viewSlip?.present}
+        paidDays={viewSlip?.paid}
+        lossOfPay={viewSlip?.lop}
+        isFinal={viewSlip?.isFinal}
+        payslipId={viewSlip?.id}
+        recentMonths={payslipHistory.map((s: any, i: number) => ({ label: s.label, now: i === 0, payslipId: s.payslip_id, status: s.status }))}
+        onSelectRecent={(e: any) => loadSlip(e.payslipId, e.label)}
+        companyName={viewSlip?.company?.name || undefined}
+        companyMeta={viewSlip?.company?.address || undefined}
+        companyInitials={viewSlip?.company?.initials || undefined}
+        hrEmail={viewSlip?.company?.hr_email || undefined}
+      />
 
-          {/* Body — sidebar + payslip preview */}
-          <div className="ep-pay-body">
-            {/* Sidebar */}
-            <aside className="ep-pay-sidebar">
-              <div className="ep-pay-side-label">Filter</div>
-              <div className="mb-3">
-                <div className="ep-pay-mini-label">Year</div>
-                <MasterSelect
-                  value={paySlipYear}
-                  options={['2026','2025','2024'].map(y => ({ value: y, label: y }))}
-                  onChange={setPaySlipYear}
-                />
-              </div>
-              <div className="mb-3">
-                <div className="ep-pay-mini-label">Month</div>
-                <MasterSelect
-                  value={paySlipMonth}
-                  options={['January','February','March','April','May','June','July','August','September','October','November','December'].map(m => ({ value: m, label: m }))}
-                  onChange={setPaySlipMonth}
-                />
-              </div>
-              <button type="button" className="ep-pay-side-btn">
-                <i className="ri-eye-line me-1" /> View Payslip
-              </button>
-
-              <div className="ep-pay-side-label mt-4">Recent Payslips</div>
-              <div className="d-flex flex-column gap-2">
-                {PAYSLIP_RECENT.map(p => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    className={`ep-pay-recent${p.now ? ' is-current' : ''}`}
-                    onClick={() => {
-                      const [m, y] = p.label.split(' ');
-                      const monthMap: Record<string,string> = { Jan:'January', Feb:'February', Mar:'March', Apr:'April', May:'May', Jun:'June', Jul:'July', Aug:'August', Sep:'September', Oct:'October', Nov:'November', Dec:'December' };
-                      setPaySlipMonth(monthMap[m] || m);
-                      setPaySlipYear(y);
-                    }}
-                  >
-                    <span>{p.label}</span>
-                    {p.now ? <span className="ep-pay-now">NOW</span> : <i className="ri-arrow-right-s-line" />}
-                  </button>
-                ))}
-              </div>
-            </aside>
-
-            {/* Payslip preview */}
-            <div className="ep-pay-preview">
-              {/* Company hero */}
-              <div className="ep-pay-company">
-                <div style={{ position: 'absolute', top: -40, right: -30, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
-                <div className="d-flex align-items-start justify-content-between gap-3" style={{ position: 'relative', zIndex: 1 }}>
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="ep-pay-company-logo">IN</span>
-                    <div>
-                      <h5 className="mb-0 text-white fw-bold" style={{ fontSize: 14 }}>INORBVICT Healthcare India Pvt. Ltd.</h5>
-                      <small style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10.5 }}>
-                        Pune, Maharashtra, India · GSTIN: 27XXXXXXXXXXX · CIN: U85190MH2020PTC339XXX
-                      </small>
-                    </div>
-                  </div>
-                  <div className="text-end">
-                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>PAYSLIP</div>
-                    <h4 className="text-white mb-0 fw-bold" style={{ fontSize: 17 }}>{paySlipMonth} {paySlipYear}</h4>
-                    <small style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10 }}>Pay Period: 01–31 {paySlipMonth.slice(0,3)} {paySlipYear}</small>
-                  </div>
-                </div>
-
-                {/* Inner identity strip */}
-                <div className="ep-pay-identity">
-                  {[
-                    { label: 'Employee Name', value: employee?.name || 'Aarav Patel' },
-                    { label: 'Employee ID',   value: employeeId },
-                    { label: 'Designation',   value: employee?.designation || 'VP Engineering' },
-                    { label: 'Department',    value: employee?.department || 'Software Development' },
-                    { label: 'Pay Period',    value: `${paySlipMonth.slice(0,3)} ${paySlipYear}` },
-                  ].map(c => (
-                    <div className="ep-pay-identity-cell" key={c.label}>
-                      <div className="ep-pay-identity-label">{c.label}</div>
-                      <div className="ep-pay-identity-value">{c.value}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* 4 KPI strip */}
-              <div className="ep-pay-kpis">
-                {[
-                  { label: 'Working Days', value: 31, tint: 'rgba(99,102,241,0.10)',  fg: '#4338ca' },
-                  { label: 'Days Present', value: 31, tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
-                  { label: 'Loss of Pay',  value: 0,  tint: 'rgba(245,158,11,0.10)',  fg: '#a16207' },
-                  { label: 'Paid Days',    value: 31, tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
-                ].map(k => (
-                  <div className="ep-pay-kpi" key={k.label} style={{ background: k.tint }}>
-                    <div className="ep-pay-kpi-label">{k.label}</div>
-                    <div className="ep-pay-kpi-value" style={{ color: k.fg }}>{k.value}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Earnings + Deductions */}
-              <Row className="g-2 mb-2">
-                <Col md={6}>
-                  <div className="ep-pay-table-card">
-                    <div className="ep-pay-table-head">
-                      <span className="ep-pay-dot" style={{ background: '#10b981' }} />
-                      <span style={{ color: '#108548' }}>EARNINGS</span>
-                    </div>
-                    <table className="ep-pay-table">
-                      <thead>
-                        <tr><th>Component</th><th className="text-end">Monthly</th></tr>
-                      </thead>
-                      <tbody>
-                        {PAYSLIP_EARNINGS.map(r => (
-                          <tr key={r.label}>
-                            <td>{r.label}</td>
-                            <td className="text-end fw-semibold">₹{r.amount.toLocaleString('en-IN')}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr style={{ background: 'rgba(16,185,129,0.06)' }}>
-                          <td className="fw-bold" style={{ color: '#108548' }}>Total Earnings</td>
-                          <td className="text-end fw-bold" style={{ color: '#108548' }}>₹{paySlipTotalEarnings.toLocaleString('en-IN')}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </Col>
-                <Col md={6}>
-                  <div className="ep-pay-table-card">
-                    <div className="ep-pay-table-head">
-                      <span className="ep-pay-dot" style={{ background: '#ef4444' }} />
-                      <span style={{ color: '#b91c1c' }}>DEDUCTIONS</span>
-                    </div>
-                    <table className="ep-pay-table">
-                      <thead>
-                        <tr><th>Component</th><th className="text-end">Monthly</th></tr>
-                      </thead>
-                      <tbody>
-                        {PAYSLIP_DEDUCTIONS.map(r => (
-                          <tr key={r.label}>
-                            <td>{r.label}</td>
-                            <td className="text-end fw-semibold">₹{r.amount.toLocaleString('en-IN')}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr style={{ background: 'rgba(239,68,68,0.06)' }}>
-                          <td className="fw-bold" style={{ color: '#b91c1c' }}>Total Deductions</td>
-                          <td className="text-end fw-bold" style={{ color: '#b91c1c' }}>₹{paySlipTotalDeductions.toLocaleString('en-IN')}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </Col>
-              </Row>
-
-              {/* Net Pay banner */}
-              <div className="ep-pay-net">
-                <div>
-                  <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.78)' }}>
-                    NET PAY — {paySlipMonth.toUpperCase()} {paySlipYear}
-                  </div>
-                  <h5 className="text-white fw-semibold mb-2" style={{ fontSize: 12 }}>Gross Earnings − Total Deductions</h5>
-                  <div className="d-flex gap-3">
-                    <div>
-                      <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.65)' }}>GROSS</div>
-                      <div className="text-white fw-bold" style={{ fontSize: 12 }}>₹{paySlipTotalEarnings.toLocaleString('en-IN')}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.65)' }}>DEDUCTIONS</div>
-                      <div className="fw-bold" style={{ color: '#fecaca', fontSize: 12 }}>−₹{paySlipTotalDeductions.toLocaleString('en-IN')}</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="text-end">
-                  <h2 className="text-white fw-bold mb-0" style={{ fontSize: 26 }}>
-                    ₹{paySlipNetPay.toLocaleString('en-IN')}
-                  </h2>
-                  <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 10 }}>Per Month (In Hand)</small>
-                </div>
-              </div>
-
-              <div className="ep-pay-footer">
-                This is a computer-generated payslip. No signature required. Queries:{' '}
-                <a href="mailto:hr@inorbvict.com">hr@inorbvict.com</a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </EpModal>
-
-      {/* ── Revise Salary Modal ── */}
-      <EpModal open={reviseOpen} onClose={() => setReviseOpen(false)} size="xl" panelClassName="ep-rev-modal">
-        {/* Hero header */}
-        <div className="ep-rev-hero">
-          <div className="d-flex align-items-start justify-content-between gap-3">
-            <div>
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>PAYROLL ACTION</div>
-              <h4 className="text-white fw-bold mb-0" style={{ fontSize: 16 }}>Revise Salary</h4>
-            </div>
-            <div className="d-flex align-items-center gap-2">
-              <button type="button" className="ep-rev-cancel-hero" onClick={() => setReviseOpen(false)}>Cancel</button>
-              <button type="button" className="ep-rev-submit-hero" onClick={() => setReviseOpen(false)}>
-                <i className="ri-check-line me-1" /> Revise Salary
-              </button>
-            </div>
-          </div>
-
-          {/* Employee strip */}
-          <div className="ep-rev-strip">
-            <div className="ep-rev-strip-cell">
-              <span className="ep-rev-avatar">{initials}</span>
-              <div>
-                <div className="ep-rev-strip-label">Employee</div>
-                <div className="ep-rev-strip-value">{employee?.name || 'Aarav Patel'}</div>
-                <div className="ep-rev-strip-sub">{employee?.designation || 'VP Engineering'}</div>
-              </div>
-            </div>
-            <div className="ep-rev-strip-cell">
-              <div>
-                <div className="ep-rev-strip-label">Joined</div>
-                <div className="ep-rev-strip-value">17-May-2022</div>
-              </div>
-            </div>
-            <div className="ep-rev-strip-cell">
-              <div>
-                <div className="ep-rev-strip-label">Department</div>
-                <div className="ep-rev-strip-value">{employee?.department || 'Software Development'}</div>
-              </div>
-            </div>
-            <div className="ep-rev-strip-cell">
-              <div>
-                <div className="ep-rev-strip-label">Current Salary</div>
-                <div className="ep-rev-strip-value">₹{currentAnnual.toLocaleString('en-IN')}</div>
-              </div>
-            </div>
-            <div className="ep-rev-strip-cell">
-              <div>
-                <div className="ep-rev-strip-label">Remuneration</div>
-                <div className="ep-rev-strip-value">Annual</div>
-              </div>
-            </div>
-            <div className="ep-rev-strip-cell">
-              <div>
-                <div className="ep-rev-strip-label">Bonus</div>
-                <div className="ep-rev-strip-value" style={{ color: '#fcd34d' }}>₹0</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Body — form on left, live preview on right */}
-        <div className="ep-rev-body">
-          <div className="ep-rev-form">
-            {/* New Salary Details */}
-            <div className="ep-rev-card mb-2">
-              <div className="d-flex align-items-center gap-2 mb-2">
-                <span className="ep-rev-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)' }}>
-                  <i className="ri-money-dollar-circle-line" />
-                </span>
-                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>New Salary Details</h6>
-              </div>
-              <Row className="g-2">
-                <Col md={6}>
-                  <div className="ep-rev-label">New Salary (₹ Annual)</div>
-                  <div className="position-relative">
-                    <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 11.5, fontWeight: 600 }}>₹</span>
-                    <input
-                      className="ep-rev-input"
-                      style={{ paddingLeft: 24 }}
-                      value={reviseAmount}
-                      onChange={e => setReviseAmount(e.target.value)}
-                      placeholder="0"
-                    />
-                  </div>
-                </Col>
-                <Col md={6}>
-                  <div className="ep-rev-label">Percentage Change (%)</div>
-                  <div className="position-relative">
-                    <input
-                      className="ep-rev-input"
-                      style={{ paddingRight: 24 }}
-                      value={revisePct}
-                      onChange={e => setRevisePct(e.target.value)}
-                      placeholder="e.g. 15"
-                    />
-                    <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 11.5, fontWeight: 600 }}>%</span>
-                  </div>
-                </Col>
-              </Row>
-            </div>
-
-            <Row className="g-2 mb-2">
-              <Col md={6}>
-                <div className="ep-rev-card h-100">
-                  <h6 className="fw-bold mb-1" style={{ fontSize: 12 }}>Salary Structure</h6>
-                  <div className="ep-rev-label mt-2">Structure Type</div>
-                  <MasterSelect
-                    value={reviseStructure}
-                    options={['Class A', 'Class B', 'Class C'].map(s => ({ value: s, label: s }))}
-                    onChange={setReviseStructure}
-                  />
-                </div>
-              </Col>
-              <Col md={6}>
-                <div className="ep-rev-card h-100">
-                  <h6 className="fw-bold mb-1" style={{ fontSize: 12 }}>Effective Date</h6>
-                  <div className="ep-rev-label mt-2">From Date</div>
-                  <MasterDatePicker
-                    value={reviseDate}
-                    onChange={setReviseDate}
-                  />
-                </div>
-              </Col>
-            </Row>
-
-            <div className="ep-rev-card mb-2">
-              <div className="d-flex align-items-center justify-content-between mb-1">
-                <h6 className="mb-0 fw-bold" style={{ fontSize: 11 }}>Bonus</h6>
-                <label className="d-inline-flex align-items-center gap-1" style={{ fontSize: 11, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={reviseBonusInSal} onChange={e => setReviseBonusInSal(e.target.checked)} />
-                  Include bonus in salary
-                </label>
-              </div>
-              {reviseBonusOpen && (
-                <div className="mb-1">
-                  <div className="ep-rev-label">Bonus Amount (₹)</div>
-                  <div className="position-relative">
-                    <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 11.5, fontWeight: 600 }}>₹</span>
-                    <input
-                      className="ep-rev-input"
-                      style={{ paddingLeft: 24 }}
-                      placeholder="0"
-                      value={reviseBonusAmount}
-                      onChange={e => setReviseBonusAmount(e.target.value)}
-                    />
-                  </div>
-                </div>
-              )}
-              <button
-                type="button"
-                className="ep-rev-add-btn"
-                onClick={() => {
-                  if (reviseBonusOpen) {
-                    setReviseBonusOpen(false);
-                    setReviseBonusAmount('');
-                  } else {
-                    setReviseBonusOpen(true);
-                  }
-                }}
-              >
-                <i className={reviseBonusOpen ? 'ri-subtract-line' : 'ri-add-line'} />{' '}
-                {reviseBonusOpen ? 'Remove Bonus' : 'Add Bonus'}
-              </button>
-            </div>
-
-            <div className="ep-rev-card">
-              <h6 className="fw-bold mb-1" style={{ fontSize: 12 }}>
-                Add Note <span className="text-muted fw-normal" style={{ fontSize: 10.5 }}>(optional)</span>
-              </h6>
-              <textarea
-                className="ep-rev-input mt-1"
-                rows={2}
-                placeholder="Reason for revision, performance notes, appraisal cycle..."
-                value={reviseNote}
-                onChange={e => setReviseNote(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Live preview sidebar */}
-          <aside className="ep-rev-preview">
-            <div className="d-flex align-items-center gap-2 mb-2">
-              <i className="ri-eye-line" style={{ color: '#0ab39c', fontSize: 13 }} />
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Live Preview</h6>
-            </div>
-
-            <div className="ep-rev-net">
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.78)' }}>NEW COMPENSATION</div>
-              <h2 className="text-white fw-bold mb-0" style={{ fontSize: 22, lineHeight: 1.1 }}>
-                ₹{reviseAnnualNum.toLocaleString('en-IN')}
-              </h2>
-              <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 10 }}>Per Annum</small>
-              <div className="d-flex justify-content-between mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.20)' }}>
-                <div>
-                  <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>MONTHLY</div>
-                  <div className="text-white fw-bold" style={{ fontSize: 11.5 }}>₹{reviseMonthlyNum.toLocaleString('en-IN')}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>BONUS</div>
-                  <div className="fw-bold" style={{ color: '#fcd34d', fontSize: 11.5 }}>₹0</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>TOTAL</div>
-                  <div className="text-white fw-bold" style={{ fontSize: 11.5 }}>₹{reviseAnnualNum.toLocaleString('en-IN')}</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="ep-rev-summary">
-              <div className="ep-rev-summary-head">CHANGE SUMMARY</div>
-              <div className="ep-rev-summary-row">
-                <span>Current Salary</span>
-                <span className="fw-semibold">₹{currentAnnual.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="ep-rev-summary-row">
-                <span>New Salary</span>
-                <span className="fw-semibold" style={{ color: '#0a8a78' }}>
-                  {reviseAnnualNum > 0 ? `₹${reviseAnnualNum.toLocaleString('en-IN')}` : '₹—'}
-                </span>
-              </div>
-              <div className="ep-rev-summary-row">
-                <span>Difference</span>
-                <span className="fw-semibold" style={{ color: reviseDifference >= 0 ? '#0a8a78' : '#b91c1c' }}>
-                  {reviseAnnualNum > 0 ? `${reviseDifference >= 0 ? '+' : ''}₹${reviseDifference.toLocaleString('en-IN')}` : '₹—'}
-                </span>
-              </div>
-              <div className="ep-rev-summary-row">
-                <span>% Change</span>
-                <span className="fw-semibold" style={{ color: revisePctChange >= 0 ? '#0a8a78' : '#b91c1c' }}>
-                  {reviseAnnualNum > 0 ? `${revisePctChange >= 0 ? '+' : ''}${revisePctChange.toFixed(1)}%` : '—%'}
-                </span>
-              </div>
-            </div>
-
-            <div className="ep-rev-summary mt-2">
-              <div className="d-flex align-items-center justify-content-between">
-                <div className="ep-rev-summary-head mb-0">COMPONENT BREAKDOWN</div>
-                <label className="d-inline-flex align-items-center gap-1" style={{ fontSize: 10.5, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={showBreakdownToggle} onChange={e => setShowBreakdownToggle(e.target.checked)} />
-                  Show
-                </label>
-              </div>
-              {!showBreakdownToggle && (
-                <small className="text-muted d-block text-center mt-1" style={{ fontSize: 10.5 }}>Toggle to see component split</small>
-              )}
-              {showBreakdownToggle && reviseAnnualNum > 0 && (() => {
-                const bd = makeBreakdown(reviseAnnualNum);
-                return (
-                  <div className="mt-1">
-                    {bd.rows.map(r => (
-                      <div className="ep-rev-summary-row" key={r.label} style={{ fontSize: 10.5 }}>
-                        <span>{r.label}</span>
-                        <span className="fw-semibold">₹{r.monthly.toLocaleString('en-IN')}/mo</span>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-          </aside>
-        </div>
-      </EpModal>
+      {/* Revise Salary uses the real SalaryStructureModal (rendered above); old mock modal removed. */}
 
       {/* ── Salary Breakdown Modal ── */}
       <EpModal open={breakdownOpen} onClose={() => setBreakdownOpen(false)} size="lg" panelClassName="ep-bd-modal">
@@ -5985,7 +5651,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
             <div className="position-relative" style={{ paddingLeft: 22 }}>
               <div style={{ position: 'absolute', top: 12, bottom: 12, left: 8, width: 2, background: 'var(--vz-border-color)' }} />
-              {SALARY_TIMELINE.map(s => {
+              {(realTimeline.length ? realTimeline : SALARY_TIMELINE).map(s => {
                 const active = s.id === breakdownRow.id;
                 return (
                   <button
@@ -6875,6 +6541,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {/* Face-biometric enrolment — opens from the Security card and posts
           the 128-d descriptor (with consent) to /api/face/register. */}
       <FaceRegistrationModal open={faceRegOpen} onClose={() => setFaceRegOpen(false)} />
+
+      {/* Real salary structure editor — replaces the old mock "Revise Salary"
+          flow. Saving creates a new version and propagates to payroll. */}
+      <SalaryStructureModal
+        open={salaryModalOpen}
+        employee={salaryEmpLite}
+        onClose={() => setSalaryModalOpen(false)}
+        onSaved={reloadSalaryStruct}
+      />
 
       {/* Hiring Requests — Raise form + read-only list. Both modals come
           from HrRecruitment so the create/validate logic, KPI strip, and
