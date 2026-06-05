@@ -29,9 +29,9 @@ const CHIPSTRIP_CSS = `
    white stickers on the dark form. Override to a violet-tinted token with a
    light label + subtle violet border (matches the rest of the dark UI). */
 [data-bs-theme="dark"] .master-multi-chip {
-  background: rgba(124,58,237,0.22) !important;
+  background: transparent !important;
   color: #ddd6fe !important;
-  border: 1px solid rgba(167,139,250,0.40);
+  border: 1px solid rgba(167,139,250,0.40) !important;
 }
 [data-bs-theme="dark"] .master-multi-chip [role="button"] { color: #ede9fe !important; opacity: .85; }
 [data-bs-theme="dark"] .master-multi-chip [role="button"]:hover { opacity: 1; }
@@ -149,8 +149,9 @@ export function MasterMultiSelect({
                     key={o.value}
                     className="d-inline-flex align-items-center master-multi-chip"
                     style={{
-                      background: '#eef2ff',
+                      background: 'transparent',
                       color: '#4338ca',
+                      border: '1px solid #c7d2fe',
                       padding: '2px 6px 2px 8px',
                       borderRadius: 12,
                       fontSize: 12,
