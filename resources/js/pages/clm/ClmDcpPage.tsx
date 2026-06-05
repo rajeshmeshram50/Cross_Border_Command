@@ -317,6 +317,7 @@ function SegmentRuleModal(props: {
   onBulkSave?: (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => void;
 }) {
   const { existing, existingRules, boot, onClose, onSave, onBulkSave } = props;
+  const toast = useToast();
   const [stage, setStage]     = useState<1 | 2>(1);
   const [reg, setReg]         = useState<'highly'|'less'|null>(existing?.regulatory_status ?? null);
   /* Multi-select segment codes. Always an array internally; in edit mode
@@ -364,8 +365,8 @@ function SegmentRuleModal(props: {
   const clearAllSegments  = () => setSegCodes([]);
 
   const goStage2 = () => {
-    if (!reg)              { alert('Please select a Regulatory Status to continue.'); return; }
-    if (segCodes.length === 0) { alert(isMulti ? 'Pick at least one segment to continue.' : 'Please select a Segment to continue.'); return; }
+    if (!reg)              { toast.error('Regulatory status required', 'Please select a Regulatory Status to continue.'); return; }
+    if (segCodes.length === 0) { toast.error('Segment required', isMulti ? 'Pick at least one segment to continue.' : 'Please select a Segment to continue.'); return; }
     setStage(2);
   };
 
