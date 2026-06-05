@@ -66,6 +66,9 @@ export interface VaultDoc {
   /** Master doc-code (DD-001, KYC-002, …). Needed by the Actions column
    *  so a re-upload can POST to /segment-uploads with the right key. */
   doc_code?: string | null;
+  /** Mandatory / Optional per the segment DCP rules — drives the
+   *  Requirement column (matches the Edit Customer form's table). */
+  requirement?: 'M' | 'O' | null;
   /** URL to the Zoho-issued Certificate of Completion. Set on rows
    *  that came from a completed Zoho Sign request; renders the
    *  certificate icon button in the Actions column. */
@@ -88,6 +91,10 @@ export interface VaultShipmentRow {
 }
 
 export interface VaultData {
+  /** True when this vault is for a consignee flagged "Same as Customer"
+   *  (its docs mirror the linked customer). Drives a header badge + a
+   *  disabled upload action — direct uploads to such a consignee 409. */
+  same_as_customer?:      boolean;
   total_documents:        number;
   verified_signed:        number;
   pending:                number;
@@ -773,21 +780,22 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   onSendTradeDoc?: (doc: VaultDoc) => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
 }) {
-  const numberHeader = tab === 'company-dd' ? 'License / Number' : tab === 'owner-kyc' ? 'Document Number' : tab === 'trade-licenses' ? 'License Number' : 'Reference No';
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
   /* Tab → SegmentDocUpload category for the re-upload endpoint. */
   const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
   return (
     <div className="cev-table-wrap">
       <div className="cev-table-scroll">
+      {/* Columns mirror the Edit Customer form's DD/KYC table:
+          Sr No · Auto Code · Document Name · Issuing Authority · Requirement · Actions. */}
       <table className="cev-table">
         <thead>
           <tr>
-            <th style={{ width: 56 }}>SR</th>
+            <th style={{ width: 56 }}>Sr No</th>
+            <th>Auto Code</th>
             <th>Document Name</th>
-            <th>{numberHeader}</th>
             <th>{authorityLbl}</th>
-            <th>Attachment</th>
+            <th>Requirement</th>
             <th style={{ width: 140 }}>Actions</th>
           </tr>
         </thead>
@@ -795,29 +803,17 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
           {rows.length === 0 ? (
             <tr><td colSpan={6} className="cev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
-            <tr key={d.id}>
+            <tr key={`${d.doc_code ?? 'doc'}-${i}`}>
               <td>{i + 1}</td>
+              <td className="cev-mono">{d.reference || d.doc_code || '—'}</td>
               <td className="cev-doc-name">{d.name}</td>
-              <td className="cev-mono">{d.reference || '—'}</td>
               <td>{d.authority || '—'}</td>
               <td>
-                {d.attachment ? (
-                  d.attachment_url ? (
-                    <Tooltip label={`Open ${d.attachment}`}>
-                      <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach" style={{ textDecoration: 'none' }}>
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                        {d.attachment}
-                      </a>
-                    </Tooltip>
-                  ) : (
-                    <Tooltip label={d.attachment}>
-                      <span className="cev-attach">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                        {d.attachment}
-                      </span>
-                    </Tooltip>
-                  )
-                ) : <span className="cev-muted">Not uploaded</span>}
+                {d.requirement === 'M' ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                )}
               </td>
               <td>
                 <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} />
@@ -868,7 +864,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 
   // Blob download so it works on the deployed server too (a plain <a download>
   // is ignored cross-origin / for inline-served files → opens instead of saving).
-  const download = () => { void downloadFile(doc.attachment_url, doc.attachment); };
+  const download = () => { void downloadFile(doc.attachment_url, doc.attachment ?? undefined); };
 
   const onPick = async (f: File | undefined) => {
     if (!f || !ownerId || !doc.doc_code) return;

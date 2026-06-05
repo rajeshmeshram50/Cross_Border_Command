@@ -117,6 +117,48 @@ const DEFAULT_HEADER: OppHeaderData = {
   country:      'IN',
 };
 
+/* Full-page loading shimmer for the Sales Matrix detail page — banner +
+ * 6-step stepper + toolbar + the three panels (CLM / Stage / Deal Engine).
+ * Self-contained (inline styles + one keyframe) so it needs no extra CSS. */
+function MatrixPageSkeleton() {
+  return (
+    <div className="smd-root" style={{ padding: 4 }}>
+      <style>{`
+        @keyframes smdpgskel { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
+        .smdpgskel { border-radius: 8px; background: linear-gradient(90deg,#ece9f5 25%,#f6f3fb 37%,#ece9f5 63%); background-size:400% 100%; animation: smdpgskel 1.2s ease-in-out infinite; }
+        .smdpgskel-card { background:#fff; border:1px solid #ede9fe; border-radius:14px; padding:16px; }
+      `}</style>
+      <div className="smdpgskel" style={{ height: 64, marginBottom: 14 }} />
+      {/* Stepper — one card per step mirroring the real layout:
+          small "Step 0N" label, big number, title line, sub line, badge. */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="smdpgskel-card" style={{ flex: 1, padding: 12, position: 'relative', minHeight: 86 }}>
+            <div className="smdpgskel" style={{ height: 9, width: 44, marginBottom: 8 }} />
+            <div className="smdpgskel" style={{ height: 24, width: 32, marginBottom: 9 }} />
+            <div className="smdpgskel" style={{ height: 11, width: '78%', marginBottom: 7 }} />
+            <div className="smdpgskel" style={{ height: 8, width: '58%' }} />
+            <div className="smdpgskel" style={{ position: 'absolute', top: 12, right: 12, height: 16, width: 42, borderRadius: 10 }} />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        {Array.from({ length: 9 }).map((_, i) => <div key={i} className="smdpgskel" style={{ height: 30, width: 108 }} />)}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr 1fr', gap: 14 }}>
+        {Array.from({ length: 3 }).map((_, c) => (
+          <div key={c} className="smdpgskel-card">
+            <div className="smdpgskel" style={{ height: 40, marginBottom: 16 }} />
+            {Array.from({ length: 6 }).map((_, r) => (
+              <div key={r} className="smdpgskel" style={{ height: 16, marginBottom: 12, width: `${92 - r * 9}%` }} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SalesMatrixDetail() {
   const params   = useParams();
   const location = useLocation();
@@ -361,6 +403,10 @@ export default function SalesMatrixDetail() {
       .catch(() => { /* silent — Stage components show their own degraded state */ });
   }, [resolvedLeadId, oppId]);
 
+  // Page-level loading flag — drives the full-page shimmer until the lead
+  // (serverHeader) has loaded, so the 7-stage page doesn't flash empty.
+  const [headerLoaded, setHeaderLoaded] = useState(false);
+
   const reloadLead = useCallback(() => {
     if (!resolvedLeadId) return;
     return api.get<{ status: boolean; data: {
@@ -403,7 +449,8 @@ export default function SalesMatrixDetail() {
           whatsappScreenshot:  d.whatsapp_screenshot,
         });
       })
-      .catch(() => toast.error('Load failed', 'Could not load this lead'));
+      .catch(() => toast.error('Load failed', 'Could not load this lead'))
+      .finally(() => setHeaderLoaded(true));
   }, [resolvedLeadId, toast]);
 
   useEffect(() => { reloadLead(); }, [reloadLead]);
@@ -617,6 +664,10 @@ export default function SalesMatrixDetail() {
     stage === 5 ? Stage5QuotationVsPI :
                   Stage6VictoryStage
   );
+
+  // Full-page shimmer until the lead data arrives (only when there is a
+  // lead to load — never blocks if the id can't be resolved).
+  if (resolvedLeadId && !headerLoaded) return <MatrixPageSkeleton />;
 
   return (
     <div className="smd-root">

@@ -132,6 +132,11 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
     return { ...vaultLive, trade_documents: sigRows, trade_documents_count: sigRows.length };
   }, [vaultLive, signatureRows]);
 
+  // Consignee flagged "Same as Customer" — its docs mirror the linked
+  // customer and direct uploads are rejected (409). Show a badge + disable
+  // the upload action.
+  const sameAsCustomer = ownerType === 'consignee' && !!vault?.same_as_customer;
+
   const docsForTab: VaultDoc[] = useMemo(() => {
     if (!vault) return [];
     return tab === 'company-dd'      ? vault.company_dd
@@ -241,6 +246,12 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
                   <h1 className="lev-hero-name">{target.company || target.id}</h1>
                   <div className="lev-hero-meta">
                     <span className="lev-hero-id">{target.id}</span>
+                    {sameAsCustomer && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 11px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: 'rgba(255,255,255,.22)', color: '#fff', border: '1px solid rgba(255,255,255,.4)', whiteSpace: 'nowrap' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        Same as Customer
+                      </span>
+                    )}
                     {target.risk && <span className="lev-hero-risk">{target.risk}</span>}
                     {target.contact && (<><span className="lev-dot" /><span>{target.contact}</span></>)}
                     {target.contactCity && (<><span className="lev-dot" /><span>{target.contactCity}</span></>)}
@@ -291,47 +302,41 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
             {/* Table */}
             <div className="lev-table-card">
               <table className="lev-doc-table">
+                {/* Columns mirror the Edit Customer form's DD/KYC table:
+                    Sr No · Auto Code · Document Name · Issuing Authority · Requirement · Actions. */}
                 <thead>
                   <tr>
-                    <th>Sr</th>
+                    <th>Sr No</th>
+                    <th>Auto Code</th>
                     <th>Document Name</th>
-                    <th>License / Number</th>
                     <th>{tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority'}</th>
-                    <th>Issue Date</th>
-                    <th>Expiry Date</th>
-                    <th>Attachment</th>
-                    <th>Status</th>
+                    <th>Requirement</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading && docsForTab.length === 0 ? (
-                    <tr><td colSpan={9} className="lev-empty">Loading documents…</td></tr>
+                    <tr><td colSpan={6} className="lev-empty">Loading documents…</td></tr>
                   ) : docsForTab.length === 0 ? (
-                    <tr><td colSpan={9} className="lev-empty">No documents in this bucket yet.</td></tr>
+                    <tr><td colSpan={6} className="lev-empty">No documents in this bucket yet.</td></tr>
                   ) : pagedDocs.map((d, i) => (
-                    <tr key={d.id}>
+                    /* key on doc_code (unique per bucket) + index — the backend
+                       can hand two rows the same numeric `id` (upload id vs.
+                       fallback index), which collided as React keys. */
+                    <tr key={`${d.doc_code ?? 'doc'}-${i}`}>
                       <td>{(safePage - 1) * PAGE_SIZE + i + 1}</td>
+                      <td><span className="lev-doc-license">{d.reference || d.doc_code || '—'}</span></td>
                       <td><span className="lev-doc-name">{d.name}</span></td>
-                      <td><span className="lev-doc-license">{d.reference || '—'}</span></td>
                       <td>{d.authority || '—'}</td>
-                      <td>{d.issue_date || <span className="lev-doc-dash">—</span>}</td>
-                      <td>{d.expiry || <span className="lev-doc-dash">—</span>}</td>
                       <td>
-                        {d.attachment ? (
-                          d.attachment_url ? (
-                            <a href={d.attachment_url} target="_blank" rel="noreferrer" className="lev-doc-att">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                              {d.attachment}
-                            </a>
-                          ) : (
-                            <span className="lev-doc-att"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>{d.attachment}</span>
-                          )
-                        ) : <span className="lev-doc-dash">Not uploaded</span>}
+                        {d.requirement === 'M' ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
+                        ) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                        )}
                       </td>
-                      <td><StatusBadge s={d.status} /></td>
                       <td>
-                        <LeadVaultRowActions doc={d} ownerType={ownerType} ownerId={target.db_id ?? null} tab={tab} onReload={reloadVault} />
+                        <LeadVaultRowActions doc={d} ownerType={ownerType} ownerId={target.db_id ?? null} tab={tab} onReload={reloadVault} sameAsCustomer={sameAsCustomer} />
                       </td>
                     </tr>
                   ))}
@@ -395,13 +400,15 @@ function StatusBadge({ s }: { s: VaultStatus }) {
 }
 
 /* ─── Per-row actions — View / Download / Upload-replace / Certificate. */
-function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload }: {
+function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCustomer }: {
   doc: VaultDoc;
   ownerType: 'customer' | 'consignee';
   ownerId: number | null;
   tab: TabKey;
   onReload: () => Promise<void> | void;
+  sameAsCustomer?: boolean;
 }) {
+  const toast = useToast();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
@@ -450,9 +457,16 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload }: {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </button>
       </Tooltip>
-      <Tooltip label={canReupload ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload')) : 'Save the record first'}>
-        <button type="button" disabled={!canReupload || busy} onClick={() => fileRef.current?.click()}
-                className={`lev-act lev-act-upload ${(!canReupload || busy) ? 'is-disabled' : ''}`} aria-label={doc.attachment ? 'Re-upload' : 'Upload'}>
+      <Tooltip label={sameAsCustomer ? 'Same as Customer — upload on the linked customer' : (canReupload ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload')) : 'Save the record first')}>
+        <button type="button" disabled={busy || (!canReupload && !sameAsCustomer)}
+                onClick={() => {
+                  if (sameAsCustomer) {
+                    toast.warning('Upload not allowed', 'This consignee is “Same as Customer” — you cannot upload a file here. Upload it on the linked customer instead.');
+                    return;
+                  }
+                  fileRef.current?.click();
+                }}
+                className={`lev-act lev-act-upload ${(sameAsCustomer || !canReupload || busy) ? 'is-disabled' : ''}`} aria-label={doc.attachment ? 'Re-upload' : 'Upload'}>
           {busy
             ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
             : doc.attachment

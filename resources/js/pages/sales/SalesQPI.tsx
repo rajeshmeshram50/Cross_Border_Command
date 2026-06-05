@@ -1238,13 +1238,18 @@ export default function SalesQPI() {
                 <IconKebab />
               </button>
             </Tooltip>
-            <ActionBtn
-              title={readOnly ? readOnlyHint : 'Delete PI'}
-              icon={<IconTrash />}
-              color="#dc2626"
-              disabled={readOnly}
-              onClick={() => r.id && setDeleteTarget({ kind: 'pi', id: r.id, code: r.piNo })}
-            />
+            {/* Delete is DISABLED for PI — a PI shouldn't be removed from the
+                history once issued. Code kept under `false &&` (not deleted)
+                so it can be re-enabled later. Quotations keep their delete. */}
+            {false && (
+              <ActionBtn
+                title={readOnly ? readOnlyHint : 'Delete PI'}
+                icon={<IconTrash />}
+                color="#dc2626"
+                disabled={readOnly}
+                onClick={() => r.id && setDeleteTarget({ kind: 'pi', id: r.id, code: r.piNo })}
+              />
+            )}
           </div>
         );
       },

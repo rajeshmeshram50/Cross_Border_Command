@@ -384,6 +384,34 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     [pis],
   );
 
+  /* ── Mandatory-doc gate for Create PI ──────────────────────────────
+   * A PI can't be created until every MANDATORY KYC / Due-Diligence /
+   * Trade doc for BOTH the customer and the consignee is uploaded. We
+   * read each party's vault (requirement = 'M', status = 'Verified' when
+   * uploaded) and flag if anything mandatory is still pending. The
+   * backend also blocks the create (422); this just greys the button. */
+  const [mandatoryIncomplete, setMandatoryIncomplete] = useState(false);
+  useEffect(() => {
+    const custId = header.customerId ?? null;
+    const consId = header.consigneeId ?? null;
+    if (!custId && !consId) { setMandatoryIncomplete(false); return; }
+    let cancelled = false;
+    const hasPendingMandatory = (vault: any): boolean =>
+      ['company_dd', 'owner_kyc', 'trade_licenses', 'trade_documents'].some(b =>
+        (Array.isArray(vault?.[b]) ? vault[b] : []).some((d: any) => d?.requirement === 'M' && d?.status !== 'Verified'));
+    (async () => {
+      try {
+        const calls: Promise<any>[] = [];
+        if (custId) calls.push(api.get(`/segment-uploads/customer/${custId}/vault`));
+        if (consId) calls.push(api.get(`/segment-uploads/consignee/${consId}/vault`));
+        const res = await Promise.allSettled(calls);
+        if (cancelled) return;
+        setMandatoryIncomplete(res.some(r => r.status === 'fulfilled' && hasPendingMandatory((r.value as any).data?.data)));
+      } catch { /* best-effort gate; backend still enforces on submit */ }
+    })();
+    return () => { cancelled = true; };
+  }, [header.customerId, header.consigneeId, pis.length, quotations.length]);
+
   const colSpan = docType === 'quotation' ? 7 : 9;
 
   return (
@@ -455,7 +483,25 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
               Create Quotation
             </button>
             <span className="s5-create-div" />
-            <button type="button" className="s5-create-btn s5-create-p" onClick={() => onCreate('pi')}>
+            {/* One PI per opportunity: once a (non-cancelled) PI exists the
+                Create PI button stays VISIBLE but greyed; clicking it explains
+                why instead of opening the form. */}
+            <button
+              type="button"
+              className="s5-create-btn s5-create-p"
+              style={(livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              onClick={() => {
+                if (livePisCount > 0) {
+                  toast.warning('Only one PI per opportunity', 'A single lead can have only one Proforma Invoice.');
+                  return;
+                }
+                if (mandatoryIncomplete) {
+                  toast.warning('Mandatory documents pending', 'Upload all mandatory KYC / Due Diligence / Trade documents for the customer and consignee before creating a PI.');
+                  return;
+                }
+                onCreate('pi');
+              }}
+            >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Create PI
             </button>
@@ -637,10 +683,15 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>
                           </button>
-                          <button type="button" className="s5-icn s5-icn-del" title="Delete"
-                            onClick={() => void onDelete(docType, r.id, r.code)} disabled={anyActing}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                          </button>
+                          {/* Delete shown for Quotations only — a PI shouldn't be
+                              removed once issued. Code kept (docType guard) so it
+                              still works for quotations and can be restored for PI. */}
+                          {docType !== 'pi' && (
+                            <button type="button" className="s5-icn s5-icn-del" title="Delete"
+                              onClick={() => void onDelete(docType, r.id, r.code)} disabled={anyActing}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
