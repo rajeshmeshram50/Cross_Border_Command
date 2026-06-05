@@ -3396,7 +3396,7 @@ const Stage2 = ({
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-                    <th>ISSUING AUTHORITY</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                    <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -3409,6 +3409,12 @@ const Stage2 = ({
                         <td><span className="acm-kyc-code">{d.code}</span></td>
                         <td style={{ fontWeight: 700 }}>{d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}</td>
                         <td>{d.authority ?? '—'}</td>
+                        {/* Requirement — Mandatory / Optional, same as Company DD. */}
+                        <td>
+                          {d.requirement === 'M'
+                            ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
+                            : <span className="acm-badge acm-badge--opt">Optional</span>}
+                        </td>
                         <td>
                           {uploaded
                             ? <a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600 }}>{uploaded.name}</a>
