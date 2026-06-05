@@ -7,6 +7,7 @@ import {
 } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { ShimmerTable } from '../../components/ui/Shimmer';
+import Tooltip from '../../components/ui/Tooltip';
 
 /* Sent rows from GET /clm/ctc-contracts/sent — the AwsContract list shape
  * enriched with the clarification thread + approver so the Clarifications
@@ -263,9 +264,15 @@ const ICO_VER  = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" str
 const ICO_TL   = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>;
 const ICO_VIEW = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
 
-function ActionBtn({ title, color, bg, border, onClick, children }: { title: string; color: string; bg: string; border: string; onClick: () => void; children: React.ReactNode }) {
+function ActionBtn({ title, color, bg, border, t, onClick, children }: { title: string; color: string; bg: string; border: string; t: OpsTokens; onClick: () => void; children: React.ReactNode }) {
+  // In dark mode the light pastel pills read as bright stickers. Keep each
+  // button's hue but as a translucent tint + brightened icon so they sit on
+  // the dark surface. Light mode keeps the original pastel look.
+  const fbg     = t.dark ? `color-mix(in srgb, ${color} 20%, transparent)` : bg;
+  const fborder = t.dark ? `color-mix(in srgb, ${color} 45%, transparent)` : border;
+  const fcolor  = t.dark ? `color-mix(in srgb, ${color} 55%, #ffffff)` : color;
   return (
-    <button title={title} onClick={onClick} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${border}`, background: bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color, opacity: .85, flexShrink: 0, transition: 'all .15s' }}
+    <button title={title} onClick={onClick} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${fborder}`, background: fbg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: fcolor, opacity: .85, flexShrink: 0, transition: 'all .15s' }}
       onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.13)'; }}
       onMouseLeave={e => { e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
       {children}
@@ -277,7 +284,7 @@ function DownloadMenu({ id, dlOpen, setDlOpen, toast, t }: { id: string; dlOpen:
   const open = dlOpen === id;
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>
-      <button title="Download Contract" onClick={() => setDlOpen(open ? null : id)} style={{ width: 28, height: 28, borderRadius: 7, border: '1.5px solid #7DD3FC', background: '#B2EBF2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0369A1', opacity: .85, flexShrink: 0 }}>{ICO_DL}</button>
+      <button title="Download Contract" onClick={() => setDlOpen(open ? null : id)} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${t.dark ? 'color-mix(in srgb, #06b6d4 45%, transparent)' : '#7DD3FC'}`, background: t.dark ? 'color-mix(in srgb, #06b6d4 20%, transparent)' : '#B2EBF2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: t.dark ? '#67e8f9' : '#0369A1', opacity: .85, flexShrink: 0 }}>{ICO_DL}</button>
       {open && (
         <div style={{ position: 'absolute', top: 32, right: 0, zIndex: 50, background: t.surface, borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.25)', border: `1.5px solid ${t.dark ? t.border : '#E8E4F9'}`, minWidth: 160, overflow: 'hidden' }}>
           {[['PDF', '#0369A1', '#B2EBF2', '#A7F3D0'], ['DOCX', '#0891b2', '#B2EBF2', '#7DD3FC']].map(([fmt, col, sbg, sbd]) => (
@@ -333,12 +340,12 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, toast, t }
                       <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
                       <td style={TD_C}><span style={CODE_PILL}>{c.id}</span></td>
                       <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.date}</span></td>
-                      <td style={TD_L}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0e7490', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }} title={c.title}>{c.title}</div></td>
-                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Avatar name={c.org} grad={ORG_GRAD[c.org] || '#4C1D95,#7C3AED'} /><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.org}</span></div></td>
+                      <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0e7490', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
+                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Avatar name={c.org} grad={ORG_GRAD[c.org] || '#4C1D95,#7C3AED'} /><Tooltip label={c.org}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.org}</span></Tooltip></div></td>
                       <td style={TD_L}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                           <Avatar name={c.cp[0]} grad="#0891b2,#0e7490" />
-                          <span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }} title={c.cp.join(', ')}>{c.cp[0]}</span>
+                          <Tooltip label={c.cp.join(', ')}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>
                           {extra > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 9, fontWeight: 800, flexShrink: 0 }} title={c.cp.slice(1).join(', ')}>+{extra}</span>}
                         </div>
                       </td>
@@ -349,9 +356,9 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, toast, t }
                       <td style={TD_C}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                           <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />
-                          <ActionBtn title="Edit Agreement" color="#0891b2" bg="#B2EBF2" border="#7DD3FC" onClick={() => toast.info('Edit Agreement', `Open ${c.id} in Case to Case Contracts`)}>{ICO_EDIT}</ActionBtn>
-                          <ActionBtn title="Version History" color="#7C3AED" bg="#EDE9FE" border="#C4B5FD" onClick={() => toast.info('Version History', c.id)}>{ICO_VER}</ActionBtn>
-                          <ActionBtn title="Agreement Timeline" color="#B45309" bg="#FEF3C7" border="#FCD34D" onClick={() => toast.info('Agreement Timeline', c.id)}>{ICO_TL}</ActionBtn>
+                          <ActionBtn title="Edit Agreement" color="#0891b2" bg="#B2EBF2" border="#7DD3FC" t={t} onClick={() => toast.info('Edit Agreement', `Open ${c.id} in Case to Case Contracts`)}>{ICO_EDIT}</ActionBtn>
+                          <ActionBtn title="Version History" color="#7C3AED" bg="#EDE9FE" border="#C4B5FD" t={t} onClick={() => toast.info('Version History', c.id)}>{ICO_VER}</ActionBtn>
+                          <ActionBtn title="Agreement Timeline" color="#B45309" bg="#FEF3C7" border="#FCD34D" t={t} onClick={() => toast.info('Agreement Timeline', c.id)}>{ICO_TL}</ActionBtn>
                         </div>
                       </td>
                     </tr>
@@ -404,14 +411,14 @@ function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, toast, t }
                       <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
                       <td style={TD_C}><span style={CODE_PILL}>{c.id}</span></td>
                       <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
-                      <td style={TD_L}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }} title={c.title}>{c.title}</div></td>
+                      <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{c.title}</div></Tooltip></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#FCA5A5,#EF4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(rej.by)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.dark ? '#fca5a5' : '#7F1D1D', whiteSpace: 'nowrap' }}>{rej.by}</span></div></td>
                       <td style={{ ...TD_L, maxWidth: 220 }}><div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}><div style={{ width: 16, height: 16, borderRadius: '50%', background: '#FEE2E2', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg></div><div style={{ fontSize: 10.5, color: t.dark ? '#fca5a5' : '#7F1D1D', fontWeight: 500, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={rej.reason}>{rej.reason}</div></div></td>
                       <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.endDate}</span></td>
                       <td style={TD_C}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                         <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />
-                        <ActionBtn title="View" color="#DC2626" bg="#FEF2F2" border="#FEE2E2" onClick={() => toast.info('View Agreement', c.id)}>{ICO_VIEW}</ActionBtn>
+                        <ActionBtn title="View" color="#DC2626" bg="#FEF2F2" border="#FEE2E2" t={t} onClick={() => toast.info('View Agreement', c.id)}>{ICO_VIEW}</ActionBtn>
                       </div></td>
                     </tr>
                   );
@@ -467,12 +474,12 @@ function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id:
                   <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(i + 1)}</span></div></td>
                   <td style={TD_C}><span style={CODE_PILL}>{c.id}</span></td>
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
-                  <td style={TD_L}><div style={{ fontSize: 12, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 185 }} title={c.title}>{c.title}</div></td>
+                  <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 185 }}>{c.title}</div></Tooltip></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(c.approver)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.approver}</span></div></td>
                   <td style={{ ...TD_L, maxWidth: 210 }}>
                     {round > 1 && <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 20, background: '#F5F0FF', border: '1px solid #DDD6FE', fontSize: 7.5, fontWeight: 700, color: '#7C3AED', marginBottom: 3 }}>Round {round}</span>}
-                    <div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210 }} title={latest?.query}>{latest?.query ?? '—'}</div>
+                    <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210 }}>{latest?.query ?? '—'}</div></Tooltip>
                     <div style={{ fontSize: 8.5, color: '#F59E0B', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting your response · raised by {c.approver} on {latest?.date}</div>
                   </td>
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub }}>{c.expDate}</span></td>
