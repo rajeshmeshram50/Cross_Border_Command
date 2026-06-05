@@ -680,6 +680,20 @@ class EmployeeController extends Controller
 
         $row->load(self::WITH);
 
+        // Payroll connection — if this edit touched a field the payroll engine
+        // reads (salary / PF / gender / state / bank / joining / status), push
+        // the change into any non-locked payslip already generated for this
+        // employee so payroll stays in sync everywhere. Locked runs are frozen.
+        $payrollFields = ['annual_salary', 'enable_payroll', 'pf_eligible', 'gender', 'state_id',
+            'date_of_joining', 'status', 'bank_account_number', 'ifsc_code', 'salary_payment_mode'];
+        if (!empty(array_intersect($payrollFields, array_keys($data)))) {
+            try {
+                app(\App\Services\PayrollService::class)->recomputeEmployeePayslips((int) $row->id);
+            } catch (\Throwable $e) {
+                // Never block an employee save on a payroll recompute hiccup.
+            }
+        }
+
         /* Welcome / credentials email fires when the wizard reaches
          * Step 4 (the final step). We use password_encrypted as the
          * "haven't sent yet" marker — once the welcome goes out, we

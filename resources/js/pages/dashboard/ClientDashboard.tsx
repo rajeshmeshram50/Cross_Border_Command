@@ -544,7 +544,7 @@ export default function ClientDashboard() {
                         : 'linear-gradient(135deg,#299cdb,#50c3e6)',
                       color: '#fff', fontWeight: 800, fontSize: 12, flexShrink: 0,
                     }}>
-                      {b.code?.substring(0, 2).toUpperCase() || b.name.charAt(0).toUpperCase()}
+                      {b.code?.substring(0, 2).toUpperCase() || (b.name || '?').charAt(0).toUpperCase()}
                     </div>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', display: 'inline-flex', alignItems: 'center', gap: 4 }}>

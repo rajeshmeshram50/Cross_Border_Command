@@ -471,6 +471,9 @@ class LeaveRequestController extends Controller
         // Let the current-level approver know they can drop it from the queue.
         $this->notifyForCancellation($row);
 
+        // Cancelling an (already-approved) leave changes payroll days.
+        $this->propagateToPayroll($row->employee_id);
+
         return response()->json(['data' => $row]);
     }
 
@@ -530,7 +533,25 @@ class LeaveRequestController extends Controller
         // Fire notifications based on the new state. Logged-only on failure.
         $this->notifyForDecision($row, $data['comment'] ?? null);
 
+        // A finalized leave decision changes paid/unpaid days — propagate it to
+        // any non-locked payroll already generated for this employee.
+        if (in_array($row->status, ['Approved', 'Rejected'], true)) {
+            $this->propagateToPayroll($row->employee_id);
+        }
+
         return response()->json(['data' => $row->fresh(['leaveType:id,name,short_code'])]);
+    }
+
+    /** Recompute the employee's draft/generated payslips so a leave change
+     *  reflects everywhere (locked runs are untouched). Best-effort. */
+    private function propagateToPayroll(?int $employeeId): void
+    {
+        if (!$employeeId) return;
+        try {
+            app(\App\Services\PayrollService::class)->recomputeEmployeePayslips((int) $employeeId);
+        } catch (\Throwable $e) {
+            // Never block a leave action on a payroll recompute hiccup.
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

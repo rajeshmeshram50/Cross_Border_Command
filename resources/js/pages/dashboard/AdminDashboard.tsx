@@ -594,8 +594,12 @@ export default function AdminDashboard() {
             <CardBody style={{ padding: '16px 20px' }}>
               {data.org_types.map((o, i) => {
                 const pct = counts.total_clients > 0 ? (o.count / counts.total_clients) * 100 : 0;
+                // Clients with no organisation type come back as a null
+                // org_type bucket — fall back to a label so .charAt() (and the
+                // React key) never blow up the whole dashboard.
+                const orgLabel = o.org_type ?? 'Unspecified';
                 return (
-                  <div key={o.org_type} style={{ marginBottom: 20 }}>
+                  <div key={orgLabel} style={{ marginBottom: 20 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{
@@ -603,9 +607,9 @@ export default function AdminDashboard() {
                           background: `linear-gradient(135deg,${COLORS[i % COLORS.length]},${COLORS[(i + 1) % COLORS.length]})`,
                           color: '#fff', fontWeight: 800, fontSize: 12,
                         }}>
-                          {o.org_type.charAt(0)}
+                          {orgLabel.charAt(0)}
                         </div>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{o.org_type}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{orgLabel}</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 12, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{pct.toFixed(0)}%</span>
@@ -717,7 +721,7 @@ export default function AdminDashboard() {
                         background: `linear-gradient(135deg,${COLORS[i % COLORS.length]},${COLORS[(i + 2) % COLORS.length]})`,
                         color: '#fff', fontWeight: 800, fontSize: 13, flexShrink: 0,
                       }}>
-                        {c.org_name.charAt(0)}{c.org_name.split(' ')[1]?.charAt(0) || ''}
+                        {(c.org_name ?? '—').charAt(0)}{(c.org_name ?? '').split(' ')[1]?.charAt(0) || ''}
                       </div>
                     )}
                     <div>

@@ -664,6 +664,52 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/advance-requests/{id}/hr-approve',          [\App\Http\Controllers\Api\AdvanceRequestController::class, 'hrApprove']);
     Route::post  ('/advance-requests/{id}/hr-reject',           [\App\Http\Controllers\Api\AdvanceRequestController::class, 'hrReject']);
 
+    // ── Payroll engine ──────────────────────────────────────────────────
+    // Monthly salary processing: cycle → finalize attendance → preflight →
+    // run → approve → pay → payslip/export. Literal segments declared before
+    // the {id} payslip route so they aren't captured as ids. See
+    // PayrollController for the rule-by-rule breakdown.
+    Route::get ('/payroll/cycles',              [\App\Http\Controllers\Api\PayrollController::class, 'cycles']);
+    Route::get ('/payroll/history',             [\App\Http\Controllers\Api\PayrollController::class, 'history']);
+    Route::get ('/payroll/preflight',           [\App\Http\Controllers\Api\PayrollController::class, 'preflight']);
+    Route::get ('/payroll/export',              [\App\Http\Controllers\Api\PayrollController::class, 'export']);
+    Route::get ('/payroll/payslips/bulk',       [\App\Http\Controllers\Api\PayrollController::class, 'payslipsBulk']);
+    Route::post('/payroll/payslips/email',      [\App\Http\Controllers\Api\PayrollController::class, 'emailPayslipsBulk']);
+    Route::get ('/payroll/payslip/{id}/pdf',    [\App\Http\Controllers\Api\PayrollController::class, 'payslipPdf'])->whereNumber('id');
+    Route::post('/payroll/payslip/{id}/email',  [\App\Http\Controllers\Api\PayrollController::class, 'emailPayslip'])->whereNumber('id');
+    Route::get ('/payroll/payslip/{id}',        [\App\Http\Controllers\Api\PayrollController::class, 'payslip'])->whereNumber('id');
+    Route::get ('/payroll/employee/{employeeId}/payslips', [\App\Http\Controllers\Api\PayrollController::class, 'employeePayslips'])->whereNumber('employeeId');
+    Route::get ('/payroll/fnf/{employeeId}',    [\App\Http\Controllers\Api\PayrollController::class, 'fnf'])->whereNumber('employeeId');
+    Route::get ('/payroll',                      [\App\Http\Controllers\Api\PayrollController::class, 'index']);
+    Route::post('/payroll/finalize-attendance', [\App\Http\Controllers\Api\PayrollController::class, 'finalizeAttendance']);
+    Route::post('/payroll/run',                  [\App\Http\Controllers\Api\PayrollController::class, 'run']);
+    Route::post('/payroll/reopen',               [\App\Http\Controllers\Api\PayrollController::class, 'reopen']);
+    Route::post('/payroll/approve',              [\App\Http\Controllers\Api\PayrollController::class, 'approve']);
+    Route::post('/payroll/pay',                  [\App\Http\Controllers\Api\PayrollController::class, 'pay']);
+
+    // Proceed-to-Pay disbursement flow (mode → advice/NEFT → 3-level sign-off → initiate).
+    Route::post('/payroll/payment/prepare',         [\App\Http\Controllers\Api\PayrollPaymentController::class, 'prepare']);
+    Route::get ('/payroll/payment/{id}',            [\App\Http\Controllers\Api\PayrollPaymentController::class, 'show'])->whereNumber('id');
+    Route::post('/payroll/payment/{id}/approve',    [\App\Http\Controllers\Api\PayrollPaymentController::class, 'approve'])->whereNumber('id');
+    Route::post('/payroll/payment/{id}/initiate',   [\App\Http\Controllers\Api\PayrollPaymentController::class, 'initiate'])->whereNumber('id');
+    Route::get ('/payroll/payment/{id}/bank-file',  [\App\Http\Controllers\Api\PayrollPaymentController::class, 'bankFile'])->whereNumber('id');
+    Route::get ('/payroll/payment/{id}/audit',      [\App\Http\Controllers\Api\PayrollPaymentController::class, 'auditTrail'])->whereNumber('id');
+
+    // Payroll adjustments — overtime / bonus / incentive / one-off deduction
+    // (Rule 4 / 10). Only approved rows affect payroll.
+    Route::get   ('/payroll-adjustments',            [\App\Http\Controllers\Api\PayrollAdjustmentController::class, 'index']);
+    Route::post  ('/payroll-adjustments',            [\App\Http\Controllers\Api\PayrollAdjustmentController::class, 'store']);
+    Route::post  ('/payroll-adjustments/{id}/approve', [\App\Http\Controllers\Api\PayrollAdjustmentController::class, 'approve'])->whereNumber('id');
+    Route::post  ('/payroll-adjustments/{id}/reject',  [\App\Http\Controllers\Api\PayrollAdjustmentController::class, 'reject'])->whereNumber('id');
+    Route::delete('/payroll-adjustments/{id}',       [\App\Http\Controllers\Api\PayrollAdjustmentController::class, 'destroy'])->whereNumber('id');
+
+    // Versioned salary structures (Rule 5 / 19) — feeds the payroll engine.
+    Route::get   ('/salary-structures/employees', [\App\Http\Controllers\Api\SalaryStructureController::class, 'employees']);
+    Route::get   ('/salary-structures',      [\App\Http\Controllers\Api\SalaryStructureController::class, 'index']);
+    Route::post  ('/salary-structures',      [\App\Http\Controllers\Api\SalaryStructureController::class, 'store']);
+    Route::get   ('/salary-structures/{id}', [\App\Http\Controllers\Api\SalaryStructureController::class, 'show'])->whereNumber('id');
+    Route::delete('/salary-structures/{id}', [\App\Http\Controllers\Api\SalaryStructureController::class, 'destroy'])->whereNumber('id');
+
     // Broadcast Centre announcements — company-wide announcements with
     // audience targeting, scheduling and acknowledgement tracking. Stats /
     // next-code declared BEFORE apiResource so they aren't captured as ids.
