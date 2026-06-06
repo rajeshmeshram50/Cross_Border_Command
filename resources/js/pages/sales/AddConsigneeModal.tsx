@@ -1974,11 +1974,16 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               so the wizard progression is the first thing the user
               sees. Linked Customer context is still right below. */}
           <div className="acm-steps">
+            {/* Completion 'done' tick removed (user request) — a green ✓ used
+                to appear even with nothing uploaded / trade docs unsent
+                (Evidence Vault is design-only), which read as "done" and
+                confused users. Visited steps now stay neutral ('incomplete')
+                showing just their number; no ✓ on any step. */}
             <StepNode
               n={1}
               title="Consignee Legal Identity"
               sub="Company, address & contact"
-              status={stage === 1 ? 'active' : 1 <= maxStage ? (stageComplete[0] ? 'done' : 'incomplete') : 'idle'}
+              status={stage === 1 ? 'active' : 1 <= maxStage ? 'incomplete' : 'idle'}
               icon={<IconHome />}
               clickable={stage !== 1 && 1 <= maxStage}
               onClick={() => gotoStage(1)}
@@ -1988,7 +1993,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               n={2}
               title="KYC / Due Diligence"
               sub="Docs, identity & compliance"
-              status={stage === 2 ? 'active' : 2 <= maxStage ? (stageComplete[1] ? 'done' : 'incomplete') : 'idle'}
+              status={stage === 2 ? 'active' : 2 <= maxStage ? 'incomplete' : 'idle'}
               icon={<IconDoc />}
               clickable={stage !== 2 && 2 <= maxStage}
               onClick={() => gotoStage(2)}
@@ -1998,7 +2003,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               n={3}
               title="Evidence Vault"
               sub="Trade documents & archive"
-              status={stage === 3 ? 'active' : 3 <= maxStage ? (stageComplete[2] ? 'done' : 'incomplete') : 'idle'}
+              status={stage === 3 ? 'active' : 3 <= maxStage ? 'incomplete' : 'idle'}
               icon={<IconVault />}
               clickable={stage !== 3 && 3 <= maxStage}
               onClick={() => gotoStage(3)}

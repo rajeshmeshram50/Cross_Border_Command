@@ -2111,13 +2111,18 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
          *   pending    — not yet reached (s.n > maxStage, locked)
          * `complete` is index-0-based (Stage n → complete[n-1]). */
         const visited = s.n <= maxStage;
-        const isComplete = !!complete[s.n - 1];
+        /* Completion ticks removed (user request): a green ✓ used to show
+         * even when nothing was uploaded / no trade docs were sent
+         * (Evidence Vault is design-only here), which read as "done" and
+         * confused users. Steps now show only their icon + number —
+         * active step highlighted, visited steps neutral, unreached steps
+         * locked. No "complete" indication anywhere. */
         const cls = s.n === stage
           ? 'acm-step-active'
           : visited
-            ? (isComplete ? 'acm-step-done' : 'acm-step-incomplete')
+            ? 'acm-step-incomplete'
             : 'acm-step-pending';
-        const showCheck = visited && s.n !== stage && isComplete;
+        const showCheck = false;
         return (
           <Fragment key={s.n}>
             <div className={`acm-step ${cls}`} onClick={() => onGoto(s.n)}>
