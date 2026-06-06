@@ -214,6 +214,11 @@ export default function SalesCustomerSendForSignatureModal({
   const [activeDocId, setActiveDocId] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  /* True once the active doc's preview PDF is loaded into pdf.js and ready
+   * to paint onto the canvas. Replaces the old <iframe>: we render ONE page
+   * at a time onto a canvas with Prev/Next nav (matching the Quotation/PI
+   * send modal) so there's no second browser PDF scrollbar. */
+  const [pdfRenderReady, setPdfRenderReady] = useState(false);
   /* Total page count of the active doc's preview PDF — populated by the
    * PDF.js loader so the page input can be range-limited and a "page X
    * of Y" hint can be shown. Kept per modal-open (no per-doc map needed
@@ -528,6 +533,7 @@ export default function SalesCustomerSendForSignatureModal({
     let cancelled = false;
     setPreviewLoading(true);
     setPreviewUrl(null);
+    setPdfRenderReady(false);
     // Per-doc page-shell override carried along so the preview reflects
     // whatever the user tweaked in the side panel + table inserts. The
     // backend layers these over the saved row's config; no override =
@@ -563,6 +569,19 @@ export default function SalesCustomerSendForSignatureModal({
         const blob = r.data as Blob;
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
+
+        // Load the PDF into pdf.js so we can paint it one page at a time
+        // onto the canvas (navigated via Prev/Next). This is separate from
+        // detectSignatureMarkers below, which does its own short-lived load
+        // for placeholder detection.
+        try {
+          const renderDoc = await pdfjsLib.getDocument({ data: await blob.arrayBuffer() }).promise;
+          if (cancelled) { renderDoc.destroy(); return; }
+          try { pdfDocRef.current?.destroy(); } catch { /* ignore */ }
+          pdfDocRef.current = renderDoc;
+          setPageCount(Math.max(1, renderDoc.numPages));
+          setPdfRenderReady(true);
+        } catch { /* keep any previous doc; the user can still drag the box */ }
 
         // Detect placeholder coords. The two modes write to different
         // state slices and track overrides on different keys, so they
@@ -786,12 +805,26 @@ export default function SalesCustomerSendForSignatureModal({
     setSettings(prev => ({ ...prev, [activeDocId]: { ...DEFAULTS, ...prev[activeDocId], ...patch } }));
   };
 
+  /* Flip the active signer's signature box (and the rendered preview page)
+   * to the previous/next page — mirrors the Quotation/PI modal's Prev/Next. */
+  const goPage = (delta: number) => {
+    const cur = activeSettings?.page ?? 0;
+    updateActiveSettings({ page: Math.max(0, Math.min(pageCount - 1, cur + delta)) });
+  };
+
   /* ── Drag-to-position the signature box on the live PDF preview.
    * The preview wrapper is sized to A4 aspect ratio (595×842), so the
    * px↔pt conversion is uniform on both axes: `ptPerPx = 595 / widthPx`.
    * PDF coords place origin at bottom-left, CSS places it at top-left,
    * so Y is mirrored when rendering and on mouseup. */
   const previewWrapRef = useRef<HTMLDivElement | null>(null);
+  // Canvas we paint the active page onto, the loaded pdf.js document, and
+  // the in-flight render task (cancelled when the page/size changes — pdf.js
+  // rejects rendering onto a canvas that's still mid-render). These replace
+  // the old <iframe> preview.
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pdfDocRef = useRef<any>(null);
+  const renderTaskRef = useRef<any>(null);
   const dragStateRef = useRef<{
     mode: 'move' | 'resize';
     startX: number; startY: number;
@@ -814,6 +847,53 @@ export default function SalesCustomerSendForSignatureModal({
     ro.observe(el);
     return () => ro.disconnect();
   }, [step, previewUrl]);
+
+  /* ── Render the active page onto the canvas at the wrapper's width.
+   * Re-runs when the page changes, the doc loads, or the wrapper resizes.
+   * The page shown is whichever page the active signature box lives on
+   * (activeSettings.page), so navigating pages and positioning stay in sync. */
+  const activePageNum = activeSettings?.page ?? 0;
+  useEffect(() => {
+    if (step !== 2 || !pdfRenderReady) return;
+    const pdf = pdfDocRef.current;
+    const canvas = canvasRef.current;
+    const wrap = previewWrapRef.current;
+    if (!pdf || !canvas || !wrap) return;
+    const cssWidth = wrap.clientWidth || wrapWidthPx;
+    if (cssWidth <= 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pageNum = Math.min(pdf.numPages, Math.max(1, activePageNum + 1));
+        const page = await pdf.getPage(pageNum);
+        if (cancelled) return;
+        const base = page.getViewport({ scale: 1 });
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const scale = (cssWidth / base.width) * dpr;
+        const viewport = page.getViewport({ scale });
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        try { renderTaskRef.current?.cancel(); } catch { /* ignore */ }
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = '100%';
+        canvas.style.height = 'auto';
+        const task = page.render({ canvasContext: ctx, viewport });
+        renderTaskRef.current = task;
+        await task.promise;
+      } catch { /* cancelled renders throw — safe to ignore */ }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdfRenderReady, activePageNum, wrapWidthPx, step, previewUrl]);
+
+  /* Tear down the pdf.js document + any in-flight render when the modal
+   * unmounts so we don't leak the parsed PDF or a pending render task. */
+  useEffect(() => () => {
+    try { renderTaskRef.current?.cancel(); } catch { /* ignore */ }
+    try { pdfDocRef.current?.destroy(); } catch { /* ignore */ }
+    pdfDocRef.current = null;
+  }, []);
 
   const wrapperSizePt = () => {
     const w = wrapWidthPx || previewWrapRef.current?.clientWidth || 0;
@@ -1111,23 +1191,26 @@ export default function SalesCustomerSendForSignatureModal({
                         ))}
                       </div>
                     )}
+                    {/* Page navigator — flip through the document pages one
+                        at a time (single-page canvas, no browser PDF
+                        scrollbar) and drop the signature box on whichever
+                        page you want. Mirrors the Quotation/PI send modal. */}
+                    {pageCount > 1 && (
+                      <div className="ssf-pagenav">
+                        <button type="button" className="ssf-pagenav-btn" onClick={() => goPage(-1)} disabled={(activeSettings?.page ?? 0) <= 0} aria-label="Previous page">‹ Prev</button>
+                        <span className="ssf-pagenav-label">Page {(activeSettings?.page ?? 0) + 1} of {pageCount}</span>
+                        <button type="button" className="ssf-pagenav-btn" onClick={() => goPage(1)} disabled={(activeSettings?.page ?? 0) >= pageCount - 1} aria-label="Next page">Next ›</button>
+                      </div>
+                    )}
                     <div className="ssf-preview-wrap" ref={previewWrapRef}>
-                      {/* PDF.js / native viewer behind; #toolbar=0&navpanes=0&scrollbar=0
-                          strips the browser PDF chrome on Chromium so the page itself
-                          fills the wrapper at A4 ratio. The draggable overlay sits
-                          on top in the SAME coordinate space.
-                          #page=N (1-indexed) syncs the visible page to the page
-                          the user is positioning on — otherwise on multi-page
-                          docs the user sees page 1 while their (x,y) is being
-                          applied by Zoho to page 2, and the widget lands far
-                          from where they dragged. Re-keying on page also
-                          forces a reload when the page input changes. */}
-                      <iframe
-                        key={`${previewUrl}-p${activeSettings?.page ?? 0}`}
-                        title="Preview"
-                        src={`${previewUrl}#page=${(activeSettings?.page ?? 0) + 1}&toolbar=0&navpanes=0&scrollbar=0&zoom=page-fit&view=FitH`}
-                        className="ssf-preview-frame"
-                      />
+                      {/* The active page is painted onto this canvas by the
+                          render effect (pdf.js), one page at a time. The
+                          draggable overlay sits on top in the SAME coordinate
+                          space. Changing the active signer's page (Prev/Next
+                          or the Page input) re-renders this canvas — so the
+                          user always sees the page their (x,y) is applied to. */}
+                      <canvas ref={canvasRef} className="ssf-preview-frame" />
+                      {previewLoading && <div className="ssf-preview-state" style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Rendering…</div>}
                       {/* Overlay rendering branches by mode.
                           - trade-doc: ONE overlay bound to settings[docId]
                           - agreement: ONE overlay per signer on the active
@@ -1917,6 +2000,19 @@ export const SSF_CSS = `
 }
 .ssf-preview-frame { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
 .ssf-preview-state { color: #475569; font-size: 13px; padding: 32px; }
+/* Page navigator (Prev / page X of Y / Next) above the canvas preview. */
+.ssf-pagenav { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.ssf-pagenav-label { font-size: 12.5px; font-weight: 700; color: #334155; min-width: 92px; text-align: center; }
+.ssf-pagenav-btn {
+  border: 1.5px solid #cbd5e1; background: #fff; color: #0f172a;
+  border-radius: 8px; padding: 5px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.ssf-pagenav-btn:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
+.ssf-pagenav-btn:disabled { opacity: .45; cursor: not-allowed; }
+[data-bs-theme="dark"] .ssf-pagenav-label { color: #cbd5e1; }
+[data-bs-theme="dark"] .ssf-pagenav-btn { background: #1e293b; border-color: #334155; color: #e2e8f0; }
+[data-bs-theme="dark"] .ssf-pagenav-btn:hover:not(:disabled) { background: #243244; }
 
 /* Draggable signature box overlaid on the PDF preview. The corner
  * handle is a child so its own pointerdown can be distinguished from

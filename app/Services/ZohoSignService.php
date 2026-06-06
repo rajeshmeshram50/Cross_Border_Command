@@ -37,22 +37,22 @@ class ZohoSignService
     public const DEFAULT_FIELD_HEIGHT = 45;
 
     /**
-     * Empirical sub-pt corrections applied to every signature field
-     * BEFORE it ships to Zoho. The SPA's drag overlay and Zoho's
-     * signature renderer don't share a pixel-perfect coordinate space
-     * (Chrome's PDF viewer chrome offsets the visible page inside the
-     * iframe by a few pt vs Zoho's own rasterisation), so a small
-     * fixed nudge closes the gap.
+     * Optional sub-pt fine-tuning applied to every signature field BEFORE
+     * it ships to Zoho. The SPA drag overlay and Zoho both use a top-left
+     * page origin and a top-left field anchor in A4 points, so the base
+     * mapping is a direct 1:1 passthrough (x_coord = x, y_coord = y) and
+     * these default to 0. Set a small value here ONLY if a specific tenant
+     * PDF template lands consistently off by a couple of pt.
      *   - SIG_X_NUDGE_PT  shifts the field horizontally (negative = left)
-     *   - SIG_Y_NUDGE_PT  shifts the field vertically   (positive = down,
-     *     since y_coord uses top-left origin after the +height bottom-
-     *     anchor fix in submitWithFields).
-     * Tune via per-page ▲/▼ in the SPA's Signature Position pane for
-     * one-off tweaks; change these constants only if every tenant's
-     * PDF template lands consistently off.
+     *   - SIG_Y_NUDGE_PT  shifts the field vertically   (positive = down)
+     *
+     * History: these were once -4 / +4 alongside a "+ height" Y term that
+     * assumed Zoho anchored the field's BOTTOM edge. QA confirmed that
+     * pushed every signature one box-height too low and ~4pt left, so the
+     * height term was removed and the nudges zeroed.
      */
-    public const SIG_X_NUDGE_PT = -4;
-    public const SIG_Y_NUDGE_PT =  4;
+    public const SIG_X_NUDGE_PT = 0;
+    public const SIG_Y_NUDGE_PT = 0;
 
     private string $clientId;
     private string $clientSecret;
@@ -285,32 +285,24 @@ class ZohoSignService
                     // before serialising. Sub-point precision is invisible
                     // to a signer anyway.
                     //
-                    // Y-axis convention — Zoho Sign anchors the signature
-                    // field at its BOTTOM-LEFT (y_coord = pt-distance from
-                    // page top to the field's lower edge). The SPA drag
-                    // overlay treats (x, y) as the TOP-LEFT of the box,
-                    // which is also how the placeholder text on the PDF
-                    // is positioned. If we sent y unchanged, the signature
-                    // would render with its TOP at (y - height), i.e.
-                    // ~height pt ABOVE the dragged position. Offsetting
-                    // by +abs_height anchors the field's BOTTOM at
-                    // y + height, putting the field's TOP exactly at the
-                    // dragged y — matching the user's WYSIWYG intent.
+                    // Coordinate convention — Zoho Sign and the SPA drag
+                    // overlay BOTH use a top-left page origin and anchor the
+                    // field by its TOP-LEFT corner, in PDF points on the same
+                    // A4 page. So the mapping is a direct 1:1 passthrough:
+                    // x_coord = x, y_coord = y.
                     //
-                    // Empirical nudge — after the height correction, the
-                    // user reported the field still sits a couple of pt
-                    // right-and-above the dragged box (PDF-viewer chrome
-                    // in the SPA preview vs Zoho's renderer don't agree
-                    // pixel-for-pixel). Shift left + down by a few pt to
-                    // close the gap. Tune these via the per-page nudge
-                    // buttons in the SPA if a specific tenant's PDF
-                    // template needs more.
+                    // (An earlier version added the field height to y on the
+                    // assumption Zoho anchored the field's BOTTOM edge. QA
+                    // confirmed that pushed every signature one box-height too
+                    // LOW — and the old -4 X nudge put it ~4pt too far LEFT —
+                    // so the height term is gone and the nudges default to 0.
+                    // The SIG_*_NUDGE_PT knobs survive for per-tenant tweaks.)
                     $xPt = (float) ($c['x']      ?? self::DEFAULT_FIELD_X);
                     $yPt = (float) ($c['y']      ?? self::DEFAULT_FIELD_Y);
                     $wPt = (float) ($c['width']  ?? self::DEFAULT_FIELD_WIDTH);
                     $hPt = (float) ($c['height'] ?? self::DEFAULT_FIELD_HEIGHT);
                     $xPtAdj = $xPt + self::SIG_X_NUDGE_PT;
-                    $yPtAdj = $yPt + $hPt + self::SIG_Y_NUDGE_PT;
+                    $yPtAdj = $yPt + self::SIG_Y_NUDGE_PT;
                     $fields[] = [
                         'document_id'     => $docId,
                         'field_name'      => 'Signature_' . ($aIdx + 1) . '_' . ($dIdx + 1),
