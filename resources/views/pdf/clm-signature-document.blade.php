@@ -275,10 +275,13 @@
 
         $pageWidth   = $pdf->get_width();
         $sideMargin  = 28;
-        // Footer baseline — 22pt above the page bottom edge. Tracks the
-        // @page { margin-bottom: 70px } reservation so the band always
-        // sits inside the bottom margin, never overlapping body content.
-        $y           = $pdf->get_height() - 22;
+        // Footer baseline — 28pt above the page bottom edge, matching the
+        // Proforma Invoice footer (proforma-invoice.blade.php draws its
+        // "Page X of Y" at get_height() - 28) so CTC, customer, consignee &
+        // supplier docs all share the PI's footer position. Sits well inside
+        // the @page { margin-bottom: 70px } reservation so it never overlaps
+        // body content.
+        $y           = $pdf->get_height() - 28;
 
         // ── Footer text (footer.text) ──
         $footerText  = "{!! addslashes($footerText) !!}";

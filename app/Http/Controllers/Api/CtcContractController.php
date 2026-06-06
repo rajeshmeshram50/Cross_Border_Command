@@ -138,11 +138,21 @@ class CtcContractController extends Controller
         ];
     }
 
+    /** Approval progress: [approvedCount, totalApprovers]. */
+    private function approvalProgress(CtcContract $c): array
+    {
+        $approvers = array_values($c->approvers ?? []);
+        $total     = count($approvers);
+        $approved  = collect($approvers)->filter(fn ($a) => (($a['status'] ?? 'pending')) === 'approved')->count();
+        return [$approved, $total];
+    }
+
     /** Agreements We Sent row. */
     private function shapeSent(CtcContract $c): array
     {
         $statusMap = ['approved' => 'approved', 'rejected' => 'rejected', 'clarification' => 'clarify', 'pending' => 'pending'];
         $approval  = $c->approval_status === 'clarification' ? 'pending' : ($c->approval_status ?: 'pending');
+        [$approvedCount, $approverCount] = $this->approvalProgress($c);
         return [
             'id'        => $c->code,
             'dbId'      => $c->id,
@@ -156,6 +166,9 @@ class CtcContractController extends Controller
             'approver'  => $c->primary_approver_name ?: '—',
             'approval'  => $approval,
             'status'    => $statusMap[$c->approval_status] ?? 'pending',
+            'approvers'     => array_values($c->approvers ?? []),
+            'approvedCount' => $approvedCount,
+            'approverCount' => $approverCount,
             'clarifications' => array_values($c->clarifications ?? []),
             'rejReason' => $c->rejection_reason,
             'expDate'   => $this->fmt($c->end_date),
@@ -381,11 +394,16 @@ class CtcContractController extends Controller
             'reminder_days'      => 'nullable|integer',
         ]);
 
+        // Each approver carries its own decision so the contract only counts
+        // as approved once EVERY selected approver has approved (see approve()).
+        // `status` starts 'pending'; `acted_at` stamps when they decide.
         $approvers = collect($data['approvers'] ?? [])->map(fn ($a) => [
             'name'      => (string) ($a['name'] ?? ''),
             'email'     => strtolower((string) ($a['email'] ?? '')),
             'role'      => (string) ($a['role'] ?? ''),
             'mandatory' => (bool) ($a['mandatory'] ?? false),
+            'status'    => 'pending',
+            'acted_at'  => null,
         ])->values();
         $primary = $approvers->first();
 
@@ -471,15 +489,71 @@ class CtcContractController extends Controller
     }
 
     /* ── Approver actions ── */
+
+    /**
+     * Mark the caller's approval. The contract is only flagged `approved`
+     * (which is what unlocks "Send for Signing" → Stage 3) once EVERY
+     * selected approver has approved — a single approver's nod is no longer
+     * enough. Each approver's decision is tracked inside the `approvers`
+     * JSON so partial progress survives reloads and is queryable.
+     *
+     * Backward-compatible: drafts created before per-approver tracking (no
+     * `status` keys, or an empty approver list) approve outright on one nod.
+     */
     public function approve(Request $request, int $id)
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
-        // Approved → stays at Stage 2 (Internal Review); the sender then chooses
-        // "Send for Signing & Negotiation" to advance to Stage 3.
-        $row->approval_status = 'approved';
-        $row->rejection_reason = null;
-        $this->pushVersion($row, 'Approved by ' . ($user->name ?? 'approver'), 'Approved', $user->name ?? '');
+
+        $email     = strtolower((string) $user->email);
+        $approvers = array_values($row->approvers ?? []);
+
+        // Legacy / no approver list → single approval approves outright.
+        if (empty($approvers)) {
+            $row->approval_status = 'approved';
+            $row->rejection_reason = null;
+            $this->pushVersion($row, 'Approved by ' . ($user->name ?? 'approver'), 'Approved', $user->name ?? '');
+            $row->save();
+            return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
+        }
+
+        // Stamp this approver's decision (match by email; fall back to the
+        // primary-approver slot for legacy rows that only stored the primary).
+        $matched = false;
+        foreach ($approvers as &$a) {
+            if (strtolower((string) ($a['email'] ?? '')) === $email && $email !== '') {
+                $a['status']   = 'approved';
+                $a['acted_at'] = now()->format('d M Y H:i');
+                $matched = true;
+            }
+        }
+        unset($a);
+        if (!$matched && $email !== '' && strtolower((string) $row->primary_approver_email) === $email) {
+            $approvers[0]['status']   = 'approved';
+            $approvers[0]['acted_at'] = now()->format('d M Y H:i');
+            $matched = true;
+        }
+        if (!$matched) {
+            return response()->json(['status' => false, 'message' => 'You are not an approver for this agreement.'], 403);
+        }
+
+        $row->approvers = $approvers;
+
+        $total    = count($approvers);
+        $approved = collect($approvers)->filter(fn ($a) => ($a['status'] ?? 'pending') === 'approved')->count();
+
+        if ($approved >= $total) {
+            // Everyone has approved → contract is approved (stays at Stage 2;
+            // the sender then chooses "Send for Signing & Negotiation").
+            $row->approval_status  = 'approved';
+            $row->rejection_reason = null;
+            $this->pushVersion($row, 'Approved by all ' . $total . ' approver' . ($total > 1 ? 's' : ''), 'Approved', $user->name ?? '');
+        } else {
+            // Still waiting on others → keep the round open. The audit note uses
+            // a non-round status so approvalRoundsShaped() doesn't close it early.
+            $row->approval_status = 'pending';
+            $this->pushVersion($row, ($user->name ?? 'Approver') . ' approved (' . $approved . ' of ' . $total . ') — awaiting remaining approvers', 'Approving', $user->name ?? '');
+        }
         $row->save();
         return response()->json(['status' => true, 'data' => $this->shapeApprove($row->fresh(), $user->name ?? '')]);
     }
@@ -489,8 +563,22 @@ class CtcContractController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
         $data = $request->validate(['reason' => 'required|string|max:1000']);
-        // Rejected → sender can revise & resubmit (multiple times), so the row
-        // stays workable (status 'inprogress'); only approval_status flips.
+
+        // One rejection blocks the whole agreement — record which approver
+        // declined, then flip the contract to rejected. Rejected → sender can
+        // revise & resubmit (multiple times), so the row stays workable
+        // (status 'inprogress'); only approval_status flips.
+        $email = strtolower((string) $user->email);
+        $approvers = array_values($row->approvers ?? []);
+        foreach ($approvers as &$a) {
+            if (strtolower((string) ($a['email'] ?? '')) === $email && $email !== '') {
+                $a['status']   = 'rejected';
+                $a['acted_at'] = now()->format('d M Y H:i');
+            }
+        }
+        unset($a);
+        if (!empty($approvers)) $row->approvers = $approvers;
+
         $row->approval_status = 'rejected';
         $row->status = 'inprogress';
         $row->rejection_reason = $data['reason'];
@@ -539,18 +627,68 @@ class CtcContractController extends Controller
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
 
         $data = $request->validate([
-            'content'       => 'nullable|string',
-            'title'         => 'sometimes|string|max:255',
-            'header_config' => 'nullable|array',
-            'footer_config' => 'nullable|array',
+            'content'        => 'nullable|string',
+            'title'          => 'sometimes|string|max:255',
+            'agreement_type' => 'nullable|string|max:64',
+            'header_config'  => 'nullable|array',
+            'footer_config'  => 'nullable|array',
+            // Full-edit fields — sent by the add/edit form's "Update & Send for
+            // Approval"; absent on the lighter rejected/declined resubmit.
+            'counterparties' => 'nullable|array',
+            'eff_date'       => 'nullable|date',
+            'end_date'       => 'nullable|date',
+            'org_name'       => 'nullable|string|max:255',
+            'org_short_code' => 'nullable|string|max:64',
+            'org_state'      => 'nullable|string|max:128',
+            'org_country'    => 'nullable|string|max:128',
+            'approvers'         => 'nullable|array',
+            'days_to_approve'   => 'nullable|integer',
+            'reminder_days'     => 'nullable|integer',
         ]);
 
-        if (array_key_exists('content', $data))       $row->content = $data['content'];
-        if (array_key_exists('title', $data))         $row->title = $data['title'];
-        if (array_key_exists('header_config', $data)) $row->header_config = $data['header_config'];
-        if (array_key_exists('footer_config', $data)) $row->footer_config = $data['footer_config'];
+        if (array_key_exists('content', $data))         $row->content = $data['content'];
+        if (array_key_exists('title', $data))           $row->title = $data['title'];
+        if (array_key_exists('agreement_type', $data))  $row->agreement_type = $data['agreement_type'];
+        if (array_key_exists('header_config', $data))   $row->header_config = $data['header_config'];
+        if (array_key_exists('footer_config', $data))   $row->footer_config = $data['footer_config'];
+        if (array_key_exists('counterparties', $data))  $row->counterparties = $data['counterparties'] ?? [];
+        if (array_key_exists('eff_date', $data))         $row->eff_date = $data['eff_date'];
+        if (array_key_exists('end_date', $data))         $row->end_date = $data['end_date'];
+        if (array_key_exists('org_name', $data))         $row->org_name = $data['org_name'];
+        if (array_key_exists('org_short_code', $data))   $row->org_short_code = $data['org_short_code'];
+        if (array_key_exists('org_state', $data))        $row->org_state = $data['org_state'];
+        if (array_key_exists('org_country', $data))      $row->org_country = $data['org_country'];
+        if (array_key_exists('days_to_approve', $data))  $row->days_to_approve = $data['days_to_approve'];
+        if (array_key_exists('reminder_days', $data))    $row->reminder_days = $data['reminder_days'];
 
         $wasDeclined = collect($row->signing_recipients ?? [])->contains(fn ($r) => !empty($r['declined']));
+
+        // Approvers: when the edit form supplies a new list, replace it
+        // (rebuilding approver_emails + primary); otherwise keep the existing
+        // approvers. Either way, reset every approver's decision so the
+        // all-must-approve gate starts over for this fresh round.
+        if (!empty($data['approvers'])) {
+            $approvers = collect($data['approvers'])->map(fn ($a) => [
+                'name'      => (string) ($a['name'] ?? ''),
+                'email'     => strtolower((string) ($a['email'] ?? '')),
+                'role'      => (string) ($a['role'] ?? ''),
+                'mandatory' => (bool) ($a['mandatory'] ?? false),
+                'status'    => 'pending',
+                'acted_at'  => null,
+            ])->values();
+            $row->approvers              = $approvers->all();
+            $row->approver_emails        = $approvers->pluck('email')->filter()->values()->all();
+            $primary                     = $approvers->first();
+            $row->primary_approver_name  = $primary['name'] ?? null;
+            $row->primary_approver_email = $primary['email'] ?? null;
+        } else {
+            $row->approvers = collect($row->approvers ?? [])->map(function ($a) {
+                $a = (array) $a;
+                $a['status']   = 'pending';
+                $a['acted_at'] = null;
+                return $a;
+            })->values()->all();
+        }
 
         $row->approval_status = 'pending';
         $row->status = 'inprogress';

@@ -1,18 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import * as pdfjsLib from 'pdfjs-dist';
+// Vite-friendly worker URL — bundles pdfjs's worker as a separate chunk
+// so it runs off the main thread.
+// @ts-ignore — Vite's ?worker&url import handled at build time
+import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import type { OpsTokens } from './useOpsTheme';
 import type { HeaderConfig, FooterConfig } from '../hrms/doc-templates/HeaderFooterPanel';
 
+// One-time pdfjs worker setup at module scope.
+pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
+
 /* ─────────────────────────────────────────────────────────────────────────
  * CTC → Send for Signature & Negotiation · Step 2 (position signatures).
  *
  * Reuses the same Zoho Sign coordinate model as the sales signature modal:
- * the preview PDF is shown in an <iframe> (page-fit) and one draggable box
- * per signer is overlaid in the SAME coordinate space. Boxes are stored in
- * PDF points (A4 595×842, top-left origin) — exactly what Zoho's submit
- * field-placement expects. On send it POSTs to /clm/signature-requests/ctc-send.
+ * the preview PDF is painted onto a <canvas> via pdf.js at the wrapper's
+ * exact width, and one draggable box per signer is overlaid in the SAME
+ * coordinate space. Rendering to canvas (rather than an <iframe>) keeps the
+ * page edge-to-edge with the wrapper so the box lands where it's dragged.
+ * Boxes are stored in PDF points (A4 595×842, top-left origin) — exactly
+ * what Zoho's submit field-placement expects. On send it POSTs to
+ * /clm/signature-requests/ctc-send.
  * ───────────────────────────────────────────────────────────────────────── */
 
 const A4_W = 595;
@@ -40,23 +51,95 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
   const [expiryDays, setExpiryDays] = useState(14);
   const [notes, setNotes] = useState('Please review and sign this agreement.');
   const [wrapW, setWrapW] = useState(0);
+  // Page count of the preview PDF + a flag that flips once the blob has
+  // been parsed into a pdf.js document and is ready to paint to canvas.
+  const [pageCount, setPageCount] = useState(1);
+  const [pdfReady, setPdfReady] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ mode: 'move' | 'resize'; sx: number; sy: number; init: Box } | null>(null);
+  // Canvas-rendered preview (replaces the old <iframe> native PDF viewer).
+  // Painting the page bitmap at exactly the wrapper width keeps the page
+  // edge-to-edge with the wrapper, so the drag overlay's px↔pt conversion
+  // (wrapW / A4_W) maps 1:1 onto the PDF and the signature box lands where
+  // it's dragged. The iframe let the browser's PDF viewer add its own
+  // page-fit padding, which offset the box.
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pdfDocRef = useRef<any>(null);
+  const renderTaskRef = useRef<any>(null);
 
   const active = boxes[activeKey];
+  const activePage = active?.page ?? 0;
 
-  // Load the contract preview PDF (page-shell + org signature applied).
+  // Load the contract preview PDF (page-shell + org signature applied)
+  // and parse it into a pdf.js document for the canvas renderer.
   useEffect(() => {
     let alive = true;
-    setLoading(true); setPreviewUrl(null);
+    setLoading(true); setPreviewUrl(null); setPdfReady(false);
     api.post('/clm/signature-requests/ctc-preview', { contract_id: contractId, header_config_override: header, footer_config_override: footer, content_override: content }, { responseType: 'blob' })
-      .then(r => { if (!alive) return; setPreviewUrl(URL.createObjectURL(r.data as Blob)); })
+      .then(async r => {
+        if (!alive) return;
+        const blob = r.data as Blob;
+        setPreviewUrl(URL.createObjectURL(blob));
+        try {
+          const buf = await blob.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+          if (!alive) { pdf.destroy(); return; }
+          try { pdfDocRef.current?.destroy(); } catch { /* ignore */ }
+          pdfDocRef.current = pdf;
+          setPageCount(Math.max(1, pdf.numPages));
+          setPdfReady(true);
+        } catch {
+          // Parse failed — preview pane keeps showing its loading state.
+        }
+      })
       .catch(() => { if (alive) toast.error('Preview failed', 'Could not render the contract for signing.'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [contractId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  // Tear down the pdf.js document + any in-flight render on unmount.
+  useEffect(() => () => {
+    try { renderTaskRef.current?.cancel(); } catch { /* ignore */ }
+    try { pdfDocRef.current?.destroy(); } catch { /* ignore */ }
+    pdfDocRef.current = null;
+  }, []);
+
+  /* Paint the active page onto the <canvas> at the wrapper's width.
+   * Re-runs when the page changes, the doc loads, or the wrapper resizes. */
+  useEffect(() => {
+    if (!pdfReady) return;
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    const doc = pdfDocRef.current;
+    if (!canvas || !wrap || !doc) return;
+    const cssWidth = wrap.clientWidth || wrapW;
+    if (cssWidth <= 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pageNum = Math.min(doc.numPages, Math.max(1, activePage + 1));
+        const page = await doc.getPage(pageNum);
+        if (cancelled) return;
+        const base = page.getViewport({ scale: 1 });
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const scale = (cssWidth / base.width) * dpr;
+        const viewport = page.getViewport({ scale });
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        try { renderTaskRef.current?.cancel(); } catch { /* ignore */ }
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = '100%';
+        canvas.style.height = 'auto';
+        const task = page.render({ canvasContext: ctx, viewport });
+        renderTaskRef.current = task;
+        await task.promise;
+      } catch { /* cancelled renders throw — safe to ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [pdfReady, activePage, wrapW]);
 
   // Measure the preview wrapper so px↔pt conversion stays accurate.
   useEffect(() => {
@@ -112,6 +195,7 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
 
   const pxPerPt = wrapW > 0 ? wrapW / A4_W : 0;
   const ipt: React.CSSProperties = { width: '100%', height: 30, padding: '0 9px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 8, fontSize: 11, fontFamily: 'inherit', color: t.text, outline: 'none', background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', boxSizing: 'border-box' };
+  const navBtn = (disabled: boolean): React.CSSProperties => ({ border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.12)' : '#fff', color: t.dark ? '#c4b5fd' : '#6D28D9', borderRadius: 8, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1, fontFamily: 'inherit' });
 
   return createPortal(
     <div onMouseDown={e => { if (e.target === e.currentTarget && !sending) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 999999999, background: 'rgba(15,7,50,.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: "'Rubik',system-ui,sans-serif" }}>
@@ -127,10 +211,27 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
         {/* body: preview (left) + controls (right) */}
         <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
           {/* preview */}
-          <div style={{ flex: 1, minWidth: 0, background: t.dark ? '#100c1c' : '#EDEAF6', padding: 18, overflowY: 'auto', display: 'flex', justifyContent: 'center' }}>
-            <div ref={wrapRef} style={{ position: 'relative', width: '100%', maxWidth: 560, aspectRatio: `${A4_W} / ${A4_H}`, background: '#fff', boxShadow: '0 8px 30px rgba(0,0,0,.25)', borderRadius: 4, overflow: 'hidden', alignSelf: 'flex-start' }}>
-              {loading && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#64748B' }}>Rendering preview…</div>}
-              {previewUrl && <iframe key={`${previewUrl}-p${active?.page ?? 0}`} title="CTC preview" src={`${previewUrl}#page=${(active?.page ?? 0) + 1}&toolbar=0&navpanes=0&scrollbar=0&zoom=page-fit&view=FitH`} style={{ width: '100%', height: '100%', border: 'none' }} />}
+          <div style={{ flex: 1, minWidth: 0, background: t.dark ? '#100c1c' : '#EDEAF6', padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            {/* Prev / Next page navigation — parity with the sales/PI
+                signature modals. Moves the active signer's box (and the
+                canvas, which follows activePage) page-by-page. Hidden on
+                single-page contracts. */}
+            {pageCount > 1 && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                <button type="button" onClick={() => setActive({ page: Math.max(0, activePage - 1) })} disabled={activePage <= 0} style={navBtn(activePage <= 0)} aria-label="Previous page">‹ Prev</button>
+                <span style={{ fontSize: 11, fontWeight: 800, color: t.textMuted, minWidth: 92, textAlign: 'center' }}>Page {activePage + 1} of {pageCount}</span>
+                <button type="button" onClick={() => setActive({ page: Math.min(pageCount - 1, activePage + 1) })} disabled={activePage >= pageCount - 1} style={navBtn(activePage >= pageCount - 1)} aria-label="Next page">Next ›</button>
+              </div>
+            )}
+            <div ref={wrapRef} style={{ position: 'relative', width: '100%', maxWidth: 560, aspectRatio: `${A4_W} / ${A4_H}`, background: '#fff', boxShadow: '0 8px 30px rgba(0,0,0,.25)', borderRadius: 4, overflow: 'hidden', flexShrink: 0 }}>
+              {(loading || !pdfReady) && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#64748B', zIndex: 5 }}>Rendering preview…</div>}
+              {/* pdf.js paints the active page onto this canvas at the
+                  wrapper's exact width (see the canvas render effect), so the
+                  page fills the wrapper edge-to-edge and the draggable signer
+                  boxes line up with the PDF. The old <iframe> deferred to the
+                  browser's native PDF viewer, whose page-fit padding offset
+                  the boxes. */}
+              <canvas ref={canvasRef} style={{ width: '100%', height: 'auto', display: 'block', background: '#fff' }} />
               {/* signer overlays on the active page */}
               {pxPerPt > 0 && keyed.map((s, i) => {
                 const b = boxes[s.key]; if (!b || b.page !== (active?.page ?? 0)) return null;
