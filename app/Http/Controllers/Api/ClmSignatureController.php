@@ -1910,17 +1910,86 @@ class ClmSignatureController extends Controller
      */
     private function resolveLogoBase64(?string ...$candidates): string
     {
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
         foreach ($candidates as $path) {
             if (!$path) continue;
             try {
-                if (\Illuminate\Support\Facades\Storage::disk('public')->exists($path)) {
-                    return base64_encode(\Illuminate\Support\Facades\Storage::disk('public')->get($path));
-                }
+                if (!$disk->exists($path)) continue;
+
+                // Cache the flattened + encoded logo keyed by path + mtime so
+                // the Send-for-Signature modal — which re-renders the preview
+                // on every page-nav and inline edit — doesn't re-run the GD
+                // flatten + base64 on every call. A logo re-upload changes
+                // lastModified and busts the entry.
+                $stamp    = (string) ($disk->lastModified($path) ?: 0);
+                $cacheKey = 'clm_sig_logo_b64:' . md5($path . '|' . $stamp);
+
+                return \Illuminate\Support\Facades\Cache::remember(
+                    $cacheKey,
+                    now()->addDay(),
+                    function () use ($disk, $path) {
+                        $bytes = $disk->get($path);
+                        // Flatten any alpha channel onto white + downscale
+                        // before embedding. DomPDF renders transparent PNGs by
+                        // splitting an alpha mask pixel-by-pixel in pure PHP —
+                        // on a large logo that loop runs width×height times and
+                        // can blow past PHP's max_execution_time (the same
+                        // slowdown SalesPdfController::flattenImageForPdf fixes
+                        // for the Quotation/PI render). The blade always emits
+                        // `data:image/png;base64,…`, so PNG output is correct.
+                        $flat = $this->flattenImageForPdf($bytes);
+                        return base64_encode($flat ?? $bytes);
+                    }
+                );
             } catch (\Throwable $e) {
                 // try the next candidate
             }
         }
         return '';
+    }
+
+    /**
+     * Composite an image onto a solid white background (dropping any alpha
+     * channel) and downscale it to a sane max width, returning PNG bytes — or
+     * null if GD isn't available or the bytes aren't a decodable image.
+     *
+     * Mirrors SalesPdfController::flattenImageForPdf. Handing DomPDF an opaque
+     * (no-alpha) PNG avoids its pure-PHP transparent-PNG pixel walk, which is
+     * the main cause of slow / timing-out signature-document renders.
+     */
+    private function flattenImageForPdf(string $bytes, int $maxWidth = 800): ?string
+    {
+        if (!function_exists('imagecreatefromstring')) return null;
+
+        $src = @imagecreatefromstring($bytes);
+        if ($src === false) return null;
+
+        try {
+            $sw = max(1, imagesx($src));
+            $sh = max(1, imagesy($src));
+            $scale = $sw > $maxWidth ? $maxWidth / $sw : 1.0;
+            $dw = max(1, (int) round($sw * $scale));
+            $dh = max(1, (int) round($sh * $scale));
+
+            $canvas = imagecreatetruecolor($dw, $dh);
+            imagefilledrectangle($canvas, 0, 0, $dw, $dh, imagecolorallocate($canvas, 255, 255, 255));
+            imagealphablending($canvas, true);
+            if ($scale < 1.0) {
+                imagecopyresampled($canvas, $src, 0, 0, 0, 0, $dw, $dh, $sw, $sh);
+            } else {
+                imagecopy($canvas, $src, 0, 0, 0, 0, $sw, $sh);
+            }
+            imagesavealpha($canvas, false);
+
+            ob_start();
+            imagepng($canvas, null, 6);
+            $out = ob_get_clean();
+            imagedestroy($canvas);
+
+            return ($out !== false && $out !== '') ? $out : null;
+        } finally {
+            imagedestroy($src);
+        }
     }
 
     /**

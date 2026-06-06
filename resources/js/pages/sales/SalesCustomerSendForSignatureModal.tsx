@@ -862,7 +862,7 @@ export default function SalesCustomerSendForSignatureModal({
    * <iframe> let the browser PDF viewer add its own page-fit padding,
    * which knocked the signature box off the placeholder). */
   useEffect(() => {
-    if (!pdfReady || step !== 2) return;
+    if (!pdfRenderReady || step !== 2) return;
     const pdf = canvasRef.current && pdfDocRef.current;
     const canvas = canvasRef.current;
     const wrap = previewWrapRef.current;
@@ -894,7 +894,7 @@ export default function SalesCustomerSendForSignatureModal({
     })();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdfReady, activePreviewPage, wrapWidthPx, step]);
+  }, [pdfRenderReady, activePreviewPage, wrapWidthPx, step]);
 
   // Tear down the pdf.js document + any in-flight render on unmount.
   useEffect(() => () => {
