@@ -986,6 +986,9 @@ body > .dropdown-menu.master-select-menu,
    gradient made the panel look light/glossy against the dark page.
    Hover state also needs an override or the light-mode hover rule
    takes over (light gradient bleeds in when cursor enters). */
+/* Container surface — was #fff with no dark counterpart, so it flashed white
+   behind the panel when the box expanded. */
+[data-bs-theme="dark"] .clm-bref { background: #0f172a; }
 [data-bs-theme="dark"] .clm-bref-head {
   background: #102234;
   border-bottom-color: rgba(6,182,212,.22);
