@@ -74,7 +74,6 @@ export default function ClmDcpPage() {
   const toast = useToast();
 
   const [rows, setRows]       = useState<SegRule[]>([]);
-  const [counts, setCounts]   = useState<Counts>({ all: 0, highly: 0, less: 0 });
   const [loading, setLoading] = useState(false);
   const [tab, setTab]         = useState<'all'|'highly'|'less'>('all');
   const [search, setSearch]   = useState('');
@@ -91,19 +90,38 @@ export default function ClmDcpPage() {
       api.get<{ status: boolean; data: SegRule[]; counts: Counts }>('/clm/segment-rules'),
       api.get<{ status: boolean; data: Bootstrap }>('/clm/segment-rules/bootstrap'),
     ]).then(([r, b]) => {
-      setRows(r.data.data ?? []); setCounts(r.data.counts ?? { all: 0, highly: 0, less: 0 });
+      setRows(r.data.data ?? []);
       setBoot(b.data.data);
     }).catch(() => toast.error('Load failed', 'Could not load segment rules'))
       .finally(() => setLoading(false));
   };
   useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A segment's regulatory tier is owned by the Segment Master — use that as
+  // the source of truth so the list never shows a stale tier the rule was
+  // saved with (bug: Rice showed "High" though it's a less-regulated segment).
+  const regOf = (r: SegRule) => boot?.segments.find(seg => seg.code === r.segment_code)?.regulatory_status ?? r.regulatory_status;
+
+  // Tab counts derived from the segment-master tier (matches the badges).
+  const tierCounts = useMemo<Counts>(() => ({
+    all:    rows.length,
+    highly: rows.filter(r => regOf(r) === 'highly').length,
+    less:   rows.filter(r => regOf(r) === 'less').length,
+  }), [rows, boot]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const filtered = useMemo(() => {
-    const base = tab === 'all' ? rows : rows.filter(r => r.regulatory_status === tab);
+    const base = tab === 'all' ? rows : rows.filter(r => regOf(r) === tab);
     if (!search.trim()) return base;
     const s = search.toLowerCase();
-    return base.filter(r => r.rule_code.toLowerCase().includes(s) || r.segment_code.toLowerCase().includes(s));
-  }, [rows, tab, search]);
+    return base.filter(r => {
+      const segName = boot?.segments.find(seg => seg.code === r.segment_code)?.name ?? '';
+      const regLabel = regOf(r) === 'highly' ? 'high' : 'less';
+      return r.rule_code.toLowerCase().includes(s)
+        || r.segment_code.toLowerCase().includes(s)
+        || segName.toLowerCase().includes(s)
+        || regLabel.includes(s);
+    });
+  }, [rows, tab, search, boot]); // eslint-disable-line react-hooks/exhaustive-deps
   const { slice, start, pageCount, safePage } = paginate(filtered, page);
 
   const onSave = async (form: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }, id?: number) => {
@@ -170,15 +188,15 @@ export default function ClmDcpPage() {
         <div className="clm-tabs-bar">
           <button className={`clm-tab ${tab === 'all' ? 'active' : ''}`} onClick={() => { setTab('all'); setPage(1); }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-            All Segments <span className="clm-tab-count">{counts.all}</span>
+            All Segments <span className="clm-tab-count">{tierCounts.all}</span>
           </button>
           <button className={`clm-tab ${tab === 'highly' ? 'active' : ''}`} onClick={() => { setTab('highly'); setPage(1); }}>
             <span className="clm-tab-dot" style={{ background: '#ef4444', boxShadow: '0 0 5px rgba(239,68,68,.5)' }} />
-            Highly Regulated <span className="clm-tab-count">{counts.highly}</span>
+            Highly Regulated <span className="clm-tab-count">{tierCounts.highly}</span>
           </button>
           <button className={`clm-tab ${tab === 'less' ? 'active' : ''}`} onClick={() => { setTab('less'); setPage(1); }}>
             <span className="clm-tab-dot" style={{ background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.5)' }} />
-            Less Regulated <span className="clm-tab-count">{counts.less}</span>
+            Less Regulated <span className="clm-tab-count">{tierCounts.less}</span>
           </button>
             <div className="clm-search">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -214,7 +232,7 @@ export default function ClmDcpPage() {
                   {loading && <ShimmerTableRows rows={6} cols={12} cellClassName="" keyPrefix="dcp-shim" />}
                   {!loading && slice.map((r, i) => {
                     const seg = boot?.segments.find(s => s.code === r.segment_code);
-                    const isHigh = r.regulatory_status === 'highly';
+                    const isHigh = (seg?.regulatory_status ?? r.regulatory_status) === 'highly';
                     const segCount = (cat: keyof DocSelections) => Object.values(r.doc_selections?.[cat] ?? {}).filter(Boolean).length;
                     return (
                       <tr key={r.id}>
@@ -330,6 +348,10 @@ function SegmentRuleModal(props: {
   const [activeCat, setActiveCat] = useState<keyof DocSelections>('kyc');
   const [saving, setSaving]   = useState(false);
 
+  // Lock the background page from scrolling while the modal is open — otherwise
+  // a scroll over the overlay bleeds through and scrolls the page behind it.
+  useEffect(() => { document.body.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; }; }, []);
+
   /* Less-Regulatory create-mode flips on multi-select. Edit mode locks to
    * single because each edit targets exactly one rule, and High keeps a
    * single-select dropdown by design (high-regulated segments need per-
@@ -389,7 +411,15 @@ function SegmentRuleModal(props: {
   const grandTotal = CAT_KEYS.reduce((sum, c) => sum + totalSel(c), 0);
 
   const handleSave = async () => {
-    if (!reg || segCodes.length === 0) return;
+    if (!reg || segCodes.length === 0) {
+      toast.error('Incomplete form', 'Select a regulatory status and segment first.');
+      setStage(1);
+      return;
+    }
+    if (grandTotal === 0) {
+      toast.error('No documents selected', 'Select at least one document requirement before saving.');
+      return;
+    }
     setSaving(true);
     try {
       /* Build one payload per picked segment. Each rule gets its own

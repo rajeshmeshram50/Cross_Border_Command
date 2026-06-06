@@ -83,6 +83,7 @@ export default function ClmAuthorityPage() {
       const err = e?.response?.data?.errors as Record<string, string[]> | undefined;
       const first = err ? Object.values(err)[0]?.[0] : undefined;
       toast.error('Save failed', first ?? e?.response?.data?.message ?? 'Could not save');
+      throw e;   // let the modal surface field-level (422) errors below the field
     }
   };
   const onDelete = async () => {
@@ -224,6 +225,13 @@ function AuthorityModal(props: { existing: Authority | null; nextCode: string; o
     if (Object.keys(next).length) return;
     setSaving(true);
     try { await Promise.resolve(onSave({ name: name.trim(), description: desc.trim() })); }
+    catch (e: any) {
+      const apiErrors = e?.response?.data?.errors as Record<string, string[] | string> | undefined;
+      if (apiErrors) {
+        const keyMap: Record<string, string> = { description: 'desc' };   // backend field → inline field
+        setErrors(p => ({ ...p, ...Object.fromEntries(Object.entries(apiErrors).map(([k, v]) => [keyMap[k] ?? k, Array.isArray(v) ? v[0] : String(v)])) }));
+      }
+    }
     finally { setSaving(false); }
   };
 
@@ -251,12 +259,12 @@ function AuthorityModal(props: { existing: Authority | null; nextCode: string; o
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Authority Name <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. FSSAI, DGFT, BIS" value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
+            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. FSSAI, DGFT, BIS" value={name} maxLength={CLM_NAME_MAX} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Description <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.desc ? 'clm-input-err' : ''}`} placeholder="e.g. Food Safety & Standards Authority of India" value={desc} onChange={e => { setDesc(e.target.value); setErrors(p => ({ ...p, desc: '' })); }} />
+            <input className={`clm-input ${errors.desc ? 'clm-input-err' : ''}`} placeholder="e.g. Food Safety & Standards Authority of India" value={desc} maxLength={CLM_DESC_MAX} onChange={e => { setDesc(e.target.value); setErrors(p => ({ ...p, desc: '' })); }} />
             {errors.desc && <div className="clm-err">{errors.desc}</div>}
           </div>
         </div>

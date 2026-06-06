@@ -342,6 +342,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * fetch as before since the ref is cleared after a single use. */
   const bundledCustomerLocationsRef = useRef<{ customerId: number; rows: any[] } | null>(null);
 
+  /* Tracks which parent-customer's segment we've already pre-filled onto a
+   * NEW consignee's Segment field, so the inherit-once logic never fights
+   * the user's later add/remove edits. Reset to null on every modal open
+   * and re-prefills when the linked customer changes. */
+  const segPrefillCustomerRef = useRef<string | null>(null);
+
   /* Stage 3 → Trade Documents → Send for Signature. Mirrors what
    * [[AddCustomerModal]] does — tdDocs is the table state (per-row
    * checkbox + status badge), sendForSignature holds the IDs the user
@@ -583,6 +589,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
      * the GET resolves. Create mode lands on a clean form so picking
      * a customer never reveals stale residue from a prior session;
      * mirror copy only happens after the user ticks Same-as-Customer. */
+    // New open → allow the parent-customer segment to pre-fill again.
+    segPrefillCustomerRef.current = null;
     if (!consignee?.db_id) {
       setForm1({
         companyName: '', legalName: '', website: '', segment: [] as string[], classification: '', risk: '',
@@ -689,6 +697,29 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       .finally(() => { if (!cancelled) setCustomersLoading(false); });
     return () => { cancelled = true; };
   }, [open, consignee]);
+
+  /* Inherit the parent customer's Segment on a NEW consignee.
+   *
+   * A consignee created under a customer defaults its Segment to that
+   * customer's selected segment(s) — but the field stays a normal
+   * editable multi-select: the user can add their own segments on top, or
+   * remove (×) the inherited ones if the consignee doesn't share them.
+   *
+   * Runs once per resolved/picked customer (tracked via segPrefillCustomerRef)
+   * so re-renders never re-add a segment the user just removed. Skipped in
+   * edit mode (keeps the saved segment) and while Same-as-Customer is on
+   * (that path copies the full identity, segment included). */
+  useEffect(() => {
+    if (!open) return;
+    if (consignee?.db_id) return;          // edit mode — keep saved segment
+    if (sameAsCustomer) return;            // full-copy effect owns segment here
+    if (!customer) return;
+    const cid = customer.id || '';
+    if (segPrefillCustomerRef.current === cid) return;  // already inherited for this customer
+    segPrefillCustomerRef.current = cid;
+    const segs = String(customer.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    setForm1(prev => ({ ...prev, segment: segs }));
+  }, [open, customer, sameAsCustomer, consignee?.db_id]);
 
   /* "Same as Customer" copy effect. When the toggle flips on (or the
    * linked customer changes while it's on), mirror every Stage 1

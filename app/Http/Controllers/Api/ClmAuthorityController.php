@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 
 class ClmAuthorityController extends Controller
@@ -46,10 +47,9 @@ class ClmAuthorityController extends Controller
             ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
             ->exists();
         if ($exists) {
-            return response()->json([
-                'status'  => false,
-                'message' => "An authority named \"{$name}\" already exists. Pick a different name.",
-            ], 409);
+            throw ValidationException::withMessages([
+                'name' => "An authority named \"{$name}\" already exists. Pick a different name.",
+            ]);
         }
 
         $row = DB::transaction(function () use ($user, $data, $name) {
@@ -89,10 +89,9 @@ class ClmAuthorityController extends Controller
                 ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
                 ->exists();
             if ($clash) {
-                return response()->json([
-                    'status'  => false,
-                    'message' => "Another authority named \"{$data['name']}\" already exists. Pick a different name.",
-                ], 409);
+                throw ValidationException::withMessages([
+                    'name' => "Another authority named \"{$data['name']}\" already exists. Pick a different name.",
+                ]);
             }
         }
 
