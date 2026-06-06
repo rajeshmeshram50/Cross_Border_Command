@@ -189,7 +189,10 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
       else    await api.post('/clm/clause-library', form);
       toast.success(id ? 'Updated' : 'Added', form.name);
       setModalOpen(false); setEditing(null); reload();
-    } catch (e: any) { toast.error('Save failed', e?.response?.data?.message ?? 'Could not save'); }
+    } catch (e: any) {
+      toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
+      throw e;   // let the modal surface field-level (422) errors inline
+    }
   };
   const onDelete = async () => {
     if (!pendingDelete) return;
@@ -347,6 +350,9 @@ function ClauseLibModal(props: {
         clause_status: existing?.clause_status ?? 'Active',
         content: content === '<br>' ? null : content,
       }));
+    } catch (e: any) {
+      const apiErrors = e?.response?.data?.errors;
+      if (apiErrors) setErrors(p => ({ ...p, ...Object.fromEntries(Object.entries(apiErrors).map(([k, v]: [string, any]) => [k, Array.isArray(v) ? v[0] : String(v)])) }));
     } finally { setSaving(false); }
   };
 

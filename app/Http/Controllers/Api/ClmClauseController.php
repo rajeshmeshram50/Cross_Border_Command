@@ -7,6 +7,7 @@ use App\Models\ClmClauseLibrary;
 use App\Models\ClmClauseType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 
 class ClmClauseController extends Controller
@@ -91,12 +92,15 @@ class ClmClauseController extends Controller
         /* Party is no longer required — the redesigned Add Clause modal
          * collects only clause_type + name + content. Backward compatible:
          * old payloads with party still work. */
+        $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
             'clause_type'   => 'required|string|max:255',
-            'name'          => 'required|string|max:255',
+            'name'          => ['required', 'string', 'max:255', Rule::unique('clm_clause_library', 'name')->where(fn ($q) => $q->where('client_id', $user->client_id))],
             'party'         => 'nullable|string|max:255',
             'clause_status' => 'nullable|string|max:32',
             'content'       => 'nullable|string',
+        ], [
+            'name.unique' => 'A clause with this name already exists.',
         ]);
 
         $row = DB::transaction(function () use ($user, $data) {
@@ -121,12 +125,15 @@ class ClmClauseController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = ClmClauseLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        if ($request->has('name')) $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
             'clause_type'   => 'sometimes|required|string|max:255',
-            'name'          => 'sometimes|required|string|max:255',
+            'name'          => ['sometimes', 'required', 'string', 'max:255', Rule::unique('clm_clause_library', 'name')->ignore($row->id)->where(fn ($q) => $q->where('client_id', $user->client_id))],
             'party'         => 'sometimes|nullable|string|max:255',
             'clause_status' => 'nullable|string|max:32',
             'content'       => 'nullable|string',
+        ], [
+            'name.unique' => 'A clause with this name already exists.',
         ]);
         if (array_key_exists('party', $data)) $data['party'] = trim((string) $data['party']);
         $data['updated_by'] = $user->id;
