@@ -1106,7 +1106,8 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-bref-item-title { color: #f1f5f9; }
 [data-bs-theme="dark"] .clm-bref-item-ico  { color: #67e8f9; }
 [data-bs-theme="dark"] .clm-bref-sub      { color: #cffafe; }
-[data-bs-theme="dark"] .clm-bref-toggle { background: rgba(15,23,42,.65); border-color: rgba(8,145,178,.32); color: #67e8f9; }
+[data-bs-theme="dark"] .clm-bref-toggle { background: rgba(15,23,42,.65); border-color: rgba(8,145,178,.32); color: #67e8f9; box-shadow: 0 1px 4px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06); }
+[data-bs-theme="dark"] .clm-bref-head:hover .clm-bref-toggle { background: rgba(8,145,178,.22); border-color: rgba(8,145,178,.55); box-shadow: 0 2px 8px rgba(6,182,212,.25), inset 0 1px 0 rgba(255,255,255,.08); }
 [data-bs-theme="dark"] .clm-status { color: #64748b; }
 [data-bs-theme="dark"] .clm-field-label { color: #67e8f9; }
 [data-bs-theme="dark"] .clm-field-hint  { color: #7dd3fc; }

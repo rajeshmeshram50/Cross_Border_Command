@@ -53,6 +53,7 @@ export default function ClmDdPage() {
       const err = e?.response?.data?.errors as Record<string, string[]> | undefined;
       const first = err ? Object.values(err)[0]?.[0] : undefined;
       toast.error('Save failed', first ?? e?.response?.data?.message ?? 'Could not save');
+      throw e;   // let the modal surface field-level (422) errors below the field
     }
   };
   const onDelete = async () => {
@@ -64,12 +65,29 @@ export default function ClmDdPage() {
   return (
     <div className="clm-root">
       <style>{CLM_CSS}</style>
+      {/* Add DD Document — same springy hover affordance as the Add Client button:
+          lift + slight scale + brightness on hover, press-down on active. */}
+      <style>{`
+        button.clm-add-ddfx {
+          transition: transform 180ms cubic-bezier(0.34,1.56,0.64,1), box-shadow 180ms ease, filter 180ms ease;
+        }
+        button.clm-add-ddfx:hover {
+          transform: translateY(-1px) scale(1.02);
+          filter: brightness(1.08);
+          box-shadow: 0 8px 22px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.18);
+        }
+        button.clm-add-ddfx:active {
+          transform: translateY(0) scale(0.99);
+          box-shadow: 0 4px 12px rgba(8,145,178,.30), inset 0 1px 0 rgba(255,255,255,.18);
+        }
+      `}</style>
 
       <ClmPageHeader
         icon={ICO.hDd}
         title="Due Diligence Master"
         sub="Manage due diligence documents, verification records, and risk validation requirements."
         addLabel="Add DD Document"
+        addClassName="clm-add-ddfx"
         onAdd={() => { setEditing(null); setModalOpen(true); }}
       />
 
@@ -180,6 +198,13 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
     if (Object.keys(next).length) return;
     setSaving(true);
     try { await Promise.resolve(onSave({ name: name.trim(), authority: auth.trim() })); }
+    catch (e: any) {
+      const apiErrors = e?.response?.data?.errors as Record<string, string[] | string> | undefined;
+      if (apiErrors) {
+        const keyMap: Record<string, string> = { authority: 'auth' };   // backend field → inline field
+        setErrors(p => ({ ...p, ...Object.fromEntries(Object.entries(apiErrors).map(([k, v]) => [keyMap[k] ?? k, Array.isArray(v) ? v[0] : String(v)])) }));
+      }
+    }
     finally { setSaving(false); }
   };
 
