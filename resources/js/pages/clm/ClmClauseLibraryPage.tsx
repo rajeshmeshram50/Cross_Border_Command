@@ -94,7 +94,10 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
       else    await api.post('/clm/clause-types', form);
       toast.success(id ? 'Updated' : 'Added', form.name);
       setModalOpen(false); setEditing(null); reload();
-    } catch (e: any) { toast.error('Save failed', e?.response?.data?.message ?? 'Could not save'); }
+    } catch (e: any) {
+      toast.error('Save failed', e?.response?.data?.errors?.name?.[0] ?? e?.response?.data?.message ?? 'Could not save');
+      throw e;   // let the modal surface field-level (422) errors below the field
+    }
   };
   const onDelete = async () => {
     if (!pendingDelete) return;
@@ -338,6 +341,7 @@ function ClauseLibModal(props: {
     const next: Record<string, string> = {};
     if (!type.trim()) next.type = 'Clause type is required';
     if (!name.trim()) next.name = 'Clause name is required';
+    else if (name.trim().length > 255) next.name = 'Name must not be greater than 255 characters';
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
@@ -405,6 +409,7 @@ function ClauseLibModal(props: {
               <input
                 className={`clm-input ${errors.name ? 'clm-input-err' : ''}`}
                 placeholder="e.g. Force Majeure, Payment Terms — 30 Days"
+                maxLength={255}
                 value={name}
                 onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }}
               />
@@ -485,7 +490,8 @@ function ClauseLibModal(props: {
             setErrors(p => ({ ...p, type: '' }));
             setShowTypeAdd(false);
           } catch (e: any) {
-            toast.error('Save failed', e?.response?.data?.message ?? 'Could not save clause type');
+            toast.error('Save failed', e?.response?.data?.errors?.name?.[0] ?? e?.response?.data?.message ?? 'Could not save clause type');
+            throw e;   // let the Clause Type modal surface the error below its field
           }
         }}
       />
@@ -513,8 +519,13 @@ function ClauseTypeModal(props: {
   const handle = async () => {
     const v = name.trim();
     if (!v) { setErr('Clause type name is required'); return; }
+    if (v.length > 255) { setErr('Name must not be greater than 255 characters'); return; }
     setSaving(true);
     try { await Promise.resolve(onSave(v)); }
+    catch (e: any) {
+      const apiErr = e?.response?.data?.errors?.name?.[0] ?? e?.response?.data?.message;
+      if (apiErr) setErr(apiErr);
+    }
     finally { setSaving(false); }
   };
 
@@ -545,6 +556,7 @@ function ClauseTypeModal(props: {
             <input
               className={`clm-input ${err ? 'clm-input-err' : ''}`}
               autoFocus
+              maxLength={255}
               value={name}
               onChange={e => { setName(e.target.value); setErr(''); }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void handle(); } }}

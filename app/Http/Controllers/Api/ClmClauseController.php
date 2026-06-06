@@ -31,9 +31,12 @@ class ClmClauseController extends Controller
         /* Description is no longer required — the redesigned Clause Type
          * modal collects only the name. Old payloads with description
          * still work; new ones can send empty string or omit. */
+        $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
-            'name'        => 'required|string|max:255',
+            'name'        => ['required', 'string', 'max:255', Rule::unique('clm_clause_types', 'name')->where(fn ($q) => $q->where('client_id', $user->client_id))],
             'description' => 'nullable|string|max:500',
+        ], [
+            'name.unique' => 'A clause type with this name already exists.',
         ]);
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
@@ -54,9 +57,12 @@ class ClmClauseController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = ClmClauseType::where('client_id', $user->client_id)->findOrFail($id);
+        if ($request->has('name')) $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
-            'name'        => 'sometimes|required|string|max:255',
+            'name'        => ['sometimes', 'required', 'string', 'max:255', Rule::unique('clm_clause_types', 'name')->ignore($row->id)->where(fn ($q) => $q->where('client_id', $user->client_id))],
             'description' => 'sometimes|nullable|string|max:500',
+        ], [
+            'name.unique' => 'A clause type with this name already exists.',
         ]);
         if (isset($data['name']))        $data['name']        = trim($data['name']);
         if (array_key_exists('description', $data)) $data['description'] = trim((string) $data['description']);
