@@ -627,27 +627,68 @@ class CtcContractController extends Controller
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
 
         $data = $request->validate([
-            'content'       => 'nullable|string',
-            'title'         => 'sometimes|string|max:255',
-            'header_config' => 'nullable|array',
-            'footer_config' => 'nullable|array',
+            'content'        => 'nullable|string',
+            'title'          => 'sometimes|string|max:255',
+            'agreement_type' => 'nullable|string|max:64',
+            'header_config'  => 'nullable|array',
+            'footer_config'  => 'nullable|array',
+            // Full-edit fields — sent by the add/edit form's "Update & Send for
+            // Approval"; absent on the lighter rejected/declined resubmit.
+            'counterparties' => 'nullable|array',
+            'eff_date'       => 'nullable|date',
+            'end_date'       => 'nullable|date',
+            'org_name'       => 'nullable|string|max:255',
+            'org_short_code' => 'nullable|string|max:64',
+            'org_state'      => 'nullable|string|max:128',
+            'org_country'    => 'nullable|string|max:128',
+            'approvers'         => 'nullable|array',
+            'days_to_approve'   => 'nullable|integer',
+            'reminder_days'     => 'nullable|integer',
         ]);
 
-        if (array_key_exists('content', $data))       $row->content = $data['content'];
-        if (array_key_exists('title', $data))         $row->title = $data['title'];
-        if (array_key_exists('header_config', $data)) $row->header_config = $data['header_config'];
-        if (array_key_exists('footer_config', $data)) $row->footer_config = $data['footer_config'];
+        if (array_key_exists('content', $data))         $row->content = $data['content'];
+        if (array_key_exists('title', $data))           $row->title = $data['title'];
+        if (array_key_exists('agreement_type', $data))  $row->agreement_type = $data['agreement_type'];
+        if (array_key_exists('header_config', $data))   $row->header_config = $data['header_config'];
+        if (array_key_exists('footer_config', $data))   $row->footer_config = $data['footer_config'];
+        if (array_key_exists('counterparties', $data))  $row->counterparties = $data['counterparties'] ?? [];
+        if (array_key_exists('eff_date', $data))         $row->eff_date = $data['eff_date'];
+        if (array_key_exists('end_date', $data))         $row->end_date = $data['end_date'];
+        if (array_key_exists('org_name', $data))         $row->org_name = $data['org_name'];
+        if (array_key_exists('org_short_code', $data))   $row->org_short_code = $data['org_short_code'];
+        if (array_key_exists('org_state', $data))        $row->org_state = $data['org_state'];
+        if (array_key_exists('org_country', $data))      $row->org_country = $data['org_country'];
+        if (array_key_exists('days_to_approve', $data))  $row->days_to_approve = $data['days_to_approve'];
+        if (array_key_exists('reminder_days', $data))    $row->reminder_days = $data['reminder_days'];
 
         $wasDeclined = collect($row->signing_recipients ?? [])->contains(fn ($r) => !empty($r['declined']));
 
-        // Fresh approval round → clear every approver's previous decision so the
-        // all-must-approve gate starts over.
-        $row->approvers = collect($row->approvers ?? [])->map(function ($a) {
-            $a = (array) $a;
-            $a['status']   = 'pending';
-            $a['acted_at'] = null;
-            return $a;
-        })->values()->all();
+        // Approvers: when the edit form supplies a new list, replace it
+        // (rebuilding approver_emails + primary); otherwise keep the existing
+        // approvers. Either way, reset every approver's decision so the
+        // all-must-approve gate starts over for this fresh round.
+        if (!empty($data['approvers'])) {
+            $approvers = collect($data['approvers'])->map(fn ($a) => [
+                'name'      => (string) ($a['name'] ?? ''),
+                'email'     => strtolower((string) ($a['email'] ?? '')),
+                'role'      => (string) ($a['role'] ?? ''),
+                'mandatory' => (bool) ($a['mandatory'] ?? false),
+                'status'    => 'pending',
+                'acted_at'  => null,
+            ])->values();
+            $row->approvers              = $approvers->all();
+            $row->approver_emails        = $approvers->pluck('email')->filter()->values()->all();
+            $primary                     = $approvers->first();
+            $row->primary_approver_name  = $primary['name'] ?? null;
+            $row->primary_approver_email = $primary['email'] ?? null;
+        } else {
+            $row->approvers = collect($row->approvers ?? [])->map(function ($a) {
+                $a = (array) $a;
+                $a['status']   = 'pending';
+                $a['acted_at'] = null;
+                return $a;
+            })->values()->all();
+        }
 
         $row->approval_status = 'pending';
         $row->status = 'inprogress';

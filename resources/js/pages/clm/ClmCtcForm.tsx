@@ -194,13 +194,25 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       approvers: approval.approvers, days_to_approve: approval.days, reminder_days: approval.reminder,
     };
     try {
-      const res = await api.post('/clm/ctc-contracts', payload);
-      const newId = Number((res.data?.data as { dbId?: number } | undefined)?.dbId ?? 0) || null;
-      toast.success('Sent for approval', `${agTitle} is now in the approval queue.`);
-      setSentForApproval(true);
-      setWorkingId(newId);
-      await refreshRecord(newId);
-      goStage(2);
+      if (workingId) {
+        // Editing an existing contract → update it AND re-enter Stage 2
+        // approval (same destination as a fresh create, but on the existing
+        // row, so no duplicate). resubmit applies the edited fields + new
+        // approver list and resets the all-must-approve gate.
+        await api.post(`/clm/ctc-contracts/${workingId}/resubmit`, payload);
+        toast.success('Sent for approval', `${agTitle} is back in the approval queue.`);
+        setSentForApproval(true);
+        await refreshRecord(workingId);
+        goStage(2);
+      } else {
+        const res = await api.post('/clm/ctc-contracts', payload);
+        const newId = Number((res.data?.data as { dbId?: number } | undefined)?.dbId ?? 0) || null;
+        toast.success('Sent for approval', `${agTitle} is now in the approval queue.`);
+        setSentForApproval(true);
+        setWorkingId(newId);
+        await refreshRecord(newId);
+        goStage(2);
+      }
     } catch (e) {
       toast.error('Could not submit', errMsg(e) || 'Please try again.');
     }
@@ -754,14 +766,13 @@ function Stage1(p: {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                 <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Resubmit for Review</span>
               </button>
-            ) : p.isEditing ? (
-              <button onClick={p.onUpdate} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(5,150,105,.4)' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
-                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Save Changes</span>
-              </button>
             ) : (
+              // Both add AND edit end Step 3 the same way: open the approval
+              // workflow and send for approval (edit updates the existing row
+              // via resubmit; see submitForApproval). No more "Save Changes"
+              // dead-end that redirected to the list.
               <button onClick={() => setApprovalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}>
-                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Submit &amp; Send for Approval</span>
+                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{p.isEditing ? 'Update & Send for Approval' : 'Submit & Send for Approval'}</span>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
               </button>
             )}
