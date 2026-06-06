@@ -175,6 +175,7 @@ function TlModal(props: { existing: Tl | null; authorities: Authority[]; nextCod
   const handleSave = async () => {
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = 'Licence name is required';
+    else if (name.trim().length > 255) next.name = 'Name must not be greater than 255 characters';
     if (!auth.trim()) next.auth = 'Authority is required';
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -221,7 +222,7 @@ function TlModal(props: { existing: Tl | null; authorities: Authority[]; nextCod
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Licence Name <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. GST Registration, IEC Certificate" value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
+            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. GST Registration, IEC Certificate" maxLength={255} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
           <div className="clm-field">
@@ -240,11 +241,9 @@ function TlModal(props: { existing: Tl | null; authorities: Authority[]; nextCod
                   onChange={(v) => { setAuth(v); setErrors(p => ({ ...p, auth: '' })); }}
                 />
               </div>
-              <Tooltip label="Add new authority">
-                <button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                </button>
-              </Tooltip>
+              <button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority" title="Add new authority">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
             </div>
             <div className="clm-field-hint">Pulls from Authority Master — click + to add a new authority.</div>
             {errors.auth && <div className="clm-err">{errors.auth}</div>}

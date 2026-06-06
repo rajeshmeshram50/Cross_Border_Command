@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ClmKycController extends Controller
 {
@@ -31,7 +32,7 @@ class ClmKycController extends Controller
 
         $data = $request->validate([
             'name'      => 'required|string|max:255',
-            'authority' => 'required|string|max:255',
+            'authority' => 'required|string|max:2000',
             'expiry'    => 'nullable|string|max:32',
             'status'    => ['nullable', Rule::in(ClmKycDocument::STATUSES)],
         ]);
@@ -40,10 +41,9 @@ class ClmKycController extends Controller
         if (ClmKycDocument::where('client_id', $user->client_id)
             ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
             ->exists()) {
-            return response()->json([
-                'status'  => false,
-                'message' => "A KYC document named \"{$name}\" already exists. Pick a different name.",
-            ], 409);
+            throw ValidationException::withMessages([
+                'name' => "A KYC document named \"{$name}\" already exists. Pick a different name.",
+            ]);
         }
 
         $row = DB::transaction(function () use ($user, $data) {
@@ -70,7 +70,7 @@ class ClmKycController extends Controller
 
         $data = $request->validate([
             'name'      => 'sometimes|required|string|max:255',
-            'authority' => 'sometimes|required|string|max:255',
+            'authority' => 'sometimes|required|string|max:2000',
             'expiry'    => 'nullable|string|max:32',
             'status'    => ['nullable', Rule::in(ClmKycDocument::STATUSES)],
         ]);
@@ -83,10 +83,9 @@ class ClmKycController extends Controller
                 ->where('id', '!=', $row->id)
                 ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
                 ->exists()) {
-            return response()->json([
-                'status'  => false,
-                'message' => "Another KYC document named \"{$data['name']}\" already exists. Pick a different name.",
-            ], 409);
+            throw ValidationException::withMessages([
+                'name' => "Another KYC document named \"{$data['name']}\" already exists. Pick a different name.",
+            ]);
         }
 
         $data['updated_by'] = $user->id;

@@ -120,9 +120,10 @@ export const CLM_CSS = `
   color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
   box-shadow: 0 3px 10px rgba(8,145,178,.35);
-  transition: transform .15s ease, box-shadow .22s ease;
+  transition: transform 180ms cubic-bezier(0.34,1.56,0.64,1), box-shadow .22s ease, filter 180ms ease;
 }
-.clm-quick-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(8,145,178,.50); }
+.clm-quick-add-btn:hover { transform: translateY(-1px) scale(1.06); filter: brightness(1.08); box-shadow: 0 8px 20px rgba(8,145,178,.50); }
+.clm-quick-add-btn:active { transform: translateY(0) scale(0.97); box-shadow: 0 4px 12px rgba(8,145,178,.4); }
 [data-bs-theme="dark"] .clm-quick-add-btn { box-shadow: 0 3px 10px rgba(8,145,178,.55); }
 
 /* ──────────────────────────────────────────────────────────
