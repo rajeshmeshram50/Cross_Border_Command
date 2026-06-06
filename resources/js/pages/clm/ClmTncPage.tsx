@@ -4,7 +4,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
-import { DeleteConf, SimpleNameModal } from './clmCommon';
+import { DeleteConf } from './clmCommon';
 import ClmTncWizardModal from './ClmTncWizardModal';
 import Tooltip from '../../components/ui/Tooltip';
 
@@ -93,13 +93,9 @@ export default function ClmTncPage() {
   );
 }
 
-function CategoriesPane({ rows, loading, reload }: { rows: Cat[]; loading: boolean; reload: () => void }) {
-  const toast = useToast();
+function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; reload: () => void }) {
   const [search, setSearch] = useState('');
   const [page, setPage]     = useState(1);
-  const [editing, setEditing] = useState<Cat | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<Cat | null>(null);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
@@ -108,20 +104,8 @@ function CategoriesPane({ rows, loading, reload }: { rows: Cat[]; loading: boole
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page);
 
-  const onSave = async (name: string, id?: number) => {
-    try {
-      const payload = { name, short_code: deriveShortCode(name) };
-      if (id) await api.put(`/clm/tnc-categories/${id}`, payload);
-      else    await api.post('/clm/tnc-categories', payload);
-      toast.success(id ? 'Updated' : 'Added', name);
-      setModalOpen(false); setEditing(null); reload();
-    } catch (e: any) { toast.error('Save failed', e?.response?.data?.message ?? 'Could not save'); }
-  };
-  const onDelete = async () => {
-    if (!pendingDelete) return;
-    try { await api.delete(`/clm/tnc-categories/${pendingDelete.id}`); toast.success('Deleted', pendingDelete.name); setPendingDelete(null); reload(); }
-    catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
-  };
+  // Document categories are read-only — they're owned by the Quotation &
+  // Proforma Invoice documents, so there's no add / edit / delete here.
 
   return (
     <div className="clm-page-card">
@@ -149,10 +133,9 @@ function CategoriesPane({ rows, loading, reload }: { rows: Cat[]; loading: boole
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 130, textAlign: 'center' }}>CATEGORY ID</th>
                 <th>DOCUMENT CATEGORY NAME</th>
-                <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={4} className="clm-status">Loading…</td></tr>}
+                {loading && <tr><td colSpan={3} className="clm-status">Loading…</td></tr>}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
@@ -162,16 +145,6 @@ function CategoriesPane({ rows, loading, reload }: { rows: Cat[]; loading: boole
                       </Tooltip>
                     </td>
                     <td className="clm-td-name">{r.name}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      <div className="clm-actions">
-                        <Tooltip label="Read-only — used by your documents">
-                          <button className="clm-act clm-act-edit" aria-label="Read-only" onClick={() => toast.info('Read-only category', 'Document categories are set up for your Quotation and Proforma Invoice documents, so they can’t be edited or removed here.')}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                        </Tooltip>
-                        <Tooltip label="Read-only — used by your documents">
-                          <button className="clm-act clm-act-del" aria-label="Read-only" onClick={() => toast.info('Read-only category', 'Document categories are set up for your Quotation and Proforma Invoice documents, so they can’t be edited or removed here.')}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
-                        </Tooltip>
-                      </div>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -189,9 +162,6 @@ function CategoriesPane({ rows, loading, reload }: { rows: Cat[]; loading: boole
           </div>
         )}
       </div>
-
-      {modalOpen && <SimpleNameModal title={editing ? 'Edit Document Category' : 'Add New Document Category'} placeholder="e.g. International – Proforma Invoice" code={editing?.code ?? `DC-${String(rows.length + 1).padStart(3, '0')}`} isEdit={!!editing} initial={editing?.name ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(name) => onSave(name, editing?.id)} />}
-      {pendingDelete && createPortal(<DeleteConf title="Delete category?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
     </div>
   );
 }
