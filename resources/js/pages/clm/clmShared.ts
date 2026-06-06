@@ -1084,6 +1084,7 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-textarea,
 [data-bs-theme="dark"] .clm-select { background-color: #1e293b; border-color: rgba(6,182,212,.30); color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-btn-cancel { background: #1e293b; border-color: #334155; color: #cbd5e1; }
+[data-bs-theme="dark"] .clm-btn-cancel:hover:not(:disabled) { background: rgba(8,145,178,.16); border-color: #0891b2; color: #67e8f9; box-shadow: 0 4px 12px rgba(8,145,178,.28); }
 
 /* Rich-text clause editor — dark mode. The card/toolbar/body default to
  * white surfaces; swap to dark slate so the editor matches the modal. */
