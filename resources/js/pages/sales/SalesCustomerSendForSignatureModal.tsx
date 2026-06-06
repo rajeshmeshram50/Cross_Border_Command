@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as pdfjsLib from 'pdfjs-dist';
-// Vite-friendly worker URL — Bundles pdfjs's worker as a separate chunk
-// so the main bundle stays small. Without this, pdfjs falls back to a
-// fake worker on the main thread and warns loudly.
-// @ts-ignore — Vite's ?worker&url import handled at build time
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -18,24 +14,9 @@ import ClmInsertPlaceholderModal from '../clm/ClmInsertPlaceholderModal';
 import ClmClauseInsertPanel from '../clm/ClmClauseInsertPanel';
 import ClmRichTextToolbar from '../clm/ClmRichTextToolbar';
 
-// One-time pdfjs setup — the worker URL is the same for every modal
-// instance, so we set it at module scope to avoid re-assigning per open.
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Customers → Send for Signature (Zoho Sign).
- *
- * Three-step wizard:
- *   1. Pick documents + recipients   (up to 10 drafts × up to 5 signers)
- *   2. Preview & position signature  (per-doc x/y/page/width/height with a
- *                                     mini A4 map; iframe shows the live PDF)
- *   3. Review & send                  (summary + the actual API call)
- *
- * Backed by:
- *   POST /api/clm/signature-requests/preview   — returns one PDF blob
- *   POST /api/clm/signature-requests           — creates + submits to Zoho
- * Both endpoints are tenant-scoped server-side via the user's client_id.
- * ────────────────────────────────────────────────────────────────────────── */
+
 
 export type SendForSignatureCustomer = {
   id: string;
@@ -53,9 +34,6 @@ type TradeDoc = {
   doc_type?: string;
   purpose?: string;
   party?: string;
-  /* Page-shell config saved on the row. The Send-for-Signature modal
-   * seeds its editable copy from these so the user can tweak the
-   * header / footer + insert tables without leaving the wizard. */
   content?: string | null;
   header_config?: HeaderConfig | null;
   footer_config?: FooterConfig | null;
@@ -76,13 +54,6 @@ export type DocSettings = {
 };
 
 export const DEFAULTS: DocSettings = { x: 380, y: 720, page: 0, width: 150, height: 45 };
-
-/* Per-signer default coords for multi-party agreements. Buyer parks on
- * the page-bottom left, Consignee on the right — so a Buyer+Consignee
- * agreement opens with two non-overlapping boxes the user can fine-tune
- * by dragging each independently. Single-signer agreements just pick
- * their role's slot. Supplier is reserved for future vendor-side flows
- * (today's lead-side workplace doesn't surface supplier signers). */
 export type SignerRoleKey = 'buyer' | 'consignee' | 'supplier';
 export const SIGNER_DEFAULTS: Record<SignerRoleKey, DocSettings> = {
   buyer:     { x:  60, y: 720, page: 0, width: 150, height: 45 },
@@ -90,47 +61,28 @@ export const SIGNER_DEFAULTS: Record<SignerRoleKey, DocSettings> = {
   supplier:  { x: 220, y: 720, page: 0, width: 150, height: 45 },
 };
 
-/* Role → marker-token mapping. Matches ClmSignatureController's
- * sigMarkerToken aliases: `{{buyer.signature}}` and
- * `{{customer.signature}}` both render the CUSTOMER marker, so the
- * buyer role detects against `customer`. Consignee + supplier are 1:1.
- * Used only in agreement mode; trade-doc mode derives its single token
- * directly from `modelName`. */
 const ROLE_TO_MARKER_TOKEN: Record<SignerRoleKey, 'customer' | 'consignee' | 'supplier'> = {
   buyer:     'customer',
   consignee: 'consignee',
   supplier:  'supplier',
 };
 
-// A4 in PDF points (1pt = 1/72in)
 export const A4_W = 595;
 export const A4_H = 842;
 
-/* When the modal is reused from the workplace's Segment Details card,
- * the data shape flips from "trade documents bound to a single party"
- * to "agreements bound to a lead (which carries customer + consignee)".
- * Keeping these in a discriminated sibling lets every internal branch
- * read `mode === 'agreement'` cleanly without ad-hoc null checks across
- * the existing trade-doc props. */
+
 export type AgreementSendRow = {
   id: number;
   code: string | null;
   title: string;
   agreement_type?: string | null;
   party?: string | null;
-  /* Seed fields for the Edit Header / Footer / Body popup — the modal
-   * needs the saved body HTML + page-shell config to hydrate the
-   * editor without a separate fetch. Optional so legacy callers that
-   * don't have them still type-check; missing values fall through to
-   * the DEFAULT_HEADER / DEFAULT_FOOTER constants. */
   content?: string | null;
   header_config?: HeaderConfig | null;
   footer_config?: FooterConfig | null;
 };
 
-/* Signer role keys mirror the backend's resolveAgreementSigners output.
- * 'supplier' isn't reachable from the lead-side flow today (suppliers
- * are vendor-side), but the union keeps the type future-proof. */
+
 export type AgreementSignerRole = 'buyer' | 'consignee' | 'supplier';
 
 export type AgreementSigner = {
@@ -141,9 +93,7 @@ export type AgreementSigner = {
 
 export type AgreementContext = {
   leadId: number;
-  /* Preselected agreements — the picker step is skipped in agreement
-   * mode (the segment-details card already chose which agreements to
-   * send), so we hand them in fully resolved. */
+
   agreements: AgreementSendRow[];
   /* Active signers for this bundle. The caller pre-filters by each
    * agreement's `party` CSV (all agreements in a bulk-send share the
