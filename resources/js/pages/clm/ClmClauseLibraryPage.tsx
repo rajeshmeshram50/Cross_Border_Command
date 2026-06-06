@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import { DeleteConf } from './clmCommon';
+import { MasterSelect } from '../../components/ui/MasterSelect';
 
 /* Central CLM → Clause Library Master (two tabs: Types + Library). */
 
@@ -283,8 +284,8 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
 /* Memoized contenteditable rich editor for the clause modal — same
  * pattern as the T&C editor (React.memo isolates the DOM from parent
  * re-renders so manual innerHTML mutations are never wiped). */
-const ClauseRichEditor = memo(forwardRef<HTMLDivElement, { initialHTML: string }>(
-  function ClauseRichEditor({ initialHTML }, ref) {
+const ClauseRichEditor = memo(forwardRef<HTMLDivElement, { initialHTML: string; onInput?: () => void }>(
+  function ClauseRichEditor({ initialHTML, onInput }, ref) {
     const inited = useRef(false);
     return (
       <div
@@ -299,6 +300,7 @@ const ClauseRichEditor = memo(forwardRef<HTMLDivElement, { initialHTML: string }
         className="clm-editor-body"
         contentEditable
         suppressContentEditableWarning
+        onInput={onInput}
         data-placeholder="Write the clause text here…"
       />
     );
@@ -342,6 +344,10 @@ function ClauseLibModal(props: {
     if (!type.trim()) next.type = 'Clause type is required';
     if (!name.trim()) next.name = 'Clause name is required';
     else if (name.trim().length > 255) next.name = 'Name must not be greater than 255 characters';
+    // Reject a blank editor — strip tags / non-breaking spaces so an empty
+    // <p>, <br>, or whitespace-only body doesn't count as content.
+    const contentText = (editorRef.current?.textContent ?? '').replace(/ /g, ' ').trim();
+    if (!contentText) next.content = 'Clause content is required';
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
@@ -390,16 +396,18 @@ function ClauseLibModal(props: {
             <div className="clm-field">
               <label className="clm-field-label">Clause Type <span className="clm-req">*</span></label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <select
-                  className={`clm-select ${errors.type ? 'clm-input-err' : ''}`}
-                  value={type}
-                  onChange={e => { setType(e.target.value); setErrors(p => ({ ...p, type: '' })); }}
-                  style={{ flex: 1 }}
-                >
-                  <option value="">— Select Clause Type —</option>
-                  {types.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                  {type && !types.find(t => t.name === type) && <option value={type}>{type}</option>}
-                </select>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <MasterSelect
+                    value={type}
+                    invalid={!!errors.type}
+                    placeholder="— Select Clause Type —"
+                    options={[
+                      ...types.map(t => ({ value: t.name, label: t.name })),
+                      ...(type && !types.find(t => t.name === type) ? [{ value: type, label: type }] : []),
+                    ]}
+                    onChange={(v) => { setType(v); setErrors(p => ({ ...p, type: '' })); }}
+                  />
+                </div>
                 <button type="button" className="clm-inline-add" title="Add new clause type" onClick={() => setShowTypeAdd(true)}>+</button>
               </div>
               {errors.type && <div className="clm-err">{errors.type}</div>}
@@ -452,7 +460,7 @@ function ClauseLibModal(props: {
               <button type="button" className="clm-editor-tb-btn" title="Redo" onClick={() => fmt('redo')}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg></button>
               <button type="button" className="clm-editor-tb-btn" title="Clear formatting" onClick={() => fmt('removeFormat')}>T̲ₓ</button>
             </div>
-            <ClauseRichEditor ref={editorRef} initialHTML={initialContent} />
+            <ClauseRichEditor ref={editorRef} initialHTML={initialContent} onInput={() => setErrors(p => (p.content ? { ...p, content: '' } : p))} />
             <div className="clm-editor-foot">
               <div className="clm-editor-foot-hint">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: .5 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -461,6 +469,7 @@ function ClauseLibModal(props: {
               <span className="clm-editor-foot-ph">{'{{PLACEHOLDER}}'}</span>
             </div>
           </div>
+          {errors.content && <div className="clm-err" style={{ marginTop: 6 }}>{errors.content}</div>}
         </div>
 
         {/* ── FOOTER ── */}

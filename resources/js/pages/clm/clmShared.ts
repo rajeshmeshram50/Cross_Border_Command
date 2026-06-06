@@ -1084,6 +1084,20 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-textarea,
 [data-bs-theme="dark"] .clm-select { background-color: #1e293b; border-color: rgba(6,182,212,.30); color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-btn-cancel { background: #1e293b; border-color: #334155; color: #cbd5e1; }
+
+/* Rich-text clause editor — dark mode. The card/toolbar/body default to
+ * white surfaces; swap to dark slate so the editor matches the modal. */
+[data-bs-theme="dark"] .clm-editor-card { background: #0f172a; border-color: rgba(6,182,212,.28); box-shadow: 0 2px 16px rgba(0,0,0,.3); }
+[data-bs-theme="dark"] .clm-editor-toolbar { background: #111c2e; border-bottom-color: rgba(6,182,212,.18); }
+[data-bs-theme="dark"] .clm-editor-tb-sel { background: #1e293b; border-color: rgba(6,182,212,.3); color: #e2e8f0; }
+[data-bs-theme="dark"] .clm-editor-tb-btn { color: #cbd5e1; }
+[data-bs-theme="dark"] .clm-editor-tb-btn:hover { background: rgba(8,145,178,.22); color: #67e8f9; }
+[data-bs-theme="dark"] .clm-editor-tb-divider { background: rgba(6,182,212,.28); }
+[data-bs-theme="dark"] .clm-editor-body { background: #0b1220; color: #e2e8f0; }
+[data-bs-theme="dark"] .clm-editor-body:empty:before { color: #64748b; }
+[data-bs-theme="dark"] .clm-editor-foot { background: #111c2e; border-top-color: rgba(6,182,212,.14); }
+[data-bs-theme="dark"] .clm-editor-foot-hint { color: #64748b; }
+[data-bs-theme="dark"] .clm-editor-foot-ph { color: rgba(103,232,249,.5); }
 [data-bs-theme="dark"] .clm-autocode { background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(6,182,212,.08)); border-color: rgba(6,182,212,.25); }
 [data-bs-theme="dark"] .clm-autocode-val { color: #67e8f9; }
 [data-bs-theme="dark"] .clm-conf { background: #0f172a; }
