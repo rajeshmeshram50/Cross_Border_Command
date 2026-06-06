@@ -1264,9 +1264,41 @@ class ClmSignatureController extends Controller
             $sigReq->save();
 
             $label   = $docKind === 'quotation' ? 'Quotation' : 'Proforma Invoice';
+
+            // 8. Also email the rendered PDF to the signer (customer contact)
+            //    as an attachment, alongside Zoho's signing notification. The
+            //    email is best-effort: a mail hiccup must NOT fail an already-
+            //    created signature request, so failures are logged, not thrown.
+            //    Reuses $tempPath (cleaned up in the finally below) and the
+            //    SalesPdfController email builder so the body/branding match the
+            //    manual "Email document" flow byte-for-byte.
+            $pdfEmailed   = false;
+            $signerEmail  = (string) ($signers[0]['email'] ?? '');
+            if ($signerEmail !== '') {
+                try {
+                    $emailKind     = $docKind === 'quotation' ? 'Quotation' : 'Proforma Invoice';
+                    $safeCode      = preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($record->code ?: ('id-' . $record->id)));
+                    $emailFilename = "{$shortLabel}-{$safeCode}_signed.pdf";
+                    app(SalesPdfController::class)->buildAndSendSalesDocEmail(
+                        $record, $emailKind, $shortLabel, $signerEmail, $tempPath, $emailFilename
+                    );
+                    $pdfEmailed = true;
+                } catch (\Throwable $e) {
+                    Log::warning('Sales-doc signature send: PDF email to signer failed', [
+                        'doc_kind' => $docKind,
+                        'doc_id'   => $docId,
+                        'to'       => $signerEmail,
+                        'error'    => $e->getMessage(),
+                    ]);
+                }
+            }
+
             $message = $finalStatus === 'inprogress'
                 ? "{$label} sent for signature successfully."
                 : "{$label} created in Zoho but submission did not flip to inprogress.";
+            if ($pdfEmailed) {
+                $message .= " The {$label} PDF was also emailed to {$signerEmail}.";
+            }
             if ($this->zoho->isTestingMode()) {
                 $message .= ' (Sandbox mode — signer emails are only delivered if the recipient is a Zoho Sign user on this org.)';
             }
@@ -1283,6 +1315,7 @@ class ClmSignatureController extends Controller
                     'expiry_date'          => $sigReq->expiry_date,
                     'auto_submitted'       => $submitted,
                     'testing_mode'         => $this->zoho->isTestingMode(),
+                    'pdf_emailed'          => $pdfEmailed,
                 ],
             ]);
         } catch (\Throwable $e) {
