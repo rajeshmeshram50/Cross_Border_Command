@@ -46,6 +46,7 @@ export default function ClmAgreementsSentPage() {
   const [search, setSearch] = useState('');
   const [dlOpen, setDlOpen] = useState<string | null>(null);
   const [respondId, setRespondId] = useState<string | null>(null);
+  const [cpOpen, setCpOpen] = useState<{ id: string; names: string[]; x: number; y: number } | null>(null);   // counterparties popover
 
   const [sent, setSent] = useState<SentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -176,11 +177,27 @@ export default function ClmAgreementsSentPage() {
           ? <ClarifyTable rows={clarifyList} onRespond={setRespondId} t={t} />
           : tab === 'rejected'
             ? <RejectedTable rows={filtered} ata={sent} page={page} setPage={setPage} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />
-            : <StandardTable rows={filtered} page={page} setPage={setPage} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} toast={toast} t={t} />}
+            : <StandardTable rows={filtered} page={page} setPage={setPage} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} cpOpen={cpOpen} setCpOpen={setCpOpen} toast={toast} t={t} />}
       </div>
 
       {respondContract && (
         <RespondModal contract={respondContract} onClose={() => setRespondId(null)} onSubmit={submitResponse} t={t} />
+      )}
+
+      {/* All-counterparties popover (opened from the +N badge) */}
+      {cpOpen && (
+        <>
+          <div onClick={() => setCpOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
+          <div style={{ position: 'fixed', left: Math.min(cpOpen.x, window.innerWidth - 240), top: cpOpen.y, zIndex: 601, width: 220, maxHeight: 280, overflowY: 'auto', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.35)' : '#A5F3FC'}`, boxShadow: '0 16px 40px rgba(0,0,0,.28)', padding: 8, fontFamily: "'Rubik', system-ui, sans-serif" }}>
+            <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#67e8f9' : '#0e7490', padding: '4px 8px 7px' }}>Counterparties ({cpOpen.names.length})</div>
+            {cpOpen.names.map((name, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 8, background: i % 2 ? (t.dark ? 'rgba(255,255,255,.03)' : '#F0FDFF') : 'transparent' }}>
+                <div style={{ width: 22, height: 22, borderRadius: 7, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(name)}</span></div>
+                <span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -301,7 +318,7 @@ function DownloadMenu({ id, dlOpen, setDlOpen, toast, t }: { id: string; dlOpen:
 }
 
 /* ── Standard contracts table (all / approved / pending) ── */
-function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, toast, t }: { rows: AwsContract[]; page: number; setPage: (n: number) => void; tab: AwsTab; dlOpen: string | null; setDlOpen: (s: string | null) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, setCpOpen, toast, t }: { rows: AwsContract[]; page: number; setPage: (n: number) => void; tab: AwsTab; dlOpen: string | null; setDlOpen: (s: string | null) => void; cpOpen: { id: string; names: string[]; x: number; y: number } | null; setCpOpen: (s: { id: string; names: string[]; x: number; y: number } | null) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * PER_PAGE;
@@ -338,7 +355,7 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, toast, t }
                       onMouseEnter={e => { e.currentTarget.style.background = t.rowHover; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #0891b2'; }}
                       onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                       <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
-                      <td style={TD_C}><span style={CODE_PILL}>{c.id}</span></td>
+                      <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
                       <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.date}</span></td>
                       <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0e7490', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Avatar name={c.org} grad={ORG_GRAD[c.org] || '#4C1D95,#7C3AED'} /><Tooltip label={c.org}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.org}</span></Tooltip></div></td>
@@ -346,7 +363,7 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, toast, t }
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                           <Avatar name={c.cp[0]} grad="#0891b2,#0e7490" />
                           <Tooltip label={c.cp.join(', ')}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>
-                          {extra > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 9, fontWeight: 800, flexShrink: 0 }} title={c.cp.slice(1).join(', ')}>+{extra}</span>}
+                          {extra > 0 && <button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cp, x: r.left, y: r.bottom + 4 }); }} title="View all counterparties" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 9, fontWeight: 800, flexShrink: 0, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button>}
                         </div>
                       </td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A7F3D0,#7DD3FC)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #B2EBF2' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0891b2' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
@@ -409,7 +426,7 @@ function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, toast, t }
                       onMouseEnter={e => { e.currentTarget.style.background = t.rowHover; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #0891b2'; }}
                       onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                       <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
-                      <td style={TD_C}><span style={CODE_PILL}>{c.id}</span></td>
+                      <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
                       <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
                       <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{c.title}</div></Tooltip></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
@@ -472,7 +489,7 @@ function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id:
                   onMouseEnter={e => { e.currentTarget.style.background = t.rowHover; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #0891b2'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                   <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(i + 1)}</span></div></td>
-                  <td style={TD_C}><span style={CODE_PILL}>{c.id}</span></td>
+                  <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 185 }}>{c.title}</div></Tooltip></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
@@ -552,7 +569,7 @@ function EmptyState({ msg, t }: { msg: string; t: OpsTokens }) {
 
 const TD_C = { padding: '11px 14px', verticalAlign: 'middle', borderBottom: '1px solid rgba(6,182,212,.06)', textAlign: 'center' } as React.CSSProperties;
 const TD_L = { ...TD_C, textAlign: 'left' } as React.CSSProperties;
-const CODE_PILL: React.CSSProperties = { fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: '#0e7490', background: 'linear-gradient(135deg,rgba(6,182,212,.12),rgba(8,145,178,.06))', padding: '4px 9px', borderRadius: 7, border: '1px solid rgba(6,182,212,.25)', whiteSpace: 'nowrap', letterSpacing: '.02em' };
+const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: dark ? '#67e8f9' : '#0e7490', background: dark ? 'rgba(6,182,212,.2)' : 'linear-gradient(135deg,rgba(6,182,212,.12),rgba(8,145,178,.06))', padding: '4px 9px', borderRadius: 7, border: `1px solid rgba(6,182,212,${dark ? '.42' : '.25'})`, whiteSpace: 'nowrap', letterSpacing: '.02em' });
 
 const AWS_CSS = `
 @keyframes awsSlideUp { from { opacity:0; transform:translateY(24px) scale(.96); } to { opacity:1; transform:none; } }
