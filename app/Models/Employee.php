@@ -345,4 +345,38 @@ class Employee extends Model
     {
         return $this->hasOne(\App\Models\EmployeeExit::class, 'employee_id');
     }
+
+    /* ── Payroll graph ─────────────────────────────────────────────────
+     * Reverse links so payroll (and any other feature) can traverse from an
+     * employee to their attendance / leave / salary / payslips. The payroll
+     * engine reads via these inputs; keeping the relationships here makes the
+     * data model explicit and lets callers eager-load.
+     */
+    public function attendances(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\Attendance::class, 'employee_id');
+    }
+
+    public function leaveRequests(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\LeaveRequest::class, 'employee_id');
+    }
+
+    public function salaryStructures(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\SalaryStructure::class, 'employee_id');
+    }
+
+    /** The one currently-active salary structure (Rule 5/19). */
+    public function activeSalaryStructure(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(\App\Models\SalaryStructure::class, 'employee_id')
+            ->where('status', 'active')
+            ->latest('effective_from');
+    }
+
+    public function payslips(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\Payslip::class, 'employee_id');
+    }
 }

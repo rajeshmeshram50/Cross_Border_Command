@@ -225,10 +225,24 @@ class CustomerController extends Controller
         $row = DB::transaction(function () use ($data, $user, $clientId, $branchId) {
             $primary = $data['primary_address'];
 
+            // Allocate the user-facing C-### code PER CLIENT (not from the
+            // global autoincrement id). The old id-based code leaked the
+            // cross-tenant sequence into every client's list — Client A
+            // would see C-009 → C-060 with gaps because the numbers in
+            // between belonged to other tenants. We serialise the
+            // allocation with a row lock on the owning client (same pattern
+            // QuotationController uses for QT/PI codes) so two concurrent
+            // inserts can't grab the same number.
+            if ($clientId !== null) {
+                DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
+            }
+            $code = $this->nextCustomerCode($clientId);
+
             $customer = Customer::create([
                 'client_id'      => $clientId,
                 'branch_id'      => $branchId,
                 'created_by'     => optional($user)->id,
+                'customer_code'  => $code,
                 'company_name'   => $data['company_name'],
                 'legal_name'     => $data['legal_name']     ?? null,
                 'type'           => $data['type']           ?? null,
@@ -239,12 +253,6 @@ class CustomerController extends Controller
                 'primary_email'  => $primary['cp_email']    ?? null,
                 'status'         => $data['status']         ?? 'Active',
             ]);
-
-            // Generate the user-facing C-### code from the new id. Done
-            // post-insert so the digit count grows naturally (C-001 →
-            // C-123 → C-1234 once we cross 1000) without a sequence table.
-            $customer->customer_code = 'C-' . str_pad((string) $customer->id, 3, '0', STR_PAD_LEFT);
-            $customer->save();
 
             // Primary address row — always exactly one.
             CustomerAddress::create(array_merge($primary, [
@@ -452,7 +460,7 @@ class CustomerController extends Controller
 
             'primary_address'                => 'required|array',
             'primary_address.type'           => 'required|string|max:64',
-            'primary_address.address_line'   => 'required|string|min:4|max:1000',
+            'primary_address.address_line'   => 'required|string|min:4|max:75',
             'primary_address.country'        => 'nullable|string|max:64',
             'primary_address.state'          => 'nullable|string|max:64',
             'primary_address.city'           => 'nullable|string|max:64',
@@ -502,7 +510,7 @@ class CustomerController extends Controller
 
             'locations'                  => 'sometimes|array',
             'locations.*.type'           => 'required_with:locations|string|max:64',
-            'locations.*.address_line'   => 'required_with:locations|string|min:4|max:1000',
+            'locations.*.address_line'   => 'required_with:locations|string|min:4|max:75',
             'locations.*.country'        => 'nullable|string|max:64',
             'locations.*.state'          => 'nullable|string|max:64',
             'locations.*.city'           => 'nullable|string|max:64',
@@ -560,6 +568,37 @@ class CustomerController extends Controller
         $clientId = $user->client_id ?? ($user->branch?->client_id);
         $branchId = $user->branch_id;
         return [$clientId, $branchId];
+    }
+
+    /**
+     * Next per-client customer code (C-001, C-002 …).
+     *
+     * Codes are sequential WITHIN a tenant, not global — so every client
+     * gets a clean gap-free list. The caller holds a lockForUpdate on the
+     * owning `clients` row (the super_admin null-client bucket excepted),
+     * which serialises concurrent allocations. Scans `withTrashed` so a
+     * soft-deleted customer's number is never reused — keeping codes a
+     * stable per-tenant audit trail.
+     */
+    private function nextCustomerCode($clientId): string
+    {
+        $codes = Customer::withTrashed()
+            ->when(
+                $clientId === null,
+                fn ($q) => $q->whereNull('client_id'),
+                fn ($q) => $q->where('client_id', $clientId)
+            )
+            ->pluck('customer_code');
+
+        $max = 0;
+        foreach ($codes as $c) {
+            if (preg_match('/^C-0*(\d+)$/', (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $max) $max = $n;
+            }
+        }
+
+        return 'C-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
     /* ──────────────────────────────────────────────────────────────────

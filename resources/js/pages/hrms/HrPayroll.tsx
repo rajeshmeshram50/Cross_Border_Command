@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardBody, Col, Row, Button, Input } from 'reactstrap';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardBody, Col, Row, Button, Input, Dropdown, DropdownToggle, DropdownMenu, DropdownItem, Spinner } from 'reactstrap';
+import * as XLSX from 'xlsx';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import PayslipViewerModal, { type PayslipLine } from '../../components/PayslipViewerModal';
 import PayrollRunModal, { type PayrollRunIssue } from '../../components/PayrollRunModal';
+import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
+import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
 import { useToast } from '../../contexts/ToastContext';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import { ShimmerTableRows, Shimmer } from '../../components/ui/Shimmer';
+import api from '../../api';
 // Reuses the purple hero-card, hero-pill, KPI surface and table styles that
 // HrEmployeeOnboarding ships (.onb-hero-card / .onb-hero-pill / .onb-surface
 // / .onb-kpi-card / .onb-pill / .onb-id-pill / .onb-role-pill) so the page
@@ -13,7 +18,7 @@ import '../employee-onboarding/HrEmployeeOnboarding.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type CycleStatus = 'Completed' | 'In Progress' | 'Not Started';
-type RowStatus   = 'Ready' | 'Processed' | 'Pending Review' | 'On Hold';
+type RowStatus   = 'Ready' | 'Processed' | 'Pending Review' | 'On Hold' | 'Paid';
 // Source of truth for the biometric tab. "Biometric" = device sync clean,
 // "Review" = needs HR attention (missing punches / mismatches), "Manual" =
 // no device data available, attendance entered manually.
@@ -24,10 +29,14 @@ interface CycleMonth {
   label: string;        // 'Apr 2025'
   range: string;        // '01 APR–30 APR'
   status: CycleStatus;
+  month?: number;       // 1-12 (from /payroll/cycles)
+  year?: number;        // 4-digit
 }
 
 interface PayrollRow {
   id: string;
+  payslip_id?: number;  // server payslip id — used to fetch the full breakup
+  employee_id?: number; // server employee id — used for slip history
   empId: string;
   name: string;
   initials: string;
@@ -57,6 +66,9 @@ interface PayrollRow {
   tds: number;
   lopDeducted: number;  // pay docked for unpaid leave / LOP days
   advanceRec: number;   // recovered from prior salary advance
+  holdReason?: string | null;
+  reasons?: string[];   // real server-computed exception reasons
+  bankVerified?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -93,12 +105,19 @@ const CYCLE_TONES: Record<CycleStatus, { bg: string; fg: string; dot: string }> 
   'Not Started': { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
 };
 
-const ROW_TONES: Record<RowStatus, { bg: string; fg: string; dot: string }> = {
+// Keyed loosely (not by RowStatus) so the server's post-disbursement 'Paid'
+// status — which isn't in the RowStatus union — still resolves to a tone.
+const ROW_TONES: Record<string, { bg: string; fg: string; dot: string }> = {
   'Ready':          { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
   'Processed':      { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
   'Pending Review': { bg: '#fdf3d6', fg: '#a06f00', dot: '#f59e0b' },
   'On Hold':        { bg: '#fdd9d6', fg: '#b1401d', dot: '#f06548' },
+  'Paid':           { bg: '#d6f4e3', fg: '#0a7d5a', dot: '#0ab39c' },
 };
+
+// Safe tone lookup — falls back to the neutral "Processed" tone for any
+// unexpected status so a row never crashes on an undefined tone.
+const toneFor = (status: string) => ROW_TONES[status] ?? ROW_TONES['Processed'];
 
 // ── Mock employee payroll rows for the Apr 2026 cycle ───────────────────────
 // 26 working days in Apr 2026 — drives the biometric tab's "26 working days"
@@ -106,20 +125,6 @@ const ROW_TONES: Record<RowStatus, { bg: string; fg: string; dot: string }> = {
 // individual heads (PF / ESI / PT / TDS / LOP / advance recovery) so the
 // Salary Report tab can render them as columns; legacy `deductions` and
 // `netPay` are recomputed from those heads to stay consistent.
-const PAYROLL_ROWS: PayrollRow[] = [
-  { id: 'PR-001', empId: 'EMP-2401', name: 'Aarav Sharma',     initials: 'AS', accent: '#7c5cfc', department: 'Engineering', designation: 'Senior Engineer',   ctc: 145000, earnings: 143250, deductions: 17563, netPay: 125687, attendance: 24, status: 'Ready',          present: 24, absent: 2, lateMarks: 2, missingPunch: 0, unpaidLeave: 0, attSource: 'Biometric',                              pfEmp: 10200, esi: 0, pt: 200, tds: 7163, lopDeducted: 0,    advanceRec: 0     },
-  { id: 'PR-002', empId: 'EMP-2402', name: 'Priya Mehta',      initials: 'PM', accent: '#0ab39c', department: 'HR',          designation: 'HR Manager',        ctc: 132000, earnings: 82197,  deductions: 21264, netPay: 60933,  attendance: 22, status: 'Pending Review', present: 22, absent: 1, lateMarks: 3, missingPunch: 1, unpaidLeave: 1, attSource: 'Review',     mismatch: 'Punch gap',      pfEmp: 6295,  esi: 0, pt: 200, tds: 0,    lopDeducted: 4769, advanceRec: 10000 },
-  { id: 'PR-003', empId: 'EMP-2403', name: 'Rohan Iyer',       initials: 'RI', accent: '#3b82f6', department: 'Finance',     designation: 'Finance Lead',      ctc: 158000, earnings: 158000, deductions: 21400, netPay: 136600, attendance: 26, status: 'Ready',          present: 26, absent: 0, lateMarks: 0, missingPunch: 0, unpaidLeave: 0, attSource: 'Biometric',                              pfEmp: 11400, esi: 0, pt: 200, tds: 9800, lopDeducted: 0,    advanceRec: 0     },
-  { id: 'PR-004', empId: 'EMP-2404', name: 'Sneha Kulkarni',   initials: 'SK', accent: '#f59e0b', department: 'Marketing',   designation: 'Marketing Lead',    ctc: 121000, earnings: 110800, deductions: 14600, netPay: 96200,  attendance: 24, status: 'Pending Review', present: 24, absent: 0, lateMarks: 1, missingPunch: 0, unpaidLeave: 2, attSource: 'Biometric',                              pfEmp: 8400,  esi: 0, pt: 200, tds: 5800, lopDeducted: 200,  advanceRec: 0     },
-  { id: 'PR-005', empId: 'EMP-2405', name: 'Pooja Desai',      initials: 'PD', accent: '#0ab39c', department: 'HR',          designation: 'HR Executive',      ctc: 78000,  earnings: 78000,  deductions: 9100,  netPay: 68900,  attendance: 26, status: 'Ready',          present: 26, absent: 0, lateMarks: 0, missingPunch: 0, unpaidLeave: 0, attSource: 'Biometric',                              pfEmp: 5400,  esi: 1500, pt: 200, tds: 2000, lopDeducted: 0,    advanceRec: 0     },
-  { id: 'PR-006', empId: 'EMP-2406', name: 'Karthik Raj',      initials: 'KR', accent: '#7c5cfc', department: 'Engineering', designation: 'Frontend Engineer', ctc: 96000,  earnings: 96000,  deductions: 11200, netPay: 84800,  attendance: 26, status: 'Processed',      present: 26, absent: 0, lateMarks: 0, missingPunch: 0, unpaidLeave: 0, attSource: 'Biometric',                              pfEmp: 6700,  esi: 0, pt: 200, tds: 4300, lopDeducted: 0,    advanceRec: 0     },
-  { id: 'PR-007', empId: 'EMP-2407', name: 'Meera Nair',       initials: 'MN', accent: '#e83e8c', department: 'Design',      designation: 'Product Designer',  ctc: 104000, earnings: 104000, deductions: 12300, netPay: 91700,  attendance: 26, status: 'Ready',          present: 26, absent: 0, lateMarks: 0, missingPunch: 0, unpaidLeave: 0, attSource: 'Biometric',                              pfEmp: 7300,  esi: 0, pt: 200, tds: 4800, lopDeducted: 0,    advanceRec: 0     },
-  { id: 'PR-008', empId: 'EMP-2408', name: 'Aditya Verma',     initials: 'AV', accent: '#0c63b0', department: 'Sales',       designation: 'Sales Executive',   ctc: 72000,  earnings: 63600,  deductions: 8400,  netPay: 55200,  attendance: 22, status: 'On Hold',        present: 22, absent: 1, lateMarks: 1, missingPunch: 2, unpaidLeave: 1, attSource: 'Review',     mismatch: 'Missing punches', pfEmp: 4400,  esi: 1300, pt: 200, tds: 2500, lopDeducted: 2400, advanceRec: 0     },
-  { id: 'PR-009', empId: 'EMP-2409', name: 'Tanvi Joshi',      initials: 'TJ', accent: '#108548', department: 'Operations',  designation: 'Ops Lead',          ctc: 118000, earnings: 118000, deductions: 14100, netPay: 103900, attendance: 26, status: 'Processed',      present: 26, absent: 0, lateMarks: 0, missingPunch: 0, unpaidLeave: 0, attSource: 'Biometric',                              pfEmp: 8200,  esi: 0, pt: 200, tds: 5700, lopDeducted: 0,    advanceRec: 0     },
-  { id: 'PR-010', empId: 'EMP-2410', name: 'Vikram Singh',     initials: 'VS', accent: '#a06f00', department: 'Engineering', designation: 'Backend Engineer',  ctc: 102000, earnings: 102000, deductions: 12000, netPay: 90000,  attendance: 26, status: 'Ready',          present: 26, absent: 0, lateMarks: 0, missingPunch: 0, unpaidLeave: 0, attSource: 'Manual',                                 pfEmp: 7100,  esi: 0, pt: 200, tds: 4700, lopDeducted: 0,    advanceRec: 0     },
-  { id: 'PR-011', empId: 'EMP-2411', name: 'Ishaan Khanna',    initials: 'IK', accent: '#3b82f6', department: 'Product',     designation: 'Product Manager',   ctc: 165000, earnings: 158600, deductions: 22500, netPay: 136100, attendance: 25, status: 'Pending Review', present: 25, absent: 0, lateMarks: 2, missingPunch: 1, unpaidLeave: 1, attSource: 'Review',     mismatch: 'Late mark dispute', pfEmp: 12000, esi: 0, pt: 200, tds: 10300,lopDeducted: 0,    advanceRec: 0     },
-  { id: 'PR-012', empId: 'EMP-2412', name: 'Riya Bansal',      initials: 'RB', accent: '#7c5cfc', department: 'Engineering', designation: 'QA Engineer',       ctc: 84000,  earnings: 84000,  deductions: 9700,  netPay: 74300,  attendance: 26, status: 'Ready',          present: 26, absent: 0, lateMarks: 0, missingPunch: 0, unpaidLeave: 0, attSource: 'Biometric',                              pfEmp: 5900,  esi: 0, pt: 200, tds: 3600, lopDeducted: 0,    advanceRec: 0     },
-];
 
 // ── Filter option lists ──────────────────────────────────────────────────────
 const DEPT_OPTIONS = [
@@ -140,6 +145,7 @@ const STATUS_OPTIONS: { value: 'All' | RowStatus; label: string }[] = [
   { value: 'Processed',      label: 'Processed' },
   { value: 'Pending Review', label: 'Pending Review' },
   { value: 'On Hold',        label: 'On Hold' },
+  { value: 'Paid',           label: 'Paid' },
 ];
 
 // KPI cards (top strip + tile icon, matches the onboarding layout)
@@ -172,6 +178,39 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function HrPayroll() {
   const toast = useToast();
+  const navigate = useNavigate();
+
+  // Issue-card actions (Go to Attendance / Open Employee) — real navigation.
+  const handleIssueAction = (action: { kind?: string }, issue: { empCode?: string }) => {
+    setRunOpen(false);
+    if (action.kind === 'attendance') {
+      navigate('/hr/attendance');
+    } else if (action.kind === 'employee' && issue.empCode) {
+      navigate(`/hr/employees/${encodeURIComponent(issue.empCode)}/profile`);
+    }
+  };
+
+  // Cycle strip — seeded with the static months for the first paint, then
+  // replaced by /api/payroll/cycles (which carries real month/year + status).
+  const [cycleMonths, setCycleMonths] = useState<CycleMonth[]>(CYCLE_MONTHS);
+
+  // Live payroll rows for the selected cycle (from /api/payroll). Seeded once
+  // behind the mount shimmer so nothing flashes empty.
+  // Starts empty — the mount shimmer covers the first /api/payroll fetch, then
+  // real rows load. No mock/seed data ever renders.
+  const [rows, setRows] = useState<PayrollRow[]>([]);
+  // Period + run meta for the selected cycle (drives finalize/run/approve/pay
+  // gating). run_id is needed for approve/pay.
+  const [periodMeta, setPeriodMeta] = useState<{ attendance_finalized: boolean; status: string; run_status: string | null; working_days?: number } | null>(null);
+  const [runMeta, setRunMeta] = useState<{ id: number; status: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  // Tracks which export/download is in flight ('csv' | 'excel' | 'zip' |
+  // 'history' | 'email') so each menu item can spin + the menu disables until
+  // the download completes.
+  const [downloading, setDownloading] = useState<string | null>(null);
+  // Per-row payslip PDF download in progress (row id).
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
 
   // Selected cycle drives every downstream stat. Defaults to the live "In
   // Progress" cycle (Mar 2026); falls back to the last entry if all cycles
@@ -183,7 +222,22 @@ export default function HrPayroll() {
   const [cycleKey, setCycleKey] = useState<string>(initialCycleKey);
   const [cycleCollapsed, setCycleCollapsed] = useState(false);
 
-  const [tab, setTab] = useState<'processing' | 'biometric' | 'report'>('processing');
+  const [tab, setTab] = useState<'processing' | 'biometric' | 'report' | 'salary'>('processing');
+
+  // Salary Setup tab — roster of employees + their structure status.
+  const [roster, setRoster] = useState<SalaryEmployeeLite[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [salaryEmp, setSalaryEmp] = useState<SalaryEmployeeLite | null>(null);
+
+  const loadRoster = () => {
+    setRosterLoading(true);
+    api.get('/salary-structures/employees')
+      .then(res => setRoster(Array.isArray(res.data?.data) ? res.data.data : []))
+      .catch(() => setRoster([]))
+      .finally(() => setRosterLoading(false));
+  };
+  // Load the roster the first time the Salary tab is opened (and after saves).
+  useEffect(() => { if (tab === 'salary' && roster.length === 0) loadRoster(); /* eslint-disable-next-line */ }, [tab]);
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | RowStatus>('All');
@@ -192,28 +246,93 @@ export default function HrPayroll() {
   // Report tab. Holds the row currently being viewed so the modal can render
   // that employee's earnings/deductions breakdown.
   const [paySlipRow, setPaySlipRow] = useState<PayrollRow | null>(null);
-  const openPayslip  = (row: PayrollRow) => setPaySlipRow(row);
-  const closePayslip = () => setPaySlipRow(null);
+  // Real component-level breakup fetched from /payroll/payslip/{id}; falls
+  // back to a synthesized split when unavailable.
+  const [payslipBreakup, setPayslipBreakup] = useState<{ earnings: PayslipLine[]; deductions: PayslipLine[] } | null>(null);
+  // Rule 16 — provisional vs final (official) slip; gates download/email.
+  const [payslipFinal, setPayslipFinal] = useState<boolean | undefined>(undefined);
+  // Salary-slip history for the employee being viewed (powers the modal's
+  // Recent Payslips list + click-to-load).
+  const [payslipRecent, setPayslipRecent] = useState<{ label: string; now?: boolean; payslipId?: number; status?: string }[]>([]);
+  // Real (branch-resolved) company letterhead for the viewer — no dummy data.
+  const [payslipCompany, setPayslipCompany] = useState<{ name: string; meta: string; initials: string; hrEmail: string } | null>(null);
+
+  // Load one payslip's full breakup + company letterhead into the viewer.
+  const loadPayslipDetail = (payslipId?: number) => {
+    if (!payslipId) return;
+    api.get(`/payroll/payslip/${payslipId}`)
+      .then(res => {
+        const d = res.data?.data ?? {};
+        const e = (d.earningsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 }));
+        const ded = (d.deductionsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 }));
+        setPayslipBreakup(e.length || ded.length ? { earnings: e, deductions: ded } : null);
+        setPayslipFinal(typeof d.is_final === 'boolean' ? d.is_final : undefined);
+        if (d.company) {
+          setPayslipCompany({
+            name: d.company.name || '',
+            meta: d.company.address || '',
+            initials: d.company.initials || '',
+            hrEmail: d.company.hr_email || '',
+          });
+        }
+      })
+      .catch(() => { /* fall back to the synthesized split */ });
+  };
+
+  const openPayslip = (row: PayrollRow) => {
+    setPaySlipRow(row);
+    setPayslipBreakup(null);
+    setPayslipFinal(undefined);
+    setPayslipCompany(null);
+    // Seed the recent list with the current cycle so the dummy default never
+    // shows; the history fetch then replaces it with the full list.
+    setPayslipRecent(row.payslip_id ? [{ label: cycle.label, now: true, payslipId: row.payslip_id, status: row.status }] : []);
+    loadPayslipDetail(row.payslip_id);
+    // Fetch this employee's slip history for the "Recent Payslips" sidebar.
+    if (row.employee_id) {
+      api.get(`/payroll/employee/${row.employee_id}/payslips`)
+        .then(res => {
+          const list = (res.data?.data ?? []) as any[];
+          if (list.length) {
+            setPayslipRecent(list.map((s, i) => ({
+              label: s.label,
+              now: i === 0,
+              payslipId: s.payslip_id,
+              status: s.status,
+            })));
+          }
+        })
+        .catch(() => { /* keep the seeded current-cycle entry */ });
+    }
+  };
+  const selectRecent = (entry: { payslipId?: number }) => loadPayslipDetail(entry.payslipId);
+  const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); };
 
   // Payroll run pre-flight modal — opened from the Run Payroll button in the
   // hero. Bridges the click into the two-phase blocking-issues / success
   // flow defined in PayrollRunModal.
   const [runOpen, setRunOpen] = useState(false);
 
-  // Issues are derived from the rows already in `PAYROLL_ROWS`:
+  // Issues are derived from the live `rows` (each payslip carries its own
+  // server-computed exceptions, surfaced via status/mismatch fields):
   //   - status 'On Hold'        → blocking
   //   - attMismatch || mismatch → warning
-  // This keeps the modal's data in sync with the table without a separate
-  // hardcoded list. Real implementation would come from /api/payroll/preflight.
+  // This keeps the modal in sync with the table; the same buckets are what
+  // /api/payroll/preflight returns.
   const runIssues = useMemo<PayrollRunIssue[]>(() => {
     const list: PayrollRunIssue[] = [];
-    for (const r of PAYROLL_ROWS) {
+    for (const r of rows) {
+      // Prefer the REAL server-computed reasons; only fall back to heuristics
+      // when the row carries none (e.g. older payslip without exceptions).
+      const realReasons = (r.reasons && r.reasons.length) ? r.reasons : null;
       if (r.status === 'On Hold') {
-        const reasons: string[] = [];
-        if (r.missingPunch > 0) reasons.push(`${r.missingPunch} missing biometric punch${r.missingPunch === 1 ? '' : 'es'}`);
-        if (r.unpaidLeave > 0)  reasons.push(`Unpaid leave on ${r.unpaidLeave} day${r.unpaidLeave === 1 ? '' : 's'}`);
-        if (r.absent > 0)       reasons.push(`Absent on ${r.absent} day${r.absent === 1 ? '' : 's'} without leave`);
-        reasons.push('Bank details not verified');
+        let reasons: string[] = realReasons ?? [];
+        if (!reasons.length) {
+          if (r.holdReason) reasons.push(r.holdReason);
+          if (r.bankVerified === false) reasons.push('Bank details not verified');
+          if (r.missingPunch > 0) reasons.push(`${r.missingPunch} missing biometric punch${r.missingPunch === 1 ? '' : 'es'}`);
+          if (!reasons.length) reasons.push('Blocking issue — resolve before running');
+        }
         list.push({
           id: r.id,
           type: 'blocking',
@@ -224,16 +343,17 @@ export default function HrPayroll() {
           department: r.department,
           reasons,
           actions: [
-            { label: 'Go to Attendance', tone: 'blue' },
-            { label: 'Open Employee',    tone: 'purple' },
+            { label: 'Go to Attendance', tone: 'blue',   kind: 'attendance' },
+            { label: 'Open Employee',    tone: 'purple', kind: 'employee' },
           ],
         });
-      } else if (r.attMismatch || r.mismatch) {
-        const reasons: string[] = [];
-        if (r.mismatch)        reasons.push(r.mismatch);
-        if (r.unpaidLeave > 0) reasons.push('Leave proof pending (Sick, Casual)');
-        if (r.lateMarks > 0)   reasons.push(`${r.lateMarks} late mark${r.lateMarks === 1 ? '' : 's'} flagged`);
-        if (reasons.length === 0) reasons.push('Attendance review pending');
+      } else if (r.status === 'Pending Review' || r.attMismatch || r.mismatch) {
+        let reasons: string[] = realReasons ?? [];
+        if (!reasons.length) {
+          if (r.mismatch)        reasons.push(r.mismatch);
+          if (r.lateMarks > 0)   reasons.push(`${r.lateMarks} late mark${r.lateMarks === 1 ? '' : 's'} flagged`);
+          if (!reasons.length)   reasons.push('Attendance review pending');
+        }
         list.push({
           id: r.id,
           type: 'warning',
@@ -244,24 +364,24 @@ export default function HrPayroll() {
           department: r.department,
           reasons,
           actions: [
-            { label: 'Upload Proof',  tone: 'green' },
-            { label: 'Open Employee', tone: 'purple' },
+            { label: 'Go to Attendance', tone: 'blue',   kind: 'attendance' },
+            { label: 'Open Employee',    tone: 'purple', kind: 'employee' },
           ],
         });
       }
     }
     return list;
-  }, []);
+  }, [rows]);
 
   // Sum of net pay for the blocking & at-risk buckets — drives the 3 KPI
   // tiles at the top of the pre-flight modal.
   const blockedAmount = useMemo(
-    () => PAYROLL_ROWS.filter(r => r.status === 'On Hold').reduce((s, r) => s + r.netPay, 0),
-    [],
+    () => rows.filter(r => r.status === 'On Hold').reduce((s, r) => s + r.netPay, 0),
+    [rows],
   );
   const atRiskAmount  = useMemo(
-    () => PAYROLL_ROWS.filter(r => (r.attMismatch || r.mismatch) && r.status !== 'On Hold').reduce((s, r) => s + r.netPay, 0),
-    [],
+    () => rows.filter(r => (r.attMismatch || r.mismatch) && r.status !== 'On Hold').reduce((s, r) => s + r.netPay, 0),
+    [rows],
   );
 
   // Pagination — match the master tables (7 per page).
@@ -271,43 +391,357 @@ export default function HrPayroll() {
   // Reset page when filters change.
   useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter, cycleKey, tab]);
 
-  // Initial mount shimmer — simulates the /api/payroll fetch so the first
-  // paint feels alive instead of dropping the full table cold. Once wired to
-  // the backend, swap the timeout for the real api.get(...) finally clause.
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    setLoading(true);
-    const t = setTimeout(() => setLoading(false), 700);
-    return () => clearTimeout(t);
-  }, [cycleKey, tab]);
 
   const cycle = useMemo(
-    () => CYCLE_MONTHS.find(c => c.key === cycleKey) ?? CYCLE_MONTHS[0],
-    [cycleKey],
+    () => cycleMonths.find(c => c.key === cycleKey) ?? cycleMonths[0],
+    [cycleKey, cycleMonths],
   );
 
-  // Counts — derived from PAYROLL_ROWS (mock). When wired to /api/payroll,
-  // these will be recomputed from the cycle-scoped server payload.
+  // Load the real cycle strip once on mount, then snap the selection to the
+  // live (In Progress / Not Started) cycle.
+  useEffect(() => {
+    api.get('/payroll/cycles')
+      .then(res => {
+        const list = (res.data?.data ?? []) as CycleMonth[];
+        if (Array.isArray(list) && list.length) {
+          setCycleMonths(list);
+          const live = list.find(c => c.status === 'In Progress' || c.status === 'Not Started');
+          setCycleKey((live ?? list[list.length - 1]).key);
+        }
+      })
+      .catch(() => { /* keep the seeded strip on failure */ });
+  }, []);
+
+  // Fetch payslip rows for the selected cycle. Maps the server payload (which
+  // already uses the PayrollRow field names) straight into table state.
+  const reloadCycle = useMemo(() => () => {
+    const c = cycleMonths.find(m => m.key === cycleKey);
+    const month = c?.month;
+    const year  = c?.year;
+    setLoading(true);
+    return api.get('/payroll', { params: month && year ? { month, year } : {} })
+      .then(res => {
+        const d = res.data?.data ?? {};
+        setRows(Array.isArray(d.rows) ? d.rows : []);
+        setPeriodMeta(d.period ?? null);
+        setRunMeta(d.run ?? null);
+      })
+      .catch(err => {
+        setRows([]);
+        const msg = err?.response?.data?.message || 'Could not load payroll for this cycle.';
+        toast.error('Load failed', msg);
+      })
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cycleKey, cycleMonths]);
+
+  useEffect(() => { reloadCycle(); }, [reloadCycle]);
+
+  // ── Actions ────────────────────────────────────────────────────────────
+  // Run Payroll: Rule 1 finalizes attendance first (if not already), then
+  // generates the run and opens the pre-flight modal against the fresh rows.
+  const runPayroll = async () => {
+    if (busy) return;
+    const month = cycle?.month, year = cycle?.year;
+    if (!month || !year) { toast.error('Run failed', 'Select a valid cycle first.'); return; }
+    setBusy(true);
+    try {
+      if (!periodMeta?.attendance_finalized) {
+        await api.post('/payroll/finalize-attendance', { month, year });
+      }
+      await api.post('/payroll/run', { month, year });
+      await reloadCycle();
+      setRunOpen(true);
+    } catch (err: any) {
+      toast.error('Payroll run failed', err?.response?.data?.message || 'Could not generate payroll.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Proceed to Pay — approve the run (so it's ready to disburse), then open the
+  // disbursement flow (mode → advice/NEFT → 3-level sign-off → initiate).
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentRunId, setPaymentRunId] = useState<number | null>(null);
+  const proceedToPay = async () => {
+    if (!runMeta?.id) { setRunOpen(false); return; }
+    setBusy(true);
+    try {
+      if (runMeta.status !== 'approved' && runMeta.status !== 'paid') {
+        await api.post('/payroll/approve', { run_id: runMeta.id });
+      }
+      setRunOpen(false);
+      setPaymentRunId(runMeta.id);
+      setPaymentOpen(true);
+    } catch (err: any) {
+      toast.error('Could not start payment', err?.response?.data?.message || 'Approve the payroll first.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Rule 15 — reopen a non-paid run for corrections (re-edit attendance/leave
+  // then re-run). Paid cycles are immutable and the server rejects them.
+  const reopenPayroll = async () => {
+    if (busy) return;
+    const month = cycle?.month, year = cycle?.year;
+    if (!month || !year) return;
+    setBusy(true);
+    try {
+      await api.post('/payroll/reopen', { month, year });
+      await reloadCycle();
+      toast.success('Payroll reopened', `${cycle.label} is open for corrections — re-run when ready.`);
+    } catch (err: any) {
+      toast.error('Reopen failed', err?.response?.data?.message || 'Could not reopen payroll.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // A generated/approved (but not paid) run can be corrected.
+  const canReopen = !!runMeta && runMeta.status !== 'paid';
+
+  // Download a single payslip PDF (from the table row buttons).
+  const downloadPayslipPdf = async (row: PayrollRow) => {
+    if (!row.payslip_id) {
+      toast.error('Not available', 'Generate payroll before downloading payslips.');
+      return;
+    }
+    if (pdfBusyId) return;
+    setPdfBusyId(row.id);
+    try {
+      const res = await api.get(`/payroll/payslip/${row.payslip_id}/pdf`, {
+        params: { download: 1 },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${row.name.replace(/\s+/g, '_')}_${cycle.label.replace(' ', '_')}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Download failed', 'Could not generate the payslip PDF.');
+    } finally {
+      setPdfBusyId(null);
+    }
+  };
+
+  // Bulk — every payslip in the cycle zipped (permission-gated server-side).
+  const downloadAllPayslips = async () => {
+    if (downloading) return;
+    const month = cycle?.month, year = cycle?.year;
+    setDownloading('zip');
+    try {
+      const res = await api.get('/payroll/payslips/bulk', {
+        params: {
+          month, year,
+          department: deptFilter !== 'All' ? deptFilter : undefined,
+          status: statusFilter !== 'All' ? statusFilter : undefined,
+        },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/zip' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Payslips_${cycle.label.replace(' ', '_')}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Payslips ready', `${cycle.label} payslips downloaded as a ZIP.`);
+    } catch (err: any) {
+      // Blob error responses need parsing back to text for the message.
+      let msg = 'Could not generate payslips.';
+      if (err?.response?.status === 403) msg = 'You are not allowed to download payslips.';
+      else if (err?.response?.data instanceof Blob) {
+        try { msg = JSON.parse(await err.response.data.text())?.message || msg; } catch { /* keep default */ }
+      }
+      toast.error('Bulk download failed', msg);
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // Email every (final) payslip in the cycle to each employee. Server skips
+  // employees with no email and reports the breakdown.
+  const emailAllPayslips = async () => {
+    if (downloading) return;
+    const month = cycle?.month, year = cycle?.year;
+    setDownloading('email');
+    try {
+      const res = await api.post('/payroll/payslips/email', {
+        month, year,
+        department: deptFilter !== 'All' ? deptFilter : undefined,
+        status: statusFilter !== 'All' ? statusFilter : undefined,
+      });
+      toast.success('Payslips emailed', res.data?.message || `Payslips sent for ${cycle.label}.`);
+    } catch (err: any) {
+      toast.error('Email failed', err?.response?.data?.message || 'Could not email payslips.');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // Rule 17 — filtered, permission-gated CSV export streamed from the server.
+  const exportCsv = async () => {
+    if (downloading) return;
+    const month = cycle?.month, year = cycle?.year;
+    setDownloading('csv');
+    try {
+      const res = await api.get('/payroll/export', {
+        params: {
+          month, year,
+          department: deptFilter !== 'All' ? deptFilter : undefined,
+          status: statusFilter !== 'All' ? statusFilter : undefined,
+        },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `payroll_${cycle.label.replace(' ', '_')}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Export ready', `${cycle.label} payroll downloaded as CSV.`);
+    } catch (err: any) {
+      const msg = err?.response?.status === 403
+        ? 'You are not allowed to export payroll.'
+        : (err?.response?.data?.message || 'Export failed.');
+      toast.error('Export failed', msg);
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // Excel (.xlsx) of the CURRENT cycle — every column, built client-side from
+  // the loaded rows (matches the project's xlsx export pattern).
+  const exportExcelCurrent = () => {
+    if (downloading) return;
+    if (!rows.length) { toast.error('Nothing to export', 'Generate payroll for this cycle first.'); return; }
+    setDownloading('excel');
+    try {
+    const sheet = rows.map(r => {
+      const lopDays = Math.max(0, (periodMeta?.working_days || 26) - r.attendance);
+      return {
+        'Emp Code': r.empId,
+        'Employee': r.name,
+        'Department': r.department,
+        'Designation': r.designation,
+        'Working Days': periodMeta?.working_days || 26,
+        'Present': r.present,
+        'Paid Days': r.attendance,
+        'LOP Days': lopDays,
+        'Unpaid Leave': r.unpaidLeave,
+        'Late Marks': r.lateMarks,
+        'Gross Earnings': r.earnings,
+        'PF (Emp)': r.pfEmp,
+        'ESI': r.esi,
+        'PT': r.pt,
+        'TDS': r.tds,
+        'LOP Amount': r.lopDeducted,
+        'Advance Rec.': r.advanceRec,
+        'Total Deductions': r.deductions,
+        'Net Pay': r.netPay,
+        'Status': r.status,
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(sheet);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Payroll');
+    XLSX.writeFile(wb, `Payroll_${cycle.label.replace(' ', '_')}.xlsx`);
+    toast.success('Excel ready', `${cycle.label} payroll exported as Excel.`);
+    } catch {
+      toast.error('Excel export failed', 'Could not build the Excel file.');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // Payroll HISTORY (Excel) — overall data across all cycles. Two sheets:
+  // a per-cycle Summary and a per-employee Detail (every column).
+  const exportHistoryExcel = async () => {
+    if (downloading) return;
+    setDownloading('history');
+    try {
+      const res = await api.get('/payroll/history');
+      const d = res.data?.data ?? {};
+      const cycles = (d.cycles ?? []) as any[];
+      const histRows = (d.rows ?? []) as any[];
+      if (!cycles.length && !histRows.length) {
+        toast.error('No history', 'No payroll cycles found yet.');
+        return;
+      }
+      const summary = cycles.map(c => ({
+        'Cycle': c.label,
+        'Run Status': c.run_status ?? '—',
+        'Attendance Finalized': c.attendance_final ? 'Yes' : 'No',
+        'Employees': c.employees,
+        'On Hold': c.on_hold,
+        'Total Gross': c.gross,
+        'Total Deductions': c.deductions,
+        'Net Disbursed': c.net,
+        'Paid On': c.paid_at ?? '—',
+      }));
+      const detail = histRows.map(r => ({
+        'Cycle': r.cycle,
+        'Emp Code': r.employee_code,
+        'Employee': r.employee_name,
+        'Department': r.department,
+        'Designation': r.designation,
+        'Working Days': r.working_days,
+        'Present': r.present_days,
+        'Paid Days': r.paid_days,
+        'LOP Days': r.lop_days,
+        'Paid Leave': r.paid_leave_days,
+        'Unpaid Leave': r.unpaid_leave_days,
+        'Late Marks': r.late_marks,
+        'Gross': r.gross_earnings,
+        'Basic': r.basic,
+        'PF': r.pf_employee,
+        'ESI': r.esi,
+        'PT': r.pt,
+        'TDS': r.tds,
+        'LOP Amount': r.lop_amount,
+        'Advance Rec.': r.advance_recovery,
+        'Total Deductions': r.total_deductions,
+        'Net Pay': r.net_pay,
+        'Status': r.status,
+        'Bank A/C': r.bank_account,
+        'IFSC': r.ifsc,
+      }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'Summary');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detail), 'Detail');
+      XLSX.writeFile(wb, `Payroll_History_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success('History exported', `${cycles.length} cycles, ${histRows.length} payslips.`);
+    } catch (err: any) {
+      toast.error('History export failed', err?.response?.data?.message || 'Could not load payroll history.');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // Counts — derived from the live cycle-scoped `rows`.
   const counts = useMemo(() => {
-    const totalEmployees = PAYROLL_ROWS.length;
-    const ready          = PAYROLL_ROWS.filter(r => r.status === 'Ready').length;
-    const processed      = PAYROLL_ROWS.filter(r => r.status === 'Processed').length;
-    const pendingReview  = PAYROLL_ROWS.filter(r => r.status === 'Pending Review').length;
-    const onHold         = PAYROLL_ROWS.filter(r => r.status === 'On Hold').length;
-    const totalPayroll   = PAYROLL_ROWS.reduce((s, r) => s + r.netPay, 0);
-    const avgCtc         = totalEmployees ? Math.round(PAYROLL_ROWS.reduce((s, r) => s + r.ctc, 0) / totalEmployees) : 0;
-    const attMismatch    = PAYROLL_ROWS.filter(r => r.attMismatch || r.attSource === 'Review').length;
+    const totalEmployees = rows.length;
+    const ready          = rows.filter(r => r.status === 'Ready').length;
+    const processed      = rows.filter(r => r.status === 'Processed' || r.status === ('Paid' as RowStatus)).length;
+    const pendingReview  = rows.filter(r => r.status === 'Pending Review').length;
+    const onHold         = rows.filter(r => r.status === 'On Hold').length;
+    const totalPayroll   = rows.reduce((s, r) => s + r.netPay, 0);
+    const avgCtc         = totalEmployees ? Math.round(rows.reduce((s, r) => s + r.ctc, 0) / totalEmployees) : 0;
+    const attMismatch    = rows.filter(r => r.attMismatch || r.attSource === 'Review').length;
     // Biometric tab aggregates
-    const syncedEmployees    = PAYROLL_ROWS.filter(r => r.attSource === 'Biometric').length;
-    const missingPunchCases  = PAYROLL_ROWS.filter(r => r.missingPunch > 0).length;
-    const mismatchCases      = PAYROLL_ROWS.filter(r => r.attSource === 'Review').length;
-    const unpaidLeaveCases   = PAYROLL_ROWS.filter(r => r.unpaidLeave > 0).length;
+    const syncedEmployees    = rows.filter(r => r.attSource === 'Biometric').length;
+    const missingPunchCases  = rows.filter(r => r.missingPunch > 0).length;
+    const mismatchCases      = rows.filter(r => r.attSource === 'Review').length;
+    const unpaidLeaveCases   = rows.filter(r => r.unpaidLeave > 0).length;
     // Salary Report aggregates
-    const totalGross    = PAYROLL_ROWS.reduce((s, r) => s + r.earnings, 0);
-    const totalNetPay   = PAYROLL_ROWS.reduce((s, r) => s + r.netPay, 0);
-    const totalPf       = PAYROLL_ROWS.reduce((s, r) => s + r.pfEmp, 0);
-    const totalTds      = PAYROLL_ROWS.reduce((s, r) => s + r.tds, 0);
-    const totalLop      = PAYROLL_ROWS.reduce((s, r) => s + r.lopDeducted, 0);
+    const totalGross    = rows.reduce((s, r) => s + r.earnings, 0);
+    const totalNetPay   = rows.reduce((s, r) => s + r.netPay, 0);
+    const totalPf       = rows.reduce((s, r) => s + r.pfEmp, 0);
+    const totalTds      = rows.reduce((s, r) => s + r.tds, 0);
+    const totalLop      = rows.reduce((s, r) => s + r.lopDeducted, 0);
     return {
       totalEmployees,
       ready,
@@ -328,11 +762,11 @@ export default function HrPayroll() {
       totalTds,
       totalLop,
     };
-  }, []);
+  }, [rows]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return PAYROLL_ROWS
+    return rows
       .filter(r => deptFilter === 'All' || r.department === deptFilter)
       .filter(r => statusFilter === 'All' || r.status === statusFilter)
       .filter(r => {
@@ -344,7 +778,7 @@ export default function HrPayroll() {
           r.designation.toLowerCase().includes(needle)
         );
       });
-  }, [q, deptFilter, statusFilter]);
+  }, [rows, q, deptFilter, statusFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage  = Math.min(page, pageCount);
@@ -360,7 +794,7 @@ export default function HrPayroll() {
     el.scrollBy({ left: dir === 'next' ? 240 : -240, behavior: 'smooth' });
   };
 
-  const monthOptions = CYCLE_MONTHS.map(m => ({ value: m.key, label: m.label }));
+  const monthOptions = cycleMonths.map(m => ({ value: m.key, label: m.label }));
 
   return (
     <>
@@ -499,36 +933,81 @@ export default function HrPayroll() {
           </div>
           <Button
             className="rounded-pill fw-bold d-inline-flex align-items-center pay-hero-run"
-            onClick={() => setRunOpen(true)}
+            onClick={runPayroll}
+            disabled={busy}
             style={{
               padding: '10px 18px',
               fontSize: 13,
               color: '#fff',
               background: 'linear-gradient(135deg,#0ab39c 0%,#078b78 100%)',
               boxShadow: '0 8px 18px rgba(90,63,209,0.32)',
+              opacity: busy ? 0.6 : 1,
             }}
           >
-            <i className="ri-play-circle-line me-2" style={{ fontSize: 16 }} />
-            Run Payroll
+            <i className={`me-2 ${busy ? 'ri-loader-4-line' : 'ri-play-circle-line'}`} style={{ fontSize: 16 }} />
+            {busy ? 'Processing…' : 'Run Payroll'}
           </Button>
-          <Button
-            color="light"
-            className="rounded-pill fw-semibold d-inline-flex align-items-center pay-hero-export"
-            onClick={() => toast.success(
-              'Export queued',
-              `${cycle.label} payroll will download shortly as CSV.`,
-            )}
-            style={{
-              padding: '10px 15px',
-              fontSize: 12,
-              border: '1px solid #705ad0',
-              background: 'var(--vz-card-bg)',
-              color: '#5a3fd1',
-            }}
-          >
-            <i className="ri-download-2-line me-2" style={{ fontSize: 14 }} />
-            Export
-          </Button>
+          <Dropdown isOpen={exportOpen} toggle={() => { if (!downloading) setExportOpen(v => !v); }}>
+            <DropdownToggle
+              caret
+              disabled={!!downloading}
+              className="rounded-pill fw-semibold d-inline-flex align-items-center pay-hero-export"
+              style={{
+                padding: '10px 15px',
+                fontSize: 12,
+                border: '1px solid #705ad0',
+                background: 'var(--vz-card-bg)',
+                color: '#5a3fd1',
+                opacity: downloading ? 0.7 : 1,
+              }}
+            >
+              {downloading
+                ? <><Spinner size="sm" className="me-2" /> Exporting…</>
+                : <><i className="ri-download-2-line me-2" style={{ fontSize: 14 }} /> Export</>}
+            </DropdownToggle>
+            {/* toggle={false} on items keeps the menu open so the per-item
+                spinner stays visible until the download finishes. */}
+            <DropdownMenu end style={{ fontSize: 13 }}>
+              <DropdownItem header>This cycle ({cycle.label})</DropdownItem>
+              <DropdownItem toggle={false} disabled={!!downloading} onClick={exportExcelCurrent}>
+                {downloading === 'excel' ? <Spinner size="sm" className="me-2" /> : <i className="ri-file-excel-2-line me-2 text-success" />} Excel (full data)
+              </DropdownItem>
+              <DropdownItem toggle={false} disabled={!!downloading} onClick={exportCsv}>
+                {downloading === 'csv' ? <Spinner size="sm" className="me-2" /> : <i className="ri-file-text-line me-2" />} CSV
+              </DropdownItem>
+              <DropdownItem toggle={false} disabled={!!downloading} onClick={downloadAllPayslips}>
+                {downloading === 'zip' ? <Spinner size="sm" className="me-2" /> : <i className="ri-file-zip-line me-2" />} All payslips (ZIP of PDFs)
+              </DropdownItem>
+              <DropdownItem toggle={false} disabled={!!downloading} onClick={emailAllPayslips}>
+                {downloading === 'email' ? <Spinner size="sm" className="me-2" /> : <i className="ri-mail-send-line me-2" />} Email payslips to all
+              </DropdownItem>
+              <DropdownItem divider />
+              <DropdownItem header>Overall</DropdownItem>
+              <DropdownItem toggle={false} disabled={!!downloading} onClick={exportHistoryExcel}>
+                {downloading === 'history' ? <Spinner size="sm" className="me-2" /> : <i className="ri-history-line me-2 text-primary" />} Payroll history (Excel)
+              </DropdownItem>
+            </DropdownMenu>
+          </Dropdown>
+          {canReopen && (
+            <Button
+              color="light"
+              className="rounded-pill fw-semibold d-inline-flex align-items-center pay-hero-export"
+              onClick={reopenPayroll}
+              disabled={busy}
+              title="Reopen this cycle to correct attendance/leave, then re-run"
+              style={{
+                padding: '10px 15px',
+                fontSize: 12,
+                border: '1px solid #e0a800',
+                background: 'var(--vz-card-bg)',
+                color: '#a06f00',
+                opacity: busy ? 0.6 : 1,
+              }}
+            >
+              <i className="ri-arrow-go-back-line me-2" style={{ fontSize: 14 }} />
+              Reopen
+            </Button>
+          )}
         </div>
       </div>
 
@@ -546,7 +1025,7 @@ export default function HrPayroll() {
               <span className="fw-bold" style={{ fontSize: 13 }}>Cycle History</span>
               {(['Completed', 'In Progress', 'Not Started'] as CycleStatus[]).map(s => {
                 const t = CYCLE_TONES[s];
-                const n = CYCLE_MONTHS.filter(c => c.status === s).length;
+                const n = cycleMonths.filter(c => c.status === s).length;
                 if (!n) return null;
                 return (
                   <span
@@ -602,7 +1081,7 @@ export default function HrPayroll() {
                   paddingBottom: 4,
                 }}
               >
-                {CYCLE_MONTHS.map(m => {
+                {cycleMonths.map(m => {
                   const on = m.key === cycleKey;
                   const t  = CYCLE_TONES[m.status];
                   return (
@@ -702,7 +1181,7 @@ export default function HrPayroll() {
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
                   <div className="min-w-0">
                     <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: '0 0 6px', lineHeight: 1 }}>
-                      {displayValue}
+                      {loading ? <Shimmer height={24} width={90} radius={6} /> : displayValue}
                     </h3>
                     <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 4px' }}>
                       {k.label}
@@ -739,6 +1218,7 @@ export default function HrPayroll() {
               { key: 'processing' as const, label: 'Payroll Processing', icon: 'ri-money-rupee-circle-line', count: counts.totalEmployees },
               { key: 'biometric'  as const, label: 'Biometric Input',    icon: 'ri-fingerprint-line',         count: counts.attMismatch },
               { key: 'report'     as const, label: 'Salary Report',      icon: 'ri-file-chart-line',          count: counts.processed },
+              { key: 'salary'     as const, label: 'Salary Setup',       icon: 'ri-money-rupee-circle-line',  count: roster.filter(r => !r.has_structure).length },
             ].map(t => {
               const on = tab === t.key;
               return (
@@ -779,6 +1259,7 @@ export default function HrPayroll() {
       {/* ── Filters + Table — own card, like Employee list ── */}
       <Card>
         <CardBody>
+          {tab !== 'salary' && (
           <Row className="g-2 align-items-center mb-3">
             <Col md={5} sm={12}>
               <div className="search-box">
@@ -820,6 +1301,7 @@ export default function HrPayroll() {
               </div>
             </Col>
           </Row>
+          )}
 
           {tab === 'processing' && (
             <div className="table-responsive table-card rounded p-2">
@@ -850,7 +1332,7 @@ export default function HrPayroll() {
                       </td>
                     </tr>
                   ) : visible.map((r, idx) => {
-                    const tone = ROW_TONES[r.status];
+                    const tone = toneFor(r.status);
                     return (
                       <tr key={r.id}>
                         <td className="ps-3 fw-semibold text-muted">{sliceFrom + idx + 1}</td>
@@ -907,13 +1389,13 @@ export default function HrPayroll() {
                             <button
                               type="button"
                               className="onb-edit-btn"
-                              title="Download"
-                              onClick={() => toast.success(
-                                'Payslip downloaded',
-                                `${r.name.replace(/\s+/g, '_')}_${cycle.label.replace(' ', '_')}.pdf`,
-                              )}
+                              title="Download payslip PDF"
+                              disabled={pdfBusyId === r.id}
+                              onClick={() => downloadPayslipPdf(r)}
                             >
-                              <i className="ri-download-2-line" style={{ fontSize: 14 }} />
+                              {pdfBusyId === r.id
+                                ? <Spinner size="sm" style={{ width: 14, height: 14 }} />
+                                : <i className="ri-download-2-line" style={{ fontSize: 14 }} />}
                             </button>
                           </div>
                         </td>
@@ -939,7 +1421,7 @@ export default function HrPayroll() {
                 }}
               >
                 <i className="ri-information-line" style={{ fontSize: 15 }} />
-                Read-only · Source data from Timelogs · {cycle.label} · 26 working days
+                Read-only · Source data from Attendance · {cycle.label} · {periodMeta?.working_days || 26} working days
               </div>
 
               {/* 4-tile mini strip — Synced / Missing Punch / Mismatch / Unpaid Leave */}
@@ -952,7 +1434,9 @@ export default function HrPayroll() {
                 ].map(t => (
                   <Col key={t.key} xl={3} md={6} sm={6} xs={12}>
                     <div className={`pay-mini-tile pay-mini-tile--${t.tone}`}>
-                      <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 22, lineHeight: 1 }}>{t.n}</div>
+                      <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 22, lineHeight: 1 }}>
+                        {loading ? <Shimmer height={20} width={40} radius={6} /> : t.n}
+                      </div>
                       <div className="text-muted mt-1" style={{ fontSize: 12 }}>{t.label}</div>
                     </div>
                   </Col>
@@ -1064,7 +1548,7 @@ export default function HrPayroll() {
                   <Col key={t.key} xl={true} md={4} sm={6} xs={12}>
                     <div className={`pay-mini-tile pay-mini-tile--${t.tone}`}>
                       <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 20, lineHeight: 1 }}>
-                        ₹{fmtINR(t.n)}
+                        {loading ? <Shimmer height={18} width={70} radius={6} /> : `₹${fmtINR(t.n)}`}
                       </div>
                       <div
                         className="mt-1 text-uppercase fw-semibold"
@@ -1109,7 +1593,7 @@ export default function HrPayroll() {
                     ) : visible.map(r => {
                       const totalDeductions = r.pfEmp + r.esi + r.pt + r.tds + r.lopDeducted + r.advanceRec;
                       const netPayable      = r.earnings - totalDeductions;
-                      const tone            = ROW_TONES[r.status];
+                      const tone            = toneFor(r.status);
                       const dim = (n: number) => n === 0
                         ? <span className="text-muted">—</span>
                         : <span style={{ color: '#b1401d' }}>−₹{fmtINR(n)}</span>;
@@ -1173,7 +1657,80 @@ export default function HrPayroll() {
             </>
           )}
 
-          {/* Pagination — same layout as master TableContainer */}
+          {/* ── Salary Setup tab — configure employee salary structures ── */}
+          {tab === 'salary' && (
+            <>
+              <div className="pay-banner d-flex align-items-center gap-2 mb-3" style={{ padding: '10px 14px', borderRadius: 10, fontSize: 12.5, fontWeight: 600 }}>
+                <i className="ri-information-line" style={{ fontSize: 15 }} />
+                Set each employee's salary here. Employees without a structure (or annual salary) show ₹0 and are held during payroll.
+              </div>
+              <div className="table-responsive table-card rounded p-2">
+                <table className="table align-middle table-nowrap mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th className="ps-3">Employee</th>
+                      <th>Emp ID</th>
+                      <th>Department</th>
+                      <th className="text-end">Monthly Gross</th>
+                      <th className="text-center">Source</th>
+                      <th className="text-center">PF</th>
+                      <th className="pe-3 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rosterLoading ? (
+                      <ShimmerTableRows rows={6} cols={7} keyPrefix="shim-sal" />
+                    ) : roster.length === 0 ? (
+                      <tr><td colSpan={7} className="text-center py-5 text-muted">
+                        <i className="ri-team-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                        No employees found for this branch
+                      </td></tr>
+                    ) : roster.map(emp => {
+                      const accent = '#7c5cfc';
+                      const initials = (emp.name || 'NA').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+                      const sourceTone = emp.source === 'structure'
+                        ? { bg: '#d6f4e3', fg: '#108548', label: 'Structure' }
+                        : emp.source === 'annual_salary'
+                          ? { bg: '#fdf3d6', fg: '#a06f00', label: 'Annual (fallback)' }
+                          : { bg: '#fde7e3', fg: '#b1401d', label: 'Not set' };
+                      return (
+                        <tr key={emp.employee_id}>
+                          <td className="ps-3">
+                            <div className="d-flex align-items-center gap-2">
+                              <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                                style={{ width: 32, height: 32, fontSize: 11, background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}>
+                                {initials}
+                              </div>
+                              <div className="fw-semibold fs-13">{emp.name}</div>
+                            </div>
+                          </td>
+                          <td><span className="onb-id-pill">{emp.emp_code || `EMP-${emp.employee_id}`}</span></td>
+                          <td className="fs-13">{emp.department || '—'}</td>
+                          <td className="text-end fs-13 fw-bold">
+                            {emp.monthly_gross ? `₹${fmtINR(emp.monthly_gross)}` : <span className="text-muted">₹0</span>}
+                            {emp.version ? <span className="text-muted ms-1" style={{ fontSize: 10.5 }}>v{emp.version}</span> : null}
+                          </td>
+                          <td className="text-center">
+                            <span className="onb-pill" style={{ background: sourceTone.bg, color: sourceTone.fg, fontSize: 11 }}>{sourceTone.label}</span>
+                          </td>
+                          <td className="text-center fs-13">{emp.pf_eligible ? <i className="ri-check-line text-success" /> : <span className="text-muted">—</span>}</td>
+                          <td className="pe-3 text-center">
+                            <button type="button" className="onb-vault-btn" onClick={() => setSalaryEmp(emp)}>
+                              <i className={`me-1 ${emp.has_structure ? 'ri-edit-line' : 'ri-add-line'}`} style={{ fontSize: 13 }} />
+                              {emp.has_structure ? 'Revise' : 'Set Salary'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* Pagination — only for the payslip-row tabs (not Salary Setup). */}
+          {tab !== 'salary' && (
           <Row className="align-items-center mt-2 g-3 text-center text-sm-start">
             <div className="col-sm">
               <div className="text-muted">
@@ -1204,26 +1761,39 @@ export default function HrPayroll() {
               </ul>
             </div>
           </Row>
+          )}
         </CardBody>
       </Card>
+
+      {/* ── Proceed-to-Pay disbursement flow (mode → advice → 3-level sign-off → initiate) ── */}
+      <PaymentDisbursementModal
+        open={paymentOpen}
+        onClose={() => setPaymentOpen(false)}
+        runId={paymentRunId}
+        cycleLabel={cycle.label}
+        onPaid={() => { reloadCycle(); }}
+      />
+
+      {/* ── Salary Structure editor — set/revise an employee's salary ── */}
+      <SalaryStructureModal
+        open={!!salaryEmp}
+        employee={salaryEmp}
+        onClose={() => setSalaryEmp(null)}
+        onSaved={loadRoster}
+      />
 
       {/* ── Payroll Run Modal — pre-flight checks → success → proceed-to-pay ── */}
       <PayrollRunModal
         open={runOpen}
         onClose={() => setRunOpen(false)}
-        onProceedToPay={() => {
-          setRunOpen(false);
-          toast.success(
-            'Payment initiated',
-            `${counts.totalEmployees} employees · ${fmtINRShort(counts.totalPayroll)} disbursed for ${cycle.label}.`,
-          );
-        }}
+        onProceedToPay={proceedToPay}
         cycleLabel={cycle.label}
         totalEmployees={counts.totalEmployees}
         totalPayrollLabel={fmtINRShort(counts.totalPayroll)}
         blockedAmountLabel={fmtINRShort(blockedAmount)}
         atRiskAmountLabel={fmtINRShort(atRiskAmount)}
         issues={runIssues}
+        onAction={handleIssueAction}
       />
 
       {/* ── Payslip Viewer Modal ──
@@ -1236,19 +1806,25 @@ export default function HrPayroll() {
         const basic   = Math.round(r.earnings * 0.50);
         const hra     = Math.round(r.earnings * 0.25);
         const special = r.earnings - basic - hra;
-        const earnings: PayslipLine[] = [
-          { label: 'Basic Salary',          amount: basic },
-          { label: 'House Rent Allowance (HRA)', amount: hra },
-          { label: 'Special Allowance',     amount: special },
-        ];
-        const deductions: PayslipLine[] = [
-          { label: 'Professional Tax',     amount: r.pt },
-          { label: 'Provident Fund (12%)', amount: r.pfEmp },
-          ...(r.esi         > 0 ? [{ label: 'ESI',                amount: r.esi }]         : []),
-          { label: 'Income Tax (TDS)',     amount: r.tds },
-          ...(r.lopDeducted > 0 ? [{ label: 'Loss of Pay',        amount: r.lopDeducted }] : []),
-          ...(r.advanceRec  > 0 ? [{ label: 'Advance Recovery',   amount: r.advanceRec }]  : []),
-        ];
+        // Prefer the real structure breakup; synthesize 50/25/25 only as a
+        // fallback when the detail fetch hasn't landed.
+        const earnings: PayslipLine[] = payslipBreakup?.earnings?.length
+          ? payslipBreakup.earnings
+          : [
+              { label: 'Basic Salary',          amount: basic },
+              { label: 'House Rent Allowance (HRA)', amount: hra },
+              { label: 'Special Allowance',     amount: special },
+            ];
+        const deductions: PayslipLine[] = payslipBreakup?.deductions?.length
+          ? payslipBreakup.deductions
+          : [
+              { label: 'Professional Tax',     amount: r.pt },
+              { label: 'Provident Fund (12%)', amount: r.pfEmp },
+              ...(r.esi         > 0 ? [{ label: 'ESI',                amount: r.esi }]         : []),
+              { label: 'Income Tax (TDS)',     amount: r.tds },
+              ...(r.lopDeducted > 0 ? [{ label: 'Loss of Pay',        amount: r.lopDeducted }] : []),
+              ...(r.advanceRec  > 0 ? [{ label: 'Advance Recovery',   amount: r.advanceRec }]  : []),
+            ];
         // Pretty-print the cycle key ('mar-2026' → 'March' / '2026') so the
         // modal opens directly on the row's payroll period.
         const [mAbbr, yStr] = cycle.label.split(' ');
@@ -1270,10 +1846,18 @@ export default function HrPayroll() {
             defaultYear={yStr}
             earnings={earnings}
             deductions={deductions}
-            workingDays={26}
+            workingDays={periodMeta?.working_days || 26}
             daysPresent={r.present}
-            lossOfPay={r.unpaidLeave}
-            paidDays={r.present}
+            lossOfPay={Math.max(0, (periodMeta?.working_days || 26) - r.attendance)}
+            paidDays={r.attendance}
+            isFinal={payslipFinal}
+            onSelectRecent={selectRecent}
+            recentMonths={payslipRecent}
+            payslipId={r.payslip_id}
+            companyName={payslipCompany?.name || undefined}
+            companyMeta={payslipCompany?.meta || undefined}
+            companyInitials={payslipCompany?.initials || undefined}
+            hrEmail={payslipCompany?.hrEmail || undefined}
           />
         );
       })()}

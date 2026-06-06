@@ -14,6 +14,14 @@ import {
   bustCustomerMasterBundle,
 } from './customerBundleCache';
 
+/* Truncate a long attachment file name so it never spills out of the
+ * ATTACHMENT cell into the ACTIONS column. The full name shows on hover
+ * via the wrapping Tooltip. Caps at 25 chars + ellipsis. */
+const truncFileName = (s: string | undefined | null, n = 25): string => {
+  const v = String(s ?? '');
+  return v.length > n ? v.slice(0, n) + '…' : v;
+};
+
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Customer — 3-stage modal
  *
@@ -1131,7 +1139,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       case 'addr':
         if (!f.addr.trim()) return 'Address is required';
         if (f.addr.trim().length < 4) return 'Address must be at least 4 characters';
-        if (f.addr.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        if (f.addr.trim().length > 75) return 'Address must be 75 characters or fewer';
         // Must contain at least one letter — blocks gibberish like "1234"
         // or "...." while still allowing addresses that mix letters,
         // numbers, commas, hyphens, etc.
@@ -2103,13 +2111,18 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
          *   pending    — not yet reached (s.n > maxStage, locked)
          * `complete` is index-0-based (Stage n → complete[n-1]). */
         const visited = s.n <= maxStage;
-        const isComplete = !!complete[s.n - 1];
+        /* Completion ticks removed (user request): a green ✓ used to show
+         * even when nothing was uploaded / no trade docs were sent
+         * (Evidence Vault is design-only here), which read as "done" and
+         * confused users. Steps now show only their icon + number —
+         * active step highlighted, visited steps neutral, unreached steps
+         * locked. No "complete" indication anywhere. */
         const cls = s.n === stage
           ? 'acm-step-active'
           : visited
-            ? (isComplete ? 'acm-step-done' : 'acm-step-incomplete')
+            ? 'acm-step-incomplete'
             : 'acm-step-pending';
-        const showCheck = visited && s.n !== stage && isComplete;
+        const showCheck = false;
         return (
           <Fragment key={s.n}>
             <div className={`acm-step ${cls}`} onClick={() => onGoto(s.n)}>
@@ -2321,7 +2334,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
               />
             </Field>
             <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">
-              <MasterSelect value={form.coClass} options={optsWith(masters.classifications, form.coClass)} placeholder="Select classification" invalid={!!errors.coClass} onChange={v => set('coClass', v)} />
+              <MasterSelect value={form.coClass} options={optsWith(masters.classifications, form.coClass)} placeholder="Select classification" invalid={!!errors.coClass} allowDeselect onChange={v => set('coClass', v)} />
             </Field>
             <Field label="Risk Level" required error={errors.coRisk} fieldKey="coRisk">
               <MasterSelect value={form.coRisk} options={optsWith(masters.riskLevels, form.coRisk)} placeholder="Select risk level" invalid={!!errors.coRisk} onChange={v => set('coRisk', v)} />
@@ -2353,7 +2366,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 onChange={() => { /* locked */ }}
               />
             </Field>
-            <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" /></Field>
+            <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" maxLength={75} /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Country" required error={errors.country} fieldKey="country">
@@ -2718,10 +2731,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
     }));
     if (sub === 'company-dd')   return norm(segmentDocs.dd || []);
     if (sub === 'owner-kyc')    return norm(segmentDocs.kyc || []);
-    if (sub === 'trade-licence') {
-      const tl = segmentDocs.tl || [];
-      return tl.length > 0 ? norm(tl) : TL_DOCS;
-    }
+    if (sub === 'trade-licence') return norm(segmentDocs.tl || []);
     return [];
   }, [sub, segmentDocs]);
   const filteredTradeLegacy = useMemo(() => {
@@ -2740,7 +2750,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
    * customer_documents (kind='tl') but were hidden behind the static
    * segmentRef reference rows. */
   const showSegmentRef =
-       (isTradeLegacy            && filteredDocs.length === 0)
+       (isTradeLegacy            && filteredDocs.length === 0 && (segmentDocs.tl?.length ?? 0) > 0)
     || (sub === 'company-dd'     && filteredDocs.length === 0 && (segmentDocs.dd?.length ?? 0) > 0)
     || (sub === 'owner-kyc'      && owners.length === 0       && (segmentDocs.kyc?.length ?? 0) > 0);
 
@@ -3024,10 +3034,10 @@ function Stage3KycDocs({ sub, setSub, segmentDocs, segmentRefUploads }: {
                       </td>
                       <td>
                         {uploaded ? (
-                          <Tooltip label={`Open ${uploaded.name}`}>
-                            <a href={uploaded.url} target="_blank" rel="noreferrer" className="acm-attach-link" aria-label="View attachment">
+                          <Tooltip label={uploaded.name}>
+                            <a href={uploaded.url} target="_blank" rel="noreferrer" className="acm-attach-link" aria-label="View attachment" style={{ whiteSpace: 'nowrap' }}>
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                              {uploaded.name}
+                              {truncFileName(uploaded.name)}
                             </a>
                           </Tooltip>
                         ) : (
@@ -4165,7 +4175,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
       case 'line':
         if (!dd.line.trim()) return 'Address is required';
         if (dd.line.trim().length < 4) return 'Address must be at least 4 characters';
-        if (dd.line.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        if (dd.line.trim().length > 75) return 'Address must be 75 characters or fewer';
         if (!/[A-Za-z]/.test(dd.line)) return 'Address must contain at least one letter';
         return null;
       case 'country':
@@ -4272,7 +4282,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
             <Field label="Address Type" required error={errs.type}>
               <MasterSelect value={d.type} options={optsWith(availableAddressTypes, d.type)} placeholder="Select address type" invalid={!!errs.type} onChange={v => set('type', v)} />
             </Field>
-            <Field label="Address" required error={errs.line}><input className={errs.line ? 'acm-input-error' : ''} value={d.line} onChange={e => set('line', e.target.value)} placeholder="Enter complete address" /></Field>
+            <Field label="Address" required error={errs.line}><input className={errs.line ? 'acm-input-error' : ''} value={d.line} onChange={e => set('line', e.target.value)} placeholder="Enter complete address" maxLength={75} /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Country" required error={errs.country}>

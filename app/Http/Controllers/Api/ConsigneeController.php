@@ -178,11 +178,23 @@ class ConsigneeController extends Controller
         $row = DB::transaction(function () use ($data, $user, $clientId, $branchId) {
             $primary = $data['primary_address'];
 
+            // Allocate the CN-### code PER CLIENT, not from the global
+            // autoincrement id. The id-based code leaked the cross-tenant
+            // sequence into each client's list (gaps like CN-009 → CN-060).
+            // Serialised under a row lock on the owning client — same
+            // pattern QuotationController uses for QT/PI codes — so two
+            // concurrent inserts can't collide on the same number.
+            if ($clientId !== null) {
+                DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
+            }
+            $code = $this->nextConsigneeCode($clientId);
+
             $consignee = Consignee::create([
                 'client_id'      => $clientId,
                 'branch_id'      => $branchId,
                 'created_by'       => optional($user)->id,
                 'customer_id'      => (int) $data['customer_id'],
+                'consignee_code'   => $code,
                 'company_name'     => $data['company_name'],
                 'legal_name'       => $data['legal_name']     ?? null,
                 'segment'          => $data['segment']        ?? null,
@@ -193,11 +205,6 @@ class ConsigneeController extends Controller
                 'status'           => $data['status']         ?? 'Active',
                 'same_as_customer' => (bool) ($data['same_as_customer'] ?? false),
             ]);
-
-            // Display id — CN-### grows from 001 → 1234 naturally with
-            // the row count, no separate sequence table.
-            $consignee->consignee_code = 'CN-' . str_pad((string) $consignee->id, 3, '0', STR_PAD_LEFT);
-            $consignee->save();
 
             ConsigneeAddress::create(array_merge($primary, [
                 'consignee_id' => $consignee->id,
@@ -491,28 +498,14 @@ class ConsigneeController extends Controller
         $rules = [
             'customer_id'      => 'required|integer|exists:customers,id',
             'company_name'     => 'required|string|max:255',
-            /* Legal (registered entity) name must be unique per tenant — two
-             * consignees can't share the same legal name. Case-insensitive,
-             * client-scoped, ignores the row being edited, and skips the
-             * check when blank (legal_name stays optional). Mirrors the
-             * uniqueness rule on customers.legal_name. */
-            'legal_name'       => [
-                'nullable', 'string', 'max:255',
-                function ($attribute, $value, $fail) use ($clientId, $consigneeId) {
-                    if (!trim((string) $value)) return;
-                    $exists = Consignee::query()
-                        ->whereNull('deleted_at')
-                        ->where(function ($q) use ($clientId) {
-                            $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
-                        })
-                        ->whereRaw('LOWER(legal_name) = ?', [mb_strtolower(trim((string) $value))])
-                        ->when($consigneeId, fn ($q) => $q->where('id', '!=', $consigneeId))
-                        ->exists();
-                    if ($exists) {
-                        $fail('This legal name is already used by another consignee.');
-                    }
-                },
-            ],
+            /* Legal (registered entity) name: base format rules only. The
+             * per-tenant UNIQUENESS check is added below — but ONLY when this
+             * is NOT a "Same as Customer" mirror. A mirror intentionally
+             * copies the customer's legal name, so enforcing uniqueness there
+             * would make same-as-customer impossible whenever the customer's
+             * legal name is already in use. (The "one mirror per customer"
+             * rule still prevents duplicate mirrors of the same customer.) */
+            'legal_name'       => 'nullable|string|max:255',
             'segment'          => 'nullable|string|max:1024',
             'classification'   => 'nullable|string|max:64',
             'risk_level'       => 'nullable|string|max:32',
@@ -524,7 +517,7 @@ class ConsigneeController extends Controller
 
             'primary_address'                => 'required|array',
             'primary_address.type'           => 'required|string|max:64',
-            'primary_address.address_line'   => 'required|string|min:4|max:1000',
+            'primary_address.address_line'   => 'required|string|min:4|max:75',
             'primary_address.country'        => 'nullable|string|max:64',
             'primary_address.state'          => 'nullable|string|max:64',
             'primary_address.city'           => 'nullable|string|max:64',
@@ -536,7 +529,7 @@ class ConsigneeController extends Controller
 
             'locations'                  => 'sometimes|array',
             'locations.*.type'           => 'required_with:locations|string|max:64',
-            'locations.*.address_line'   => 'required_with:locations|string|min:4|max:1000',
+            'locations.*.address_line'   => 'required_with:locations|string|min:4|max:75',
             'locations.*.country'        => 'nullable|string|max:64',
             'locations.*.state'          => 'nullable|string|max:64',
             'locations.*.city'           => 'nullable|string|max:64',
@@ -552,12 +545,30 @@ class ConsigneeController extends Controller
             'locations.*.cp_whatsapp'    => 'nullable|in:yes,no',
         ];
 
-        /* Cross-consignee uniqueness on the primary contact's phone +
-         * email — mirrors CustomerController so two consignees in the
-         * same tenant can't claim the same primary contact. Skipped
-         * when same_as_customer is on because that flow deliberately
-         * copies the customer's contact details onto the consignee. */
+        /* Cross-consignee uniqueness on the legal name + primary contact's
+         * phone + email — mirrors CustomerController so two consignees in the
+         * same tenant can't claim the same identity. ALL skipped when
+         * same_as_customer is on because that flow deliberately copies the
+         * customer's legal name + contact details onto the consignee; the
+         * "one mirror per customer" rule already blocks duplicate mirrors. */
         if (!$sameAsCustomer) {
+            $rules['legal_name'] = [
+                'nullable', 'string', 'max:255',
+                function ($attribute, $value, $fail) use ($clientId, $consigneeId) {
+                    if (!trim((string) $value)) return;
+                    $exists = Consignee::query()
+                        ->whereNull('deleted_at')
+                        ->where(function ($q) use ($clientId) {
+                            $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                        })
+                        ->whereRaw('LOWER(legal_name) = ?', [mb_strtolower(trim((string) $value))])
+                        ->when($consigneeId, fn ($q) => $q->where('id', '!=', $consigneeId))
+                        ->exists();
+                    if ($exists) {
+                        $fail('This legal name is already used by another consignee.');
+                    }
+                },
+            ];
             $rules['primary_address.cp_email'] = [
                 'required', 'email', 'max:255',
                 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/',
@@ -690,5 +701,35 @@ class ConsigneeController extends Controller
         $clientId = $user->client_id ?? ($user->branch?->client_id);
         $branchId = $user->branch_id;
         return [$clientId, $branchId];
+    }
+
+    /**
+     * Next per-client consignee code (CN-001, CN-002 …).
+     *
+     * Sequential WITHIN a tenant, not global — so each client gets a
+     * clean gap-free list. The caller holds a lockForUpdate on the owning
+     * `clients` row (super_admin null bucket excepted) to serialise
+     * concurrent allocations. Scans `withTrashed` so a soft-deleted
+     * consignee's number is never reused.
+     */
+    private function nextConsigneeCode($clientId): string
+    {
+        $codes = Consignee::withTrashed()
+            ->when(
+                $clientId === null,
+                fn ($q) => $q->whereNull('client_id'),
+                fn ($q) => $q->where('client_id', $clientId)
+            )
+            ->pluck('consignee_code');
+
+        $max = 0;
+        foreach ($codes as $c) {
+            if (preg_match('/^CN-0*(\d+)$/', (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $max) $max = $n;
+            }
+        }
+
+        return 'CN-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 }

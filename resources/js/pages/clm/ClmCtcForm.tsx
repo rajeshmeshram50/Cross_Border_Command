@@ -194,13 +194,25 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       approvers: approval.approvers, days_to_approve: approval.days, reminder_days: approval.reminder,
     };
     try {
-      const res = await api.post('/clm/ctc-contracts', payload);
-      const newId = Number((res.data?.data as { dbId?: number } | undefined)?.dbId ?? 0) || null;
-      toast.success('Sent for approval', `${agTitle} is now in the approval queue.`);
-      setSentForApproval(true);
-      setWorkingId(newId);
-      await refreshRecord(newId);
-      goStage(2);
+      if (workingId) {
+        // Editing an existing contract → update it AND re-enter Stage 2
+        // approval (same destination as a fresh create, but on the existing
+        // row, so no duplicate). resubmit applies the edited fields + new
+        // approver list and resets the all-must-approve gate.
+        await api.post(`/clm/ctc-contracts/${workingId}/resubmit`, payload);
+        toast.success('Sent for approval', `${agTitle} is back in the approval queue.`);
+        setSentForApproval(true);
+        await refreshRecord(workingId);
+        goStage(2);
+      } else {
+        const res = await api.post('/clm/ctc-contracts', payload);
+        const newId = Number((res.data?.data as { dbId?: number } | undefined)?.dbId ?? 0) || null;
+        toast.success('Sent for approval', `${agTitle} is now in the approval queue.`);
+        setSentForApproval(true);
+        setWorkingId(newId);
+        await refreshRecord(newId);
+        goStage(2);
+      }
     } catch (e) {
       toast.error('Could not submit', errMsg(e) || 'Please try again.');
     }
@@ -754,14 +766,13 @@ function Stage1(p: {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
                 <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Resubmit for Review</span>
               </button>
-            ) : p.isEditing ? (
-              <button onClick={p.onUpdate} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(5,150,105,.4)' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
-                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Save Changes</span>
-              </button>
             ) : (
+              // Both add AND edit end Step 3 the same way: open the approval
+              // workflow and send for approval (edit updates the existing row
+              // via resubmit; see submitForApproval). No more "Save Changes"
+              // dead-end that redirected to the list.
               <button onClick={() => setApprovalOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}>
-                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Submit &amp; Send for Approval</span>
+                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{p.isEditing ? 'Update & Send for Approval' : 'Submit & Send for Approval'}</span>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
               </button>
             )}
@@ -806,6 +817,12 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const rejReason = String((record?.rejection_reason as string) ?? '');
   const apprName = String((record?.primary_approver_name as string) ?? 'Approver');
   const apprInit = apprName.trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || 'AP';
+  // Multi-approver gate: the contract only becomes "approved" (and can advance
+  // to Stage 3 signing) once EVERY approver has approved. Surface the running
+  // tally so the sender sees how many of the selected approvers have signed off.
+  const approverList = (Array.isArray(record?.approvers) ? record!.approvers : []) as { name?: string; status?: string }[];
+  const approverCount = approverList.length;
+  const approvedCount = approverList.filter(a => (a.status || 'pending') === 'approved').length;
   const fmtNice = (s: unknown) => { if (!s) return '—'; const d = new Date(String(s)); return isNaN(d.getTime()) ? String(s) : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); };
   const executedOn = fmtNice(record?.cp_signed_date);
   // Once approved, the {{signature}} placeholder (receiving-party / our org)
@@ -923,7 +940,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 <button onClick={() => setSigningOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(8,145,178,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> Send for Signing &amp; Negotiation</button>
               )}
               {stage === 2 && approval !== 'approved' && approval !== 'rejected' && (
-                <button disabled title="Waiting for the approver's decision" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9', border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0'}`, cursor: 'not-allowed', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting Approval</button>
+                <button disabled title={approverCount > 1 ? `All ${approverCount} approvers must approve before this can be sent for signing` : "Waiting for the approver's decision"} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9', border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0'}`, cursor: 'not-allowed', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting Approval{approverCount > 1 ? ` · ${approvedCount} of ${approverCount} approved` : ''}</button>
               )}
               {/* Stage 3 — declined → must re-run internal approval before it can
                   go back to the counterparty, so route to Stage 1 / resubmit. */}
@@ -1037,16 +1054,31 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               </div>
               <div style={{ padding: '10px 10px 14px' }}>
                 {(() => {
-                  const ok = approval === 'approved' || stage >= 4, bad = approval === 'rejected';
-                  const stBg = ok ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : bad ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7');
-                  const stFg = ok ? (t.dark ? '#6ee7b7' : '#059669') : bad ? (t.dark ? '#fca5a5' : '#DC2626') : (t.dark ? '#fcd34d' : '#D97706');
-                  return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 9px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.03)' : 'linear-gradient(135deg,#FAFBFF,#F5F0FF)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, marginBottom: 14 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#F97316,#EA580C)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{apprInit}</span></div>
-                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 9.5, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{apprName}</div><div style={{ display: 'flex', gap: 3, marginTop: 3 }}><span style={{ fontSize: 6.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7', color: t.dark ? '#fcd34d' : '#D97706' }}>APPROVER</span><span style={{ fontSize: 6.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2', color: t.dark ? '#fca5a5' : '#DC2626' }}>Mandatory</span></div></div>
+                  // Render EVERY selected approver with their own decision so the
+                  // sender can see each name + individual status (Approved /
+                  // Rejected / Pending). Legacy drafts (no per-approver list)
+                  // fall back to the single primary-approver row driven by the
+                  // contract-level approval_status.
+                  const rows = approverList.length > 0
+                    ? approverList.map((a, i) => ({
+                        name: String(a.name || `Approver ${i + 1}`),
+                        status: String(a.status || 'pending'),
+                        mandatory: !!(a as { mandatory?: boolean }).mandatory,
+                      }))
+                    : [{ name: apprName, status: approval === 'approved' ? 'approved' : approval === 'rejected' ? 'rejected' : 'pending', mandatory: true }];
+                  return rows.map((a, i) => {
+                    const init = a.name.trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || 'AP';
+                    const ok = a.status === 'approved', bad = a.status === 'rejected';
+                    const stBg = ok ? (t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5') : bad ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7');
+                    const stFg = ok ? (t.dark ? '#6ee7b7' : '#059669') : bad ? (t.dark ? '#fca5a5' : '#DC2626') : (t.dark ? '#fcd34d' : '#D97706');
+                    return (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 9px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.03)' : 'linear-gradient(135deg,#FAFBFF,#F5F0FF)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, marginBottom: i === rows.length - 1 ? 14 : 7 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#F97316,#EA580C)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{init}</span></div>
+                  <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 9.5, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.name}</div><div style={{ display: 'flex', gap: 3, marginTop: 3 }}><span style={{ fontSize: 6.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7', color: t.dark ? '#fcd34d' : '#D97706' }}>APPROVER</span>{a.mandatory && <span style={{ fontSize: 6.5, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2', color: t.dark ? '#fca5a5' : '#DC2626' }}>Mandatory</span>}</div></div>
                   <span style={{ padding: '3px 8px', borderRadius: 8, background: stBg, fontSize: 7, fontWeight: 700, color: stFg }}>{ok ? 'Approved' : bad ? 'Rejected' : 'Pending'}</span>
                 </div>
-                  );
+                    );
+                  });
                 })()}
                 {/* Approval reminder — only while still awaiting the approver's
                     decision (Stage 2, pending). Hidden once approved / at Stage 3+. */}

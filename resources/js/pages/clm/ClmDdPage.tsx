@@ -6,7 +6,7 @@ import { CLM_CSS, PER_PAGE, paginate } from './clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from './ClmPageShell';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
-import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterMultiSelect } from '../../components/ui/MasterMultiSelect';
 import { SimpleDescModal } from './clmCommon';
 
 /* Central CLM → Due Diligence Master. 3-card faithful port. */
@@ -53,6 +53,7 @@ export default function ClmDdPage() {
       const err = e?.response?.data?.errors as Record<string, string[]> | undefined;
       const first = err ? Object.values(err)[0]?.[0] : undefined;
       toast.error('Save failed', first ?? e?.response?.data?.message ?? 'Could not save');
+      throw e;   // let the modal surface field-level (422) errors below the field
     }
   };
   const onDelete = async () => {
@@ -64,12 +65,29 @@ export default function ClmDdPage() {
   return (
     <div className="clm-root">
       <style>{CLM_CSS}</style>
+      {/* Add DD Document — same springy hover affordance as the Add Client button:
+          lift + slight scale + brightness on hover, press-down on active. */}
+      <style>{`
+        button.clm-add-ddfx {
+          transition: transform 180ms cubic-bezier(0.34,1.56,0.64,1), box-shadow 180ms ease, filter 180ms ease;
+        }
+        button.clm-add-ddfx:hover {
+          transform: translateY(-1px) scale(1.02);
+          filter: brightness(1.08);
+          box-shadow: 0 8px 22px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.18);
+        }
+        button.clm-add-ddfx:active {
+          transform: translateY(0) scale(0.99);
+          box-shadow: 0 4px 12px rgba(8,145,178,.30), inset 0 1px 0 rgba(255,255,255,.18);
+        }
+      `}</style>
 
       <ClmPageHeader
         icon={ICO.hDd}
         title="Due Diligence Master"
         sub="Manage due diligence documents, verification records, and risk validation requirements."
         addLabel="Add DD Document"
+        addClassName="clm-add-ddfx"
         onAdd={() => { setEditing(null); setModalOpen(true); }}
       />
 
@@ -164,8 +182,11 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
   const { existing, authorities: initialAuthorities, nextCode, onClose, onSave } = props;
   const toast = useToast();
   const isEdit = !!existing;
+  // Authorities are stored as a comma-joined string on the record; the form
+  // works with an array so one DD document can map to multiple authorities.
+  const splitAuth = (s: string) => s.split(',').map(x => x.trim()).filter(Boolean);
   const [name, setName] = useState(existing?.name ?? '');
-  const [auth, setAuth] = useState(existing?.authority ?? '');
+  const [authList, setAuthList] = useState<string[]>(existing ? splitAuth(existing.authority) : []);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [authorities, setAuthorities] = useState<Authority[]>(initialAuthorities);
@@ -175,11 +196,18 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
   const handleSave = async () => {
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = 'Document name is required';
-    if (!auth.trim()) next.auth = 'Authority is required';
+    if (!authList.length) next.auth = 'At least one authority is required';
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
-    try { await Promise.resolve(onSave({ name: name.trim(), authority: auth.trim() })); }
+    try { await Promise.resolve(onSave({ name: name.trim(), authority: authList.join(', ') })); }
+    catch (e: any) {
+      const apiErrors = e?.response?.data?.errors as Record<string, string[] | string> | undefined;
+      if (apiErrors) {
+        const keyMap: Record<string, string> = { authority: 'auth' };   // backend field → inline field
+        setErrors(p => ({ ...p, ...Object.fromEntries(Object.entries(apiErrors).map(([k, v]) => [keyMap[k] ?? k, Array.isArray(v) ? v[0] : String(v)])) }));
+      }
+    }
     finally { setSaving(false); }
   };
 
@@ -188,7 +216,7 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
       const r = await api.post<{ status: boolean; data: Authority }>('/clm/authorities', form);
       const created = r.data.data;
       setAuthorities(prev => [...prev, created]);
-      setAuth(created.name);
+      setAuthList(prev => prev.includes(created.name) ? prev : [...prev, created.name]);
       setErrors(p => ({ ...p, auth: '' }));
       setQuickAddOpen(false);
       toast.success('Added', created.name);
@@ -225,19 +253,18 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
           <div className="clm-field">
-            <label className="clm-field-label">Issuing Authority <span className="clm-req">*</span></label>
+            <label className="clm-field-label">Issuing Authorities <span className="clm-req">*</span></label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <MasterSelect
-                  key={`dd-auth-${authorities.length}`}
-                  value={auth}
+                <MasterMultiSelect
+                  values={authList}
                   invalid={!!errors.auth}
-                  placeholder="— Select Authority —"
+                  placeholder="— Select Authorities —"
                   options={[
                     ...authorities.map(a => ({ value: a.name, label: a.name })),
-                    ...(auth && !authorities.find(a => a.name === auth) ? [{ value: auth, label: auth }] : []),
+                    ...authList.filter(a => !authorities.find(x => x.name === a)).map(a => ({ value: a, label: a })),
                   ]}
-                  onChange={(v) => { setAuth(v); setErrors(p => ({ ...p, auth: '' })); }}
+                  onChange={(vals) => { setAuthList(vals); setErrors(p => ({ ...p, auth: '' })); }}
                 />
               </div>
               <Tooltip label="Add new authority">
@@ -246,7 +273,7 @@ function DdModal(props: { existing: Dd | null; authorities: Authority[]; nextCod
                 </button>
               </Tooltip>
             </div>
-            <div className="clm-field-hint">Pulls from Authority Master — click + to add a new authority.</div>
+            <div className="clm-field-hint">Pulls from Authority Master — select one or more, or click + to add a new authority.</div>
             {errors.auth && <div className="clm-err">{errors.auth}</div>}
           </div>
         </div>

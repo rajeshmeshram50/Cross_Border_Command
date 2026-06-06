@@ -25,7 +25,7 @@ const TH  = { padding: '10px 14px', fontSize: 8, fontWeight: 800, letterSpacing:
 const THL = { ...TH, textAlign: 'left' } as React.CSSProperties;
 const TD_C = { padding: '11px 14px', verticalAlign: 'middle', borderBottom: '1px solid rgba(6,182,212,.06)', textAlign: 'center' } as React.CSSProperties;
 const TD_L = { ...TD_C, textAlign: 'left' } as React.CSSProperties;
-const CODE_PILL: React.CSSProperties = { fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: '#0e7490', background: 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: '1px solid rgba(6,182,212,.28)' };
+const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: dark ? '#67e8f9' : '#0e7490', background: dark ? 'rgba(6,182,212,.2)' : 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: `1px solid rgba(6,182,212,${dark ? '.42' : '.28'})` });
 
 const S_CFG = {
   approved:      { label: 'Approved', bg: '#ECFDF5', border: '#A7F3D0', color: '#059669', dot: '#10B981' },
@@ -76,6 +76,26 @@ export default function ClmAgreementsToApprovePage() {
     const row = ata.find(c => c.id === id); if (!row?.dbId) return;
     try { await api.post(`/clm/ctc-contracts/${row.dbId}/approve`); toast.success('Agreement approved', 'Approved successfully'); load(); }
     catch { toast.error('Could not approve', 'Please try again.'); }
+  };
+  // Open the exact draft that was submitted for approval as a PDF in a new
+  // tab. Reuses the CTC preview renderer (page-shell + body) the signing
+  // flow uses, so the approver reads the same document the counterparty will.
+  // The blank tab is opened synchronously inside the click handler so the
+  // browser doesn't treat the post-fetch navigation as a blocked popup.
+  const doView = async (id: string) => {
+    const row = ata.find(c => c.id === id); if (!row?.dbId) return;
+    const tab = window.open('', '_blank');
+    if (tab) { try { tab.document.write('Loading agreement…'); } catch { /* cross-origin guard */ } }
+    try {
+      const res = await api.post('/clm/signature-requests/ctc-preview', { contract_id: row.dbId }, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      if (tab) tab.location.href = url; else window.open(url, '_blank');
+      // Give the tab time to load the blob before releasing the object URL.
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      if (tab) tab.close();
+      toast.error('Could not open', 'Failed to render the agreement PDF.');
+    }
   };
   const doAction = async (id: string, mode: 'clarification' | 'rejected', comment: string) => {
     const row = ata.find(c => c.id === id); setActionId(null); if (!row?.dbId) return;
@@ -158,8 +178,8 @@ export default function ClmAgreementsToApprovePage() {
         {loading
           ? <ShimmerTable rows={6} cols={9} />
           : tab === 'clarification'
-          ? <ClarificationTable rows={list} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} toast={toast} t={t} />
-          : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} toast={toast} t={t} />}
+          ? <ClarificationTable rows={list} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} onView={doView} t={t} />
+          : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} onApprove={doApprove} onAction={setActionId} onView={doView} t={t} />}
       </div>
 
       {actionContract && <TakeActionModal contract={actionContract} onClose={() => setActionId(null)} onSubmit={doAction} t={t} />}
@@ -233,7 +253,7 @@ function ViewBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
   );
 }
 
-function StandardTable({ rows, tab, page, setPage, onApprove, onAction, toast, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; onApprove: (id: string) => void; onAction: (id: string) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function StandardTable({ rows, tab, page, setPage, onApprove, onAction, onView, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; onApprove: (id: string) => void; onAction: (id: string) => void; onView: (id: string) => void; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * PER_PAGE;
@@ -280,7 +300,7 @@ function StandardTable({ rows, tab, page, setPage, onApprove, onAction, toast, t
                   onMouseEnter={e => { e.currentTarget.style.background = t.rowHover; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #0891b2'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                   <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
-                  <td style={TD_C}><span style={CODE_PILL}>{c.id}</span></td>
+                  <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
                   <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
@@ -293,7 +313,7 @@ function StandardTable({ rows, tab, page, setPage, onApprove, onAction, toast, t
                   <td style={TD_C}>
                     {actionable ? (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-                        <ViewBtn onClick={() => toast.info('View Agreement', c.id)} t={t} />
+                        <ViewBtn onClick={() => onView(c.id)} t={t} />
                         <ApproveBtn active onClick={() => onApprove(c.id)} />
                         <TakeActionBtn active onClick={() => onAction(c.id)} />
                       </div>
@@ -312,7 +332,7 @@ function StandardTable({ rows, tab, page, setPage, onApprove, onAction, toast, t
   );
 }
 
-function ClarificationTable({ rows, page, setPage, onApprove, onAction, toast, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; onApprove: (id: string) => void; onAction: (id: string) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function ClarificationTable({ rows, page, setPage, onApprove, onAction, onView, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; onApprove: (id: string) => void; onAction: (id: string) => void; onView: (id: string) => void; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * PER_PAGE;
@@ -360,7 +380,7 @@ function ClarificationTable({ rows, page, setPage, onApprove, onAction, toast, t
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.expDate}</span></td>
                   <td style={TD_C}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, flexWrap: 'nowrap' }}>
-                      <ViewBtn onClick={() => toast.info('View Agreement', c.id)} t={t} />
+                      <ViewBtn onClick={() => onView(c.id)} t={t} />
                       <ApproveBtn active={hasResp} onClick={() => onApprove(c.id)} />
                       <TakeActionBtn active={hasResp} onClick={() => onAction(c.id)} />
                     </div>
