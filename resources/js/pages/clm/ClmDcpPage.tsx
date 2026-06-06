@@ -389,7 +389,15 @@ function SegmentRuleModal(props: {
   const grandTotal = CAT_KEYS.reduce((sum, c) => sum + totalSel(c), 0);
 
   const handleSave = async () => {
-    if (!reg || segCodes.length === 0) return;
+    if (!reg || segCodes.length === 0) {
+      toast.error('Incomplete form', 'Select a regulatory status and segment first.');
+      setStage(1);
+      return;
+    }
+    if (grandTotal === 0) {
+      toast.error('No documents selected', 'Select at least one document requirement before saving.');
+      return;
+    }
     setSaving(true);
     try {
       /* Build one payload per picked segment. Each rule gets its own
