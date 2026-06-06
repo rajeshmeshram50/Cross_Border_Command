@@ -378,4 +378,23 @@ const MMS_CSS = `
   background: transparent;
   border-color: rgba(255,255,255,0.18);
 }
+
+/* Chips — the light violet pills glare on the dark surface. Swap to a
+ * translucent violet fill with lighter text so they read cleanly. */
+[data-bs-theme="dark"] .mms-chip,
+[data-layout-mode="dark"] .mms-chip {
+  background: rgba(124,58,237,0.22);
+  border-color: rgba(124,58,237,0.45);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .mms-chip-x,
+[data-layout-mode="dark"] .mms-chip-x {
+  background: rgba(196,181,253,0.18);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .mms-chip-x:hover,
+[data-layout-mode="dark"] .mms-chip-x:hover {
+  background: #7c3aed;
+  color: #fff;
+}
 `;

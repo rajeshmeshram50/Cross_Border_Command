@@ -32,7 +32,7 @@ class ClmDdController extends Controller
 
         $data = $request->validate([
             'name'      => 'required|string|max:255',
-            'authority' => 'required|string|max:255',
+            'authority' => 'required|string|max:2000',
             'expiry'    => 'nullable|string|max:32',
             'status'    => ['nullable', Rule::in(ClmDdDocument::STATUSES)],
         ]);
@@ -70,7 +70,7 @@ class ClmDdController extends Controller
 
         $data = $request->validate([
             'name'      => 'sometimes|required|string|max:255',
-            'authority' => 'sometimes|required|string|max:255',
+            'authority' => 'sometimes|required|string|max:2000',
             'expiry'    => 'nullable|string|max:32',
             'status'    => ['nullable', Rule::in(ClmDdDocument::STATUSES)],
         ]);
