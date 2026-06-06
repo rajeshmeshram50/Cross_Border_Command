@@ -13,6 +13,7 @@ use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -270,23 +271,12 @@ class SalesPdfController extends Controller
 
         $viewData = $this->buildQuotationViewData($quot, $withSignature);
 
-        // DomPDF's pure-PHP renderer is slow on this heavy template (large
-        // nested tables + multiple embedded images); on slower local boxes a
-        // single render can approach the default 60s cap. Give it headroom so
-        // the PDF always completes instead of 500-ing with a FatalError.
-        @set_time_limit(180);
-        $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
-            ->setPaper('A4', 'portrait')
-            // Required for the <script type="text/php"> page-number block
-            // at the bottom of the Blade template to actually execute.
-            // The global dompdf config has enable_php=false (default,
-            // for security); we opt-in only on this controller's PDFs.
-            ->setOption('isPhpEnabled', true);
+        $bytes = $this->renderSalesPdfCached($viewData, $withSignature);
 
         $filename = 'Quotation-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $quot->code ?? ('id-' . $quot->id))
             . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
 
-        return Response::make($pdf->output(), 200, [
+        return Response::make($bytes, 200, [
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . $filename . '"',
         ]);
@@ -331,23 +321,12 @@ class SalesPdfController extends Controller
         // + label are different.
         $viewData = $this->buildQuotationViewData($pi, $withSignature, 'PROFORMA INVOICE', 'PI');
 
-        // DomPDF's pure-PHP renderer is slow on this heavy template (large
-        // nested tables + multiple embedded images); on slower local boxes a
-        // single render can approach the default 60s cap. Give it headroom so
-        // the PDF always completes instead of 500-ing with a FatalError.
-        @set_time_limit(180);
-        $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
-            ->setPaper('A4', 'portrait')
-            // Required for the <script type="text/php"> page-number block
-            // at the bottom of the Blade template to actually execute.
-            // The global dompdf config has enable_php=false (default,
-            // for security); we opt-in only on this controller's PDFs.
-            ->setOption('isPhpEnabled', true);
+        $bytes = $this->renderSalesPdfCached($viewData, $withSignature);
 
         $filename = 'PI-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $pi->code ?? ('id-' . $pi->id))
             . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
 
-        return Response::make($pdf->output(), 200, [
+        return Response::make($bytes, 200, [
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . $filename . '"',
         ]);
@@ -925,6 +904,56 @@ class SalesPdfController extends Controller
      *
      * @param  Quotation|ProformaInvoice  $q
      */
+    /**
+     * Render the shared `pdf.proforma-invoice` view to PDF bytes, caching the
+     * result on the local disk keyed by a hash of the fully-resolved view
+     * data (+ the signature flag).
+     *
+     * Why this is safe: the key hashes the ACTUAL rendered content — live
+     * customer / product names, logo bytes, totals, ports, title, signature
+     * flag, everything in $viewData. Any change to what the PDF shows changes
+     * the hash and forces a fresh render, so a stale document can never be
+     * served. The win: DomPDF's pure-PHP layout of this heavy nested-table
+     * template costs several seconds per cold render; repeat view / download /
+     * preview / send of an unchanged document now returns the cached bytes
+     * instantly.
+     *
+     * NB: the key does NOT include the Blade template version, so after a
+     * template change the cache should be cleared (`storage/app/pdf-cache`).
+     */
+    private function renderSalesPdfCached(array $viewData, bool $withSignature): string
+    {
+        $payload = json_encode($viewData);
+        $key = $payload !== false
+            ? 'pdf-cache/sales-' . md5($payload . '|' . ($withSignature ? 's' : 'u')) . '.pdf'
+            : null;
+
+        if ($key) {
+            try {
+                if (Storage::disk('local')->exists($key)) {
+                    return Storage::disk('local')->get($key);
+                }
+            } catch (\Throwable $e) { /* fall through to a fresh render */ }
+        }
+
+        // DomPDF's pure-PHP renderer is slow on this heavy template (large
+        // nested tables + embedded images); a cold render can take several
+        // seconds. Give it headroom so it never 500s mid-render.
+        @set_time_limit(180);
+        $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
+            ->setPaper('A4', 'portrait')
+            // Required for the <script type="text/php"> page-number block at
+            // the bottom of the Blade template to execute.
+            ->setOption('isPhpEnabled', true);
+        $bytes = $pdf->output();
+
+        if ($key) {
+            try { Storage::disk('local')->put($key, $bytes); } catch (\Throwable $e) { /* best-effort cache */ }
+        }
+
+        return $bytes;
+    }
+
     private function buildQuotationViewData($q, bool $withSignature, string $pdfTitle = 'QUOTATION DOCUMENT', string $docLabelShort = 'QT'): array
     {
         $branch = $q->branch;
@@ -1516,22 +1545,32 @@ class SalesPdfController extends Controller
 
         try {
             if (!Storage::disk('public')->exists($norm)) return null;
-            $bytes = Storage::disk('public')->get($norm);
-            $mime  = Storage::disk('public')->mimeType($norm) ?: 'image/png';
 
-            // Flatten any alpha channel onto white (and downscale) before
-            // embedding. DomPDF renders transparent PNGs by splitting an
-            // alpha mask pixel-by-pixel in pure PHP (Cpdf.php) — on a large
-            // logo that loop runs width×height times and exceeds PHP's
-            // 60s max_execution_time. A flattened, non-alpha PNG skips that
-            // path entirely, so the render finishes in well under a second.
-            $flat = $this->flattenImageForPdf($bytes);
-            if ($flat !== null) {
-                $bytes = $flat;
-                $mime  = 'image/png';
-            }
+            // Cache the flattened + encoded data URI keyed by path + mtime so
+            // repeated renders (view / download / preview / send all hit this)
+            // don't re-run the GD flatten + base64 each time. A re-upload
+            // changes lastModified and busts the entry.
+            $stamp    = (string) (Storage::disk('public')->lastModified($norm) ?: 0);
+            $cacheKey = 'sales_pdf_asset_uri:' . md5($norm . '|' . $stamp);
 
-            return 'data:' . $mime . ';base64,' . base64_encode($bytes);
+            return Cache::remember($cacheKey, now()->addDay(), function () use ($norm) {
+                $bytes = Storage::disk('public')->get($norm);
+                $mime  = Storage::disk('public')->mimeType($norm) ?: 'image/png';
+
+                // Flatten any alpha channel onto white (and downscale) before
+                // embedding. DomPDF renders transparent PNGs by splitting an
+                // alpha mask pixel-by-pixel in pure PHP (Cpdf.php) — on a large
+                // logo that loop runs width×height times and exceeds PHP's
+                // 60s max_execution_time. A flattened, non-alpha PNG skips that
+                // path entirely, so the render finishes in well under a second.
+                $flat = $this->flattenImageForPdf($bytes);
+                if ($flat !== null) {
+                    $bytes = $flat;
+                    $mime  = 'image/png';
+                }
+
+                return 'data:' . $mime . ';base64,' . base64_encode($bytes);
+            });
         } catch (\Throwable $e) {
             return null;
         }
