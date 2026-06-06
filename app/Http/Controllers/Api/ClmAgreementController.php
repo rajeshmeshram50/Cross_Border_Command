@@ -113,6 +113,20 @@ class ClmAgreementController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = ClmAgreementType::where('client_id', $user->client_id)->findOrFail($id);
+
+        // Block deletion while drafts in the Agreement Library still use this
+        // type — the library references the type by name. The user must delete
+        // those agreements first, then the type can be removed.
+        $inUse = ClmAgreementLibrary::where('client_id', $user->client_id)
+            ->whereRaw('LOWER(agreement_type) = ?', [mb_strtolower($row->name)])
+            ->count();
+        if ($inUse > 0) {
+            return response()->json([
+                'status'  => false,
+                'message' => "This agreement type is used by {$inUse} agreement" . ($inUse === 1 ? '' : 's') . " in the Agreement Library. Delete " . ($inUse === 1 ? 'that agreement' : 'those agreements') . " first.",
+            ], 409);
+        }
+
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }

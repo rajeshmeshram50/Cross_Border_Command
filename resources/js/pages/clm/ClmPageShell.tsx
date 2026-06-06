@@ -18,11 +18,13 @@ export type ClmHeaderProps = {
   /** "Add X" button label — pass null/empty to hide the button */
   addLabel?: string;
   onAdd?:    () => void;
+  /** Extra class on the Add button (e.g. for a page-specific hover effect) */
+  addClassName?: string;
   /** Optional extra control to render on the right side (e.g. tab pills) */
   rightSlot?: ReactNode;
 };
 
-export function ClmPageHeader({ icon, title, sub, addLabel, onAdd, rightSlot }: ClmHeaderProps) {
+export function ClmPageHeader({ icon, title, sub, addLabel, onAdd, addClassName, rightSlot }: ClmHeaderProps) {
   return (
     <div className="clm-head-strip">
       <div className="clm-head-strip-left">
@@ -37,7 +39,7 @@ export function ClmPageHeader({ icon, title, sub, addLabel, onAdd, rightSlot }: 
       </div>
       {rightSlot}
       {addLabel && onAdd && (
-        <button className="clm-add-btn" onClick={onAdd}>
+        <button className={`clm-add-btn ${addClassName ?? ''}`} onClick={onAdd}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>

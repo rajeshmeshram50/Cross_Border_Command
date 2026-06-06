@@ -25,7 +25,7 @@ const TH  = { padding: '10px 14px', fontSize: 8, fontWeight: 800, letterSpacing:
 const THL = { ...TH, textAlign: 'left' } as React.CSSProperties;
 const TD_C = { padding: '11px 14px', verticalAlign: 'middle', borderBottom: '1px solid rgba(6,182,212,.06)', textAlign: 'center' } as React.CSSProperties;
 const TD_L = { ...TD_C, textAlign: 'left' } as React.CSSProperties;
-const CODE_PILL: React.CSSProperties = { fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: '#0e7490', background: 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: '1px solid rgba(6,182,212,.28)' };
+const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: dark ? '#67e8f9' : '#0e7490', background: dark ? 'rgba(6,182,212,.2)' : 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: `1px solid rgba(6,182,212,${dark ? '.42' : '.28'})` });
 
 const S_CFG = {
   approved:      { label: 'Approved', bg: '#ECFDF5', border: '#A7F3D0', color: '#059669', dot: '#10B981' },
@@ -300,7 +300,7 @@ function StandardTable({ rows, tab, page, setPage, onApprove, onAction, onView, 
                   onMouseEnter={e => { e.currentTarget.style.background = t.rowHover; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #0891b2'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                   <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
-                  <td style={TD_C}><span style={CODE_PILL}>{c.id}</span></td>
+                  <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
                   <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>

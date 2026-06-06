@@ -407,7 +407,17 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   const validateStep1 = () => {
     const next: Record<string, string> = {};
     if (!agreementType.trim()) next.agreementType = 'Agreement type is required';
-    if (!title.trim())          next.title         = 'Title is required';
+
+    const t = title.trim();
+    if (!t)                 next.title = 'Title is required';
+    else if (t.length < 3)  next.title = 'Title must be at least 3 characters';
+    else if (t.length > 255) next.title = 'Title must not be greater than 255 characters';
+
+    const p = purpose.trim();
+    if (!p)                  next.purpose = 'Purpose is required';
+    else if (p.length < 10)  next.purpose = 'Purpose must be at least 10 characters';
+    else if (p.length > 1000) next.purpose = 'Purpose must not be greater than 1000 characters';
+
     if (parties.size === 0)     next.party         = 'Select at least one applicable party';
     if (regulatory === 'highly' && segments.length !== 1) {
       next.segment = 'High-regulatory agreements need exactly one segment';
@@ -589,6 +599,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                     type="text"
                     className={`agw-input ${errors.title ? 'is-err' : ''}`}
                     placeholder="e.g. Master Supplier Agreement — FY2026"
+                    maxLength={255}
                     value={title}
                     onChange={(e) => { setTitle(e.target.value); setErrors(p => ({ ...p, title: '' })); }}
                   />
@@ -660,11 +671,13 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
               <div className="agw-field">
                 <label className="agw-label">Agreement Purpose <span className="agw-req">*</span></label>
                 <textarea
-                  className="agw-input agw-textarea"
+                  className={`agw-input agw-textarea ${errors.purpose ? 'is-err' : ''}`}
                   placeholder="e.g. Governs supplier material sourcing terms for the FY2026 procurement cycle…"
+                  maxLength={1000}
                   value={purpose}
-                  onChange={(e) => setPurpose(e.target.value)}
+                  onChange={(e) => { setPurpose(e.target.value); setErrors(p => ({ ...p, purpose: '' })); }}
                 />
+                {errors.purpose && <div className="agw-err">{errors.purpose}</div>}
               </div>
 
               {/* Applicable Party */}

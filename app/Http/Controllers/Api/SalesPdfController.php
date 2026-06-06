@@ -592,72 +592,11 @@ class SalesPdfController extends Controller
         $pdfPath = $tmpDir . '/' . uniqid('mail-', true) . '-' . $pdfFilename;
         $pdf->save($pdfPath);
 
-        // 3) Build the email payload (product summary = first item's name,
-        //    branch name/email/website for the signature block). Prefer the
-        //    LIVE product master name so renames in the product master flow
-        //    through to the email body too (mirrors the PDF behaviour).
-        $branch = $record->branch;
-        $firstItem = $record->items->first();
-        $productSummary = '';
-        if ($firstItem) {
-            if ($firstItem->product_id) {
-                $live = DB::table('products')->where('id', $firstItem->product_id)->value('name');
-                if ($live) $productSummary = (string) $live;
-            }
-            if ($productSummary === '') {
-                $productSummary = (string) ($firstItem->product_name ?? '');
-                // Strip "CODE – " prefix from snapshot so the email reads cleanly.
-                if (preg_match('/^.+?\s+[\x{2013}\-]\s+(.+)$/u', $productSummary, $m)) {
-                    $productSummary = trim($m[1]);
-                }
-            }
-        }
-        if ($record->items->count() > 1) {
-            $productSummary .= ' (+' . ($record->items->count() - 1) . ' more)';
-        }
-
-        // Signed, expiring view URL — the "View Quotation" / "View PI"
-        // button in the email opens this in the browser. Public route,
-        // no app login needed; Laravel's `signed` middleware validates
-        // the URL on the way in. 60-day window matches the typical
-        // quote validity period in this domain.
-        $viewRouteName = $kind === 'Quotation' ? 'sales.quotation.view' : 'sales.pi.view';
-        $viewUrl = \Illuminate\Support\Facades\URL::temporarySignedRoute(
-            $viewRouteName,
-            now()->addDays(60),
-            ['id' => $record->id],
-        );
-
-        // Currency: prefer the stored value, fall back to USD for
-        // International / INR for Domestic so the email's Grand Total
-        // never renders with a bare unprefixed number when the
-        // currency column is null on legacy rows.
-        $resolvedCurrency = (string) ($record->currency
-            ?: ($record->doc_type === 'Domestic' ? 'INR' : 'USD'));
-
-        $payload = [
-            'docKind'        => $kind,
-            'docLabel'       => $docLabel,    // 'QT' or 'PI' — used in the info-card label
-            'docCode'        => $record->code,
-            'docDate'        => optional($record->created_at)->format('d/m/Y') ?: date('d/m/Y'),
-            'branchName'     => $branch?->name    ?: ($branch?->code ?: 'Sales Team'),
-            'branchEmail'    => $branch?->email   ?: null,
-            'branchWebsite'  => $branch?->website ?: null,
-            'customerName'   => $record->customer?->company_name ?: ($record->customer_name ?: 'Sir/Madam'),
-            'productSummary' => $productSummary,
-            'productsCount'  => (int) $record->items->count(),
-            'grandTotal'     => (float) ($record->grand_total ?? 0),
-            'currency'       => $resolvedCurrency,
-            'docType'        => (string) ($record->doc_type ?? ''),
-            'viewUrl'        => $viewUrl,
-            'logoPath'       => $this->branchAssetAbsolutePath($branch?->logo),
-            'pdfPath'        => $pdfPath,
-            'pdfFilename'    => $pdfFilename,
-        ];
-
-        // 4) Send + always clean up the temp PDF, even if the mailer throws.
+        // 3) Build the payload + send. Shared with the Send-for-Signature
+        //    flow (see buildAndSendSalesDocEmail). Always clean up the temp
+        //    PDF, even if the mailer throws.
         try {
-            Mail::to($to)->send(new SalesDocumentEmail($payload));
+            $this->buildAndSendSalesDocEmail($record, $kind, $docLabel, $to, $pdfPath, $pdfFilename);
         } catch (\Throwable $e) {
             @unlink($pdfPath);
             Log::error('Sales document email failed', [
@@ -665,7 +604,6 @@ class SalesPdfController extends Controller
                 'record'     => $record->code,
                 'to'         => $to,
                 'pdfPath'    => $pdfPath,
-                'logoPath'   => $payload['logoPath'] ?? null,
                 'errorClass' => get_class($e),
                 'error'      => $e->getMessage(),
                 'trace'      => $e->getTraceAsString(),
@@ -694,6 +632,83 @@ class SalesPdfController extends Controller
             'emailed_at'     => optional($record->emailed_at)->toIso8601String(),
             'reminder_count' => (int) ($record->reminder_count ?? 0),
         ]);
+    }
+
+    /**
+     * Build the SalesDocumentEmail payload from a relation-loaded Quotation/PI
+     * record + an already-rendered PDF, then send it to $to.
+     *
+     * Shared by the manual "Email document" endpoints (sendSalesDocumentEmail)
+     * and the Send-for-Signature flow (ClmSignatureController::salesDocSend),
+     * which reuses its already-rendered signed PDF so the customer ALSO receives
+     * the document as an attachment alongside Zoho's signing notification email.
+     *
+     * THROWS on mail failure — the caller owns the temp-file lifecycle, error
+     * surfacing, and any emailed_at stamping. The $record must have `branch`,
+     * `items`, and `customer` eager-loaded (product summary = first item's name,
+     * preferring the LIVE product-master name so renames flow into the email body).
+     *
+     * @param  \App\Models\Quotation|\App\Models\ProformaInvoice  $record
+     */
+    public function buildAndSendSalesDocEmail($record, string $kind, string $docLabel, string $to, string $pdfPath, string $pdfFilename): void
+    {
+        $branch    = $record->branch;
+        $firstItem = $record->items->first();
+        $productSummary = '';
+        if ($firstItem) {
+            if ($firstItem->product_id) {
+                $live = DB::table('products')->where('id', $firstItem->product_id)->value('name');
+                if ($live) $productSummary = (string) $live;
+            }
+            if ($productSummary === '') {
+                $productSummary = (string) ($firstItem->product_name ?? '');
+                // Strip "CODE – " prefix from snapshot so the email reads cleanly.
+                if (preg_match('/^.+?\s+[\x{2013}\-]\s+(.+)$/u', $productSummary, $m)) {
+                    $productSummary = trim($m[1]);
+                }
+            }
+        }
+        if ($record->items->count() > 1) {
+            $productSummary .= ' (+' . ($record->items->count() - 1) . ' more)';
+        }
+
+        // Signed, expiring view URL — the "View Quotation" / "View PI" button
+        // in the email opens this in the browser. Public route, no app login;
+        // Laravel's `signed` middleware validates it. 60-day window matches the
+        // typical quote-validity period in this domain.
+        $viewRouteName = $kind === 'Quotation' ? 'sales.quotation.view' : 'sales.pi.view';
+        $viewUrl = \Illuminate\Support\Facades\URL::temporarySignedRoute(
+            $viewRouteName,
+            now()->addDays(60),
+            ['id' => $record->id],
+        );
+
+        // Currency: prefer the stored value, fall back to USD for International /
+        // INR for Domestic so the Grand Total never renders unprefixed on legacy rows.
+        $resolvedCurrency = (string) ($record->currency
+            ?: ($record->doc_type === 'Domestic' ? 'INR' : 'USD'));
+
+        $payload = [
+            'docKind'        => $kind,
+            'docLabel'       => $docLabel,    // 'QT' or 'PI' — used in the info-card label
+            'docCode'        => $record->code,
+            'docDate'        => optional($record->created_at)->format('d/m/Y') ?: date('d/m/Y'),
+            'branchName'     => $branch?->name    ?: ($branch?->code ?: 'Sales Team'),
+            'branchEmail'    => $branch?->email   ?: null,
+            'branchWebsite'  => $branch?->website ?: null,
+            'customerName'   => $record->customer?->company_name ?: ($record->customer_name ?: 'Sir/Madam'),
+            'productSummary' => $productSummary,
+            'productsCount'  => (int) $record->items->count(),
+            'grandTotal'     => (float) ($record->grand_total ?? 0),
+            'currency'       => $resolvedCurrency,
+            'docType'        => (string) ($record->doc_type ?? ''),
+            'viewUrl'        => $viewUrl,
+            'logoPath'       => $this->branchAssetAbsolutePath($branch?->logo),
+            'pdfPath'        => $pdfPath,
+            'pdfFilename'    => $pdfFilename,
+        ];
+
+        Mail::to($to)->send(new SalesDocumentEmail($payload));
     }
 
     /* ──────────────────────────────────────────────────────────────────
