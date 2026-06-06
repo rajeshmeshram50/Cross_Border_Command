@@ -91,10 +91,15 @@ export default function ClmQcPage() {
       />
 
       <div className="clm-page-card">
-        <div className="clm-tabs-bar">
-          <div className="clm-search">
+        <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
+          <div className="clm-search clm-search-grow">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input type="text" placeholder="Search QC documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          </div>
+          <div className="clm-total">
+            <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+            <div className="clm-total-lbl">Total QC Documents</div>
+            <div className="clm-total-num">{rows.length}</div>
           </div>
         </div>
 
@@ -186,7 +191,9 @@ function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCod
   const handleSave = async () => {
     const next: Record<string, string> = {};
     if (!name.trim())     next.name     = 'Name is required';
+    else if (name.trim().length > 255) next.name = 'Name must not be greater than 255 characters';
     if (!purpose.trim())  next.purpose  = 'Purpose is required';
+    else if (purpose.trim().length > 500) next.purpose = 'Purpose must not be greater than 500 characters';
     if (!issuedBy.trim()) next.issuedBy = 'Authority is required';
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -237,12 +244,12 @@ function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCod
           </div>
           <div className="clm-field">
             <label className="clm-field-label">QC Certificate Name <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. ISO 9001, HACCP, GOTS" value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
+            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. ISO 9001, HACCP, GOTS" maxLength={255} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Purpose <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.purpose ? 'clm-input-err' : ''}`} placeholder="What this certificate is for…" value={purpose} onChange={e => { setPurpose(e.target.value); setErrors(p => ({ ...p, purpose: '' })); }} />
+            <input className={`clm-input ${errors.purpose ? 'clm-input-err' : ''}`} placeholder="What this certificate is for…" maxLength={500} value={purpose} onChange={e => { setPurpose(e.target.value); setErrors(p => ({ ...p, purpose: '' })); }} />
             {errors.purpose && <div className="clm-err">{errors.purpose}</div>}
           </div>
           <div className="clm-field">
@@ -261,11 +268,9 @@ function QcModal(props: { existing: Qc | null; authorities: Authority[]; nextCod
                   onChange={(v) => { setIssuedBy(v); setErrors(p => ({ ...p, issuedBy: '' })); }}
                 />
               </div>
-              <Tooltip label="Add new authority">
-                <button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                </button>
-              </Tooltip>
+              <button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority" title="Add new authority">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
             </div>
             <div className="clm-field-hint">Pulls from Authority Master — click + to add a new authority.</div>
             {errors.issuedBy && <div className="clm-err">{errors.issuedBy}</div>}

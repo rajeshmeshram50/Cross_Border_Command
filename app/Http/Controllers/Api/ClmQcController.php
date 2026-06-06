@@ -117,7 +117,7 @@ class ClmQcController extends Controller
         if (!$user) abort(401);
         $row  = ClmQcDocument::where('client_id', $user->client_id)->findOrFail($id);
 
-        $usedIn = $this->usageCheck($row->code, $row->name);
+        $usedIn = $this->usageCheck($user->client_id, $row->code, $row->name);
         if (!empty($usedIn)) {
             return response()->json([
                 'status'  => false,
@@ -132,25 +132,39 @@ class ClmQcController extends Controller
     }
 
     /** QC docs are referenced by code (segment rules JSON + segment doc
-     *  uploads) AND by name (product_qc_records.qc_name free-text). */
-    private function usageCheck(?string $code, ?string $name): array
+     *  uploads) AND by name (product_qc_records.qc_name free-text).
+     *
+     *  Codes (QC-001, …) are allocated PER CLIENT, so every tenant has a
+     *  "QC-001". The usage lookups MUST be scoped to this client's rows —
+     *  otherwise a freshly created QC-001 falsely matches another tenant's
+     *  reference to their own QC-001 and the delete is wrongly blocked. */
+    private function usageCheck(int $clientId, ?string $code, ?string $name): array
     {
         $usedIn = [];
         if ($code && Schema::hasTable('clm_segment_rules')
             && Schema::hasColumn('clm_segment_rules', 'doc_selections')
             && DB::table('clm_segment_rules')
+                ->where('client_id', $clientId)
                 ->where('doc_selections', 'like', '%"' . $code . '"%')
                 ->exists()) {
             $usedIn[] = 'Segment Rules';
         }
         if ($code && Schema::hasTable('segment_doc_uploads')
             && Schema::hasColumn('segment_doc_uploads', 'doc_code')
-            && DB::table('segment_doc_uploads')->where('doc_code', $code)->exists()) {
+            && DB::table('segment_doc_uploads')
+                ->where('client_id', $clientId)
+                ->where('doc_code', $code)
+                ->exists()) {
             $usedIn[] = 'Segment Doc Uploads';
         }
+        // product_qc_records has no client_id — scope through its product.
         if ($name && Schema::hasTable('product_qc_records')
             && Schema::hasColumn('product_qc_records', 'qc_name')
-            && DB::table('product_qc_records')->where('qc_name', $name)->exists()) {
+            && DB::table('product_qc_records')
+                ->join('products', 'products.id', '=', 'product_qc_records.product_id')
+                ->where('products.client_id', $clientId)
+                ->where('product_qc_records.qc_name', $name)
+                ->exists()) {
             $usedIn[] = 'Product QC Records';
         }
         return $usedIn;
