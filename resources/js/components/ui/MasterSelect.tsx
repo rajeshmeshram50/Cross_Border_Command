@@ -12,6 +12,7 @@ export function MasterSelect({
   disabled,
   invalid,
   loading,
+  allowDeselect,
   onChange,
   onOpen,
 }: {
@@ -27,6 +28,12 @@ export function MasterSelect({
    * async master fetch — gives users a polished "fetching the master"
    * cue instead of the grey "Loading…" placeholder. */
   loading?: boolean;
+  /* Opt-in toggle behaviour: clicking the already-selected option clears
+   * the field back to empty (single-select acts like a toggle). Off by
+   * default so every other dropdown keeps the standard "pick replaces"
+   * behaviour — only fields that explicitly want a clearable selection
+   * (e.g. Classification & Flags) pass this. */
+  allowDeselect?: boolean;
   onChange?: (value: string) => void;
   onOpen?: () => void;
 }) {
@@ -81,8 +88,10 @@ export function MasterSelect({
     ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
     : options;
   const handlePick = (val: string) => {
-    if (value === undefined) setInternal(val);
-    onChange?.(val);
+    // With allowDeselect, re-clicking the current selection clears it.
+    const next = allowDeselect && val === currentValue ? '' : val;
+    if (value === undefined) setInternal(next);
+    onChange?.(next);
   };
   return (
     <div ref={wrapRef}>

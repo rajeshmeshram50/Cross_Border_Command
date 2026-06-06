@@ -1293,7 +1293,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       case 'address':
         if (!f.address.trim()) return 'Address is required';
         if (f.address.trim().length < 4) return 'Address must be at least 4 characters';
-        if (f.address.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        if (f.address.trim().length > 75) return 'Address must be 75 characters or fewer';
         // Must contain at least one letter — blocks gibberish like "1234"
         // or "...." while still allowing genuine addresses that mix
         // letters, numbers, commas, hyphens, etc.
@@ -2888,6 +2888,7 @@ const Stage1 = ({
                 options={optsWith(masters.classifications, form.classification)}
                 placeholder="Select Classification"
                 disabled={lock}
+                allowDeselect
                 onChange={v => set('classification', v)}
               />
             </Field>
@@ -2922,7 +2923,7 @@ const Stage1 = ({
                 />
               </Field>
               <Field label="Address" required error={errors.address} fieldKey="address">
-                <input className={`acm-input ${errors.address ? 'acm-input-error' : ''}`} placeholder="Street, building, area" value={form.address} onChange={e => set('address', e.target.value)} disabled={lock} />
+                <input className={`acm-input ${errors.address ? 'acm-input-error' : ''}`} placeholder="Street, building, area" value={form.address} onChange={e => set('address', e.target.value)} disabled={lock} maxLength={75} />
               </Field>
             </div>
             <div className="acm-grid-4 acm-mt-12">
@@ -5098,7 +5099,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
       case 'line':
         if (!dd.line.trim()) return 'Address is required';
         if (dd.line.trim().length < 4) return 'Address must be at least 4 characters';
-        if (dd.line.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        if (dd.line.trim().length > 75) return 'Address must be 75 characters or fewer';
         if (!/[A-Za-z]/.test(dd.line)) return 'Address must contain at least one letter';
         return null;
       case 'country':
@@ -5261,6 +5262,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 placeholder="Enter complete address"
                 value={d.line}
                 onChange={e => set('line', e.target.value)}
+                maxLength={75}
               />
               {errs.line && <span className="acm-err-text">{errs.line}</span>}
             </div>
@@ -5556,9 +5558,9 @@ const SCOPED_CSS = `
   background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.30);
   color: #fff; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: background .15s;
+  transition: all .25s;
 }
-.acm-close:hover { background: rgba(255,255,255,.30); }
+.acm-close:hover { background: rgba(255,255,255,.30); transform: rotate(90deg); }
 
 /* ─── Phase A — Customer picker ─── */
 .acm-pick {

@@ -1139,7 +1139,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       case 'addr':
         if (!f.addr.trim()) return 'Address is required';
         if (f.addr.trim().length < 4) return 'Address must be at least 4 characters';
-        if (f.addr.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        if (f.addr.trim().length > 75) return 'Address must be 75 characters or fewer';
         // Must contain at least one letter — blocks gibberish like "1234"
         // or "...." while still allowing addresses that mix letters,
         // numbers, commas, hyphens, etc.
@@ -2329,7 +2329,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
               />
             </Field>
             <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">
-              <MasterSelect value={form.coClass} options={optsWith(masters.classifications, form.coClass)} placeholder="Select classification" invalid={!!errors.coClass} onChange={v => set('coClass', v)} />
+              <MasterSelect value={form.coClass} options={optsWith(masters.classifications, form.coClass)} placeholder="Select classification" invalid={!!errors.coClass} allowDeselect onChange={v => set('coClass', v)} />
             </Field>
             <Field label="Risk Level" required error={errors.coRisk} fieldKey="coRisk">
               <MasterSelect value={form.coRisk} options={optsWith(masters.riskLevels, form.coRisk)} placeholder="Select risk level" invalid={!!errors.coRisk} onChange={v => set('coRisk', v)} />
@@ -2361,7 +2361,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 onChange={() => { /* locked */ }}
               />
             </Field>
-            <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" /></Field>
+            <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" maxLength={75} /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Country" required error={errors.country} fieldKey="country">
@@ -4170,7 +4170,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
       case 'line':
         if (!dd.line.trim()) return 'Address is required';
         if (dd.line.trim().length < 4) return 'Address must be at least 4 characters';
-        if (dd.line.trim().length > 1000) return 'Address must be 1000 characters or fewer';
+        if (dd.line.trim().length > 75) return 'Address must be 75 characters or fewer';
         if (!/[A-Za-z]/.test(dd.line)) return 'Address must contain at least one letter';
         return null;
       case 'country':
@@ -4277,7 +4277,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
             <Field label="Address Type" required error={errs.type}>
               <MasterSelect value={d.type} options={optsWith(availableAddressTypes, d.type)} placeholder="Select address type" invalid={!!errs.type} onChange={v => set('type', v)} />
             </Field>
-            <Field label="Address" required error={errs.line}><input className={errs.line ? 'acm-input-error' : ''} value={d.line} onChange={e => set('line', e.target.value)} placeholder="Enter complete address" /></Field>
+            <Field label="Address" required error={errs.line}><input className={errs.line ? 'acm-input-error' : ''} value={d.line} onChange={e => set('line', e.target.value)} placeholder="Enter complete address" maxLength={75} /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Country" required error={errs.country}>
