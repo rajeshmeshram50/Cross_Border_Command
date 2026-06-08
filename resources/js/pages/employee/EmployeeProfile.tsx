@@ -3104,24 +3104,46 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Work Experience</h6>
                 </div>
                 <div className="px-3 py-3 flex-grow-1">
-                  <Row className="g-3">
-                    <Col xs={6}>
-                      <div className="ep-field-label">Status</div>
-                      <div className="ep-field-value">Experienced</div>
-                    </Col>
-                    <Col xs={6}>
-                      <div className="ep-field-label">Total Experience</div>
-                      <div className="ep-field-value">5 yrs 3 mos</div>
-                    </Col>
-                    <Col xs={6}>
-                      <div className="ep-field-label">Last Company</div>
-                      <div className="ep-field-value">Infotech Solutions Ltd</div>
-                    </Col>
-                    <Col xs={6}>
-                      <div className="ep-field-label">Last Designation</div>
-                      <div className="ep-field-value">Software Engineer</div>
-                    </Col>
-                  </Row>
+                  {/* REAL work experience (was hardcoded sample data). Sourced
+                      from the employee's previous_employments + the
+                      has_prior_experience flag — shows "Fresher" / "Not
+                      Provided" when no experience was entered. */}
+                  {(() => {
+                    const prev: any[] = Array.isArray(empDetail?.previous_employments) ? empDetail.previous_employments : [];
+                    const hasExp = empDetail?.has_prior_experience === true || prev.length > 0;
+                    let months = 0;
+                    prev.forEach((p) => {
+                      if (!p?.start_date) return;
+                      const s = new Date(p.start_date);
+                      const e = p.end_date ? new Date(p.end_date) : new Date();
+                      if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && e >= s) {
+                        months += (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
+                      }
+                    });
+                    const totalExp = months > 0 ? `${Math.floor(months / 12)} yrs ${months % 12} mos` : (hasExp ? '—' : 'Fresher');
+                    const last = prev[0] || null;
+                    const notProvided = <span className="text-muted fst-italic">Not Provided</span>;
+                    return (
+                      <Row className="g-3">
+                        <Col xs={6}>
+                          <div className="ep-field-label">Status</div>
+                          <div className="ep-field-value">{hasExp ? 'Experienced' : 'Fresher'}</div>
+                        </Col>
+                        <Col xs={6}>
+                          <div className="ep-field-label">Total Experience</div>
+                          <div className="ep-field-value">{totalExp}</div>
+                        </Col>
+                        <Col xs={6}>
+                          <div className="ep-field-label">Last Company</div>
+                          <div className="ep-field-value">{last?.company_name || notProvided}</div>
+                        </Col>
+                        <Col xs={6}>
+                          <div className="ep-field-label">Last Designation</div>
+                          <div className="ep-field-value">{last?.job_title || notProvided}</div>
+                        </Col>
+                      </Row>
+                    );
+                  })()}
                 </div>
               </div>
             </Col>

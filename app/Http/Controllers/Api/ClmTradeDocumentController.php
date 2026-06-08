@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesDocxHtmlRoundtrip;
+use App\Models\Client;
 use App\Models\ClmSignatureRequest;
 use App\Models\ClmTradeDocLibrary;
 use App\Models\ClmTradeDocName;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -289,6 +291,14 @@ class ClmTradeDocumentController extends Controller
         // alignment/font-size/color all survive the round trip.
         $html = $this->normaliseEditorHtml($html);
 
+        // The browser's contentEditable emits HTML, not XHTML — unclosed <p>,
+        // bare <br>, unescaped &, etc. PhpWord parses with strict loadXML
+        // ("Premature end of data in tag p"), which silently mangled the
+        // tables into run-on text. Round-trip through the lenient HTML parser
+        // first so PhpWord receives well-formed markup and the tables render
+        // as real Word tables.
+        $html = $this->toWellFormedHtml($html);
+
         // Wrap as a full document so PhpWord parses it as one — fragment
         // mode (false) sometimes drops block-level styling like text-align.
         $wrapped = '<!DOCTYPE html><html><body>' . $html . '</body></html>';
@@ -308,6 +318,113 @@ class ClmTradeDocumentController extends Controller
         return response()->download($tmp, $filename, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         ])->deleteFileAfterSend(true);
+    }
+
+    /**
+     * Download the trade document as a PDF rendered with its FULL page-shell
+     * (branded header + body content + footer / page numbers), reusing the
+     * same blade the Send-for-Signature flow renders. Placeholders are left
+     * as-is (they auto-fill only at generation time, when a party is bound).
+     */
+    public function downloadPdf(Request $request, $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $row  = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($id);
+
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(120);
+
+        $client       = Client::find($row->client_id);
+        $headerConfig = is_array($row->header_config) ? $row->header_config : [];
+        $footerConfig = is_array($row->footer_config) ? $row->footer_config : [];
+
+        // Resolve the header logo to a base64 data URL — dompdf can't fetch
+        // /storage URLs at render time. Prefer the uploaded logo_path, then
+        // the seeded logo_url (strip the /storage/ prefix), then client brand.
+        $logoUrlPath = null;
+        $lu = $headerConfig['logo_url'] ?? null;
+        if ($lu && str_contains($lu, '/storage/')) {
+            $logoUrlPath = ltrim(substr($lu, strpos($lu, '/storage/') + strlen('/storage/')), '/');
+        }
+        $headerLogoBase64 = $this->resolveLogoBase64(
+            $headerConfig['logo_path'] ?? null,
+            $logoUrlPath,
+            $client?->logo,
+        );
+
+        $html = trim((string) $row->content);
+        if ($html === '') $html = '<p></p>';
+
+        $pdf = Pdf::loadView('pdf.clm-signature-document', [
+            'document'         => $row,
+            'modelName'        => 'Trade Document',
+            'processedHtml'    => $html,
+            'generatedDate'    => now()->format('d/m/Y'),
+            'requestId'        => (string) ($row->code ?? ''),
+            'signers'          => [],
+            'client'           => $client,
+            'headerConfig'     => $headerConfig,
+            'footerConfig'     => $footerConfig,
+            'headerLogoBase64' => $headerLogoBase64,
+        ])->setPaper('a4')->setOption('isPhpEnabled', true);
+
+        return $pdf->download(($row->code ?: 'trade-document') . '.pdf');
+    }
+
+    /**
+     * Walk candidate public-disk paths and return the first that resolves to
+     * a file, base64-encoded for inline embedding in the PDF header. Returns
+     * '' when none resolve so the blade falls back to a text-only header.
+     */
+    /**
+     * Convert the editor's loose HTML (unclosed tags, bare <br>, raw &) into
+     * well-formed XHTML via the lenient DOM HTML parser, so PhpWord's strict
+     * loadXML reader can ingest it without choking (which was collapsing the
+     * document's tables into run-on text). Returns the original on failure.
+     */
+    private function toWellFormedHtml(string $html): string
+    {
+        if (trim($html) === '') return $html;
+        $prev = libxml_use_internal_errors(true);
+        try {
+            $doc = new \DOMDocument('1.0', 'UTF-8');
+            // Wrap in a single root + declare UTF-8 so loadHTML keeps the
+            // encoding and we have a known node to read children back from.
+            $doc->loadHTML(
+                '<?xml encoding="UTF-8"?><div data-root="1">' . $html . '</div>',
+                LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+            );
+            $root = null;
+            foreach ($doc->childNodes as $node) {
+                if ($node->nodeType === XML_ELEMENT_NODE && $node->nodeName === 'div') { $root = $node; break; }
+            }
+            if (!$root) return $html;
+            $out = '';
+            foreach ($root->childNodes as $child) {
+                $out .= $doc->saveXML($child);
+            }
+            return $out !== '' ? $out : $html;
+        } catch (\Throwable $e) {
+            return $html;
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($prev);
+        }
+    }
+
+    private function resolveLogoBase64(?string ...$candidates): string
+    {
+        $disk = Storage::disk('public');
+        foreach ($candidates as $path) {
+            if (!$path) continue;
+            try {
+                // RAW base64 only — the blade wraps it in
+                // `data:image/png;base64,{{ ... }}` itself, so a data-URI
+                // prefix here would double up and break the <img>.
+                if ($disk->exists($path)) return base64_encode($disk->get($path));
+            } catch (\Throwable $e) { continue; }
+        }
+        return '';
     }
 
     public function uploadDocx(Request $request, $id)

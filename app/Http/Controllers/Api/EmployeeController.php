@@ -60,6 +60,10 @@ class EmployeeController extends Controller
         // extra round-trip per row. Selected columns only; the full row
         // is loaded on the exit modal itself via /employees/{id}/exit.
         'exit:id,employee_id,notice_date,last_working_day,exit_type,exit_case_status,completed_at,current_stage',
+        // Prior work experience — drives the EmployeeProfile "Work Experience"
+        // card with REAL data (was previously hardcoded sample values). Newest
+        // first so the frontend's [0] is the most recent employer.
+        'previousEmployments:id,employee_id,company_name,job_title,start_date,end_date',
     ];
 
     /* ─────────────────────────────────────────────────────────────────
@@ -1185,7 +1189,10 @@ class EmployeeController extends Controller
             // legacy "derive from previous_employments row count" was
             // unable to distinguish "No, first job" from "not answered yet".
             'has_prior_experience'      => 'nullable|boolean',
-            'date_of_joining' => 'nullable|date',
+            // Sanity-bound the joining date: reject absurd historical values
+            // (e.g. 1900) and far-future dates while still allowing genuine
+            // historical join dates for existing staff being added.
+            'date_of_joining' => 'nullable|date|after_or_equal:' . now()->subYears(50)->toDateString() . '|before_or_equal:' . now()->addYears(2)->toDateString(),
 
             'probation_policy'   => 'nullable|string|max:50',
             'probation_months'   => 'nullable|integer|min:0|max:60',
