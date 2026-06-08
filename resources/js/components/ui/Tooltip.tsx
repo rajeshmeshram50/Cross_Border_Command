@@ -40,9 +40,12 @@ interface TooltipProps {
   offset?: number;
   /** Optional max width in px. Default no cap. */
   maxWidth?: number;
-  /** Stacking layer. Default 12000 — above every modal in this
-   *  project (highest known overlay is 11200). Bump higher if you
-   *  ever introduce a deeper layer. */
+  /** Stacking layer. Default 260000 — above every overlay in this
+   *  project. The CLM modules raised their stack sharply: the CLM
+   *  modal backdrop is 200000 and their portalled dropdowns sit at
+   *  250000 (see clmShared.ts). A tooltip must float above all of
+   *  them, hence the high default. Bump higher if you ever introduce
+   *  a deeper layer. */
   zIndex?: number;
 }
 
@@ -54,7 +57,7 @@ export default function Tooltip({
   disabled = false,
   offset = 8,
   maxWidth,
-  zIndex = 12000,
+  zIndex = 260000,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
