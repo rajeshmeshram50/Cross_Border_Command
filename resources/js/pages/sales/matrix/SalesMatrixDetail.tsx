@@ -127,6 +127,10 @@ function MatrixPageSkeleton() {
         @keyframes smdpgskel { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
         .smdpgskel { border-radius: 8px; background: linear-gradient(90deg,#ece9f5 25%,#f6f3fb 37%,#ece9f5 63%); background-size:400% 100%; animation: smdpgskel 1.2s ease-in-out infinite; }
         .smdpgskel-card { background:#fff; border:1px solid #ede9fe; border-radius:14px; padding:16px; }
+        [data-bs-theme="dark"] .smdpgskel,
+        [data-layout-mode="dark"] .smdpgskel { background: linear-gradient(90deg,#241c3a 25%,#322750 37%,#241c3a 63%); background-size:400% 100%; }
+        [data-bs-theme="dark"] .smdpgskel-card,
+        [data-layout-mode="dark"] .smdpgskel-card { background: rgba(28,20,50,0.55); border-color: rgba(167,139,250,.18); }
       `}</style>
       <div className="smdpgskel" style={{ height: 64, marginBottom: 14 }} />
       {/* Stepper — one card per step mirroring the real layout:
@@ -862,7 +866,7 @@ export default function SalesMatrixDetail() {
                 </svg>
               </div>
               <div>
-                <div className="smd-clm-group-title">KYC / DD / Trade Documents</div>
+                <div className="smd-clm-group-title">KYC / DD / Trade License</div>
                 <div className="smd-clm-group-sub">View customer and consignee information</div>
               </div>
             </div>
@@ -962,7 +966,7 @@ export default function SalesMatrixDetail() {
               </div>
               <div>
                 <div className="smd-clm-group-title">Segment Details</div>
-                <div className="smd-clm-group-sub">View consignee information</div>
+                <div className="smd-clm-group-sub">Agreements & trade documents per segment</div>
               </div>
             </div>
 

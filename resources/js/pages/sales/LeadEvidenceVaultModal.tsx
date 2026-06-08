@@ -40,7 +40,10 @@ interface Props {
   onClose: () => void;
 }
 
-type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses' | 'trade-documents';
+/* Trade Documents are no longer shown here — they now live segment-wise in
+ * the Sales Matrix "Segment Details" card (see LeadAgreementSendModal). This
+ * per-party vault keeps only the identity/compliance buckets. */
+type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses';
 
 /* Rows shown per page in the document table. */
 const PAGE_SIZE = 5;
@@ -52,7 +55,6 @@ const TABS: {
   { key: 'company-dd',      label: 'Due Diligence',   icon: 'home',   sectionTitle: 'Company Due Diligence', sub: 'Business registration, tax, compliance & identity documents', countKey: 'company_dd_count' },
   { key: 'owner-kyc',       label: 'KYC Documents',   icon: 'user',   sectionTitle: 'Owner KYC Details',     sub: 'Owner & director identity verification documents',           countKey: 'owner_kyc_count' },
   { key: 'trade-licenses',  label: 'Trade License',   icon: 'shield', sectionTitle: 'Trade Licenses',        sub: 'Export / import licenses & regulatory permits',              countKey: 'trade_license_count' },
-  { key: 'trade-documents', label: 'Trade Documents', icon: 'file',   sectionTitle: 'Trade Documents',       sub: 'Agreements & documents sent for signature',                  countKey: 'trade_documents_count' },
 ];
 
 type TabIcon = 'home' | 'user' | 'shield' | 'file';
@@ -139,10 +141,9 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
 
   const docsForTab: VaultDoc[] = useMemo(() => {
     if (!vault) return [];
-    return tab === 'company-dd'      ? vault.company_dd
-         : tab === 'owner-kyc'       ? vault.owner_kyc
-         : tab === 'trade-licenses'  ? vault.trade_licenses
-         : vault.trade_documents;
+    return tab === 'owner-kyc'      ? vault.owner_kyc
+         : tab === 'trade-licenses' ? vault.trade_licenses
+         : vault.company_dd;
   }, [vault, tab]);
 
   const tabMeta = TABS.find(t => t.key === tab)!;
@@ -172,7 +173,6 @@ export default function LeadEvidenceVaultModal({ open, target, onClose }: Props)
         { folder: 'Due Diligence',   docs: vault.company_dd },
         { folder: 'KYC Documents',   docs: vault.owner_kyc },
         { folder: 'Trade License',   docs: vault.trade_licenses },
-        { folder: 'Trade Documents', docs: vault.trade_documents },
       ];
       let added = 0, failed = 0;
       for (const g of groups) {

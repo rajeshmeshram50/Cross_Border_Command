@@ -1109,7 +1109,11 @@ class ClmSignatureController extends Controller
         $data = $request->validate([
             'doc_kind'          => 'required|string|in:quotation,proforma_invoice',
             'doc_id'            => 'required|integer',
-            'lead_id'           => 'required|integer|exists:leads,id',
+            // Lead is OPTIONAL — a quotation/PI created directly (no
+            // opportunity, e.g. a "Without Shipment" PI) has no lead. Signers
+            // are resolved from the document record itself, so a lead isn't
+            // needed to send for signature.
+            'lead_id'           => 'nullable|integer|exists:leads,id',
             'signers'           => 'nullable|array|max:5',
             'signers.*.role'    => 'nullable|string|max:32',
             'signers.*.email'   => 'required_with:signers|email',
@@ -1124,7 +1128,12 @@ class ClmSignatureController extends Controller
 
         $docKind = $data['doc_kind'];
         $docId   = (int) $data['doc_id'];
-        $lead    = Lead::where('client_id', $user->client_id)->findOrFail($data['lead_id']);
+        // Lead may be omitted (direct PI/quotation with no opportunity); when
+        // supplied it's tenant-scoped. Falls back to the document's own opp_id
+        // below once the record is loaded.
+        $lead    = !empty($data['lead_id'])
+            ? Lead::where('client_id', $user->client_id)->findOrFail($data['lead_id'])
+            : null;
 
         // 1. Render the sales PDF to a temp file (reuses SalesPdfController so
         //    the signed source byte-matches what preview/email produce).
@@ -1136,8 +1145,14 @@ class ClmSignatureController extends Controller
         $tempPath = $rendered['path'];
         $record   = $rendered['record'];
 
-        // Defence-in-depth: the doc must belong to the lead in context.
-        if ((int) ($record->opp_id ?? 0) !== (int) $lead->id) {
+        // When no lead was supplied, adopt the document's own opportunity (if
+        // it has one) so the signature row still records the linkage.
+        if (!$lead && !empty($record->opp_id)) {
+            $lead = Lead::where('client_id', $user->client_id)->find($record->opp_id);
+        }
+        // Defence-in-depth: when a lead IS in context, the doc must belong to
+        // it. A document with no opportunity simply has no lead linkage.
+        if ($lead && (int) ($record->opp_id ?? 0) !== (int) $lead->id) {
             @unlink($tempPath);
             return response()->json(['status' => false, 'message' => 'This document does not belong to the supplied opportunity.'], 422);
         }
@@ -1240,7 +1255,7 @@ class ClmSignatureController extends Controller
             $sigReq->document_type     = $docKind === 'quotation'
                 ? ClmSignatureRequest::DOC_QUOTATION
                 : ClmSignatureRequest::DOC_PROFORMA_INVOICE;
-            $sigReq->lead_id           = $lead->id;
+            $sigReq->lead_id           = $lead?->id;
             $sigReq->trade_doc_id      = $docId;
             $sigReq->trade_doc_ids     = [$docId];
             $sigReq->document_names    = [$docName];
@@ -1257,7 +1272,7 @@ class ClmSignatureController extends Controller
                 'document_type'     => $docKind,
                 'doc_id'            => $docId,
                 'doc_code'          => $record->code,
-                'lead_id'           => $lead->id,
+                'lead_id'           => $lead?->id,
                 'document_settings' => $data['document_settings'] ?? null,
             ];
             $sigReq->created_by = Auth::id();
