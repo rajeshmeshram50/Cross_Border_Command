@@ -262,6 +262,18 @@ class LeaveRequestController extends Controller
         if ($user->user_type !== 'super_admin' && $user->client_id) {
             $q->where('client_id', $user->client_id);
         }
+
+        // Branch scope — "Notify Colleagues" is branch-local: a leave applicant
+        // should only see people from their OWN branch, not the whole client.
+        // Prefer the user's own branch (can't be spoofed); fall back to the
+        // active branch the BranchSwitcher sends (?branch_id=) for admins who
+        // aren't pinned to a single branch. Super admin stays unscoped.
+        if ($user->user_type !== 'super_admin') {
+            $branchId = $user->branch_id ?: ($request->integer('branch_id') ?: null);
+            if ($branchId) {
+                $q->where('branch_id', $branchId);
+            }
+        }
         if ($search !== '') {
             $like = '%' . $search . '%';
             $q->where(function ($w) use ($like) {
