@@ -219,6 +219,33 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     }
   };
 
+  /* Download the Zoho Sign completion certificate (the audit-trail PDF).
+   * Only meaningful once the document is signed — `sigByRow` carries the
+   * signature-request id + 'completed' status that the certificate endpoint
+   * keys off. */
+  const onDownloadCertificate = async (kind: DocType, id: number, code: string | null) => {
+    const sig = sigByRow[`${kind}:${id}`];
+    if (!sig || sig.status !== 'completed') {
+      toast.warning('Certificate not ready', 'The signing certificate is available only after the document has been signed.');
+      return;
+    }
+    setActingId(id);
+    try {
+      const res = await api.get(`/clm/signature-requests/${sig.id}/certificate`, { responseType: 'blob' });
+      const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${(code ?? `${kind}-${id}`).replace(/[^a-z0-9\-_.]/gi, '_')}_certificate.pdf`;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (e: any) {
+      toast.error('Certificate failed', e?.response?.data?.message ?? 'Could not download the signing certificate.');
+    } finally {
+      setActingId(null);
+    }
+  };
+
   /* Auto-unlock the left CLM "Segment Details" card whenever this lead
    * ALREADY has at least one quotation or PI in the list — the user
    * shouldn't have to open (or submit) the Create/Edit form to trigger
@@ -675,17 +702,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             );
                           })()}
                           <span className="s5-act-sep" />
-                          {/* Email button shown for Quotations only. For a PI the
-                              document is delivered to the customer via Zoho Sign
-                              ("Send for Sign"), so the manual email button is
-                              hidden. Code kept (docType guard) so it still works
-                              for quotations and can be restored for PI if needed. */}
-                          {docType !== 'pi' && (
-                            <button type="button" className="s5-icn s5-icn-mail" title="Send via Email"
-                              onClick={() => void onEmail(docType, r.id, r.code)} disabled={anyActing}>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                            </button>
-                          )}
+                          {/* Email button shown for BOTH Quotations and PIs. It
+                              stays available after every send (no one-time hide)
+                              so the document can be re-emailed to the customer
+                              as many times as needed; each send fires a toast. */}
+                          <button type="button" className="s5-icn s5-icn-mail" title="Send via Email"
+                            onClick={() => void onEmail(docType, r.id, r.code)} disabled={anyActing}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                          </button>
                           {(() => {
                             // A signed doc is locked — show the pencil greyed
                             // out; clicking still explains why (handled in onEdit).
@@ -747,6 +771,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       {moreMenu && (
         <MoreActionsMenu
           anchor={moreMenu.anchor}
+          signed={sigByRow[`${moreMenu.kind}:${moreMenu.id}`]?.status === 'completed'}
           onClose={() => setMoreMenu(null)}
           onPick={(action, signature) => {
             const id = moreMenu.id, kind = moreMenu.kind;
@@ -754,6 +779,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             setMoreMenu(null);
             if (action === 'download') void onDownloadPdf(kind, id, code, signature);
             else                        void onViewPdf(kind, id, signature);
+          }}
+          onCertificate={() => {
+            const id = moreMenu.id, kind = moreMenu.kind;
+            const code = (kind === 'quotation' ? quotations : pis).find(x => x.id === id)?.code ?? null;
+            setMoreMenu(null);
+            void onDownloadCertificate(kind, id, code);
           }}
         />
       )}
@@ -841,10 +872,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
 /* ─── More Actions menu — fixed-position portal anchored to the 3-dot
  *      button. Download / View, each With / Without Signature. */
-function MoreActionsMenu({ anchor, onClose, onPick }: {
+function MoreActionsMenu({ anchor, onClose, onPick, signed, onCertificate }: {
   anchor: DOMRect;
   onClose: () => void;
   onPick: (action: 'download' | 'view', signature: boolean) => void;
+  signed: boolean;
+  onCertificate: () => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: anchor.bottom + 6, left: anchor.right - 210 });
@@ -875,6 +908,7 @@ function MoreActionsMenu({ anchor, onClose, onPick }: {
 
   const dl = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
   const eye = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
+  const cert = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>;
 
   return createPortal(
     <div ref={ref} className="s5-menu" style={{ top: pos.top, left: pos.left }} onClick={e => e.stopPropagation()}>
@@ -893,6 +927,15 @@ function MoreActionsMenu({ anchor, onClose, onPick }: {
         <div className="s5-menu-sec s5-menu-sec-vw">👁 View</div>
         <button type="button" className="s5-menu-item s5-mi-vw" onClick={() => onPick('view', true)}><span className="s5-mi-ico">{eye}</span>With Signature</button>
         <button type="button" className="s5-menu-item s5-mi-vw" onClick={() => onPick('view', false)}><span className="s5-mi-ico">{eye}</span>Without Signature</button>
+        {/* Certificate — the Zoho Sign completion/audit certificate, shown
+            only once the document has been signed (status = completed). */}
+        {signed && (
+          <>
+            <div className="s5-menu-div" />
+            <div className="s5-menu-sec s5-menu-sec-ct">🏅 Certificate</div>
+            <button type="button" className="s5-menu-item s5-mi-ct" onClick={onCertificate}><span className="s5-mi-ico">{cert}</span>Download Signed Certificate</button>
+          </>
+        )}
       </div>
     </div>,
     document.body,
@@ -1311,6 +1354,7 @@ const STAGE5_CSS = `
 .s5-menu-sec { padding: 5px 13px 3px; font-size: 7.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .14em; }
 .s5-menu-sec-dl { color: #6d28d9; }
 .s5-menu-sec-vw { color: #7c3aed; }
+.s5-menu-sec-ct { color: #15803d; }
 .s5-menu-item {
   display: flex; align-items: center; gap: 9px; width: calc(100% - 10px); margin: 1px 5px;
   padding: 7px 13px; border: none; background: none; cursor: pointer; border-radius: 7px;
@@ -1319,8 +1363,10 @@ const STAGE5_CSS = `
 .s5-mi-ico { width: 24px; height: 24px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .s5-mi-dl .s5-mi-ico { background: rgba(109,40,217,.1); color: #6d28d9; }
 .s5-mi-vw .s5-mi-ico { background: rgba(124,58,237,.1); color: #7c3aed; }
+.s5-mi-ct .s5-mi-ico { background: rgba(21,128,61,.1); color: #15803d; }
 .s5-mi-dl:hover { background: rgba(109,40,217,.1); color: #6d28d9; padding-left: 16px; }
 .s5-mi-vw:hover { background: rgba(124,58,237,.1); color: #7c3aed; padding-left: 16px; }
+.s5-mi-ct:hover { background: rgba(21,128,61,.1); color: #15803d; padding-left: 16px; }
 .s5-menu-div { height: 1px; background: linear-gradient(90deg, rgba(124,58,237,.15), rgba(124,58,237,.05), transparent); margin: 5px 8px; }
 
 /* ─── Latest Quoted Price Summary popup (figma) ─── */
