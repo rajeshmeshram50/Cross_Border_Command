@@ -308,11 +308,41 @@ const SCOPED_CSS = `
 }
 .cv2pi-confirm-danger:hover:not(:disabled) { box-shadow: 0 9px 22px rgba(220,38,38,0.45); }
 
-[data-bs-theme="dark"] .cv2pi-card { background: rgba(13,148,136,0.10); border-color: rgba(94,234,212,0.30); }
-[data-bs-theme="dark"] .cv2pi-accent { color: #5eead4; }
-[data-bs-theme="dark"] .cv2pi-note { background: rgba(251,191,36,0.10); border-color: rgba(251,191,36,0.30); color: #fcd34d; }
-[data-bs-theme="dark"] .cv2pi-alert { background: rgba(220,38,38,0.10); border-color: rgba(248,113,113,0.30); border-left-color: #ef4444; }
-[data-bs-theme="dark"] .cv2pi-alert-title { color: #fca5a5; }
-[data-bs-theme="dark"] .cv2pi-alert-line { color: #fecaca; }
-[data-bs-theme="dark"] .cv2pi-alert-line strong { color: #fca5a5; }
+/* ── Dark mode — covers BOTH attributes this app toggles dark with
+   (data-bs-theme + data-layout-mode). The body used var(--vz-card-bg)
+   which resolved white, so every surface/text colour is pinned dark. ── */
+[data-bs-theme="dark"] .cv2pi-modal,
+[data-layout-mode="dark"] .cv2pi-modal { background: #211f2e; box-shadow: 0 24px 60px rgba(0,0,0,0.6); }
+[data-bs-theme="dark"] .cv2pi-value,
+[data-layout-mode="dark"] .cv2pi-value { color: #e2e8f0; }
+[data-bs-theme="dark"] .cv2pi-label,
+[data-layout-mode="dark"] .cv2pi-label { color: #94a3b8; }
+[data-bs-theme="dark"] .cv2pi-card,
+[data-layout-mode="dark"] .cv2pi-card { background: rgba(13,148,136,0.12); border-color: rgba(94,234,212,0.28); }
+[data-bs-theme="dark"] .cv2pi-card-title,
+[data-layout-mode="dark"] .cv2pi-card-title { color: #5eead4; }
+[data-bs-theme="dark"] .cv2pi-accent,
+[data-layout-mode="dark"] .cv2pi-accent { color: #5eead4; }
+[data-bs-theme="dark"] .cv2pi-money,
+[data-layout-mode="dark"] .cv2pi-money { color: #4ade80; }
+[data-bs-theme="dark"] .cv2pi-note,
+[data-layout-mode="dark"] .cv2pi-note { background: rgba(251,191,36,0.10); border-color: rgba(251,191,36,0.30); color: #fcd34d; }
+[data-bs-theme="dark"] .cv2pi-foot,
+[data-layout-mode="dark"] .cv2pi-foot { border-top-color: rgba(255,255,255,0.08); }
+[data-bs-theme="dark"] .cv2pi-cancel,
+[data-layout-mode="dark"] .cv2pi-cancel { background: rgba(255,255,255,0.06); color: #cbd5e1; border-color: rgba(255,255,255,0.14); }
+[data-bs-theme="dark"] .cv2pi-cancel:hover:not(:disabled),
+[data-layout-mode="dark"] .cv2pi-cancel:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
+[data-bs-theme="dark"] .cv2pi-block-hint,
+[data-layout-mode="dark"] .cv2pi-block-hint { color: #cbd5e1; }
+[data-bs-theme="dark"] .cv2pi-block-hint strong,
+[data-layout-mode="dark"] .cv2pi-block-hint strong { color: #f1f5f9; }
+[data-bs-theme="dark"] .cv2pi-alert,
+[data-layout-mode="dark"] .cv2pi-alert { background: rgba(220,38,38,0.12); border-color: rgba(248,113,113,0.30); border-left-color: #ef4444; }
+[data-bs-theme="dark"] .cv2pi-alert-title,
+[data-layout-mode="dark"] .cv2pi-alert-title { color: #fca5a5; }
+[data-bs-theme="dark"] .cv2pi-alert-line,
+[data-layout-mode="dark"] .cv2pi-alert-line { color: #fecaca; }
+[data-bs-theme="dark"] .cv2pi-alert-line strong,
+[data-layout-mode="dark"] .cv2pi-alert-line strong { color: #fca5a5; }
 `;

@@ -700,7 +700,7 @@ export default function SalesQPI() {
    * action button (Send -> Sent +Remind/View -> Signed +View). `sigTick`
    * is bumped after a send so the poller refreshes immediately. */
   const [sigSendFor, setSigSendFor] = useState<
-    { kind: 'quotation' | 'pi'; id: number; code: string; customerName: string | null; leadId: number } | null
+    { kind: 'quotation' | 'pi'; id: number; code: string; customerName: string | null; leadId: number | null } | null
   >(null);
   const [sigByRow, setSigByRow] = useState<Record<string, { id: number; status: string }>>({});
   const [sigTick, setSigTick] = useState(0);
@@ -748,6 +748,21 @@ export default function SalesQPI() {
       window.open(URL.createObjectURL(r.data as Blob), '_blank');
     } catch (e: any) {
       toast.error('Open failed', e?.response?.data?.message ?? 'Could not open the signed document.');
+    }
+  };
+  /* Download (not just view) the signed PDF — fired by the labelled
+   * "Signed PDF" button on a completed row. */
+  const onDownloadSignedSig = async (sigId: number, code: string) => {
+    try {
+      const r = await api.get(`/clm/signature-requests/${sigId}/view-file/0`, { responseType: 'blob' });
+      const blobUrl = URL.createObjectURL(new Blob([r.data as BlobPart], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${(code || `signed-${sigId}`).replace(/[^a-z0-9\-_.]/gi, '_')}_signed.pdf`;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+    } catch (e: any) {
+      toast.error('Download failed', e?.response?.data?.message ?? 'Could not download the signed document.');
     }
   };
   const onViewSentPdf = async (kind: 'quotation' | 'pi', id: number) => {
@@ -875,10 +890,15 @@ export default function SalesQPI() {
     if (qt.oppId) {
       const blocker = pis.find(p => p.oppId === qt.oppId);
       if (blocker) {
+        // Mutually exclusive with the confirm popup — clear it so a prior
+        // open ConvertToPiModal can't stack behind the blocked dialog.
+        setConvertTarget(null);
         setConvertBlocked({ fromQt: qt.qtNo, pi: blocker });
         return;
       }
     }
+    // Clear any lingering blocked dialog before opening the confirm popup.
+    setConvertBlocked(null);
     setConvertTarget(qt);
     setConvertPreviewCode(null);
     // Best-effort preview of the next PI number (never consumes a number).
@@ -981,16 +1001,23 @@ export default function SalesQPI() {
     }
     if (st === 'completed') {
       return (
-        <ActionBtn title="View signed PDF" color="#16a34a" onClick={() => void onViewSignedSig(sig!.id)}
-          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12"/></svg>} />
+        <Tooltip label="Download the signed PDF">
+          <button type="button" className="qpi-convert-btn qpi-signed-btn" onClick={() => void onDownloadSignedSig(sig!.id, code)}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Signed PDF
+          </button>
+        </Tooltip>
       );
     }
     return (
       <ActionBtn
-        title={readOnly ? 'View-only — this record belongs to the main branch.' : (!leadId ? 'No linked opportunity — cannot send for signature' : 'Send for Signature')}
+        // A linked opportunity is NO LONGER required — signers are resolved
+        // from the document's own customer/consignee, so a direct PI/quotation
+        // (e.g. a "Without Shipment" PI with no opp) can still be sent.
+        title={readOnly ? 'View-only — this record belongs to the main branch.' : 'Send for Signature'}
         color="#0ea5e9"
-        disabled={readOnly || !leadId}
-        onClick={() => leadId && setSigSendFor({ kind, id, code, customerName: customer || null, leadId })}
+        disabled={readOnly}
+        onClick={() => setSigSendFor({ kind, id, code, customerName: customer || null, leadId: leadId ?? null })}
         icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>}
       />
     );
@@ -2874,8 +2901,12 @@ function BasicForm(props: {
   }, [selectedCustomerRow, masters.opportunities, masters.opportunitiesRaw]);
 
   // Consignees filtered by selected customer — uses consignee.customer_id
-  // (numeric FK) matching the customer's numeric dbId. If no consignees
-  // are mapped at all, fall back to the full list rather than showing nothing.
+  // (numeric FK) matching the customer's numeric dbId. STRICT: only the
+  // consignees mapped to this customer are shown (whether the customer was
+  // picked directly or auto-filled from an opportunity). When the customer
+  // has none mapped, the list is empty and the field shows the
+  // "No consignees for this customer" placeholder — we no longer fall back
+  // to the full list, which used to leak every consignee.
   const filteredConsignees = useMemo(() => {
     if (!selectedCustomerRow) return masters.consignees;
     const matchValues = new Set(
@@ -2883,8 +2914,7 @@ function BasicForm(props: {
         .filter(c => c.customerDbId === selectedCustomerRow.dbId)
         .map(c => `${c.code} – ${c.company}`)
     );
-    const filtered = masters.consignees.filter(opt => matchValues.has(opt.value));
-    return filtered.length > 0 ? filtered : masters.consignees;
+    return masters.consignees.filter(opt => matchValues.has(opt.value));
   }, [selectedCustomerRow, masters.consignees, masters.consigneesRaw]);
 
   // ── Auto-fill on Opportunity selection ────────────────────────
@@ -3141,18 +3171,33 @@ function BasicForm(props: {
           </Field>
         ) : (
           <>
-            {/* Currency is NOT chosen here — it comes from the opportunity's
-                products (the lead enforces one currency across its products).
-                Read-only display so it can't drift from the product pricing. */}
+            {/* Currency:
+                 • With an Opportunity → driven by the opp's products (the lead
+                   enforces one currency across its products), so it stays
+                   read-only here to avoid drifting from the product pricing.
+                 • Direct customer (no Opportunity) → there are no opp products
+                   to source from, so the user picks the currency from the
+                   Currencies master dropdown. */}
             <Field label="Currency" required>
-              <input
-                className="qpi-input"
-                value={form.currency || ''}
-                readOnly
-                placeholder="Auto — from the opportunity's products"
-                title="Currency is taken from the opportunity's products and cannot be changed here."
-                style={{ background: '#f8fafc', cursor: 'not-allowed' }}
-              />
+              {form.opportunity ? (
+                <input
+                  className="qpi-input qpi-input-readonly"
+                  value={form.currency || ''}
+                  readOnly
+                  placeholder="Auto — from the opportunity's products"
+                  title="Currency is taken from the opportunity's products and cannot be changed here."
+                  style={{ cursor: 'not-allowed' }}
+                />
+              ) : (
+                <MasterSelect
+                  key={`cur-${masters.currencies.length}`}
+                  value={form.currency}
+                  loading={masters.loading}
+                  placeholder="— Select Currency —"
+                  options={withCurrent(masters.currencies, form.currency)}
+                  onChange={(v) => set('currency', v)}
+                />
+              )}
             </Field>
             <Field label="Exchange Rate">
               <input className="qpi-input" placeholder="Enter exchange rate" value={form.exchangeRate} onChange={(e) => set('exchangeRate', e.target.value)} />
@@ -4272,6 +4317,19 @@ const SCOPED_CSS = `
 }
 .qpi-convert-btn-done:hover { transform: none; }
 
+/* "Signed PDF" download button — green pill, clickable (unlike the locked
+   "converted" state above). Shown on completed e-signature rows. */
+.qpi-signed-btn {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  box-shadow: 0 3px 10px rgba(22,163,74,.28);
+}
+.qpi-signed-btn:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(22,163,74,.42);
+}
+.qpi-signed-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(22,163,74,.28), 0 3px 10px rgba(22,163,74,.28);
+}
+
 /* Action tiles — mirror the customer page ActionBtn: neutral background,
    neutral border, hover shifts border + icon to the column accent. */
 .qpi-act {
@@ -4881,8 +4939,12 @@ const SCOPED_CSS = `
   background: rgba(255,255,255,.04);
   border-color: rgba(167,139,250,.25);
 }
-[data-bs-theme="dark"] .qpi-tab        { color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-tab        { color: #ede9fe; }
 [data-bs-theme="dark"] .qpi-tab:hover  { background: rgba(167,139,250,.12); }
+/* Inactive count chip — the light-mode dark-purple text/bg is invisible on
+   the dark toggle, so brighten both. The active chip stays white-on-glass. */
+[data-bs-theme="dark"] .qpi-tab-count { background: rgba(167,139,250,.22); color: #e9d5ff; }
+[data-bs-theme="dark"] .qpi-tab.active .qpi-tab-count { background: rgba(255,255,255,.28); color: #fff; }
 
 /* What We Are Doing Here */
 [data-bs-theme="dark"] .qpi-wdh {
@@ -4923,12 +4985,15 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, rgba(124,58,237,.10), rgba(167,139,250,.05));
   border-bottom-color: rgba(167,139,250,.20);
 }
-[data-bs-theme="dark"] .qpi-pill-group {
-  background: var(--vz-secondary-bg);
-  border-color: var(--vz-border-color);
+[data-bs-theme="dark"] .qpi-pill-group,
+[data-layout-mode="dark"] .qpi-pill-group {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(167,139,250,.22);
 }
-[data-bs-theme="dark"] .qpi-pi-subtab { color: var(--vz-secondary-color); }
-[data-bs-theme="dark"] .qpi-pi-subtab:hover { background: rgba(167,139,250,.10); color: #c4b5fd; }
+[data-bs-theme="dark"] .qpi-pi-subtab,
+[data-layout-mode="dark"] .qpi-pi-subtab { color: #cbd5e1; }
+[data-bs-theme="dark"] .qpi-pi-subtab:hover,
+[data-layout-mode="dark"] .qpi-pi-subtab:hover { background: rgba(167,139,250,.12); color: #ede9fe; }
 [data-bs-theme="dark"] .qpi-search {
   background: rgba(255,255,255,.03);
   border-color: rgba(167,139,250,.30);
@@ -4960,19 +5025,23 @@ const SCOPED_CSS = `
   border-bottom-color: color-mix(in srgb, #ffffff 6%, transparent) !important;
 }
 
-[data-bs-theme="dark"] .qpi-table-host .pagination .page-link {
-  background: var(--vz-secondary-bg);
-  color: #c4b5fd;
-  border-color: var(--vz-border-color);
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-link,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-link {
+  background: #2b2640;
+  color: #ddd6fe;
+  border-color: rgba(167,139,250,.28);
 }
-[data-bs-theme="dark"] .qpi-table-host .pagination .page-link:hover {
-  background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.45);
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-link:hover,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-link:hover {
+  background: rgba(167,139,250,.12); border-color: rgba(167,139,250,.45); color: #ede9fe;
 }
-[data-bs-theme="dark"] .qpi-table-host .pagination .page-item.active .page-link {
-  background: linear-gradient(135deg, #6d28d9, #4c1d95);
-  border-color: #7c3aed; color: #fff;
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-item.active .page-link,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-item.active .page-link {
+  background: linear-gradient(135deg, #6d28d9, #4c1d95) !important;
+  border-color: #7c3aed !important; color: #fff !important;
 }
-[data-bs-theme="dark"] .qpi-table-host .pagination .page-item.disabled .page-link {
+[data-bs-theme="dark"] .qpi-table-host .pagination .page-item.disabled .page-link,
+[data-layout-mode="dark"] .qpi-table-host .pagination .page-item.disabled .page-link {
   background: rgba(255,255,255,.03); color: #6b6481;
   border-color: rgba(167,139,250,.18);
 }
