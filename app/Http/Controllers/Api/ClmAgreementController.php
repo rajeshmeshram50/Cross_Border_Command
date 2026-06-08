@@ -398,8 +398,11 @@ class ClmAgreementController extends Controller
         // Customer + consignee mapped to this lead. Resolved up-front (it
         // used to sit below the loop) because the per-segment trade-document
         // block now needs both parties' upload state inside the loop.
-        $customer  = $lead->customer_id  ? Customer::find($lead->customer_id)   : null;
-        $consignee = $lead->consignee_id ? Consignee::find($lead->consignee_id) : null;
+        // Eager-load the primary address so the Trade Documents popup header
+        // can surface each party's country (it lives on customer_addresses /
+        // consignee_addresses, not the party row itself).
+        $customer  = $lead->customer_id  ? Customer::with('primaryAddress')->find($lead->customer_id)   : null;
+        $consignee = $lead->consignee_id ? Consignee::with('primaryAddress')->find($lead->consignee_id) : null;
         $partyOwners = array_values(array_filter([
             $customer  ? ['party' => 'customer',  'model' => $customer]  : null,
             $consignee ? ['party' => 'consignee', 'model' => $consignee] : null,
@@ -510,14 +513,20 @@ class ClmAgreementController extends Controller
                     'id'   => $lead->id,
                     'code' => $lead->opportunity_code ?? null,
                     'customer' => $customer ? [
-                        'id'    => $customer->id,
-                        'name'  => $customer->company_name,
-                        'email' => $customer->primary_email,
+                        'id'      => $customer->id,
+                        'code'    => $customer->customer_code,
+                        'name'    => $customer->company_name,
+                        'email'   => $customer->primary_email,
+                        'country' => $customer->primaryAddress?->country,
+                        'segment' => $customer->segment,
                     ] : null,
                     'consignee' => $consignee ? [
-                        'id'    => $consignee->id,
-                        'name'  => $consignee->company_name,
-                        'email' => $consignee->primary_email,
+                        'id'      => $consignee->id,
+                        'code'    => $consignee->consignee_code,
+                        'name'    => $consignee->company_name,
+                        'email'   => $consignee->primary_email,
+                        'country' => $consignee->primaryAddress?->country,
+                        'segment' => $consignee->segment,
                     ] : null,
                 ],
                 'pi' => $pi ? [

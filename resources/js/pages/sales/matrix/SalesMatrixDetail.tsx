@@ -212,7 +212,10 @@ export default function SalesMatrixDetail() {
    * the popup opens instantly on row click. */
   const [agreementApplicable, setAgreementApplicable] = useState<AgreementApplicablePayload | null>(null);
   const [agreementModalOpen, setAgreementModalOpen] = useState(false);
-  const [agreementModalTier, setAgreementModalTier] = useState<'highly' | 'less'>('highly');
+  /* Which document type the Segment Details popup opens on. The card now
+   * splits by document TYPE (Trade Documents vs Agreements) rather than by
+   * regulatory tier — both pull from the same PI-derived segment payload. */
+  const [agreementModalView, setAgreementModalView] = useState<'trade' | 'agreements'>('agreements');
 
   /* Side-rail collapsing — clicking the chevron in either side card collapses
    * it to a thin vertical rail so the stage form gets more breathing room.
@@ -535,6 +538,20 @@ export default function SalesMatrixDetail() {
       .catch(() => { if (!cancelled) setAgreementApplicable(null); });
     return () => { cancelled = true; };
   }, [resolvedLeadId, custRefreshTick, consRefreshTick, agreementRefreshTick, stage]);
+
+  /* Segment Details card tallies — collapse the PI-derived segments into two
+   * document-type rollups (Trade Documents + Agreements) regardless of
+   * regulatory tier. "done" = the trade doc is uploaded/verified or the
+   * agreement signature request has completed; drives the row progress bar. */
+  const segDocTallies = useMemo(() => {
+    const segs = agreementApplicable?.segments ?? [];
+    let agrTotal = 0, agrDone = 0, tdTotal = 0, tdDone = 0;
+    for (const s of segs) {
+      for (const a of s.agreements) { agrTotal++; if (a.signature_request?.status === 'completed') agrDone++; }
+      for (const td of s.trade_documents) { tdTotal++; if (td.status === 'Verified') tdDone++; }
+    }
+    return { agrTotal, agrDone, tdTotal, tdDone };
+  }, [agreementApplicable]);
 
   /* "Marked as key" is sourced live from the server (leads.key_opportunity)
    * so it survives navigation / refresh. Toggling fires a PUT and the
@@ -982,46 +999,50 @@ export default function SalesMatrixDetail() {
                 row click opens the agreement send modal. */}
             {agreementApplicable?.pi ? (
               <>
+                {/* Trade Documents — every segment-applicable trade doc for
+                    the PI's products, across both regulatory tiers. */}
+                <ClmRow
+                  icon={<IconShieldSm />}
+                  tone="emerald"
+                  title="Trade Documents"
+                  sub={segDocTallies.tdTotal < 1
+                    ? 'No trade documents'
+                    : `${segDocTallies.tdDone} of ${segDocTallies.tdTotal} uploaded`}
+                  progress={segDocTallies.tdTotal > 0
+                    ? Math.round((segDocTallies.tdDone / segDocTallies.tdTotal) * 100)
+                    : 0}
+                  onClick={() => {
+                    if (segDocTallies.tdTotal < 1) {
+                      toast.warning('No trade documents', 'No product on this PI maps to a segment with trade documents.');
+                      return;
+                    }
+                    setAgreementModalView('trade'); setAgreementModalOpen(true);
+                  }}
+                />
+                {/* Agreements — every segment-applicable agreement for the
+                    PI's products, across both regulatory tiers. */}
                 <ClmRow
                   icon={<IconShieldSm />}
                   tone="rose"
-                  title="Highly Regulated Segments"
-                  sub={agreementApplicable.totals.highly.matched < 1
-                    ? 'No segments'
-                    : `${agreementApplicable.totals.highly.matched} of ${agreementApplicable.totals.highly.total} segments`}
-                  progress={agreementApplicable.totals.highly.total > 0
-                    ? Math.round((agreementApplicable.totals.highly.matched / agreementApplicable.totals.highly.total) * 100)
+                  title="Agreements"
+                  sub={segDocTallies.agrTotal < 1
+                    ? 'No agreements'
+                    : `${segDocTallies.agrDone} of ${segDocTallies.agrTotal} signed`}
+                  progress={segDocTallies.agrTotal > 0
+                    ? Math.round((segDocTallies.agrDone / segDocTallies.agrTotal) * 100)
                     : 0}
                   onClick={() => {
-                    if ((agreementApplicable.totals.highly.matched ?? 0) < 1) {
-                      toast.warning('No highly regulated segment', 'No product on this PI is mapped to a highly regulated segment, so there are no agreements to send.');
+                    if (segDocTallies.agrTotal < 1) {
+                      toast.warning('No agreements', 'No product on this PI maps to a segment with agreements to send.');
                       return;
                     }
-                    setAgreementModalTier('highly'); setAgreementModalOpen(true);
-                  }}
-                />
-                <ClmRow
-                  icon={<IconShieldSm />}
-                  tone="orange"
-                  title="Less Regulated Segments"
-                  sub={agreementApplicable.totals.less.matched < 1
-                    ? 'No segments'
-                    : `${agreementApplicable.totals.less.matched} of ${agreementApplicable.totals.less.total} segments`}
-                  progress={agreementApplicable.totals.less.total > 0
-                    ? Math.round((agreementApplicable.totals.less.matched / agreementApplicable.totals.less.total) * 100)
-                    : 0}
-                  onClick={() => {
-                    if ((agreementApplicable.totals.less.matched ?? 0) < 1) {
-                      toast.warning('No less regulated segment', 'No product on this PI is mapped to a less regulated segment, so there are no agreements to send.');
-                      return;
-                    }
-                    setAgreementModalTier('less'); setAgreementModalOpen(true);
+                    setAgreementModalView('agreements'); setAgreementModalOpen(true);
                   }}
                 />
               </>
             ) : (
               <div className="smd-clm-empty">
-                Create a proforma invoice on this lead to fetch segment-applicable agreements here.
+                Create a proforma invoice on this lead to fetch segment-applicable trade documents and agreements here.
               </div>
             )}
           </div>
@@ -1376,15 +1397,16 @@ export default function SalesMatrixDetail() {
         onClose={() => setMeetingsOpen(false)}
       />
 
-      {/* ── Lead-scoped agreement send-for-signature popup ──
-          Opened from the left CLM card's "Highly / Less Regulated
-          Segments" rows. Pre-loaded payload is passed through so the
+      {/* ── Lead-scoped trade-document / agreement popup ──
+          Opened from the left CLM card's "Trade Documents" and
+          "Agreements" rows. `view` selects which document type the
+          popup lands on. Pre-loaded payload is passed through so the
           modal renders instantly; the modal also re-fetches after
           each Send so the row status badges stay live. */}
       <LeadAgreementSendModal
         open={agreementModalOpen}
         leadId={resolvedLeadId}
-        tier={agreementModalTier}
+        view={agreementModalView}
         data={agreementApplicable}
         onClose={() => setAgreementModalOpen(false)}
         onSent={() => setAgreementRefreshTick(t => t + 1)}
