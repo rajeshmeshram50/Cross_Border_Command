@@ -34,7 +34,7 @@ class ClmTncController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = sprintf('DC-%03d', ClmTncCategory::where('client_id', $user->client_id)->count() + 1);
+            $code = $this->nextCode(ClmTncCategory::class, $user->client_id, 'DC-');
             return ClmTncCategory::create([
                 'client_id'  => $user->client_id,
                 'code'       => $code,
@@ -98,7 +98,7 @@ class ClmTncController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = sprintf('TNC-%03d', ClmTncLibrary::where('client_id', $user->client_id)->count() + 1);
+            $code = $this->nextCode(ClmTncLibrary::class, $user->client_id, 'TNC-');
             return ClmTncLibrary::create([
                 'client_id'  => $user->client_id,
                 'code'       => $code,
@@ -137,5 +137,36 @@ class ClmTncController extends Controller
         $row  = ClmTncLibrary::where('client_id', $user->client_id)->findOrFail($id);
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
+    }
+
+    /**
+     * Allocate the next per-tenant code (DC-NNN / TNC-NNN). Uses MAX(numeric
+     * suffix) + 1 rather than count()+1 so a deleted row in the middle of the
+     * sequence doesn't make the next allocation reuse a code that still
+     * exists — which throws a unique-constraint violation on save. Caller
+     * must already hold the client row lock; the composite UNIQUE
+     * (client_id, code) is the final guard.
+     *
+     * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass
+     */
+    private function nextCode(string $modelClass, int $clientId, string $prefix): string
+    {
+        $codes = $modelClass::where('client_id', $clientId)->pluck('code')->all();
+        $maxN  = 0;
+        $taken = [];
+        $re    = '/^' . preg_quote($prefix, '/') . '(\d+)$/';
+        foreach ($codes as $c) {
+            if (preg_match($re, (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $maxN) $maxN = $n;
+            }
+            $taken[(string) $c] = true;
+        }
+        $n = $maxN;
+        do {
+            $n++;
+            $code = sprintf('%s%03d', $prefix, $n);
+        } while (isset($taken[$code]));
+        return $code;
     }
 }

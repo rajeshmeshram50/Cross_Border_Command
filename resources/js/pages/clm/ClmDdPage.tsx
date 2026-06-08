@@ -25,6 +25,7 @@ export default function ClmDdPage() {
   const [editing, setEditing]   = useState<Dd | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Dd | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const reload = () => {
     setLoading(true);
@@ -57,9 +58,11 @@ export default function ClmDdPage() {
     }
   };
   const onDelete = async () => {
-    if (!pendingDelete) return;
+    if (!pendingDelete || deleting) return;
+    setDeleting(true);
     try { await api.delete(`/clm/dd-documents/${pendingDelete.id}`); toast.success('Deleted', `${pendingDelete.name} removed`); setPendingDelete(null); reload(); }
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -171,6 +174,7 @@ export default function ClmDdPage() {
         title="Delete DD Document"
         itemName={pendingDelete ? `${pendingDelete.name} (${pendingDelete.code})` : undefined}
         subMessage="This Due Diligence document will be permanently removed. The action cannot be undone."
+        loading={deleting}
         onClose={() => setPendingDelete(null)}
         onConfirm={() => void onDelete()}
       />
