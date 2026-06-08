@@ -353,6 +353,9 @@
         .vault-modal-wide .modal-dialog { max-width: min(1080px, 94vw); }
         .vault-modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
         .vault-pill { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: rgba(255,255,255,0.18); color: #fff; }
+        .vault-close-btn { background: rgba(255,255,255,0.20); transition: background .15s ease, transform .15s ease; }
+        .vault-close-btn:hover { background: rgba(255,255,255,0.38); transform: scale(1.08); }
+        .vault-close-btn:active { transform: scale(0.94); }
         .vault-kpi-card { background: #ffffff; border-radius: 16px; padding: 20px 20px 16px; box-shadow: 0 2px 20px rgba(0,0,0,0.06); border: 1px solid var(--vz-border-color); position: relative; overflow: hidden; height: 100%; cursor: pointer; transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
         .vault-kpi-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(18,38,63,0.12); border-color: rgba(99,102,241,0.30); }
         .vault-kpi-card:hover .vault-kpi-icon { transform: scale(1.08); }

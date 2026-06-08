@@ -138,6 +138,22 @@ class HrDocumentSignatureController extends Controller
             $tpl = HrDocumentTemplate::findOrFail((int) $data['template_id']);
             $emp = Employee::with(['department', 'designation'])->findOrFail((int) $data['employee_id']);
 
+            // Idempotency guard — a fast double-submit (double-click on Send)
+            // was creating two identical in-flight signature runs for the same
+            // template + employee. If an ACTIVE run already exists (Pending or
+            // In Progress), return it instead of creating a duplicate. The
+            // lockForUpdate serialises concurrent sends so the second request
+            // waits for the first to commit, then sees it and bails out.
+            $existing = HrDocumentSignature::where('template_id', $tpl->id)
+                ->where('employee_id', $emp->id)
+                ->whereIn('status', ['Pending', 'In Progress'])
+                ->lockForUpdate()
+                ->first();
+            if ($existing) {
+                $existing->load(self::WITH);
+                return response()->json($existing, 200);
+            }
+
             // Resolve workflow signers against real users at SEND time so a
             // later re-org of reporting lines doesn't retroactively change
             // who's on the hook for an in-flight document.

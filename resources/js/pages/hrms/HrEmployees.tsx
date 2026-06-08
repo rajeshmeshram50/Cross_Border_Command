@@ -2038,7 +2038,9 @@ export default function HrEmployees() {
     }
   };
 
-  // When "Same as Current Address" is checked, mirror the current address.
+  // When "Same as Current Address" is checked, mirror the current address;
+  // when unchecked, clear the permanent fields so the user starts fresh
+  // instead of editing the mirrored copy left behind.
   const onToggleSameAsCurrent = (checked: boolean) => {
     setESameAsCurrent(checked);
     if (checked) {
@@ -2048,8 +2050,28 @@ export default function HrEmployees() {
       setEPermState(eCurState);
       setEPermCountry(eCurCountry);
       setEPermPin(eCurPin);
+    } else {
+      setEPermAddr1('');
+      setEPermAddr2('');
+      setEPermCity('');
+      setEPermState('');
+      setEPermCountry('');
+      setEPermPin('');
     }
   };
+
+  // While "Same as Current Address" stays checked, keep the permanent
+  // address mirrored to the current address live — so edits to the
+  // current address flow through instead of leaving a stale snapshot.
+  useEffect(() => {
+    if (!eSameAsCurrent) return;
+    setEPermAddr1(eCurAddr1);
+    setEPermAddr2(eCurAddr2);
+    setEPermCity(eCurCity);
+    setEPermState(eCurState);
+    setEPermCountry(eCurCountry);
+    setEPermPin(eCurPin);
+  }, [eSameAsCurrent, eCurAddr1, eCurAddr2, eCurCity, eCurState, eCurCountry, eCurPin]);
 
   // Filter options pull straight from the Departments master (mDepts).
   // Earlier we derived this from existing employees' departments, which
@@ -2768,6 +2790,23 @@ export default function HrEmployees() {
         .hr-employees-surface .search-box .form-control::placeholder {
           color: var(--vz-secondary-color);
           opacity: 0.75;
+        }
+        /* Glassy search field with a visible border + purple focus halo —
+           mirrors the shared .rec-req-search look used on Exit / Leave /
+           Recruitment so the Employee search reads the same. */
+        .hr-employees-surface .search-box .form-control {
+          border-radius: 8px;
+          background: linear-gradient(180deg, #ffffff 0%, #fbfaff 100%);
+          border: 1px solid #e2e1f3;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 2px rgba(15,23,42,0.03);
+          transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .hr-employees-surface .search-box .form-control:focus {
+          border-color: #7c5cfc;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 0 0 3px rgba(124,92,252,0.16);
+        }
+        .hr-employees-surface .search-box .search-icon {
+          color: #7c5cfc;
         }
         [data-bs-theme="dark"] .hr-employees-surface .search-box .form-control,
         [data-layout-mode="dark"] .hr-employees-surface .search-box .form-control {
@@ -4198,6 +4237,9 @@ export default function HrEmployees() {
           }
           .emp-label { font-size: 10.5px; font-weight: 700; color: #5a3fd1; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; display: block; }
           [data-bs-theme="dark"] .emp-label { color: #c4b5fd; }
+          .emp-close-btn { background: rgba(255,255,255,0.18); transition: background 0.15s ease, transform 0.15s ease; }
+          .emp-close-btn:hover { background: rgba(255,255,255,0.34); transform: scale(1.08); }
+          .emp-close-btn:active { transform: scale(0.95); }
           .emp-label .req { color: #f06548; margin-left: 4px; font-size: 13px; font-weight: 800; line-height: 1; vertical-align: middle; }
           .emp-label .hint { color: #9ca3af; font-weight: 600; text-transform: none; letter-spacing: 0; margin-left: 4px; font-size: 10px; }
           .emp-section {
@@ -4384,10 +4426,9 @@ export default function HrEmployees() {
                   type="button"
                   onClick={closeEmp}
                   aria-label="Close"
-                  className="btn p-0 d-inline-flex align-items-center justify-content-center"
+                  className="btn p-0 d-inline-flex align-items-center justify-content-center emp-close-btn"
                   style={{
                     width: 28, height: 28, borderRadius: 8,
-                    background: 'rgba(255,255,255,0.18)',
                     border: 'none',
                     color: '#fff',
                   }}
@@ -5166,14 +5207,15 @@ export default function HrEmployees() {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   title="View document"
-                                  style={{ color: '#0c63b0', fontSize: 16, lineHeight: 1 }}
+                                  style={{ color: '#0c63b0', fontSize: 16, lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
                                 >
                                   <i className="ri-eye-line" />
                                 </a>
                               )}
                               <label
                                 title="Replace"
-                                style={{ color: '#7c5cfc', cursor: busy ? 'wait' : 'pointer', fontSize: 16, lineHeight: 1, opacity: busy ? 0.5 : 1 }}
+                                className="mb-0"
+                                style={{ color: '#7c5cfc', cursor: busy ? 'wait' : 'pointer', fontSize: 16, lineHeight: 1, opacity: busy ? 0.5 : 1, margin: 0, display: 'inline-flex', alignItems: 'center' }}
                               >
                                 <i className={busy ? 'ri-loader-line' : 'ri-refresh-line'} />
                                 <input

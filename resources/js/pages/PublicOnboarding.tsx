@@ -217,6 +217,19 @@ export default function PublicOnboarding() {
     departmentId, designationId, primaryRoleId, legalEntityId, location, joiningDate,
   ]);
 
+  // While "Same as Current Address" stays checked, keep the permanent
+  // address mirrored to the current address live — so edits to the
+  // current address flow through instead of leaving a stale snapshot.
+  useEffect(() => {
+    if (!sameAsCurrent) return;
+    setPermAddr1(curAddr1);
+    setPermAddr2(curAddr2);
+    setPermCity(curCity);
+    setPermState(curState);
+    setPermCountry(curCountry);
+    setPermPin(curPin);
+  }, [sameAsCurrent, curAddr1, curAddr2, curCity, curState, curCountry, curPin]);
+
   // Country-filtered states for the two address rows.
   const statesFor = (countryId: string) => countryId
     ? states.filter(s => String(s.country_id) === String(countryId))
@@ -1769,6 +1782,7 @@ export default function PublicOnboarding() {
                     const c = e.target.checked;
                     setSameAsCurrent(c);
                     if (c) { setPermAddr1(curAddr1); setPermAddr2(curAddr2); setPermCity(curCity); setPermCountry(curCountry); setPermState(curState); setPermPin(curPin); }
+                    else { setPermAddr1(''); setPermAddr2(''); setPermCity(''); setPermCountry(''); setPermState(''); setPermPin(''); }
                   }} /> Same as Current Address
                 </label>
               </div>

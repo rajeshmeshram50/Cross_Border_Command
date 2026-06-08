@@ -1124,6 +1124,13 @@ class EmployeeController extends Controller
         $salaryFreqRule = $requireSalary ? ['required', 'string', 'max:30']   : ['nullable', 'string', 'max:30'];
         $salaryFromRule = $requireSalary ? ['required', 'date']               : ['nullable', 'date'];
 
+        // Free-text address fields must not carry HTML/script markup — reject
+        // any angle brackets so `<script>`/tag-injection can never be stored
+        // (XSS defence). SQL injection is already neutralised by Eloquent's
+        // parameter binding, so we deliberately do NOT blacklist SQL keywords,
+        // which would wrongly reject legitimate values like "123 Drop Lane".
+        $noTags = ['not_regex:/[<>]/'];
+
         return $request->validate([
             // Identity — first_name is the only field the server insists on
             // (drives display_name + login user.name). Everything else can
@@ -1153,21 +1160,21 @@ class EmployeeController extends Controller
             // Current address
             'country_id'   => 'nullable|integer',
             'state_id'     => 'nullable|integer',
-            'city'         => 'nullable|string|max:100',
-            'address_line1' => 'nullable|string|max:255',
-            'address_line2' => 'nullable|string|max:255',
+            'city'         => array_merge(['nullable', 'string', 'max:100'], $noTags),
+            'address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags),
+            'address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'pincode'      => 'nullable|string|max:20',
 
             // Permanent address (mirrors current address shape)
             'perm_country_id'   => 'nullable|integer',
             'perm_state_id'     => 'nullable|integer',
-            'perm_city'         => 'nullable|string|max:100',
-            'perm_address_line1' => 'nullable|string|max:255',
-            'perm_address_line2' => 'nullable|string|max:255',
+            'perm_city'         => array_merge(['nullable', 'string', 'max:100'], $noTags),
+            'perm_address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags),
+            'perm_address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'perm_pincode'      => 'nullable|string|max:20',
 
             'legal_entity_id' => 'nullable|integer',
-            'location'        => 'nullable|string|max:191',
+            'location'        => array_merge(['nullable', 'string', 'max:191'], $noTags),
             // Department + designation arrive in step 2 of the wizard, so
             // they're nullable here — the frontend per-step validator gates
             // them when the user actually clicks Next on step 2.
@@ -1259,6 +1266,14 @@ class EmployeeController extends Controller
             'id_card_status'      => 'nullable|in:Not Printed,Printed,Issued,Lost,Reissued',
             'status'  => 'nullable|in:Active,Inactive,On Leave,Probation,Notice Period,Resigned,Terminated',
             'onboarding_stage_completed' => 'nullable|integer|min:0|max:6',
+        ], [
+            'city.not_regex'               => 'City cannot contain < or > characters.',
+            'address_line1.not_regex'      => 'Address cannot contain < or > characters.',
+            'address_line2.not_regex'      => 'Address cannot contain < or > characters.',
+            'perm_city.not_regex'          => 'City cannot contain < or > characters.',
+            'perm_address_line1.not_regex' => 'Address cannot contain < or > characters.',
+            'perm_address_line2.not_regex' => 'Address cannot contain < or > characters.',
+            'location.not_regex'           => 'Location cannot contain < or > characters.',
         ]);
     }
 

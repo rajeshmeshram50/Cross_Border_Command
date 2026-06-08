@@ -7,6 +7,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
+import { downloadFile } from '../../utils/downloadFile';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
@@ -1636,10 +1637,16 @@ export function VaultModal({
   // Send-confirmation modal
   const [sendForTpl, setSendForTpl] = useState<MatchedTemplate | null>(null);
   const [sending, setSending] = useState(false);
+  // Synchronous double-submit guard. `sending` state only disables the button
+  // on the NEXT render, leaving a tiny window where a fast double-click fires
+  // confirmSend twice → two signature runs. The ref flips instantly so the
+  // second call bails before the API fires.
+  const sendingRef = useRef(false);
 
   const openSend = (tpl: MatchedTemplate) => { setSendForTpl(tpl); };
   const confirmSend = async () => {
-    if (!sendForTpl || !emp?.dbId) return;
+    if (!sendForTpl || !emp?.dbId || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     try {
       const { data } = await api.post('/hr-document-signatures', {
@@ -1653,6 +1660,7 @@ export function VaultModal({
       toast.error('Could not send', err?.response?.data?.message || 'Please try again.');
     } finally {
       setSending(false);
+      sendingRef.current = false;
     }
   };
 
@@ -1962,8 +1970,8 @@ export function VaultModal({
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="btn p-0 d-inline-flex align-items-center justify-content-center"
-                style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(255,255,255,0.20)', border: 'none', color: '#fff' }}
+                className="btn p-0 d-inline-flex align-items-center justify-content-center vault-close-btn"
+                style={{ width: 32, height: 32, borderRadius: 10, border: 'none', color: '#fff' }}
               >
                 <i className="ri-close-line" style={{ fontSize: 18 }} />
               </button>
@@ -2091,15 +2099,16 @@ export function VaultModal({
                           >
                             <i className="ri-eye-line" /> View
                           </a>
-                          <a
-                            href={hasFile ? doc.url! : undefined}
-                            download
+                          <button
+                            type="button"
+                            onClick={() => { if (hasFile) void downloadFile(doc.url!); }}
+                            disabled={!hasFile}
                             className="vault-action-download"
-                            style={{ opacity: hasFile ? 1 : 0.5, pointerEvents: hasFile ? 'auto' : 'none', textDecoration: 'none' }}
+                            style={{ opacity: hasFile ? 1 : 0.5, pointerEvents: hasFile ? 'auto' : 'none', cursor: hasFile ? 'pointer' : 'default' }}
                             title={hasFile ? 'Download original upload' : 'No file available'}
                           >
                             <i className="ri-download-2-line" /> Download
-                          </a>
+                          </button>
                         </div>
                       );
                     })}
