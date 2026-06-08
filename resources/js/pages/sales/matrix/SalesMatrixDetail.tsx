@@ -256,7 +256,9 @@ export default function SalesMatrixDetail() {
    * the requested stage (2 = KYC, 3 = Trade Docs / Evidence Vault). Stage
    * selection comes from which CLM row the user clicked — both currently
    * deep-link to Stage 2 since the panel labels them "KYC / DD / Trade". */
-  const [clmInitialStage, setClmInitialStage] = useState<1 | 2 | 3 | undefined>(undefined);
+  // Customer/Consignee modals are 2-stage now (Evidence Vault / Stage 3 was
+  // removed from the customer form), so this deep-link tops out at Stage 2.
+  const [clmInitialStage, setClmInitialStage] = useState<1 | 2 | undefined>(undefined);
 
   useEffect(() => {
     if (!changeOwnerOpen || ownerOpts.length > 0) return;

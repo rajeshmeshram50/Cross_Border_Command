@@ -36,7 +36,10 @@ const truncFileName = (s: string | undefined | null, n = 25): string => {
  * lands and we swap the front-end arrays for /api/customers POST.
  * ──────────────────────────────────────────────────────────────────────── */
 
-type Stage = 1 | 2 | 3;
+/* Evidence Vault (the former Stage 3) was removed from the customer form —
+ * those uploads now live in the standalone CustomerEvidenceVaultModal. The
+ * form is a 2-stage flow: Legal Identity → KYC / Due Diligence. */
+type Stage = 1 | 2;
 type StageTab = 'identification' | 'address-contact';
 type KycSubTab = 'company-dd' | 'owner-kyc' | 'trade-licence';
 type EvTab = 'kyc-documents' | 'trade-documents';
@@ -454,8 +457,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, SigInfo>>({});
 
   useEffect(() => {
+    // Dormant since the Evidence Vault (Stage 3) was removed from this form:
+    // `evTab` can no longer become 'trade-documents' here, so this poller
+    // never fires. Kept for the standalone Evidence Vault flow's parity.
     const partyId = customer?.db_id ?? savedDbId;
-    if (!open || stage !== 3 || evTab !== 'trade-documents' || !partyId) return;
+    if (!open || evTab !== 'trade-documents' || !partyId) return;
 
     let cancelled = false;
 
@@ -736,9 +742,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     /* Deep-link: when the caller asked us to land on a specific stage
      * (and we're in Edit mode, so identity is already captured), honour
      * it and bump maxStage so the tracker lets us be there. */
-    const landing: Stage = (isEdit && initialStage) ? initialStage : 1;
+    /* Clamp to ≤2 — the form is now a 2-stage flow. A caller could still
+     * pass the legacy initialStage=3 (Evidence Vault), and module-level
+     * stageMemory may hold a 3 from before; never let either land past
+     * Stage 2. */
+    const landing = Math.min(2, (isEdit && initialStage) ? initialStage : 1) as Stage;
     setStage   (landing);
-    setMaxStage(Math.max(remembered?.maxStage ?? 1, landing) as Stage);
+    setMaxStage(Math.min(2, Math.max(remembered?.maxStage ?? 1, landing)) as Stage);
     setTab     ('identification');
     setKycSub  (remembered?.kycSub   ?? 'company-dd');
     setEvTab   (remembered?.evTab    ?? 'kyc-documents');
@@ -1496,78 +1506,44 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       // onSaved intentionally NOT fired here — Stage 1 → 2 is an
       // intermediate auto-save, not the user's explicit "I'm done"
       // action. Calling it triggered the parent's "Customer updated"
-      // toast twice (once here, once again after final Stage 3 save).
+      // toast twice (once here, once again after the final save).
       // The parent refreshes its list when the modal actually closes.
-    } else if (stage === 2) {
-      /* Stage 2 advance: no validation gate. Stage 2 is now a
+    } else {
+      /* Stage 2 (final): no validation gate. Stage 2 is a
        * segment-rule-driven reference view — the manual Add flow that
-       * the old DD/Owner KYC gate enforced has been removed, so the
-       * user can move to Stage 3 without uploading anything.
+       * the old DD/Owner KYC gate enforced has been removed.
        *
        * Sub-tab cycling: walk through Company DD → Owner KYC →
-       * Trade Licence before crossing into Stage 3 so each sub-tab
-       * gets its own Save & Next step. */
-      if (kycSub === 'company-dd')  { setKycSub('owner-kyc');    return; }
-      if (kycSub === 'owner-kyc')   { setKycSub('trade-licence'); return; }
-      // Crossing into Stage 3 — reset Evidence Vault sub-state so the
-      // user lands on KYC Documents › Company Due Diligence and can
-      // walk every Stage 3 sub-tab via Save & Next instead of landing
-      // mid-flow on whichever sub-tab was last selected.
-      setEvTab('kyc-documents');
-      setEvSub('dd');
-      setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
-    } else {
-      if (!validateStage1()) { setStage(1); setTab('identification'); return; }
-      /* Stage 3 sub-tab cycling: walk Evidence Vault › KYC Documents
-       * (Company DD → Owner KYC → Trade Licence) → Trade Documents
-       * before firing the final submit. Previously this branch jumped
-       * straight to submitCustomer(), so clicking Update Customer from
-       * any Stage 3 sub-tab persisted and closed without giving the
-       * user a chance to review the remaining tabs.
-       *
-       * Stage 3's KYC sub-tab state is evSub (dd/kyc/tl) — distinct
-       * from kycSub which drives Stage 2. */
-      if (evTab === 'kyc-documents') {
-        if (evSub === 'dd')  { setEvSub('kyc'); return; }
-        if (evSub === 'kyc') { setEvSub('tl');  return; }
-        setEvTab('trade-documents');
-        return;
-      }
+       * Trade Licence, each getting its own Save & Next step. On the
+       * last sub-tab the primary button submits the customer — there is
+       * no Stage 3 (Evidence Vault) to step into anymore. */
+      if (kycSub === 'company-dd') { setKycSub('owner-kyc');    return; }
+      if (kycSub === 'owner-kyc')  { setKycSub('trade-licence'); return; }
       submitCustomer();
     }
   };
   const goPrev = () => {
     if (stage === 1) {
       if (tab === 'address-contact') setTab('identification');
-    } else if (stage === 2) {
+    } else {
       // Mirror goNext: step backwards through Stage 2 sub-tabs before
       // falling back to Stage 1's last tab.
       if (kycSub === 'trade-licence') { setKycSub('owner-kyc'); return; }
       if (kycSub === 'owner-kyc')     { setKycSub('company-dd'); return; }
       setStage(1); setTab('address-contact');
     }
-    else {
-      // Stage 3 reverse cycle: Trade Documents → KYC Documents
-      // (Trade Licence → Owner KYC → Company DD) → Stage 2.
-      if (evTab === 'trade-documents') {
-        setEvTab('kyc-documents');
-        setEvSub('tl');
-        return;
-      }
-      if (evSub === 'tl')  { setEvSub('kyc'); return; }
-      if (evSub === 'kyc') { setEvSub('dd');  return; }
-      setStage(2);
-    }
   };
 
   const atStart = stage === 1 && tab === 'identification';
-  const onFinalStage3Tab = stage === 3 && evTab === 'trade-documents';
-  const nextLabel = onFinalStage3Tab
+  // Final step = Stage 2's last sub-tab (Trade Licence). The primary
+  // button submits there instead of advancing — there's no Stage 3.
+  const onFinalTab = stage === 2 && kycSub === 'trade-licence';
+  const nextLabel = onFinalTab
     ? (isEdit ? 'Update Customer' : 'Submit Customer')
     : 'Save & Next';
 
-  /* Stage 2/3 advance: no gates. The form moves freely between stages
-   * 1 → 2 → 3 — only Stage 1's required fields are enforced. */
+  /* Stage 2 advance: no gates. The form moves freely between stages
+   * 1 → 2 — only Stage 1's required fields are enforced. */
   const stage2Missing = '';
   const nextLocked = false;
 
@@ -1648,26 +1624,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               </div>
             </div>
             <div className="acm-history-body">
+              {/* On Stage 2 the only "previous stage" is Stage 1, so the
+                  recap shows just the legal-identity summary. The former
+                  Stage 2 KYC recap (HistoryStage2) belonged to Stage 3,
+                  which has been removed. */}
               <HistoryStage1 form={form} locations={locations} customerId={customer?.id} />
-              {stage >= 3 && (() => {
-                /* Combined counts: legacy hand-added docs (kycDocs /
-                 * kycOwners) PLUS segment-rule reference uploads keyed
-                 * by `${sub-tab}::${doc.code}`. Counting only the legacy
-                 * arrays left the Stage 3 summary stuck at 0 even when
-                 * the user had uploaded files against the segment-rule
-                 * rows on Stage 2. */
-                const segKeys = Object.keys(segmentRefUploads);
-                const segDd  = segKeys.filter(k => k.startsWith('company-dd::')).length;
-                const segOwn = segKeys.filter(k => k.startsWith('owner-kyc::')).length;
-                const segTl  = segKeys.filter(k => k.startsWith('trade-licence::')).length;
-                return (
-                  <HistoryStage2
-                    ddCount={kycDocs.filter(d => d.kind === 'dd').length + segDd}
-                    ownerCount={kycOwners.length + segOwn}
-                    tlCount={kycDocs.filter(d => d.kind === 'tl').length + segTl}
-                  />
-                );
-              })()}
             </div>
           </div>
         )}
@@ -1692,13 +1653,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           </div>
         )}
 
-        {/* STAGE 3 TABS */}
-        {stage === 3 && (
-          <div className="acm-tabs">
-            <button type="button" className={`acm-tab ${evTab === 'kyc-documents' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => setEvTab('kyc-documents')}>KYC Documents</button>
-            <button type="button" className={`acm-tab ${evTab === 'trade-documents' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => setEvTab('trade-documents')}>Trade Documents</button>
-          </div>
-        )}
+        {/* Stage 3 (Evidence Vault) tabs removed — KYC / Trade Documents
+            uploads now live in the standalone CustomerEvidenceVaultModal. */}
 
         {/* BODY */}
         <div className="acm-body">
@@ -1771,93 +1727,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               }}
             />
           )}
-          {stage === 3 && showShimmer && <Stage3Shimmer />}
-          {stage === 3 && !showShimmer && evTab === 'kyc-documents' && (
-            <Stage3KycDocs sub={evSub} setSub={setEvSub} segmentDocs={segmentDocs} segmentRefUploads={segmentRefUploads} />
-          )}
-          {stage === 3 && !showShimmer && evTab === 'trade-documents' && (
-            <Stage3TradeDocs
-              docs={tdDocs.map(d => ({ ...d, cooldownActive: isReminderCooldown(d.signature_request_id) }))}
-              onToggle={(id) => setTdDocs(prev => prev.map(d => d.id === id ? { ...d, selected: !d.selected } : d))}
-              // Select-all skips already-signed docs — they're locked and
-              // must never join a bulk send.
-              onToggleAll={(checked) => setTdDocs(prev => prev.map(d => d.status === 'completed' ? d : { ...d, selected: checked }))}
-              onSend={(id) => {
-                const row = tdDocs.find(d => d.id === id);
-                if (!row?.db_id) {
-                  toast.info('Not a library document', 'This row is a placeholder. Pick a segment with mapped trade documents to enable signature sending.');
-                  return;
-                }
-                if (!(customer?.db_id || savedDbId)) {
-                  toast.info('Save customer first', 'Save the customer before sending documents for signature.');
-                  return;
-                }
-                /* Resend semantics — when the doc is already sitting in
-                 * Zoho `inprogress`, the user clicking "Resend" wants to
-                 * NUDGE the existing signer, not re-pick recipients +
-                 * re-position the signature. Hit the remind endpoint
-                 * directly (same flow New_IDIMS_6.0 uses) and toast.
-                 * For declined / recalled / expired / never-sent rows
-                 * fall through to the wizard so the user can re-cast a
-                 * fresh request.
-                 *
-                 * Bundle handling — Zoho's remind API operates per-
-                 * REQUEST; a 3-doc bundle gets ONE email when any of
-                 * its rows is reminded. We seed a 60s cooldown on the
-                 * signature_request_id so accidentally clicking
-                 * Resend on the other two rows in the bundle doesn't
-                 * fire three reminder emails. */
-                const reqId = row.signature_request_id;
-                if (row.sent && reqId && row.status === 'inprogress') {
-                  if (isReminderCooldown(reqId)) {
-                    toast.info('Already reminded', `One reminder covers every document in this bundle. Try again in ${reminderCooldownSeconds(reqId)}s.`);
-                    return;
-                  }
-                  const bundleCount = tdDocs.filter(d => d.signature_request_id === reqId).length;
-                  api.post(`/clm/signature-requests/${reqId}/remind`)
-                    .then((res) => {
-                      setRecentReminds(prev => ({ ...prev, [reqId]: Date.now() + 60_000 }));
-                      toast.success('Reminder sent',
-                        bundleCount > 1
-                          ? `The signer was notified about all ${bundleCount} documents in this signature request.`
-                          : 'The signer has been notified.',
-                      );
-                      // Bump the "× N" badge on every row in this bundle
-                      // immediately (server is source of truth — its
-                      // returned count overrides the optimistic +1).
-                      const serverCount = Number(res?.data?.data?.reminder_count ?? NaN);
-                      const serverLastAt = (res?.data?.data?.last_reminder_sent_at ?? null) as string | null;
-                      setTdDocs(prev => prev.map(d => (
-                        d.signature_request_id === reqId
-                          ? {
-                              ...d,
-                              reminder_count: Number.isFinite(serverCount) ? serverCount : (d.reminder_count ?? 0) + 1,
-                              last_reminder_sent_at: serverLastAt ?? new Date().toISOString(),
-                            }
-                          : d
-                      )));
-                    })
-                    .catch(err => toast.error('Reminder failed', err?.response?.data?.message ?? 'Could not send the reminder. Try again later.'));
-                  return;
-                }
-                setSendForSignature([row.db_id]);
-              }}
-              onSendSelected={() => {
-                // Already-signed (completed) docs are excluded — they're
-                // locked and can't be re-sent in a bulk action.
-                const ids = tdDocs.filter(d => d.selected && d.db_id && d.status !== 'completed').map(d => d.db_id!);
-                if (ids.length === 0) {
-                  toast.info('Nothing selected', 'Tick one or more unsigned documents under "Send for Signature" first.');
-                  return;
-                }
-                if (!(customer?.db_id || savedDbId)) {
-                  toast.info('Save customer first', 'Save the customer before sending documents for signature.');
-                  return;
-                }
-                setSendForSignature(ids.slice(0, 10));
-              }}
-            />
-          )}
+          
         </div>
 
         {/* FOOTER */}
@@ -2092,8 +1962,6 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
       icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
     { n:2 as Stage, title:'KYC / Due Diligence', sub:'Docs, identity & compliance',
       icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg> },
-    { n:3 as Stage, title:'Evidence Vault', sub:'Trade documents & archive',
-      icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="5" rx="1.5"/><path d="M4 8v12a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8"/><line x1="10" y1="13" x2="14" y2="13"/><line x1="10" y1="17" x2="14" y2="17"/></svg> },
   ];
   const CHECK_BADGE = <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>;
   const CHECK_NUM = <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12"/></svg>;
@@ -2252,36 +2120,7 @@ function Stage2Shimmer() {
   );
 }
 
-/* ───── Stage 3 Evidence Vault shimmer ─────
- * Mirrors the document-grid layout users land on for the final stage,
- * so the populated view appears in the same footprint. */
-function Stage3Shimmer() {
-  return (
-    <div>
-      {/* Sub-tab row (DD / TL / Owner KYC) */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        <Shimmer height={34} width={140} radius={999} />
-        <Shimmer height={34} width={120} radius={999} />
-        <Shimmer height={34} width={150} radius={999} />
-      </div>
-      {/* 2-col card grid of doc previews */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} style={{ padding: 14, border: '1px solid var(--vz-border-color)', borderRadius: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <Shimmer width={36} height={36} radius={8} />
-              <div style={{ flex: 1 }}>
-                <Shimmer height={11} width="60%" radius={4} style={{ marginBottom: 6 }} />
-                <Shimmer height={9} width="40%" radius={4} />
-              </div>
-            </div>
-            <Shimmer height={56} width="100%" radius={8} />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+/* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
 /* ───── Stage 1 — Identification + Primary Address & Contact ───── */
 function Stage1Identification({ form, setF, masters, errors, clearErr, validateField }:
@@ -2966,95 +2805,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
 /* Legacy KycRow (rendered the old hardcoded DD/TL rows) was removed
    once Stage 2 became data-driven and inlined its row rendering. */
 
-/* ───── Stage 3 — Evidence Vault KYC Documents ───── */
-function Stage3KycDocs({ sub, setSub, segmentDocs, segmentRefUploads }: {
-  sub: EvSubTab;
-  setSub: (s: EvSubTab) => void;
-  segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
-  segmentRefUploads: Record<string, { file: File; url: string; name: string }>;
-}) {
-  const meta = EV_SUB_META[sub];
-  /* Stage 3 KYC vault is a read-only roll-up of the Stage 2
-   * segment-rule uploads. Map each EvSubTab to the matching Stage 2
-   * sub-tab (the refKey prefix that the uploader stored uploads
-   * under) and the segmentDocs category that drives the row list. */
-  const stage2Key = sub === 'dd' ? 'company-dd' : sub === 'kyc' ? 'owner-kyc' : 'trade-licence';
-  const sourceRows = sub === 'dd' ? segmentDocs.dd
-                    : sub === 'kyc' ? segmentDocs.kyc
-                    : segmentDocs.tl;
-  return (
-    <div>
-      <div className="acm-nested-tabs">
-        {(['dd','kyc','tl'] as EvSubTab[]).map(s => (
-          <button key={s} type="button" className={`acm-nested-tab ${sub === s ? 'is-active' : ''}`} onClick={() => setSub(s)}>
-            {s === 'dd' ? 'Company Due Diligence' : s === 'kyc' ? 'Owner KYC' : 'Trade License'}
-          </button>
-        ))}
-      </div>
 
-      <div className="acm-section acm-section-purple">
-        <div className="acm-section-head">
-          <div className="acm-section-head-row" style={{ width: '100%' }}>
-            <div className="acm-section-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-            <div>
-              <span className="acm-section-title">{meta.title}</span>
-              <span className="acm-section-sub">{meta.sub}</span>
-            </div>
-          </div>
-        </div>
-        <div className="acm-section-body acm-section-body-table">
-          <div className="acm-table-wrap">
-            <table className="acm-table">
-              <thead><tr><th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>Issuing Authority</th><th>Expiry</th><th>Requirement</th><th>Status</th><th>Attachment</th></tr></thead>
-              <tbody>
-                {sourceRows.length === 0 ? (
-                  <tr className="acm-empty-row"><td colSpan={8}>No segment rule loaded for this category yet — pick a segment on Stage 1.</td></tr>
-                ) : sourceRows.map((d: any, i: number) => {
-                  const refKey = `${stage2Key}::${d.code}`;
-                  const uploaded = segmentRefUploads[refKey];
-                  const expCls = !d.expiry || d.expiry === 'N/A' ? 'acm-expiry-na' : 'acm-expiry-date';
-                  return (
-                    <tr key={d.code}>
-                      <td>{i + 1}</td>
-                      <td><span className="acm-doc-code">{d.code}</span></td>
-                      <td style={{ fontWeight: 700, color: '#1f2937' }}>{d.name}</td>
-                      <td style={{ color: '#6b7280' }}>{d.authority || '—'}</td>
-                      <td><span className={expCls}>{d.expiry || 'N/A'}</span></td>
-                      {/* Requirement — is this doc required or optional. */}
-                      <td>
-                        {d.requirement === 'M'
-                          ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
-                          : <span className="acm-badge acm-badge--opt">Optional</span>}
-                      </td>
-                      {/* Status — completed only when an attachment was uploaded. */}
-                      <td>
-                        {uploaded
-                          ? <span className="acm-badge acm-badge--done">✓ Completed</span>
-                          : <span className={`acm-badge ${d.requirement === 'M' ? 'acm-badge--miss-m' : 'acm-badge--miss-o'}`}>✗ Incomplete</span>}
-                      </td>
-                      <td>
-                        {uploaded ? (
-                          <Tooltip label={uploaded.name}>
-                            <a href={uploaded.url} target="_blank" rel="noreferrer" className="acm-attach-link" aria-label="View attachment" style={{ whiteSpace: 'nowrap' }}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                              {truncFileName(uploaded.name)}
-                            </a>
-                          </Tooltip>
-                        ) : (
-                          <span style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: 11 }}>Not uploaded in Stage 2</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ───── Stage 3 — Trade Documents ─────
  * Per-row signature status. `status` mirrors clm_signature_requests.status
@@ -3097,181 +2848,7 @@ const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: stri
   expired:    { label: 'Expired',             bg: '#fee2e2', fg: '#7f1d1d' },
 };
 
-function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }:
-  { docs: TdDocRow[]; onToggle:(id:string)=>void; onToggleAll:(c:boolean)=>void; onSend:(id:string)=>void; onSendSelected:()=>void }) {
-  // Signed (completed) docs are locked: they don't count toward the
-  // "Send for Signature" select-all and can never be ticked by it.
-  const selectable = docs.filter(d => d.status !== 'completed');
-  const selCount = selectable.filter(d => d.selected).length;
-  const allChecked = selectable.length > 0 && selCount === selectable.length;
-  return (
-    <div className="acm-section acm-section-purple">
-      <div className="acm-section-head">
-        <div className="acm-section-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v12a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8"/><line x1="10" y1="12" x2="14" y2="12"/></svg></div>
-        <div>
-          <span className="acm-section-title">TRADE DOCUMENTS</span>
-          <span className="acm-section-sub">| Trade documents for digital signature & archive</span>
-        </div>
-      </div>
-      <div className="acm-section-body acm-section-body-table">
-        <div className="acm-table-wrap">
-          <table className="acm-table acm-td-table">
-            <colgroup><col className="col-srno" /><col className="col-docname" /><col className="col-sig" /><col className="col-status" /><col className="col-actions" /></colgroup>
-            <thead>
-              <tr>
-                <th>Sr No</th>
-                <th>Document Name</th>
-                <th>
-                  <label className="acm-td-check-label">
-                    <input type="checkbox" checked={allChecked} disabled={selectable.length === 0} ref={el => { if (el) el.indeterminate = selCount > 0 && selCount < selectable.length; }} onChange={e => onToggleAll(e.target.checked)} />
-                    Send for Signature
-                  </label>
-                </th>
-                <th className="th-status">Document Status</th>
-                <th className="th-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {docs.map((d, i) => (
-                <tr key={d.id}>
-                  <td style={{ color: '#9ca3af', fontWeight: 600 }}>{i + 1}</td>
-                  <td style={{ fontWeight: 600, color: '#1f2937' }}>{d.name}</td>
-                  <td>
-                    {(() => {
-                      // Once a doc is `completed` (signer finished signing),
-                      // resending is a footgun — it would create a brand-new
-                      // signature request against the already-archived PDF.
-                      // declined / recalled / expired stay re-sendable so
-                      // the user can retry with a different recipient or
-                      // window.
-                      const isSigned = d.status === 'completed';
-                      const onCooldown = !!d.cooldownActive;
-                      const resendLocked = isSigned || onCooldown;
-                      return (
-                        <div className="acm-td-cell-check">
-                          <input type="checkbox" checked={!isSigned && d.selected} onChange={() => onToggle(d.id)} disabled={isSigned} />
-                          {d.sent ? (
-                            (() => {
-                              const remCount = d.reminder_count ?? 0;
-                              const lastAt   = d.last_reminder_sent_at;
-                              const baseTitle = isSigned   ? 'This document has already been signed.'
-                                : onCooldown ? 'Reminder just sent — one reminder covers every document in this bundle.'
-                                : 'Resend for signature';
-                              const titleWithCount = remCount > 0
-                                ? `${baseTitle} · Reminders sent: ${remCount}${lastAt ? ` (last: ${new Date(lastAt).toLocaleString()})` : ''}`
-                                : baseTitle;
-                              return (
-                                <button
-                                  type="button"
-                                  className="acm-btn-resend"
-                                  onClick={() => { if (!resendLocked) onSend(d.id); }}
-                                  disabled={resendLocked}
-                                  title={titleWithCount}
-                                  style={resendLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                                >
-                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
-                                  {onCooldown ? 'Sent ✓' : 'Resend'}
-                                  {remCount > 0 && (
-                                    <span className="acm-remind-count" aria-label={`Reminder sent ${remCount} times`}>× {remCount}</span>
-                                  )}
-                                </button>
-                              );
-                            })()
-                          ) : (
-                            <button type="button" className="acm-btn-send" onClick={() => onSend(d.id)}>
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                              Send
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </td>
-                  <td className="td-status">
-                    {(() => {
-                      const s = d.status ?? 'idle';
-                      const b = TD_STATUS_BADGE[s];
-                      return (
-                        <span style={{
-                          display: 'inline-block', padding: '3px 10px', borderRadius: 999,
-                          fontSize: 11, fontWeight: 700,
-                          background: b.bg, color: b.fg,
-                        }}>{b.label}</span>
-                      );
-                    })()}
-                  </td>
-                  <td className="td-actions">
-                    {/* Action set is status-driven:
-                        • completed  → View signed | Download signed | Download certificate
-                        • anything else → View | Download (both disabled until a signed
-                          URL exists, e.g. inprogress rows).
-                        The certificate button only appears for completed rows because
-                        Zoho only mints the certificate after the recipient finishes
-                        signing — earlier statuses have no certificate to fetch. */}
-                    <div className="acm-row-actions">
-                      <Tooltip label={d.signed_url ? 'View signed document' : 'View document'}>
-                        <a
-                          href={d.signed_url || '#'}
-                          target={d.signed_url ? '_blank' : undefined}
-                          rel={d.signed_url ? 'noreferrer' : undefined}
-                          onClick={e => { if (!d.signed_url) e.preventDefault(); }}
-                          className="acm-doc-action acm-doc-action-view"
-                          aria-label="View"
-                          style={{ opacity: d.signed_url ? 1 : 0.5, cursor: d.signed_url ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </a>
-                      </Tooltip>
-                      <Tooltip label={d.signed_url ? 'Download signed document' : 'Download document'}>
-                        <a
-                          href={d.signed_url || '#'}
-                          onClick={e => { e.preventDefault(); if (d.signed_url) void downloadFile(d.signed_url, d.name || ''); }}
-                          className="acm-doc-action acm-doc-action-download"
-                          aria-label="Download"
-                          style={{ opacity: d.signed_url ? 1 : 0.5, cursor: d.signed_url ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        </a>
-                      </Tooltip>
-                      {d.status === 'completed' && d.certificate_url && (
-                        <Tooltip label="Download Certificate of Completion">
-                          <a
-                            href={d.certificate_url}
-                            onClick={e => { e.preventDefault(); void downloadFile(d.certificate_url!, `${d.name || 'document'}-certificate`); }}
-                            className="acm-doc-action acm-doc-action-cert"
-                            aria-label="Download Certificate"
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                              width: 28, height: 28, borderRadius: 6,
-                              background: '#cffafe', color: '#0e7490',
-                              border: '1px solid #67e8f9',
-                              cursor: 'pointer', textDecoration: 'none',
-                            }}
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="12" cy="8" r="6"/>
-                              <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
-                            </svg>
-                          </a>
-                        </Tooltip>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="acm-td-actions">
-          <button type="button" className="acm-btn-purple-lg" onClick={onSendSelected}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            Send Selected Documents for Signature
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+
 
 /* ───── KYC file slot ─────
  * Shared widget used by Stage 2's Add Document / License and Owner KYC
@@ -5663,15 +5240,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-page-btn.is-active { background: linear-gradient(135deg,#6d28d9,#4c1d95); border-color: #7c3aed; color: #fff; }
 [data-bs-theme="dark"] .acm-page-btn:disabled { opacity: 0.4; }
 
-/* Stage 3 - Trade Documents */
-[data-bs-theme="dark"] .acm-btn-send { background: rgba(124,58,237,0.20); color: #c4b5fd; border-color: rgba(167,139,250,0.40); }
-[data-bs-theme="dark"] .acm-btn-send:hover { background: rgba(124,58,237,0.32); border-color: #a78bfa; }
-[data-bs-theme="dark"] .acm-btn-resend { background: rgba(255,255,255,0.06); color: #94a3b8; border-color: rgba(255,255,255,0.18); }
-[data-bs-theme="dark"] .acm-btn-purple-lg { background: linear-gradient(135deg,#6d28d9,#4c1d95); }
-[data-bs-theme="dark"] .acm-btn-purple-lg-out { background: transparent; color: #c4b5fd; border-color: rgba(167,139,250,0.40); }
-[data-bs-theme="dark"] .acm-btn-purple-lg-out:hover { background: rgba(167,139,250,0.12); }
-[data-bs-theme="dark"] .acm-td-actions { background: rgba(28,37,49,0.40); border-top-color: rgba(255,255,255,0.06); }
-[data-bs-theme="dark"] .acm-td-check-label { color: #ede9fe; }
+
 
 /* Stage 2 doc counter stats (history) */
 [data-bs-theme="dark"] .acm-hs-stat { background: linear-gradient(135deg, rgba(76,29,149,0.28), rgba(109,40,217,0.18)); border-color: rgba(167,139,250,0.30); }
