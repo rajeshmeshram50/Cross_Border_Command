@@ -1751,7 +1751,15 @@ function MasterPageInner({
           box-shadow: 0 8px 18px rgba(99,102,241,0.30);
         }
 
-        /* Search box — focus ring matches the rest of the system */
+        /* Search box — give the resting border real contrast so the field
+           reads as interactive (BUG-116), then the violet focus ring on top. */
+        .search-box .form-control {
+          border: 1px solid #cbd5e1;
+        }
+        [data-bs-theme="dark"] .search-box .form-control,
+        [data-layout-mode="dark"] .search-box .form-control {
+          border-color: rgba(255,255,255,0.20);
+        }
         .search-box .form-control:focus {
           border-color: rgba(99,102,241,0.45);
           box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
