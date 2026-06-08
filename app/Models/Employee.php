@@ -84,7 +84,7 @@ class Employee extends Model
      *  `photo_url` resolves the passport-size photo uploaded as an
      *  EmployeeDocument with document_key='photo' — eager-load
      *  `photoDocument` to avoid N+1 on list endpoints. */
-    protected $appends = ['other_assets_resolved', 'ancillary_roles_resolved', 'photo_url', 'face_registered', 'encrypted_id'];
+    protected $appends = ['other_assets_resolved', 'ancillary_roles_resolved', 'photo_url', 'face_registered', 'encrypted_id', 'profile_completion'];
 
     /** Never ship the raw 128-d descriptor on list/detail responses.
      *  It's biometric data, ~1.5 KB per row, and the only legitimate
@@ -169,6 +169,48 @@ class Employee extends Model
         return $this->face_registered_at !== null
             && is_array($this->face_descriptor)
             && count($this->face_descriptor) > 0;
+    }
+
+    /**
+     * Field-based profile completeness (0-100). Counts how many of the
+     * "business-card" profile fields are filled, so a created/onboarded
+     * employee with real data shows a meaningful % instead of 0% (which the
+     * onboarding-stage-only number reported until their wizard advanced).
+     * Exposed on the API payload so the HR Onboarding list, HR Employees,
+     * and the dashboard all read the SAME dynamic number.
+     */
+    public function getProfileCompletionAttribute(): int
+    {
+        // BLENDED completion: 50% from the onboarding-form data fields that
+        // are filled + 50% from the HR 6-stage onboarding progress. So a
+        // fully-filled record that HR hasn't onboarded yet ("Not Started")
+        // tops out at 50% (no longer a misleading 100%), and only a fully
+        // onboarded employee with all data reaches 100%.
+        //
+        // Data half mirrors the fields the onboarding form actually collects
+        // (basic → contact → address → job); purely optional fields
+        // (middle_name, alt_mobile, address_line2) are excluded so skipping
+        // them doesn't unfairly lower the score.
+        $fields = [
+            // Basic details
+            'first_name', 'last_name', 'gender', 'date_of_birth',
+            'work_country_id', 'nationality_country_id',
+            // Contact & identity
+            'email', 'mobile',
+            // Address
+            'address_line1', 'city', 'state_id', 'country_id', 'pincode',
+            // Job
+            'department_id', 'designation_id', 'primary_role_id', 'date_of_joining',
+        ];
+        $hit = 0;
+        foreach ($fields as $f) {
+            $v = $this->{$f};
+            if ($v !== null && $v !== '' && $v !== 0 && $v !== '0') $hit++;
+        }
+        $dataPart  = ($hit / count($fields)) * 50;
+        $stage     = max(0, min(6, (int) ($this->onboarding_stage_completed ?? 0)));
+        $stagePart = ($stage / 6) * 50;
+        return (int) round($dataPart + $stagePart);
     }
 
     /**
@@ -355,6 +397,11 @@ class Employee extends Model
     public function attendances(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(\App\Models\Attendance::class, 'employee_id');
+    }
+
+    public function previousEmployments(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\PreviousEmployment::class, 'employee_id');
     }
 
     public function leaveRequests(): \Illuminate\Database\Eloquent\Relations\HasMany

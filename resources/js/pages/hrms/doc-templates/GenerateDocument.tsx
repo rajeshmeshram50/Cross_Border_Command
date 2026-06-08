@@ -972,6 +972,13 @@ function ScopedStyles() {
       [data-layout-mode="dark"] .gd-page .gd-body { background: #1f2937; }
       [data-bs-theme="dark"] .gd-page .gd-footer,
       [data-layout-mode="dark"] .gd-page .gd-footer { background: #111827 !important; border-top-color: rgba(255,255,255,0.08) !important; }
+      /* Step-1 table pagination strip — was a hardcoded light #fafafa (BUG-113). */
+      [data-bs-theme="dark"] .gd-page .gd-pagination,
+      [data-layout-mode="dark"] .gd-page .gd-pagination { background: #111827 !important; border-top-color: rgba(255,255,255,0.08) !important; }
+      [data-bs-theme="dark"] .gd-page .gd-pagination span,
+      [data-layout-mode="dark"] .gd-page .gd-pagination span { color: rgba(255,255,255,0.70) !important; }
+      [data-bs-theme="dark"] .gd-page .gd-pagination button,
+      [data-layout-mode="dark"] .gd-page .gd-pagination button { background: rgba(255,255,255,0.06) !important; border-color: rgba(255,255,255,0.14) !important; color: #cbd5e1 !important; }
       [data-bs-theme="dark"] .gd-page .gd-step-counter,
       [data-layout-mode="dark"] .gd-page .gd-step-counter { color: rgba(255,255,255,0.6); }
       [data-bs-theme="dark"] .gd-page .gd-cancel,
@@ -1017,6 +1024,11 @@ function ScopedStyles() {
       [data-layout-mode="dark"] .gd-page .gd-emp-card,
       [data-layout-mode="dark"] .gd-page .gd-apply-all {
         background: #1f2937 !important; border-color: rgba(255,255,255,0.08) !important;
+      }
+      /* Custom-variables empty/content box — was a hardcoded light #fafaff (BUG-114). */
+      [data-bs-theme="dark"] .gd-page .gd-empty,
+      [data-layout-mode="dark"] .gd-page .gd-empty {
+        background: rgba(99,102,241,0.10) !important; border-color: rgba(129,140,248,0.40) !important; color: #c7d2fe !important;
       }
       [data-bs-theme="dark"] .gd-page .gd-emp-name,
       [data-layout-mode="dark"] .gd-page .gd-emp-name { color: #f1f5f9 !important; }

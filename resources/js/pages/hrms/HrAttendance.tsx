@@ -708,6 +708,22 @@ export default function HrAttendance() {
                   </div>
 
                   <div className="att-emplist-search">
+                    {/* BUG-069: give the search field a real resting border so
+                        it reads as interactive instead of blending into the
+                        panel — in both light and dark mode. */}
+                    <style>{`
+                      .att-emplist-search .search-box .form-control {
+                        border: 1px solid #cbd5e1;
+                      }
+                      [data-bs-theme="dark"] .att-emplist-search .search-box .form-control,
+                      [data-layout-mode="dark"] .att-emplist-search .search-box .form-control {
+                        border-color: rgba(255,255,255,0.20);
+                      }
+                      .att-emplist-search .search-box .form-control:focus {
+                        border-color: rgba(99,102,241,0.45);
+                        box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+                      }
+                    `}</style>
                     <div className="search-box">
                       <Input type="text" className="form-control form-control-sm" placeholder="Search name, EMP-ID, biometric…" value={search} onChange={e => setSearch(e.target.value)} />
                       <i className="ri-search-line search-icon" />
@@ -1216,13 +1232,13 @@ function LogsRequestsCard({
                 table-card with table-light header. Custom .att-* classes only
                 kick in for the cells that need attendance-specific styling
                 (date split, shift pill, status pill, action icons, popover). */}
-            {/* Fixed-height wrapper so the table doesn't shrink on partial
-                pages (e.g. 3 rows on the last page). Height = header (~46px)
-                + N rows × ~52px so the footer stays at the same vertical
-                position whatever page you're on. */}
+            {/* Height tracks the ACTUAL rows on the page (header ~46px + visible
+                rows × ~52px), capped at the page size — so a short page (e.g. 4
+                records with page size 10) doesn't leave a big empty placeholder
+                area below the rows (HRMS-BUG-080). */}
             <div
               className="table-responsive table-card border rounded att-logs-table-wrap--fixed"
-              style={{ minHeight: `${46 + rowsPerPage * 52}px` }}
+              style={{ minHeight: `${46 + Math.min(Math.max(visibleLogs.length, 1), rowsPerPage) * 52}px` }}
             >
               <table className="table align-middle table-nowrap mb-0 att-logs-table att-logs-table--v2">
                 <thead className="table-light">

@@ -87,6 +87,10 @@ export default function CustomFieldModal(props: {
         }
         .cfm-type-tile { transition: transform 140ms ease, border-color 140ms ease, background 140ms ease; }
         .cfm-type-tile:hover:not(.is-active) { border-color: #c7d2fe !important; background: #fafaff !important; }
+        /* Save Field + Close (X) hover feedback (BUG-108 / BUG-109). */
+        .cfm-save-btn:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 7px 20px rgba(99,102,241,0.45) !important; }
+        .cfm-save-btn:active { transform: translateY(0); }
+        .cfm-close-x:hover { background: rgba(255,255,255,0.32) !important; }
 
         [data-bs-theme="dark"] .cfm-overlay,
         [data-layout-mode="dark"] .cfm-overlay { background: rgba(2, 6, 23, 0.55); }
@@ -175,8 +179,8 @@ export default function CustomFieldModal(props: {
               <h5 className="mb-0 fw-bold" style={{ color: '#fff' }}>{initial?.id ? 'Edit Custom Field' : 'Add Custom Field'}</h5>
               <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.9)' }}>Variables used in templates — filled at document generation time</div>
             </div>
-            <button type="button" onClick={onClose}
-              style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', cursor: 'pointer' }}>
+            <button type="button" onClick={onClose} className="cfm-close-x"
+              style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', cursor: 'pointer', transition: 'background .15s ease' }}>
               <i className="ri-close-line" style={{ fontSize: 18 }} />
             </button>
           </div>
@@ -244,8 +248,8 @@ export default function CustomFieldModal(props: {
               style={{ padding: '8px 18px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
               Cancel
             </button>
-            <button type="button" onClick={submit}
-              style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
+            <button type="button" onClick={submit} className="cfm-save-btn"
+              style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease' }}>
               Save Field
             </button>
           </div>

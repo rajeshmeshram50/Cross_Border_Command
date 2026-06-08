@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody } from 'reactstrap';
-import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
+import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import { useAuth } from '../../contexts/AuthContext';
 import { leaveRequestsApi, ApiLeaveRequest } from './leavePlansApi';
@@ -687,30 +687,53 @@ export default function HrLeave() {
                 </button>
 
                 {/* Date filter — pick any day to see who's on leave on it.
-                    Keeping this as a native input means we don't need a
-                    full date-picker portal inside an already-busy header. */}
+                    Uses the same styled date-nav as the Attendance page
+                    (prev / picker / next / Today) for visual consistency
+                    (HRMS-BUG-082). */}
                 <div className="d-flex align-items-center gap-2" style={{ marginLeft: 'auto' }}>
                   <label className="text-muted" style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase' }}>
                     Date
                   </label>
-                  <input
-                    type="date"
-                    className="form-control form-control-sm"
-                    style={{ width: 150, fontSize: 12.5 }}
-                    value={onLeaveDate}
-                    onChange={e => setOnLeaveDate(e.target.value || new Date().toISOString().slice(0, 10))}
-                  />
-                  {onLeaveDate !== new Date().toISOString().slice(0, 10) && (
+                  <div className="att-date-nav">
                     <button
                       type="button"
-                      onClick={() => setOnLeaveDate(new Date().toISOString().slice(0, 10))}
-                      className="rec-btn-ghost"
-                      title="Reset to today"
-                      style={{ fontSize: 11.5, padding: '4px 10px' }}
+                      className="att-date-nav-btn"
+                      aria-label="Previous day"
+                      onClick={() => {
+                        const d = new Date(onLeaveDate); d.setDate(d.getDate() - 1);
+                        setOnLeaveDate(d.toISOString().slice(0, 10));
+                      }}
                     >
-                      <i className="ri-refresh-line me-1" />Today
+                      <i className="ri-arrow-left-s-line" />
                     </button>
-                  )}
+                    <div className="att-date-nav-pick">
+                      <MasterDatePicker
+                        value={onLeaveDate}
+                        onChange={v => setOnLeaveDate(v || new Date().toISOString().slice(0, 10))}
+                        placeholder="Pick date"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="att-date-nav-btn"
+                      aria-label="Next day"
+                      onClick={() => {
+                        const d = new Date(onLeaveDate); d.setDate(d.getDate() + 1);
+                        setOnLeaveDate(d.toISOString().slice(0, 10));
+                      }}
+                    >
+                      <i className="ri-arrow-right-s-line" />
+                    </button>
+                    {onLeaveDate !== new Date().toISOString().slice(0, 10) && (
+                      <button
+                        type="button"
+                        className="att-date-nav-today"
+                        onClick={() => setOnLeaveDate(new Date().toISOString().slice(0, 10))}
+                      >
+                        Today
+                      </button>
+                    )}
+                  </div>
                   <span className={`lv-today-count ${onLeaveToday.length === 0 ? 'is-empty' : ''}`}>
                     <i className={onLeaveToday.length === 0 ? 'ri-emotion-happy-line' : 'ri-team-line'} />
                     {onLeaveToday.length} {onLeaveToday.length === 1 ? 'person' : 'people'}

@@ -151,6 +151,9 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   const [hrPickerOpen, setHrPickerOpen] = useState(false);
   // Clause Library picker — drops reusable clauses (GET /clm/clause-library) at the caret.
   const [clausePickerOpen, setClausePickerOpen] = useState(false);
+  // Full-page drafting — expands the editor shell to fill the viewport so the
+  // user can draft long documents without the modal chrome cramping them.
+  const [fullPage, setFullPage] = useState(false);
   const lastRangeRef                 = useRef<Range | null>(null);
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
@@ -312,6 +315,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       toast.error('Download failed', msg);
     }
   };
+
   const uploadDocx = async (file: File) => {
     if (!editingId) {
       toast.error('Save first', 'Save the trade document before uploading a revised DOCX.');
@@ -338,6 +342,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   useEffect(() => {
     if (!open) return;
     setStep(1);
+    setFullPage(false);
     setErrors({});
     setSaving(false);
     if (existing) {
@@ -382,8 +387,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     if (step === 2 && editorRef.current) {
       editorRef.current.innerHTML = content ?? '';
     }
+    // `fullPage` is in the deps because toggling it portals the editor to /
+    // from <body>, which remounts the contentEditable div — re-push the
+    // latest content so the draft body survives the switch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
+  }, [step, fullPage]);
 
   /* Track the last caret position inside the body editor on every
    * selectionchange. Without this, clicking a toolbar button that opens
@@ -730,15 +738,27 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
             </div>
           ) : (
             <div className="tdw-step-body">
-              <div className="tdw-editor-shell">
+              {/* In full page the shell is portalled to <body> so its
+                  position:fixed is relative to the viewport — otherwise the
+                  modal's CSS transform traps it inside the modal box. */}
+              {(() => { const editorShell = (
+              <div className={`tdw-editor-shell ${fullPage ? 'tdw-editor-shell-full' : ''}`}>
                 <div className="tdw-editor-head">
                   <div className="tdw-editor-title">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
-                    DRAFT DOCUMENT CONTENT
+                    <span className="tdw-editor-title-ico">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+                    </span>
+                    <div className="tdw-editor-title-text">
+                      <div className="tdw-editor-title-main">Draft Document Content</div>
+                      {fullPage && <div className="tdw-editor-title-sub">Write or paste your trade document text below</div>}
+                    </div>
                   </div>
                   <div className="tdw-editor-actions">
                     <input ref={docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
                            onChange={e => { const f = e.target.files?.[0]; if (f) void uploadDocx(f); e.currentTarget.value = ''; }} />
+                    {/* DOCX only — Stage 2 exports the editable Word file. The
+                        full combined PDF preview lives on the Library list as
+                        "Download Draft PDF". */}
                     <button type="button" className="tdw-editor-btn" onClick={() => void downloadDocx()} title={editingId ? 'Download as DOCX' : 'Save the trade document first'}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                       Download DOCX
@@ -763,6 +783,17 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     <button type="button" className="tdw-editor-btn" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={() => setClausePickerOpen(true)}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
                       Clause Library
+                    </button>
+                    {/* Full Page — expands the drafting area to fill the screen
+                        (and collapses back). Lets the user draft long content
+                        without the modal frame cramping the editor. */}
+                    <button type="button" className={`tdw-editor-btn ${fullPage ? 'is-on' : ''}`} onClick={() => setFullPage(v => !v)} title={fullPage ? 'Exit full page' : 'Edit in full page'}>
+                      {fullPage ? (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6" /><path d="M20 10h-6V4" /><path d="M14 10l7-7" /><path d="M3 21l7-7" /></svg>
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>
+                      )}
+                      {fullPage ? 'Exit Full Page' : 'Full Page'}
                     </button>
                   </div>
                 </div>
@@ -863,9 +894,9 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                 </div>
                 <div className="tdw-editor-foot">
                   <span className="tdw-editor-foot-hint">ℹ Placeholders auto-fill on document generation</span>
-                  <span className="tdw-editor-foot-tag">{'{{PLACEHOLDER}}'}</span>
                 </div>
               </div>
+              ); return fullPage ? createPortal(editorShell, document.body) : editorShell; })()}
             </div>
           )}
         </div>
@@ -1194,6 +1225,19 @@ const TDW_CSS = `
   background: #fff;
   display: flex; flex-direction: column;
 }
+/* Full-page drafting — pops the editor out to fill the viewport. Sits above
+   the modal overlay (200000) but below the Placeholder/Table/Clause pickers
+   (260000+) so those still open on top while in full page. */
+.tdw-editor-shell-full {
+  position: fixed; inset: 0; z-index: 210000;
+  border: 0; border-radius: 0;
+  height: 100vh; max-height: 100vh;
+}
+.tdw-editor-shell-full .tdw-editor-scroll { flex: 1; min-height: 0; }
+.tdw-editor-btn.is-on {
+  background: linear-gradient(135deg,#06b6d4,#0e7490);
+  border-color: transparent; color: #fff;
+}
 .tdw-editor-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px; flex-wrap: wrap;
@@ -1204,11 +1248,41 @@ const TDW_CSS = `
 }
 /* Scrollable page-shell region between the pinned toolbar and footer. */
 .tdw-editor-scroll { flex: 1; min-height: 0; overflow-y: auto; background: #fff; }
-.tdw-editor-title {
-  display: inline-flex; align-items: center; gap: 7px;
-  font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
-}
+.tdw-editor-title { display: inline-flex; align-items: center; gap: 9px; }
+.tdw-editor-title-ico { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.tdw-editor-title-main { font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.tdw-editor-title-sub { font-size: 11px; font-weight: 500; opacity: .85; margin-top: 1px; }
 .tdw-editor-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+
+/* Full-page header — taller, prominent stage-style title bar matching the
+   reference full-screen drafting view. */
+.tdw-editor-shell-full .tdw-editor-head { padding: 13px 22px; }
+.tdw-editor-shell-full .tdw-editor-title-ico {
+  width: 36px; height: 36px; border-radius: 10px; background: rgba(255,255,255,.16);
+}
+.tdw-editor-shell-full .tdw-editor-title-main { font-size: 16px; letter-spacing: -.01em; text-transform: none; }
+/* Centre the document canvas with comfortable margins in full page. */
+.tdw-editor-shell-full .tdw-editor-scroll { padding: 0; }
+
+/* Download format chooser (PDF / DOCX) */
+.tdw-download-backdrop { position: fixed; inset: 0; z-index: 1; }
+.tdw-download-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 2;
+  min-width: 180px; padding: 6px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(15,23,42,.18);
+}
+.tdw-download-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 8px 10px; border: 0; border-radius: 7px; background: none;
+  font-family: inherit; font-size: 12.5px; font-weight: 600; color: #1e293b;
+  cursor: pointer; text-align: left; transition: background .12s;
+}
+.tdw-download-item:hover { background: #f1f5f9; }
+[data-bs-theme="dark"] .tdw-download-menu { background: #1e293b; border-color: rgba(148,163,184,.22); }
+[data-bs-theme="dark"] .tdw-download-item { color: #e2e8f0; }
+[data-bs-theme="dark"] .tdw-download-item:hover { background: rgba(148,163,184,.14); }
+
 .tdw-editor-btn {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 5px 9px; border-radius: 7px;

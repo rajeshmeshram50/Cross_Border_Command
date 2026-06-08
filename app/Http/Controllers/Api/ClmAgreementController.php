@@ -505,10 +505,16 @@ class ClmAgreementController extends Controller
         // the frontend uses these to resolve signers based on the
         // agreement's `party` CSV.)
 
+        // Buyer == Consignee when there's no distinct consignee, or the mapped
+        // consignee is flagged same-as-customer. Drives the Trade Documents
+        // popup: equal ⇒ one flat list; different ⇒ Buyer/Consignee/Both tabs.
+        $buyerEqualsConsignee = !$consignee || (bool) ($consignee->same_as_customer ?? false);
+
         return response()->json([
             'status' => true,
             'data'   => [
-                'stage5Complete' => $stage5Complete,
+                'stage5Complete'       => $stage5Complete,
+                'buyerEqualsConsignee' => $buyerEqualsConsignee,
                 'lead' => [
                     'id'   => $lead->id,
                     'code' => $lead->opportunity_code ?? null,
@@ -555,11 +561,11 @@ class ClmAgreementController extends Controller
     }
 
     /**
-     * Trade documents required for a single segment, listed for each mapped
-     * party (customer + consignee). Mirrors the Evidence Vault's `td` bucket
-     * logic (segment rule → doc_selections['td'] → master + upload status)
-     * but scoped to ONE segment so the Sales Matrix can show trade documents
-     * segment-wise instead of unioned per party.
+     * Trade documents required for a single segment, ONE row per document.
+     * Each row carries the document's applicable party (parsed from the trade
+     * doc master's `party` CSV → for_buyer / for_consignee) so the Sales Matrix
+     * popup can segregate into Buyer / Consignee / Both tabs. Upload status is
+     * unioned across the mapped parties (uploaded by either ⇒ Verified).
      *
      * @param  array<int,array{party:string,model:Model}>  $partyOwners
      * @return array<int,array<string,mixed>>
@@ -577,30 +583,51 @@ class ClmAgreementController extends Controller
             ->get()
             ->keyBy('code');
 
-        $out = [];
+        // Upload state keyed by doc_code, per mapped party owner.
+        $uploadsByOwner = [];
         foreach ($partyOwners as $owner) {
             $model = $owner['model'];
-            $uploads = SegmentDocUpload::where('uploadable_type', get_class($model))
+            $uploadsByOwner[$owner['party']] = SegmentDocUpload::where('uploadable_type', get_class($model))
                 ->where('uploadable_id', $model->id)
                 ->where('category', 'td')
                 ->get()
                 ->keyBy('doc_code');
+        }
 
-            foreach ($sel as $code => $req) {
-                $m = $masters->get($code);
-                $u = $uploads->get($code);
-                $out[] = [
-                    'party'          => $owner['party'],
-                    'db_id'          => $m?->id,
-                    'name'           => $m?->name ?? ($m?->title ?? $code),
-                    'reference'      => $m?->code ?? $code,
-                    'doc_code'       => (string) $code,
-                    'requirement'    => $req === 'M' ? 'M' : 'O',
-                    'status'         => $u ? 'Verified' : 'Pending',
-                    'attachment'     => $u?->attachment_name,
-                    'attachment_url' => $u?->attachment_url,
-                ];
+        $out = [];
+        foreach ($sel as $code => $req) {
+            $m = $masters->get($code);
+
+            // Applicable party comes from the master's `party` CSV (e.g.
+            // "Buyer,Consignee,Supplier-Material"). A doc that names neither
+            // Buyer nor Consignee falls back to "both" so it's never hidden.
+            $tokens = array_filter(array_map(
+                fn ($t) => strtolower(trim($t)),
+                explode(',', (string) ($m?->party ?? ''))
+            ));
+            $forBuyer     = in_array('buyer', $tokens, true);
+            $forConsignee = in_array('consignee', $tokens, true);
+            if (!$forBuyer && !$forConsignee) { $forBuyer = true; $forConsignee = true; }
+
+            // Verified if EITHER mapped party has uploaded this code.
+            $uploaded = null;
+            foreach ($uploadsByOwner as $ups) {
+                if ($hit = $ups->get($code)) { $uploaded = $hit; break; }
             }
+
+            $out[] = [
+                'db_id'            => $m?->id,
+                'name'             => $m?->name ?? ($m?->title ?? $code),
+                'reference'        => $m?->code ?? $code,
+                'doc_code'         => (string) $code,
+                'requirement'      => $req === 'M' ? 'M' : 'O',
+                'applicable_party' => (string) ($m?->party ?? ''),
+                'for_buyer'        => $forBuyer,
+                'for_consignee'    => $forConsignee,
+                'status'           => $uploaded ? 'Verified' : 'Pending',
+                'attachment'       => $uploaded?->attachment_name,
+                'attachment_url'   => $uploaded?->attachment_url,
+            ];
         }
         return $out;
     }
