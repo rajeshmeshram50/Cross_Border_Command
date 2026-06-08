@@ -106,7 +106,9 @@ export default function Vendors() {
   /* When set, the wizard opens directly on that step — used by
      "Map Products" so the user doesn't have to re-walk Steps 1-3
      just to add a product mapping. */
-  const [editingStep, setEditingStep] = useState<1 | 2 | 3 | 4 | null>(null);
+  // Supplier wizard is 3 steps now (Trade Document Management / Evidence
+  // Vault step removed): Identity → KYC → Map Products.
+  const [editingStep, setEditingStep] = useState<1 | 2 | 3 | null>(null);
   /* Standalone Evidence Vault modal target — clicking the Vault action
    * on a row sets this; the modal pulls a fresh /vault payload from
    * the API and renders KPI cards + per-bucket tables read-only. */

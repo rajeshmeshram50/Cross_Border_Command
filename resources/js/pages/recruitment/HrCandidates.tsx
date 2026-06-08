@@ -32,6 +32,8 @@ interface CandidateRow {
   expected_salary_lpa: number | null;
   notice_period: string | null;
   source: string | null;
+  referred_by_id: number | null;
+  referred_by_name: string | null;
   cv_path: string | null;
   cv_url: string | null;
   status: CandidateStatus;
@@ -465,13 +467,13 @@ export default function HrCandidates() {
                           <tr key={c.id}>
                             <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
                             <td>
-                              <div className="d-flex align-items-center gap-2">
+                              <div className="d-flex align-items-center gap-2" style={{ maxWidth: 240 }}>
                                 <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
                                   style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${c.accent}, ${c.accent}cc)` }}>
                                   {c.initials}
                                 </div>
-                                <span className="fw-bold fs-13">{c.name}</span>
-                                {c.recruitment_code && <span className="rec-id-pill" style={{ fontSize: 10, padding: '2px 7px' }}>{c.recruitment_code}</span>}
+                                <span className="fw-bold fs-13" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} title={c.name}>{c.name}</span>
+                                {c.recruitment_code && <span className="rec-id-pill flex-shrink-0" style={{ fontSize: 10, padding: '2px 7px' }}>{c.recruitment_code}</span>}
                               </div>
                             </td>
                             <td className="fs-13 text-muted">{c.email || '—'}</td>
@@ -1300,8 +1302,14 @@ function CandidateFormModal({
   const [expectedSalary, setExpectedSalary]   = useState('');
   const [noticePeriod, setNoticePeriod]       = useState('Immediate');
   const [source, setSource]                   = useState('');
+  // Referral capture (HRMS-BUG-057) — only used when source === 'Referral'.
+  const [referredById, setReferredById]       = useState('');
+  const [employeeOpts, setEmployeeOpts]       = useState<{ value: string; label: string }[]>([]);
   const [status, setStatus]                   = useState<CandidateStatus>('Final Interview');
   const [cvFile, setCvFile]                   = useState<File | null>(null);
+  // Holds the previously-uploaded CV's URL when editing, so the form can
+  // show "current CV" instead of looking like nothing was ever attached.
+  const [existingCvUrl, setExistingCvUrl]     = useState<string | null>(null);
   const [errors, setErrors]                   = useState<Record<string, string>>({});
   const [saving, setSaving]                   = useState(false);
 
@@ -1347,16 +1355,46 @@ function CandidateFormModal({
       setExpectedSalary(editing.expected_salary_lpa != null ? String(editing.expected_salary_lpa) : '');
       setNoticePeriod(editing.notice_period || 'Immediate');
       setSource(editing.source || '');
+      setReferredById(editing.referred_by_id != null ? String(editing.referred_by_id) : '');
       setStatus(editing.status);
+      setExistingCvUrl(editing.cv_url || editing.cv_path || null);
     } else {
       setName(''); setEmail(''); setMobile(''); setAddress(''); setQualification('');
       setExperience('0'); setTransport(''); setDistance('');
       setCurrentSalary(''); setExpectedSalary(''); setNoticePeriod('Immediate');
-      setSource(''); setStatus('Final Interview');
+      setSource(''); setReferredById(''); setStatus('Final Interview');
+      setExistingCvUrl(null);
     }
     setCvFile(null);
     setErrors({});
   }, [open, editing]);
+
+  // Load employees for the "Referred By" picker (shown when Source = Referral).
+  // onboarded_only mirrors the Recruitment dropdowns so only active, fully
+  // onboarded staff can be credited with a referral.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get('/employees', { params: { onboarded_only: 1 } });
+        if (cancelled) return;
+        const rows: any[] = Array.isArray(data) ? data : [];
+        setEmployeeOpts(
+          rows.map(e => {
+            const name = e.display_name
+              || [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')
+              || `Employee #${e.id}`;
+            const code = e.emp_code ? ` (${e.emp_code})` : '';
+            return { value: String(e.id), label: `${name}${code}` };
+          }).sort((a, b) => a.label.localeCompare(b.label)),
+        );
+      } catch {
+        if (!cancelled) setEmployeeOpts([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open]);
 
   const handleSubmit = async () => {
     // Client-side validation — surface every problem inline so the user
@@ -1422,6 +1460,11 @@ function CandidateFormModal({
     if (expErr) errs.expected_salary_lpa = expErr;
 
     if (!source.trim()) errs.source = 'Source is required';
+    // When the application came via Referral, the referring employee must be
+    // captured (HRMS-BUG-057).
+    if (source === 'Referral' && !referredById) {
+      errs.referred_by_id = 'Please select the referring employee';
+    }
     if (!status) errs.status = 'Status is required';
 
     // CV is required on create, optional on edit (existing CV stays unless replaced).
@@ -1454,6 +1497,13 @@ function CandidateFormModal({
     if (expectedSalary) fd.append('expected_salary_lpa', expectedSalary);
     if (noticePeriod)   fd.append('notice_period', noticePeriod);
     if (source)         fd.append('source', source);
+    // Referral details — only sent when the source is Referral. Include a
+    // name snapshot so the referrer stays legible in lists/exports.
+    if (source === 'Referral' && referredById) {
+      fd.append('referred_by_id', referredById);
+      const refLabel = employeeOpts.find(o => o.value === referredById)?.label || '';
+      if (refLabel) fd.append('referred_by_name', refLabel.replace(/\s*\([^)]*\)\s*$/, '').trim());
+    }
     fd.append('status', status);
     if (cvFile)         fd.append('cv', cvFile);
 
@@ -1653,7 +1703,12 @@ function CandidateFormModal({
                     placeholder="e.g. 10"
                     value={currentSalary}
                     onChange={e => {
-                      setCurrentSalary(e.target.value);
+                      // Block negatives and clamp to the 9999.99 LPA cap as the
+                      // user types, so the field can't hold an invalid value.
+                      let v = e.target.value;
+                      if (v && Number(v) < 0) v = '';
+                      if (v && Number(v) > 9999.99) v = '9999.99';
+                      setCurrentSalary(v);
                       // Clear any prior error as the user types; revalidate on blur.
                       if (errors.current_salary_lpa) setFieldError('current_salary_lpa', null);
                     }}
@@ -1669,7 +1724,11 @@ function CandidateFormModal({
                     placeholder="e.g. 15"
                     value={expectedSalary}
                     onChange={e => {
-                      setExpectedSalary(e.target.value);
+                      // Block negatives and clamp to the 9999.99 LPA cap.
+                      let v = e.target.value;
+                      if (v && Number(v) < 0) v = '';
+                      if (v && Number(v) > 9999.99) v = '9999.99';
+                      setExpectedSalary(v);
                       if (errors.expected_salary_lpa) setFieldError('expected_salary_lpa', null);
                     }}
                     onBlur={e => setFieldError('expected_salary_lpa', validateSalaryLpa(e.target.value, 'Expected salary'))}
@@ -1692,8 +1751,32 @@ function CandidateFormModal({
                     <p className="rec-form-section-title">Source of Application</p>
                   </div>
                   <label className="rec-form-label">Source<span className="req">*</span></label>
-                  <MasterSelect value={source} onChange={setSource} options={SOURCES.map(s => ({ value: s, label: s }))} placeholder="— Select —" />
+                  <MasterSelect
+                    value={source}
+                    onChange={(v) => {
+                      setSource(v);
+                      // Drop any selected referrer when switching away from Referral.
+                      if (v !== 'Referral') { setReferredById(''); }
+                      if (errors.source) setFieldError('source', null);
+                      if (errors.referred_by_id) setFieldError('referred_by_id', null);
+                    }}
+                    options={SOURCES.map(s => ({ value: s, label: s }))}
+                    placeholder="— Select —"
+                  />
                   {errors.source && <div className="rec-error"><i className="ri-error-warning-line" />{errors.source}</div>}
+                  {source === 'Referral' && (
+                    <div className="mt-2">
+                      <label className="rec-form-label">Referred By<span className="req">*</span></label>
+                      <MasterSelect
+                        value={referredById}
+                        onChange={(v) => { setReferredById(v); if (errors.referred_by_id) setFieldError('referred_by_id', null); }}
+                        options={employeeOpts}
+                        placeholder={employeeOpts.length === 0 ? 'Loading employees…' : '— Select employee —'}
+                        invalid={!!errors.referred_by_id}
+                      />
+                      {errors.referred_by_id && <div className="rec-error"><i className="ri-error-warning-line" />{errors.referred_by_id}</div>}
+                    </div>
+                  )}
                 </div>
               </Col>
               <Col md={4}>
@@ -1738,10 +1821,34 @@ function CandidateFormModal({
                     />
                     <i className="ri-attachment-2" />
                     <span className="cand-cv-text">
-                      <strong>{cvFile ? cvFile.name : 'Attach CV'}</strong>
+                      <strong>{cvFile ? cvFile.name : (existingCvUrl ? 'Replace CV' : 'Attach CV')}</strong>
                       <span>PDF, DOC, DOCX · Max 2 MB</span>
                     </span>
                   </label>
+                  {/* Show the previously-uploaded CV when editing so it's clear
+                      one already exists (HRMS-BUG-066). Picking a new file
+                      above replaces it on save. */}
+                  {!cvFile && existingCvUrl && editing && (
+                    <button
+                      type="button"
+                      className="btn btn-link p-0 d-inline-flex align-items-center gap-1 mt-1 fs-13"
+                      style={{ color: 'var(--vz-link-color, #4458fe)', textDecoration: 'none' }}
+                      onClick={async () => {
+                        // CV is auth-protected — pull the blob via the API
+                        // (carries the bearer token) and open it in a new tab.
+                        try {
+                          const resp = await api.get(`/candidates/${editing.id}/cv`, { responseType: 'blob' });
+                          const url = URL.createObjectURL(resp.data as Blob);
+                          window.open(url, '_blank', 'noopener');
+                          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                        } catch {
+                          toast.error('Could not open CV', 'Please try again.');
+                        }
+                      }}
+                    >
+                      <i className="ri-file-text-line" />View current CV
+                    </button>
+                  )}
                   {errors.cv && <div className="rec-error"><i className="ri-error-warning-line" />{errors.cv}</div>}
                 </div>
               </Col>
@@ -1897,9 +2004,8 @@ function CandidateConfirmModal({
                 : 'This will mark the candidate as Selected'}
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-confirm-close" disabled={submitting}>
-            <i className="ri-close-line" />
-          </button>
+          {/* HRMS-BUG-072: corner X removed — the footer "Cancel" is the
+              single cancel affordance for this dialog. */}
         </div>
 
         {/* Body */}

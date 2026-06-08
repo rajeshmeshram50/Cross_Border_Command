@@ -1216,13 +1216,13 @@ function LogsRequestsCard({
                 table-card with table-light header. Custom .att-* classes only
                 kick in for the cells that need attendance-specific styling
                 (date split, shift pill, status pill, action icons, popover). */}
-            {/* Fixed-height wrapper so the table doesn't shrink on partial
-                pages (e.g. 3 rows on the last page). Height = header (~46px)
-                + N rows × ~52px so the footer stays at the same vertical
-                position whatever page you're on. */}
+            {/* Height tracks the ACTUAL rows on the page (header ~46px + visible
+                rows × ~52px), capped at the page size — so a short page (e.g. 4
+                records with page size 10) doesn't leave a big empty placeholder
+                area below the rows (HRMS-BUG-080). */}
             <div
               className="table-responsive table-card border rounded att-logs-table-wrap--fixed"
-              style={{ minHeight: `${46 + rowsPerPage * 52}px` }}
+              style={{ minHeight: `${46 + Math.min(Math.max(visibleLogs.length, 1), rowsPerPage) * 52}px` }}
             >
               <table className="table align-middle table-nowrap mb-0 att-logs-table att-logs-table--v2">
                 <thead className="table-light">

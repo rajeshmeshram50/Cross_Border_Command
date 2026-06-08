@@ -160,6 +160,21 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
           overflow: 'hidden', display: 'flex', flexDirection: 'column',
         }}
       >
+        <style>{`
+          .frm-close-btn {
+            border: 1px solid var(--vz-border-color);
+            background: var(--vz-light);
+            color: var(--vz-body-color);
+            transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+          }
+          .frm-close-btn:hover:not(:disabled) {
+            background: var(--vz-danger);
+            border-color: var(--vz-danger);
+            color: #fff;
+            transform: scale(1.06);
+          }
+          .frm-close-btn:active:not(:disabled) { transform: scale(0.94); }
+        `}</style>
         <div className="d-flex align-items-center justify-content-between px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
           <div className="d-flex align-items-center gap-2">
             <span style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(99,102,241,0.18)', color: '#4338ca', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -171,12 +186,13 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
           </div>
           <button
             type="button"
-            className="btn btn-light btn-sm"
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center frm-close-btn"
+            style={{ width: 30, height: 30, padding: 0, borderRadius: 8 }}
             onClick={onClose}
             disabled={step === 'saving' || step === 'revoking'}
             aria-label="Close"
           >
-            <i className="ri-close-line" />
+            <i className="ri-close-line" style={{ fontSize: 16 }} />
           </button>
         </div>
 

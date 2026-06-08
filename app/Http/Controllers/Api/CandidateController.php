@@ -198,6 +198,7 @@ class CandidateController extends Controller
     {
         $this->authorize($request, 'can_add');
         $data = $this->validatePayload($request);
+        $this->normaliseReferral($data);
 
         return DB::transaction(function () use ($request, $data) {
             $auth = $request->user();
@@ -238,6 +239,7 @@ class CandidateController extends Controller
         $row = $this->resolveRow($request, (int) $id);
 
         $data = $this->validatePayload($request, $row->id);
+        $this->normaliseReferral($data);
         $this->guardDuplicate($data, $row->recruitment_id, $row->id);
 
         // Replace the CV if a new file came in. Old file is removed AFTER the
@@ -377,9 +379,66 @@ class CandidateController extends Controller
             }
         }
 
+        $previousStatus = $row->status;
         $row->update($data);
+
+        // Fire the candidate-facing email on a real transition into a
+        // terminal decision state (HRMS-BUG-059 / 060). Best-effort: a
+        // missing email / SMTP failure must not fail the status update.
+        if ($data['status'] === 'Selected' && $previousStatus !== 'Selected') {
+            $this->notifyCandidateDecision($row->fresh(), 'selected', $data['status_notes'] ?? null);
+        } elseif ($data['status'] === 'Rejected' && $previousStatus !== 'Rejected') {
+            $this->notifyCandidateDecision($row->fresh(), 'rejected', $data['status_notes'] ?? null, $data['rejection_reason'] ?? null);
+        }
+
         $row->load(self::WITH);
         return response()->json($this->serialize($row));
+    }
+
+    /**
+     * Email the candidate when they're Selected or Rejected. Silent no-op
+     * when the platform mail toggle is OFF or the candidate has no email.
+     * Failures are logged, never re-thrown — the status change already
+     * persisted before this is called.
+     */
+    private function notifyCandidateDecision(Candidate $candidate, string $decision, ?string $notes = null, ?string $reason = null): void
+    {
+        if (!\App\Support\Settings::shouldSendMail()) return;
+        $email = trim((string) ($candidate->email ?? ''));
+        if ($email === '') return;
+
+        try {
+            $candidate->loadMissing('recruitment:id,code,job_title');
+            $orgName = \App\Models\Client::find($candidate->client_id)?->org_name
+                ?? config('mail.from.name', 'Cross Border Command');
+            $jobTitle = $candidate->recruitment?->job_title;
+
+            $mailable = $decision === 'selected'
+                ? new \App\Mail\CandidateSelectedMail($candidate, $orgName, $jobTitle, $notes)
+                : new \App\Mail\CandidateRejectedMail($candidate, $orgName, $jobTitle, $reason, $notes);
+
+            \Illuminate\Support\Facades\Mail::to($email)->send($mailable);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Candidate decision mail failed', [
+                'candidate_id' => $candidate->id,
+                'decision'     => $decision,
+                'error'        => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Strip the referral fields unless Source is explicitly "Referral" so a
+     * later source change (or a stray payload) can't leave a dangling
+     * referrer on the row. Only acts when `source` is part of the payload.
+     */
+    private function normaliseReferral(array &$data): void
+    {
+        if (!array_key_exists('source', $data)) return;
+        if (($data['source'] ?? null) !== 'Referral') {
+            $data['referred_by_id']   = null;
+            $data['referred_by_name'] = null;
+        }
     }
 
     /* ─────────────────────────────────────────────────────────────────
@@ -851,6 +910,11 @@ class CandidateController extends Controller
             'notice_period'       => ['nullable', Rule::in(self::NOTICE_PERIODS)],
 
             'source'              => ['nullable', Rule::in(self::SOURCES)],
+            // Referral capture (HRMS-BUG-057). Kept nullable at the API level
+            // so CSV imports / non-referral sources stay valid; the SPA form
+            // requires it when Source = Referral.
+            'referred_by_id'      => 'nullable|integer|exists:employees,id',
+            'referred_by_name'    => 'nullable|string|max:150',
 
             // CV: only validated when actually present so a partial PATCH
             // that doesn't touch the file still passes.

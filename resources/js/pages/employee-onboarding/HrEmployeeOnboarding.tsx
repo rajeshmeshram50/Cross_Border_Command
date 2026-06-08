@@ -1506,6 +1506,7 @@ export function VaultModal({
     category: string;
     status: VaultStatus;
     url: string | null;
+    docId?: number;
   };
   const [empDocs, setEmpDocs] = useState<EmpDocApi[]>([]);
   const [prevCompanies, setPrevCompanies] = useState<{ id: number; company_name: string }[]>([]);
@@ -1555,6 +1556,7 @@ export function VaultModal({
           category: cat.title.replace(/ Documents?$/, '').replace(/ Proof$/, ''),
           status: serverStatusToVault(u.status),
           url: u.url,
+          docId: u.id,
         });
       }
       if (docs.length) out.push({ title: cat.title, docs });
@@ -1579,6 +1581,7 @@ export function VaultModal({
         category: 'Employment',
         status: serverStatusToVault(u.status),
         url: u.url,
+        docId: u.id,
       });
     }
     if (prevDocs.length) out.push({ title: 'Previous Employment', docs: prevDocs });
@@ -1596,6 +1599,7 @@ export function VaultModal({
         category: 'Other',
         status: serverStatusToVault(u.status),
         url: u.url,
+        docId: u.id,
       });
     }
     if (other.length) out.push({ title: 'Other Documents', docs: other });
@@ -1650,10 +1654,16 @@ export function VaultModal({
   // Send-confirmation modal
   const [sendForTpl, setSendForTpl] = useState<MatchedTemplate | null>(null);
   const [sending, setSending] = useState(false);
+  // Synchronous double-submit guard. `sending` state only disables the button
+  // on the NEXT render, leaving a tiny window where a fast double-click fires
+  // confirmSend twice → two signature runs. The ref flips instantly so the
+  // second call bails before the API fires.
+  const sendingRef = useRef(false);
 
   const openSend = (tpl: MatchedTemplate) => { setSendForTpl(tpl); };
   const confirmSend = async () => {
-    if (!sendForTpl || !emp?.dbId) return;
+    if (!sendForTpl || !emp?.dbId || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     try {
       const { data } = await api.post('/hr-document-signatures', {
@@ -1667,6 +1677,7 @@ export function VaultModal({
       toast.error('Could not send', err?.response?.data?.message || 'Please try again.');
     } finally {
       setSending(false);
+      sendingRef.current = false;
     }
   };
 
@@ -1877,6 +1888,27 @@ export function VaultModal({
     }
   };
 
+  // Download an employee document through the app (same-origin, attachment
+  // disposition) so it actually SAVES. A raw Azure Blob URL only opens a
+  // preview (cross-origin, no CORS, served inline). Routing through the
+  // backend mirrors how the customer Evidence Vault downloads its files.
+  const downloadEmpDoc = async (docId?: number, filename?: string) => {
+    if (!docId) return;
+    try {
+      const resp = await api.get(`/documents/${docId}/download`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([resp.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || `document-${docId}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    }
+  };
+
   return (
     <Modal
       isOpen={isOpen}
@@ -1976,8 +2008,8 @@ export function VaultModal({
                 type="button"
                 onClick={onClose}
                 aria-label="Close"
-                className="btn p-0 d-inline-flex align-items-center justify-content-center"
-                style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(255,255,255,0.20)', border: 'none', color: '#fff' }}
+                className="btn p-0 d-inline-flex align-items-center justify-content-center vault-close-btn"
+                style={{ width: 32, height: 32, borderRadius: 10, border: 'none', color: '#fff' }}
               >
                 <i className="ri-close-line" style={{ fontSize: 18 }} />
               </button>
@@ -2105,15 +2137,16 @@ export function VaultModal({
                           >
                             <i className="ri-eye-line" /> View
                           </a>
-                          <a
-                            href={hasFile ? doc.url! : undefined}
-                            download
+                          <button
+                            type="button"
+                            onClick={() => { if (hasFile) void downloadEmpDoc(doc.docId, doc.desc || doc.name); }}
+                            disabled={!hasFile}
                             className="vault-action-download"
-                            style={{ opacity: hasFile ? 1 : 0.5, pointerEvents: hasFile ? 'auto' : 'none', textDecoration: 'none' }}
+                            style={{ opacity: hasFile ? 1 : 0.5, pointerEvents: hasFile ? 'auto' : 'none', cursor: hasFile ? 'pointer' : 'default' }}
                             title={hasFile ? 'Download original upload' : 'No file available'}
                           >
                             <i className="ri-download-2-line" /> Download
-                          </a>
+                          </button>
                         </div>
                       );
                     })}

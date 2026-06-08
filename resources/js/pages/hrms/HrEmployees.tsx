@@ -6,6 +6,7 @@ import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import api from '../../api';
 import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
@@ -310,7 +311,23 @@ const ROLE_TONES: Record<string, { bg: string; fg: string }> = {
   'Developer':            { bg: '#fdf3d6', fg: '#a06f00' },
   'Design Head':          { bg: '#fdf3d6', fg: '#a06f00' },
 };
-const tone = (role: string) => ROLE_TONES[role] || { bg: '#eef2f6', fg: '#475569' };
+// Dark-mode equivalents keyed by the light tone's ink (fg) — every role maps
+// to one of a handful of base hues, so converting by fg keeps one dark variant
+// per hue instead of restating the whole table. Translucent tint + bright ink
+// stays legible on the dark card surface (the light pastel bgs clashed badly).
+const DARK_BY_FG: Record<string, { bg: string; fg: string }> = {
+  '#a06f00': { bg: 'rgba(160,111,0,0.28)', fg: '#fcd34d' }, // amber
+  '#0c63b0': { bg: 'rgba(12,99,176,0.28)', fg: '#7cc4ff' }, // blue
+  '#a4661c': { bg: 'rgba(164,102,28,0.30)', fg: '#fdba74' }, // orange
+  '#108548': { bg: 'rgba(16,133,72,0.26)', fg: '#6ee7b7' }, // green
+  '#0a716a': { bg: 'rgba(10,113,106,0.28)', fg: '#5eead4' }, // teal
+  '#a02960': { bg: 'rgba(160,41,96,0.26)', fg: '#f9a8d4' }, // pink
+};
+const tone = (role: string, dark = false) => {
+  const light = ROLE_TONES[role] || { bg: '#eef2f6', fg: '#475569' };
+  if (!dark) return light;
+  return DARK_BY_FG[light.fg] || { bg: 'rgba(148,163,184,0.20)', fg: '#cbd5e1' };
+};
 
 // Onboarding-status pill recipe — soft tinted background + bold dot accent.
 // Each tone carries a light background, a darker foreground for the label,
@@ -520,6 +537,8 @@ export default function HrEmployees() {
   // master/client forms: per-field error map cleared as the user fixes the
   // field, with a summary toast on submit if anything is still invalid.
   const toast = useToast();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   type OnbErrors = { name?: string; email?: string; dept?: string; date?: string };
   const [onbErrors, setOnbErrors] = useState<OnbErrors>({});
   const clearOnbError = (key: keyof OnbErrors) => {
@@ -1572,6 +1591,7 @@ export default function HrEmployees() {
     if (!eDesignation)     e.designation_id    = 'Designation is required';
     if (!ePrimaryRole)     e.primary_role_id   = 'Primary role is required';
     if (!eLegalEntity)     e.legal_entity_id   = 'Legal entity is required';
+    if (!eReportingMgr)    e.reporting_manager_id = 'Reporting manager is required';
     if (!eProbationPolicy) e.probation_policy  = 'Probation policy is required';
     if (eProbationPolicy === CUSTOM_PROBATION_VALUE && !eCustomProbation.trim()) {
       e.probation_policy = 'Please describe the custom probation policy';
@@ -1581,7 +1601,7 @@ export default function HrEmployees() {
       e.notice_period = 'Please describe the custom notice period';
     }
     return e;
-  }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eLegalEntity,
+  }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eLegalEntity, eReportingMgr,
       eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
 
   // Step 3 — Documents section requires Aadhar + PAN. A document counts
@@ -2038,7 +2058,9 @@ export default function HrEmployees() {
     }
   };
 
-  // When "Same as Current Address" is checked, mirror the current address.
+  // When "Same as Current Address" is checked, mirror the current address;
+  // when unchecked, clear the permanent fields so the user starts fresh
+  // instead of editing the mirrored copy left behind.
   const onToggleSameAsCurrent = (checked: boolean) => {
     setESameAsCurrent(checked);
     if (checked) {
@@ -2048,8 +2070,28 @@ export default function HrEmployees() {
       setEPermState(eCurState);
       setEPermCountry(eCurCountry);
       setEPermPin(eCurPin);
+    } else {
+      setEPermAddr1('');
+      setEPermAddr2('');
+      setEPermCity('');
+      setEPermState('');
+      setEPermCountry('');
+      setEPermPin('');
     }
   };
+
+  // While "Same as Current Address" stays checked, keep the permanent
+  // address mirrored to the current address live — so edits to the
+  // current address flow through instead of leaving a stale snapshot.
+  useEffect(() => {
+    if (!eSameAsCurrent) return;
+    setEPermAddr1(eCurAddr1);
+    setEPermAddr2(eCurAddr2);
+    setEPermCity(eCurCity);
+    setEPermState(eCurState);
+    setEPermCountry(eCurCountry);
+    setEPermPin(eCurPin);
+  }, [eSameAsCurrent, eCurAddr1, eCurAddr2, eCurCity, eCurState, eCurCountry, eCurPin]);
 
   // Filter options pull straight from the Departments master (mDepts).
   // Earlier we derived this from existing employees' departments, which
@@ -2761,6 +2803,16 @@ export default function HrEmployees() {
         [data-bs-theme="dark"] .hr-emp-srno,
         [data-layout-mode="dark"] .hr-emp-srno { color: #d0d4dc; }
 
+        /* Active/Inactive pill toggle — crisp, solid colours (no blurry glow).
+           ON = brand purple, OFF = clearly visible track in both themes. */
+        .emp-toggle { background: #cbd5e1; transition: background .18s ease; }
+        .emp-toggle.is-on { background: #7c5cfc; }
+        .emp-toggle:hover { filter: brightness(1.05); }
+        [data-bs-theme="dark"] .emp-toggle,
+        [data-layout-mode="dark"] .emp-toggle { background: #3f4654; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); }
+        [data-bs-theme="dark"] .emp-toggle.is-on,
+        [data-layout-mode="dark"] .emp-toggle.is-on { background: #8b6dff; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); }
+
         /* Search box — placeholder and field both need extra contrast in
            dark mode. The default placeholder is rendered with
            secondary-color at ~50% opacity which reads as pure grey on
@@ -2768,6 +2820,23 @@ export default function HrEmployees() {
         .hr-employees-surface .search-box .form-control::placeholder {
           color: var(--vz-secondary-color);
           opacity: 0.75;
+        }
+        /* Glassy search field with a visible border + purple focus halo —
+           mirrors the shared .rec-req-search look used on Exit / Leave /
+           Recruitment so the Employee search reads the same. */
+        .hr-employees-surface .search-box .form-control {
+          border-radius: 8px;
+          background: linear-gradient(180deg, #ffffff 0%, #fbfaff 100%);
+          border: 1px solid #e2e1f3;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 2px rgba(15,23,42,0.03);
+          transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .hr-employees-surface .search-box .form-control:focus {
+          border-color: #7c5cfc;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 0 0 3px rgba(124,92,252,0.16);
+        }
+        .hr-employees-surface .search-box .search-icon {
+          color: #7c5cfc;
         }
         [data-bs-theme="dark"] .hr-employees-surface .search-box .form-control,
         [data-layout-mode="dark"] .hr-employees-surface .search-box .form-control {
@@ -3102,7 +3171,7 @@ export default function HrEmployees() {
                           </td>
                         </tr>
                       ) : pageRows.map((e, idx) => {
-                        const primary = tone(e.primaryRole);
+                        const primary = tone(e.primaryRole, isDark);
                         return (
                           <tr
                             // Use the DB primary key for React's reconciliation
@@ -4198,6 +4267,9 @@ export default function HrEmployees() {
           }
           .emp-label { font-size: 10.5px; font-weight: 700; color: #5a3fd1; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; display: block; }
           [data-bs-theme="dark"] .emp-label { color: #c4b5fd; }
+          .emp-close-btn { background: rgba(255,255,255,0.18); transition: background 0.15s ease, transform 0.15s ease; }
+          .emp-close-btn:hover { background: rgba(255,255,255,0.34); transform: scale(1.08); }
+          .emp-close-btn:active { transform: scale(0.95); }
           .emp-label .req { color: #f06548; margin-left: 4px; font-size: 13px; font-weight: 800; line-height: 1; vertical-align: middle; }
           .emp-label .hint { color: #9ca3af; font-weight: 600; text-transform: none; letter-spacing: 0; margin-left: 4px; font-size: 10px; }
           .emp-section {
@@ -4384,10 +4456,9 @@ export default function HrEmployees() {
                   type="button"
                   onClick={closeEmp}
                   aria-label="Close"
-                  className="btn p-0 d-inline-flex align-items-center justify-content-center"
+                  className="btn p-0 d-inline-flex align-items-center justify-content-center emp-close-btn"
                   style={{
                     width: 28, height: 28, borderRadius: 8,
-                    background: 'rgba(255,255,255,0.18)',
                     border: 'none',
                     color: '#fff',
                   }}
@@ -4873,13 +4944,15 @@ export default function HrEmployees() {
                       />
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Reporting Manager</label>
+                      <label className="emp-label">Reporting Manager<span className="req">*</span></label>
                       <MasterSelect
                         value={eReportingMgr}
-                        onChange={setEReportingMgr}
+                        onChange={(v) => { setEReportingMgr(v); clearEErr('reporting_manager_id'); }}
                         placeholder="Select manager"
                         options={reportingManagerOptions}
+                        invalid={!!eErrors.reporting_manager_id}
                       />
+                      {eErrors.reporting_manager_id && <small className="emp-err">{eErrors.reporting_manager_id}</small>}
                     </Col>
                   </Row>
                 </div>
@@ -5166,14 +5239,15 @@ export default function HrEmployees() {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   title="View document"
-                                  style={{ color: '#0c63b0', fontSize: 16, lineHeight: 1 }}
+                                  style={{ color: '#0c63b0', fontSize: 16, lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
                                 >
                                   <i className="ri-eye-line" />
                                 </a>
                               )}
                               <label
                                 title="Replace"
-                                style={{ color: '#7c5cfc', cursor: busy ? 'wait' : 'pointer', fontSize: 16, lineHeight: 1, opacity: busy ? 0.5 : 1 }}
+                                className="mb-0"
+                                style={{ color: '#7c5cfc', cursor: busy ? 'wait' : 'pointer', fontSize: 16, lineHeight: 1, opacity: busy ? 0.5 : 1, margin: 0, display: 'inline-flex', alignItems: 'center' }}
                               >
                                 <i className={busy ? 'ri-loader-line' : 'ri-refresh-line'} />
                                 <input
@@ -5359,64 +5433,6 @@ export default function HrEmployees() {
                       <MasterSelect value={eTaxRegime} onChange={setETaxRegime} options={TAX_REGIME_OPTIONS} placeholder="Select tax regime" />
                     </Col>
                   </Row>
-                </div>
-
-                {/* Bonus, Perks & Payroll Settings */}
-                <div className="emp-section">
-                  <div className="emp-section-title">
-                    <i className="ri-gift-line" style={{ color: '#7c5cfc' }} /> Bonus, Perks &amp; Payroll Settings
-                  </div>
-                  <div
-                    className="d-flex align-items-center gap-2 mb-3"
-                    style={{ padding: '8px 12px', border: '1px solid var(--vz-border-color)', borderRadius: 8 }}
-                  >
-                    <input
-                      type="checkbox"
-                      id="bonus-in-annual"
-                      className="form-check-input m-0"
-                      checked={eBonusInAnnual}
-                      onChange={e => setEBonusInAnnual(e.target.checked)}
-                    />
-                    <label htmlFor="bonus-in-annual" className="mb-0" style={{ fontSize: 13, cursor: 'pointer' }}>
-                      Bonus included in annual salary
-                    </label>
-                  </div>
-                  <div className="d-flex flex-wrap gap-2 mb-3">
-                    <button
-                      type="button"
-                      className="btn emp-dashed-btn-violet d-inline-flex align-items-center gap-1 fw-semibold"
-                      style={{
-                        fontSize: 12.5,
-                        padding: '6px 14px',
-                        borderRadius: 8,
-                      }}
-                    >
-                      <i className="ri-add-line" /> Add Bonus
-                    </button>
-                    <button
-                      type="button"
-                      className="btn emp-dashed-btn-teal d-inline-flex align-items-center gap-1 fw-semibold"
-                      style={{
-                        fontSize: 12.5,
-                        padding: '6px 14px',
-                        borderRadius: 8,
-                      }}
-                    >
-                      <i className="ri-add-line" /> Add Perks
-                    </button>
-                  </div>
-                  <div className="d-flex align-items-center gap-2 mb-2">
-                    <input
-                      type="checkbox"
-                      id="pf-eligible"
-                      className="form-check-input m-0"
-                      checked={ePfEligible}
-                      onChange={e => setEPfEligible(e.target.checked)}
-                    />
-                    <label htmlFor="pf-eligible" className="mb-0" style={{ fontSize: 13, cursor: 'pointer' }}>
-                      Provident Fund (PF) Eligible
-                    </label>
-                  </div>
                 </div>
 
                 {/* Salary Breakup */}
@@ -5810,6 +5826,8 @@ export default function HrEmployees() {
  * on outside-click, Esc, scroll, or window resize. Empty list = "—".
  */
 function AncillaryRolesChip({ names }: { names: string[] }) {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -5857,7 +5875,7 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
 
   const first = names[0];
   const rest = names.slice(1);
-  const firstTone = tone(first);
+  const firstTone = tone(first, isDark);
 
   return (
     <>
@@ -5885,9 +5903,9 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
               fontSize: 10.5,
               padding: '4px 8px',
               borderRadius: 999,
-              background: open ? '#7c5cfc' : 'rgba(124,92,252,0.12)',
-              color: open ? '#fff' : '#5a3fd1',
-              border: '1px solid rgba(124,92,252,0.25)',
+              background: open ? '#7c5cfc' : 'rgba(124,92,252,0.16)',
+              color: open ? '#fff' : (isDark ? '#c4b5fd' : '#5a3fd1'),
+              border: '1px solid rgba(124,92,252,0.30)',
               cursor: 'pointer',
               transition: 'background .15s ease, color .15s ease',
               lineHeight: 1.1,
@@ -5928,7 +5946,7 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
             All Ancillary Roles
           </div>
           {names.map(n => {
-            const t = tone(n);
+            const t = tone(n, isDark);
             return (
               <span
                 key={n}
@@ -6268,12 +6286,11 @@ function ToggleSwitch({
       type="button"
       onClick={handleClick}
       aria-pressed={on}
-      className="btn p-0 border-0 d-inline-flex align-items-center"
+      className={`btn p-0 border-0 d-inline-flex align-items-center emp-toggle${on ? ' is-on' : ''}`}
       style={{
         width: 36,
         height: 20,
         borderRadius: 999,
-        background: on ? '#0ab39c' : '#e5e7eb',
         border: 'none',
         position: 'relative',
         marginLeft: 4,

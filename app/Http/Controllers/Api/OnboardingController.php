@@ -369,7 +369,7 @@ class OnboardingController extends Controller
         if ($grantedBy) {
             $adminMasterIds = Permission::where('user_id', $grantedBy)
                 ->where('can_view', true)
-                ->whereHas('module', fn ($q) => $q->where('slug', 'like', 'master.%'))
+                ->whereHas('module', fn($q) => $q->where('slug', 'like', 'master.%'))
                 ->pluck('module_id')
                 ->all();
         }
@@ -412,6 +412,12 @@ class OnboardingController extends Controller
         $mobileRule = ['regex:/^[+\d\s\-()]{7,20}$/'];
         // Pincode: 4-10 digits.
         $pincodeRule = ['regex:/^\d{4,10}$/'];
+        // Free-text address fields must not carry HTML/script markup — reject
+        // any angle brackets so `<script>`/tag-injection can never be stored
+        // (XSS defence). SQL injection is already neutralised by Eloquent's
+        // parameter binding, so we deliberately do NOT blacklist SQL keywords,
+        // which would wrongly reject legitimate values like "123 Drop Lane".
+        $noTags = ['not_regex:/[<>]/'];
 
         return $request->validate([
             'first_name'   => array_merge(['required', 'string', 'max:100'], $nameRule),
@@ -428,17 +434,17 @@ class OnboardingController extends Controller
             // Current address
             'country_id'   => 'nullable|integer',
             'state_id'     => 'nullable|integer',
-            'city'         => 'nullable|string|max:100',
-            'address_line1' => 'nullable|string|max:255',
-            'address_line2' => 'nullable|string|max:255',
+            'city'         => array_merge(['nullable', 'string', 'max:100'], $noTags),
+            'address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags),
+            'address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'pincode'      => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
 
             // Permanent address
             'perm_country_id'    => 'nullable|integer',
             'perm_state_id'      => 'nullable|integer',
-            'perm_city'          => 'nullable|string|max:100',
-            'perm_address_line1' => 'nullable|string|max:255',
-            'perm_address_line2' => 'nullable|string|max:255',
+            'perm_city'          => array_merge(['nullable', 'string', 'max:100'], $noTags),
+            'perm_address_line1' => array_merge(['nullable', 'string', 'max:255'], $noTags),
+            'perm_address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'perm_pincode'       => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
 
             // Job — defaults from invite when omitted
@@ -454,6 +460,13 @@ class OnboardingController extends Controller
             // ahead (covers scheduled future starts).
             'date_of_joining' => 'nullable|date|after_or_equal:' . now()->subYear()->toDateString() . '|before_or_equal:' . now()->addYears(2)->toDateString(),
         ], [
+            'city.not_regex'               => 'City cannot contain < or > characters.',
+            'address_line1.not_regex'      => 'Address cannot contain < or > characters.',
+            'address_line2.not_regex'      => 'Address cannot contain < or > characters.',
+            'perm_city.not_regex'          => 'City cannot contain < or > characters.',
+            'perm_address_line1.not_regex' => 'Address cannot contain < or > characters.',
+            'perm_address_line2.not_regex' => 'Address cannot contain < or > characters.',
+            'location.not_regex'           => 'Location cannot contain < or > characters.',
             'first_name.regex'   => 'First name cannot contain numbers.',
             'middle_name.regex'  => 'Middle name cannot contain numbers.',
             'last_name.regex'    => 'Last name cannot contain numbers.',

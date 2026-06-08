@@ -13,11 +13,14 @@ import { ShimmerTableRows } from '../../components/ui/Shimmer';
  * Lists Segment Rules — one per (segment × regulatory tier) configuration
  * with per-category document-count badges. The Add/Edit modal is a 2-stage
  * flow: Stage 1 picks segment + auto-maps authorities, Stage 2 toggles
- * Mandatory/Optional per document across KYC/DD/TL/TD/QC.
+ * Mandatory/Optional per document across KYC/DD/TL/QC.
  */
 
 type DocSel = Record<string, 'M' | 'O'>;
-type DocSelections = { kyc?: DocSel; dd?: DocSel; tl?: DocSel; td?: DocSel; qc?: DocSel };
+/* Trade Documents (td) was removed from the Document Control Panel — it is no
+ * longer a configurable category. The Bootstrap payload may still ship a `td`
+ * array, but the panel neither renders nor saves it. */
+type DocSelections = { kyc?: DocSel; dd?: DocSel; tl?: DocSel; qc?: DocSel };
 
 type SegRule = {
   id: number; rule_code: string; segment_id: number | null;
@@ -38,9 +41,9 @@ type Bootstrap = {
   kyc: DocItem[]; dd: DocItem[]; tl: DocItem[]; td: DocItem[]; qc: DocItem[];
 };
 
-const CAT_KEYS: Array<keyof DocSelections> = ['kyc', 'dd', 'tl', 'td', 'qc'];
+const CAT_KEYS: Array<keyof DocSelections> = ['kyc', 'dd', 'tl', 'qc'];
 const CAT_LABELS: Record<keyof DocSelections, string> = {
-  kyc: 'KYC', dd: 'Due Diligence', tl: 'Trade Licenses', td: 'Trade Documents', qc: 'Quality & Compliance',
+  kyc: 'KYC', dd: 'Due Diligence', tl: 'Trade Licenses', qc: 'Quality & Compliance',
 };
 
 /* Hardcoded segment→authority mapping mirrors the prototype's
@@ -174,10 +177,10 @@ export default function ClmDcpPage() {
       <ClmBrefBox
         icon={ICO.bDcp}
         label="Document Control Panel"
-        sub="Configure which KYC, DD, Trade License, Trade Documents and Quality & Compliance documents are required for each business segment."
+        sub="Configure which KYC, DD, Trade License and Quality & Compliance documents are required for each business segment."
         steps={[
           { n: '01', title: 'Select Segment',      desc: 'Pick a segment — all segments from Segment Master are available.', icon: ICO.grid },
-          { n: '02', title: 'Auto-Load Masters',   desc: 'KYC, DD, TL, TD & QC masters auto-load in sequence.',              icon: ICO.refresh },
+          { n: '02', title: 'Auto-Load Masters',   desc: 'KYC, DD, TL & QC masters auto-load in sequence.',                  icon: ICO.refresh },
           { n: '03', title: 'Set Requirements',    desc: 'Toggle each document as Mandatory, Optional, or Not Required.',     icon: ICO.doc },
           { n: '04', title: 'Save & Persist',      desc: 'Rules are saved per segment — settings remembered across visits.',  icon: ICO.users },
           { n: '05', title: 'Used in CLM',         desc: 'Saved rules auto-apply across CLM workflows and validations.',      icon: ICO.check },
@@ -223,13 +226,12 @@ export default function ClmDcpPage() {
                   <th style={{ width: 60, textAlign: 'center' }}>KYC</th>
                   <th style={{ width: 60, textAlign: 'center' }}>DD</th>
                   <th style={{ width: 60, textAlign: 'center' }}>TL</th>
-                  <th style={{ width: 60, textAlign: 'center' }}>TD</th>
                   <th style={{ width: 60, textAlign: 'center' }}>QC</th>
                   <th style={{ width: 80, textAlign: 'center' }}>TOTAL</th>
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <ShimmerTableRows rows={6} cols={12} cellClassName="" keyPrefix="dcp-shim" />}
+                  {loading && <ShimmerTableRows rows={6} cols={11} cellClassName="" keyPrefix="dcp-shim" />}
                   {!loading && slice.map((r, i) => {
                     const seg = boot?.segments.find(s => s.code === r.segment_code);
                     const isHigh = (seg?.regulatory_status ?? r.regulatory_status) === 'highly';
@@ -403,7 +405,7 @@ function SegmentRuleModal(props: {
   };
 
   const catData: Record<keyof DocSelections, DocItem[]> = {
-    kyc: boot.kyc, dd: boot.dd, tl: boot.tl, td: boot.td, qc: boot.qc,
+    kyc: boot.kyc, dd: boot.dd, tl: boot.tl, qc: boot.qc,
   };
   const totalSel = (cat: keyof DocSelections) => Object.values(docSel[cat] ?? {}).filter(Boolean).length;
   const mandCount = (cat: keyof DocSelections) => Object.values(docSel[cat] ?? {}).filter(v => v === 'M').length;
@@ -809,7 +811,7 @@ function DocListPopup(props: {
   const seg = boot.segments.find(s => s.code === rule.segment_code);
   const segName = seg?.name ?? rule.segment_code;
   const catData: Record<keyof DocSelections, DocItem[]> = {
-    kyc: boot.kyc, dd: boot.dd, tl: boot.tl, td: boot.td, qc: boot.qc,
+    kyc: boot.kyc, dd: boot.dd, tl: boot.tl, qc: boot.qc,
   };
 
   /* Flatten selected docs across one (or all) categories. In all-mode each

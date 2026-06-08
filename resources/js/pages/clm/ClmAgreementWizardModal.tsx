@@ -251,7 +251,20 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     } catch (e: any) {
-      toast.error('Download failed', e?.response?.data?.message ?? 'Please try again.');
+      // The response is a Blob (responseType: 'blob'), so a server error body
+      // arrives as a Blob too — read it back to surface the real message
+      // instead of a generic "Please try again". Mirrors the Trade Doc flow.
+      let msg = 'Please try again.';
+      try {
+        const blob = e?.response?.data;
+        if (blob instanceof Blob) {
+          const json = JSON.parse(await blob.text());
+          if (json?.message) msg = json.message;
+        } else if (typeof e?.response?.data?.message === 'string') {
+          msg = e.response.data.message;
+        }
+      } catch { /* keep the default message */ }
+      toast.error('Download failed', msg);
     }
   };
   const uploadDocx = async (file: File) => {
@@ -938,7 +951,16 @@ function AgrEditor({
         </div>
       </div>
 
-      <div className="agw-toolbar" onMouseDown={e => e.preventDefault()}>
+      {/* preventDefault on mousedown keeps the editor's text selection alive
+          when a toolbar BUTTON is clicked (so execCommand acts on the
+          selection). Native <select> dropdowns, however, open ON mousedown —
+          blanket-preventing it stopped the Font-size / Block-format dropdowns
+          from opening at all. Skip the preventDefault when the target is a
+          <select> (or its options) so those dropdowns work again. */}
+      <div
+        className="agw-toolbar"
+        onMouseDown={e => { if (!(e.target as HTMLElement).closest('select')) e.preventDefault(); }}
+      >
         <select className="agw-toolbar-sel" value={fontSize} onChange={e => { setFontSizeState(e.target.value); applyFontSize(e.target.value); }} title="Font size">
           <option value="11">11</option><option value="12">12</option><option value="13">13</option>
           <option value="14">14</option><option value="16">16</option><option value="18">18</option>
