@@ -708,6 +708,22 @@ export default function HrAttendance() {
                   </div>
 
                   <div className="att-emplist-search">
+                    {/* BUG-069: give the search field a real resting border so
+                        it reads as interactive instead of blending into the
+                        panel — in both light and dark mode. */}
+                    <style>{`
+                      .att-emplist-search .search-box .form-control {
+                        border: 1px solid #cbd5e1;
+                      }
+                      [data-bs-theme="dark"] .att-emplist-search .search-box .form-control,
+                      [data-layout-mode="dark"] .att-emplist-search .search-box .form-control {
+                        border-color: rgba(255,255,255,0.20);
+                      }
+                      .att-emplist-search .search-box .form-control:focus {
+                        border-color: rgba(99,102,241,0.45);
+                        box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+                      }
+                    `}</style>
                     <div className="search-box">
                       <Input type="text" className="form-control form-control-sm" placeholder="Search name, EMP-ID, biometric…" value={search} onChange={e => setSearch(e.target.value)} />
                       <i className="ri-search-line search-icon" />

@@ -4132,6 +4132,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               className="ep-section-card-flat ep-section-card mb-3"
               style={{ borderTop: '3px solid #16a34a' }}
             >
+              {/* Dark-theme-aware styling for the org-doc Code badge, Signer
+                  tags and View button (were hardcoded light → BUG-131/132/133). */}
+              <style>{`
+                .epv-code-badge { font-size: 10.5px; background: #fef3c7; color: #a16207; padding: 2px 6px; border-radius: 4px; }
+                .epv-signer-tag { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; font-weight: 700; display: inline-block; }
+                .epv-signer-tag.is-done { background: #dcfce7; color: #15803d; }
+                .epv-signer-tag.is-pending { background: #f3f4f6; color: #6b7280; }
+                .epv-view-btn { padding: 4px 10px; border-radius: 6px; border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
+                .epv-view-btn:hover { background: #e0e7ff; }
+                [data-bs-theme="dark"] .epv-code-badge, [data-layout-mode="dark"] .epv-code-badge { background: rgba(251,191,36,.16); color: #fcd34d; }
+                [data-bs-theme="dark"] .epv-signer-tag.is-done, [data-layout-mode="dark"] .epv-signer-tag.is-done { background: rgba(34,197,94,.18); color: #86efac; }
+                [data-bs-theme="dark"] .epv-signer-tag.is-pending, [data-layout-mode="dark"] .epv-signer-tag.is-pending { background: rgba(148,163,184,.16); color: #cbd5e1; }
+                [data-bs-theme="dark"] .epv-view-btn, [data-layout-mode="dark"] .epv-view-btn { background: rgba(99,102,241,.16); border-color: rgba(129,140,248,.40); color: #c7d2fe; }
+                [data-bs-theme="dark"] .epv-view-btn:hover, [data-layout-mode="dark"] .epv-view-btn:hover { background: rgba(99,102,241,.26); }
+              `}</style>
               <div
                 className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
                 style={{
@@ -4181,12 +4196,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                             <td className="text-muted">{i + 1}</td>
                             <td className="fw-semibold">{doc.template?.name || '(template removed)'}</td>
                             <td>
-                              <code style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '2px 6px', borderRadius: 4 }}>{doc.code || '—'}</code>
+                              <code className="epv-code-badge">{doc.code || '—'}</code>
                             </td>
                             <td>
                               <div className="d-flex flex-wrap gap-1">
                                 {(doc.signers || []).slice(0, 3).map((s, j) => (
-                                  <span key={j} style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 999, background: s.status === 'Done' ? '#dcfce7' : '#f3f4f6', color: s.status === 'Done' ? '#15803d' : '#6b7280', fontWeight: 700 }}>
+                                  <span key={j} className={`epv-signer-tag ${s.status === 'Done' ? 'is-done' : 'is-pending'}`}>
                                     {s.name}
                                   </span>
                                 ))}
@@ -4200,8 +4215,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                             </td>
                             <td>
                               <div className="d-flex gap-1">
-                                <button type="button" onClick={() => setSignedPreview(doc)}
-                                  style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                                <button type="button" className="epv-view-btn" onClick={() => setSignedPreview(doc)}>
                                   <i className="ri-eye-line me-1" />View
                                 </button>
                                 <button type="button" onClick={() => downloadSignedPdf(doc.id, doc.code)}

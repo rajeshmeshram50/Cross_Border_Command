@@ -149,8 +149,8 @@ export default function HrDocumentTemplates() {
                   <div className="text-muted" style={{ fontSize: 12.5 }}>Role-based document templates — versions, variables &amp; approval flows</div>
                 </div>
               </div>
-              <button type="button" onClick={() => navigate('/hr/doc-templates/new')}
-                style={{ padding: '8px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
+              <button type="button" className="dtm-add-tpl-btn" onClick={() => navigate('/hr/doc-templates/new')}
+                style={{ padding: '8px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease' }}>
                 <i className="ri-add-line me-1" /> Add Template
               </button>
             </CardBody>
@@ -494,7 +494,10 @@ function DtmDarkStyles() {
       [data-bs-theme="dark"] .dtm-page .dtm-act-info    { background: rgba(96,165,250,0.18) !important; color: #93c5fd !important; }
       [data-bs-theme="dark"] .dtm-page .dtm-act-success { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
       [data-bs-theme="dark"] .dtm-page .dtm-act-danger  { background: rgba(248,113,113,0.18) !important; color: #fca5a5 !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-act-dark    { background: var(--vz-secondary-bg) !important; color: var(--vz-body-color) !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-act-dark    { background: rgba(148,163,184,0.18) !important; color: #cbd5e1 !important; border: 1px solid rgba(148,163,184,0.32) !important; }
+      /* Add Template button — hover feedback (BUG-039). Applies in both themes. */
+      .dtm-page .dtm-add-tpl-btn:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 7px 20px rgba(99,102,241,0.45) !important; }
+      .dtm-page .dtm-add-tpl-btn:active { transform: translateY(0); }
     `}</style>
   );
 }
