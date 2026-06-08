@@ -4759,6 +4759,23 @@
   border-color: rgba(16,185,129,0.40);
 }
 
+/* Dark-mode badges — the number circle and the Pending / In Progress pill
+   used a light-grey (#f3f4f6) background that washed out on the dark card.
+   Swap to a translucent light tint + bright ink so they stay legible. The
+   active (--in-progress.is-current) card keeps its white-on-purple styling. */
+[data-bs-theme="dark"] .ep-stage-num {
+  background: rgba(255,255,255,0.10);
+  color: #cbd5e1;
+}
+[data-bs-theme="dark"] .ep-stage-status {
+  background: rgba(255,255,255,0.10);
+  color: #cbd5e1;
+}
+[data-bs-theme="dark"] .ep-stage-card--completed .ep-stage-status {
+  background: rgba(16,185,129,0.20);
+  color: #6ee7b7;
+}
+
 /* Content */
 .ep-content {
   flex: 1;
@@ -4926,6 +4943,13 @@
   transition: all .15s ease;
 }
 .ep-check-box i { font-size: 11px; color: transparent; }
+/* Dark mode (unchecked) — the white box glared against the dark row. Use a
+   subtle translucent fill + visible border instead. The checked (green) rule
+   below has higher specificity, so a ticked box still goes green. */
+[data-bs-theme="dark"] .ep-check-box {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.28);
+}
 .ep-check-row > input[type="checkbox"]:checked + .ep-check-box {
   background: linear-gradient(135deg, #22c55e, #15803d);
   border-color: #15803d;
@@ -4971,6 +4995,33 @@
   border: 1px solid #fecaca;
 }
 .ep-alert--warning i { color: #dc2626; }
+
+/* Preview modal "Unfilled placeholders" notice — amber, theme-aware (the
+   inline light-cream version glared inside the dark preview modal). */
+.ep-preview-warn { padding: 10px 14px; border-radius: 10px; font-size: 12.5px; background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }
+[data-bs-theme="dark"] .ep-preview-warn { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.42); color: #fcd34d; }
+
+/* "Matching templates for…" context banner — was inline light indigo, which
+   glared on the dark surface. Class-based so it adapts per theme. */
+.ep-match-banner { padding: 10px 14px; border-radius: 10px; background: #eef2ff; border: 1px solid #c7d2fe; }
+.ep-match-icon, .ep-match-title { color: #4338ca; }
+.ep-match-title { font-size: 12.5px; }
+.ep-match-text { font-size: 12px; color: #374151; }
+.ep-match-chip { background: #ffffff; padding: 1px 8px; border-radius: 6px; font-weight: 700; }
+[data-bs-theme="dark"] .ep-match-banner { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.38); }
+[data-bs-theme="dark"] .ep-match-icon,
+[data-bs-theme="dark"] .ep-match-title { color: #a5b4fc; }
+[data-bs-theme="dark"] .ep-match-text { color: #cbd5e1; }
+[data-bs-theme="dark"] .ep-match-chip { background: rgba(255,255,255,0.12); color: #e5e7eb; }
+
+/* Dark mode — the light-pink alert washed out on the dark surface. Mirror the
+   "Close Exit Case" pattern: translucent tint + matching border + bright ink. */
+[data-bs-theme="dark"] .ep-alert--warning {
+  background: rgba(220,38,38,0.12);
+  border-color: rgba(220,38,38,0.42);
+  color: #fca5a5;
+}
+[data-bs-theme="dark"] .ep-alert--warning i { color: #f87171; }
 
 /* FnF table */
 .ep-fnf-table {
@@ -5092,6 +5143,11 @@
 }
 .ep-doc-tag--pending { background: #ede9fe; color: #5b3fd1; border: 1px solid #ddd6fe; }
 .ep-doc-tag--blank   { background: #f3f4f6; color: var(--vz-secondary-color); border: 1px solid #e5e7eb; }
+[data-bs-theme="dark"] .ep-doc-tag--pending { background: rgba(124,92,252,0.18); color: #c4b5fd; border-color: rgba(124,92,252,0.42); }
+[data-bs-theme="dark"] .ep-doc-tag--blank   { background: rgba(255,255,255,0.08); color: #cbd5e1; border-color: rgba(255,255,255,0.20); }
+/* Monospace template-code chip (e.g. IT-EXE-001) — amber, theme-aware. */
+.ep-doc-code { font-size: 10.5px; font-family: monospace; color: #a16207; background: #fef3c7; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+[data-bs-theme="dark"] .ep-doc-code { color: #fcd34d; background: rgba(160,111,0,0.26); }
 
 .ep-doc-btn {
   display: inline-flex; align-items: center; gap: 5px;
@@ -5114,10 +5170,20 @@
   cursor: default;
 }
 .ep-doc-btn--done:hover { transform: none; filter: none; }
+[data-bs-theme="dark"] .ep-doc-btn--done {
+  background: rgba(16,185,129,0.16);
+  color: #6ee7b7;
+  border-color: rgba(16,185,129,0.42);
+}
 .ep-doc-btn--ghost {
   background: #ffffff;
   color: var(--vz-secondary-color);
   border: 1px solid #e5e7eb;
+}
+[data-bs-theme="dark"] .ep-doc-btn--ghost {
+  background: rgba(255,255,255,0.06);
+  color: #cbd5e1;
+  border-color: rgba(255,255,255,0.22);
 }
 .ep-doc-btn--ghost:disabled { opacity: 0.5; cursor: not-allowed; }
 .ep-doc-btn i { font-size: 13px; }
@@ -5142,6 +5208,7 @@
   margin-bottom: 10px;
 }
 .ep-signing-head i { font-size: 12px; }
+[data-bs-theme="dark"] .ep-signing-head { color: #c4b5fd; }
 .ep-signing-pct { margin-left: auto; color: var(--vz-secondary-color); }
 .ep-signing-flow {
   display: flex; align-items: flex-start;
@@ -5173,6 +5240,11 @@
   border: 2px solid #ddd6fe;
   z-index: 1;
 }
+[data-bs-theme="dark"] .ep-signer-dot {
+  background: rgba(124,92,252,0.20);
+  color: #c4b5fd;
+  border-color: rgba(124,92,252,0.45);
+}
 .ep-signer.is-active .ep-signer-dot {
   background: linear-gradient(130deg, #2d1f6e 0%, #4c2d9c 40%, #6d28d9 75%, #7c3aed 100%);
   color: #ffffff;
@@ -5192,6 +5264,7 @@
   font-weight: 600;
 }
 .ep-signer.is-active .ep-signer-state { color: #6d28d9; font-weight: 700; }
+[data-bs-theme="dark"] .ep-signer.is-active .ep-signer-state { color: #c4b5fd; }
 .ep-signer-btn {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 9px;

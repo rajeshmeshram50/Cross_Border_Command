@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTheme } from '../contexts/ThemeContext';
 
 // Role → tone palette. Same shape and defaults as HrEmployees.tsx so the
 // chip looks identical wherever it's mounted (Employees, Onboarding,
@@ -20,7 +21,28 @@ const ROLE_TONES: Record<string, { bg: string; fg: string }> = {
   'Architect':            { bg: '#dceefe', fg: '#0c63b0' },
   'Analyst':              { bg: '#d3f0ee', fg: '#0a716a' },
 };
-const roleTone = (role: string) => ROLE_TONES[role] || { bg: '#eef2f6', fg: '#475569' };
+// Dark-mode tones — same hue per role, but a translucent tint background +
+// a lighter ink so the badge stays legible on the dark surface (the light
+// pastel backgrounds above clashed badly with dark cards).
+const ROLE_TONES_DARK: Record<string, { bg: string; fg: string }> = {
+  'HR':                   { bg: 'rgba(124,43,181,0.22)',  fg: '#d8b4fe' },
+  'Admin':                { bg: 'rgba(236,72,153,0.20)',  fg: '#f9a8d4' },
+  'Manager':              { bg: 'rgba(16,133,72,0.24)',   fg: '#6ee7b7' },
+  'Approver':             { bg: 'rgba(12,99,176,0.28)',   fg: '#7cc4ff' },
+  'Developer':            { bg: 'rgba(160,111,0,0.28)',   fg: '#fcd34d' },
+  'Designer':             { bg: 'rgba(124,43,181,0.22)',  fg: '#d8b4fe' },
+  'QA':                   { bg: 'rgba(10,113,106,0.28)',  fg: '#5eead4' },
+  'Tester':               { bg: 'rgba(10,113,106,0.28)',  fg: '#5eead4' },
+  'Lead':                 { bg: 'rgba(160,111,0,0.28)',   fg: '#fcd34d' },
+  'Mentor':               { bg: 'rgba(91,63,209,0.28)',   fg: '#b9a7ff' },
+  'Coordinator':          { bg: 'rgba(160,111,0,0.28)',   fg: '#fcd34d' },
+  'Engineer':             { bg: 'rgba(160,111,0,0.28)',   fg: '#fcd34d' },
+  'Architect':            { bg: 'rgba(12,99,176,0.28)',   fg: '#7cc4ff' },
+  'Analyst':              { bg: 'rgba(10,113,106,0.28)',  fg: '#5eead4' },
+};
+const roleTone = (role: string, dark: boolean) =>
+  (dark ? ROLE_TONES_DARK[role] : ROLE_TONES[role])
+  || (dark ? { bg: 'rgba(148,163,184,0.20)', fg: '#cbd5e1' } : { bg: '#eef2f6', fg: '#475569' });
 
 /**
  * Renders the first ancillary role as a pill, plus a `+N` button that opens
@@ -32,6 +54,8 @@ const roleTone = (role: string) => ROLE_TONES[role] || { bg: '#eef2f6', fg: '#47
  * duplicating 100+ lines of popover code.
  */
 export function AncillaryRolesChip({ names }: { names: string[] }) {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -79,7 +103,7 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
 
   const first = names[0];
   const rest = names.slice(1);
-  const firstTone = roleTone(first);
+  const firstTone = roleTone(first, isDark);
 
   return (
     <>
@@ -107,9 +131,9 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
               fontSize: 10.5,
               padding: '4px 8px',
               borderRadius: 999,
-              background: open ? '#7c5cfc' : 'rgba(124,92,252,0.12)',
-              color: open ? '#fff' : '#5a3fd1',
-              border: '1px solid rgba(124,92,252,0.25)',
+              background: open ? '#7c5cfc' : 'rgba(124,92,252,0.16)',
+              color: open ? '#fff' : (isDark ? '#c4b5fd' : '#5a3fd1'),
+              border: '1px solid rgba(124,92,252,0.30)',
               cursor: 'pointer',
               transition: 'background .15s ease, color .15s ease',
               lineHeight: 1.1,
@@ -150,7 +174,7 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
             All Ancillary Roles
           </div>
           {names.map(n => {
-            const t = roleTone(n);
+            const t = roleTone(n, isDark);
             return (
               <span
                 key={n}

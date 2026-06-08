@@ -6,6 +6,7 @@ import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import api from '../../api';
 import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
@@ -310,7 +311,23 @@ const ROLE_TONES: Record<string, { bg: string; fg: string }> = {
   'Developer':            { bg: '#fdf3d6', fg: '#a06f00' },
   'Design Head':          { bg: '#fdf3d6', fg: '#a06f00' },
 };
-const tone = (role: string) => ROLE_TONES[role] || { bg: '#eef2f6', fg: '#475569' };
+// Dark-mode equivalents keyed by the light tone's ink (fg) — every role maps
+// to one of a handful of base hues, so converting by fg keeps one dark variant
+// per hue instead of restating the whole table. Translucent tint + bright ink
+// stays legible on the dark card surface (the light pastel bgs clashed badly).
+const DARK_BY_FG: Record<string, { bg: string; fg: string }> = {
+  '#a06f00': { bg: 'rgba(160,111,0,0.28)', fg: '#fcd34d' }, // amber
+  '#0c63b0': { bg: 'rgba(12,99,176,0.28)', fg: '#7cc4ff' }, // blue
+  '#a4661c': { bg: 'rgba(164,102,28,0.30)', fg: '#fdba74' }, // orange
+  '#108548': { bg: 'rgba(16,133,72,0.26)', fg: '#6ee7b7' }, // green
+  '#0a716a': { bg: 'rgba(10,113,106,0.28)', fg: '#5eead4' }, // teal
+  '#a02960': { bg: 'rgba(160,41,96,0.26)', fg: '#f9a8d4' }, // pink
+};
+const tone = (role: string, dark = false) => {
+  const light = ROLE_TONES[role] || { bg: '#eef2f6', fg: '#475569' };
+  if (!dark) return light;
+  return DARK_BY_FG[light.fg] || { bg: 'rgba(148,163,184,0.20)', fg: '#cbd5e1' };
+};
 
 // Onboarding-status pill recipe — soft tinted background + bold dot accent.
 // Each tone carries a light background, a darker foreground for the label,
@@ -520,6 +537,8 @@ export default function HrEmployees() {
   // master/client forms: per-field error map cleared as the user fixes the
   // field, with a summary toast on submit if anything is still invalid.
   const toast = useToast();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   type OnbErrors = { name?: string; email?: string; dept?: string; date?: string };
   const [onbErrors, setOnbErrors] = useState<OnbErrors>({});
   const clearOnbError = (key: keyof OnbErrors) => {
@@ -3152,7 +3171,7 @@ export default function HrEmployees() {
                           </td>
                         </tr>
                       ) : pageRows.map((e, idx) => {
-                        const primary = tone(e.primaryRole);
+                        const primary = tone(e.primaryRole, isDark);
                         return (
                           <tr
                             // Use the DB primary key for React's reconciliation
@@ -5807,6 +5826,8 @@ export default function HrEmployees() {
  * on outside-click, Esc, scroll, or window resize. Empty list = "—".
  */
 function AncillaryRolesChip({ names }: { names: string[] }) {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -5854,7 +5875,7 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
 
   const first = names[0];
   const rest = names.slice(1);
-  const firstTone = tone(first);
+  const firstTone = tone(first, isDark);
 
   return (
     <>
@@ -5882,9 +5903,9 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
               fontSize: 10.5,
               padding: '4px 8px',
               borderRadius: 999,
-              background: open ? '#7c5cfc' : 'rgba(124,92,252,0.12)',
-              color: open ? '#fff' : '#5a3fd1',
-              border: '1px solid rgba(124,92,252,0.25)',
+              background: open ? '#7c5cfc' : 'rgba(124,92,252,0.16)',
+              color: open ? '#fff' : (isDark ? '#c4b5fd' : '#5a3fd1'),
+              border: '1px solid rgba(124,92,252,0.30)',
               cursor: 'pointer',
               transition: 'background .15s ease, color .15s ease',
               lineHeight: 1.1,
@@ -5925,7 +5946,7 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
             All Ancillary Roles
           </div>
           {names.map(n => {
-            const t = tone(n);
+            const t = tone(n, isDark);
             return (
               <span
                 key={n}

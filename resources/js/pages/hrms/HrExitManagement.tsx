@@ -1812,18 +1812,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       keyword substring (any trigger-point master row
                       containing "exit" qualifies). */}
                   {exitMatchMeta && (
-                    <div className="d-flex align-items-center gap-2 flex-wrap mb-3"
-                      style={{ padding: '10px 14px', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 10 }}>
-                      <i className="ri-magic-line" style={{ color: '#4338ca' }} />
-                      <strong style={{ fontSize: 12.5, color: '#4338ca' }}>Matching templates for</strong>
-                      <span style={{ fontSize: 12, color: '#374151' }}>
+                    <div className="d-flex align-items-center gap-2 flex-wrap mb-3 ep-match-banner">
+                      <i className="ri-magic-line ep-match-icon" />
+                      <strong className="ep-match-title">Matching templates for</strong>
+                      <span className="ep-match-text">
                         Department <strong>{exitMatchMeta.department_name || '—'}</strong> → Category{' '}
-                        <span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>{exitMatchMeta.employee_category || '—'}</span>
+                        <span className="ep-match-chip">{exitMatchMeta.employee_category || '—'}</span>
                         {exitMatchMeta.role_type && (
-                          <>{' '}· Level{' '}<span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>{exitMatchMeta.role_type}</span></>
+                          <>{' '}· Level{' '}<span className="ep-match-chip">{exitMatchMeta.role_type}</span></>
                         )}
                         {' '}· Trigger contains{' '}
-                        <span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>“exit”</span>
+                        <span className="ep-match-chip">“exit”</span>
                       </span>
                     </div>
                   )}
@@ -1878,7 +1877,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                 <div className="ep-doc-name">
                                   {tpl.name || '(unnamed template)'}{' '}
                                   {tpl.code && (
-                                    <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4, marginLeft: 6 }}>{tpl.code}</span>
+                                    <span className="ep-doc-code">{tpl.code}</span>
                                   )}
                                   {run && runTone && (
                                     <span style={{ marginLeft: 8, padding: '2px 10px', borderRadius: 999, background: runTone.bg, color: runTone.fg, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -2145,8 +2144,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           ) : (
             <>
               {previewMissing.length > 0 && (
-                <div className="d-flex align-items-start gap-2 mb-3"
-                  style={{ padding: '10px 14px', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, color: '#92400e', fontSize: 12.5 }}>
+                <div className="d-flex align-items-start gap-2 mb-3 ep-preview-warn">
                   <i className="ri-error-warning-line" style={{ marginTop: 2 }} />
                   <div>
                     <strong>Unfilled placeholders:</strong> {previewMissing.join(', ')}
@@ -2154,7 +2152,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 </div>
               )}
               <div
-                style={{ background: '#fff', color: '#1f2937', padding: 24, borderRadius: 10, border: '1px solid var(--vz-border-color)', minHeight: 320 }}
+                style={{ background: '#fff', color: '#1f2937', padding: 24, borderRadius: 10, border: '1px solid var(--vz-border-color)', minHeight: 320, boxShadow: '0 6px 24px rgba(0,0,0,0.22)' }}
                 dangerouslySetInnerHTML={{ __html: previewHtml }}
               />
             </>
