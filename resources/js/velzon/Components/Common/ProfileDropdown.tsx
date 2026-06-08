@@ -59,9 +59,18 @@ const ProfileDropdown = () => {
   // employees just need to do their work, not configure the tenant.
   const canSeeSettings = user.user_type !== 'employee';
 
+  // Gmail — outbound email history + compose/send box. Oversight of tenant
+  // correspondence, so it's shown to every non-employee tier; the page itself
+  // scopes the data per client/branch server-side. Lives here (profile menu)
+  // rather than the sidebar, alongside Inbox/My Team.
+  const canSeeMail = user.user_type !== 'employee';
+
   const menuItems: { to: string; icon: string; label: string; grad: string; badge?: number }[] = [
     { to: '/profile',  icon: 'ri-user-3-line',     label: 'Profile',  grad: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' },
     { to: '/inbox',    icon: 'ri-inbox-line',      label: 'Inbox',    grad: 'linear-gradient(135deg, #f59e0b 0%, #f7b84b 100%)', badge: inboxCount },
+    ...(canSeeMail
+      ? [{ to: '/gmail',    icon: 'ri-mail-send-line', label: 'Gmail',    grad: 'linear-gradient(135deg, #ea4335 0%, #fbbc05 100%)' }]
+      : []),
     ...(canSeeMyTeam
       ? [{ to: '/my-team',  icon: 'ri-team-line',      label: 'My Team',  grad: 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)' }]
       : []),

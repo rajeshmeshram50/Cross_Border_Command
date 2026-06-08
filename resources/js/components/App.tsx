@@ -105,6 +105,7 @@ import PublicOnboarding from '../pages/PublicOnboarding';
 import ClockIn from '../pages/ClockIn';
 import MyTeam from '../pages/MyTeam';
 import Inbox from '../pages/Inbox';
+import Gmail from '../pages/Gmail';
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -694,6 +695,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/clock-in" element={<ClockIn />} />
               <Route path="/my-team"  element={<MyTeam />} />
               <Route path="/inbox"    element={<Inbox />} />
+              <Route path="/gmail"    element={<Gmail />} />
               <Route path="/master" element={<MasterDashboard />} />
               {/* /master/segments and /clm/segment share the SAME backend
                   (clm_segments table) and SAME UI. Whatever is added on either
