@@ -1615,10 +1615,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </EpField>
                   </Col>
                   <Col xs={12}>
-                    <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', display: 'flex', alignItems: 'center', gap: 6, marginTop: -2, marginBottom: 4 }}>
-                      <i className="ri-information-line" style={{ color: '#6366f1' }} />
-                      Notice start → last working day ke beech employee <strong>Exit In Progress</strong> rahega; last working day nikalte hi apne-aap <strong>Exited</strong> ho jayega.
-                    </div>
+              
                   </Col>
                   <Col md={6}>
                     <EpField label="Reporting Manager">
