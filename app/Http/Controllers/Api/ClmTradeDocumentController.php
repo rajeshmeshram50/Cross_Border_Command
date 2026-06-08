@@ -122,6 +122,9 @@ class ClmTradeDocumentController extends Controller
             'doc_type'  => 'required|string|max:64',
             'purpose'   => 'required|string|max:500',
             'party'     => 'required|string|max:255',
+            // Regulatory tier + segment scope — mirrors clm_agreement_library.
+            'regulatory' => 'nullable|string|in:highly,less',
+            'segment'    => 'nullable|string|max:500',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
             // Stage 2 page-shell config — same JSON shape as
@@ -166,6 +169,8 @@ class ClmTradeDocumentController extends Controller
             'doc_type'  => 'sometimes|required|string|max:64',
             'purpose'   => 'sometimes|required|string|max:500',
             'party'     => 'sometimes|required|string|max:255',
+            'regulatory' => 'sometimes|nullable|string|in:highly,less',
+            'segment'    => 'sometimes|nullable|string|max:500',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
             // Same Stage 2 page-shell config as libraryStore. Re-validated

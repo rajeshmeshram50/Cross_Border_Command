@@ -4,6 +4,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
+import { MasterMultiSelect } from '../master/masterFormKit';
 import { SimpleNameModal } from './clmCommon';
 import ClmInsertPlaceholderModal from './ClmInsertPlaceholderModal';
 import ClmInsertTableModal from './ClmInsertTableModal';
@@ -39,6 +40,9 @@ export type TdLib = {
   doc_type: string;
   purpose: string;
   party: string;
+  /* Regulatory tier + segment scope — same model as the Agreement Library. */
+  regulatory?: 'highly' | 'less';
+  segment?: string | null;
   file_path: string | null;
   content: string | null;
   /* Stage 2 page-shell config — mirror of hr_document_templates. Nullable
@@ -84,11 +88,15 @@ interface Props {
   existing: TdLib | null;
   names: TdName[];
   nextCode: string;
+  /* Segment master rows (name + regulatory tier) — used to filter the
+   * Step-1 segment selector by the chosen High/Less regulatory radio,
+   * exactly like the Agreement wizard. Strings (legacy) default to 'less'. */
+  knownSegments?: Array<{ name: string; regulatory_status: 'highly' | 'less' }> | string[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function ClmTradeDocumentDraftModal({ open, existing, names: initialNames, nextCode, onClose, onSaved }: Props) {
+export default function ClmTradeDocumentDraftModal({ open, existing, names: initialNames, nextCode, knownSegments = [], onClose, onSaved }: Props) {
   const toast = useToast();
   const editingId = existing?.id ?? null;
 
@@ -105,6 +113,26 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   const [docType, setDocType] = useState<string>(DOC_TYPES[0]);
   const [purpose, setPurpose] = useState('');
   const [parties, setParties] = useState<Set<string>>(new Set());
+  // Regulatory tier + segment scope (mirrors the Agreement wizard).
+  const [regulatory, setRegulatory] = useState<'highly' | 'less'>('less');
+  const [segments, setSegments]     = useState<string[]>([]);
+
+  /* Normalise knownSegments (strings or {name,regulatory_status}) and derive
+   * the dropdown options for the current regulatory tier. High-reg shows only
+   * highly-regulated segments; less-reg only less-regulated. Any segment
+   * already saved on the row that no longer matches the tier is appended so
+   * the user can still see/remove it. */
+  const normalisedSegments = useMemo(() => (
+    (knownSegments as Array<string | { name: string; regulatory_status: 'highly' | 'less' }>)
+      .map(s => (typeof s === 'string' ? { name: s, regulatory_status: 'less' as const } : s))
+      .filter(s => !!s.name)
+  ), [knownSegments]);
+  const segmentOptions = useMemo(() => {
+    const byName = new Map<string, string>();
+    normalisedSegments.filter(s => s.regulatory_status === regulatory).forEach(s => byName.set(s.name, s.name));
+    segments.forEach(name => { if (!byName.has(name)) byName.set(name, name); });
+    return Array.from(byName.entries()).map(([value, label]) => ({ value, label }));
+  }, [normalisedSegments, segments, regulatory]);
 
   // Step 2 fields
   const [content, setContent] = useState('');
@@ -318,6 +346,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setDocType(existing.doc_type ?? DOC_TYPES[0]);
       setPurpose(existing.purpose ?? '');
       setParties(new Set((existing.party ?? '').split(',').map(s => s.trim()).filter(Boolean)));
+      setRegulatory(existing.regulatory ?? 'less');
+      setSegments((existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean));
       setContent(existing.content ?? '');
       if (editorRef.current) editorRef.current.innerHTML = existing.content ?? '';
       // Layer the saved zone config over the branded defaults. Rows that
@@ -331,6 +361,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setDocType(DOC_TYPES[0]);
       setPurpose('');
       setParties(new Set());
+      setRegulatory('less');
+      setSegments([]);
       setContent('');
       if (editorRef.current) editorRef.current.innerHTML = '';
       setHeaderConfig(brandedDefaults.header);
@@ -405,6 +437,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     else if (purpose.trim().length < PURPOSE_MIN) next.purpose = `Purpose must be at least ${PURPOSE_MIN} characters`;
     else if (purpose.trim().length > PURPOSE_MAX) next.purpose = `Purpose must not exceed ${PURPOSE_MAX} characters`;
     if (parties.size === 0) next.party = 'Select at least one applicable party';
+    // High-regulatory trade docs target exactly one regulated segment;
+    // less-regulatory may apply to many (or none → all standard segments).
+    if (regulatory === 'highly' && segments.length !== 1) {
+      next.segment = 'High-regulatory documents need exactly one segment';
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -426,6 +463,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       doc_type: docType.trim(),
       purpose: purpose.trim(),
       party: Array.from(parties).join(','),
+      regulatory,
+      segment: segments.length ? segments.join(', ') : null,
       file_path: null,
       content: editorRef.current?.innerHTML ?? content ?? null,
       header_config: headerConfig,
@@ -579,6 +618,61 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     onChange={e => { setTitle(e.target.value.slice(0, TITLE_MAX)); setErrors(p => ({ ...p, title: '' })); }}
                   />
                   {errors.title && <div className="tdw-err">{errors.title}</div>}
+                </div>
+              </div>
+
+              {/* Segment Regulatory Status + Segments — same model as the
+                  Agreement wizard: High-reg → single segment; Less-reg →
+                  multi-select (or none = all standard segments). */}
+              <div className="tdw-reg">
+                <div className="tdw-reg-head">
+                  <span className="tdw-reg-ico">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+                  </span>
+                  Segment Regulatory Status <span className="tdw-req">*</span>
+                </div>
+                <div className="tdw-reg-grid">
+                  <label className={`tdw-reg-opt tdw-reg-high ${regulatory === 'highly' ? 'is-on' : ''}`}>
+                    <input type="radio" name="tdw-reg" checked={regulatory === 'highly'} onChange={() => { setRegulatory('highly'); setSegments([]); setErrors(p => ({ ...p, segment: '' })); }} />
+                    <span className="tdw-reg-opt-dot" />
+                    <div>
+                      <div className="tdw-reg-opt-title">High Regulatory</div>
+                      <div className="tdw-reg-opt-sub">Requires specific segment &amp; compliance review</div>
+                    </div>
+                  </label>
+                  <label className={`tdw-reg-opt tdw-reg-less ${regulatory === 'less' ? 'is-on' : ''}`}>
+                    <input type="radio" name="tdw-reg" checked={regulatory === 'less'} onChange={() => { setRegulatory('less'); setSegments([]); setErrors(p => ({ ...p, segment: '' })); }} />
+                    <span className="tdw-reg-opt-dot" />
+                    <div>
+                      <div className="tdw-reg-opt-title">Less Regulatory</div>
+                      <div className="tdw-reg-opt-sub">Applicable to all standard segments by default</div>
+                    </div>
+                  </label>
+                </div>
+                <div className="tdw-field" style={{ marginTop: 12 }}>
+                  <label className="tdw-label">
+                    {regulatory === 'highly' ? <>Segment <span className="tdw-req">*</span></> : 'Segments (select one or more)'}
+                  </label>
+                  {regulatory === 'highly' ? (
+                    <MasterSelect
+                      key={`tdw-seg-h-${segmentOptions.length}`}
+                      value={segments[0] ?? ''}
+                      invalid={!!errors.segment}
+                      placeholder={segmentOptions.length ? '— Select Segment —' : 'No highly-regulated segments configured'}
+                      options={segmentOptions}
+                      onChange={(v) => { setSegments(v ? [v] : []); setErrors(p => ({ ...p, segment: '' })); }}
+                    />
+                  ) : (
+                    <MasterMultiSelect
+                      key={`tdw-seg-l-${segmentOptions.length}`}
+                      value={segments}
+                      invalid={!!errors.segment}
+                      placeholder={segmentOptions.length ? '— Select Segments —' : 'No less-regulated segments configured'}
+                      options={segmentOptions}
+                      onChange={(vs) => { setSegments(vs); setErrors(p => ({ ...p, segment: '' })); }}
+                    />
+                  )}
+                  {errors.segment && <div className="tdw-err">{errors.segment}</div>}
                 </div>
               </div>
 
@@ -1023,6 +1117,22 @@ const TDW_CSS = `
 }
 .tdw-add-mini:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(8,145,178,.50); }
 
+/* ── Segment Regulatory Status card (mirrors the Agreement wizard) ── */
+.tdw-reg { border: 1.5px solid rgba(6,182,212,.20); border-radius: 14px; padding: 16px 18px; background: linear-gradient(180deg, #ffffff 0%, #f7feff 100%); }
+.tdw-reg-head { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #0891b2; margin-bottom: 12px; }
+.tdw-reg-ico { width: 22px; height: 22px; border-radius: 7px; background: rgba(8,145,178,.10); display: inline-flex; align-items: center; justify-content: center; color: #0891b2; }
+.tdw-reg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tdw-reg-opt { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 12px; border: 1.5px solid; cursor: pointer; transition: background .15s, box-shadow .22s ease, transform .15s ease; }
+.tdw-reg-opt input { display: none; }
+.tdw-reg-opt-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; border: 2px solid #cbd5e1; transition: border-color .15s ease, background .15s ease; }
+.tdw-reg-opt.is-on .tdw-reg-opt-dot { border-color: currentColor; background: radial-gradient(circle at 50% 50%, currentColor 0 5px, transparent 6px); }
+.tdw-reg-opt-title { font-size: 13px; font-weight: 800; letter-spacing: -.01em; }
+.tdw-reg-opt-sub { font-size: 11px; opacity: .85; margin-top: 1px; }
+.tdw-reg-high { color: #b91c1c; background: rgba(254, 226, 226, .35); border-color: rgba(248,113,113,.35); }
+.tdw-reg-high.is-on { background: rgba(254, 226, 226, .7); border-color: #ef4444; box-shadow: 0 6px 18px rgba(239,68,68,.18); }
+.tdw-reg-less { color: #15803d; background: rgba(220, 252, 231, .35); border-color: rgba(74, 222, 128, .35); }
+.tdw-reg-less.is-on { background: rgba(220, 252, 231, .7); border-color: #22c55e; box-shadow: 0 6px 18px rgba(34,197,94,.18); }
+
 /* ── Applicable Party card ── */
 .tdw-party {
   border: 1.5px solid rgba(6,182,212,.20);
@@ -1198,9 +1308,14 @@ const TDW_CSS = `
 [data-bs-theme="dark"] .tdw-input { background-color: #1e293b; border-color: rgba(6,182,212,.30); color: #e2e8f0; }
 [data-bs-theme="dark"] .tdw-input::placeholder { color: #94a3b8; }
 [data-bs-theme="dark"] .tdw-hint { color: #67e8f9; }
-[data-bs-theme="dark"] .tdw-party { background: linear-gradient(180deg, #0f172a 0%, #102234 100%); border-color: rgba(6,182,212,.22); }
-[data-bs-theme="dark"] .tdw-party-head { color: #67e8f9; }
-[data-bs-theme="dark"] .tdw-party-ico { background: rgba(8,145,178,.20); color: #67e8f9; }
+[data-bs-theme="dark"] .tdw-reg, [data-bs-theme="dark"] .tdw-party { background: linear-gradient(180deg, #0f172a 0%, #102234 100%); border-color: rgba(6,182,212,.22); }
+[data-bs-theme="dark"] .tdw-reg-head, [data-bs-theme="dark"] .tdw-party-head { color: #67e8f9; }
+[data-bs-theme="dark"] .tdw-reg-ico, [data-bs-theme="dark"] .tdw-party-ico { background: rgba(8,145,178,.20); color: #67e8f9; }
+[data-bs-theme="dark"] .tdw-reg-opt-sub { color: #94a3b8; }
+[data-bs-theme="dark"] .tdw-reg-high { color: #fca5a5; background: rgba(239,68,68,.10); border-color: rgba(248,113,113,.30); }
+[data-bs-theme="dark"] .tdw-reg-high.is-on { background: rgba(239,68,68,.18); border-color: #ef4444; box-shadow: 0 6px 18px rgba(239,68,68,.22); }
+[data-bs-theme="dark"] .tdw-reg-less { color: #86efac; background: rgba(34,197,94,.10); border-color: rgba(74,222,128,.30); }
+[data-bs-theme="dark"] .tdw-reg-less.is-on { background: rgba(34,197,94,.18); border-color: #22c55e; box-shadow: 0 6px 18px rgba(34,197,94,.22); }
 [data-bs-theme="dark"] .tdw-party-label { color: #cbd5e1; }
 [data-bs-theme="dark"] .tdw-checkbox { background: #1e293b; border-color: rgba(6,182,212,.22); color: #cbd5e1; }
 [data-bs-theme="dark"] .tdw-checkbox:hover { background: rgba(8,145,178,.10); border-color: rgba(103,232,249,.45); }
@@ -1233,6 +1348,7 @@ const TDW_CSS = `
   .tdw-step-line { display: none; }
   .tdw-grid-2 { grid-template-columns: minmax(0,1fr); }
   .tdw-party-row { grid-template-columns: 1fr; }
+  .tdw-reg-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .tdw-overlay { padding: 8px; }

@@ -10,13 +10,15 @@ import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 /* Central CLM → Trade Documents Master (two tabs: List + Library). */
 
 type TdName = { id: number; code: string; name: string };
-type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; file_path: string | null; content: string | null; is_signed?: boolean };
+type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; regulatory?: 'highly'|'less'; segment?: string | null; file_path: string | null; content: string | null; is_signed?: boolean };
+type Seg    = { id: number; name: string; regulatory_status: 'highly' | 'less' };
 
 export default function ClmTradeDocumentsPage() {
   const toast = useToast();
   const [tab, setTab]           = useState<'list'|'lib'>('list');
   const [names, setNames]       = useState<TdName[]>([]);
   const [lib, setLib]           = useState<TdLib[]>([]);
+  const [segments, setSegments] = useState<Seg[]>([]);
   const [loading, setLoading]   = useState(false);
 
   const reload = () => {
@@ -24,7 +26,10 @@ export default function ClmTradeDocumentsPage() {
     Promise.all([
       api.get<{ status: boolean; data: TdName[] }>('/clm/trade-doc-names'),
       api.get<{ status: boolean; data: TdLib[] }>('/clm/trade-doc-library'),
-    ]).then(([n, l]) => { setNames(n.data.data ?? []); setLib(l.data.data ?? []); })
+      // Segments drive the Step-1 Segment Regulatory Status selector in the
+      // draft modal (same source the Agreement wizard uses).
+      api.get<{ status: boolean; data: Seg[] }>('/clm/segments').catch(() => ({ data: { data: [] } })),
+    ]).then(([n, l, s]) => { setNames(n.data.data ?? []); setLib(l.data.data ?? []); setSegments((s.data as { data?: Seg[] }).data ?? []); })
       .catch(() => toast.error('Load failed', 'Could not load trade documents'))
       .finally(() => setLoading(false));
   };
@@ -69,7 +74,7 @@ export default function ClmTradeDocumentsPage() {
 
       {tab === 'list'
         ? <NamesPane rows={names} loading={loading} reload={reload} />
-        : <LibraryPane rows={lib} names={names} loading={loading} reload={reload} />}
+        : <LibraryPane rows={lib} names={names} segments={segments} loading={loading} reload={reload} />}
     </div>
   );
 }
@@ -173,7 +178,7 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
 
 /* ─── Library sub-tab ─── */
 
-function LibraryPane({ rows, names, loading, reload }: { rows: TdLib[]; names: TdName[]; loading: boolean; reload: () => void }) {
+function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]; names: TdName[]; segments: Seg[]; loading: boolean; reload: () => void }) {
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [page, setPage]     = useState(1);
@@ -233,19 +238,39 @@ function LibraryPane({ rows, names, loading, reload }: { rows: TdLib[]; names: T
                 <th style={{ width: 110, textAlign: 'center' }}>TRADE DOC ID</th>
                 <th>TRADE DOCUMENT TITLE</th>
                 <th style={{ width: 130, textAlign: 'center' }}>TYPE</th>
+                <th style={{ width: 110, textAlign: 'center' }}>REGULATORY</th>
+                <th style={{ width: 130, textAlign: 'center' }}>SEGMENT</th>
                 <th>PURPOSE</th>
                 <th>APPLICABLE PARTY</th>
                 <th style={{ width: 110, textAlign: 'center' }}>DOWNLOAD</th>
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={8} className="clm-status">Loading…</td></tr>}
+                {loading && <tr><td colSpan={10} className="clm-status">Loading…</td></tr>}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
                     <td className="clm-td-name">{r.title}</td>
                     <td style={{ textAlign: 'center' }}><span className={`clm-badge ${typeBadge(r.doc_type)}`}>{r.doc_type}</span></td>
+                    <td style={{ textAlign: 'center' }}>
+                      {(() => {
+                        const isHigh = r.regulatory === 'highly';
+                        return (
+                          <span
+                            className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-emerald'}`}
+                            title={isHigh ? 'Highly Regulated — needs segment-specific compliance' : 'Less Regulated — applies to all standard segments'}
+                          >
+                            <span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {r.segment
+                        ? <span className="clm-badge clm-badge-teal" title={`Segment scope · ${r.segment}`}>{r.segment}</span>
+                        : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All segments</span>}
+                    </td>
                     <td className="clm-td-desc">{r.purpose}</td>
                     <td className="clm-td-desc">{r.party}</td>
                     <td style={{ textAlign: 'center' }}>
@@ -292,6 +317,7 @@ function LibraryPane({ rows, names, loading, reload }: { rows: TdLib[]; names: T
         existing={editing}
         names={names}
         nextCode={editing?.code ?? `TDL-${String(rows.length + 1).padStart(3, '0')}`}
+        knownSegments={segments.map(s => ({ name: s.name, regulatory_status: s.regulatory_status }))}
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
       />
