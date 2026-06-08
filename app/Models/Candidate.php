@@ -19,7 +19,7 @@ class Candidate extends Model
 
         'current_salary_lpa', 'expected_salary_lpa', 'notice_period',
 
-        'source',
+        'source', 'referred_by_id', 'referred_by_name',
         'cv_path', 'cv_original_name',
 
         'status', 'rejection_reason', 'status_notes',
@@ -58,6 +58,12 @@ class Candidate extends Model
     public function recruitment(): BelongsTo
     {
         return $this->belongsTo(Recruitment::class);
+    }
+
+    /** Employee who referred this candidate (only set when Source = Referral). */
+    public function referrer(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'referred_by_id');
     }
 
     // ── Computed accessors ──────────────────────────────────────────────

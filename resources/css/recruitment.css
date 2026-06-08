@@ -972,8 +972,9 @@
     inset 0 1px 0 rgba(255,255,255,0.24),
     inset 0 -1px 0 rgba(0,0,0,0.12);
 }
-.rec-close-btn { width: 32px; height: 32px; border-radius: 8px; background: rgba(255,255,255,0.18); border: none; color: #fff; transition: background .15s ease; display: inline-flex; align-items: center; justify-content: center; }
-.rec-close-btn:hover { background: rgba(255,255,255,0.30); }
+.rec-close-btn { width: 32px; height: 32px; border-radius: 8px; background: rgba(255,255,255,0.18); border: none; color: #fff; transition: background .15s ease, transform .15s ease, box-shadow .15s ease; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.rec-close-btn:hover { background: rgba(255,255,255,0.40); transform: scale(1.08); box-shadow: 0 4px 12px rgba(0,0,0,0.18); }
+.rec-close-btn:active { transform: scale(0.96); }
 .rec-close-btn i { font-size: 17px !important; }
 
 /* ---------------------------------------------------------------------
@@ -2191,10 +2192,11 @@
   color: #ffffff;
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer;
-  transition: background .15s ease;
+  transition: background .15s ease, transform .15s ease, box-shadow .15s ease;
   flex-shrink: 0;
 }
-.rec-cancel-close:hover { background: rgba(255,255,255,0.30); }
+.rec-cancel-close:hover { background: rgba(255,255,255,0.40); transform: scale(1.08); box-shadow: 0 4px 12px rgba(0,0,0,0.18); }
+.rec-cancel-close:active { transform: scale(0.96); }
 .rec-cancel-close i { font-size: 18px; }
 
 /* ── Body ───────────────────────────────────────────────────────────── */
