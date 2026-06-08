@@ -5416,64 +5416,6 @@ export default function HrEmployees() {
                   </Row>
                 </div>
 
-                {/* Bonus, Perks & Payroll Settings */}
-                <div className="emp-section">
-                  <div className="emp-section-title">
-                    <i className="ri-gift-line" style={{ color: '#7c5cfc' }} /> Bonus, Perks &amp; Payroll Settings
-                  </div>
-                  <div
-                    className="d-flex align-items-center gap-2 mb-3"
-                    style={{ padding: '8px 12px', border: '1px solid var(--vz-border-color)', borderRadius: 8 }}
-                  >
-                    <input
-                      type="checkbox"
-                      id="bonus-in-annual"
-                      className="form-check-input m-0"
-                      checked={eBonusInAnnual}
-                      onChange={e => setEBonusInAnnual(e.target.checked)}
-                    />
-                    <label htmlFor="bonus-in-annual" className="mb-0" style={{ fontSize: 13, cursor: 'pointer' }}>
-                      Bonus included in annual salary
-                    </label>
-                  </div>
-                  <div className="d-flex flex-wrap gap-2 mb-3">
-                    <button
-                      type="button"
-                      className="btn emp-dashed-btn-violet d-inline-flex align-items-center gap-1 fw-semibold"
-                      style={{
-                        fontSize: 12.5,
-                        padding: '6px 14px',
-                        borderRadius: 8,
-                      }}
-                    >
-                      <i className="ri-add-line" /> Add Bonus
-                    </button>
-                    <button
-                      type="button"
-                      className="btn emp-dashed-btn-teal d-inline-flex align-items-center gap-1 fw-semibold"
-                      style={{
-                        fontSize: 12.5,
-                        padding: '6px 14px',
-                        borderRadius: 8,
-                      }}
-                    >
-                      <i className="ri-add-line" /> Add Perks
-                    </button>
-                  </div>
-                  <div className="d-flex align-items-center gap-2 mb-2">
-                    <input
-                      type="checkbox"
-                      id="pf-eligible"
-                      className="form-check-input m-0"
-                      checked={ePfEligible}
-                      onChange={e => setEPfEligible(e.target.checked)}
-                    />
-                    <label htmlFor="pf-eligible" className="mb-0" style={{ fontSize: 13, cursor: 'pointer' }}>
-                      Provident Fund (PF) Eligible
-                    </label>
-                  </div>
-                </div>
-
                 {/* Salary Breakup */}
                 <div className="emp-section">
                   <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
