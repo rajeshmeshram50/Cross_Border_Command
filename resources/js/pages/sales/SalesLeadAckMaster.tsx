@@ -520,8 +520,11 @@ export default function SalesLeadAckMaster() {
       </div>
 
       {/* ── Opportunity-type selector modal ── */}
+      {/* No backdrop-click-to-close — users were losing partially filled
+          forms by misclicking the overlay. Close only via the X / Cancel
+          button or the ESC key. */}
       {oppSelectorOpen && (
-        <div className="lam-overlay" onMouseDown={() => setOppSelectorOpen(false)}>
+        <div className="lam-overlay">
           <div className="lam-modal lam-modal-md" onMouseDown={e => e.stopPropagation()}>
             <div className="lam-modal-header">
               <div className="lam-modal-hicon"><i className="ri-folder-add-line" /></div>
@@ -570,7 +573,9 @@ export default function SalesLeadAckMaster() {
               textarea spans the full width; Status / DQ Status sit
               side-by-side in equal columns. ── */}
       {formOpen && pendingType && (
-        <div className="lam-overlay lam-overlay-strong" onMouseDown={() => { if (!saving) closeForm(); }}>
+        /* No backdrop-click-to-close — users were losing partially filled
+           forms by misclicking the overlay. Close only via Cancel or ESC. */
+        <div className="lam-overlay lam-overlay-strong">
           <div className="lam-modal lam-modal-lg lam-modal-noclose" onMouseDown={e => e.stopPropagation()}>
             <div className="lam-modal-header lam-modal-header-rich">
               <span className="lam-mh-orb lam-mh-orb-tr" aria-hidden />
