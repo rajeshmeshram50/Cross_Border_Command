@@ -173,6 +173,24 @@ class EmployeeDocumentController extends Controller
         return response()->json(['message' => 'Removed.']);
     }
 
+    /**
+     * Stream the document through the app (same-origin) with an attachment
+     * disposition so it DOWNLOADS instead of opening a preview. A plain file
+     * URL points straight at Azure Blob on prod (cross-origin, no CORS, served
+     * inline) — which only ever opens in a new tab. Routing the bytes through
+     * here mirrors how the customer Evidence Vault downloads its segment
+     * uploads via /segment-uploads/download.
+     */
+    public function download(Request $request, EmployeeDocument $document)
+    {
+        $this->authorizeDocumentAccess($request, $document);
+        if (! $document->file_path || ! Storage::disk('public')->exists($document->file_path)) {
+            abort(404, 'File is missing on storage.');
+        }
+        $name = $document->original_name ?: basename($document->file_path);
+        return Storage::disk('public')->download($document->file_path, $name);
+    }
+
     /* ─────────────────────────────────────────────────────────────────
      *  Helpers
      * ───────────────────────────────────────────────────────────────── */

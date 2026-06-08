@@ -1572,6 +1572,7 @@ export default function HrEmployees() {
     if (!eDesignation)     e.designation_id    = 'Designation is required';
     if (!ePrimaryRole)     e.primary_role_id   = 'Primary role is required';
     if (!eLegalEntity)     e.legal_entity_id   = 'Legal entity is required';
+    if (!eReportingMgr)    e.reporting_manager_id = 'Reporting manager is required';
     if (!eProbationPolicy) e.probation_policy  = 'Probation policy is required';
     if (eProbationPolicy === CUSTOM_PROBATION_VALUE && !eCustomProbation.trim()) {
       e.probation_policy = 'Please describe the custom probation policy';
@@ -1581,7 +1582,7 @@ export default function HrEmployees() {
       e.notice_period = 'Please describe the custom notice period';
     }
     return e;
-  }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eLegalEntity,
+  }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eLegalEntity, eReportingMgr,
       eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
 
   // Step 3 — Documents section requires Aadhar + PAN. A document counts
@@ -2782,6 +2783,16 @@ export default function HrEmployees() {
         .hr-emp-srno { color: var(--vz-secondary-color); font-weight: 600; }
         [data-bs-theme="dark"] .hr-emp-srno,
         [data-layout-mode="dark"] .hr-emp-srno { color: #d0d4dc; }
+
+        /* Active/Inactive pill toggle — crisp, solid colours (no blurry glow).
+           ON = brand purple, OFF = clearly visible track in both themes. */
+        .emp-toggle { background: #cbd5e1; transition: background .18s ease; }
+        .emp-toggle.is-on { background: #7c5cfc; }
+        .emp-toggle:hover { filter: brightness(1.05); }
+        [data-bs-theme="dark"] .emp-toggle,
+        [data-layout-mode="dark"] .emp-toggle { background: #3f4654; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); }
+        [data-bs-theme="dark"] .emp-toggle.is-on,
+        [data-layout-mode="dark"] .emp-toggle.is-on { background: #8b6dff; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); }
 
         /* Search box — placeholder and field both need extra contrast in
            dark mode. The default placeholder is rendered with
@@ -4914,13 +4925,15 @@ export default function HrEmployees() {
                       />
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Reporting Manager</label>
+                      <label className="emp-label">Reporting Manager<span className="req">*</span></label>
                       <MasterSelect
                         value={eReportingMgr}
-                        onChange={setEReportingMgr}
+                        onChange={(v) => { setEReportingMgr(v); clearEErr('reporting_manager_id'); }}
                         placeholder="Select manager"
                         options={reportingManagerOptions}
+                        invalid={!!eErrors.reporting_manager_id}
                       />
+                      {eErrors.reporting_manager_id && <small className="emp-err">{eErrors.reporting_manager_id}</small>}
                     </Col>
                   </Row>
                 </div>
@@ -6310,12 +6323,11 @@ function ToggleSwitch({
       type="button"
       onClick={handleClick}
       aria-pressed={on}
-      className="btn p-0 border-0 d-inline-flex align-items-center"
+      className={`btn p-0 border-0 d-inline-flex align-items-center emp-toggle${on ? ' is-on' : ''}`}
       style={{
         width: 36,
         height: 20,
         borderRadius: 999,
-        background: on ? '#0ab39c' : '#e5e7eb',
         border: 'none',
         position: 'relative',
         marginLeft: 4,

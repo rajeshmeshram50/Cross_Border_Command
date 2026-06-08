@@ -601,6 +601,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // employee; verify/reject/delete address documents directly by id.
     Route::get  ('/employees/{employee}/documents', [EmployeeDocumentController::class, 'index']);
     Route::post ('/employees/{employee}/documents', [EmployeeDocumentController::class, 'store']);
+    Route::get  ('/documents/{document}/download',  [EmployeeDocumentController::class, 'download']);
     Route::patch('/documents/{document}/verify',    [EmployeeDocumentController::class, 'verify']);
     Route::patch('/documents/{document}/reject',    [EmployeeDocumentController::class, 'reject']);
     Route::delete('/documents/{document}',          [EmployeeDocumentController::class, 'destroy']);
