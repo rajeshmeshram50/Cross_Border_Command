@@ -28,7 +28,7 @@ export default function CustomFieldModal(props: {
   initial: CustomFieldInitial | null;
   prefillName?: string;
   onClose: () => void;
-  onSave: (row: CustomFieldFormPayload) => void;
+  onSave: (row: CustomFieldFormPayload) => void | Promise<void>;
 }) {
   const { initial, prefillName, onClose, onSave } = props;
 
@@ -37,6 +37,7 @@ export default function CustomFieldModal(props: {
   const [description, setDescription] = useState(initial?.description || '');
   const [usedInHint, setUsedInHint]   = useState(initial?.used_in_hint || '');
   const [errors, setErrors]           = useState<Record<string, string>>({});
+  const [saving, setSaving]           = useState(false);
 
   const TYPE_OPTIONS: { value: CustomFieldType; label: string; icon: string }[] = [
     { value: 'text',     label: 'Text',     icon: 'ri-text' },
@@ -56,15 +57,23 @@ export default function CustomFieldModal(props: {
     return Object.keys(e).length === 0;
   };
 
-  const submit = () => {
-    if (!validate()) return;
-    onSave({
-      id: initial?.id,
-      name: name.trim(),
-      type,
-      description: description.trim(),
-      used_in_hint: usedInHint.trim(),
-    });
+  const submit = async () => {
+    if (!validate() || saving) return;
+    // BUG-108: show a loading state while the parent persists the field. The
+    // parent's onSave is async (PUT/POST), so await it and keep the spinner up
+    // until it resolves; on error the modal stays open and re-enables the button.
+    try {
+      setSaving(true);
+      await onSave({
+        id: initial?.id,
+        name: name.trim(),
+        type,
+        description: description.trim(),
+        used_in_hint: usedInHint.trim(),
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -88,9 +97,18 @@ export default function CustomFieldModal(props: {
         .cfm-type-tile { transition: transform 140ms ease, border-color 140ms ease, background 140ms ease; }
         .cfm-type-tile:hover:not(.is-active) { border-color: #c7d2fe !important; background: #fafaff !important; }
         /* Save Field + Close (X) hover feedback (BUG-108 / BUG-109). */
-        .cfm-save-btn:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 7px 20px rgba(99,102,241,0.45) !important; }
-        .cfm-save-btn:active { transform: translateY(0); }
+        .cfm-save-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 7px 20px rgba(99,102,241,0.45) !important; }
+        .cfm-save-btn:active:not(:disabled) { transform: translateY(0); }
         .cfm-close-x:hover { background: rgba(255,255,255,0.32) !important; }
+        /* BUG-108: loading spinner shown inside the Save button while persisting. */
+        @keyframes cfm-spin { to { transform: rotate(360deg); } }
+        .cfm-spinner {
+          width: 14px; height: 14px; border-radius: 50%;
+          border: 2px solid rgba(255,255,255,0.45);
+          border-top-color: #fff;
+          animation: cfm-spin 0.6s linear infinite;
+          display: inline-block;
+        }
 
         [data-bs-theme="dark"] .cfm-overlay,
         [data-layout-mode="dark"] .cfm-overlay { background: rgba(2, 6, 23, 0.55); }
@@ -244,13 +262,14 @@ export default function CustomFieldModal(props: {
 
           {/* Footer */}
           <div className="cfm-footer" style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button type="button" onClick={onClose} className="cfm-cancel"
-              style={{ padding: '8px 18px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+            <button type="button" onClick={onClose} disabled={saving} className="cfm-cancel"
+              style={{ padding: '8px 18px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
               Cancel
             </button>
-            <button type="button" onClick={submit} className="cfm-save-btn"
-              style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease' }}>
-              Save Field
+            <button type="button" onClick={submit} disabled={saving} className="cfm-save-btn"
+              style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: saving ? 'progress' : 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease', opacity: saving ? 0.85 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {saving && <span className="cfm-spinner" />}
+              {saving ? 'Saving…' : 'Save Field'}
             </button>
           </div>
         </div>
