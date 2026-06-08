@@ -224,10 +224,24 @@ class ProformaInvoiceController extends Controller
         $checker = app(SegmentDocUploadController::class);
         $blocks  = [];
 
+        // Only gate on document categories the user can actually upload from
+        // the Customer / Consignee Evidence Vault: KYC (owner_kyc), DD
+        // (company_dd) and Trade Licences (trade_licenses).
+        //   - `td` (Trade Documents): the upload step (Stage 3 / Evidence
+        //      Vault) was removed from the customer/consignee form.
+        //   - `qc` (Quality & Compliance, e.g. COA): the vault has no QC
+        //      bucket at all, so a mandatory QC doc could never be satisfied.
+        // Both are dropped so they can't permanently block PI creation.
+        $gatedCategories = ['kyc', 'dd', 'tl'];
+        $onlyGated = fn (array $miss) => array_values(array_filter(
+            $miss,
+            fn ($d) => in_array($d['category'] ?? null, $gatedCategories, true)
+        ));
+
         if ($customerId) {
             $customer = Customer::where('client_id', $user->client_id)->find($customerId);
             if ($customer) {
-                $miss = $checker->missingMandatoryDocs($customer, 'customer');
+                $miss = $onlyGated($checker->missingMandatoryDocs($customer, 'customer'));
                 if (!empty($miss)) $blocks['Customer'] = $miss;
             }
         }
@@ -236,7 +250,7 @@ class ProformaInvoiceController extends Controller
             // Same-as-Customer consignees mirror the customer's docs (already
             // checked above), so don't double-block on them.
             if ($consignee && !$consignee->same_as_customer) {
-                $miss = $checker->missingMandatoryDocs($consignee, 'consignee');
+                $miss = $onlyGated($checker->missingMandatoryDocs($consignee, 'consignee'));
                 if (!empty($miss)) $blocks['Consignee'] = $miss;
             }
         }

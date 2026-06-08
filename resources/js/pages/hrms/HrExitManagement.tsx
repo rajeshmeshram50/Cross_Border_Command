@@ -1216,6 +1216,21 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return () => { cancelled = true; };
   }, [employee?.id]);
 
+  // Outstanding items that block "Complete Exit" — each named so HR sees
+  // exactly what's left (which clearance, which checklist step, sign-off).
+  // Drives both the completion gate (toast) and the live readiness box.
+  // MUST sit above the `if (!employee) return null` early-return so the hook
+  // order stays stable across renders (Rules of Hooks).
+  const exitPending = useMemo(() => {
+    const CLR = ['Manager', 'IT', 'Admin', 'Finance', 'Legal / Compliance'];
+    const CHK = ['All clearances obtained', 'All assets handed over', 'All access revoked', 'Exit documents signed', 'Exit interview completed'];
+    const items: string[] = [];
+    clearances.forEach((c, i) => { if (c.status !== 'Approved') items.push(`${CLR[i]} clearance — ${c.status || 'Pending'}`); });
+    validation.forEach((v, i) => { if (!v) items.push(CHK[i]); });
+    if (hrSignOff === 'Pending') items.push('HR final sign-off');
+    return items;
+  }, [clearances, validation, hrSignOff]);
+
   if (!employee) return null;
 
   const statusOf = (n: number): StageStatus => stageStatus[n] || (n === stage ? 'In Progress' : 'Pending');
@@ -1362,6 +1377,21 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   // login — the ONE action that actually moves the employee to "Exited".
   const completeExit = async () => {
     if (!employee || completing) return;
+
+    // The employee only moves to "Exited" once the WHOLE process is genuinely
+    // done. Stages stay freely navigable (HR can fill data in any order), but
+    // completion is hard-gated until every requirement is met — and the gate
+    // names EXACTLY which items are still outstanding so HR knows what to fix.
+    if (exitPending.length) {
+      toast.error(
+        `Exit can't be completed — ${exitPending.length} item${exitPending.length > 1 ? 's' : ''} pending`,
+        exitPending.join('  •  '),
+      );
+      // Jump to where the first pending item lives.
+      setStage(clearances.some(c => c.status !== 'Approved') ? 2 : 4);
+      return;
+    }
+
     setCompleting(true);
     try {
       await api.post(`/employees/${employee.id}/exit/complete`, buildExitPayload());
@@ -2023,13 +2053,25 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   <Col md={6}><EpField label="HR Final Sign-off"><EpSelect value={hrSignOff} onChange={setHrSignOff} options={['Pending','Approved','Rejected']} /></EpField></Col>
                 </Row>
 
-                <div className="ep-close-case">
-                  <i className="ri-flag-line" />
-                  <div>
-                    <div className="ep-close-case-title">Close Exit Case</div>
-                    <div className="ep-close-case-sub">Click "Close &amp; Complete" to finalize and close the exit case for {employee.name}.</div>
+                {exitPending.length === 0 ? (
+                  <div className="ep-close-case">
+                    <i className="ri-flag-line" />
+                    <div>
+                      <div className="ep-close-case-title">Ready to close</div>
+                      <div className="ep-close-case-sub">Everything's done — click "Complete Exit" to finalize and close the exit case for {employee.name}.</div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="ep-close-case ep-close-case--blocked">
+                    <i className="ri-error-warning-line" />
+                    <div>
+                      <div className="ep-close-case-title">{exitPending.length} item{exitPending.length > 1 ? 's' : ''} pending before this exit can be completed</div>
+                      <ul className="ep-close-case-list">
+                        {exitPending.map((p, i) => <li key={i}>{p}</li>)}
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </section>
@@ -2917,33 +2959,29 @@ function apiToExitRow(e: any): EmployeeRow {
     || '—';
 
   // Map server status → ExitStatus bucket.
-  // Priority order — date-driven so the notice window auto-advances:
+  // Priority order. "Exited" means the exit is genuinely FINALISED — never a
+  // mere date rollover, so an unfinished process is never shown as complete:
   //   1. Soft-deleted (`deleted_at`)                        → Exited.
   //   2. Exit case Closed / completed_at set                → Exited
-  //      (HR clicked "Complete Exit").
-  //   3. Terminal employees.status (Resigned/Terminated/    → Exited.
-  //      Retired/Exited).
-  //   4. Last Working Day has PASSED (lwd < today)          → Exited.
-  //      The notice period is over — the employee's last day has gone, so
-  //      the list auto-moves them to Exited without HR re-opening the case.
-  //   5. Notice period RUNNING → Exit In Progress. The window is
-  //      notice start → last working day (inclusive). An exit with a
-  //      FUTURE notice start date stays Active until that date arrives —
-  //      it only enters In Progress on/after the notice start, NOT from
-  //      the day it was initiated. (status Notice Period also counts.)
-  //   6. Required-field guards                               → Missing Details.
-  //   7. Otherwise                                           → Active
+  //      (HR clicked the gated "Complete Exit" — all clearances approved,
+  //      checklist ticked, HR sign-off done).
+  //   3. Terminal employees.status (Resigned/Terminated)    → Exited
+  //      (only the complete() endpoint sets these).
+  //   4. Notice period RUNNING → Exit In Progress. Once the exit is
+  //      initiated and the notice start date has arrived the employee stays
+  //      In Progress — EVEN IF the Last Working Day has passed — until HR
+  //      actually completes the process. A passed LWD no longer auto-exits
+  //      a half-done exit (the old rule wrongly marked people Exited just
+  //      because their last day went by). A FUTURE notice start keeps them
+  //      Active until that date. (status Notice Period also counts.)
+  //   5. Required-field guards                               → Missing Details.
+  //   6. Otherwise                                           → Active
   //      (includes a scheduled exit whose notice hasn't begun yet).
   const trashed   = !!e.deleted_at;
   const rawStatus = String(e.status ?? 'Active');
   const ex        = e?.exit ?? null;
   const todayIso  = new Date().toISOString().slice(0, 10);
-  const lwdRaw    = ex?.last_working_day ? String(ex.last_working_day).slice(0, 10) : '';
   const noticeRaw = ex?.notice_date ? String(ex.notice_date).slice(0, 10) : '';
-  // Strictly before today — the last working day is the employee's final
-  // working day, so they're still "In Progress" ON that day and only flip to
-  // Exited once it has passed.
-  const lwdPassed   = !!lwdRaw && lwdRaw < todayIso;
   // Notice has begun if there's no start date (legacy / immediate) or the
   // start date is today-or-earlier. A future start date means "not yet".
   const noticeStarted = !noticeRaw || noticeRaw <= todayIso;
@@ -2955,7 +2993,12 @@ function apiToExitRow(e: any): EmployeeRow {
   const exitInitiated = !!ex && (!!ex.exit_type || !!ex.last_working_day);
 
   let status: ExitStatus;
-  if      (trashed || caseClosed || statusExited || lwdPassed)      status = 'Exited';
+  // "Exited" ONLY when the exit is genuinely finalised — case Closed via the
+  // gated "Complete Exit", or a terminal employees.status. A passed Last
+  // Working Day no longer auto-exits: if the process (clearances / documents /
+  // checklist) isn't done, the employee stays "Exit In Progress" so nobody is
+  // marked complete before the work actually is.
+  if      (trashed || caseClosed || statusExited)                   status = 'Exited';
   else if ((exitInitiated && noticeStarted) || statusNotice)        status = 'Exit In Progress';
   else if (!e.email || !e.department_id || !e.designation_id)        status = 'Missing Details';
   else                                                              status = 'Active';
