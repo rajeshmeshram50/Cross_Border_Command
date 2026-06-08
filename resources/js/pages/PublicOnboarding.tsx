@@ -592,8 +592,9 @@ export default function PublicOnboarding() {
               <polyline points="22,6 12,13 2,6" />
             </svg>
             <div style={{ fontSize: 12.5, color: '#475569', lineHeight: 1.45 }}>
-              Login credentials sent to{' '}
+              Your login credentials will be emailed to{' '}
               <span style={{ fontWeight: 700, color: '#0f172a' }}>{invite?.invitee_email}</span>
+              {' '}once your employee account is activated in the company system.
             </div>
           </div>
 

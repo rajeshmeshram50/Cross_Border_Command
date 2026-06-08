@@ -311,16 +311,21 @@ function MoreOptionsMenu(props: {
    * way. Labels in the menu also switch on this. */
   kind: 'quotation' | 'pi';
   payload: Record<string, unknown>;
+  /* Zoho Sign completion-certificate request id — present only once the
+   * document is signed. When set, a "Download Signed Certificate" item is
+   * added to the menu. */
+  sigId: number | null;
+  docCode: string;
   onClose: () => void;
   onError: (msg: string) => void;
 }) {
-  const { rect, kind, payload, onClose, onError } = props;
+  const { rect, kind, payload, sigId, docCode, onClose, onError } = props;
   const docLabel = kind === 'quotation' ? 'Quotation' : 'PI';
   const menuRef = useRef<HTMLDivElement>(null);
   /* Busy key encodes mode + signature so only the clicked item shows a
-   * spinner while the request is in flight. Keys mirror the four menu
-   * buttons: view-sig / view-nosig / dl-sig / dl-nosig. */
-  type BusyKey = 'view-sig' | 'view-nosig' | 'dl-sig' | 'dl-nosig';
+   * spinner while the request is in flight. Keys mirror the menu buttons:
+   * view-sig / view-nosig / dl-sig / dl-nosig / cert. */
+  type BusyKey = 'view-sig' | 'view-nosig' | 'dl-sig' | 'dl-nosig' | 'cert';
   const [busy, setBusy] = useState<BusyKey | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
@@ -383,6 +388,26 @@ function MoreOptionsMenu(props: {
       .finally(() => setBusy(null));
   };
 
+  /* Download the Zoho Sign completion certificate (audit-trail PDF) for a
+   * signed document. Saved via a hidden <a download> click, mirroring the
+   * Download items above. */
+  const downloadCertificate = () => {
+    if (sigId == null) return;
+    setBusy('cert');
+    api.get(`/clm/signature-requests/${sigId}/certificate`, { responseType: 'blob' })
+      .then((res) => {
+        const blobUrl = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `${(docCode || `${kind}-${sigId}`).replace(/[^a-z0-9\-_.]/gi, '_')}_certificate.pdf`;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
+        onClose();
+      })
+      .catch((err: any) => onError(err?.response?.data?.message || 'Could not download the signing certificate'))
+      .finally(() => setBusy(null));
+  };
+
   return createPortal(
     <div
       ref={menuRef}
@@ -433,6 +458,23 @@ function MoreOptionsMenu(props: {
         <span>Download {docLabel} without Signature</span>
         {busy === 'dl-nosig' && <span className="qpi-moremenu-spinner" />}
       </button>
+      {/* Certificate — Zoho Sign completion/audit certificate, shown only
+          once the document has been signed (sigId present). */}
+      {sigId != null && (
+        <>
+          <div className="qpi-moremenu-sep" />
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={downloadCertificate}
+          >
+            <IconCertificateSm />
+            <span>Download Signed Certificate</span>
+            {busy === 'cert' && <span className="qpi-moremenu-spinner" />}
+          </button>
+        </>
+      )}
     </div>,
     document.body
   );
@@ -442,6 +484,12 @@ const IconEyeSm = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z" />
     <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const IconCertificateSm = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="8" r="6" />
+    <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" />
   </svg>
 );
 const IconDownloadSm = () => (
@@ -866,8 +914,8 @@ export default function SalesQPI() {
   // Capture coordinates (not DOM element) so a TanStack re-render of the
   // row doesn't leave us pointing at a detached node and dump the menu
   // at top-left.
-  const [qtMenuFor, setQtMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown> } | null>(null);
-  const [piMenuFor, setPiMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown> } | null>(null);
+  const [qtMenuFor, setQtMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown>; sigId: number | null } | null>(null);
+  const [piMenuFor, setPiMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown>; sigId: number | null } | null>(null);
 
   /* Stable ActionBtn — matches the customer-page pattern: neutral tile,
    * hover shifts border + icon to the column accent.
@@ -1056,22 +1104,22 @@ export default function SalesQPI() {
             )}
             {/* Send for Signature (Zoho Sign) — status-aware control. */}
             {renderSignAction('quotation', r.id, r.qtNo, r.customer, r.leadId, readOnly)}
-            {/* Email button — only enabled until the first send AND only
-                when the user can modify this row. Read-only rows
-                (main-branch viewed by normal branch) show a hint instead. */}
+            {/* Email button — matches the in-matrix Stage 5 table: stays
+                available after every send (no one-time disable) so the
+                quotation can be re-emailed; each send fires a toast.
+                Read-only rows (main-branch viewed by a normal branch) show
+                a hint and stay disabled. */}
             <ActionBtn
               title={
                 readOnly
                   ? readOnlyHint
                   : emailingFor?.kind === 'quotation' && emailingFor.id === r.id
                     ? 'Sending…'
-                    : r.emailedAt
-                      ? 'Already emailed — use Reminder to follow up'
-                      : 'Email Quotation'
+                    : 'Email Quotation'
               }
               icon={<IconMail />}
               color="#2563eb"
-              disabled={readOnly || !!r.emailedAt || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
+              disabled={readOnly || (emailingFor?.kind === 'quotation' && emailingFor.id === r.id)}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
             />
             {/* Reminder button — REMOVED for the email flow. The only
@@ -1124,9 +1172,10 @@ export default function SalesQPI() {
                   e.stopPropagation();
                   const b = e.currentTarget.getBoundingClientRect();
                   const rect: AnchorRect = { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
+                  const qSig = r.id ? sigByRow[`quotation:${r.id}`] : undefined;
                   setQtMenuFor(prev => prev?.id === r.qtNo
                     ? null
-                    : { id: r.qtNo, rect, payload: piPayloadFromQuotation(r) });
+                    : { id: r.qtNo, rect, payload: piPayloadFromQuotation(r), sigId: qSig?.status === 'completed' ? qSig.id : null });
                 }}
               >
                 <IconKebab />
@@ -1184,6 +1233,19 @@ export default function SalesQPI() {
       },
     },
     {
+      // Signature status — mirrors the Quotation table (and the in-matrix
+      // Stage 5 PI table): Not Sent -> Sent (awaiting signature) -> Signed.
+      header: () => <div className="text-center">Status</div>,
+      id: '__sigstatus', meta: { align: 'center' },
+      cell: (info: any) => {
+        const r  = info.row.original as PI;
+        const st = r.id ? sigByRow[`pi:${r.id}`]?.status : undefined;
+        if (st === 'completed')  return <span className="qpi-sig-pill qpi-sig-signed">Signed</span>;
+        if (st === 'inprogress') return <span className="qpi-sig-pill qpi-sig-sent">Sent</span>;
+        return <span className="qpi-sig-pill qpi-sig-none">Not Sent</span>;
+      },
+    },
+    {
       header: () => <div className="text-center">Action</div>,
       id: '__actions', meta: { align: 'center' },
       cell: (info: any) => {
@@ -1196,44 +1258,41 @@ export default function SalesQPI() {
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
             {/* Send for Signature (Zoho Sign) — status-aware control. */}
             {renderSignAction('pi', r.id, r.piNo, r.customer, r.leadId, readOnly)}
-            {/* Email + Reminder are DISABLED for PI — the PI is delivered to
-                the customer via Zoho Sign ("Send for Sign"), so the manual
-                email + reminder buttons are hidden here. Code is kept under
-                `false &&` (not deleted) so it can be re-enabled later. */}
+            {/* Email button — matches the in-matrix Stage 5 PI table: stays
+                available after every send (no one-time disable) so the PI can
+                be re-emailed to the customer; each send fires a toast. The
+                follow-up Reminder button stays retired (Zoho Sign reminders
+                cover PI signing) — kept under `false &&` for restore. */}
+            <ActionBtn
+              title={
+                readOnly
+                  ? readOnlyHint
+                  : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                    ? 'Sending…'
+                    : 'Email PI'
+              }
+              icon={<IconMail />}
+              color="#2563eb"
+              disabled={readOnly || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+              onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
+            />
             {false && (
-              <>
-                <ActionBtn
-                  title={
-                    readOnly
-                      ? readOnlyHint
-                      : emailingFor?.kind === 'pi' && emailingFor.id === r.id
-                        ? 'Sending…'
-                        : r.emailedAt
-                          ? 'Already emailed — use Reminder to follow up'
-                          : 'Email PI'
-                  }
-                  icon={<IconMail />}
-                  color="#2563eb"
-                  disabled={readOnly || !!r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
-                  onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
-                />
-                <ActionBtn
-                  title={
-                    readOnly
-                      ? readOnlyHint
-                      : emailingFor?.kind === 'pi' && emailingFor.id === r.id
-                        ? 'Sending…'
-                        : r.emailedAt
-                          ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
-                          : 'Send initial email first to enable reminders'
-                  }
-                  icon={<IconBellSm />}
-                  color="#f59e0b"
-                  disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
-                  badge={r.reminderCount ?? 0}
-                  onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
-                />
-              </>
+              <ActionBtn
+                title={
+                  readOnly
+                    ? readOnlyHint
+                    : emailingFor?.kind === 'pi' && emailingFor.id === r.id
+                      ? 'Sending…'
+                      : r.emailedAt
+                        ? `Send Reminder${r.reminderCount ? ` (#${(r.reminderCount ?? 0) + 1})` : ''}`
+                        : 'Send initial email first to enable reminders'
+                }
+                icon={<IconBellSm />}
+                color="#f59e0b"
+                disabled={readOnly || !r.emailedAt || (emailingFor?.kind === 'pi' && emailingFor.id === r.id)}
+                badge={r.reminderCount ?? 0}
+                onClick={() => r.id && sendReminder('pi', r.id, r.piNo)}
+              />
             )}
             <ActionBtn
               title={readOnly ? readOnlyHint : 'Edit PI'}
@@ -1256,9 +1315,10 @@ export default function SalesQPI() {
                   e.stopPropagation();
                   const b = e.currentTarget.getBoundingClientRect();
                   const rect: AnchorRect = { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
+                  const pSig = r.id ? sigByRow[`pi:${r.id}`] : undefined;
                   setPiMenuFor(prev => prev?.id === r.piNo
                     ? null
-                    : { id: r.piNo, rect, payload: piPayloadFromPI(r) });
+                    : { id: r.piNo, rect, payload: piPayloadFromPI(r), sigId: pSig?.status === 'completed' ? pSig.id : null });
                 }}
               >
                 <IconKebab />
@@ -1438,6 +1498,8 @@ export default function SalesQPI() {
             kind="quotation"
             rect={qtMenuFor.rect}
             payload={qtMenuFor.payload}
+            sigId={qtMenuFor.sigId}
+            docCode={qtMenuFor.id}
             onClose={() => setQtMenuFor(null)}
             onError={(msg) => toast.error('Preview failed', msg)}
           />
@@ -1447,6 +1509,8 @@ export default function SalesQPI() {
             kind="pi"
             rect={piMenuFor.rect}
             payload={piMenuFor.payload}
+            sigId={piMenuFor.sigId}
+            docCode={piMenuFor.id}
             onClose={() => setPiMenuFor(null)}
             onError={(msg) => toast.error('Preview failed', msg)}
           />

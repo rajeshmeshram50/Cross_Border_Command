@@ -371,12 +371,24 @@ export default function SalesLeadAckMaster() {
               </tr>
             </thead>
             <tbody>
-              {loading && (
-                <tr><td colSpan={tab === 'disqualified' ? 5 : 4} className="lam-empty">
-                  <span className="lam-spinner lam-spinner-violet" />
-                  Loading reasons…
-                </td></tr>
-              )}
+              {loading && Array.from({ length: 6 }).map((_, i) => (
+                <tr key={`sk-${i}`} className="lam-skel-row">
+                  <td className="lam-td-sr"><span className="lam-skel lam-skel-badge" /></td>
+                  <td className="lam-td-reason">
+                    <span className="lam-skel lam-skel-line" style={{ width: `${72 - (i % 3) * 14}%` }} />
+                  </td>
+                  {tab === 'disqualified' && (
+                    <td style={{ textAlign: 'center' }}><span className="lam-skel lam-skel-pill" /></td>
+                  )}
+                  <td style={{ textAlign: 'center' }}><span className="lam-skel lam-skel-pill" /></td>
+                  <td style={{ textAlign: 'center' }}>
+                    <div className="lam-actions">
+                      <span className="lam-skel lam-skel-btn" />
+                      <span className="lam-skel lam-skel-btn" />
+                    </div>
+                  </td>
+                </tr>
+              ))}
               {!loading && rows.length === 0 && (
                 <tr><td colSpan={tab === 'disqualified' ? 5 : 4} className="lam-empty">
                   <i className="ri-inbox-line lam-empty-icon" />
@@ -947,6 +959,28 @@ const SCOPED_CSS = `
   animation: lam-spin .7s linear infinite;
 }
 
+/* ─── Skeleton shimmer — shown while the reasons list loads. Each
+   placeholder mirrors the real column shape (Sr-No badge / reason
+   line / status pill / action chips) and sweeps a light lavender
+   gradient across, so the table keeps its structure instead of
+   collapsing to a single spinner row. */
+.lam-skel-row td { background: transparent !important; }
+.lam-skel-row:hover td { background: transparent !important; }
+.lam-skel {
+  display: inline-block;
+  background: linear-gradient(90deg, #efe9fb 25%, #e2d8f7 37%, #efe9fb 63%);
+  background-size: 400% 100%;
+  animation: lam-shimmer 1.4s ease infinite;
+}
+.lam-skel-badge { width: 28px; height: 24px; border-radius: 7px; }
+.lam-skel-line  { height: 12px; border-radius: 999px; vertical-align: middle; }
+.lam-skel-pill  { width: 64px; height: 20px; border-radius: 999px; }
+.lam-skel-btn   { width: 30px; height: 30px; border-radius: 8px; }
+@keyframes lam-shimmer {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
 .lam-td-sr { font-weight: 700; color: #1e293b; }
 /* Rounded-square Sr-No badge — outlined violet chip matching the Figma. */
 .lam-sr-badge {
@@ -1420,6 +1454,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .lam-td-reason { color: #ede9fe; }
 [data-bs-theme="dark"] .lam-empty { color: #7a6b9a; }
 [data-bs-theme="dark"] .lam-empty-icon { background: rgba(124,58,237,.16); color: #a78bfa; }
+[data-bs-theme="dark"] .lam-skel {
+  background: linear-gradient(90deg, #241c3a 25%, #322750 37%, #241c3a 63%);
+  background-size: 400% 100%;
+}
 
 /* Dark-mode status pills — softer tints so they don't burn out on
    the deep purple table. Action buttons (.lam-ab) already auto-adapt
