@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -2838,6 +2839,172 @@ function BasicFormSkeleton({ theme }: { theme: 'teal' | 'purple' }) {
   );
 }
 
+/* ─── Opportunity picker — async, server-paginated + globally searchable.
+ *  Replaces the static 50-row MasterSelect: it fetches /sales/leads one
+ *  page at a time, appends the next page when the list is scrolled to the
+ *  bottom (infinite scroll), and routes the search box to the server's
+ *  full-table `search` so a query matches EVERY lead, not just the loaded
+ *  page. `customerId` (when a customer is picked) narrows the list
+ *  server-side via the leads `customer_id` filter. onPick hands the parent
+ *  the fully-mapped LeadRow so the cascade (customer/consignee/currency)
+ *  works without a second lookup. */
+function OpportunitySelect({
+  value, customerId, disabled, onPick,
+}: {
+  value: string;
+  customerId: number | null;
+  disabled?: boolean;
+  onPick: (oppValue: string, row: LeadRow | null) => void;
+}) {
+  const [open, setOpen]       = useState(false);
+  const [items, setItems]     = useState<Array<{ value: string; label: string; row: LeadRow }>>([]);
+  const [page, setPage]       = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch]   = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [menuWidth, setMenuWidth] = useState<number | undefined>(undefined);
+  const [dropDir, setDropDir]     = useState<'up' | 'down'>('down');
+
+  // Map an API lead row → option + LeadRow (identical shape to the static
+  // masters loader so the parent cascade reads the same fields).
+  const mapLead = (r: any): { value: string; label: string; row: LeadRow } | null => {
+    const code = r.opp_code ?? r.opp_id ?? (r.id ? `OPP-${String(r.id).padStart(4, '0')}` : '');
+    const who  = (r.sender_company || r.sender_name || r.company || '').toString();
+    const label = code && who ? `${code} – ${who}` : (code || who || '');
+    if (!label) return null;
+    const dateSrc = r.query_time ?? r.created_at;
+    const row: LeadRow = {
+      leadId:         Number(r.id ?? 0),
+      opp_code:       code,
+      sender_company: who,
+      sender_country: r.sender_country_iso ?? r.sender_country ?? '',
+      date:           dateSrc ? new Date(dateSrc).toLocaleDateString('en-GB') : '',
+      customerDbId:   r.customer_id != null ? Number(r.customer_id) : (r.customer?.id != null ? Number(r.customer.id) : null),
+      consigneeDbId:  r.consignee_id != null ? Number(r.consignee_id) : (r.consignee?.id != null ? Number(r.consignee.id) : null),
+      currency:       r.currency ?? r.quote_currency ?? null,
+    };
+    return { value: label, label, row };
+  };
+
+  const fetchPage = useCallback(async (pageNum: number, q: string, replace: boolean) => {
+    setLoading(true);
+    try {
+      const res = await api.get<any>('/sales/leads', {
+        params: {
+          page: pageNum, per_page: 50, with_counts: 0,
+          search:      q.trim() || undefined,
+          customer_id: customerId || undefined,
+        },
+      });
+      const rows   = Array.isArray(res.data?.data) ? res.data.data : [];
+      const mapped = rows.map(mapLead).filter(Boolean) as Array<{ value: string; label: string; row: LeadRow }>;
+      setItems(prev => (replace ? mapped : [...prev, ...mapped]));
+      const lastPage = res.data?.pagination?.last_page ?? null;
+      setHasMore(lastPage != null ? pageNum < lastPage : mapped.length >= 50);
+      setPage(pageNum);
+    } catch {
+      if (replace) setItems([]);
+      setHasMore(false);
+    } finally {
+      setLoading(false);
+    }
+  }, [customerId]);
+
+  // (Re)load page 1 on open and whenever the search text or customer
+  // changes while open. Debounce typed searches so we don't fire per key.
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => { void fetchPage(1, search, true); }, search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [open, search, fetchPage]);
+  useEffect(() => { if (!open) setSearch(''); }, [open]);
+
+  // Width + auto-flip, mirroring MasterSelect so the portalled menu lines up.
+  useEffect(() => {
+    if (!open || !wrapRef.current) return;
+    const update = () => {
+      if (!wrapRef.current) return;
+      const rect = wrapRef.current.getBoundingClientRect();
+      setMenuWidth(rect.width);
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setDropDir(spaceBelow < 280 && rect.top > spaceBelow ? 'up' : 'down');
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [open]);
+
+  // Infinite scroll — append the next page as the list nears its bottom.
+  const onScroll = () => {
+    const el = listRef.current;
+    if (!el || loading || !hasMore) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 48) {
+      void fetchPage(page + 1, search, false);
+    }
+  };
+
+  return (
+    <div ref={wrapRef}>
+      <Dropdown
+        isOpen={open && !disabled}
+        toggle={() => { if (!disabled) setOpen(v => !v); }}
+        direction={dropDir}
+        className={`master-select-wrap${disabled ? ' disabled' : ''}`}
+      >
+        <DropdownToggle tag="button" type="button" disabled={disabled} className="master-select-toggle">
+          {value
+            ? <span className="master-select-value">{value}</span>
+            : <span className="master-select-placeholder">— Select Opportunity —</span>}
+          <i className="ri-arrow-down-s-line master-select-chev" />
+        </DropdownToggle>
+        <DropdownMenu
+          className="master-select-menu"
+          container="body"
+          strategy="fixed"
+          style={menuWidth ? { width: menuWidth, minWidth: menuWidth } : undefined}
+        >
+          <div className="master-select-search" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
+            <i className="ri-search-line master-select-search-icon" />
+            <input
+              type="text"
+              className="master-select-search-input"
+              placeholder="Search opportunities…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => e.stopPropagation()}
+              autoFocus
+            />
+          </div>
+          <div className="master-select-list" ref={listRef} onScroll={onScroll} style={{ maxHeight: 220, overflowY: 'auto' }}>
+            {items.length === 0 && !loading ? (
+              <div className="master-select-empty">{search ? 'No results' : 'No opportunities'}</div>
+            ) : (
+              <>
+                {items.map(opt => (
+                  <DropdownItem
+                    key={opt.row.leadId}
+                    active={opt.value === value}
+                    onClick={() => onPick(opt.value, opt.row)}
+                    className="master-select-item"
+                  >
+                    {opt.label}
+                  </DropdownItem>
+                ))}
+                {loading && <div className="master-select-empty">Loading…</div>}
+                {!loading && !hasMore && items.length > 0 && (
+                  <div className="master-select-empty" style={{ fontSize: 10.5, opacity: 0.55 }}>— End of list —</div>
+                )}
+              </>
+            )}
+          </div>
+        </DropdownMenu>
+      </Dropdown>
+    </div>
+  );
+}
+
 /* ─── Basic form (Step 1) ─── */
 function BasicForm(props: {
   form: BasicFormState; setForm: (f: BasicFormState) => void;
@@ -2885,20 +3052,9 @@ function BasicForm(props: {
     return masters.customersRaw.find(c => c.code === code) ?? null;
   }, [form.customer, masters.customersRaw]);
 
-  // Opportunities filtered by selected customer's NUMERIC dbId — joins
-  // to lead.customer_id (the real FK). Fallback to company-name match
-  // for any lead rows where customer_id was never set.
-  const filteredOpportunities = useMemo(() => {
-    if (!selectedCustomerRow) return masters.opportunities;
-    const matchCodes = new Set(
-      masters.opportunitiesRaw
-        .filter(o => (o.customerDbId != null && o.customerDbId === selectedCustomerRow.dbId)
-                  || (o.sender_company && selectedCustomerRow.company &&
-                      o.sender_company.toLowerCase() === selectedCustomerRow.company.toLowerCase()))
-        .map(o => o.opp_code)
-    );
-    return masters.opportunities.filter(opt => matchCodes.has(labelCode(opt.value)));
-  }, [selectedCustomerRow, masters.opportunities, masters.opportunitiesRaw]);
+  // (Opportunity filtering now happens server-side inside OpportunitySelect
+  // via the leads `customer_id` param + paginated fetch — the old client-side
+  // `filteredOpportunities` memo over the static 50-row list was removed.)
 
   // Consignees filtered by selected customer — uses consignee.customer_id
   // (numeric FK) matching the customer's numeric dbId. STRICT: only the
@@ -2923,9 +3079,12 @@ function BasicForm(props: {
   // 3. Use lead.consigneeDbId → resolve the Consignee master row → fill
   //    the EXACT consignee mapped on that lead.
   // 4. Auto-fill Opportunity Date and Origin Country from the lead.
-  const onOpportunityChange = (oppValue: string) => {
+  const onOpportunityChange = (oppValue: string, providedRow?: LeadRow | null) => {
     const code = labelCode(oppValue);
-    const row  = masters.opportunitiesRaw.find(o => o.opp_code === code);
+    // The async OpportunitySelect hands us the picked LeadRow directly (it
+    // may not live in the static masters list when paginated). Fall back to
+    // the masters lookup for any other caller.
+    const row  = providedRow ?? masters.opportunitiesRaw.find(o => o.opp_code === code);
     if (!row) { setForm({ ...form, opportunity: oppValue, oppId: null }); return; }
 
     let nextCustomer  = form.customer;
@@ -3097,13 +3256,10 @@ function BasicForm(props: {
           {lockParty ? (
             <input className="qpi-input qpi-input-readonly" value={form.opportunity} readOnly title="Fixed by the lead this was opened from" />
           ) : (
-            <MasterSelect
-              key={`opp-${filteredOpportunities.length}`}
+            <OpportunitySelect
               value={form.opportunity}
-              loading={masters.loading}
-              placeholder="— Select Opportunity —"
-              options={withCurrent(filteredOpportunities, form.opportunity)}
-              onChange={onOpportunityChange}
+              customerId={form.customerId}
+              onPick={(val, row) => onOpportunityChange(val, row)}
             />
           )}
         </Field>
