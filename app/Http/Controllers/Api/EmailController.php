@@ -278,11 +278,18 @@ class EmailController extends Controller
 
         $sent = 0;
         $failed = [];
+        // One personalised send per recipient (each gets a "Hi {their name}").
+        // Cc is attached only to the FIRST send so cc'd people don't receive a
+        // duplicate copy for every To address.
+        $ccAttached = false;
         foreach ($data['to'] as $email) {
             $name = $this->resolveRecipientName($email);
             try {
                 $mail = Mail::to($email);
-                if (!empty($data['cc'])) $mail->cc($data['cc']);
+                if (!empty($data['cc']) && !$ccAttached) {
+                    $mail->cc($data['cc']);
+                    $ccAttached = true;
+                }
                 $mail->send(new ComposedEmail($data['subject'], $bodyHtml, $name, $orgName, $senderName));
                 $sent++;
             } catch (\Throwable $e) {
