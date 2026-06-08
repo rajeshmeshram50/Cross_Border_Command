@@ -272,6 +272,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
    * which agreements were picked when the user clicked Send. */
   const [ssfAgreements, setSsfAgreements] = useState<AgreementRow[]>([]);
 
+  /* Trade Documents view — bulk selection (by trade-doc library id) and the
+   * id list handed to the Zoho Sign wizard. The wizard's signer is the active
+   * party tab (Customer / Consignee), so no same-party lock is needed. */
+  const [tdSelected, setTdSelected] = useState<Set<number>>(new Set());
+  const [tdSendIds, setTdSendIds]   = useState<number[] | null>(null);
+  // Clear the selection when the popup opens or the party tab flips.
+  useEffect(() => { setTdSelected(new Set()); }, [open, view, partyTab]);
+
   /* Escape-to-close mirrors the rest of the matrix modals. */
   useEffect(() => {
     if (!open) return;
@@ -408,6 +416,32 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     }
     onSent?.();
   };
+
+  /* Same refresh after a Trade Document send so the row status reflects the
+   * new signature request and the parent card counts re-pull. */
+  const onTdSent = async () => {
+    setTdSendIds(null);
+    setTdSelected(new Set());
+    if (leadId) {
+      try {
+        const ref = await api.get(`/clm/leads/${leadId}/agreement-applicable`);
+        setPayload((ref.data?.data ?? null) as ApplicablePayload | null);
+      } catch {
+        // ignore — UI still works on the previous payload
+      }
+    }
+    onSent?.();
+  };
+
+  /* The signer the Trade Documents wizard sends to = the active party tab. */
+  const tdSignParty = partyTab === 'customer' ? payload?.lead.customer : payload?.lead.consignee;
+  const tdSignCustomer = tdSignParty ? {
+    id:      tdSignParty.code ?? `${partyTab === 'customer' ? 'c' : 'g'}-${tdSignParty.id}`,
+    db_id:   tdSignParty.id,
+    company: tdSignParty.name,
+    contact: '',
+    email:   tdSignParty.email ?? '',
+  } : null;
 
   /* Poll every 15 seconds for agreement signature-request status updates
    * on the current lead. Mirrors the customer/consignee/vendor trade-
@@ -642,21 +676,55 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     <div className="lasm-td-empty">
                       No trade documents applicable to the {partyTab === 'customer' ? 'customer' : 'consignee'}.
                     </div>
-                  ) : (
+                  ) : (() => {
+                    const rows = tradeDocsByParty[partyTab];
+                    // Library docs (db_id set) are the only sendable rows.
+                    const selectableIds = Array.from(new Set(rows.filter(r => r.db_id != null).map(r => r.db_id as number)));
+                    const allSel  = selectableIds.length > 0 && selectableIds.every(id => tdSelected.has(id));
+                    const someSel = selectableIds.some(id => tdSelected.has(id)) && !allSel;
+                    const toggleAll = () => setTdSelected(allSel ? new Set() : new Set(selectableIds));
+                    const toggleOne = (id: number) => setTdSelected(prev => {
+                      const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+                    });
+                    return (<>
                     <table className="lasm-td-table">
                       <thead>
                         <tr>
+                          <th style={{ width: 38 }}>
+                            <input
+                              type="checkbox"
+                              aria-label="Select all trade documents"
+                              ref={el => { if (el) el.indeterminate = someSel; }}
+                              checked={allSel}
+                              disabled={selectableIds.length === 0 || !tdSignCustomer}
+                              onChange={toggleAll}
+                            />
+                          </th>
                           <th style={{ width: 56 }}>Sr No.</th>
                           <th>Document</th>
                           <th style={{ width: 180 }}>Segment</th>
                           <th style={{ width: 90 }}>Required</th>
                           <th style={{ width: 110 }}>Status</th>
-                          <th style={{ width: 90 }}>File</th>
+                          <th style={{ width: 80 }}>File</th>
+                          <th style={{ width: 120 }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {tradeDocsByParty[partyTab].map((td, i) => (
-                          <tr key={`${td.party}-${td.doc_code}-${i}`}>
+                        {rows.map((td, i) => {
+                          const sendable = td.db_id != null && !!tdSignCustomer;
+                          const checked  = td.db_id != null && tdSelected.has(td.db_id);
+                          return (
+                          <tr key={`${td.party}-${td.doc_code}-${i}`} className={checked ? 'lasm-row-selected' : ''}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${td.name}`}
+                                checked={checked}
+                                disabled={!sendable}
+                                title={sendable ? 'Add to bulk send' : 'This document has no template to send'}
+                                onChange={() => td.db_id != null && toggleOne(td.db_id)}
+                              />
+                            </td>
                             <td>{i + 1}</td>
                             <td>
                               <div className="lasm-doc-name">{td.name}</div>
@@ -673,11 +741,46 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 ? <a className="lasm-td-file" href={td.attachment_url} target="_blank" rel="noopener noreferrer">View</a>
                                 : <span className="lasm-td-dash">—</span>}
                             </td>
+                            <td>
+                              <Tooltip label={sendable ? `Send to ${partyTab} for signature` : 'No template to send'} disabled={false}>
+                                <button
+                                  type="button"
+                                  className="lasm-td-send"
+                                  disabled={!sendable}
+                                  onClick={() => td.db_id != null && setTdSendIds([td.db_id])}
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                  Send
+                                </button>
+                              </Tooltip>
+                            </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
-                  )}
+
+                    {/* Bulk send bar — fires one Zoho request for every checked
+                        document, all signed by the active party. */}
+                    {tdSelected.size > 0 && (
+                      <div className="lasm-bulk-bar">
+                        <div className="lasm-bulk-info">
+                          <strong>{tdSelected.size}</strong> selected · signer <em>{tdSignParty?.name ?? partyTab}</em>
+                          <button type="button" className="lasm-bulk-clear" onClick={() => setTdSelected(new Set())}>Clear</button>
+                        </div>
+                        <button
+                          type="button"
+                          className="lasm-bulk-send"
+                          disabled={!tdSignCustomer}
+                          onClick={() => setTdSendIds(Array.from(tdSelected))}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                          {`Send Selected (${tdSelected.size})`}
+                        </button>
+                      </div>
+                    )}
+                    </>);
+                  })()}
                 </div>
               </>
             )
@@ -989,6 +1092,19 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
         onClose={() => setSsfAgreements([])}
         onSent={() => { void onSsfSent(); }}
       />
+
+      {/* Trade Documents → Send for Signature (Zoho Sign). Reuses the same
+          wizard in trade-doc mode; the signer is the active party tab, so
+          modelName + recipient flip between Customer and Consignee. */}
+      <SalesCustomerSendForSignatureModal
+        open={Array.isArray(tdSendIds)}
+        mode="trade-doc"
+        modelName={partyTab === 'customer' ? 'Customer' : 'Consignee'}
+        customer={tdSignCustomer}
+        preselectedDocIds={tdSendIds ?? undefined}
+        onClose={() => setTdSendIds(null)}
+        onSent={() => { void onTdSent(); }}
+      />
     </div>,
     document.body,
   );
@@ -1017,7 +1133,9 @@ const LASM_CSS = `
   display: flex; align-items: center; justify-content: center; padding: 24px;
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif; animation: lasmFade .18s ease both; }
 @keyframes lasmFade { from { opacity: 0 } to { opacity: 1 } }
-.lasm-shell { width: 100%; max-width: 1080px; max-height: calc(100vh - 48px); display: flex; flex-direction: column;
+/* Fixed height so the Agreements and Trade Documents views are always the
+   same size — the table region inside scrolls when rows overflow. */
+.lasm-shell { width: 100%; max-width: 1080px; height: min(620px, calc(100vh - 48px)); display: flex; flex-direction: column;
   border-radius: 16px; overflow: hidden; background: #fff; box-shadow: 0 24px 60px rgba(15,23,42,.40); }
 .lasm-head { display: flex; align-items: center; gap: 12px;
   padding: 16px 22px; color: #fff;
@@ -1029,18 +1147,20 @@ const LASM_CSS = `
 .lasm-head-sub { font-size: 12px; opacity: .85; margin-top: 2px; }
 .lasm-close { width: 32px; height: 32px; border-radius: 8px; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.16); color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease; }
 .lasm-close:hover { background: rgba(255,255,255,.28); }
-.lasm-body { padding: 0; overflow: auto; flex: 1; min-height: 280px; }
+.lasm-body { padding: 0; display: flex; flex-direction: column; overflow: hidden; flex: 1; min-height: 0; }
 .lasm-empty { padding: 32px; text-align: center; color: #94a3b8; font-size: 13px; }
 .lasm-empty-warn { color: #92400e; background: linear-gradient(110deg,rgba(251,191,36,.08),rgba(254,243,199,.40)); border-radius: 0; }
-.lasm-tabs { display: flex; align-items: stretch; gap: 0; padding: 0 22px;
+.lasm-tabs { display: flex; align-items: stretch; gap: 0; padding: 0 22px; flex-shrink: 0;
   border-bottom: 1px solid #e2e8f0; background: #fff; overflow-x: auto; }
 .lasm-tab { padding: 14px 18px; background: transparent; border: 0; border-bottom: 3px solid transparent;
   color: #64748b; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: color .15s ease, border-color .15s ease; }
 .lasm-tab:hover { color: #0e7490; }
 .lasm-tab.is-on { color: #0e7490; border-bottom-color: #0e7490; }
-.lasm-table-wrap { padding: 18px 22px; }
+.lasm-table-wrap { padding: 0 22px 18px; flex: 1 1 0; min-height: 0; overflow: auto; }
 .lasm-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.lasm-table thead th { text-align: left; padding: 12px 12px; font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #64748b; background: linear-gradient(110deg,#fdfaff,#f3f0ff); border-bottom: 1.5px solid rgba(99,102,241,.18); }
+/* Header row matches the popup's teal header — a flat fill so every column
+   reads as one continuous bar (a per-cell gradient would segment). */
+.lasm-table thead th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 12px 12px; font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #ffffff; background: #0e7490; border-bottom: 1.5px solid rgba(8,145,178,.45); }
 .lasm-table tbody td { padding: 12px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #1e293b; }
 .lasm-table tbody tr:hover td { background: rgba(241,245,249,.4); }
 .lasm-empty-row { text-align: center; color: #94a3b8; padding: 22px !important; }
@@ -1052,7 +1172,7 @@ const LASM_CSS = `
 .lasm-pill-opt { background: #fef3c7; color: #92400e; }
 
 /* ── Top-level regulatory tier tabs: Highly / Less Regulated ── */
-.lasm-tier-tabs { display: inline-flex; gap: 6px; padding: 6px; margin: 14px 22px 4px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 12px; }
+.lasm-tier-tabs { display: inline-flex; flex-shrink: 0; gap: 6px; padding: 6px; margin: 14px 22px 4px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 12px; }
 .lasm-tier-tab { display: inline-flex; align-items: center; gap: 8px; padding: 9px 18px; border: none; background: transparent; border-radius: 9px; color: #475569; font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; transition: all .15s; }
 .lasm-tier-tab:hover { background: rgba(15,23,42,.05); }
 .lasm-tier-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: rgba(15,23,42,.08); color: #475569; font-size: 10.5px; font-weight: 800; }
@@ -1062,15 +1182,16 @@ const LASM_CSS = `
 
 /* ── Party tabs (Trade Documents view): Customer / Consignee. Each tab is a
       detail card — role + name + email + doc count. ── */
-.lasm-party-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 22px 4px; }
+.lasm-party-tabs { display: grid; flex-shrink: 0; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 22px 4px; }
 .lasm-party-tab { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; text-align: left; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; cursor: pointer; font-family: inherit; transition: all .15s; }
 .lasm-party-tab:hover { border-color: #cbd5e1; box-shadow: 0 2px 10px rgba(15,23,42,.06); }
 .lasm-party-tab-role { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #94a3b8; }
 .lasm-party-tab-count { position: absolute; top: 10px; right: 12px; display: inline-flex; align-items: center; justify-content: center; padding: 2px 9px; border-radius: 999px; background: rgba(15,23,42,.06); color: #475569; font-size: 10.5px; font-weight: 800; }
-/* Title row: "code: name" on the left, country on the right. */
-.lasm-party-tab-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; width: 100%; margin-top: 2px; }
+/* Title row: "code: name" in column 1, country in column 2 — same 2-col grid
+   as the Email/Segment row below, so COUNTRY lines up under SEGMENT. */
+.lasm-party-tab-title-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; align-items: start; width: 100%; margin-top: 2px; }
 .lasm-party-tab-name { font-size: 13.5px; font-weight: 800; color: #0f172a; line-height: 1.3; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lasm-party-tab-country { display: flex; flex-direction: column; gap: 1px; flex-shrink: 0; text-align: right; font-size: 11.5px; font-weight: 600; color: #334155; }
+.lasm-party-tab-country { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; font-size: 11.5px; font-weight: 600; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Detail row below: Email + Segment. */
 .lasm-party-tab-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; width: 100%; margin-top: 8px; }
 .lasm-party-tab-meta > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 11.5px; font-weight: 600; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1092,12 +1213,16 @@ const LASM_CSS = `
 .lasm-party-agr { background: #e0f2fe; color: #075985; }
 
 /* ── Segment-wise Trade Documents panel (moved out of the per-party vault) ── */
-.lasm-td-panel { margin: 4px 0 14px; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #f8fafc; }
+.lasm-td-panel { margin: 4px 8px 14px; border: 1px solid #e2e8f0; border-radius: 10px; overflow: auto; background: #f8fafc; flex: 1 1 0; min-height: 0; }
 .lasm-td-head { display: flex; align-items: center; gap: 7px; padding: 9px 12px; background: #eef6fb; color: #0c4a6e; font-size: 11.5px; font-weight: 800; letter-spacing: .02em; border-bottom: 1px solid #e2e8f0; }
 .lasm-td-empty { padding: 14px 12px; color: #94a3b8; font-size: 11.5px; font-style: italic; }
 .lasm-td-table { width: 100%; border-collapse: separate; border-spacing: 0; }
-.lasm-td-table thead th { text-align: left; padding: 8px 12px; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b; background: #f1f5f9; }
-.lasm-td-table tbody td { padding: 9px 12px; font-size: 12px; color: #334155; border-top: 1px solid #eef2f7; vertical-align: middle; }
+.lasm-td-table thead th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 12px 12px; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b; background: #f1f5f9; }
+.lasm-td-table tbody td { padding: 12px 12px; font-size: 12px; color: #334155; border-top: 1px solid #eef2f7; vertical-align: middle; }
+.lasm-td-table tbody tr.lasm-row-selected td { background: rgba(8,145,178,.06); }
+.lasm-td-send { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(8,145,178,.30); background: linear-gradient(135deg,#06b6d4,#0e7490); color: #fff; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: filter .15s, opacity .15s; }
+.lasm-td-send:hover:not(:disabled) { filter: brightness(1.06); }
+.lasm-td-send:disabled { opacity: .45; cursor: not-allowed; }
 .lasm-party-pill { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 700; }
 .lasm-party-customer  { background: #fef3c7; color: #92400e; }
 .lasm-party-consignee { background: #d1fae5; color: #065f46; }
@@ -1135,7 +1260,7 @@ const LASM_CSS = `
 
 .lasm-row-selected td { background: rgba(8,145,178,.06) !important; }
 
-.lasm-bulk-bar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between;
+.lasm-bulk-bar { position: sticky; bottom: 0; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
   gap: 14px; padding: 12px 22px; background: linear-gradient(110deg,#ecfeff,#cffafe);
   border-top: 1.5px solid rgba(8,145,178,.32); box-shadow: 0 -6px 14px rgba(15,23,42,.05); }
 .lasm-bulk-info { font-size: 12px; color: #0c4a6e; display: inline-flex; align-items: center; gap: 12px; }
@@ -1178,9 +1303,9 @@ const LASM_CSS = `
   border-bottom-color: #06b6d4;
 }
 [data-bs-theme="dark"] .lasm-table thead th {
-  color: #cffafe;
-  background: linear-gradient(110deg, rgba(8,145,178,.20), rgba(99,102,241,.16));
-  border-bottom-color: rgba(99,102,241,.35);
+  color: #ffffff;
+  background: #0e7490;
+  border-bottom-color: rgba(8,145,178,.5);
 }
 [data-bs-theme="dark"] .lasm-table tbody td {
   color: #e2e8f0;
@@ -1226,6 +1351,7 @@ const LASM_CSS = `
 [data-bs-theme="dark"] .lasm-td-head { background: rgba(8,145,178,.14); color: #67e8f9; border-bottom-color: rgba(148,163,184,.18); }
 [data-bs-theme="dark"] .lasm-td-table thead th { background: rgba(30,41,59,.60); color: #94a3b8; }
 [data-bs-theme="dark"] .lasm-td-table tbody td { color: #cbd5e1; border-top-color: rgba(148,163,184,.12); }
+[data-bs-theme="dark"] .lasm-td-table tbody tr.lasm-row-selected td { background: rgba(8,145,178,.16); }
 [data-bs-theme="dark"] .lasm-party-customer  { background: rgba(245,158,11,.20); color: #fcd34d; }
 [data-bs-theme="dark"] .lasm-party-consignee { background: rgba(16,185,129,.20); color: #6ee7b7; }
 [data-bs-theme="dark"] .lasm-td-status.is-ok { background: rgba(34,197,94,.20); color: #86efac; }

@@ -151,6 +151,12 @@ export default function HeaderFooterPanel({
     const container = headerRef.current;
     if (!container) return;
 
+    // The item we actually move is the center-anchored box that carries the
+    // `data-tpl-no-popover` flag. For the title that's the block *containing*
+    // the small drag handle (e.currentTarget) — not the handle itself — so we
+    // walk up to it; for the logo it's the mousedown target directly.
+    const node = (e.currentTarget as HTMLElement).closest('[data-tpl-no-popover="1"]') as HTMLElement | null;
+
     const start = which === 'logo' ? logoPos : titlePos;
     const startMouseX = e.clientX;
     const startMouseY = e.clientY;
@@ -159,10 +165,16 @@ export default function HeaderFooterPanel({
       const rect = container.getBoundingClientRect();
       const dxPct = ((ev.clientX - startMouseX) / Math.max(1, rect.width)) * 100;
       const dyPct = ((ev.clientY - startMouseY) / Math.max(1, rect.height)) * 100;
-      const next: PointPct = {
-        x: clamp(start.x + dxPct, 0, 100),
-        y: clamp(start.y + dyPct, 0, 100),
-      };
+      // The item is center-anchored (translate(-50%,-50%)), so clamping the
+      // center to 0–100 still lets half of it spill past the edges. Clamp to
+      // the item's half-size instead so its bounding box stays fully inside the
+      // header. If the item is wider/taller than the container, just centre it.
+      const nodeRect = node?.getBoundingClientRect();
+      const halfWPct = nodeRect ? (nodeRect.width  / 2 / Math.max(1, rect.width))  * 100 : 0;
+      const halfHPct = nodeRect ? (nodeRect.height / 2 / Math.max(1, rect.height)) * 100 : 0;
+      const boundedX = halfWPct >= 50 ? 50 : clamp(start.x + dxPct, halfWPct, 100 - halfWPct);
+      const boundedY = halfHPct >= 50 ? 50 : clamp(start.y + dyPct, halfHPct, 100 - halfHPct);
+      const next: PointPct = { x: boundedX, y: boundedY };
       if (which === 'logo')  setHeader({ ...header, logo_pos: next });
       else                   setHeader({ ...header, title_pos: next });
     };

@@ -92,6 +92,17 @@ class EmployeeController extends Controller
             $q->where('department_id', $dept);
         }
 
+        // Assignment pickers (e.g. Recruitment's Hiring Manager / Assigned HR
+        // dropdowns) opt into this so half-onboarded or inactive staff don't
+        // appear as selectable people. Defaults OFF so the HR Employees master
+        // list still shows everyone — including disabled rows and in-progress
+        // onboarding. Mirrors the gate used by managers() and Exit Management.
+        if ($request->boolean('onboarded_only')) {
+            $q->whereNull('deleted_at')
+              ->where('status', 'Active')
+              ->where('onboarding_stage_completed', '>=', 6);
+        }
+
         return response()->json($q->orderByDesc('id')->get());
     }
 
