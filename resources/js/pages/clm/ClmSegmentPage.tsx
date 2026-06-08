@@ -283,6 +283,12 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
+  // Regulatory classification is fixed once a segment is created — it can be
+  // changed neither way on edit (no Highly→Less downgrade, no Less→Highly
+  // upgrade), since compliance structures (DCP rules, required docs) are built
+  // against whatever it was set to. Editing only allows it to stay as-is.
+  const regLocked = isEdit;
+
   const handleSave = async () => {
     const trimmed = name.trim();
     const next: Record<string, string> = {};
@@ -309,6 +315,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
       }
     }
     if (!reg) next.reg = 'Regulatory status is required';
+    else if (regLocked && reg !== existing?.regulatory_status) next.reg = 'Regulatory status cannot be changed after the segment is created.';
     if (!bc)  next.bc  = 'Buyer / Consignee rule is required';
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -390,6 +397,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
             <MasterSelect
               value={reg}
               invalid={!!errors.reg}
+              disabled={regLocked}
               placeholder="— Select —"
               options={[
                 { value: 'highly', label: 'Highly Regulated' },
@@ -397,6 +405,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
               ]}
               onChange={(v) => { setReg(v as Reg); setErrors(p => ({ ...p, reg: '' })); }}
             />
+            {regLocked && <div className="clm-field-hint">Regulatory status is fixed once the segment is created and can't be changed.</div>}
             {errors.reg && <div className="clm-err">{errors.reg}</div>}
           </div>
 
