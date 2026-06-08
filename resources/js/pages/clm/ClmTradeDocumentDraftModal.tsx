@@ -766,7 +766,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     </button>
                   </div>
                 </div>
-                <div className="tdw-toolbar" onMouseDown={e => e.preventDefault()}>
+                {/* Skip preventDefault for native <select> (font-size / block)
+                    so their dropdowns open — they open ON mousedown, which the
+                    selection-preserving preventDefault otherwise swallowed. */}
+                <div className="tdw-toolbar" onMouseDown={e => { if (!(e.target as HTMLElement).closest('select')) e.preventDefault(); }}>
                   <select className="tdw-toolbar-sel" value={fontSize} onChange={e => { setFontSizeState(e.target.value); applyFontSize(e.target.value); }} title="Font size">
                     <option value="11">11</option><option value="12">12</option><option value="13">13</option>
                     <option value="14">14</option><option value="16">16</option><option value="18">18</option>

@@ -609,6 +609,14 @@ class ClmAgreementController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         $row  = ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($id);
 
+        // DOCX generation (PhpWord HTML reader + Word2007 writer) is memory-
+        // and time-heavy for table-rich documents. The web SAPI's default
+        // limits can be lower than CLI, producing intermittent OOM 500s that
+        // surface to the user as a generic "Download failed". Raise both
+        // defensively for this request only. Mirrors the Trade Doc flow.
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(120);
+
         // Prefer the user-uploaded DOCX (it's the source of truth after a
         // Word round-trip — preserves header/footer/styling we can't fully
         // reproduce from HTML alone).
