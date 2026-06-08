@@ -306,6 +306,22 @@ export const CLM_CSS = `
 }
 .clm-search:focus-within { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.12); }
 .clm-search input { flex: 1; border: none; outline: none; font-size: 12px; background: transparent; color: #0c4a6e; font-family: inherit; }
+/* Neutralise the browser autofill highlight on the search field. Chrome
+   paints autofilled / previously-searched inputs with a pale fill (yellow/
+   cyan in light mode, near-white in dark) that overrides our transparent
+   input bg and shows up as a tinted "shimmer" across the bar. The 1000px
+   inset box-shadow trick is the only way to repaint that internal surface —
+   here it's the light search bg; the dark-mode override below swaps it. */
+.clm-search input:-webkit-autofill,
+.clm-search input:-webkit-autofill:hover,
+.clm-search input:-webkit-autofill:focus,
+.clm-search input:-webkit-autofill:active {
+  -webkit-text-fill-color: #0c4a6e;
+  caret-color: #0c4a6e;
+  -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
+  box-shadow: 0 0 0 1000px #fff inset !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
 .clm-search-grow:focus-within { width: 480px; }
 
 /* Compound Total badge — icon block + label + count number */
